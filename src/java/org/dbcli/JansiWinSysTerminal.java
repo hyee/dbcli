@@ -12,11 +12,9 @@ import org.jline.terminal.impl.jansi.win.WindowsAnsiWriter;
 import org.jline.utils.InfoCmp;
 import org.jline.utils.OSUtils;
 import org.jline.utils.Status;
+import org.jline.utils.WriterOutputStream;
 
-import java.io.BufferedWriter;
-import java.io.IOError;
-import java.io.IOException;
-import java.io.Writer;
+import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.function.IntConsumer;
@@ -41,14 +39,19 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
             else
                 type = TYPE_WINDOWS;
         }
+        JansiWinConsoleWriter secondWriter = null;
+        String secondType = null;
         if (ansiPassThrough) {
-            type = TYPE_WINDOWS;
-            if (("ansicon").equals(System.getenv("ANSICON_DEF")))
-                writer = new BufferedWriter(OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter(), 1024*1024);
-            else
+            if (("ansicon").equals(System.getenv("ANSICON_DEF"))) {
+                writer = OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter();
+                if (type.equals(TYPE_WINDOWS_VTP)) {
+                    secondType = type;
+                    secondWriter = new JansiWinConsoleWriter();
+                }
+            } else
                 writer = new JansiWinConsoleWriter();
+            type = TYPE_WINDOWS;
         } else {
-            System.out.println(type);
             if (type.equals(TYPE_WINDOWS_VTP) || type.equals(TYPE_WINDOWS_CONEMU)) {
                 writer = new JansiWinConsoleWriter();
             } else {
@@ -58,12 +61,19 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
             throw new IOException("Failed to get console mode: " + getLastErrorMessage());
         }
-        JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
+        JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler, secondWriter, secondType);
         // Start input pump thread
         if (!paused) {
             terminal.resume();
         }
         return terminal;
+    }
+
+    @Override
+    protected void doClose() throws IOException {
+        switchWriter(0);
+        super.doClose();
+        if (writer != null) writers[1].close();
     }
 
     @Override
@@ -87,11 +97,43 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return Kernel32.GetConsoleMode(consoleIn, mode) != 0;
     }
 
-    JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler) throws IOException {
+    PrintWriter[] writers = null;
+    WriterOutputStream[] outputs = null;
+    String[] infoComps = null;
+    public int currentWriterr = 0;
+
+    JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, JansiWinConsoleWriter secondWriter,
+                        String secondType) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
         this.status = null;
+        if (secondWriter != null) {
+            writers = new PrintWriter[]{this.writer, new PrintWriter(secondWriter)};
+            outputs = new WriterOutputStream[]{(WriterOutputStream) this.output, new WriterOutputStream(writers[1], encoding())};
+            infoComps = new String[]{type, secondType};
+        }
         t.setDaemon(true);
         t.start();
+    }
+
+    //remove the "final" keywords of writer/output/type from AbstractWindowsTerminal
+    public void switchWriter(int index) {
+        if (writers == null || index == currentWriterr) return;
+        if (currentWriterr == 0) {
+            writer.write("\33[?1048h");
+        } else {
+            puts(InfoCmp.Capability.clear_screen);
+        }
+        writer.flush();
+        writer = writers[index];
+        output = outputs[index];
+        type = infoComps[index];
+        parseInfoCmp();
+        currentWriterr = index;
+
+        if (currentWriterr == 0) {
+            writer.write("\33[?1048l");
+            writer.flush();
+        }
     }
 
     @Override
@@ -213,7 +255,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     protected boolean processConsoleInput() throws IOException {
         INPUT_RECORD[] events;
         if (consoleIn != INVALID_HANDLE_VALUE
-                && WaitForSingleObject(consoleIn, 100) == 0) {
+                && WaitForSingleObject(consoleIn, 128) == 0) {
             events = readConsoleInputHelper(consoleIn, 1, false);
         } else {
             return false;

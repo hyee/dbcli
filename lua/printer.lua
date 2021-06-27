@@ -126,7 +126,7 @@ function printer.print(...)
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
         if ignore~='__BYPASS_GREP__' and (printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html') then
-            pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
+            pcall(printer.tee_hdl.write,printer.tee_hdl,(printer.tee_type=='ans' and output or strip_ansi(output)).."\n")
         end
     end
 
@@ -327,7 +327,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
         end
         hdl:write("\n")
     elseif type(str)=="string" then
-        pcall(hdl.write,hdl,env.space..strip_ansi(str):rtrim().."\n")
+        pcall(hdl.write,hdl,env.space..(printer.tee_type=='ans' and str:convert_ansi() or strip_ansi(str)):rtrim().."\n")
     end
 end
 
@@ -388,9 +388,19 @@ function printer.onload()
     end
     BOLD=BOLD..'%1'..NOR
     local tee_help=[[
-    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command> (support pipe(|) operation)
-        or <other command>|@@NAME {+|.|[+]<file>|<file>+}
-    When <other command> is a query, then the output can be same to the screen output/csv file/html file which depends on the file extension. ]]
+    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>} <other command> (support pipe(|) operation)
+        or <other command>|@@NAME {+|.|[+]<file>}
+    Target:
+         <file> : write the output into <file> with override mode
+        +<file> : write the output into <file> with append mode
+              . : write the output into "last_output.txt" with override mode
+              + : write the output into "last_output.txt" with append mode
+    File extentions:
+           .html: if the output is a query result, then save it as HTML format
+           .csv : if the output is a query result, then save it as CSV format
+           .ans : keep the output's ANSI color escapes
+        <others>: remove output's ANSI color escapes
+    ]]
 
     local grep_help=[[
     Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>  (support pipe(|) operation), -keyword means exclude.

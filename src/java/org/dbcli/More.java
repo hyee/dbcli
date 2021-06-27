@@ -44,6 +44,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import static org.jline.keymap.KeyMap.*;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
 
 /* Change following class/methods as public：
    Nano.PatternHistory
@@ -51,7 +52,7 @@ import static org.jline.keymap.KeyMap.*;
    Nano.Parser.split
    Commands.findFiles
 * */
-public class More {
+final public class More {
 
     private static final int ESCAPE = 27;
     private static final String MESSAGE_FILE_INFO = "FILE_INFO";
@@ -298,7 +299,6 @@ public class More {
 
     public void handle(Signal signal) {
         size.copy(terminal.getSize());
-        size.setColumns(120);
         try {
             display.clear();
             display(false);
@@ -361,7 +361,6 @@ public class More {
                 }
                 terminal.writer().flush();
 
-                display.clear();
                 display(false);
                 checkInterrupted();
 
@@ -970,11 +969,7 @@ public class More {
                     curPos = lineEditor.editBuffer(op, curPos);
                     currentBuffer = buffer.toString();
             }
-            display.updateLine(buffer.toString());
-            if (curPos < begPos) {
-                buffer.setLength(0);
-                return forward;
-            }
+            display.updateBuff(buffer.toString());
         }
     }
 
@@ -1318,7 +1313,7 @@ public class More {
         if (line == 0 && !toBeDisplayed(curLine, dpCompiled)) {
             curLine = null;
         }
-        return new Pair<>(line, curLine);
+        return new Pair<>(line < 0 ? 0 : line, curLine);
     }
 
     private boolean toBeDisplayed(AttributedString curLine, Pattern dpCompiled) {
@@ -1328,10 +1323,6 @@ public class More {
     synchronized boolean display(boolean oneScreen) throws IOException {
         return display(oneScreen, null);
     }
-
-    public int numWidth = 4;
-    int globalLineWidth = 0;
-    public int padding = 0;
 
     boolean waitReader(long timeout) {
         try {
@@ -1354,10 +1345,21 @@ public class More {
         return false;
     }
 
+    public int numWidth = 4;
+    public int padding = 0;
+    private int globalLineWidth = 0;
+    private int rows = 0;
+    private int cols = 0;
+
     synchronized boolean display(boolean oneScreen, Integer curPos) throws IOException {
         if (!oneScreen && !waitReader(128)) return false;
-
-        int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0) - 1;
+        if (curPos == null && display.getPos() > 0 && buffer.length() > 0 && rows == size.getRows() && cols == size.getColumns()) {
+            display.updateBuff(buffer.toString());
+            return false;
+        }
+        rows = size.getRows();
+        cols = size.getColumns();
+        int width = cols - (printLineNumbers ? numWidth + 1 : 0) - 1;
         int maxWidth = 0;
         AttributedStringBuilder asb = new AttributedStringBuilder();
         if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth - width / 2) {
@@ -1365,7 +1367,7 @@ public class More {
         }
 
         List<AttributedString> newLines = new ArrayList<>();
-        int height = size.getRows();
+
         int inputLine = firstLineToDisplay;
         AttributedString curLine = null;
         Pattern compiled = getPattern();
@@ -1378,7 +1380,7 @@ public class More {
         final String spaces = String.join("", Collections.nCopies(padding, " "));
         AttributedStringBuilder msg = new AttributedStringBuilder(2048);
         final AttributedString sep = new AttributedString("|", AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW));
-        for (int terminalLine = 0; terminalLine < height - 1; terminalLine++) {
+        for (int terminalLine = 0; terminalLine < rows - 1; terminalLine++) {
             if (curLine == null) {
                 Pair<Integer, AttributedString> nextLine = nextLine2display(inputLine, dpCompiled);
                 inputLine = nextLine.getU();
@@ -1450,7 +1452,7 @@ public class More {
             Long allLines = source.lines();
             message = source.getName()
                     + (sources.size() > 2 ? " (file " + sourceIdx + " of " + (sources.size() - 1) + ")" : "")
-                    + " lines " + (firstLineToDisplay + 1) + "-" + inputLine + "/" + (allLines != null ? allLines : lines.size())
+                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/" + (allLines != null ? allLines : lines.size())
                     + (eof ? " (END)" : "");
         }
         if (buffer.length() > 0) {
@@ -1468,7 +1470,7 @@ public class More {
             msg.append(":");
         }
         newLines.add(msg.toAttributedString());
-
+        display.resize(size.getRows(), size.getColumns());
         if (curPos == null) {
             display.update(newLines, -1);
         } else {
@@ -1496,6 +1498,7 @@ public class More {
     int paddingCounter = 0;
 
     AttributedString getLine(int line) throws IOException {
+        if (line < 0) line = 0;
         while (line >= lines.size()) {
             String str = reader.readLine();
             if (str != null) {
@@ -1523,7 +1526,7 @@ public class More {
             }
         }
         lineIndex = -1;
-        if (line - firstLineToDisplay < titleLines) return titles[line - firstLineToDisplay];
+        if (line - firstLineToDisplay < titleLines && titleLines > 0) return titles[line - firstLineToDisplay];
         else line -= titleLines;
 
         if (line < lines.size()) {
@@ -1565,9 +1568,9 @@ public class More {
         map.bind(Operation.REPAINT, "r", ctrl('R'), ctrl('L'));
         map.bind(Operation.REPAINT_AND_DISCARD, "R");
         map.bind(Operation.REPEAT_SEARCH_FORWARD, "n");
-        map.bind(Operation.REPEAT_SEARCH_BACKWARD, "b", "B", "B");
+        map.bind(Operation.REPEAT_SEARCH_BACKWARD, "N");
         map.bind(Operation.REPEAT_SEARCH_FORWARD_SPAN_FILES, alt('n'));
-        map.bind(Operation.REPEAT_SEARCH_BACKWARD_SPAN_FILES, alt('N'), alt('b'), alt('B'));
+        map.bind(Operation.REPEAT_SEARCH_BACKWARD_SPAN_FILES, alt('N'));
         map.bind(Operation.UNDO_SEARCH, alt('u'));
         map.bind(Operation.GO_TO_FIRST_LINE_OR_N, "g", "<", alt('<'));
         map.bind(Operation.GO_TO_LAST_LINE_OR_N, "G", ">", alt('>'));
@@ -1579,7 +1582,7 @@ public class More {
         map.bind(Operation.GOTO_FILE, ":x");
         map.bind(Operation.INFO_FILE, "=", ":f", ctrl('G'));
         map.bind(Operation.DELETE_FILE, ":d");
-        map.bind(Operation.BACKSPACE, del());
+        map.bind(Operation.BACKSPACE, del(), "\b");
         map.bind(Operation.OPT_PRINT_LINES, "l", "L");
         "-/0123456789?&".chars().forEach(c -> map.bind(Operation.CHAR, Character.toString((char) c)));
     }
@@ -1698,7 +1701,7 @@ public class More {
 
     static class Play extends Display {
         public Play(Terminal terminal) {
-            super(terminal, true);
+            super(terminal, !terminal.getType().equals(TYPE_WINDOWS));
         }
 
         boolean isStarted;
@@ -1706,51 +1709,87 @@ public class More {
 
         public void init(boolean isEnterCA) {
             reset();
+            prevBuff = null;
             isStarted = false;
             this.isEnterCA = isEnterCA;
             if (isEnterCA) terminal.puts(Capability.enter_ca_mode);
         }
 
         public void exit() {
-            if (this.isEnterCA) terminal.puts(Capability.exit_ca_mode);
+            isStarted = false;
+            if (this.isEnterCA) {
+                if (!fullScreen)
+                    terminal.puts(Capability.clear_screen);
+                else
+                    terminal.puts(Capability.exit_ca_mode);
+            }
+        }
+
+        @Override
+        public void clear() {
+            if (!isStarted) return;
+            super.clear();
+            reset = true;
+        }
+
+        @Override
+        public void resize(int rows, int columns) {
+            int prevRows = this.rows;
+            super.resize(rows, columns);
+            if (prevRows != rows) {
+                clear();
+            }
         }
 
         @Override
         public synchronized void update(List<AttributedString> newLines, int targetCursorPos) {
+            clear();
             if (isStarted) {
-                clear();
                 if (!isEnterCA) {
                     terminal.puts(Capability.enter_ca_mode);
                     isEnterCA = true;
                 }
             } else {
                 isStarted = true;
-                if (OSUtils.IS_CONEMU || "terminator".equals(System.getenv("TERM")) || "ansicon".equals(System.getenv("ANSICON_DEF"))) {
-                    clear();
-                } else {
-                    cursorPos = 0;
-                    oldLines.clear();
-                }
             }
+            prevBuff = null;
             Size size = terminal.getSize();
             super.resize(size.getRows(), size.getColumns());
             super.update(newLines, targetCursorPos, false);
             terminal.writer().flush();
         }
 
-        void updateLine(int targetPos, String newLine) {
-            if (cursorPos != targetPos) {
-                moveVisualCursorTo(targetPos);
+        public int getPos() {
+            return cursorPos;
+        }
+
+        void updateLine(int targetLine, String newLine, int targetCol) {
+            if (targetLine == 0) targetLine = rows;
+            if (cursorPos != targetLine && targetLine != -1) {
+                moveVisualCursorTo(targetLine);
             }
             terminal.puts(InfoCmp.Capability.clr_bol);
-            terminal.puts(Capability.column_address, 1);
+            terminal.puts(Capability.column_address, targetCol);
             terminal.writer().print(newLine);
             terminal.flush();
         }
 
-        void updateLine(String newLine) {
-            updateLine(cursorPos, newLine);
+        void updateLine(String newLine, int targetCol) {
+            updateLine(cursorPos, newLine, targetCol);
+        }
+
+        String prevBuff = null;
+
+        public boolean updateBuff(final String currBuff) {
+            if (prevBuff != null && (cursorPos == 0 || currBuff == null || !isStarted)) prevBuff = null;
+            if (currBuff == null || currBuff.equals(prevBuff)) return true;
+            if (prevBuff != null && currBuff.startsWith(prevBuff)) {
+                terminal.writer().write(currBuff.substring(prevBuff.length()));
+                terminal.writer().flush();
+            } else
+                updateLine(currBuff, 1);
+            prevBuff = currBuff;
+            return false;
         }
     }
-
 }

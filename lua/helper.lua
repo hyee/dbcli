@@ -90,6 +90,7 @@ function helper.env(target,depth)
     if rows[2][1] and rows[2][2] then
         add("Memory.Total(KB)",rows[2][1]+rows[2][2])
     end
+    add("TERM",console.terminal:getType())
     add("CodePoint",e)
     add("ENV.locale",os.setlocale())
     local prefix=env.WORK_DIR:len()+1

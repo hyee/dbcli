@@ -4,7 +4,6 @@ import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
-import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
@@ -201,11 +200,6 @@ public final class Console {
         return s.getBytes().length + ":" + size + ":" + (maxLength > 0 ? s : "");
     }
 
-    private Candidate candidate(String key, String desc) {
-        if (desc != null && (desc.equals("") || desc.equals("\0"))) desc = null;
-        return new Candidate(key, key, null, null, null, null, true);
-    }
-
 
     public void setKeywords(AbstractTableMap<String, ?> keywords) {
         HashMap<String, ?> map = (HashMap) keywords.toJavaObject();
@@ -291,7 +285,7 @@ public final class Console {
 
     public void less(String output, int titleLines, int spaces, int lines) {
         More less = new More(terminal, null);
-        less.noInit = true;
+        //less.noInit = true;
         less.veryQuiet = true;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));
         less.padding = spaces;
@@ -334,6 +328,8 @@ public final class Console {
             setEvents(null, null);
             terminal.echo(false);
             terminal.resume();
+            terminal.puts(InfoCmp.Capability.cursor_visible);
+            terminal.flush();
             isPrompt = buffer != null && ansiPattern.matcher(buffer).find();
             if (isPrompt) {
                 parser.setAnsi(buffer);

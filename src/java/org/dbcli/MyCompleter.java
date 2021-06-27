@@ -98,8 +98,6 @@ public class MyCompleter implements org.jline.reader.Completer {
                 objs[0] = key;
                 for (int i = 0; i < keys.length; i++) objs[i + 1] = node(keys[i]);
                 nodes.add(node(objs));
-                objs[0] = key.toLowerCase();
-                nodes.add(node(objs));
             } else nodes.add(node(key));
         }
         commandCompleter = new TreeCompleter(nodes.toArray(new Node[0]));
