@@ -72,7 +72,7 @@ public class MyCompleter implements org.jline.reader.Completer {
     synchronized void setCommands(Map<String, ?> keywords) {
         for (Map.Entry<String, ?> entry : keywords.entrySet()) {
             String key = entry.getKey().toUpperCase();
-            if (key.equals("DBWR")) System.out.println(1);
+            if (key.length() < 3 || key.contains(" ")) continue;
             Object value = entry.getValue();
             HashMap<String, Boolean> map = commands.get(key);
             if (map == null) map = new HashMap<>();
@@ -112,13 +112,14 @@ public class MyCompleter implements org.jline.reader.Completer {
     synchronized void setKeysWords(Map<String, ?> keywords) {
         try {
             for (Map.Entry<String, ?> entry : keywords.entrySet()) {
-                String key = entry.getKey().toLowerCase();
-                final Object value = entry.getValue();
-                if (value instanceof String) key = value + "." + key;
-                final String[] ary = key.toLowerCase().split(re);
-                for (int i = 0, n = ary.length - 1; i <= n; i++) {
+                String key = entry.getKey();
+                if (key.length() < 3 || key.contains(" ")) continue;
+                Object value = entry.getValue();
+                String[] ary = key.toLowerCase().split(re);
+                if (value instanceof String)
+                    putKey(((String) value).toLowerCase(), ary[0]);
+                for (int i = 0, n = ary.length - 1; i <= n; i++)
                     putKey(ary[i], i == n ? null : ary[i + 1]);
-                }
             }
             values.clear();
             keywords.clear();

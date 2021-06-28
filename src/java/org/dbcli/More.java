@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import static org.jline.keymap.KeyMap.*;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
 /* Change following class/methods as public：
    Nano.PatternHistory
@@ -1343,9 +1343,10 @@ final public class More {
     private int globalLineWidth = 0;
     private int rows = 0;
     private int cols = 0;
-	final AttributedString sep = new AttributedString("|", AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW));
+    final AttributedString sep = new AttributedString("|", AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW));
+
     synchronized boolean display(boolean oneScreen, Integer curPos) throws IOException {
-        if (!oneScreen ) {
+        if (!oneScreen) {
             if (!waitReader(128)) return false;
             if (curPos == null && display.getPos() > 0 && buffer.length() > 0 && rows == size.getRows() && cols == size.getColumns()) {
                 display.updateBuff(buffer.toString());
@@ -1374,7 +1375,7 @@ final public class More {
         int off = 0;
         final String spaces = String.join("", Collections.nCopies(padding, " "));
         AttributedStringBuilder msg = new AttributedStringBuilder(2048);
-    
+
         for (int terminalLine = 0; terminalLine < rows - 1; terminalLine++) {
             if (curLine == null) {
                 Pair<Integer, AttributedString> nextLine = nextLine2display(inputLine, dpCompiled);
@@ -1696,7 +1697,7 @@ final public class More {
 
     static class Play extends Display {
         public Play(Terminal terminal) {
-            super(terminal, !terminal.getType().equals(TYPE_WINDOWS));
+            super(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR));
         }
 
         boolean isStarted;

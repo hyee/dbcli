@@ -138,7 +138,7 @@ end
 
 local function flush_mem(target)
     local c=collectgarbage('count')
-    target.memory,curr=math.ceil(1000*(c-curr+(target.memory or 0)))/1000,c
+    target.memory,curr=c-curr+(target.memory or 0),c
 end
 
 

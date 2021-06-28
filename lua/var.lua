@@ -170,6 +170,7 @@ function var.setInputs(name,args)
     var.inputs[name]=args
 end
 
+local var_pattern='%f[\\&](&+)([%w%_%$]+)(%.?)'
 function var.update_text(item,pos,params)
     local org_txt
     if type(item)=="string" then
@@ -199,14 +200,14 @@ function var.update_text(item,pos,params)
     while count>0 do
         count=0
         for k,v in pairs(params) do
-            if type(v)=="string" then params[k]=v:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl) end
+            if type(v)=="string" then params[k]=v:gsub(var_pattern,repl) end
         end
     end
 
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub('%f[\\&](&&?)([%w%_%$]+)(%.?)',repl)
+        item[pos]=item[pos]:gsub(var_pattern,repl)
     end
 
     if org_txt then return item[1] end

@@ -12,11 +12,14 @@ import org.jline.terminal.impl.jansi.win.WindowsAnsiWriter;
 import org.jline.utils.InfoCmp;
 import org.jline.utils.OSUtils;
 import org.jline.utils.Status;
-import org.jline.utils.WriterOutputStream;
 
-import java.io.*;
+import java.io.BufferedWriter;
+import java.io.IOError;
+import java.io.IOException;
+import java.io.Writer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.IntConsumer;
 
 import static org.fusesource.jansi.internal.Kernel32.*;
@@ -39,18 +42,15 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
             else
                 type = TYPE_WINDOWS;
         }
-        JansiWinConsoleWriter secondWriter = null;
         String secondType = null;
         if (ansiPassThrough) {
             if (("ansicon").equals(System.getenv("ANSICON_DEF"))) {
-                writer = OSUtils.IS_CONEMU ? new JansiWinConsoleWriter() : new ConEmuWriter();
-                if (type.equals(TYPE_WINDOWS_VTP)) {
-                    secondType = type;
-                    secondWriter = new JansiWinConsoleWriter();
-                }
-            } else
+                writer = new JansiWinConsoleWriter(type.equals(TYPE_WINDOWS_VTP));
+                if (type.equals(TYPE_WINDOWS_VTP)) secondType = TYPE_WINDOWS_256_COLOR;
+            } else {
                 writer = new JansiWinConsoleWriter();
-            type = TYPE_WINDOWS;
+                type = TYPE_WINDOWS;
+            }
         } else {
             if (type.equals(TYPE_WINDOWS_VTP) || type.equals(TYPE_WINDOWS_CONEMU)) {
                 writer = new JansiWinConsoleWriter();
@@ -61,7 +61,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
             throw new IOException("Failed to get console mode: " + getLastErrorMessage());
         }
-        JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler, secondWriter, secondType);
+        JansiWinSysTerminal terminal = new JansiWinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler, secondType);
         // Start input pump thread
         if (!paused) {
             terminal.resume();
@@ -70,17 +70,9 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     }
 
     @Override
-    protected void doClose() throws IOException {
-        switchWriter(0);
-        super.doClose();
-        if (writer != null) writers[1].close();
-    }
-
-    @Override
     public Status getStatus() {
         return null;
     }
-
 
     public static boolean isWindowsConsole() {
         int[] mode = new int[1];
@@ -97,42 +89,39 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return Kernel32.GetConsoleMode(consoleIn, mode) != 0;
     }
 
-    PrintWriter[] writers = null;
-    WriterOutputStream[] outputs = null;
     String[] infoComps = null;
-    public int currentWriterr = 0;
 
-    JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, JansiWinConsoleWriter secondWriter,
+    public final int currentWriter() {
+        return console.currentWriter();
+    }
+
+    JansiWinConsoleWriter console = null;
+
+    JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler,
                         String secondType) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
         this.status = null;
-        if (secondWriter != null) {
-            writers = new PrintWriter[]{this.writer, new PrintWriter(secondWriter)};
-            outputs = new WriterOutputStream[]{(WriterOutputStream) this.output, new WriterOutputStream(writers[1], encoding())};
+        if (secondType != null) {
+            console = (JansiWinConsoleWriter) writer;
             infoComps = new String[]{type, secondType};
+            console.setWriter(type.equals(TYPE_WINDOWS_VTP) ? 0 : 1);
         }
         t.setDaemon(true);
         t.start();
     }
 
-    //remove the "final" keywords of writer/output/type from AbstractWindowsTerminal
+    //remove the "final" keywords of type from AbstractWindowsTerminal
     public void switchWriter(int index) {
-        if (writers == null || index == currentWriterr) return;
-        if (currentWriterr == 0) {
-            writer.write("\33[?1048h");
-        } else {
-            puts(InfoCmp.Capability.clear_screen);
-        }
+        if (infoComps == null || index == currentWriter()) return;
         writer.flush();
-        writer = writers[index];
-        output = outputs[index];
         type = infoComps[index];
+        bools.clear();
+        ints.clear();
+        strings.clear();
         parseInfoCmp();
-        currentWriterr = index;
-
-        if (currentWriterr == 0) {
-            writer.write("\33[?1048l");
-            writer.flush();
+        console.setWriter(index);
+        if (index == 1) {
+            writer.write(enablePaste ? LineReaderImpl.BRACKETED_PASTE_ON : LineReaderImpl.BRACKETED_PASTE_OFF);
         }
     }
 
@@ -173,6 +162,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     private volatile int pasteCount = 0;
     private volatile char lastChar;
     private volatile boolean enablePaste = true;
+    volatile CountDownLatch latch = null;
     final char[] bp = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_BEGIN).toCharArray();
     final char[] ep = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_END).toCharArray();
     final short bpl = (short) (bp.length - 1);
@@ -203,6 +193,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
             this.slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_BEGIN);
             prevTime = System.currentTimeMillis();
             pasteCount = 1;
+            if (latch != null) latch.countDown();
             //insert one more space to bypass the completor's detection if the first pasted char is tab
             if (c == '\t') {
                 this.slaveInputPipe.write(' ');
@@ -235,16 +226,20 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     Thread t = new Thread(() -> {
         while (true) {
             try {
-                Thread.sleep(32);
+                if (latch == null) {
+                    latch = new CountDownLatch(1);
+                    latch.await();
+                } else Thread.sleep(32);
                 if (prevTime == 0 || pasteCount == 0 || paused()) continue;
                 //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
                 if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
+                    pasteCount = 0;
                     if (endIdx != epl) {
                         slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_END);
                         if (lastChar == '\r' || lastChar == '\n') processChar('\n');
                         prevTime = 0;
                     }
-                    pasteCount = 0;
+                    latch = null;
                 }
             } catch (Exception e) {
             }
@@ -294,6 +289,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
         int dwButtonState = mouseEvent.buttonState;
+        System.out.println(mouseEvent);
         if (tracking == MouseTracking.Off
                 || tracking == MouseTracking.Normal && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
                 || tracking == MouseTracking.Button && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {

@@ -2,41 +2,42 @@ package org.dbcli;
 
 import com.sun.jna.Native;
 import com.sun.jna.NativeLibrary;
-import com.sun.jna.Pointer;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.win32.W32APIOptions;
 import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 
 public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
-    static {
-        NativeLibrary nativeLibrary = NativeLibrary.getInstance("ConEmuHk" + (System.getProperty("os.arch").equals("x86") ? "" : "64"), W32APIOptions.UNICODE_OPTIONS);
-        Native.register(ConEmuWriter.class, nativeLibrary);
-    }
-
-    private final Pointer console;
+    private NativeLibrary INSTANCE;
     private IntByReference charsWritten = new IntByReference();
 
     public ConEmuWriter() {
-        this(Kernel32.INSTANCE.GetStdHandle(Kernel32.STD_OUTPUT_HANDLE));
-    }
-
-
-    public ConEmuWriter(Pointer console) {
         super();
-        this.console = console;
     }
-
 
     static final native boolean WriteProcessed(String in_lpBuffer, int in_nLength, IntByReference out_lpNumberOfCharsWritten);
 
-    static final native boolean WriteProcessed3(String in_lpBuffer, int in_nLength, IntByReference out_lpNumberOfCharsWritten, Pointer in_hConsoleOutput);
+    @Override
+    protected final void writeConsole(char[] chars, int i) {
+        try {
+            WriteProcessed(String.valueOf(chars), i, charsWritten);
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
+    void register(boolean active) {
+        if (!active) close();
+        else if (INSTANCE == null) {
+            INSTANCE = NativeLibrary.getInstance("ConEmuHk" + (System.getProperty("os.arch").equals("x86") ? "" : "64"), W32APIOptions.UNICODE_OPTIONS);
+            Native.register(ConEmuWriter.class, INSTANCE);
+        }
+    }
 
     @Override
-    protected void writeConsole(char[] chars, int i) {
-        try {
-            WriteProcessed3(String.valueOf(chars), i, charsWritten, console);
-        } catch (Error e) {
-
+    public void close() {
+        if (INSTANCE != null) {
+            INSTANCE.dispose();
+            INSTANCE = null;
         }
     }
 }

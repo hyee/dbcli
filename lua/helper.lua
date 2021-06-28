@@ -226,7 +226,7 @@ function helper.helper(cmd,...)
         local row=grid.new()
         row:add{"#","Module","Total Time(ms)","Load Time(ms)","Init Time(ms)","Memory(K)"}
         for k,v in pairs(env._M) do
-            row:add{v.load_seq,k,math.round((v.load+v.onload)*1000),math.round(v.load*1000),math.round(v.onload*1000),v.memory}
+            row:add{v.load_seq,k,math.round((v.load+v.onload)*1000),math.round(v.load*1000),math.round(v.onload*1000),v.memory and math.round(v.memory) or ''}
         end
         row:sort(1)
         row:add_calc_ratio(3)

@@ -32,6 +32,8 @@ import java.util.stream.Collectors;
 
 import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
+import static org.jline.reader.impl.LineReaderImpl.BRACKETED_PASTE_OFF;
+import static org.jline.reader.impl.LineReaderImpl.BRACKETED_PASTE_ON;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
@@ -170,15 +172,15 @@ public final class Console {
         else reader.setOpt(LineReader.Option.MOUSE);
     }
 
-    public void enableBracketedPaste(String val) {
+    public void enableBracketedPaste(String val) throws Exception {
         if ("off".equals(val)) {
             reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
-            stdout.print("\033[?2004h");
+            terminal.writer().write(BRACKETED_PASTE_OFF);
         } else {
             reader.setOpt(LineReader.Option.BRACKETED_PASTE);
-            stdout.print("\033[?2004l");
+            terminal.writer().write(BRACKETED_PASTE_ON);
         }
-        stdout.flush();
+        terminal.writer().flush();
         if (isJansiConsole) ((JansiWinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
 

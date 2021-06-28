@@ -1,9 +1,10 @@
 /*[[
-Show execution plan. Usage: @@NAME {<sql_id>|last [<plan_hash_value>|<child_number>] [format1..n]} [-all|-last|-b|-d|-s|-ol|-adv] 
+Show execution plan. Usage: @@NAME [x|<plan_id>|<sql_id>] [<plan_hash>|<child#>|<sql_handle>] [<format>] [-all|-last|-b|-s|-ol|-adv] [-g|-d] 
 
 Options:
     -b    : show binding variables
     -d    : only show the plan from AWR views
+    -g    : only show the plan from GV$ views
     -s    : the plan with the simplest 'basic' format
     -ol   : show outline information
     -adv  : the plan with the 'advanced' format
@@ -19,7 +20,8 @@ Options:
     &DF: default={ALLSTATS PARALLEL PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
     &SRC: {
             default={0}, # Both
-            d={2}        # Dictionary only
+            d={2},       # Dictionary only
+            g={1}        # GV only
           }
     &binds: default={}, b={PEEKED_BINDS}
     @check_access_aux: default={(26/8/12)-6}
@@ -48,6 +50,7 @@ Options:
                          access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   dba_hist_sql_plan a
                   WHERE  a.sql_id = '&v1'
+                  AND    &SRC != 1
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
@@ -77,6 +80,7 @@ Options:
                          access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = '&v1'
+                  AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(select max(plan_hash_value) keep(dense_rank last order by timestamp) from dba_advisor_sqlplans where sql_id=:V1))}
            default={}
@@ -102,6 +106,7 @@ Options:
                          access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   sys.sql$text st,sys.sqlobj$plan a
                   WHERE  st.sql_handle = '&v1'
+                  AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.signature = st.signature
                   AND    a.plan_id = coalesce(:V2+0,(select max(plan_id) keep(dense_rank last order by timestamp) from sys.sqlobj$plan b where b.signature=a.signature))
@@ -143,7 +148,7 @@ BEGIN
                                               'GV$SQL_BIND_CAPTURE' SRC
                                        FROM   gv$sql_bind_capture a
                                        WHERE  sql_id = '&v1'
-                                       AND    1 > &SRC
+                                       AND    &SRC!=2
                                        $IF &check_access_ab=1 $THEN
                                        UNION ALL
                                        SELECT MAX(LAST_CAPTURED) OVER(PARTITION BY DBID,SNAP_ID,INSTANCE_NUMBER)||DBID||':'|| SNAP_ID || ':' || INSTANCE_NUMBER,
@@ -160,6 +165,7 @@ BEGIN
                                               'DBA_HIST_SQLBIND' SRC
                                        FROM   dba_hist_sqlbind a
                                        WHERE  sql_id = '&v1'
+                                       AND    &SRC!=1
                                        $END
                                        ) a) a)
                       SELECT inst_id inst,
@@ -259,7 +265,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   WHERE  a.sql_id = '&v1'
                   AND   ('&v1' != '&_sql_id' or inst_id=userenv('instance'))
                   AND    '&v1' !='X'
-                  AND    1 > &SRC
+                  AND    &SRC != 2
                   AND    nvl('&V2'+0,-1) in(plan_hash_value,child_number,-1)
                   UNION ALL
                   SELECT /*+no_expand*/ id,
@@ -279,6 +285,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = '&v1'
+                  AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
@@ -305,10 +312,11 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          access_predicates ap,filter_predicates fp,search_columns sc
                   FROM   plan_table a
                   WHERE  '&v1' not in('&_sql_id')
+                  AND    &SRC = 0
                   AND    plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) 
                                   from plan_table
                                   where nvl(upper(:V1),'X') in(statement_id,''||plan_id,'X'))) a
-         WHERE flag>=&src)
+         )
   WHERE  seq = 1),
 hierarchy_data AS
  (SELECT /*+CONNECT_BY_COMBINE_SW NO_CONNECT_BY_FILTERING*/
