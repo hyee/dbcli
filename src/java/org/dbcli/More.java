@@ -330,12 +330,8 @@ final public class More {
             message = errorMessage;
             errorMessage = null;
         }
-        Status status = Status.getStatus(terminal, false);
 
         try {
-            if (status != null) {
-                status.suspend();
-            }
             size.copy(terminal.getSize());
             if (quitIfOneScreen && sources.size() == 2) {
                 if (display(true)) {
@@ -666,9 +662,7 @@ final public class More {
                 if (prevHandler != null) {
                     terminal.handle(Terminal.Signal.WINCH, prevHandler);
                 }
-
                 display.exit();
-
                 if (!noKeypad) {
                     terminal.puts(Capability.keypad_local);
                 }
@@ -678,9 +672,6 @@ final public class More {
             lines = null;
             if (reader != null) {
                 reader.close();
-            }
-            if (status != null) {
-                status.restore();
             }
             patternHistory.persist();
         }
@@ -1697,7 +1688,11 @@ final public class More {
 
     static class Play extends Display {
         public Play(Terminal terminal) {
-            super(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR));
+            this(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR));
+        }
+
+        public Play(Terminal terminal, boolean fullScreen) {
+            super(terminal, fullScreen);
         }
 
         boolean isStarted;
@@ -1708,6 +1703,7 @@ final public class More {
             prevBuff = null;
             isStarted = false;
             this.isEnterCA = isEnterCA;
+            if(Status.getStatus(terminal)!=null) Status.getStatus(terminal).suspend();
             if (isEnterCA) terminal.puts(Capability.enter_ca_mode);
         }
 
@@ -1716,8 +1712,10 @@ final public class More {
             if (this.isEnterCA) {
                 if (!fullScreen) {
                     terminal.puts(Capability.clear_screen);
-                } else terminal.puts(Capability.exit_ca_mode);
+                } else
+                    terminal.puts(Capability.exit_ca_mode);
             }
+            if(Status.getStatus(terminal)!=null) Status.getStatus(terminal).restore();
         }
 
         @Override
@@ -1741,7 +1739,7 @@ final public class More {
             Size size = terminal.getSize();
             resize(size.getRows(), size.getColumns());
             if (isStarted) {
-                if (!isEnterCA) {
+                if (!isEnterCA && fullScreen) {
                     terminal.puts(Capability.enter_ca_mode);
                     isEnterCA = true;
                 }

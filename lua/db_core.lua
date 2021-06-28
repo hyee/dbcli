@@ -959,6 +959,7 @@ function db_core:is_connect(recursive,test_sql)
         self.__stmts = {}
         self.__preparedCaches={}
         self.props={privs={}}
+        env._CACHE_PATH=env.join_path(env._CACHE_BASE,'')
         if self.conn~=nil and recursive~=true then self:disconnect(false) end
         return false
     end

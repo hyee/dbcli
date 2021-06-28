@@ -77,11 +77,9 @@ public final class Console {
             this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
-
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         this.status = this.terminal.getStatus();
-        this.display = new More.Play(this.terminal);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -155,6 +153,7 @@ public final class Console {
     }
 
     public void initDisplay() {
+        display=new More.Play(terminal,false);
         display.init(false);
     }
 
@@ -163,6 +162,7 @@ public final class Console {
     }
 
     public void display(String[] args) {
+        display.clear();
         display.updateAnsi(Arrays.asList(args), -1);
     }
 
@@ -234,7 +234,7 @@ public final class Console {
     }
 
     public void setStatus(String status, String color) {
-        if (this.status == null || colorPlan.equals(TYPE_WINDOWS_256_COLOR) || colorPlan.equals(TYPE_WINDOWS) || getScreenWidth() <= 0)
+        if (this.status == null || getScreenWidth() <= 0)
             return;
         if (tmpTitles.size() == 0) {
             tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));

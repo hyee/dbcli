@@ -75,7 +75,7 @@ function init.init_path(env)
     env("PLATFORM",console:getPlatform())
     env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw" or env.PLATFORM=="conemu")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
-    env("_CACHE_PATH",env._CACHE_BASE)
+    env("_CACHE_PATH",env._CACHE_BASE..path_del)
     env("LIB_PATH",env.join_path(env.WORK_DIR,'lib/'..lib))
     local package=package
     local cpath=java.system:getProperty('java.library.path')

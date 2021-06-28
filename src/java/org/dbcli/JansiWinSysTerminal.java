@@ -69,11 +69,6 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return terminal;
     }
 
-    @Override
-    public Status getStatus() {
-        return null;
-    }
-
     final private static int[] mode = new int[1];
 
     public static boolean isWindowsConsole() {
@@ -99,12 +94,13 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler,
                         String secondType) throws IOException {
         super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
-        this.status = null;
         if (secondType != null) {
             console = (JansiWinConsoleWriter) writer;
             infoComps = new String[]{type, secondType};
             console.setWriter(type.equals(TYPE_WINDOWS_VTP) ? 0 : 1);
         }
+        //set status as null due to run into display issue in case of scrolling screen
+        status=null;
         t.setDaemon(true);
         t.start();
     }
@@ -122,6 +118,12 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         if (index == 1) {
             writer.write(enablePaste ? LineReaderImpl.BRACKETED_PASTE_ON : LineReaderImpl.BRACKETED_PASTE_OFF);
         }
+        if(status!=null) status.redraw();
+    }
+
+    @Override
+    public Status getStatus() {
+        return status;
     }
 
     @Override

@@ -235,7 +235,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
         end
         for i = 2, pivot, 1 do
             _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i][keys[v]], i - 1)
-            table.insert(row, tostring(value):trim())
+            row[#row+1]=tostring(value):trim()
         end
     end
     
@@ -720,7 +720,7 @@ function grid:wellform(col_del, row_del)
                 end
             end
         elseif v.rsize==1 and type(v[1])=='string' and v[1]:find('^[~#%$%-%+%|%*%=%.%_%/%\\%@]$') 
-               and (v[2] and v[2]=='' or v[2]==v[1] or (v[2] or ''):find('^%W+$')) then
+               and type(v[2])=='string' and (v[2]=='' or v[2]==v[1] or v[2]:find('^%W+$')) then
             local c=v[1]
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1

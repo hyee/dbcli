@@ -333,8 +333,7 @@ local function load_ext()
               oradebug session_event wait_event[all] trace('\nevent="%", p1=%, p2=%, p3=%, ela=%, tstamp=% shortstack=%', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), evargn(7),shortstack())
               oradebug event wait_event["latch: ges resource hash list"] {wait: minwait=8000} trace(''event "%", p1 %, p2 %, p3 %, wait time % Stk=%'', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), shortstack())
             ]]
-        },
-        MILLSAP={'11g+ Trace 10046 events',"oradebug event Millsap {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12"}
+        }
     }
 
     ext={
@@ -696,9 +695,9 @@ local function load_ext()
                 * 37 Yields the maximum level of tracing, without using the buffer]],
             [[oradebug session_event 10046 trace name context forever,level 12
               oradebug session_event 10046 trace name context off
-              oradebug session_event 10046 trace name context level 12, lifetime 10000, after 5000 occurrences
-              oradebug event Millsap {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12]]},
+              oradebug session_event 10046 trace name context level 12, lifetime 10000, after 5000 occurrences]]},
             {'crash','Kill the specific session','oradebug event immediate crash'},
+            {'controlc','Cancel the sql when it matches','oradebug event trace[SQL_Execution.*] [SQL: ...]{occurence:end_after 3} controlc_signal()'},
             {'deadlock','Dump deadlocks',
             [[oradebug event deadlock trace name hanganalyze_global
             oradebug event 60 trace name hanganalyze level 4

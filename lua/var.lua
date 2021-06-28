@@ -620,7 +620,7 @@ function var.define_column(col,...)
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
                 obj.format_dir='%'..#arg..'s'
                 func=function(v)
-                    if not tonumber(v) then return s,1 end
+                    if not tonumber(v) then return v,1 end
                     local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,cast(v,'java.math.BigDecimal')))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
@@ -668,7 +668,7 @@ function var.define_column(col,...)
     end
     if #formats>0 then
         obj.format=function(v,rownum,grid)
-            local is_number,tmp
+            local org,is_number,v1,tmp=org
             for _,func in ipairs(formats) do
                 v,tmp=func(v,rownum,grid)
                 if tmp then is_number=true end
