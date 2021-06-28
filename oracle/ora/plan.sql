@@ -31,6 +31,8 @@ Options:
              default={(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets}
              }
     @check_access_ab : dba_hist_sqlbind={1} default={0}
+    @check_access_pdb: pdb={AWR_PDB_} default={DBA_HIST_}
+    @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @check_access_awr: {
            dba_hist_sql_plan={UNION ALL
                   SELECT /*+no_expand*/ id,
@@ -48,16 +50,17 @@ Options:
                          io_cost,position,
                          &proj,
                          access_predicates ap,filter_predicates fp,search_columns sc
-                  FROM   dba_hist_sql_plan a
+                  FROM   &check_access_pdb.sql_plan a
                   WHERE  a.sql_id = '&v1'
                   AND    &SRC != 1
+                  AND    dbid=nvl(:dbid,&did)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce(:V2+0,(
                      select --+index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
-                     from dba_hist_sqlstat c where sql_id=:V1),(
+                     from &check_access_pdb.sqlstat c where sql_id=:V1 AND dbid=nvl(:dbid,&did)),(
                      select max(plan_hash_value) keep(dense_rank last order by timestamp) 
-                     from dba_hist_sql_plan where sql_id=:V1))} 
+                     from &check_access_pdb.sql_plan where sql_id=:V1 AND  dbid=nvl(:dbid,&did)))} 
            default={0}
           }
     @check_access_advisor: {
@@ -163,9 +166,10 @@ BEGIN
                                               instance_number,
                                               last_captured,
                                               'DBA_HIST_SQLBIND' SRC
-                                       FROM   dba_hist_sqlbind a
+                                       FROM   &check_access_pdb.sqlbind a
                                        WHERE  sql_id = '&v1'
                                        AND    &SRC!=1
+                                       AND    dbid=nvl(0+'&dbid',&did)
                                        $END
                                        ) a) a)
                       SELECT inst_id inst,
@@ -357,7 +361,7 @@ qry AS
   WHERE  rownum<2),
 xplan AS
  (SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display( 'dba_hist_sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  FROM   qry, TABLE(dbms_xplan.display( '&check_access_pdb.sql_plan',NULL,format,'dbid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 2
   UNION ALL
   SELECT a.*

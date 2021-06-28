@@ -74,18 +74,17 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         return null;
     }
 
+    final private static int[] mode = new int[1];
+
     public static boolean isWindowsConsole() {
-        int[] mode = new int[1];
         return Kernel32.GetConsoleMode(consoleOut, mode) != 0 && Kernel32.GetConsoleMode(consoleIn, mode) != 0;
     }
 
     public static boolean isConsoleOutput() {
-        int[] mode = new int[1];
         return Kernel32.GetConsoleMode(consoleOut, mode) != 0;
     }
 
     public static boolean isConsoleInput() {
-        int[] mode = new int[1];
         return Kernel32.GetConsoleMode(consoleIn, mode) != 0;
     }
 
@@ -127,7 +126,6 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     @Override
     protected int getConsoleMode() {
-        int[] mode = new int[1];
         if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
             return -1;
         }

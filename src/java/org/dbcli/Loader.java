@@ -108,7 +108,7 @@ public class Loader {
         lua.pushGlobal("loader", loader);
         console.isSubSystem = false;
         console.setLua(lua);
-        console.completer.reset();
+
         String separator = File.separator;
         String input = root + separator + "lua" + separator + "input.lua";
         if (Console.writer != null) {
@@ -144,23 +144,6 @@ public class Loader {
         System.runFinalization();
     }
 
-    public static void addLibrary(String s, Boolean isReplace) throws Exception {
-        try {
-            Field field = ClassLoader.class.getDeclaredField("usr_paths");
-            field.setAccessible(true);
-            TreeMap<String, Boolean> map = new TreeMap<>();
-            for (String t : s.split(File.pathSeparator)) map.put(t, true);
-            if (!isReplace) for (String t : (String[]) field.get(null)) map.put(t, true);
-            String[] tmp = map.keySet().toArray(new String[0]);
-            System.setProperty("java.library.path", String.join(File.pathSeparator, tmp));
-            field.set(null, tmp);
-        } catch (IllegalAccessException e) {
-            throw new IOException("Failed to get permissions to set library path");
-        } catch (NoSuchFieldException e) {
-            System.setProperty("java.library.path", s);
-            //throw new IOException("Failed to get field handle to set library path");
-        }
-    }
 
     public static void main(String[] args) throws Exception {
         if (args.length == 1) {
@@ -180,6 +163,25 @@ public class Loader {
         while (ReloadNextTime != null) loadLua(l, args);
         //console.threadPool.shutdown();
     }
+
+    public static void addLibrary(String s, Boolean isReplace) throws Exception {
+        try {
+            Field field = ClassLoader.class.getDeclaredField("usr_paths");
+            field.setAccessible(true);
+            TreeMap<String, Boolean> map = new TreeMap<>();
+            for (String t : s.split(File.pathSeparator)) map.put(t, true);
+            if (!isReplace) for (String t : (String[]) field.get(null)) map.put(t, true);
+            String[] tmp = map.keySet().toArray(new String[0]);
+            System.setProperty("java.library.path", String.join(File.pathSeparator, tmp));
+            field.set(null, tmp);
+        } catch (IllegalAccessException e) {
+            throw new IOException("Failed to get permissions to set library path");
+        } catch (NoSuchFieldException e) {
+            System.setProperty("java.library.path", s);
+            //throw new IOException("Failed to get field handle to set library path");
+        }
+    }
+
 
     public static byte[] hexStringToByteArray(String s) {
         int len = s.length();

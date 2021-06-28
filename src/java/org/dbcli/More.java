@@ -1714,10 +1714,9 @@ final public class More {
         public void exit() {
             isStarted = false;
             if (this.isEnterCA) {
-                if (!fullScreen)
+                if (!fullScreen) {
                     terminal.puts(Capability.clear_screen);
-                else
-                    terminal.puts(Capability.exit_ca_mode);
+                } else terminal.puts(Capability.exit_ca_mode);
             }
         }
 

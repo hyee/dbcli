@@ -6,9 +6,12 @@ import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.win32.W32APIOptions;
 import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 
+import java.util.HashMap;
+
 public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
     private NativeLibrary INSTANCE;
     private IntByReference charsWritten = new IntByReference();
+    HashMap<String, Object> errs = new HashMap<>();
 
     public ConEmuWriter() {
         super();
@@ -21,7 +24,12 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
         try {
             WriteProcessed(String.valueOf(chars), i, charsWritten);
         } catch (Throwable e) {
-            e.printStackTrace();
+            String msg = new String(chars).substring(0, 32);
+            if (!errs.containsKey(msg)) {
+                errs.put(msg, 1);
+                System.err.println("\nChars: " + new String(chars).replaceAll("\033", "\\\\E"));
+                e.printStackTrace();
+            }
         }
     }
 

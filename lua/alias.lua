@@ -66,7 +66,7 @@ function alias.make_command(name, args, is_print)
             alias.args[i] = v
             alias.rest[i] = v
         end
-        target = target:gsub("%$(%d%w+)%[(.-)%]", alias.parser)
+        target = target:gsub("%$(%d%w*)%[(.-)%]", alias.parser)
         target = target:gsub("%f[%w%$%%]%$([%d%*]%w*)", alias.parser)
         --target = target:gsub("%s+$", "")
         target = target:gsub("[%$%%](%$[%d%*])", "%1")

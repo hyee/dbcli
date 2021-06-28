@@ -187,6 +187,7 @@ public final class Console {
 
     public void setLua(LuaState lua) {
         this.lua = lua;
+        completer.reset();
         parserCallback = null;
     }
 

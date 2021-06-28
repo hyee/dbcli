@@ -44,35 +44,11 @@ public class MyCompleter implements org.jline.reader.Completer {
         console.threadPool.schedule(() -> setCommands(keywords), delay, TimeUnit.MILLISECONDS);
     }
 
-    HashMap<String, HashMap> values = new HashMap();
-
-    void putKey(String key, String value) {
-        Object o = values.get(key);
-        if (o == null) {
-            o = Boolean.TRUE;
-        } else {
-            o = ((HashMap) o).get(key);
-            if (o instanceof Boolean) {
-                o = new HashMap<String, Object>();
-            }
-        }
-        keywords.put(key, o);
-        values.put(key, keywords);
-        if (value != null && o instanceof HashMap) {
-            HashMap m = (HashMap<String, Object>) o;
-            o = values.get(value);
-            if (o == null) o = Boolean.TRUE;
-            else o = ((HashMap) o).get(value);
-            m.put(value, o);
-            values.put(value, m);
-        }
-    }
-
     //command is used to complete the leading words of a command line
     synchronized void setCommands(Map<String, ?> keywords) {
         for (Map.Entry<String, ?> entry : keywords.entrySet()) {
             String key = entry.getKey().toUpperCase();
-            if (key.length() < 3 || key.contains(" ")) continue;
+            if (key.length() < 2 || key.contains(" ")) continue;
             Object value = entry.getValue();
             HashMap<String, Boolean> map = commands.get(key);
             if (map == null) map = new HashMap<>();
@@ -108,6 +84,31 @@ public class MyCompleter implements org.jline.reader.Completer {
     //keyword completer is triggered since the 2nd word of a command line, such as object name and function name
     final String dot = ".";
     final String re = "\\" + dot;
+    HashMap<String, HashMap> values = new HashMap();
+
+    void putKey(String key, String value) {
+        Object o = values.get(key);
+        if (o == null && (o = keywords.get(key)) == null) {
+            o = value;
+        } else {
+            if (o.equals(value)) return;
+            if (o instanceof HashMap)
+                o = ((HashMap) o).get(key);
+            if (o instanceof String) {
+                o = new HashMap<String, Object>();
+            }
+        }
+        keywords.put(key, o);
+        values.put(key, keywords);
+        if (!value.equals("\\1") && o instanceof HashMap) {
+            HashMap m = (HashMap<String, Object>) o;
+            o = values.get(value);
+            if (o == null) o = value;
+            else o = ((HashMap) o).get(value);
+            m.put(value, o);
+            values.put(value, m);
+        }
+    }
 
     synchronized void setKeysWords(Map<String, ?> keywords) {
         try {
@@ -119,7 +120,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 if (value instanceof String)
                     putKey(((String) value).toLowerCase(), ary[0]);
                 for (int i = 0, n = ary.length - 1; i <= n; i++)
-                    putKey(ary[i], i == n ? null : ary[i + 1]);
+                    putKey(ary[i], i == n ? "\\1" : ary[i + 1]);
             }
             values.clear();
             keywords.clear();
