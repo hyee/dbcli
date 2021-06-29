@@ -44,6 +44,7 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import static org.jline.keymap.KeyMap.*;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
 import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
 /* Change following class/methods as public：
@@ -1688,7 +1689,7 @@ final public class More {
 
     static class Play extends Display {
         public Play(Terminal terminal) {
-            this(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR));
+            this(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR) && !terminal.getType().equals(TYPE_WINDOWS));
         }
 
         public Play(Terminal terminal, boolean fullScreen) {
@@ -1705,7 +1706,7 @@ final public class More {
             prevBuff = null;
             isStarted = false;
             this.isEnterCA = isEnterCA;
-            status = Status.getStatus(terminal,false);
+            status = Status.getStatus(terminal);
             if (status != null && !(isSuspended = status.isSuspended())) status.suspend();
             if (isEnterCA) terminal.puts(Capability.enter_ca_mode);
         }
@@ -1750,7 +1751,7 @@ final public class More {
                 isStarted = true;
             }
             if (cursorPos > 0 && prevBuff != null && oldLines.size() > 0) {
-                oldLines.remove(oldLines.size() - 1);
+                oldLines.remove(oldLines.size()-1);
             }
             prevBuff = null;
             super.update(newLines, targetCursorPos, false);

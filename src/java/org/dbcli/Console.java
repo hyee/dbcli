@@ -72,7 +72,7 @@ public final class Console {
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = JansiWinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         Interrupter.reset();
@@ -97,7 +97,7 @@ public final class Console {
         this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
-        this.isJansiConsole = this.terminal instanceof JansiWinSysTerminal;
+        this.isJansiConsole = this.terminal instanceof WinSysTerminal;
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
@@ -178,7 +178,7 @@ public final class Console {
             terminal.writer().write(BRACKETED_PASTE_ON);
         }
         terminal.writer().flush();
-        if (isJansiConsole) ((JansiWinSysTerminal) terminal).enablePaste(!"off".equals(val));
+        if (isJansiConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
 
 

@@ -27,7 +27,7 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
             String msg = new String(chars).substring(0, 32);
             if (!errs.containsKey(msg)) {
                 errs.put(msg, 1);
-                System.err.println("\nChars: " + new String(chars).replaceAll("\033", "\\\\E"));
+                System.err.println("\nChars: " + new String(chars).replaceAll("\033", "^E"));
                 e.printStackTrace();
             }
         }
