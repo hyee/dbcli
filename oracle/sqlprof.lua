@@ -102,28 +102,49 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 FROM   gv$sql_plan a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
+                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
+                                        plan_hash_value like p_sql_id OR 
+                                        sql_id = p_plan)
+                                AND     rownum<2
+                                AND    nvl(p_sql_id,'-')!='_x_'
                                 UNION ALL
-                                SELECT other_xml, 'plan table' src, statement_id, -1
+                                SELECT other_xml, 'plan table' src, decode(upper(statement_id),upper(p_plan),p_plan,p_sql_id), -1
                                 FROM   plan_table a
                                 WHERE  other_xml IS NOT NULL 
-                                AND    UPPER(statement_id) = UPPER(p_plan)
+                                AND    (p_sql_id='_x_' AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from PLAN_TABLE)
+                                        OR UPPER(statement_id) = UPPER(p_plan)) 
                                 AND    v_plan!='-1'
                                 UNION ALL
                                 SELECT other_xml, 'awr' src, sql_id, plan_hash_value
                                 FROM   dba_hist_sql_plan a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
+                                AND    nvl(p_sql_id,'-')!='_x_'
+                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
+                                        plan_hash_value like p_sql_id OR 
+                                        sql_id = p_plan)
+                                AND     rownum<2
                                 UNION ALL
                                 SELECT other_xml, 'sqlset', sql_id, plan_hash_value
                                 FROM   dba_sqlset_plans a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
+                                AND    nvl(p_sql_id,'-')!='_x_'
+                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
+                                        plan_hash_value like p_sql_id OR 
+                                        sql_id = p_plan)
+                                AND     rownum<2
                                 $IF DBMS_DB_VERSION.VERSION>11 $THEN
                                 UNION ALL
                                 SELECT other_xml, 'monitor', sql_id, SQL_PLAN_HASH_VALUE
                                 FROM   gv$sql_plan_monitor a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
+                                AND    nvl(p_sql_id,'-')!='_x_'
+                                AND    (sql_id = p_sqlid AND SQL_PLAN_HASH_VALUE LIKE v_plan OR 
+                                        SQL_PLAN_HASH_VALUE like p_sql_id OR 
+                                        sql_id = p_plan)
+                                AND     rownum<2
                                 $END
                                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
                                 UNION ALL
@@ -131,19 +152,14 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 FROM   dba_advisor_sqlplans a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
+                                AND    nvl(p_sql_id,'-')!='_x_'
+                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
+                                        plan_hash_value like p_sql_id OR 
+                                        sql_id = p_plan)
+                                AND     rownum<2
                                 $END
-                                UNION ALL
-                                SELECT other_xml, 'plan table', p_sql_id sql_id, -1
-                                FROM   PLAN_TABLE a 
-                                WHERE  other_xml IS NOT NULL
-                                AND    v_plan='-1'
-                                AND    PLAN_ID=(select max(PLAN_ID) keep(dense_rank last order by timestamp) from PLAN_TABLE)
                         )
                         WHERE  rownum < 2
-                        AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                plan_hash_value like p_sql_id OR 
-                                sql_id = p_plan OR 
-                                src='plan table' and sql_id='_x_')
                     $IF DBMS_DB_VERSION.VERSION>11 $THEN
                         UNION ALL
                         SELECT other_xml, 'spm' src
@@ -151,6 +167,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         WHERE  b.name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
                         AND    other_xml is not null
+                        AND    nvl(p_sql_id,'-')!='_x_'
+                        AND    rownum < 2
                     $END
                     $IF DBMS_DB_VERSION.VERSION>10 $THEN
                         UNION ALL
@@ -159,6 +177,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         WHERE  b.name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
                         AND    comp_data is not null
+                        AND    nvl(p_sql_id,'-')!='_x_'
+                        AND    rownum < 2
                     $ELSE
                         UNION ALL
                         SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#)).getclobval() comp_data,
@@ -166,6 +186,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         FROM   sys.sqlprof$ b, sys.sqlprof$attr a
                         WHERE  b.sp_name = nvl(p_plan, p_sqlid)
                         AND    b.signature = a.signature
+                        AND    nvl(p_sql_id,'-')!='_x_'
+                        AND    rownum < 2
                     $END)
                 WHERE  rownum < 2;
                 
@@ -398,7 +420,6 @@ BEGIN
     
     sql_prof := SYS.SQLPROF_ATTR(
         @sql_profile
-        'IGNORE_OPTIM_EMBEDDED_HINTS'
     );
     signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);
     BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE('PROF_'||sq_id||'');EXCEPTION WHEN OTHERS THEN NULL;END;
@@ -410,7 +431,6 @@ BEGIN
         category    => 'DEFAULT',
         replace     => TRUE,
         force_match => TRUE);
-    EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA=APPS';
 END;
 /
 PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('@sql_id@')]]
@@ -428,13 +448,13 @@ function sqlprof.generate_profile_from_outlines(sql_id,outlines)
     else
         for v in outlines:gsplit('\n') do
             v=v:trim()
-            if v~='' then hints[#hints+1]=v end
+            if v:find('^%a') then hints[#hints+1]=v end
         end
     end
     
     for i=#hints,1,-1 do
         local hint=hints[i]
-        if hint:upper()=='IGNORE_OPTIM_EMBEDDED_HINTS' or hint:upper():find('_OUTLINE_DATA',1,true) then
+        if hint:upper():find('_OUTLINE_DATA',1,true) then
             table.remove(hints,i)
         else
             local q,st,ed='','',''
@@ -453,7 +473,6 @@ function sqlprof.generate_profile_from_outlines(sql_id,outlines)
     end
     
     outlines=table.concat(hints,',\n        ')
-    if #hints>0 then outlines=outlines..',' end
     local profile=profile_template:gsub('@sql_id@',sql_id):gsub('@sql_profile',outlines)
     print("Result written to file "..env.write_cache('prof_'..sql_id..".sql",profile))
 end

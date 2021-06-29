@@ -1697,25 +1697,28 @@ final public class More {
 
         boolean isStarted;
         boolean isEnterCA;
+        Status status = null;
+        boolean isSuspended = false;
 
         public void init(boolean isEnterCA) {
             reset();
             prevBuff = null;
             isStarted = false;
             this.isEnterCA = isEnterCA;
-            if(Status.getStatus(terminal)!=null) Status.getStatus(terminal).suspend();
+            status = Status.getStatus(terminal,false);
+            if (status != null && !(isSuspended = status.isSuspended())) status.suspend();
             if (isEnterCA) terminal.puts(Capability.enter_ca_mode);
         }
 
         public void exit() {
             isStarted = false;
             if (this.isEnterCA) {
-                if (!fullScreen) {
+                if (!fullScreen)
                     terminal.puts(Capability.clear_screen);
-                } else
+                else
                     terminal.puts(Capability.exit_ca_mode);
             }
-            if(Status.getStatus(terminal)!=null) Status.getStatus(terminal).restore();
+            if (!isSuspended) status.restore();
         }
 
         @Override

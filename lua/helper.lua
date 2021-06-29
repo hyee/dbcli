@@ -85,10 +85,12 @@ function helper.env(target,depth)
     local e=terminal.encoding(terminal)
     
     
+    
+    add("Memory.JVM.Used(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
     add("Memory.LUA(KB)",math.floor(collectgarbage("count")))
-    add("Memory.JVM(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
+    add("Memory.JVM.Free(KB)",math.floor(runtime:freeMemory()/1024))
     if rows[2][1] and rows[2][2] then
-        add("Memory.Total(KB)",rows[2][1]+rows[2][2])
+        add("Memory.Total(KB)",rows[2][1]+rows[2][2]+rows[2][3])
     end
     add("TERM",console.terminal:getType())
     add("CodePoint",e)
@@ -113,7 +115,7 @@ function helper.env(target,depth)
         add('env.'..k,v)
     end
     if math.fmod(#rows[1],2)==1 then
-        add("","")
+        add("Memory.Used(KB)",rows[2][1]+rows[2][2])
     end
     add('package.path',package.path:gsub(';',';\n'))
     add('package.cpath',package.cpath:gsub(';',';\n'))

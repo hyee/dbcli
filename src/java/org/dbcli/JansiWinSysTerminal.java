@@ -93,7 +93,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
 
     JansiWinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler,
                         String secondType) throws IOException {
-        super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
+        super(writer instanceof JansiWinConsoleWriter ? new BufferedWriter(writer, 256 * 1024) : writer, name, type, encoding, codepage, nativeSignals, signalHandler);
         if (secondType != null) {
             console = (JansiWinConsoleWriter) writer;
             infoComps = new String[]{type, secondType};
@@ -118,7 +118,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
         if (index == 1) {
             writer.write(enablePaste ? LineReaderImpl.BRACKETED_PASTE_ON : LineReaderImpl.BRACKETED_PASTE_OFF);
         }
-        if(status!=null) status.redraw();
+        if (status != null) status.redraw();
     }
 
     @Override
@@ -247,7 +247,7 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     });
 
 
-    protected boolean processConsoleInput() throws IOException {
+    final protected boolean processConsoleInput() throws IOException {
         INPUT_RECORD[] events;
         if (consoleIn != INVALID_HANDLE_VALUE
                 && WaitForSingleObject(consoleIn, 128) == 0) {
@@ -289,7 +289,6 @@ public final class JansiWinSysTerminal extends AbstractWindowsTerminal {
     private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
         int dwButtonState = mouseEvent.buttonState;
-        System.out.println(mouseEvent);
         if (tracking == MouseTracking.Off
                 || tracking == MouseTracking.Normal && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
                 || tracking == MouseTracking.Button && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {

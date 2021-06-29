@@ -329,12 +329,13 @@ BEGIN
     FOR r IN (WITH plans AS
                    (SELECT STATEMENT_ID,
                           NVL(regexp_substr(STATEMENT_ID, '\d+$') + 0, 0) ID,
-                          MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                          MAX(decode(id,1,regexp_substr(to_char(substr(other_xml, 1, 2000)),'"plan_hash_2">(\d+)',1,1,'i',1))) + 0 plan_hash2
+                          MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
+                          MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)),'"plan_hash_2">(\d+)',1,1,'i',1),'')) + 0 plan_hash2
                    FROM   &ptable q
                    GROUP  BY STATEMENT_ID)
                   SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash2
                   FROM   PLANS
+
                   GROUP  BY plan_hash, plan_hash2
                   ORDER  BY seq) LOOP
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash2;
@@ -368,8 +369,8 @@ BEGIN
                          MAX(remarks) remarks,
                          NVL(regexp_substr(STATEMENT_ID, '\d+$') + 0, 0) ID,
                          MAX(ID) plan_lines,
-                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash2,
+                         MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
+                         MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2,
                          MAX(q.cost) cost,
                          MAX(bytes) bytes,
                          MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,

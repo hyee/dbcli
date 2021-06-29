@@ -34,8 +34,6 @@ import static org.jline.reader.LineReader.DISABLE_HISTORY;
 import static org.jline.reader.LineReader.SECONDARY_PROMPT_PATTERN;
 import static org.jline.reader.impl.LineReaderImpl.BRACKETED_PASTE_OFF;
 import static org.jline.reader.impl.LineReaderImpl.BRACKETED_PASTE_ON;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
 
 public final class Console {
@@ -67,9 +65,9 @@ public final class Console {
     private volatile boolean pause = false;
     private MyHistory history = new MyHistory();
 
-    private Status status;
     private String colorPlan;
     private KeyMap keyMap;
+    private Status status;
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -79,7 +77,6 @@ public final class Console {
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
-        this.status = this.terminal.getStatus();
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -153,7 +150,7 @@ public final class Console {
     }
 
     public void initDisplay() {
-        display=new More.Play(terminal,false);
+        display = new More.Play(terminal, false);
         display.init(false);
     }
 
@@ -172,7 +169,7 @@ public final class Console {
         else reader.setOpt(LineReader.Option.MOUSE);
     }
 
-    public void enableBracketedPaste(String val) throws Exception {
+    public void enableBracketedPaste(String val) {
         if ("off".equals(val)) {
             reader.unsetOpt(LineReader.Option.BRACKETED_PASTE);
             terminal.writer().write(BRACKETED_PASTE_OFF);
@@ -234,6 +231,7 @@ public final class Console {
     }
 
     public void setStatus(String status, String color) {
+        this.status = terminal.getStatus(status != null && !status.equals(""));
         if (this.status == null || getScreenWidth() <= 0)
             return;
         if (tmpTitles.size() == 0) {
@@ -358,10 +356,10 @@ public final class Console {
             terminal.puts(InfoCmp.Capability.cursor_up);
             terminal.puts(InfoCmp.Capability.delete_line);
             terminal.raise(Terminal.Signal.INT);
-            if (status != null) status.redraw();
             return "";
         } finally {
-
+            status = terminal.getStatus(false);
+            if (status != null) status.redraw();
         }
     }
 

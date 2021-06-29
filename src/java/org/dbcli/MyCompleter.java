@@ -94,13 +94,13 @@ public class MyCompleter implements org.jline.reader.Completer {
             if (o.equals(value)) return;
             if (o instanceof HashMap)
                 o = ((HashMap) o).get(key);
-            if (o instanceof String) {
+            if (o instanceof String && !value.equals("\1")) {
                 o = new HashMap<String, Object>();
             }
         }
         keywords.put(key, o);
         values.put(key, keywords);
-        if (!value.equals("\\1") && o instanceof HashMap) {
+        if (!value.equals("\1") && o instanceof HashMap) {
             HashMap m = (HashMap<String, Object>) o;
             o = values.get(value);
             if (o == null) o = value;
@@ -120,7 +120,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 if (value instanceof String)
                     putKey(((String) value).toLowerCase(), ary[0]);
                 for (int i = 0, n = ary.length - 1; i <= n; i++)
-                    putKey(ary[i], i == n ? "\\1" : ary[i + 1]);
+                    putKey(ary[i], i == n ? "\1" : ary[i + 1]);
             }
             values.clear();
             keywords.clear();
@@ -132,7 +132,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 final String key = entry.getKey();
                 final Object value = entry.getValue();
                 if (value instanceof HashMap) {
-                    candidates[seq] = new Candidate(key, key, null, null, dot, null, false);
+                    candidates[seq] = new Candidate(key, key, null, null, null, dot, false);
                     String[] keys = ((HashMap<String, Object>) value).keySet().toArray(new String[0]);
                     Arrays.sort(keys);
                     String prev = null;
@@ -188,7 +188,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 prefix += prefix.equals("") ? ary[i] : (dot + ary[i]);
                 next = i + 1 <= len ? ary[i + 1].toLowerCase() : null;
                 if (next != null && map.get(next) instanceof HashMap) {
-                    if (!doted && i + 1 == len && groups.get(next) != null) {
+                    if (!doted && i + 1 == len && groups.containsKey(next)) {
                         //skip if there are similar matches
                     } else continue;
                 }
@@ -197,7 +197,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                     String can = entry.getKey();
                     if (isUpper) can = can.toUpperCase();
                     if (entry.getValue() instanceof HashMap) {
-                        list.add(new Candidate(prefix + dot + can, dot + can, null, null, dot, null, false));
+                        list.add(new Candidate(prefix + dot + can, dot + can, null, null, null, dot, false));
                     } else
                         list.add(new Candidate(prefix + dot + can, dot + can, null, null, null, null, true));
                 }

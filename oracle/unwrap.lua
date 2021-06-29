@@ -2203,7 +2203,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 strip_quote(p.object_alias),
                 '|',
-                strip_quote(qb and qb:sub(2) or nil),
+                strip_quote(qb and qb:gsub('^@','') or nil),
             }
             attrs.lines[id]=lines[#lines]
             if child then lvs[depth]=child==3 and ' ' or child_fmt:format(child_color,child_sep) end
