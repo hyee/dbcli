@@ -452,10 +452,11 @@ final public class More {
                         }
                     }
                     if (op != null) {
+                        String prevMeesage = message;
                         message = null;
                         switch (op) {
                             case FORWARD_ONE_LINE:
-                                moveForward(getStrictPositiveNumberInBuffer(1));
+                                if (prevMeesage == null) moveForward(getStrictPositiveNumberInBuffer(1));
                                 break;
                             case BACKWARD_ONE_LINE:
                                 moveBackward(getStrictPositiveNumberInBuffer(1));
@@ -954,7 +955,13 @@ final public class More {
                     curPos = lineEditor.editBuffer(op, curPos);
                     currentBuffer = buffer.toString();
             }
-            display.updateBuff(buffer.toString());
+
+            display.updateBuff(buffer.toString(), curPos);
+
+            if (curPos < begPos) {
+                buffer.setLength(0);
+                return forward;
+            }
         }
     }
 
@@ -1336,12 +1343,13 @@ final public class More {
     private int rows = 0;
     private int cols = 0;
     final AttributedString sep = new AttributedString("|", AttributedStyle.DEFAULT.foreground(AttributedStyle.YELLOW));
+    final AttributedStringBuilder msg = new AttributedStringBuilder(2048);
 
     synchronized boolean display(boolean oneScreen, Integer curPos) throws IOException {
         if (!oneScreen) {
             if (!waitReader(128)) return false;
             if (curPos == null && display.getPos() > 0 && buffer.length() > 0 && rows == size.getRows() && cols == size.getColumns()) {
-                display.updateBuff(buffer.toString());
+                display.updateBuff(buffer.toString(), -1);
                 return false;
             }
         }
@@ -1353,9 +1361,7 @@ final public class More {
         if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth - width / 2) {
             firstColumnToDisplay = Math.max(0, globalLineWidth - width / 2);
         }
-
         List<AttributedString> newLines = new ArrayList<>();
-
         int inputLine = firstLineToDisplay;
         AttributedString curLine = null;
         Pattern compiled = getPattern();
@@ -1366,7 +1372,6 @@ final public class More {
 
         int off = 0;
         final String spaces = String.join("", Collections.nCopies(padding, " "));
-        AttributedStringBuilder msg = new AttributedStringBuilder(2048);
 
         for (int terminalLine = 0; terminalLine < rows - 1; terminalLine++) {
             if (curLine == null) {
@@ -1750,10 +1755,11 @@ final public class More {
             } else {
                 isStarted = true;
             }
-            if (cursorPos > 0 && prevBuff != null && oldLines.size() > 0) {
-                oldLines.remove(oldLines.size()-1);
+            if (cursorPos > 0 && prevBuff != null &&  prevOffset > 0) {
+                updateBuff("",0);
             }
             prevBuff = null;
+            prevOffset=0;
             super.update(newLines, targetCursorPos, false);
             terminal.writer().flush();
         }
@@ -1762,31 +1768,27 @@ final public class More {
             return cursorPos;
         }
 
-        void updateLine(int targetLine, String newLine, int targetCol) {
-            if (targetLine == 0) targetLine = rows;
-            if (cursorPos != targetLine && targetLine != -1) {
-                moveVisualCursorTo(targetLine);
-            }
-            terminal.puts(InfoCmp.Capability.clr_bol);
-            terminal.puts(Capability.column_address, targetCol);
-            terminal.writer().print(newLine);
-            terminal.flush();
-        }
-
-        void updateLine(String newLine, int targetCol) {
-            updateLine(cursorPos, newLine, targetCol);
-        }
-
         String prevBuff = null;
+        int prevOffset;
 
-        public boolean updateBuff(final String currBuff) {
-            if (prevBuff != null && (cursorPos == 0 || currBuff == null || !isStarted)) prevBuff = null;
-            if (currBuff == null || currBuff.equals(prevBuff)) return true;
+        public boolean updateBuff(final String currBuff, int offset) {
+            if (offset > -1) prevOffset = offset;
+            if (currBuff.equals(prevBuff)) {
+                if (offset > -1) terminal.puts(Capability.column_address, offset);
+                return true;
+            }
             if (prevBuff != null && currBuff.startsWith(prevBuff)) {
                 terminal.writer().write(currBuff.substring(prevBuff.length()));
                 terminal.writer().flush();
-            } else
-                updateLine(currBuff, 1);
+            } else {
+                terminal.puts(InfoCmp.Capability.clr_bol);
+                terminal.puts(Capability.column_address, 0);
+                terminal.writer().print(currBuff);
+                terminal.flush();
+            }
+
+            if(prevOffset!=currBuff.length()&&prevOffset>0) terminal.puts(Capability.column_address, prevOffset);
+            cursorPos += currBuff.length() - (prevBuff == null ? 0 : prevBuff.length());
             prevBuff = currBuff;
             return false;
         }

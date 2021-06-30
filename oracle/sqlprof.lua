@@ -433,7 +433,7 @@ BEGIN
         force_match => TRUE);
 END;
 /
-PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('@sql_id@')]]
+PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('PROF_@sql_id@')]]
 
 function sqlprof.generate_profile_from_outlines(sql_id,outlines)
     outlines=outlines:trim()
