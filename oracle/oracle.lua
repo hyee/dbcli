@@ -20,7 +20,7 @@ oracle.module_list={
     "rac",
     "chart",
     "ssh",
-    "extvars",
+    "dict",
     "oradebug",
     "sqlcl",
     "adb",

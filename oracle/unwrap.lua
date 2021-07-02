@@ -1107,7 +1107,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {'unc_bytes','Unzip|Bytes'},
         {'elig_bytes','Elig|Bytes'},
         {'ret_bytes','Return|Bytes'},
-        {'cell_offload_efficiency2','Eff|Rate'},
+        {'cell_offload_efficiency2','Eff|Rate2'},
+        {'cell_offload_efficiency','Eff|Rate'},
         {'|','|'},
         {'top_event','Top Event'},
         {'aas_rate','AAS%'},
@@ -1202,7 +1203,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             
             if slaves and row.px_set then
-                for i=aas_idx,statset.seqs.cell_offload_efficiency2-1 do --exclude offload efficiency
+                for i=aas_idx,statset.seqs.cell_offload_efficiency-1 do --exclude offload efficiency
                     local v=row[i]
                     if type(v)=='string' then v=tonumber(v:strip_ansi()) end
                     if v then

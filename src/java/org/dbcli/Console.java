@@ -203,7 +203,7 @@ public final class Console {
 
     public void setKeywords(AbstractTableMap<String, ?> keywords) {
         HashMap<String, ?> map = (HashMap) keywords.toJavaObject();
-        completer.loadKeyWords(map, 1500);
+        completer.loadKeyWords(map, 700);
         //addCompleters(keywords, false);
     }
 
@@ -217,7 +217,7 @@ public final class Console {
 
     public void setSubCommands(AbstractTableMap<String, Object> commands) {
         HashMap<String, Object> map = (HashMap) commands.toJavaObject();
-        completer.loadCommands(map, 700);
+        completer.loadCommands(map, 300);
         //parser.commands.putAll(commands);
     }
 

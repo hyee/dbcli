@@ -802,7 +802,7 @@ function db_core.log_param(params)
     if cfg.get('debug')=='DB' or cfg.get('debug')=='ALL' then
         local tab={{'Bind Index','In/Out','Name','Data Type','Bind Method','Bind Value'}}
         for k,v in pairs(params) do
-            if type(v)=='table' then
+            if type(v)=='table' and v[1] then
                 tab[#tab+1]={
                     (v[6] and v[6]..',' or  '')..v[2],
                     v[1]=='$' and 'IN' or v[6] and 'IN,OUT' or 'OUT',

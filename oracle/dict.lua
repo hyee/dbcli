@@ -1,6 +1,6 @@
 local env=env
 local db,cfg,event,var,type=env.getdb(),env.set,env.event,env.var,type
-local extvars={}
+local dicts={}
 local datapath=env.join_path(env.WORK_DIR,'oracle/dict.pack')
 local re=env.re
 local uid=nil
@@ -17,10 +17,10 @@ local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
 local checking_access
 local function rep_instance(prefix,full,obj,suffix)
     obj=obj:upper()
-    local dict,dict1,flag,str=extvars.dict[obj],extvars.dict[obj:sub(2)],0
-    if not checking_access and cdbmode~='off' and extvars.dict[obj] and obj:find(cdbstr) then
+    local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
+    if not checking_access and cdbmode~='off' and dicts.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
-        if cdbmode=='pdb' and (extvars.dict[new_obj] or {}).comm_view and db.props.version<21 then 
+        if cdbmode=='pdb' and (dicts.dict[new_obj] or {}).comm_view and db.props.version<21 then 
             if db.props.select_dict==nil then
                 checking_access=true
                 db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false
@@ -28,12 +28,12 @@ local function rep_instance(prefix,full,obj,suffix)
             end
             if db.props.select_dict  then
                 obj=new_obj
-                new_obj='NO_CROSS_CONTAINER(SYS.'..extvars.dict[new_obj].comm_view..')'
+                new_obj='NO_CROSS_CONTAINER(SYS.'..dicts.dict[new_obj].comm_view..')'
                 full=new_obj
             end
         else
             new_obj=obj:gsub(cdbmode=='cdb' and '^[DA][BL][AL]_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_') 
-            if new_obj~=obj and extvars.dict[new_obj] then
+            if new_obj~=obj and dicts.dict[new_obj] then
                 if not full:find(obj) then new_obj=new_obj:lower() end
                 full=full:gsub(obj:escape('*i'),new_obj)
                 obj=new_obj
@@ -67,16 +67,16 @@ local function rep_instance(prefix,full,obj,suffix)
         str=prefix..full..suffix
     else
         str=str:gsub('where 1=1 and','where'):gsub(' where 1=1 :others:',''):gsub(' :others:','')
-        env.log_debug('extvars',str)
+        env.log_debug('dicts',str)
     end
     return str
 end
 
-function extvars.set_inputs(inputs)
-    extvars.on_before_db_exec({'',''})
+function dicts.set_inputs(inputs)
+    dicts.on_before_db_exec({'',''})
 end
 
-function extvars.on_before_db_exec(item)
+function dicts.on_before_db_exec(item)
     for i=1,2 do
         if item and type(item[i])=="string" and item[i]:find('@lz_compress@',1,true) then
             item[i]=item[i]:gsub("@lz_compress@",db.lz_compress);
@@ -98,20 +98,20 @@ function extvars.on_before_db_exec(item)
         if var.outputs[v[1]]==nil then var.setInputs(v[1],''..v[2]) end
     end
 
-    if not extvars.dict then return item end
+    if not dicts.dict then return item end
     local _,sql,args,params=table.unpack(item)
 
     if sql and not cache[sql] then
         if (tonumber(db.props.instance)==instance or type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11)) and not sql:find('^'..(env.ROOT_CMD:escape())) then
             sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
         end
-        item[2]=re.gsub(sql..' ',extvars.P,rep_instance):sub(1,-2)
+        item[2]=re.gsub(sql..' ',dicts.P,rep_instance):sub(1,-2)
         cache[item[2]]=1
     end
     return item
 end
 
-function extvars.on_after_db_exec()
+function dicts.on_after_db_exec()
     table.clear(cache)
 end
 
@@ -123,14 +123,14 @@ local noparallel_sql=[[
             if sqlcode=-1031 then execute immediate 'alter session %s parallel query';end if;
     end;
 ]]
-function extvars.set_noparallel(name,value)
+function dicts.set_noparallel(name,value)
     if noparallel==value then return value end
     db:internal_call(noparallel_sql:format(value=="off" and "off" or "forever , level 16384",value=='off' and 'enable' or 'disable'))
     noparallel=value
     return value
 end
 
-function extvars.set_title(name,value,orig)
+function dicts.set_title(name,value,orig)
     local get=env.set.get
     local title={ tonumber(get("INSTANCE"))>-1   and "Inst="..get("INSTANCE") or "",
                   tonumber(get("DBID"))>0   and "DBID="..get("DBID") or "",
@@ -147,17 +147,17 @@ function extvars.set_title(name,value,orig)
     env.set_title(title~='' and "Filter: ["..title.."]" or nil)
 end
 
-function extvars.check_time(name,value)
+function dicts.check_time(name,value)
     if not value or value=="" then return "" end
     print("Time set as",db:check_date(value,'YYMMDDHH24MISS'))
     return value:trim()
 end
 
-function extvars.set_instance(name,value)
+function dicts.set_instance(name,value)
     return tonumber(value)
 end
 
-function extvars.set_container(name,value)
+function dicts.set_container(name,value)
     if name=='CONTAINER' and value>=0 then env.checkerr(db.props.version and db.props.version >= 12,'Current db version does not support the CDB feature!') end
     value=tonumber(value)
     env.checkerr(value and value>=-1 and value==math.floor(value),'Input value must be an integer!');
@@ -165,7 +165,7 @@ function extvars.set_container(name,value)
 end
 
 
-function extvars.set_schema(name,value)
+function dicts.set_schema(name,value)
     if value==nil or value=="" then 
         uid=nil
         --db:internal_call("alter session set current_schema="..db.props.db_user)
@@ -181,7 +181,7 @@ function extvars.set_schema(name,value)
 end
 
 local prev_container={}
-function extvars.set_cdbmode(name,value)
+function dicts.set_cdbmode(name,value)
     if value~='off' then
         if not db:is_connect() then return end
     end
@@ -213,7 +213,7 @@ function extvars.set_cdbmode(name,value)
     return value
 end
 
-function extvars.on_after_db_conn()
+function dicts.on_after_db_conn()
     if db.props.isadb==true then
         local mode=''
         if db.props.israc==true then 
@@ -236,14 +236,14 @@ function extvars.on_after_db_conn()
     cfg.force_set('noparallel','off')
 
     if db.props.version then
-        extvars.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..(db.props.dbid or 0)..'.dat'
+        dicts.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..(db.props.dbid or 0)..'.dat'
     else
-        extvars.db_dict_path=datapath
+        dicts.db_dict_path=datapath
     end
 
-    extvars.cache_obj=nil
-    if extvars.current_dict and extvars.current_dict.path~=extvars.db_dict_path and os.exists(extvars.db_dict_path) then
-        extvars.load_dict(extvars.db_dict_path)
+    dicts.cache_obj=nil
+    if dicts.current_dict and dicts.current_dict.path~=dicts.db_dict_path and os.exists(dicts.db_dict_path) then
+        dicts.load_dict(dicts.db_dict_path)
     end
 
     if not db:is_connect(true) then
@@ -252,7 +252,7 @@ function extvars.on_after_db_conn()
 end
 
 
-function extvars.test_grid()
+function dicts.test_grid()
     local rs1=db:internal_call([[select * from (select * from v$sysstat order by 1) where rownum<=20]])
     local rs2=db:internal_call([[select * from (select rownum "#",name,hash from v$latch) where rownum<=30]])
     local rs3=db:internal_call([[select * from (select rownum "#",event,total_Waits from v$system_event) where rownum<=60]])
@@ -270,12 +270,12 @@ function extvars.test_grid()
     merge({rs3,'|',merge{rs1,'-',{rs2,'+',rs5}},'-',rs4},true)
 end
 
-function extvars.set_dict(type,scope)
+function dicts.set_dict(type,scope)
     if not type then
-        local dict=extvars.current_dict
+        local dict=dicts.current_dict
         if not dict then return print('Please run "dict public" to build the global dictionary.') end
         if dict.cache==0 then
-            for k,v in pairs(extvars.cache_obj or {}) do
+            for k,v in pairs(dicts.cache_obj or {}) do
                 dict.cache=dict.cache+1
             end
         end
@@ -300,7 +300,7 @@ function extvars.set_dict(type,scope)
     local pattern=scope:gsub('%%','@'):escape():gsub('@','.*')
     local keys={}
     if type=='param' then
-        params=extvars.params
+        params=dicts.params
         local is_connect=db:is_connect()
         for k,v in pairs(params) do
             if (k..' '..v[1]..' '..v[7]):lower():find(pattern) and (not is_connect or v[1]<=db.props.version) then
@@ -345,7 +345,7 @@ function extvars.set_dict(type,scope)
         end
         return env.grid.print(rows)
     elseif type=='obj' then
-        dict=extvars.dict
+        dict=dicts.dict
         for k,v in pairs(dict) do
             if (k..' '..(v.comm_view or '')):lower():find(pattern) then
                 keys[#keys+1]=k
@@ -369,8 +369,8 @@ function extvars.set_dict(type,scope)
         end
         return env.grid.print(rows)
     elseif type=='init' then 
-        path=extvars.db_dict_path
-        extvars.dict,extvars.keywords,extvars.params={},{},{}
+        path=dicts.db_dict_path
+        dicts.dict,dicts.keywords,dicts.params={},{},{}
         sql=[[
             with r as(
                     SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
@@ -404,8 +404,8 @@ function extvars.set_dict(type,scope)
                 ORDER  BY decode(owner,'SYS',' ','PUBLIC','  ',owner),table_name)
             WHERE ROWNUM<=65536*5]]
     else
-        extvars.load_dict(path)
-        dict,params,keywords=extvars.dict,extvars.params,{}
+        dicts.load_dict(path)
+        dict,params,keywords=dicts.dict,dicts.params,{}
         sql=[[
             with r as(
                     SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
@@ -543,16 +543,16 @@ function extvars.set_dict(type,scope)
         end
     end
 
-    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(type=='init' and extvars.cache_obj) or nil},31*1024*1024)
-    extvars.load_dict(path)
+    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(type=='init' and dicts.cache_obj) or nil},31*1024*1024)
+    dicts.load_dict(path)
     print((cnt1+cnt2+cnt3-2)..' records saved into '..path)
 end
 
-function extvars.load_dict(path)
+function dicts.load_dict(path)
     env.load_data(path,true,function(data)
-        extvars.dict=data.dict
-        extvars.params=data.params or {}
-        extvars.keywords={}
+        dicts.dict=data.dict
+        dicts.params=data.params or {}
+        dicts.keywords={}
         local dict={objects=0,subobjects=0,vpd=0,cache=0,path=path}
         if data.keywords then
             for k,v in pairs(data.dict) do 
@@ -570,17 +570,17 @@ function extvars.load_dict(path)
             console:setKeywords(data.keywords)
             table.clear(data.keywords)
         end
-        extvars.current_dict=dict
+        dicts.current_dict=dict
         if data.cache then 
-            extvars.cache_obj=data.cache
+            dicts.cache_obj=data.cache
         end
         data=nil
-        env.log_debug('extvars','Loaded dictionry '..path)
+        env.log_debug('dicts','Loaded dictionry '..path)
     end)
 end
 
-function extvars.onload()
-    env.set_command(nil,"TEST_GRID",nil,extvars.test_grid,false,1)
+function dicts.onload()
+    env.set_command(nil,"TEST_GRID",nil,dicts.test_grid,false,1)
     env.set_command(nil,'DICT',[[
         Show or create dictionary for auto completion. Usage: @@NAME {<init|public [all|dict|param]>} | {<obj|param> <keyword>}
         init  : Create a separate offline dictionary that only used for current database
@@ -589,24 +589,24 @@ function extvars.onload()
             * param : Only build the Oracle parameter dictionary
             * all   : Build either dict and param
         obj   : Fuzzy search the objects that stored in offline dictionary
-        param : Fuzzy search the parameters that stored in offline dictionary]],extvars.set_dict,false,3)
+        param : Fuzzy search the parameters that stored in offline dictionary]],dicts.set_dict,false,3)
 
-    event.snoop('BEFORE_DB_EXEC',extvars.on_before_db_exec,nil,60)
-    event.snoop('AFTER_DB_EXEC',extvars.on_after_db_exec)
-    event.snoop('ON_SUBSTITUTION',extvars.on_before_db_exec,nil,60)
-    event.snoop('AFTER_ORACLE_CONNECT',extvars.on_after_db_conn)
-    event.snoop('ON_DB_DISCONNECTED',extvars.on_after_db_conn)
-    event.snoop('ON_SETTING_CHANGED',extvars.set_title)
-    event.snoop('ON_SHOW_INPUTS',extvars.set_inputs)
-    cfg.init("cdbmode","off",extvars.set_cdbmode,"oracle","Controls whether to auto-replace all SQL texts from 'DBA_HIST_' to 'CDB_HIST_'/'AWR_PDB_'","cdb,pdb,off")
-    cfg.init("instance",-1,extvars.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
-    cfg.init("schema","",extvars.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
-    cfg.init({"container","con","con_id"},-1,extvars.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 32768")
-    cfg.init("dbid",0,extvars.set_container,"oracle","Specify the dbid for AWR analysis")
-    cfg.init("starttime","",extvars.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-    cfg.init("endtime","",extvars.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-    cfg.init("noparallel","off",extvars.set_noparallel,"oracle","Controls executing SQL statements in no parallel mode. refer to MOS 1114405.1","on,off");
-    extvars.P=re.compile([[
+    event.snoop('BEFORE_DB_EXEC',dicts.on_before_db_exec,nil,60)
+    event.snoop('AFTER_DB_EXEC',dicts.on_after_db_exec)
+    event.snoop('ON_SUBSTITUTION',dicts.on_before_db_exec,nil,60)
+    event.snoop('AFTER_ORACLE_CONNECT',dicts.on_after_db_conn)
+    event.snoop('ON_DB_DISCONNECTED',dicts.on_after_db_conn)
+    event.snoop('ON_SETTING_CHANGED',dicts.set_title)
+    event.snoop('ON_SHOW_INPUTS',dicts.set_inputs)
+    cfg.init("cdbmode","off",dicts.set_cdbmode,"oracle","Controls whether to auto-replace all SQL texts from 'DBA_HIST_' to 'CDB_HIST_'/'AWR_PDB_'","cdb,pdb,off")
+    cfg.init("instance",-1,dicts.set_instance,"oracle","Auto-limit the inst_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 99")
+    cfg.init("schema","",dicts.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
+    cfg.init({"container","con","con_id"},-1,dicts.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 32768")
+    cfg.init("dbid",0,dicts.set_container,"oracle","Specify the dbid for AWR analysis")
+    cfg.init("starttime","",dicts.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
+    cfg.init("endtime","",dicts.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
+    cfg.init("noparallel","off",dicts.set_noparallel,"oracle","Controls executing SQL statements in no parallel mode. refer to MOS 1114405.1","on,off");
+    dicts.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]
         pt      <- [%s,(]
@@ -616,7 +616,7 @@ function extvars.onload()
         name    <- {prefix %a%a [%w$#_]+}
         prefix  <- "GV_$"/"GV$"/"V_$"/"V$"/"INT$"/"DBA_"/"AWR_"/"ALL_"/"CDB_"/"X$"/"XV$"
     ]],nil,true)
-    extvars.load_dict(datapath)
+    dicts.load_dict(datapath)
 end
 
 db.lz_compress=[[
@@ -793,4 +793,4 @@ db.lz_compress=[[
            wr('END;'); 
         END IF;
     END;]]
-return extvars
+return dicts

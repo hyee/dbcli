@@ -406,7 +406,7 @@ function grid:add(row)
                     colsize[k][3],colsize[k][4]=""
                 end
             else
-                v=v:sub(1,1048576):gsub('[^%S\n\r]+$',''):gsub("\t", '    '):gsub('%z+','')
+                v=v:sub(1,1048576):gsub('[^%S\n\r]+$',''):gsub("\t", '    '):gsub('%z+',''):rtrim()
                 if colsize[k][3] and v~=colsize[k][3] then 
                     colsize[k][3],colsize[k][4]=nil 
                 end
@@ -803,6 +803,9 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,p
     rows,output = grid.format(rows, include_head, col_del, row_del)
     rows_limit = rows_limit and math.min(rows_limit, #rows) or #rows
     env.set.force_set("pivot", 0)
+    if not pivotsort then 
+        env.set.force_set("PIVOTSORT", env.set._p['PIVOTSORT'] or 'off') 
+    end
     return table.concat(rows, "\n", 1, rows_limit),output
 end
 

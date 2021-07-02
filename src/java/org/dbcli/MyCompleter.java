@@ -21,6 +21,8 @@ public class MyCompleter implements org.jline.reader.Completer {
     HashMap<String, Object> commandSet = new HashMap<>(128);
     HashMap<String, HashMap<String, Boolean>> commands = new HashMap<>();
     Console console;
+    String defaultSchema = null;
+    String quote = "\"";
 
 
     public void reset() {
@@ -30,6 +32,8 @@ public class MyCompleter implements org.jline.reader.Completer {
         groups.clear();
         commands.clear();
         values.clear();
+        defaultSchema = null;
+        quote = "\"";
     }
 
     public MyCompleter(Console console) {
@@ -119,7 +123,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 String[] ary = key.toLowerCase().split(re);
                 if (value instanceof String)
                     putKey(((String) value).toLowerCase(), ary[0]);
-                for (int i = 0, n = ary.length - 1; i <= n; i++)
+                for (int i = 0, n = ary.length - 1, m = n - (n > 0 ? 1 : 0); i <= m; i++)
                     putKey(ary[i], i == n ? "\1" : ary[i + 1]);
             }
             values.clear();
@@ -132,7 +136,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 final String key = entry.getKey();
                 final Object value = entry.getValue();
                 if (value instanceof HashMap) {
-                    candidates[seq] = new Candidate(key, key, null, null, null, dot, false);
+                    candidates[seq] = new Candidate(key, key, null, null, null, null, false);
                     String[] keys = ((HashMap<String, Object>) value).keySet().toArray(new String[0]);
                     Arrays.sort(keys);
                     String prev = null;
@@ -166,7 +170,7 @@ public class MyCompleter implements org.jline.reader.Completer {
         } else if (index > 0) {
             String k = words.get(words.size() - 1);
             if (k.equals("")) return;
-            final int pos = k.lastIndexOf(dot);
+            int pos = k.lastIndexOf(dot);
             boolean doted = false;
             if (pos == k.length() - 1) {
                 k = k.substring(0, pos);
@@ -175,17 +179,34 @@ public class MyCompleter implements org.jline.reader.Completer {
                 keysWordCompeleter.complete(lineReader, parsedLine, list);
                 return;
             }
-            final String[] ary = k.split(re);
-            final int len = ary.length - 1;
+
+            String[] ary = k.split(re);
+            int len = ary.length - 1;
             String prefix = "";
             String next;
             Object keys;
             HashMap<String, Object> map = keywords;
+            String sep;
             for (int i = 0; i <= len; i++) {
+                if (ary[i].startsWith(quote) && ary[i].endsWith(quote))
+                    ary[i]=ary[i].substring(1,ary[i].length()-1);
                 keys = map.get(ary[i].toLowerCase());
-                if (!(keys instanceof HashMap)) break;
+                sep = dot;
+                if (!(keys instanceof HashMap)) {
+                    if (i == 0 && defaultSchema != null && !defaultSchema.equals("")) {
+                        keys = map.get(defaultSchema.toLowerCase());
+                        if (keys instanceof HashMap) {
+                            k = defaultSchema + "." + k;
+                            ary = k.split(re);
+                            ++len;
+                            ++pos;
+                            sep = "";
+                        } else break;
+                    } else break;
+                } else {
+                    prefix += (prefix.equals("") ? ary[i] : (dot + ary[i]));
+                }
                 map = (HashMap) keys;
-                prefix += prefix.equals("") ? ary[i] : (dot + ary[i]);
                 next = i + 1 <= len ? ary[i + 1].toLowerCase() : null;
                 if (next != null && map.get(next) instanceof HashMap) {
                     if (!doted && i + 1 == len && groups.containsKey(next)) {
@@ -197,14 +218,14 @@ public class MyCompleter implements org.jline.reader.Completer {
                     String can = entry.getKey();
                     if (isUpper) can = can.toUpperCase();
                     if (entry.getValue() instanceof HashMap) {
-                        list.add(new Candidate(prefix + dot + can, dot + can, null, null, null, dot, false));
+                        list.add(new Candidate(prefix + sep + can, sep + can, null, null, sep, null, false));
                     } else
-                        list.add(new Candidate(prefix + dot + can, dot + can, null, null, null, null, true));
+                        list.add(new Candidate(prefix + sep + can, sep + can, null, null, null, null, true));
                 }
                 return;
             }
             if (pos > 0) return;
-            else keysWordCompeleter.complete(lineReader, parsedLine, list);
+            keysWordCompeleter.complete(lineReader, parsedLine, list);
         } else {
             commandCompleter.complete(lineReader, parsedLine, list);
         }

@@ -90,7 +90,7 @@ Parameters
     _gcs_cluster_flash_cache_mode: 1-Enables the cluster flash cache/2-allows a block on the non-master instance to be saved in that instance's flash cache/3-1+2
     _gcs_flash_cache_mode: 1-allows a local instance to serve the flash block to the remote requester/2-disallow
     _cr_grant_local_role: controls 3-way CR grants. Auto:depends on cpu load(85%), and latency of 'gc cr grant 2-way + db file sequential read' vs 'gc current block 2-way', and 'gc cr grant 2-way' vs 'gc current block 3-way'
-    sqltune_category: used to change the SQL Profile category and therfor disable the use of some existing SQL Profiles
+    sqltune_category: used to change the SQL Profile category and therefor disable the use of some existing SQL Profiles
     Parameters for Adaptive LGWR:
         _use_adaptive_log_file_sync
             TRUE: Enable adaptive log file sync (default)
@@ -144,7 +144,8 @@ Parameters
         1: Disable LOB predicate pushdown to Smart Scan
         4096: Disable rowset function evaluation in Smart Scan
         8192: Disable aggregation pushdown to Smart Scan
-        131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan        
+        131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
+    _cursor_reload_failure_threshold: prevents multiple sessions to experience reload failures for the same cursor. reduce library/mutex lock         
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 

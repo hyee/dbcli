@@ -9,7 +9,7 @@ if not env then return print(err) end
 
 env=env()
 env.onload(...)
-local print=env.printer.print
+local print=env.printer and env.printer.print or print
 print("-------------------------------DBCLI------------------------------------")
 print("| Type 'conn' to connect to db, or 'help' for more information.        |")
 print("| (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)       |")

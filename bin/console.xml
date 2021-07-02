@@ -187,6 +187,17 @@
 			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="4" r="255" g="255" b="255"/>
 		</tab>
+		<tab title="mysql" use_default_icon="0">
+			<console shell="..\dbcli.bat mysql" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0">
+				<env var="CONSOLE_COLOR" value="0F" check="1"/>
+			</console>
+			<cursor style="4" r="255" g="255" b="255"/>
+			<background type="0" r="0" g="36" b="85">
+				<image file="" relative="0" extend="0" position="0">
+					<tint opacity="0" r="0" g="0" b="0"/>
+				</image>
+			</background>
+		</tab>
 		<tab title="dbcli(conemu)" use_default_icon="0">
 			<console shell="..\dbcli.bat" init_dir="%~dp0" priority="2" run_as_user="0" user="" net_only="0" run_as_admin="0"/>
 			<cursor style="4" r="255" g="255" b="255"/>

@@ -10,6 +10,7 @@ mysql.module_list={
     "sql",
     "chart",
     "ssh",
+    "dict",
     "mysqluc"
 }
 
@@ -59,28 +60,34 @@ function mysql:connect(conn_str)
          useSSL='false',
          serverTimezone='UTC',
         },args)
-    
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
     for k,v in pairs(args) do args[k]=tostring(v) end
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value([[
-        select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,plugin_version 
-        from   INFORMATION_SCHEMA.PLUGINS
-        where  plugin_name='InnoDB']])
+    local info=self:get_value([[select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port]])
+    table.clear(self.props)
+    local props=self.props
     if info then
-        self.props.db_version,self.props.server=info[8]:match('^([%d%.]+)'),info[5]
-        self.props.db_user=info[4]:match("([^@]+)")
-        self.props.db_conn_id=tostring(info[3])
-        self.props.database=info[1] or ""
-        self.props.sql_mode=info[6]
+        props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[%W%.]+([%w%.]+)')
+        props.server=info[5]
+        props.db_user=info[4]:match("([^@]+)")
+        props.db_conn_id=tostring(info[3])
+        props.database=info[1] or ""
+        props.sql_mode=info[6]
         args.database=info[1] or ""
         args.hostname=url:match("^[^/%:]+")
         args.port=info[7]
-        if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
-        env.set_title(('%s - User: %s   CID: %s   Version: %s(InnoDB-%s)'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2],info[8]))
+        if props.sub_version:lower():find('tidb') then
+            props.tidb,props.branch=true,'tidb'
+            props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
+        end
+
+        env.set_title(('MySQL v%s(%s)   CID: %s'):format(
+                props.db_version,
+                (props.branch and (props.branch.. ' v') or '')..props.sub_version,
+                props.db_conn_id))
         if  tonumber(self.props.db_version:match("^%d+%.%d"))<5.5 then
             env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
         end

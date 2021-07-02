@@ -147,9 +147,20 @@ function init.load_database()
     if not env.CURRENT_DB then
         if env.set and env.set._p then env.CURRENT_DB=env.set._p['database'] end
         if not env.CURRENT_DB then
-            for _,k in ipairs(env.__ARGS__) do
-                env.CURRENT_DB=k:lower():match('database%s*(%w+)')
-                if env.CURRENT_DB then break end
+            for i,k in ipairs(env.__ARGS__) do
+                k=k:lower()
+
+                local db=k:match('[=%s]database%s+(%w+)') or k:match('[= ]platform%s+(%w+)')
+                if not db or not init.databases[db] then
+                    db=init.databases[k] and k
+                else
+                    db=nil
+                end
+                if db then
+                    env.CURRENT_DB=db
+                    table.remove(env.__ARGS__,i)
+                    break
+                end
             end
         end
         env.CURRENT_DB=env.CURRENT_DB or default_database
