@@ -461,6 +461,7 @@ public final class Console {
             setAnsi(NOR);
             super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
+            quoteChars(new char[]{'\'', '"','`'}).escapeChars(new char[]{});
             Interrupter.listen(MyParser.this, c -> {
                 lines = 0;
                 sb.setLength(0);

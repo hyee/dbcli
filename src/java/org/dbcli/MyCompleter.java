@@ -26,11 +26,15 @@ public class MyCompleter implements org.jline.reader.Completer {
 
 
     public void reset() {
-        keysWordCompeleter = new StringsCompleter();
         commandCompleter = new TreeCompleter();
+        commands.clear();
+        resetKeywords();
+    }
+
+    public void resetKeywords() {
+        keysWordCompeleter = new StringsCompleter();
         keywords.clear();
         groups.clear();
-        commands.clear();
         values.clear();
         defaultSchema = null;
         quote = "\"";

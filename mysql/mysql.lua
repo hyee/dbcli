@@ -168,7 +168,7 @@ function mysql:onload()
     env.event.snoop("BEFORE_EVAL",self.on_eval,self)
     env.rename_command("TEE",{"write"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
-    env.rename_command("PRINT","PRINTVAR")
+    env.rename_command("PRINT",{"PRINTVAR","PR"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
     env.rename_command("HELP",{"HELP","\\h"})
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
@@ -215,7 +215,7 @@ function mysql:set_session(name,value)
 end
 
 function mysql:help_topic(...)
-    local keyword=table.concat({...}," "):upper():trim()
+    local keyword=table.concat({...}," "):gsub('%s+',' '):upper():trim()
     local liker={keyword:find("%$") and keyword or (keyword.."%")}
     local desc
     env.set.set("feed","off")
@@ -225,11 +225,11 @@ function mysql:help_topic(...)
     elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
         keyword=keyword:gsub("^[^%s+]%s+","")
         liker={keyword:find("%$") and keyword or ("%"..keyword.."%")}
-        self:query("select a.name,b.name as category,a.url"..help_table.."where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",liker)
+        self:query("select a.name,b.name as category,a.url"..help_table.."where (a.name like :1 or b.name like :1) order by a.name",liker)
     else
-        local topic=self:get_value("select 1"..help_table.."where upper(b.name)=:1 or convert(help_category_id,char)=:1",{keyword})
+        local topic=self:get_value("select 1"..help_table.."where b.name=:1 or convert(help_category_id,char)=:1",{keyword})
         if topic then
-            self:query("select a.name,b.name as category,a.url"..help_table.." where upper(b.name)=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
+            self:query("select a.name,b.name as category,a.url"..help_table.." where b.name=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
         else
             local topic=self:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
             env.checkerr(topic,"No such topic: "..keyword)

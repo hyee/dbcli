@@ -644,6 +644,9 @@ function db_core:parse(sql,params,prefix,prep,vname)
             elseif type(v)=="boolean" then
                 typ='BOOLEAN'
                 args={db_Types:set(typ,v)}
+            elseif type(v)~='string' then
+                counter=counter-1
+                return s
             elseif v:sub(1,1)=="#" then
                 typ=v:upper():sub(2)
                 params[k]={'#',{counter},typ}
@@ -1688,4 +1691,3 @@ function db_core:compute_delta(rs2,rs1,groups,aggrs)
 end
 
 return db_core
-

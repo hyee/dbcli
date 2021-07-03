@@ -45,3 +45,4 @@ dbcli_mysql.bat
 user.xml
 NULL
 .stackdump
+console.chm

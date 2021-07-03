@@ -9,11 +9,11 @@ local words,abbrs={
 
 local show={name="SHOW"}
 
-function show.run(arg)
-    env.checkhelp(arg)
+function show.run(...)
+    local args={...}
+    env.checkhelp(args[1])
     db:assert_connect()
     local cmd={"SHOW"}
-    local args=env.parse_args(3,arg)
     env.set.set("printsize",10000)
     for i,k in ipairs(args) do
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
@@ -27,7 +27,7 @@ function show.run(arg)
         end
     end
     cmd=table.concat(cmd,' ')
-    if cmd~="SHOW "..arg then print("Command: "..cmd) end
+    if cmd~="SHOW "..table.concat(args,' ') then print("Command: "..cmd) end
     env.set.set("feed","off")
 
     db:query(cmd)
@@ -49,7 +49,7 @@ function show.onload()
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
     abbrs["CLT"]="COLLATION"
-    env.set_command(nil,show.name, {"Show database information",show.help},show.run,false,2)
+    env.set_command(nil,show.name, {"Show database information",show.help},show.run,false,10)
 end
 
 return show

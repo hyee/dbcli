@@ -234,7 +234,6 @@ function dicts.on_after_db_conn()
     cfg.force_set('dbid','default')
     noparallel='off'
     cfg.force_set('noparallel','off')
-
     if db.props.version then
         dicts.db_dict_path=env._CACHE_BASE..'dict_'..(db.props.dbname or 'db'):gsub("%..*$",""):gsub('%W+','-'):lower()..'_'..(db.props.dbid or 0)..'.dat'
     else
@@ -243,6 +242,7 @@ function dicts.on_after_db_conn()
 
     dicts.cache_obj=nil
     if dicts.current_dict and dicts.current_dict.path~=dicts.db_dict_path and os.exists(dicts.db_dict_path) then
+        console.completer:resetKeywords()
         dicts.load_dict(dicts.db_dict_path)
     end
 
