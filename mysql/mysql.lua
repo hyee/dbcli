@@ -3,6 +3,7 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local mysql=env.class(env.db_core)
 mysql.module_list={
+    "help",
     "mysql_exe",
     "usedb",
     "show",
@@ -59,6 +60,7 @@ function mysql:connect(conn_str)
          allowMultiQueries="true",
          useSSL='false',
          serverTimezone='UTC',
+         zeroDateTimeBehavior='convertToNull'
         },args)
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
@@ -128,7 +130,7 @@ function mysql:command_call(sql,...)
 end
 
 function mysql:onload()
-    local default_desc={"#MYSQL database SQL command",self.help_topic}
+    local default_desc={"#MYSQL database SQL command",self.C.help.help_topic}
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
             set_command(self,select(i,...), default_desc,self.command_call,true,1,true)
@@ -160,12 +162,7 @@ function mysql:onload()
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
-    set_command(self,{"?","\\?"},nil,self.help_topic,false,9)
-
     env.set.change_default("null","NULL")
-    env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
-    env.event.snoop("ON_SET_NOTFOUND",self.set,self)
-    env.event.snoop("BEFORE_EVAL",self.on_eval,self)
     env.rename_command("TEE",{"write"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
     env.rename_command("PRINT",{"PRINTVAR","PR"})
@@ -212,36 +209,6 @@ end
 function mysql:set_session(name,value)
     self:assert_connect()
     return self:exec(table.concat({"SET",name,value}," "))
-end
-
-function mysql:help_topic(...)
-    local keyword=table.concat({...}," "):gsub('%s+',' '):upper():trim()
-    local liker={keyword:find("%$") and keyword or (keyword.."%")}
-    local desc
-    env.set.set("feed","off")
-    local help_table=" from mysql.help_topic as a join mysql.help_category as b using(help_category_id) "
-    if keyword=="C" or keyword=="CONTENTS" then
-        self:query("select help_category_id as `Category#`,b.name as `Category`,group_concat(distinct coalesce(nullif(substring(a.name,1,instr(a.name,' ')-1),''),a.name) order by a.name) as `Keywords`"..help_table.."group by help_category_id,b.name order by 2")
-    elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
-        keyword=keyword:gsub("^[^%s+]%s+","")
-        liker={keyword:find("%$") and keyword or ("%"..keyword.."%")}
-        self:query("select a.name,b.name as category,a.url"..help_table.."where (a.name like :1 or b.name like :1) order by a.name",liker)
-    else
-        local topic=self:get_value("select 1"..help_table.."where b.name=:1 or convert(help_category_id,char)=:1",{keyword})
-        if topic then
-            self:query("select a.name,b.name as category,a.url"..help_table.." where b.name=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
-        else
-            local topic=self:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
-            env.checkerr(topic,"No such topic: "..keyword)
-            topic[1]='Name:  '..topic[4].." / "..topic[1]
-            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n"..('='):rep(#topic[1])
-                      ..(" \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n","\n  ")
-            if (topic[3] or ""):trim()~="" then
-                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n","\n  "))
-            end
-            print(ansi.convert_ansi((desc:gsub("%s+$",""))))
-        end
-    end
 end
 
 function mysql:set(item)

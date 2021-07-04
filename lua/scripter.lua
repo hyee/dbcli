@@ -184,7 +184,7 @@ function scripter:parse_args(sql,args,print_args,cmd)
                             if k=='@ARGS' and not print_args then
                                 local min=tonumber(v)
                                 if min and #args<min then
-                                    env.helper.helper(self:get_command(),cmd)
+                                    env.help.help(self:get_command(),cmd)
                                     env.checkerr(false,'Please input at least '..min..' parameter(s).')
                                 end
                             end
@@ -392,7 +392,7 @@ function scripter:get_script(cmd,args,print_args)
     end
 
     if not cmd or cmd:match('^%s*$') then
-        return env.helper.helper(self:get_command())
+        return env.help.help(self:get_command())
     end
     local org=cmd
     cmd=cmd:trim():upper()
@@ -408,7 +408,7 @@ function scripter:get_script(cmd,args,print_args)
     if cmd=="-R" then
         return
     elseif cmd=="-H" then
-        return  env.helper.helper(self:get_command(),args[1])
+        return  env.help.help(self:get_command(),args[1])
     elseif cmd=="-G" then
         env.checkerr(args[1],"Please specify the command name!")
         cmd,is_get=args[1] and args[1]:upper() or "/",true
@@ -427,14 +427,14 @@ function scripter:get_script(cmd,args,print_args)
         cmd,print_args=args[1] and args[1]:upper() or "/",true
         table.remove(args,1)
     elseif cmd=="-S" then
-        return env.helper.helper(self:get_command(),"-S",table.unpack(args))
+        return env.help.help(self:get_command(),"-S",table.unpack(args))
     end
 
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then
         target_dir,file=self:check_ext_file(org:sub(2))
         env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..org:sub(2))
-        if not file then return env.helper.helper(self:get_command(),org) end
+        if not file then return env.help.help(self:get_command(),org) end
         cmd,file=file,target_dir[file].path
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path

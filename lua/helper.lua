@@ -1,6 +1,6 @@
 local env,java=env,java
 local runtime=java.require("java.lang.Runtime",true):getRuntime()
-local helper={}
+local helper=env.class()
 
 function helper.jvm()
     local grid=env.grid
@@ -192,7 +192,7 @@ function helper.colorful(helps,target)
     return helps:rtrim()..'\n',is_table
 end
 
-function helper.helper(cmd,...)
+function helper.help(cmd,...)
     local grid,_CMDS=env.grid,env._CMDS
     local rows={}
     if cmd and cmd:sub(1,1)~="-" then
@@ -205,7 +205,7 @@ function helper.helper(cmd,...)
         if type(_CMDS[cmd].HELPER) =="function" then
             local args,sub= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
             helps,sub = (_CMDS[cmd].HELPER)(table.unpack(args))
-            helps = helps or "No help information."
+            helps = helps or ""
             target= table.concat({cmd,sub}," ")
         else
             helps = _CMDS[cmd].HELPER or ""
@@ -323,7 +323,8 @@ function helper.helper(cmd,...)
             end
         end
     end
-    print("Available comands:\n===============")
+    if env.help.prefix then print("==================\n"..env.help.prefix.."\n") end
+    print("Available comands:\n==================")
     grid.sort(rows,1,true)
     grid.print(rows)
     return ""
@@ -349,5 +350,9 @@ function helper.desc()
      ]]
 end
 
-env.set_command(nil,'help',helper.desc,helper.helper,false,9)
+function helper:__onload()
+    env.help=self
+    env.set_command(nil,'help',self.desc,self.help,false,9)
+end
+
 return helper

@@ -465,7 +465,7 @@ function env.checkerr(result,index,msg,...)
 end
 
 function env.checkhelp(arg)
-    env.checkerr(arg,env.helper.helper,env.CURRENT_CMD)
+    env.checkerr(arg,env.help.help,env.CURRENT_CMD)
 end
 
 local co_stacks={}

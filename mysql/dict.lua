@@ -3,10 +3,8 @@ local env=env
 local db,cfg,event,var,type=env.getdb(),env.set,env.event,env.var,type
 local datapath=env.join_path(env.WORK_DIR,'mysql/dict.pack')
 local current_dict=nil
-
-function dicts.reorg_dict(dict,rows,prefix,val)
+local function reorg_dict(dict,rows,prefix)
 	db:assert_connect()
-	local cnt=#rows-1
 	local branch=db.props.branch or 'mysql'
 	if not dict.mysql then dict.mysql={} end
 	if not dict[branch] then dict[branch]={} end
@@ -15,15 +13,16 @@ function dicts.reorg_dict(dict,rows,prefix,val)
     local counter=0
     val=val or 1
     for _,row in ipairs(rows) do
-    	local row=prefix..(type(row)=='table' and row[1] or row):lower()
-    	if source~=mysql and not mysql[row] then
-			source[row]=val
+    	local name=prefix..(type(row)=='table' and row[1] or row):lower()
+    	local val=type(row)=='table' and row[2] or 1
+    	if source~=mysql and not mysql[name] then
+			source[name]=val
 			counter=counter+1
 		elseif source==mysql then
-			source[row]=val
+			source[name]=val
 			counter=counter+1
 			for n,d in pairs(dict) do
-				if type(d)=='table' and d~=mysql then d[row]=nil end
+				if type(d)=='table' and d~=mysql then d[name]=nil end
 			end
 		end
     end
@@ -35,20 +34,29 @@ function dicts.build_dict(typ,scope)
 	typ=typ:lower()
 	local sqls={
 		[[show global variables]],
-		[[SELECT concat_ws('.',lower(TABLE_SCHEMA),lower(TABLE_NAME)) fname FROM INFORMATION_SCHEMA.TABLES
-		  WHERE  lower(table_schema) in('information_schema','sys','mysql','performance_schema','metrics_schema')
-		]],
+		[[SELECT lower(TABLE_NAME),lower(TABLE_SCHEMA) fname FROM INFORMATION_SCHEMA.TABLES
+		  WHERE  lower(table_schema) in('information_schema','sys','mysql','performance_schema','metrics_schema')]],
+		[[SELECT lower(word) from INFORMATION_SCHEMA.KEYWORDS where length(word)>5]],
 		[[select lower(a.name) 
 		  from mysql.help_topic as a join mysql.help_category as b using(help_category_id) 
-		  where lower(b.name) like '%functions%' and length(a.name)>3 and instr(a.name,' ')=0
+		  where parent_category_id in(select help_category_id from mysql.help_category where name like '%Function%') 
+		  and length(a.name)>3 and instr(a.name,' ')=0
 		]],
 	}
-	local dict,path
+	local dict,path,doc,helppath,_categories
 	if typ=='public' then
 		path=datapath
 		if os.exists(path) then
 			dict=dicts.load_dict(path,false)
 		end
+		helppath=env.help.helpdict
+		if os.exists(helppath) then
+			doc=dicts.load_dict(helppath,false)
+		else
+			doc={}
+		end
+		_categories=doc._categories or {}
+		doc._categories=_categories
 	else
 		db:assert_connect()
 		path=current_dict
@@ -60,7 +68,10 @@ function dicts.build_dict(typ,scope)
 		done,rows=pcall(db.get_rows,db,sql)
 		if done then
     		table.remove(rows,1)
-    		count=count+dicts.reorg_dict(dict.keywords,rows,i==1 and '@@' or '')
+    		if i==1 then
+    			for _,row in ipairs(rows) do row[2]=nil end
+    		end
+    		count=count+reorg_dict(dict.keywords,rows,i==1 and '@@' or '')
     	end
     end
     done,rows=pcall(db.get_rows,db,[[select upper(name) from help_topic where length(name)>=3]])
@@ -72,15 +83,24 @@ function dicts.build_dict(typ,scope)
     		count=count+1
     	end
     	dict.commands.HELP=help
-        rows=db:get_rows([[select name,substr(description,1,256) from help_topic where length(name)>2]])
+        rows=db:get_rows([[select a.name,a.description,example,b.name category,help_category_id,parent_category_id,a.url 
+        	               from mysql.help_topic as a 
+        	               join mysql.help_category as b using(help_category_id) 
+        	               where length(a.name)>2]])
         table.remove(rows,1)
         local len=#rows
     	for i=len,1,-1 do
     		local row=rows[i]
+    		if doc then
+    			doc[row[1]]={row[2],row[3],row[4],row[5],row[6],row[7]}
+    			if not _categories[row[4]] then _categories[row[4]]={} end
+    			_categories[row[4]][1],_categories[row[4]][2]=row[5],row[6]
+    			_categories[row[4]][row[1]]=1
+    		end
         	local flag=0
     		local op=row[1]:match('%S+')
     		if row[1]~='SHOW' and op~='HELP' and env._CMDS[op] then
-	    		local desc=(row[2]..'\n'):match('Syntax:%s*\n%s*('..row[1]:trim():gsub('%s+','[^\n]+')..'.-)\n%s*\n')
+	    		local desc=(row[2]:sub(1,256)..'\n'):match('Syntax:%s*\n%s*('..row[1]:trim():gsub('%s+','[^\n]+')..'.-)\n%s*\n')
 	    		if not desc then 
 	    			desc,flag=row[1],1
 	    		else
@@ -153,10 +173,10 @@ function dicts.build_dict(typ,scope)
 	    local function walk(word,stack,root)
 	    	if root=='HELP' then return end
 	    	local cnt=0
-	    	if type(stack)~='table' then
-	    		print(root,word,stack)
-	    	end
 	    	for n,v in pairs(stack) do
+	    		if not root then
+	    			dict.keywords.mysql[n:lower()]=nil
+	    		end
 	    		cnt=cnt+1
 	    		walk(root and (word..(word=='' and '' or ' ')..n) or '',v,root or n)
 	    	end
@@ -168,6 +188,7 @@ function dicts.build_dict(typ,scope)
     end
     
     env.save_data(path,dict,31*1024*1024)
+    if doc then env.save_data(helppath,doc,31*1024*1024) end
     dicts.load_dict(dict,"all")
     print(count..' records saved into '..path)
 end
@@ -175,12 +196,7 @@ end
 local function set_keywords(dict,category)
 	dict=dict[category]
 	if not dict then return end
-	local keys={}
-	for key,_ in pairs(dict) do
-		keys[key]=category
-	end
-	console:setKeywords(keys)
-	table.clear(dict)
+	console:setKeywords(dict)
 end
 
 function dicts.load_dict(path,category)
@@ -191,31 +207,30 @@ function dicts.load_dict(path,category)
 		if not os.exists(path) then return end
 		data=env.load_data(path,true)
 	end
+	dicts.data=data
 	if category~=false then
 		local keywords=data.keywords
-		set_keywords(keywords,category or 'mysql')
 		if category=='all' then
-			for branch,_ in pairs(keywords) do
-				if db.props[branch] and branch~='mysql' then
+			console.completer:resetKeywords();
+			for branch,keys in pairs(keywords) do
+				if db.props[branch] or branch=='mysql' then
 					set_keywords(keywords,branch)
 				end
 			end
+		else
+			set_keywords(keywords,category or 'mysql')
 		end
 		console:setSubCommands(data.commands)
+		console:setSubCommands({
+			['?']=data.commands.HELP,
+			['\\?']=data.commands.HELP})
 	end
     return data
 end
 
 local current_branch
 function dicts.on_after_db_conn()
-	if current_branch then return end
-	for _,branch in ipairs{'tidb','ob','maria'} do
-		if db.props[branch] then
-			current_branch=branch
-			dicts.load_dict(datapath,branch)
-			break
-		end
-	end
+	dicts.load_dict(datapath,'all')
 end
 
 function dicts.on_after_db_disc()

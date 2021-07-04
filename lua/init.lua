@@ -174,12 +174,8 @@ function init.load_database()
     env[name]=exec(loadfile(dir..name..'.lua'))
     local m={load=clock()-timer,load_seq=load_seq}
     M[short_dir]=m
-    timer=clock()
-    exec(type(env[name])=="table" and env[name].onload,env[name],name)
-    m.onload=clock()-timer
     init.module_list[#init.module_list+1]=file
     env.module_list[#env.module_list+1]=env.join_path(file)
-    if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
     env[name].ROOT_PATH,env[name].SHORT_PATH=dir,short_dir
     env.getdb=function() return env[name] end
     if env[name].module_list then
@@ -192,6 +188,10 @@ function init.load_database()
         flush_mem(m)
         init.load_modules(list,env[name].C,name)
     end
+    timer=clock()
+    exec(type(env[name])=="table" and env[name].onload,env[name],name)
+    m.onload=clock()-timer
+    if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
 end
 
 function init.load_modules(list,tab,module_name)

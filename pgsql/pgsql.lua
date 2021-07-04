@@ -3,7 +3,7 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local pgsql=env.class(env.db_core)
 pgsql.module_list={
-   "sql","chart","ssh","snap",
+   "help","sql","chart","ssh","snap",
    "show","psql_exe",
 }
 

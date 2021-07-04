@@ -59,9 +59,10 @@ function class(super,init)
 
         local create=rawget(this_class,'ctor')
         if type(create)=="function" then create(obj,...) end
-
         for _,k in ipairs({'onload','onunload'}) do
-            if not obj[k] then obj[k]=obj['__'..k] end
+            if not obj[k] then 
+                obj[k]=obj['__'..k] 
+            end
         end
 
         return obj,attrs

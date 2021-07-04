@@ -26,18 +26,22 @@ public class MyCompleter implements org.jline.reader.Completer {
 
 
     public void reset() {
-        commandCompleter = new TreeCompleter();
-        commands.clear();
-        resetKeywords();
+        synchronized (this.commands) {
+            commandCompleter = new TreeCompleter();
+            commands.clear();
+            resetKeywords();
+        }
     }
 
     public void resetKeywords() {
-        keysWordCompeleter = new StringsCompleter();
-        keywords.clear();
-        groups.clear();
-        values.clear();
-        defaultSchema = null;
-        quote = "\"";
+        synchronized (this.keywords) {
+            keysWordCompeleter = new StringsCompleter();
+            keywords.clear();
+            groups.clear();
+            values.clear();
+            defaultSchema = null;
+            quote = "\"";
+        }
     }
 
     public MyCompleter(Console console) {
@@ -53,39 +57,45 @@ public class MyCompleter implements org.jline.reader.Completer {
     }
 
     //command is used to complete the leading words of a command line
-    synchronized void setCommands(Map<String, ?> keywords) {
-        for (Map.Entry<String, ?> entry : keywords.entrySet()) {
-            String key = entry.getKey().toUpperCase();
-            if (key.length() < 2 || key.contains(" ")) continue;
-            Object value = entry.getValue();
-            HashMap<String, Boolean> map = commands.get(key);
-            if (map == null) map = new HashMap<>();
-            if (value instanceof Map) {
-                Set<String> keys = ((Map) value).keySet();
-                for (String key1 : keys) {
-                    map.put(key1.toUpperCase(), true);
+    void setCommands(Map<String, ?> keywords) {
+        synchronized (this.commands) {
+            try {
+                for (Map.Entry<String, ?> entry : keywords.entrySet()) {
+                    String key = entry.getKey().toUpperCase();
+                    if (key.contains(" ")) continue;
+                    Object value = entry.getValue();
+                    HashMap<String, Boolean> map = commands.get(key);
+                    if (map == null) map = new HashMap<>();
+                    if (value instanceof Map) {
+                        Set<String> keys = ((Map) value).keySet();
+                        for (String key1 : keys) {
+                            map.put(key1.toUpperCase(), true);
+                        }
+                    }
+                    commands.put(key, map);
                 }
+                ArrayList<Node> nodes = new ArrayList<>(commands.size() + keywords.size());
+                String[] list = commands.keySet().toArray(new String[0]);
+                Arrays.sort(list);
+                for (String e : list) {
+                    String key = e.toUpperCase();
+                    HashMap<String, Boolean> map = commands.get(e);
+                    if (map.size() > 0) {
+                        commandSet.put(key, 1);
+                        Object[] objs = new Object[map.size() + 1];
+                        String[] keys = map.keySet().toArray(new String[0]);
+                        Arrays.sort(keys);
+                        objs[0] = key;
+                        for (int i = 0; i < keys.length; i++) objs[i + 1] = node(keys[i]);
+                        nodes.add(node(objs));
+                    } else nodes.add(node(key));
+                }
+                commandCompleter = new TreeCompleter(nodes.toArray(new Node[0]));
+                keywords.clear();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-            commands.put(key, map);
         }
-        ArrayList<Node> nodes = new ArrayList<>(commands.size() + keywords.size());
-        String[] list = commands.keySet().toArray(new String[0]);
-        Arrays.sort(list);
-        for (String e : list) {
-            String key = e.toUpperCase();
-            HashMap<String, Boolean> map = commands.get(e);
-            if (map.size() > 0) {
-                commandSet.put(key, 1);
-                Object[] objs = new Object[map.size() + 1];
-                String[] keys = map.keySet().toArray(new String[0]);
-                Arrays.sort(keys);
-                objs[0] = key;
-                for (int i = 0; i < keys.length; i++) objs[i + 1] = node(keys[i]);
-                nodes.add(node(objs));
-            } else nodes.add(node(key));
-        }
-        commandCompleter = new TreeCompleter(nodes.toArray(new Node[0]));
-        keywords.clear();
     }
 
 
@@ -118,46 +128,48 @@ public class MyCompleter implements org.jline.reader.Completer {
         }
     }
 
-    synchronized void setKeysWords(Map<String, ?> keywords) {
-        try {
-            for (Map.Entry<String, ?> entry : keywords.entrySet()) {
-                String key = entry.getKey();
-                if (key.length() < 3 || key.contains(" ")) continue;
-                Object value = entry.getValue();
-                String[] ary = key.toLowerCase().split(re);
-                if (value instanceof String)
-                    putKey(((String) value).toLowerCase(), ary[0]);
-                for (int i = 0, n = ary.length - 1, m = n - (n > 0 ? 1 : 0); i <= m; i++)
-                    putKey(ary[i], i == n ? "\1" : ary[i + 1]);
-            }
-            values.clear();
-            keywords.clear();
-            groups.clear();
-
-            Candidate[] candidates = new Candidate[this.keywords.size()];
-            int seq = 0;
-            for (Map.Entry<String, Object> entry : this.keywords.entrySet()) {
-                final String key = entry.getKey();
-                final Object value = entry.getValue();
-                if (value instanceof HashMap) {
-                    candidates[seq] = new Candidate(key, key, null, null, null, null, false);
-                    String[] keys = ((HashMap<String, Object>) value).keySet().toArray(new String[0]);
-                    Arrays.sort(keys);
-                    String prev = null;
-                    for (int j = 0, m = keys.length; j < m; j++) {
-                        //if the sibling key contains prev key, then cheat prev key as possible multiple candidates
-                        if (prev != null && keys[j].startsWith(prev) && this.keywords.get(key) != null)
-                            groups.put(prev, keys[j]);
-                        prev = keys[j];
-                    }
-                } else {
-                    candidates[seq] = new Candidate(key, key, null, null, null, null, true);
+    void setKeysWords(Map<String, ?> keywords) {
+        synchronized (this.keywords) {
+            try {
+                for (Map.Entry<String, ?> entry : keywords.entrySet()) {
+                    String key = entry.getKey();
+                    if (key.length() < 3 || key.contains(" ")) continue;
+                    Object value = entry.getValue();
+                    String[] ary = key.toLowerCase().split(re);
+                    if (value instanceof String)
+                        putKey(((String) value).toLowerCase(), ary[0]);
+                    for (int i = 0, n = ary.length - 1, m = n - (n > 0 ? 1 : 0); i <= m; i++)
+                        putKey(ary[i], i == n ? "\1" : ary[i + 1]);
                 }
-                ++seq;
+                //values.clear();
+                keywords.clear();
+                groups.clear();
+
+                Candidate[] candidates = new Candidate[this.keywords.size()];
+                int seq = 0;
+                for (Map.Entry<String, Object> entry : this.keywords.entrySet()) {
+                    final String key = entry.getKey();
+                    final Object value = entry.getValue();
+                    if (value instanceof HashMap) {
+                        candidates[seq] = new Candidate(key, key, null, null, null, null, false);
+                        String[] keys = ((HashMap<String, Object>) value).keySet().toArray(new String[0]);
+                        Arrays.sort(keys);
+                        String prev = null;
+                        for (int j = 0, m = keys.length; j < m; j++) {
+                            //if the sibling key contains prev key, then cheat prev key as possible multiple candidates
+                            if (prev != null && keys[j].startsWith(prev) && this.keywords.get(key) != null)
+                                groups.put(prev, keys[j]);
+                            prev = keys[j];
+                        }
+                    } else {
+                        candidates[seq] = new Candidate(key, key, null, null, null, null, true);
+                    }
+                    ++seq;
+                }
+                keysWordCompeleter = new StringsCompleter(candidates);
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-            keysWordCompeleter = new StringsCompleter(candidates);
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 
@@ -193,7 +205,7 @@ public class MyCompleter implements org.jline.reader.Completer {
             String sep;
             for (int i = 0; i <= len; i++) {
                 if (ary[i].startsWith(quote) && ary[i].endsWith(quote))
-                    ary[i]=ary[i].substring(1,ary[i].length()-1);
+                    ary[i] = ary[i].substring(1, ary[i].length() - 1);
                 keys = map.get(ary[i].toLowerCase());
                 sep = dot;
                 if (!(keys instanceof HashMap)) {

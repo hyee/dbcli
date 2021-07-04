@@ -34,7 +34,7 @@ function show.run(...)
 end
 
 function show.help(...)
-    return db:help_topic(table.concat({...}," "))
+    return env.help.help_topic(table.concat({...}," "))
 end
 
 function show.onload()

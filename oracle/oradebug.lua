@@ -1442,7 +1442,7 @@ function oradebug.run(action,args)
                                 end
                                 target=target..n
                                 usage[#usage+1]='\n'..string.rep('=',#target+2)..'\n|'..target..'|\n'..string.rep('-',#target+2)
-                                usage[#usage+1]=env.helper.colorful(d.usage,'')
+                                usage[#usage+1]=env.help.colorful(d.usage,'')
                             end
                         elseif (n:upper():find(action) or d.desc:upper():find(action) or (d.usage or ''):upper():find(action)) then
                             libs1[name][k][n]=d

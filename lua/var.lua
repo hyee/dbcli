@@ -87,7 +87,7 @@ end
 
 function var.setOutput(name,datatype,desc)
     if not name then
-        return env.helper.helper("VAR")
+        return env.help.help("VAR")
     end
 
     name=name:upper()

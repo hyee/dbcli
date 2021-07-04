@@ -667,6 +667,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
                 return '?'
             end
         end)
+    if sql:find('%%%-%.%d+s') then print(sql) end
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
     self:check_params(sql,prep,bind_info,params)
@@ -827,7 +828,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
     local is_timing = is_not_prep and not is_internal and cfg.get("TIMING")=="on"
-    if is_not_prep and sql:sub(1,1024):find('/*DBCLI_EXEC_CACHE*/',1,true) then
+    if is_not_prep and sql:sub(1,512):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
 
@@ -878,6 +879,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
     end
     if is_timing then clock=os.timer() end
+
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
     if is_timing then exe=os.timer()-clock end
     self.current_stmt=nil
