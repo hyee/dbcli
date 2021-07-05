@@ -5,6 +5,7 @@ local file='setting.dat'
 local root_cmd
 cfg._backup=nil
 cfg._plugins=table.strong()
+local cmds={}
 
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
@@ -290,7 +291,7 @@ end
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
-    if command[1]~='SET' and cmd.ALIAS_TO~='SET' and command[1]~='HELP' then
+    if not cmds[command[1]] and not cmds[cmd.ALIAS_TO] and command[1]~='HELP' then
         env.log_debug("set","taking full backup",command[1])
         cfg._backup=cfg.backup()
     else
@@ -307,6 +308,10 @@ function cfg.capture_after_cmd(cmd,args)
     cfg._backup=nil
 end
 
+function cfg.reset_backup()
+    cfg._backup=nil
+end
+
 function cfg.on_env_load()
     local list,keys={},{}
     for k,v in pairs(cfg) do
@@ -316,15 +321,27 @@ function cfg.on_env_load()
             end
         end
     end
-    list['SET']=keys
+    for _,n in ipairs(cmds) do list[n]=keys end
     console:setSubCommands(list)
 end
 
+function cfg.rename_command(new)
+    if type(new)=='string' then new={new} end
+    cfg.name=new[1]:upper()
+    table.clear(cmds)
+    for _,n in ipairs(new) do
+        n=n:upper()
+        cmds[#cmds+1]=n
+        cmds[n]=#cmds
+    end
+end
+
 function cfg.onload()
+    cfg.rename_command{cfg.name,'ENV'}
     env.event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
     env.event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
     env.event.snoop("ON_ENV_LOADED",cfg.on_env_load)
-    env.set_command{obj=nil,cmd=cfg.name, 
+    env.set_command{obj=nil,cmd=cmds, 
                     help_func="Set environment parameters. Usage: @@NAME [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
                     call_func=cfg.doset,
                     is_multiline=false,parameters=99,color="PROMPTCOLOR"}

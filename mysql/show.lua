@@ -28,8 +28,6 @@ function show.run(...)
     end
     cmd=table.concat(cmd,' ')
     if cmd~="SHOW "..table.concat(args,' ') then print("Command: "..cmd) end
-    env.set.set("feed","off")
-
     db:query(cmd)
 end
 
@@ -49,7 +47,7 @@ function show.onload()
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
     abbrs["CLT"]="COLLATION"
-    env.set_command(nil,show.name, {"Show database information",show.help},show.run,false,10)
+    env.set_command(nil,show.name, {"#Show database information",show.help},show.run,true,10)
 end
 
 return show

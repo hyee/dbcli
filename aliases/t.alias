@@ -1,1 +1,1 @@
-set prompt timing
+env prompt timing

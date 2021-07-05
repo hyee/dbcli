@@ -145,8 +145,9 @@ function mysql:onload()
         where name not in('SET','DO','DUAL','JOIN','UNION','HELP','SHOW','USE','EXPLAIN','DESCRIBE','DESC','CONSTRAINT','CREATE')
         order by 1
     --]]
-
-    add_default_sql_stmt('DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
+    env.rename_command("SET",{"ENV"})
+    env.set.rename_command('ENV')
+    add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
     add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
@@ -161,9 +162,10 @@ function mysql:onload()
                   @@NAME root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
+    set_command(self,"create",   default_desc, self.command_call,self.check_completion,1,true)
     env.set.change_default("null","NULL")
-    env.rename_command("TEE",{"write"})
+    env.rename_command("HOST",{"SYSTEM","\\!","!"})
+    env.rename_command("TEE",{"WRITE"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
     env.rename_command("PRINT",{"PRINTVAR","PR"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})

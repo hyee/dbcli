@@ -322,40 +322,11 @@ function ResultSet:print(res,conn,prefix)
             hdl:add(row)
         end
     end
-    grid.print(hdl or result,nil,nil,nil,nil,prefix,(cfg.get("feed")=="on" and '\n'..(#result-1).." rows returned." or "").."\n")
+    grid.print(hdl or result,nil,nil,nil,nil,prefix,(cfg.get("feed")=="on" and db_core.get_feed('SELECT',#result-1) or "").."\n")
     return result
 end
 
-function ResultSet:print_old(res,conn)
-    local result,hdl={},nil
-    if is_rsclosed(res) then return end
-    local rows,maxrows,feedflag,pivot=0,cfg.get("printsize"),cfg.get("feed"),cfg.get("pivot")
-    if pivot==0 then hdl=grid.new() end
-    while true do
-        --run statement
-        local rs = self:fetch(res,conn)
-        if type(rs) ~= "table" then
-            if not rs then break end
-            env.raise(tostring(rs))
-        end
-        if rows>maxrows or hdl==nil and rows>math.abs(pivot) then
-            self:close(res)
-            break
-        end
-        rows=rows+1
-        if hdl then
-            hdl:add(rs)
-        else
-            table.insert(result,rs)
-        end
-    end
-    grid.print(hdl or result)
-    db_core.print_feed("SELECT",rows-1)
-    print("")
-end
-
-
-db_core.db_types   = db_Types
+db_core.db_types = db_Types
 db_core.feed_list={
     UPDATE  ="%d rows updated",
     INSERT  ="%d rows inserted",
@@ -427,25 +398,30 @@ function db_core.get_command_type(sql)
     return table.unpack(list)
 end
 
-function db_core.print_feed(sql,result)
+function db_core.get_feed(sql,result)
     if cfg.get("feed")~="on" or not sql then return end
     local secs=''
-    if cfg.get("PROMPT")=='TIMING' and db_core.__start_clock then
-        secs=' (' ..math.round(os.timer()-db_core.__start_clock,3)..' secs)'
+    if db_core.__start_clock then
+        secs=' (' ..math.round(os.timer()-db_core.__start_clock,3)..' secs).'
     end
     local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
     if feed then
-        feed=feed..secs..'.'
+        feed=feed..secs
         if feed:find('%d',1,true) then
-            if type(result)=="number" then print(feed:format(result)) end
+            if type(result)=="number" then return feed:format(result) end
             return
         else
-            return print(feed:format(obj:initcap()))
+            return feed:format(obj:initcap())
         end
     end
-    if type(result)=="number" and result>0 then return print(result.." rows impacted.") end
-    return print('Statement completed.')
+    if type(result)=="number" and result>0 then return result.." rows impacted"..secs end
+    return 'Statement completed'..secs
+end
+
+function db_core.print_feed(sql,result)
+    local rtn=db_core.get_feed(sql,result)
+    if rtn then print(rtn) end 
 end
 
 function db_core:ctor()
@@ -667,7 +643,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
                 return '?'
             end
         end)
-    if sql:find('%%%-%.%d+s') then print(sql) end
+    --if sql:find('%%%-%.%d+s') then print(sql) end
     if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
     self:check_params(sql,prep,bind_info,params)
@@ -1547,7 +1523,7 @@ function db_core:__onload()
     cfg.init("ASYNCEXP",true,set_param,"db.export","Detemine if use parallel process for the export(SQL2CSV and SQL2FILE)",'true,false')
     cfg.init("SQLERRLINE",'auto',nil,"db.core","Also print the line number when error SQL is printed",'on,off,auto')
     cfg.init("NULL","",nil,"db.core","Define the display value for NULL value")
-    cfg.init({"TIMING","TIMI"},"off",nil,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.")
+    cfg.init({"TIMING","TIMI"},"off",nil,"db.core","Controls whether or not SQL*Plus displays the elapsed time for each SQL statement.",'on,off')
     cfg.init("ConvertRAW2Hex","on",nil,"db.core","Convert raw data to Hex(text) format","on,off")
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     cfg.init("PROMPTEXP","on",set_param,"db.core","Controls whether to prompt input when export SQL data",'on,off')

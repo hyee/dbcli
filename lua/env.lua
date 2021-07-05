@@ -325,11 +325,13 @@ end
 function env.rename_command(name,new_name)
     local info=_CMDS[name]
     env.checkerr(info,"No such command: "..name)
+    local old_name={}
     for k,v in pairs(_CMDS.___ABBR___) do
         if _CMDS[k]==info then
-            _CMDS[k]=nil 
+            old_name[#old_name+1],_CMDS[k]=k
         end
     end
+
     if type(new_name)=="string" then
         info.ABBR=""
         new_name={new_name}
@@ -338,9 +340,11 @@ function env.rename_command(name,new_name)
     end
     
     for k,v in ipairs(new_name) do
+        new_name[k]=v:upper()
         _CMDS.___ABBR___[v:upper()]=new_name[1]:upper()
     end
     _CMDS[new_name[1]:upper()]=info
+    console:renameCommand(old_name,new_name)
 end
 
 function env.get_command_by_source(list)

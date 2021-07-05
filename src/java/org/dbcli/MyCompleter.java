@@ -29,8 +29,8 @@ public class MyCompleter implements org.jline.reader.Completer {
         synchronized (this.commands) {
             commandCompleter = new TreeCompleter();
             commands.clear();
-            resetKeywords();
         }
+        resetKeywords();
     }
 
     public void resetKeywords() {
@@ -54,6 +54,10 @@ public class MyCompleter implements org.jline.reader.Completer {
 
     public void loadCommands(final Map<String, ?> keywords, long delay) {
         console.threadPool.schedule(() -> setCommands(keywords), delay, TimeUnit.MILLISECONDS);
+    }
+
+    public void renameCommands(String[] oldNames,String[] newNames) {
+
     }
 
     //command is used to complete the leading words of a command line
@@ -144,7 +148,6 @@ public class MyCompleter implements org.jline.reader.Completer {
                 //values.clear();
                 keywords.clear();
                 groups.clear();
-
                 Candidate[] candidates = new Candidate[this.keywords.size()];
                 int seq = 0;
                 for (Map.Entry<String, Object> entry : this.keywords.entrySet()) {

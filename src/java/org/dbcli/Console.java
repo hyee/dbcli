@@ -209,16 +209,25 @@ public final class Console {
 
     public void setCommands(AbstractTableMap<String, Object> commands) {
         HashMap<String, Object> map = (HashMap) commands.toJavaObject();
-        Object o = new Object();
-        for (String key : map.keySet()) parser.commands.put(key, o);
+        Object o=new Object();
+        map.forEach((k, v) ->parser.commands.put(k, o));
         completer.setCommands(map);
         //addCompleters(commands, true);
     }
 
     public void setSubCommands(AbstractTableMap<String, Object> commands) {
         HashMap<String, Object> map = (HashMap) commands.toJavaObject();
+        Object o=new Object();
+        map.forEach((k, v) ->parser.commands.put(k, o));
         completer.loadCommands(map, 300);
-        //parser.commands.putAll(commands);
+        //map.forEach((k, v) ->parser.commands.put(k, v));
+    }
+
+    public void renameCommand(String[] oldNames,String[] newNames) {
+        for(String name:oldNames) parser.commands.remove(name);
+        Object o=new Object();
+        for(String name:newNames) parser.commands.put(name,o);
+        completer.renameCommands(oldNames,newNames);
     }
 
     public String getPlatform() {

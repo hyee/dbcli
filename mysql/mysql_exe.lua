@@ -9,7 +9,7 @@ function mysql_exe:ctor()
     self.support_redirect=false
     self.name="mysql"
     self.executable="mysql"
-    self.description="Switch to mysql.exe with same login, the default working folder is 'mysql/mysql'. Usage: @@NAME [-n|-d<work_path>] [other args]"
+    self.description="Switch to native mysql client with same login, the default working folder is 'mysql/mysql'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run mysql script under the "mysql" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."mysql",nil
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"

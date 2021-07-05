@@ -7,7 +7,7 @@ function help.help_topic(...)
 	if type(args[1])=='table' then table.remove(args,1) end
     local keyword=table.concat(args," "):gsub('%s+',' '):upper():trim()
     if keyword=='' then keyword='HELP_VERSION' end
-    local liker={keyword:find("%$") and keyword or (keyword.."%")}
+    local like={keyword:find("%$") and keyword or (keyword.."%")}
     local desc
     env.set.set("feed","off")
     local doc
@@ -15,7 +15,7 @@ function help.help_topic(...)
 		doc=env.load_data(helpdict,true)
 		local category=doc._categories
 		doc._categories=nil
-		liker=liker[1]:gsub('%%','.*')
+		like=like[1]:gsub('%%','.*')
 		if keyword=="C" or keyword=="CONTENTS" then
 			local rows={}
 			for key,list in pairs(category) do
@@ -31,41 +31,48 @@ function help.help_topic(...)
 			table.sort(rows,function(a,b) return a[1]<b[1] end)
 			table.insert(rows,1,{"Category#","Parent#","Category","Keywords"})
 			grid.print(rows)
-		elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
-			keyword=keyword:gsub("^[^%s+]%s+","")
-			liker=(keyword:find("%$") and keyword or ("%"..keyword.."%")):gsub('%%','.*')
+		elseif keyword:find("^S%s+") or keyword:find("^F%s+") then
+			local f
+			f,keyword=keyword:match("^(%w)%s+(.*)$")
+			like=(keyword:find("%$") and keyword or ("%"..keyword.."%")):gsub('%%','.-')
 			local rows={}
 			for key,list in pairs(doc) do
-				if key:find(liker) or list[3]:find(liker) then
-					rows[#rows+1]={key,list[3],list[6]}
+				if key:find(like) or list[3]:find(like) or (f=='F' and not(to) and list[1]:sub(1,512):find(like)) then
+					local piece=list[6]
+					if f=='F' then
+						piece=list[1]:sub(1,512):match('\n('..like..'[^\n\r]+)'):trim()
+					end
+					rows[#rows+1]={key,list[3],piece}
 				end
 			end
 			table.sort(rows,function(a,b) return a[1]<b[1] end)
-			table.insert(rows,1,{"Name","Category","URL"})
+			table.insert(rows,1,{"Name","Category",f=='F' and "Piece" or "URL"})
 			grid.print(rows)
 		else
-			local cate
+			local cats={}
 			for key,list in pairs(category) do
 				if key:upper()==keyword or tostring(list[1])==keyword or tostring(list[2])==keyword then
-					cate=list
+					cats[#cats+1]=list
 				end
 			end
-			if cate then
+			if cats[1] then
 				local rows={}
-				for n,_ in pairs(cate) do
-					if type(n)=='string' then
-						local key=doc[n]
-						rows[#rows+1]={n,key[3],key[6]}
+				for _,cat in ipairs(cats) do
+					for n,_ in pairs(cat) do
+						if type(n)=='string' then
+							local key=doc[n]
+							rows[#rows+1]={key[4],key[5],n,key[3],key[6]}
+						end
 					end
 				end
-				table.sort(rows,function(a,b) return a[1]<b[1] end)
-				table.insert(rows,1,{"Name","Category","URL"})
+				table.sort(rows,function(a,b) return a[3]<b[3] end)
+				table.insert(rows,1,{"Category#","Parent#","Name","Category","URL"})
 				grid.print(rows)
 			else
 				local match=doc[keyword]
 				if not match then
 					for key,list in pairs(doc) do
-						if key:find(liker) then 
+						if key:find(like) then 
 							match=list
 							keyword=key
 							break
@@ -94,14 +101,14 @@ function help.help_topic(...)
         	              ..help_table.."group by help_category_id,b.name order by 1")
     elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
         keyword=keyword:gsub("^[^%s+]%s+","")
-        liker={keyword:find("%$") and keyword or ("%"..keyword.."%")}
-        db:query("select a.name,b.name as category,a.url"..help_table.."where (a.name like :1 or upper(b.name) like :1) order by a.name",liker)
+        like={keyword:find("%$") and keyword or ("%"..keyword.."%")}
+        db:query("select a.name,b.name as category,a.url"..help_table.."where (a.name like :1 or upper(b.name) like :1) order by a.name",like)
     else
         local topic=db:get_value("select 1"..help_table.."where upper(b.name)=:1 or convert(help_category_id,char)=:1",{keyword})
         if topic then
             db:query("select a.name,b.name as category,a.url"..help_table.." where upper(b.name)=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
         else
-            local topic=db:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
+            local topic=db:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",like)
             env.checkerr(topic,"No such topic: "..keyword)
             local rows={}
             rows[1]={'Name:  '..topic[4].." / "..topic[1]}
