@@ -32,7 +32,7 @@ function show.run(...)
 end
 
 function show.help(...)
-    return env.help.help_topic(table.concat({...}," "))
+    return env.help.help_offline(table.concat({...}," "))
 end
 
 function show.onload()
@@ -47,7 +47,7 @@ function show.onload()
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
     abbrs["CLT"]="COLLATION"
-    env.set_command(nil,show.name, {"#Show database information",show.help},show.run,true,10)
+    env.set_command(nil,show.name, {"#Show database information",show.help},show.run,false,10)
 end
 
 return show

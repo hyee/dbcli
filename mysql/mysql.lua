@@ -84,6 +84,8 @@ function mysql:connect(conn_str)
         if props.sub_version:lower():find('tidb') then
             props.tidb,props.branch=true,'tidb'
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
+        elseif props.sub_version:lower():find('maria') then
+            props.maria,props.branch=true,'maria'
         end
 
         env.set_title(('MySQL v%s(%s)   CID: %s'):format(
@@ -130,7 +132,7 @@ function mysql:command_call(sql,...)
 end
 
 function mysql:onload()
-    local default_desc={"#MYSQL database SQL command",self.C.help.help_topic}
+    local default_desc={"#MYSQL database SQL command",self.C.help.help_offline}
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
             set_command(self,select(i,...), default_desc,self.command_call,true,1,true)

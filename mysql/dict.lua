@@ -74,7 +74,7 @@ function dicts.build_dict(typ,scope)
     		count=count+reorg_dict(dict.keywords,rows,i==1 and '@@' or '')
     	end
     end
-    done,rows=pcall(db.get_rows,db,[[select upper(name) from help_topic where length(name)>=3]])
+    done,rows=pcall(db.get_rows,db,[[select upper(name) from mysql.help_topic where length(name)>=3]])
     if done and #rows>1 then
     	table.remove(rows,1)
     	local help=dict.commands.HELP or {}
@@ -83,7 +83,7 @@ function dicts.build_dict(typ,scope)
     		count=count+1
     	end
     	dict.commands.HELP=help
-        rows=db:get_rows([[select a.name,a.description,example,b.name category,help_category_id,parent_category_id,a.url 
+        rows=db:get_rows([[select upper(a.name),trim(a.description),example,b.name category,help_category_id,parent_category_id,a.url 
         	               from mysql.help_topic as a 
         	               join mysql.help_category as b using(help_category_id) 
         	               where length(a.name)>2]])
@@ -91,7 +91,9 @@ function dicts.build_dict(typ,scope)
         local len=#rows
     	for i=len,1,-1 do
     		local row=rows[i]
+    		row[1]=row[1]:gsub('%s+',' '):trim()
     		if doc then
+    			row[2]=row[2]:sub(1,-256)..row[2]:sub(-255):gsub('%s*URL:[^\n]-%s*$','')
     			doc[row[1]]={row[2],row[3],row[4],row[5],row[6],row[7]}
     			if not _categories[row[4]] then _categories[row[4]]={} end
     			_categories[row[4]][1],_categories[row[4]][2]=row[5],row[6]
@@ -100,11 +102,11 @@ function dicts.build_dict(typ,scope)
         	local flag=0
     		local op=row[1]:match('%S+')
     		if row[1]~='SHOW' and op~='HELP' and env._CMDS[op] then
-	    		local desc=(row[2]:sub(1,256)..'\n'):match('Syntax:%s*\n%s*('..row[1]:trim():gsub('%s+','[^\n]+')..'.-)\n%s*\n')
+	    		local desc=(row[2]:sub(1,256)..'\n'):match('\n%s*('..row[1]:trim():gsub('%s+','[^\n]+')..'.-)\n%s*\n')
 	    		if not desc then 
 	    			desc,flag=row[1],1
 	    		else
-	    			desc=desc:trim():gsub('%s+',' '):gsub([[[%['"{ ]*%l.*]],''):gsub('%[[^%]]*$',''):gsub('{[^}]*$',''):trim()
+	    			desc=desc:trim():gsub('%s+',' '):match('^[%u |{%[%]}=]+'):gsub('%[[^%]]*$',''):gsub('{[^}]*$',''):trim()
 	    			--print(op,desc)
 	    			if #desc<=#row[1] then desc,flag=row[1],2 end
 	    		end
@@ -118,11 +120,13 @@ function dicts.build_dict(typ,scope)
 	    	end
     	end
 
-    	local rs=db:get_rows([[select name,description from help_topic where name='SHOW']])
-    	for n in rs[2][2]:gmatch('\n%s*(SHOW%s+[%[%{%u][^\r\n]+)') do
-    		rows[#rows+1]={'SHOW',n:gsub([[[%['"{ ]*%l.*]],''):gsub('%[[^%]]*$',''):gsub('{[^}]*$',''):trim()}
+    	local rs=db:get_rows([[select name,trim(description) from mysql.help_topic where name='SHOW']])
+    	if rs[2] then
+	    	for n in rs[2][2]:gmatch('\n%s*(SHOW%s+[%[%{%u][^\r\n]+)') do
+	    		rows[#rows+1]={'SHOW',n:match('^[%u |{%[%]}=]+'):gsub('%[[^%]]*$',''):gsub('{[^}]*$',''):trim()}
+	    	end
     	end
-    	
+
     	local p=env.re.compile([[
     		pattern <- p1/p2/p3
     		p1      <- '{' [^}]+ '}'
@@ -141,6 +145,7 @@ function dicts.build_dict(typ,scope)
 	    		stacks[cmd]=words
 	    	end
 	    	if rest then
+	    		--print(row)
 		    	local parents={words}
 		    	re.gsub(rest:gsub('[%[%]]','~'),p,function(s)
 		    		local len=#parents
@@ -157,7 +162,6 @@ function dicts.build_dict(typ,scope)
 		    				if not p[n] then
 		    					p[n]={}
 		    				end
-
 		    				if j==#pieces then
 		    					parents[j]=p[n]
 		    				else
