@@ -42,7 +42,7 @@ function help.help_topic(...)
 	            grid.print(rows)
 	        end
 	    end
-	elseif offline then
+	else
 		doc=env.load_data(helpdict,true)
 		local category=doc._categories
 		doc._categories=nil
@@ -111,8 +111,6 @@ function help.help_topic(...)
 	            grid.print(rows)
 			end
 		end
-	else
-		db:assert_connect()
 	end
 end
 

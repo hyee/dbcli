@@ -292,7 +292,6 @@ function init.unload(list,tab,finalize)
         if type(tab[m])=="table" then
             if type(tab[m].C)=="table" and type(tab[m].module_list)=="table" then
                 init.unload(tab[m].module_list,tab[m].C,finalize)
-                tab[m].C=nil
             end
             local func=tab[m][finalize and 'finalize' or 'onunload']
             if type(func)=='function' then func(tab[m]) end
