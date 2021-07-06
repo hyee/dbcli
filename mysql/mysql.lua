@@ -130,7 +130,7 @@ function mysql:command_call(sql,...)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
     env.checkhelp(#env.parse_args(2,sql)>1)
-    local result=self.super.exec(self,sql,{args})
+    local result,verticals=self.super.exec(self,sql,{args})
     if not bypass then event("BEFORE_MYSQL_EXEC",self,sql,args,result) end
     self:print_result(result,sql)
 end
@@ -153,7 +153,7 @@ function mysql:onload()
     --]]
     env.set.rename_command('ENV')
     add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
-    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','WITH','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
 
     local  conn_help = [[
         Connect to mysql database. Usage: @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]

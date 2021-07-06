@@ -196,11 +196,14 @@ function grid.sort(rows, cols, bypass_head)
 end
 
 function grid.show_pivot(rows, col_del,pivotsort)
-    local title = rows[1]
+    
     local keys = {}
 
     --if not title then print(table.dump(rows)) end
-    
+    local verticals=rows and rows.verticals and math.min(#rows,rows.verticals+1)
+    rows=rows.data or rows
+    local title = rows[1]
+
     local pivot = math.abs(grid.pivot) + 1
     local del = grid.title_del
     del = (del == "-" and "=") or (del == "=" and "||") or (del == "." and ":") or del
@@ -216,8 +219,28 @@ function grid.show_pivot(rows, col_del,pivotsort)
             maxlen = len2
         end
     end
-    
+
     local r = {}
+    if verticals then
+        maxlen=maxlen+1
+        r[1]={"#",'Column Name',"Column Value"}
+        local titles={}
+        local _, value
+        for k, v in ipairs(title) do
+            v=grid.format_title(v)
+            local len1,len2=v:ulen()
+            titles[k]=("%" .. (maxlen+len1-len2) .. "s"):format(v..':')
+        end
+        for i=2,verticals do
+            for j,v in ipairs(titles) do
+                _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i][j], i - 1)
+                r[#r+1]={i-1,v,tostring(value):trim()}
+            end
+            r[#r+1]={'-','-','-'}
+        end
+        return r
+    end
+    
     local color = env.ansi.get_color
     local nor, hor = color("NOR"), color("HEADCOLOR")
     pivotsort=(pivotsort or grid.pivotsort):lower()
@@ -791,7 +814,7 @@ end
 
 function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,pivotsort)
     if pivot then grid.pivot = pivot end
-    if grid.pivot ~= 0 and include_head ~= false then
+    if rows.verticals or (grid.pivot ~= 0 and include_head ~= false) then
         rows = grid.show_pivot(rows,nil,pivotsort)
         if math.abs(grid.pivot) == 1 then
             include_head = false

@@ -1,3 +1,4 @@
+2021-06-27: + public: support "<query>\G[<rows>]" to print result vertically
 2021-07-05: * mysql : rename some dbcli commands to avoid conflicting with native mysql client:
                       set->env, host->system, tee->write, spool->tee, print->pr
 2021-07-04: + mysql : support offline help documents
@@ -11,6 +12,7 @@
                       add '.limit(120)' in LineReaderImpl.doList to limit the maximum output candidates
                       enhance the completer logics
                       enhance the 'less' logics, inluding changing some some Jline3 functions as public to accomplish the enhancement
+===================================== v1.8 ============================================================================================
 2021-06-18: + oracle: new script 'show autotask'
 2021-04-30: + oracle: new script 'ora lfs' to analyze the 'log file sync' event
 2021-01-30: * public: upgrade lib ConEmu to build 210128

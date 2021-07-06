@@ -256,6 +256,8 @@ function var.print(name)
     local db=var.current_db
     if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
+        local verticals
+        name=name:gsub('%s*\\G(%d*)%s*$', function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
         local typ,f=os.exists(name)
         if typ=='file' then
             f=io.open(f,'r')
@@ -268,7 +270,7 @@ function var.print(name)
             local obj=var.inputs[name]
             env.checkerr(obj,'Target variable[%s] does not exist!',name)
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
+                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)),verticals)
                 var.outputs[name]="#CURSOR"
             elseif type(obj)=='table' then
                 grid.print(obj,nil,nil,nil,nil,prefix,"\n")

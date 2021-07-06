@@ -22,6 +22,8 @@ rwp.lua
 \bc\
 \emviewers\
 xmlparserv2.jar
+db2jcc4.jar
+db2jcc_license_cu.jar
 .sublime-project
 .sublime-workspace
 ANSI32.DLL

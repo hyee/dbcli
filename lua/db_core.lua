@@ -3,7 +3,7 @@ local cfg,grid,bit,string,type,pairs,ipairs=env.set,env.grid,env.bit,env.string,
 local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
-local db_Types={}
+local db_Types,__stmts={},{}
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 local rs_close,rs_isclosed,prep_close,prep_isclosed,prep_exec
 
@@ -297,7 +297,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
     return rows
 end
 
-function ResultSet:print(res,conn,prefix)
+function ResultSet:print(res,conn,prefix,verticals)
     local result,hdl={},nil
     if is_rsclosed(res) then return end
     local cols=self:getHeads(res)
@@ -309,12 +309,16 @@ function ResultSet:print(res,conn,prefix)
         end
     end
     res:setFetchSize(cfg.get("FETCHSIZE"))
-    local maxrows,pivot=cfg.get("printsize"),cfg.get("pivot")
-    if pivot~=0 then maxrows=math.abs(pivot) end
+    verticals=verticals or __stmts[res]
+    local maxrows,pivot=verticals or cfg.get("printsize"),cfg.get("pivot")
+    if pivot~=0 and not verticals then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,cfg.get('null'),true)
     if not result then return end
-    if pivot==0 then
+    __stmts[res]=nil
+    result.verticals=verticals
+    if pivot==0 and not verticals then
         hdl=grid.new()
+        hdl.verticals=verticals
         if #cols==1 and #result==2 then
             cfg.set('colwrap',console:getScreenWidth())
         end
@@ -432,7 +436,7 @@ end
 function db_core:ctor()
     self.resultset  = ResultSet.new()
     self.db_types:load_sql_types('java.sql.Types')
-    self.__stmts = {}
+    self.__stmts = __stmts
     self.test_connection_sql="SELECT 1"
     self.type="unknown"
     env.set_command(self,"commit",nil,self.commit,false,1)
@@ -493,6 +497,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
         local sql_name=self.get_command_type(sql)
 
         if info and info.error and info.error~="" then
+             __stmts[select(1,...)]=nil
             if  info.sql and (not self:is_internal_call(info.sql)) and 
                 (env.ROOT_CMD~=sql_name or showline~='off' and info.position) then
                 if showline~='off' and ((info.position or 0) > 1 or info.col) then
@@ -837,7 +842,11 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.autocommit=autocommit
     end
     
+    local verticals
     if is_not_prep then
+        sql=sql:sub(1,-128)..
+            sql:sub(-127):gsub('%s*\\G(%d*)%s*$',
+                function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
         sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
         if type(sql)~="string" then
             return sql
@@ -845,8 +854,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep,sql,params=self:parse(sql,params)
         prep:setEscapeProcessing(false)
         local str = tostring(prep)
-        caches=self.__stmts[str] or {{}}
-        caches.count,caches[1][#caches[1]+1],self.__stmts[str]=0,prep,caches
+        caches=__stmts[prep] or {}
+        caches.verticals=verticals
+        caches.count,__stmts[prep]=0,caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         self.current_stmt=prep
@@ -869,8 +879,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
 
     local function process_result(rs,is_print)
         if print_result and is_print~=false then
-            self.resultset:print(rs,self.conn)
+            self.resultset:print(rs,self.conn,nil,verticals)
         elseif caches then
+            __stmts[rs]=verticals
             caches[#caches+1]=rs
         end
         return rs
@@ -917,6 +928,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             result[#result+1]=process_result(prep:getResultSet())
         end
     end
+    result.verticals=verticals
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if is_not_prep then self:clearStatements() end
@@ -942,7 +954,7 @@ function db_core:is_connect(recursive,test_sql)
         if err then is_closed=true end
     end
     if is_closed then
-        self.__stmts = {}
+        table.clear(__stmts)
         self.__preparedCaches={}
         self.props={privs={}}
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,'')
@@ -971,13 +983,13 @@ function db_core:is_internal_call(sql)
     return sql and sql:sub(1,256):find("INTERNAL_DBCLI_CMD",1,true) and true or false
 end
 
-function db_core:print_result(rs,sql)
+function db_core:print_result(rs,sql,verticals)
     if type(rs)=='userdata' then
-        return self.resultset:print(rs,self.conn)
+        return self.resultset:print(rs,self.conn,nil,verticals)
     elseif type(rs)=='table' then
         for k,v in ipairs(rs) do
             if type(v)=='userdata' then
-                self.resultset:print(v,self.conn)
+                self.resultset:print(v,self.conn,nil,verticals)
             else
                 print(v)
             end
@@ -1034,7 +1046,7 @@ function db_core:connect(attrs,data_source)
         event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
-    self.__stmts = {}
+    table.clear(__stmts)
     self.__preparedCaches={}
     self.properties={}
 
@@ -1060,28 +1072,33 @@ end
 function db_core:clearStatements(is_force)
     local counter=0
     if is_force~=true then
-        for prep,caches in pairs(self.__stmts) do
-            for j=#caches,2,-1 do
-                if is_rsclosed(caches[j]) then table.remove(caches,j) end
-            end
+        for prep,caches in pairs(__stmts) do
+            if type(caches)=='table' then
+                for j=#caches,1,-1 do
+                    if is_rsclosed(caches[j]) then table.remove(caches,j) end
+                end
 
-            if #caches<2 then
-            	for k,p in ipairs(caches[1]) do close_prep(p) end
-                self.__stmts[prep],counter=nil,1
-            else
-            	caches.count=caches.count+1
-            	if caches.count >= cfg.get('SQLCACHESIZE') then
-            		for k,p in ipairs(caches[1]) do close_prep(p) end
-            		self.__stmts[prep],counter=nil,1
-            	end
+                if #caches<1 then
+                	close_prep(prep)
+                    __stmts[prep],counter=nil,1
+                else
+                	caches.count=caches.count+1
+                	if caches.count >= cfg.get('SQLCACHESIZE') then
+                		close_prep(prep)
+                		__stmts[prep],counter=nil,1
+                	end
+                end
+            elseif is_rsclosed(prep) then
+                close_prep(prep)
+                __stmts[prep],counter=nil,1
             end
         end
     else
         counter=1
-        for prep,caches in pairs(self.__stmts) do
-        	for k,p in ipairs(caches[1]) do close_prep(p) end
+        for prep,caches in pairs(__stmts) do
+        	close_prep(prep)
         end
-        self.__stmts={}
+        table.clear(__stmts)
     end
 
     if counter>1 then
