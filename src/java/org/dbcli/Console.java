@@ -457,7 +457,7 @@ public final class Console {
         volatile int lines = 0;
         StringBuffer sb = new StringBuffer(32767);
         boolean enabled = true;
-        Pattern p1 = Pattern.compile("^(\\s*\\.?)([^\\s\\|;/]+)(.*)$", Pattern.DOTALL);
+        Pattern p1 = Pattern.compile("^(\\s*\\.?)([^\\s\\w]+|\\w[^\\s\\|;/]*)(.*)$", Pattern.DOTALL);
         AttributedStringBuilder asb = new AttributedStringBuilder();
         final AttributedString empty = asb.toAttributedString();
         private String ansi = null;

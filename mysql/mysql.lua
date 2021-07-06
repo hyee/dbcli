@@ -72,7 +72,7 @@ function mysql:connect(conn_str)
     table.clear(self.props)
     local props=self.props
     if info then
-        props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[%W%.]+([%w%.]+)')
+        props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[%W%.]+([%w%.]*)')
         props.server=info[5]
         props.db_user=info[4]:match("([^@]+)")
         props.db_conn_id=tostring(info[3])
@@ -86,11 +86,15 @@ function mysql:connect(conn_str)
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
         elseif props.sub_version:lower():find('maria') then
             props.maria,props.branch=true,'maria'
+            props.sub_version=nil
+        elseif props.sub_version:find('^%a') then
+            props.branch,props[props.sub_version:lower()]=props.sub_version:lower(),true
+            props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
         end
 
         env.set_title(('MySQL v%s(%s)   CID: %s'):format(
                 props.db_version,
-                (props.branch and (props.branch.. ' v') or '')..props.sub_version,
+                (props.branch or '')..(props.branch and props.sub_version and ' v' or '')..(props.sub_version or ''),
                 props.db_conn_id))
         if  tonumber(self.props.db_version:match("^%d+%.%d"))<5.5 then
             env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
@@ -147,7 +151,6 @@ function mysql:onload()
         where name not in('SET','DO','DUAL','JOIN','UNION','HELP','SHOW','USE','EXPLAIN','DESCRIBE','DESC','CONSTRAINT','CREATE')
         order by 1
     --]]
-    env.rename_command("SET",{"ENV"})
     env.set.rename_command('ENV')
     add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
     add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
@@ -175,12 +178,11 @@ function mysql:onload()
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
          function(sep)
             if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("SQLTERMINATOR",sep)
+                return env.set.force_set("SQLTERMINATOR",';,'..sep)
             else
-                env.set.doset("SQLTERMINATOR",sep)
+                env.set.doset("SQLTERMINATOR",';,'..sep)
             end
         end,false,2)
-    self.C={}
 
     set_command(nil,{"PROMPT","\\R"},"Change your mysql prompt. Usage: @@NAME {<text>|default|back}",
         function(sep)

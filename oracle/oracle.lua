@@ -3,7 +3,6 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local oracle=env.class(env.db_core)
 oracle.module_list={
-    "help",
     "ora",
     "findobj",
     "dbmsoutput",

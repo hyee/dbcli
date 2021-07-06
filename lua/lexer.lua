@@ -394,5 +394,5 @@ lexer.lines={
         end
     }
 }
-
+lexer.finalize='N/A'
 return lexer

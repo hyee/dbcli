@@ -249,11 +249,10 @@ end
 env.root_cmds={}
 local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color,is_blocknewline)
     local abbr={}
-
+    if not cmd then return end
     if not parameters then
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
-
 
     local cmds=type(cmd)~="table" and {cmd} or cmd
     
@@ -324,7 +323,7 @@ end
 
 function env.rename_command(name,new_name)
     local info=_CMDS[name]
-    env.checkerr(info,"No such command: "..name)
+    if not info then return end
     local old_name={}
     for k,v in pairs(_CMDS.___ABBR___) do
         if _CMDS[k]==info then

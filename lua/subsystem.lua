@@ -232,5 +232,5 @@ end
 function system:onunload()
     self:terminate()
 end
-
+system.finalize='N/A'
 return system

@@ -587,6 +587,7 @@ end
 
 function scripter:__onload()
     --env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self:get_command().."' command!")
+    if not self.script_dir then return end
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     self.extend_dirs=env.set.get_config(self.__className..".extension")
@@ -603,5 +604,5 @@ function scripter:__onload()
     --env.uv.thread.new(function(o) if not o.cmdlist then o:run_script("-r") end end,self)
     if not self.cmdlist then self:run_script("-r") end
 end
-
+scripter.finalize='N/A'
 return scripter

@@ -52,7 +52,6 @@ env._M=M
 
 local curr=0
 
-
 function init.init_path(env)
     local java=java
     java.system=java.require("java.lang.System")
@@ -281,22 +280,24 @@ function init.onload(env)
     end
     init.load_modules(init.module_list,env)
     init.load_database()
+    init.unload(init.module_list,env,true)
     collectgarbage('restart')
     if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
 end
 
-function init.unload(list,tab)
+function init.unload(list,tab,finalize)
     if type(tab)~='table' then return end
     for i=#list,1,-1 do
         local m=list[i]:match("([^\\/]+)$")
-        if type(tab[m])=="table" and type(tab[m].onunload)=="function" then
+        if type(tab[m])=="table" then
             if type(tab[m].C)=="table" and type(tab[m].module_list)=="table" then
-                init.unload(tab[m].module_list,tab[m].C)
+                init.unload(tab[m].module_list,tab[m].C,finalize)
                 tab[m].C=nil
             end
-            tab[m].onunload(tab[m])
+            local func=tab[m][finalize and 'finalize' or 'onunload']
+            if type(func)=='function' then func(tab[m]) end
         end
-        tab[m]=nil
+        if not finalize then tab[m]=nil end
     end
 end
 

@@ -398,11 +398,16 @@ function db_core.get_command_type(sql)
     return table.unpack(list)
 end
 
+local sec2num
 function db_core.get_feed(sql,result)
+    if not ela_fmt and env.var then
+        sec2num=env.var.format_function("smhd3")
+    end
+
     if cfg.get("feed")~="on" or not sql then return end
     local secs=''
     if db_core.__start_clock then
-        secs=' (' ..math.round(os.timer()-db_core.__start_clock,3)..' secs).'
+        secs=' (' ..sec2num(os.timer()-db_core.__start_clock)..').'
     end
     local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
@@ -808,8 +813,10 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         return self:exec_cache(sql,args,prep_params)
     end
 
+    local clock,ela,exe,caches=os.timer()
+
     if is_not_prep and not is_internal then
-        db_core.__start_clock=os.timer()
+        db_core.__start_clock=clock
     end
 
     local params,prep={}
@@ -829,7 +836,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.conn:setAutoCommit(autocommit=="on" and true or false)
         self.autocommit=autocommit
     end
-    local caches,clock,ela,exe
+    
     if is_not_prep then
         sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
         if type(sql)~="string" then
@@ -854,10 +861,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             env.log_debug("db","Cursor:",desc)
         end
     end
-    if is_timing then clock=os.timer() end
 
     local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
-    if is_timing then exe=os.timer()-clock end
+    exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
 
@@ -911,9 +917,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             result[#result+1]=process_result(prep:getResultSet())
         end
     end
-
-    if is_timing then ela=os.timer()-clock end
-
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if is_not_prep then self:clearStatements() end
@@ -922,9 +925,11 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
     end
 
+    ela=os.timer()-clock
     if is_timing then 
-        ela=os.timer()-clock
         print(string.format("Elapsed: %.3f secs  Executed: %.3f secs\n",ela,exe))
+    elseif db_core.__start_clock and (not is_not_prep or is_internal) then
+        db_core.__start_clock=db_core.__start_clock+ela
     end
     return #result==1 and result[1] or result
 end

@@ -327,6 +327,7 @@ end
 
 function cfg.rename_command(new)
     if type(new)=='string' then new={new} end
+    env.rename_command(cfg.name,new)
     cfg.name=new[1]:upper()
     table.clear(cmds)
     for _,n in ipairs(new) do

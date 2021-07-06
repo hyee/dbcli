@@ -548,5 +548,5 @@ end
 function snapper:__onload()
     cfg.init(self.command.."rows","50",nil,"db.core","Number of max records for the '"..self.command.."' command result","5 - 3000")
 end
-
+snapper.finalize='N/A'
 return snapper

@@ -1134,4 +1134,5 @@ function grid.onload()
     env.ansi.define_color("HEADCOLOR", "BRED;HIW", "ansi.grid", "Define grid title's color, type 'ansi' for more available options")
 end
 
+grid.finalize='N/A'
 return grid

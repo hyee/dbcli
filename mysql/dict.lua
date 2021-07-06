@@ -35,7 +35,7 @@ function dicts.build_dict(typ,scope)
 	local sqls={
 		[[show global variables]],
 		[[SELECT lower(TABLE_NAME),lower(TABLE_SCHEMA) fname FROM INFORMATION_SCHEMA.TABLES
-		  WHERE  lower(table_schema) in('information_schema','sys','mysql','performance_schema','metrics_schema')]],
+		  WHERE  lower(table_schema) in('information_schema','sys','mysql','performance_schema','metrics_schema','sys','ndbinfo')]],
 		[[SELECT lower(word) from INFORMATION_SCHEMA.KEYWORDS where length(word)>5]],
 		[[select lower(a.name) 
 		  from mysql.help_topic as a join mysql.help_category as b using(help_category_id) 

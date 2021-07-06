@@ -3,13 +3,12 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local pgsql=env.class(env.db_core)
 pgsql.module_list={
-   "help","sql","chart","ssh","snap",
+   "sql","chart","ssh","snap",
    "show","psql_exe",
 }
 
 function pgsql:ctor(isdefault)
     self.type="pgsql"
-    self.C,self.props={},{}
     self.C,self.props={},{}
     self.JDBC_ADDRESS='https://jdbc.postgresql.org/download.html'
 end
@@ -56,6 +55,7 @@ function pgsql:connect(conn_str)
     self.conn=java.cast(self.conn,"org.postgresql.jdbc.PgConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local info=self:get_value([[select current_database(),substring(version() from '[0-9\.]+'),current_user,inet_server_addr(),inet_server_port(),pg_backend_pid()]])
+    table.clear(self.props)
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.database=info[1] or ""
