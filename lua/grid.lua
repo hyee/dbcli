@@ -201,7 +201,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local verticals=rows and rows.verticals and math.min(#rows,rows.verticals+1)
     rows=rows.data or rows
     local title = rows[1]
-
+    local maxsize = grid.col_size
     local pivot = math.abs(grid.pivot) + 1
     local del = grid.title_del
     del = (del == "-" and "=") or (del == "=" and "||") or (del == "." and ":") or del
@@ -210,55 +210,69 @@ function grid.show_pivot(rows, col_del,pivotsort)
     if pivot > #rows then pivot = #rows end
     if pivot > 2 then del='' end
     local maxlen,maxchar = 0,0
+    local len1,len2,nv
+    local tops={{}}
+    local _, value
+    local max_cols=12
+
+    local function get_value(title,r,c)
+        _, value = grid.format_column(true, type(title) == "table" and title or {column_name = title}, rows[r][c], r-1)
+        len1,len2,nv=tostring(value or env.set.get('null')):trim():ulen(maxsize)
+        max_cols=max_cols<len1 and len1 or max_cols
+        return nv
+    end
+
     for k, v in ipairs(title) do
         keys[v] = k
-        local len1,len2=v:ulen()
+        len1,len2,nv=v:ulen(maxsize)
         maxlen=maxlen < len2 and len2 or maxlen
         maxchar=maxchar < len1 and len1 or maxchar
+        if verticals then
+            for i=1,math.min(15,verticals-1) do
+                if not tops[i] then tops[i]={} end
+                tops[i][k]=get_value(v,i+1,k)
+            end
+        end
     end
 
     local color = env.ansi.get_color
     local nor, hor = color("NOR"), color("HEADCOLOR")
 
     local r = {}
-    if verticals then
+    if verticals and verticals>1 then
         maxlen=maxlen+2
-        local width=console:getBufferWidth() - maxlen - #env.space
+        local width=console:getScreenWidth() - maxchar - 2 - #env.space*2
         r[1]={'','|',"#",'|','Column Name',"Column Value"}
-        local siz=#r[1]
+        local siz
         local titles={}
-        local _, value
         for k, v in ipairs(title) do
             v=grid.format_title(v)
-            local len1,len2=v:ulen()
-            titles[k]=("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, v, nor, ':')
+            len1,len2,nv=v:ulen(maxsize)
+            titles[k]=("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, nv, nor, ':')
         end
-        local maxwidth=0
+        local seq_size=#tostring(verticals)+3
+        local group_rows=math.floor(1.0*(width+seq_size)/(max_cols+seq_size))
+        for j=2,group_rows do
+            siz=#r[1]
+            r[1][siz+1],r[1][siz+2],r[1][siz+3],r[1][siz+4]="|","#",'|','Column Name'
+        end
+        
         local row
-        local st,ed,two_rows
+        local st,ed
         for i=1,verticals-1 do
-            if math.fmod(i,2)==1 or not two_rows then st,ed=#r,#r+#titles end
+            if group_rows<2 or math.fmod(i,group_rows)==1 then st,ed=#r,#r+#titles end
             for j,v in ipairs(titles) do
-                _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i+1][j], i)
-                value=tostring(value):trim()
-                if i==1 then
-                    local len1,len2=value:ulen()
-                    maxwidth=maxwidth<len1 and len1 or maxwidth
-                end
                 local idx=st+j
+                nv=tops[i] and tops[i][j] or get_value(title,i+1,j)
                 if not r[idx] then 
-                    r[idx]={'','|',i,'|',v,value} 
+                    r[idx]={'','|',i,'|',v,nv}
                 else
-                    r[idx][siz+1],r[idx][siz+2],r[idx][siz+3],r[idx][siz+4]='|',i,'|',value
+                    siz=#r[idx]
+                    r[idx][siz+1],r[idx][siz+2],r[idx][siz+3],r[idx][siz+4]='|',i,'|',' '..nv
                 end
             end
-            if i==1 and i<verticals-1 and width/2>maxwidth+10 then 
-                two_rows=true
-                r[1][siz+1],r[1][siz+2],r[1][siz+3],r[1][siz+4]="|","#",'|','Column Name'
-            end
-            if math.fmod(i,2)==0 or i==verticals-1 or not two_rows then r[#r+1]={'$HIY$-$NOR$'} end
+            if group_rows<2 or i==verticals-1 or math.fmod(i,group_rows)==0 then r[#r+1]={'$HIY$-$NOR$'} end
         end
-
         return r
     end
     
@@ -268,16 +282,15 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local _, value
     for k, v in ipairs(title) do
         v=grid.format_title(v)
-        local len1,len2=v:ulen()
-        local row={("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, v..(v:lower()==head and ' =>' or ''), nor, del)}
+        len1,len2,nv=v:ulen(maxsize)
+        local row={("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, nv..(v:lower()==head and ' =>' or ''), nor, del)}
         if v:lower()==head then
             table.insert(r,1, row)
         else    
             table.insert(r, row)
         end
         for i = 2, pivot, 1 do
-            _, value = grid.format_column(true, type(v) == "table" and v or {column_name = v}, rows[i][keys[v]], i - 1)
-            row[#row+1]=tostring(value):trim()
+            row[#row+1]=get_value(v,i,keys[v])
         end
     end
     
@@ -857,7 +870,7 @@ function grid.tostring(rows, include_head, col_del, row_del, rows_limit, pivot,p
     rows_limit = rows_limit and math.min(rows_limit, #rows) or #rows
     env.set.force_set("pivot", 0)
     if not pivotsort then 
-        env.set.force_set("PIVOTSORT", env.set._p['PIVOTSORT'] or 'off') 
+        env.set.force_set("PIVOTSORT", env.set._p['PIVOTSORT'] or 'on') 
     end
     return table.concat(rows, "\n", 1, rows_limit),output
 end

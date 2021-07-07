@@ -2,7 +2,7 @@ local rawget,rawset,setmetatable,pairs,ipairs=rawget,rawset,setmetatable,pairs,i
 
 local function newindex(self,k,v)
     if type(v)=="function" then
-        if k=="onload" or k=="onunload" or k=="__onload" or k=="__onunload" then
+        if k=="onload" or k=="onunload" or k=="__onload" or k=="__onunload" or k=="finalize" or k=="__finalize"  then
             local super=self.super or self.__super
             local k1='__'..k:match("(%a+)$")
             if  type(super)=="table" and type(super[k1])=="function" then
@@ -15,15 +15,13 @@ local function newindex(self,k,v)
 end
 
 function class(super,init)
-    local this_class=setmetatable(init or {},
-        {__newindex=newindex,
-        __index=function(self,k)
+    local this_class=setmetatable(init or {},{
+        __newindex=newindex,
+        __index   =function(self,k)
             if k~='finalize' or rawget(self,'__child') then return rawget(self,k) end
             if not self.onunload then self.onunload=rawget(self,'__onunload') end
-            --print(k,'->',rawget(self,'__className'))
             return rawget(self,'__onload')
-        end
-        })
+        end})
     super=super and rawget(super,'__class') or super
     local classname=debug.getinfo(2).source:gsub("^@+","",1)
     rawset(this_class,'__className',classname)

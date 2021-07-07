@@ -4,11 +4,14 @@ local set_command,exec_command=env.set_command,env.exec_command
 local mysql=env.class(env.db_core)
 mysql.module_list={
     "help",
+    "findobj",
     "mysql_exe",
     "usedb",
     "show",
     "snap",
     "sql",
+    "list",
+    "ti",
     "chart",
     "ssh",
     "dict",
@@ -53,7 +56,8 @@ function mysql:connect(conn_str)
          useCachedCursor=self.MAX_CACHE_SIZE,
          useUnicode='true',
          useServerPrepStmts='true',
-         characterEncoding='UTF8',
+         characterEncoding='utf8',
+         connectionCollation='utf8_general_ci',
          useCompression='true',
          callableStmtCacheSize=10,
          enableEscapeProcessing='false',
@@ -68,6 +72,7 @@ function mysql:connect(conn_str)
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
+    pcall(self.internal_call,self,[[SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci]])
     local info=self:get_value([[select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port]])
     table.clear(self.props)
     local props=self.props
@@ -175,6 +180,7 @@ function mysql:onload()
     env.rename_command("PRINT",{"PRINTVAR","PR"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
     env.rename_command("HELP",{"HELP","\\h"})
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
          function(sep)
             if #env.RUNNING_THREADS<=2 then
@@ -209,6 +215,32 @@ function mysql:on_eval(line)
         if c=="\\G" then
             env.set.doset("PIVOT",20)
         end
+    end
+end
+
+local ignore_errors={
+
+}
+
+function mysql:handle_error(info)
+    for k,v in pairs(ignore_errors) do
+        if info.error:lower():find(k:lower(),1,true) then
+            info.sql=nil
+            if v~='default' then
+                info.error=v
+            else
+                info.error=info.error:match('^([^\n\r]+)')
+            end
+            return info
+        end
+    end
+    local line,col=info.error:sub(1,1024):match('line (%d+) column (%d+)')
+    if not line then
+        line=info.error:sub(1,1024):match('at line (%d+) *[\r\n]+')
+    end
+    info.row,info.col=line,col or (line and 0 or nil)
+    if line then
+        info.error=info.error:gsub('You have an error.-syntax to use','Syntax error at',1)
     end
 end
 

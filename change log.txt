@@ -1,4 +1,8 @@
-2021-06-27: + public: support "<query>\G[<rows>]" to print result vertically
+2021-07-07: + mysql : new command set 'list' for the scripts without parameters
+                      new command 'sql obj' to find object by name, and 'sql search' to fuzzy search object
+                      new command set 'ti' for TiDB only
+                      new command 'ti locks' to show data locks
+2021-07-06: + public: support "<query>\G[<rows>]" to print result vertically
 2021-07-05: * mysql : rename some dbcli commands to avoid conflicting with native mysql client:
                       set->env, host->system, tee->write, spool->tee, print->pr
 2021-07-04: + mysql : support offline help documents

@@ -442,11 +442,10 @@ function oracle:parse(sql,params)
         else
             typ='VARCHAR'
         end
-
         if v==nil then
             if counter<2 then counter=counter+2 end
-        else
-            if counter~=1 and counter~=3 then counter=counter+1 end
+        elseif math.fmod(counter,2)==0 then 
+            counter=counter+1
         end
 
         local typename,typeid=typ,self.db_types[typ].id
@@ -514,7 +513,7 @@ function oracle:parse(sql,params)
         return prep,org_sql,params
     elseif counter>1 then
         return self.super.parse(self,org_sql,params,':',':')
-    else 
+    else
         org_sql=sql
     end
 
@@ -578,8 +577,6 @@ function oracle:check_date(string,fmt)
     return args[4]
 end
 
-local is_executing=false
-
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',
@@ -590,11 +587,6 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
-    if is_executing then
-        info.sql=nil
-        return
-    end
-
     for k,v in pairs(ignore_errors) do
         if info.error:lower():find(k:lower(),1,true) then
             info.sql=nil

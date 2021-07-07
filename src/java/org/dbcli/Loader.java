@@ -25,6 +25,7 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -534,8 +535,7 @@ public class Loader {
             boolean result = p.execute();
             if (p.isClosed()) throw CancelError;
             return result;
-        } catch (Exception e) {
-            //e.printStackTrace();
+        } catch (SQLException e) {
             throw e;
         } finally {
             console.setEvents(null, null);

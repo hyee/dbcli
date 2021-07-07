@@ -19,6 +19,7 @@ local function close_rs(rs)
 	if not rs_close then rs_close=rs.close end
 	if not rs_close then return nil end
 	pcall(rs_close,rs)
+    __stmts[rs]=nil
 end
 
 local function is_prepclosed(prep)
@@ -184,7 +185,7 @@ function ResultSet:getHeads(rs)
     local colinfo={}
     local titles={}
     for i=1,len,1 do
-        local cname=meta:getColumnLabel(i)
+        local cname=meta:getColumnLabel(i) or ''
         colinfo[i]={
             column_name=cname,
             data_typeName=meta:getColumnTypeName(i),
@@ -264,7 +265,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
     local dtype=titles[1].data_typeName
     local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML"))
 
-    null_value=null_value or cfg.get('null')
+    null_value=null_value or ''
     if count~=0 then
         rows=loader:fetchResult(rs,count)
         for i=1,#rows do
@@ -290,6 +291,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
             end
         end
     end
+    rows.verticals=__stmts[res]
     if (is_close==true or count <0 ) then
         self:close(rs)
     end
@@ -314,7 +316,6 @@ function ResultSet:print(res,conn,prefix,verticals)
     if pivot~=0 and not verticals then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,cfg.get('null'),true)
     if not result then return end
-    __stmts[res]=nil
     result.verticals=verticals
     if pivot==0 and not verticals then
         hdl=grid.new()
@@ -489,9 +490,22 @@ function db_core:call_sql_method(event_name,sql,method,...)
     if res==false then
         self:is_connect(nil,true)
         local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
-        if event_name=='ON_SQL_ERROR' and obj.getCause then
-            info.cause=tostring(obj:getCause():toString())
+        local code=''
+
+        if obj.getErrorCode then
+            local code=obj:getErrorCode()
+            if code and not tostring(obj:getMessage()):find(code,1,true) then
+                code="ERROR "..code..": "
+                info.error=info.error:gsub("(Exception: )",'%1'..code,1)
+            else
+                code=''
+            end
         end
+
+        if event_name=='ON_SQL_ERROR' and obj.getCause then
+            info.cause=tostring(obj:getCause():toString()):gsub("(Exception: )",'%1'..code,1)
+        end
+
         event(event_name,info)
         local showline,found=cfg.get("SQLERRLINE"),false
         local sql_name=self.get_command_type(sql)
@@ -614,6 +628,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
 
     prefix=(prefix or ':')
 
+    local func,typeid,value,varname,typename=1,2,2,3,4
     sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
             local v= params[k]
@@ -636,7 +651,6 @@ function db_core:parse(sql,params,prefix,prep,vname)
             elseif v:sub(1,1)=="#" then
                 typ=v:upper():sub(2)
                 params[k]={'#',{counter},typ}
-                binds[k]={'#',{counter},typ}
                 if not db_Types[typ] then
                     env.raise("Cannot find '"..typ.."' in java.sql.Types!")
                 end
@@ -645,7 +659,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
                 typ='VARCHAR'
                 args={db_Types:set(typ,v)}
             end
-            args[#args+1],args[#args+2]=k,typ
+            args[varname],args[typename]=k,typ
             bind_info[#bind_info+1]=args
             if vname==':' then
                 return ':'..counter
@@ -659,19 +673,18 @@ function db_core:parse(sql,params,prefix,prep,vname)
     self:check_params(sql,prep,bind_info,params)
 
     if #bind_info==0 then return prep,sql,params end
-    local binds={}
-    local method,typeid,value,varname,typename=1,2,2,3,4
+    
 
     for k,v in ipairs(bind_info) do
-        prep[v[method]](prep,k,v[value])
-        local inout=type(params[bind_info[varname]])=='table' and params[bind_info[varname]]=='#' and '#' or '$'
-        if binds[varname] and type(binds[varname][2])=="table" then
-            table.insert(binds[varname][2],k)
+        prep[v[func]](prep,k,v[value])
+        local name=v[varname]
+        if binds[name] and type(binds[name][2])=="table" then
+            table.insert(binds[name][2],k)
         else
-            binds[varname]={inout,inout=='$' and k or {k},v[typename],v[method],v[value]}
+            local inout=type(params[name])=='table' and params[name][1]=='#' and '#' or '$'
+            binds[name]={inout,{k},v[typename],v[func],v[value]}
         end
     end
-    env.log_debug("parse","SQL",sql)
     env.log_debug("parse","Standard-Params:",table.dump(binds))
     return prep,sql,binds
 end
@@ -743,11 +756,10 @@ function db_core:exec_cache(sql,args,description)
         prep,org,params=table.unpack(cache)
         for k,n in pairs(args) do
             k=type(k)=="string" and k:upper() or k
-            local o,typ=org[k]
-            if params[k] and o ~= n and tostring(n):sub(1,1)~='#' then
-                local idx=params[k][6] or params[k][2]
-                local method=params[k][4]
-                org[k]=n
+            local param,typ=params[k]
+            if param and org[k]~=n and tostring(n):sub(1,1)~='#' then
+                local idx=param[6] or param[2]
+                local method=param[4]
                 if method:find('setNull',1,true) and n~=nil and n~='' then
                     if type(v)=='boolean' then
                         typ='setBoolean'
@@ -763,11 +775,16 @@ function db_core:exec_cache(sql,args,description)
                     typ,n=self.db_types:set("VARCHAR",nil)
                     method=typ..(method:match('AtName') or '')
                 end
-                prep[method](prep,idx,n)
-                params[k][5]=n
+                if type(idx)=='table' then
+                    for _,pos in ipairs(idx) do
+                        prep[method](prep,pos,n)
+                    end
+                else
+                    prep[method](prep,idx,n)
+                end
+                org[k],param[5]=n,n
             end
-        end
-        --print(table.dump(params),table.dump(args))
+        end 
     end
     args._description=description and ('('..description..')') or ''
 
@@ -1128,12 +1145,12 @@ function db_core:get_value(sql,args)
     return rtn and #rtn==1 and rtn[1] or rtn
 end
 
-function db_core:get_rows(sql,args,count)
+function db_core:get_rows(sql,args,count,null_value)
     local result = self:internal_call(sql,args)
     if not result or type(result)=="number" then
         return result
     end
-    return self.resultset:rows(result,count or -1)
+    return self.resultset:rows(result,count or -1,null_value or '')
 end
 
 function db_core:grid_call(tabs,rows_limit,args,is_cache)
