@@ -937,15 +937,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
 
-    if not is_query then
-        while true do
-            params1,is_query=pcall(prep.getMoreResults,prep,2)
-            if not params1 or not is_query then break end
-            if result[1]==-1 then table.remove(result,1) end
-            result[#result+1]=process_result(prep:getResultSet())
-        end
+    while true do
+        params1,is_query=pcall(prep.getMoreResults,prep,2)
+        if not params1 or not is_query then break end
+        if result[1]==-1 then table.remove(result,1) end
+        result[#result+1]=process_result(prep:getResultSet())
     end
-    result.verticals=verticals
+
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if is_not_prep then self:clearStatements() end
@@ -1134,6 +1132,23 @@ function db_core:get_value(sql,args)
     local result = self:internal_call(sql,args)
     if not result or type(result)=="number" then
         return result
+    elseif type(result)=='table' then
+        local rs,rtn={}
+        for k,r in ipairs(result) do
+            if type(r)=='userdata' then
+                self.resultset:fetch(r,self.conn)
+                rtn=self.resultset:fetch(r,self.conn)
+                rs[#rs+1]=#rtn==1 and rtn[1] or rtn
+            else
+                rtn=r
+            end
+        end
+        if #rs==1 then 
+            return rs[1]
+        elseif #rs==0 then
+            return rtn
+        end
+        return rs
     end
     --bypass the titles
     self.resultset:fetch(result,self.conn)
@@ -1149,6 +1164,21 @@ function db_core:get_rows(sql,args,count,null_value)
     local result = self:internal_call(sql,args)
     if not result or type(result)=="number" then
         return result
+    elseif type(result)=='table' then
+        local rs,rtn={}
+        for k,r in ipairs(result) do
+            if type(r)=='userdata' then
+                rs[#rs+1]=self.resultset:rows(r,count or -1,null_value or '')
+            else
+                rtn=r
+            end
+        end
+        if #rs==1 then 
+            return rs[1]
+        elseif #rs==0 then
+            return rtn
+        end
+        return rs
     end
     return self.resultset:rows(result,count or -1,null_value or '')
 end

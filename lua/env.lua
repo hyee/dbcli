@@ -224,7 +224,6 @@ function env.check_cmd_end(cmd,other_parts,stmt)
     end
 
     local match,typ,index = env.COMMAND_SEPS.match(prev..other_parts)
-    --print(match,other_parts)
     if index==0 then
         return false,other_parts
     end
@@ -750,6 +749,8 @@ local function _eval_line(line,exec,is_internal,not_skip)
             if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end
             return 
         end
+    --elseif env.event then
+    --    line=env.event.callback('BEFORE_EVAL',{line})[1]
     end
     local subsystem_prefix=""
     --Remove BOM header
@@ -928,9 +929,6 @@ function env.modify_command(_,key_event)
 end
 
 function env.eval_line(lines,exec,is_internal,is_skip)
-    if env.event then
-        lines=env.event.callback('BEFORE_EVAL',{lines})[1]
-    end
     if type(lines)~="string" then
         print(debug.traceback())
         return nil 
@@ -965,24 +963,24 @@ function env.safe_call(func,...)
 end
 
 function env.set_endmark(name,value)
+    if not value then return end
     if value:gsub('[\\%%]%a',''):match('[%w]') then return print('The delimiter cannot be alphanumeric characters. ') end;
-    local p={value:gsub("\\+",'\\'):match("^([^, ]+)( *,? *(.*))$")}
-    table.remove(p,2)
-    for k,v in ipairs(p) do
+    local p={}
+    local k=0
+    for v in value:gmatch('[^ ,]+') do
+        k=k+1
         p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '\\'..s end)
         local c=p[k]:gsub("(.?)([%$%(%)%^%.])",function(a,b) return a..(a=="%" and "" or "%")..b end)
-        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
-        p[k]=p[k]:gsub("([^%+%*%?%-])[%+%*%?%-]","%1"):gsub("%%.","")
+        p[k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
     end
-    if p[2]=="" then p[2],p["p2"]=p[1],p["p1"] end
 
     env.COMMAND_SEPS=p
     env.COMMAND_SEPS.match=function(s)
         local s1,s2=s:sub(1,-129),s:sub(-128)
-        local c,r=s2:match(p["p1"])
-        if c then return s1..c,r,1 end
-        c,r=s2:match(p["p2"])
-        if c then return s1..c,r,2 end
+        for i,v in ipairs(p) do
+            local c,r=s2:match(v)
+            if c then return s1..c,r,i end
+        end
         if s:sub(-1)=='\0' then
             return s:sub(1,-2),'\0',2
         end
@@ -1097,7 +1095,7 @@ function env.onload(...)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},line_terminators,env.set_endmark,
+        env.set.init({"sqlterminator","END_MARKERS"},line_terminators,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
@@ -1141,6 +1139,7 @@ function env.onload(...)
             end
         end
     end
+    env.init.finalize(env)
     env.IS_ENV_LOADED=true
 end
 

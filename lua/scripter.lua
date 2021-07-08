@@ -355,8 +355,7 @@ function scripter:run_sql(sql,args,cmds)
     
     local echo=cfg.get("echo"):lower()=="on"
     if #env.RUNNING_THREADS == 2 then
-        cfg.set("define","on")
-        cfg.set("verify","on")
+        cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT")
     end
     local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do
@@ -444,12 +443,7 @@ function scripter:get_script(cmd,args,print_args)
     --[[No idea of why this operation can trigger lua gc on var.inputs (e.g.: ora actives)]] --
     local succ,sql=pcall(readFile,loader,file,10485760)
     env.checkerr(succ,tostring(sql))
-    
 
-    --local f=io.open(file)
-    --env.checkerr(f,"Cannot find this script!")
-    --local sql=f:read(10485760)
-    --f:close()
     if is_get then return print(sql) end
     args=self:parse_args(sql,args,print_args,cmd)
     return sql,args,print_args,file,cmd
@@ -557,11 +551,9 @@ function scripter:helper(_,cmd,search_key)
             table.insert(rows[1],'_Undocumented_')
             table.insert(rows[2],undocs)
         end
-        env.set.set("PIVOT",-1)
+        env.set.set("PIVOT",-1,"PIVOTSORT","ON","HEADSEP",":")
         env.checkerr(#rows[1]>0,'No result for the specific input.')
-        env.set.set("HEADDEL",":")
         help=help..grid.tostring(rows)
-        env.set.restore("HEADDEL")
         return help
     end
     cmd = cmd:upper()

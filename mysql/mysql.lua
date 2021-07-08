@@ -11,6 +11,7 @@ mysql.module_list={
     "snap",
     "sql",
     "list",
+    "ps",
     "ti",
     "chart",
     "ssh",
@@ -52,12 +53,12 @@ function mysql:connect(conn_str)
         {driverClassName="com.mysql.cj.jdbc.Driver",
          retrieveMessagesFromServerOnGetMessage='true',
          allowPublicKeyRetrieval=true,
-         --clientProgramName='SQL Developer',
+         rewriteBatchedStatements='true',
          useCachedCursor=self.MAX_CACHE_SIZE,
          useUnicode='true',
          useServerPrepStmts='true',
          characterEncoding='utf8',
-         connectionCollation='utf8_general_ci',
+         connectionCollation='utf8mb4_unicode_ci',
          useCompression='true',
          callableStmtCacheSize=10,
          enableEscapeProcessing='false',
@@ -72,8 +73,7 @@ function mysql:connect(conn_str)
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    pcall(self.internal_call,self,[[SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci]])
-    local info=self:get_value([[select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port]])
+    local info=self:get_value([[select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,@@character_set_client]])
     table.clear(self.props)
     local props=self.props
     if info then
@@ -83,6 +83,7 @@ function mysql:connect(conn_str)
         props.db_conn_id=tostring(info[3])
         props.database=info[1] or ""
         props.sql_mode=info[6]
+        props.charset=info[8]
         args.database=info[1] or ""
         args.hostname=url:match("^[^/%:]+")
         args.port=info[7]
@@ -173,7 +174,6 @@ function mysql:onload()
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,"create",   default_desc, self.command_call,self.check_completion,1,true)
-    env.set.change_default("null","NULL")
     env.rename_command("HOST",{"SYSTEM","\\!","!"})
     env.rename_command("TEE",{"WRITE"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
@@ -182,40 +182,10 @@ function mysql:onload()
     env.rename_command("HELP",{"HELP","\\h"})
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
-         function(sep)
-            if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("SQLTERMINATOR",';,'..sep)
-            else
-                env.set.doset("SQLTERMINATOR",';,'..sep)
-            end
-        end,false,2)
+         function(sep) if sep then env.set.doset("SQLTERMINATOR",';,'..sep..',\\g') end end,false,2)
 
     set_command(nil,{"PROMPT","\\R"},"Change your mysql prompt. Usage: @@NAME {<text>|default|back}",
-        function(sep)
-            if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("PROMPT",sep)
-            else
-                env.set.doset("PROMPT",sep)
-            end
-        end,false,2)
-end
-
-function mysql:on_eval(line)
-    --[[
-    local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
-    if not first or near=="\\" then return end
-    if near==env.COMMAND_SEPS[1] then near="" end
-    if not env.pending_command() then
-
-    end
-    --]]
-    local c=line[1]:sub(-2)
-    if c:lower()=="\\g" then
-        line[1]=line[1]:sub(1,-3)..'\0'
-        if c=="\\G" then
-            env.set.doset("PIVOT",20)
-        end
-    end
+        function(sep) env.set.doset("PROMPT",sep) end,false,2)
 end
 
 local ignore_errors={
@@ -258,6 +228,11 @@ end
 
 function mysql:onunload()
     env.set_title("")
+end
+
+function mysql:finalize()
+    env.set.change_default("NULL","NULL")
+    env.set.change_default("SQLTERMINATOR",";,$$,\\g")
 end
 
 return mysql.new()

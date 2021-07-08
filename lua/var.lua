@@ -728,7 +728,7 @@ end
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
-    snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item,1) end end)
+    --snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item,1) end end)
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)

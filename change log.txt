@@ -1,3 +1,5 @@
+2021-07-08: + mysql : support '<query>\g' to complete the input
+                      support command 'charset' to switch client charset
 2021-07-07: + mysql : new command set 'list' for the scripts without parameters
                       new command 'sql obj' to find object by name, and 'sql search' to fuzzy search object
                       new command set 'ti' for TiDB only

@@ -280,7 +280,6 @@ function init.onload(env)
     end
     init.load_modules(init.module_list,env)
     init.load_database()
-    init.unload(init.module_list,env,true)
     collectgarbage('restart')
     if env.set then env.set.init({"platform","database"},env.CURRENT_DB,init.set_database,'core','Define current database type',table.concat(init.db_list(),',')) end
 end
@@ -298,6 +297,10 @@ function init.unload(list,tab,finalize)
         end
         if not finalize then tab[m]=nil end
     end
+end
+
+function init.finalize(env)
+    init.unload(init.module_list,env,true)
 end
 
 return init
