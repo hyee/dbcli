@@ -10,8 +10,62 @@ function sql:ctor()
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."sql",{}
 end
 
-local function format_version(version)
-    return version:gsub("(%d+)",function(s) return s:len()<3 and string.rep('0',3-s:len())..s or s end)
+function sql:validate_accessable(name,options,values)
+    local check_flag,expect_name,default,option,expect
+    local db=self.db
+    local check_container
+    for i=1,#options do
+        option=options[i]
+        default=option
+        if name:find("CHECK_USER",1,true)==1 then--check user
+            check_flag=3
+            expect_name="user"
+            default=nil
+            for role in option:gmatch("([^/]+)") do
+                role=role:upper()
+                if role:upper()=="DEFAULT" or db.props.privs[role] then
+                    default=option
+                    break
+                end
+            end
+            expect=option
+        elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
+            for obj in option:gmatch("([^/%s]+)") do
+                if obj:upper()~="DEFAULT" then
+                    local is_accessed=db:check_access(obj,'1')
+                    if not is_accessed then
+                        default=nil
+                        check_flag=2
+                        expect_name="access"
+                        expect='the accesses to: '.. option
+                        break
+                    end
+                end
+            end
+        else--check version
+            local check_ver=option:match('^([%d%.]+)$')
+            if check_ver then
+                check_flag=1
+                expect_name="database version"
+                local db_version=self:format_version(db.props.db_version or "5.0.0")
+                if db_version<self:format_version(check_ver) then default=nil end
+                expect=option
+            end
+        end
+        if default~=nil then break end
+    end
+
+    if not default and expect then
+        env.raise('The command doesn\'t support current %s %s, expected %s.',
+            expect_name,
+            check_flag==1 and (db.props.db_version or 'unknown')
+                or check_flag==2 and "rights"
+                or check_flag==3 and (db.props.db_user or 'unknown')
+                or check_flag==4 and 'mode',
+            expect)
+    end
+    return default
 end
+
 
 return sql.new()

@@ -31,7 +31,7 @@ function help.help_topic(...)
 	        if topic then
 	            db:query("select a.name,help_category_id as `Category#`,parent_category_id as `Parent#`,b.name as category,a.url"..help_table.." where upper(b.name)=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
 	        else
-	            local topic=db:get_value("select a.name,description,example,b.name as category"..help_table.."where upper(a.name) like :1 order by a.name limit 1",like)
+	            local topic=db:get_value("select a.name,description,example,b.name as category"..help_table.."where upper(a.name) like :1 order by nullif(instr(upper(a.name),trim('%' from :1)),0),a.name limit 1",like)
 	            env.checkerr(topic,"No such topic: "..keyword)
 	            local rows={}
 	            rows[1]={'Name:  '..topic[4].." / "..topic[1]}
@@ -63,7 +63,6 @@ function help.help_topic(...)
 			table.insert(rows,1,{"Category#","Parent#","Category","Keywords"})
 			grid.print(rows)
 		elseif f then
-			print(keyword,',',like)
 			local rows={}
 			for key,list in pairs(doc) do
 				local piece=f=='S' and list[1]:sub(1,512):upper():match('\n('..like..'[^\n\r]+)')
@@ -121,7 +120,7 @@ function help:onload()
 		                      "?   <keyword> : Show help document of the SQL that matches the input keyword",
 		                      "help ...      : Query offline help documents"},"\n")
 	self.helpdict=helpdict
-	set_command(nil,{"?","\\?"},"Synonym for `help`",self.help_topic,false,9)
+	set_command(nil,{"?","\\?"},"#Synonym for `help`",self.help_topic,false,9)
     env.event.snoop("ON_HELP_NOTFOUND",function(...) self.help_offline('\1',...) end)
 end
 

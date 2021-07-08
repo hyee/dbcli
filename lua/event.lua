@@ -1,6 +1,6 @@
 local env,pcall=env,pcall
 local event={}
-
+local log_debug=env.log_debug
 function event.callback(name,...)
     local args,callee_idx={...},3
     if type(name)=="number" then
@@ -14,12 +14,13 @@ function event.callback(name,...)
     local v=event[name]
     local flag,result
     for k,v in ipairs(v) do
-        env.log_debug("Event",name,'-->',v.src)
+        log_debug("Event",name,'-->',v.src)
         if v.obj then
             flag,result=pcall(v.func,v.obj,...)
         else
             flag,result=pcall(v.func,...)
         end
+        v.count=(v.count or 0)+1
         if not flag then
             env.warn(result)
         end
@@ -48,14 +49,14 @@ end
 
 function event.show()
     local grid=env.grid
-    local rows={{"Name","Definer","Listener","Priority"}}
+    local rows={{"Name","Definer","Listener","Priority","Calls"}}
     for k,v in pairs(event) do
         if type(v)=="table" and k==k:upper() then
             if #v==0 then
-                table.insert(rows,{k,v.src,v.src_line,"","",""})
+                rows[#rows+1]={k,v.src,v.src_line,"","","",v.count or 0}
             else
                 for i,j in ipairs(v) do
-                    table.insert(rows,{k,v.src,j.src,i..'('..j.prior..')'})
+                    rows[#rows+1]={k,v.src,j.src,i..'('..j.prior..')',j.count or 0}
                 end
             end
         end

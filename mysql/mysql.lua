@@ -22,7 +22,6 @@ mysql.module_list={
 function mysql:ctor(isdefault)
     self.type="mysql"
     self.C,self.props={},{}
-    self.C,self.props={},{}
     self.JDBC_ADDRESS='https://mvnrepository.com/artifact/mysql/mysql-connector-java'
 end
 
@@ -76,6 +75,7 @@ function mysql:connect(conn_str)
     local info=self:get_value([[select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,@@character_set_client]])
     table.clear(self.props)
     local props=self.props
+    props.privs={}
     if info then
         props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[%W%.]+([%w%.]*)')
         props.server=info[5]
@@ -97,14 +97,17 @@ function mysql:connect(conn_str)
             props.branch,props[props.sub_version:lower()]=props.sub_version:lower(),true
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
         end
+        env._CACHE_PATH=env.join_path(env._CACHE_BASE,props.server,'')
+        loader:mkdir(env._CACHE_PATH)
 
-        env.set_title(('MySQL v%s(%s)   CID: %s'):format(
+        env.set_title(('MySQL v%s(%s)   Server: %s   CID: %s'):format(
                 props.db_version,
                 (props.branch or '')..(props.branch and props.sub_version and ' v' or '')..(props.sub_version or ''),
+                props.server,
                 props.db_conn_id))
-        if  tonumber(self.props.db_version:match("^%d+%.%d"))<5.5 then
-            env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
-        end
+    end
+    if (tonumber(self.props.db_version:match("^%d+%.%d")) or 1)<5.5 then
+        env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
     end
     self.connection_info=args
     if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
@@ -158,9 +161,9 @@ function mysql:onload()
         order by 1
     --]]
     env.set.rename_command('ENV')
-    add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
-    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','WITH','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
-
+    add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOCK','OPTIMIZE','PREPARE','PURGE')
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','WITH','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
+    add_default_sql_stmt('IMPORT','LOAD','TABLE','VALUES','BEGIN','DECLARE','INSTALL','UNINSTALL','RESTART','SHUTDOWN','GET','CLONE')
     local  conn_help = [[
         Connect to mysql database. Usage: @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
                                        or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
@@ -189,6 +192,7 @@ function mysql:onload()
 end
 
 local ignore_errors={
+    ['No operations allowed after statement closed']='default'
 
 }
 
@@ -232,6 +236,7 @@ end
 
 function mysql:finalize()
     env.set.change_default("NULL","NULL")
+    env.set.change_default("AUTOCOMMIT","on")
     env.set.change_default("SQLTERMINATOR",";,$$,\\g")
 end
 

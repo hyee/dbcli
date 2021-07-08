@@ -749,8 +749,6 @@ local function _eval_line(line,exec,is_internal,not_skip)
             if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end
             return 
         end
-    --elseif env.event then
-    --    line=env.event.callback('BEFORE_EVAL',{line})[1]
     end
     local subsystem_prefix=""
     --Remove BOM header
@@ -928,11 +926,12 @@ function env.modify_command(_,key_event)
     end
 end
 
+local callbacks={}
 function env.eval_line(lines,exec,is_internal,is_skip)
-    if type(lines)~="string" then
-        print(debug.traceback())
-        return nil 
-    end 
+    if env.event then
+        callbacks[1]=lines
+        lines=env.event.callback('BEFORE_EVAL',callbacks)[1]
+    end
     local stack=lines:split("[\n\r]+")
     for index,line in ipairs(stack) do
         if index==#stack then

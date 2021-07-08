@@ -228,7 +228,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
         maxlen=maxlen < len2 and len2 or maxlen
         maxchar=maxchar < len1 and len1 or maxchar
         if verticals then
-            for i=1,math.min(15,verticals-1) do
+            for i=1,math.min(30,verticals-1) do
                 if not tops[i] then tops[i]={} end
                 tops[i][k]=get_value(v,i+1,k)
             end
@@ -406,9 +406,9 @@ function grid:add(row)
     local function strip_len(str)
         if autohide=='all' or autohide=='col' then
             local len=#(str:ltrim())
-            if len==0 then return 0 end
+            if len==0 or str==null_value then return 0,'' end
         end
-        return #str
+        return #str,str
     end
     for k = 1, cols do
         local v = rs[k]
@@ -431,7 +431,7 @@ function grid:add(row)
         if tostring(v) ~= tostring(v1) then v = v1 end
         if st or ed then v=(st or '')..v..(ed or '') end
         if colsize[k][3] and type(v)=='string' and colsize[k][3]:find(v,1,true) then
-            csize=strip_len(colsize[k][3])
+            csize,colsize[k][3]=strip_len(colsize[k][3])
         elseif is_number and headind>0 then
             l,csize=0,strip_len(tostring(v))
             if csize>0 then
@@ -440,9 +440,8 @@ function grid:add(row)
                 v=''
             end
             colsize[k][3],colsize[k][4]=nil
-        elseif type(v) ~= "string" or v == "" then
-            v = tostring(v) or ""
-            csize = strip_len(v)
+        elseif type(v) ~= "string" or v == "" or v==null_value then
+            csize,v = strip_len(tostring(v) or "")
         else
             if headind == 0 then
                 v = v:gsub("([^|]+)|([^|]+)", function(a, b)

@@ -651,7 +651,7 @@ function var.define_column(col,...)
             obj.heading=arg
             i=i+1
             valid=true
-        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and #formats>0 then
+        elseif args[i]=='JUSTIFY' or args[i]=='JUS' then
             local arg=arg and arg:upper()
             local dir
             if arg then
@@ -660,6 +660,12 @@ function var.define_column(col,...)
             env.checkerr(dir,'Format:  COL[UMN] <column> FOR[MAT] <format> JUS[TIFY] [LEFT|L|RIGHT|R].')
             if type(obj.format_dir)=="string" then
                 obj.format_dir=obj.format_dir:gsub("-*(%d+)",dir..'%1')
+            else
+                obj.format_dir='%'..dir..#col..'s'
+                formats[#formats+1]=function(v)
+                    if not v or v=='' then return v,1 end
+                    return obj.format_dir:format(tostring(v)),1
+                end
             end
             i=i+1
             valid=true
@@ -728,7 +734,7 @@ end
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
-    --snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item,1) end end)
+    snoop('BEFORE_EVAL',function(item) if not env.pending_command() then var.update_text(item,1) end end)
     snoop('BEFORE_COMMAND',var.before_command)
     snoop("AFTER_COMMAND",var.capture_after_cmd)
     snoop("ON_COLUMN_VALUE",var.trigger_column)

@@ -63,9 +63,9 @@ function cfg.change_default(name,value)
     local item=cfg.exists(name)
     env.checkerr(item,"No Such setting: %s",name)
     if cfg.get(name)==item.default then
-        cfg.force_set(name,value)
+        value=cfg.force_set(name,value)
     end
-    item.default=value
+    if value then item.default=value end
 end
 
 function cfg.get_config(name,value)

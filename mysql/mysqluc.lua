@@ -6,7 +6,7 @@ local utils=env.class(env.subsystem)
 function utils:ctor()
     self.db=env.getdb()
     self.support_redirect=false
-    self.name="mysqluc"
+    self.name="MYSQLUC"
     self.command=nil
     self.executable="mysqluc.exe"
     self.description="Switch to MySQL Utilities, the default working folder is 'mysql/util'. Usage: @@NAME [-n|-d<work_path>] [other args]"
