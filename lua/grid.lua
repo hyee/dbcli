@@ -248,10 +248,10 @@ function grid.show_pivot(rows, col_del,pivotsort)
         for k, v in ipairs(title) do
             v=grid.format_title(v)
             len1,len2,nv=v:ulen(maxsize)
-            titles[k]=("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, nv, nor, ':')
+            titles[k]=("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, nv, nor, '=')
         end
         local seq_size=#tostring(verticals)+3
-        local group_rows=math.floor(1.0*(width+seq_size)/(max_cols+seq_size))
+        local group_rows=math.min(verticals-1,math.floor(1.0*(width+seq_size)/(max_cols+seq_size)))
         for j=2,group_rows do
             siz=#r[1]
             r[1][siz+1],r[1][siz+2],r[1][siz+3],r[1][siz+4]="|","#",'|','Column Name'
