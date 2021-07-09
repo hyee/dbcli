@@ -133,7 +133,7 @@ end
 
 function findobj.onload()
 	env.set_command(db,"FINDOBJ","#internal",db.check_obj,false,4)
-	env.event.snoop("AFTER_ORACLE_CONNECT",findobj.onreset)
+	env.event.snoop("ON_DB_DISCONNECTED",findobj.onreset)
 end
 
 return findobj

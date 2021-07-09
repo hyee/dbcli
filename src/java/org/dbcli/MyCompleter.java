@@ -23,7 +23,7 @@ public class MyCompleter implements org.jline.reader.Completer {
     Console console;
     String defaultSchema = null;
     String quote = "\"";
-
+    Candidate[] candidates;
 
     public void reset() {
         synchronized (this.commands) {
@@ -41,6 +41,7 @@ public class MyCompleter implements org.jline.reader.Completer {
             values.clear();
             defaultSchema = null;
             quote = "\"";
+            candidates = null;
         }
     }
 
@@ -56,7 +57,7 @@ public class MyCompleter implements org.jline.reader.Completer {
         console.threadPool.schedule(() -> setCommands(keywords), delay, TimeUnit.MILLISECONDS);
     }
 
-    public void renameCommands(String[] oldNames,String[] newNames) {
+    public void renameCommands(String[] oldNames, String[] newNames) {
 
     }
 
@@ -148,7 +149,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 //values.clear();
                 keywords.clear();
                 groups.clear();
-                Candidate[] candidates = new Candidate[this.keywords.size()];
+                candidates = new Candidate[this.keywords.size()];
                 int seq = 0;
                 for (Map.Entry<String, Object> entry : this.keywords.entrySet()) {
                     final String key = entry.getKey();
@@ -206,13 +207,14 @@ public class MyCompleter implements org.jline.reader.Completer {
             Object keys;
             HashMap<String, Object> map = keywords;
             String sep;
+            boolean usedefaultSchema = false;
             for (int i = 0; i <= len; i++) {
                 if (ary[i].startsWith(quote) && ary[i].endsWith(quote))
                     ary[i] = ary[i].substring(1, ary[i].length() - 1);
                 keys = map.get(ary[i].toLowerCase());
                 sep = dot;
                 if (!(keys instanceof HashMap)) {
-                    if (i == 0 && defaultSchema != null && !defaultSchema.equals("")) {
+                    if (i == 0 && pos == 0 && defaultSchema != null && !defaultSchema.equals("")) {
                         keys = map.get(defaultSchema.toLowerCase());
                         if (keys instanceof HashMap) {
                             k = defaultSchema + "." + k;
@@ -220,9 +222,11 @@ public class MyCompleter implements org.jline.reader.Completer {
                             ++len;
                             ++pos;
                             sep = "";
+                            usedefaultSchema = true;
                         } else break;
                     } else break;
                 } else {
+                    usedefaultSchema = false;
                     prefix += (prefix.equals("") ? ary[i] : (dot + ary[i]));
                 }
                 map = (HashMap) keys;
@@ -241,6 +245,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                     } else
                         list.add(new Candidate(prefix + sep + can, sep + can, null, null, null, null, true));
                 }
+                if (!usedefaultSchema) return;
                 return;
             }
             if (pos > 0) return;

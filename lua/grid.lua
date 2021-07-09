@@ -41,6 +41,8 @@ function grid.set_param(name, value)
         return print("The value should be only one char!")
     elseif name == "COLWRAP" and value > 0 and value < 30 then
         return print("The value cannot be less than 30 !")
+    elseif name=='AUTOHIDE' then
+        --print(value,debug.traceback())
     end
     grid[grid.params[name].name] = value
     return value
@@ -214,10 +216,11 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local tops={{}}
     local _, value
     local max_cols=12
+    local null_value=env.set.NULL and env.set.get('NULL') or ''
 
     local function get_value(title,r,c)
         _, value = grid.format_column(true, type(title) == "table" and title or {column_name = title}, rows[r][c], r-1)
-        len1,len2,nv=tostring(value or env.set.get('null')):trim():ulen(maxsize)
+        len1,len2,nv=tostring(value or null_value):trim():ulen(maxsize)
         max_cols=max_cols<len2 and len2 or max_cols
         return nv
     end
@@ -238,39 +241,50 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local nor, hor = color("NOR"), color("HEADCOLOR")
 
     local r = {}
+    local autohide=grid.autohide
     if verticals and verticals>1 then
-        maxlen=maxlen+2
+        maxlen=maxlen+3
         local width=console:getScreenWidth() - maxlen - 2 - #env.space*2
-        r[1]={'','|',"#",'|','Column Name',"Column Value"}
+        local cname='Column Value'
+        r[1]={'','|',"#",'|','Column Name',cname}
         local siz
         local titles={}
-        for k, v in ipairs(title) do
-            v=grid.format_title(v)
-            len1,len2,nv=v:ulen(maxsize)
-            titles[k]=("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, nv, nor, '=')
+        for k, t in ipairs(title) do
+            t=grid.format_title(t)
+            len1,len2,nv=t:rtrim():ulen(maxsize)
+            titles[k]=("%s %-" .. (maxlen+len1-len2) .. "s%s %s"):format(hor, nv, nor, '=')
         end
         local seq_size=#tostring(verticals)+3
         local group_rows=math.min(verticals-1,math.floor(1.0*(width+seq_size)/(max_cols+seq_size)))
         for j=2,group_rows do
             siz=#r[1]
-            r[1][siz+1],r[1][siz+2],r[1][siz+3],r[1][siz+4]="|","#",'|','Column Name'
+            r[1][siz+1],r[1][siz+2],r[1][siz+3],r[1][siz+4]="|","#",'|',cname
         end
         
         local row
         local st,ed
+        local empties={}
         for i=1,verticals-1 do
             if group_rows<2 or math.fmod(i,group_rows)==1 then st,ed=#r,#r+#titles end
             for j,v in ipairs(titles) do
                 local idx=st+j
-                nv=tops[i] and tops[i][j] or get_value(title,i+1,j)
-                if not r[idx] then 
+                nv=tops[i] and tops[i][j] or get_value(t,i+1,j)
+                empties[idx]=(empties[idx] or 0) + (nv~='' and nv~=null_value and 1 or 0)
+                if not r[idx] then
                     r[idx]={'','|',i,'|',v,nv}
                 else
                     siz=#r[idx]
                     r[idx][siz+1],r[idx][siz+2],r[idx][siz+3],r[idx][siz+4]='|',i,'|',' '..nv
                 end
             end
-            if group_rows<2 or i==verticals-1 or math.fmod(i,group_rows)==0 then r[#r+1]={'$HIY$-$NOR$'} end
+            if group_rows<2 or i==verticals-1 or math.fmod(i,group_rows)==0 then
+                if autohide=='col' or autohide=='all' then
+                    for j=ed,st+1,-1 do
+                        if empties[j]==0 then table.remove(r,j) end
+                    end
+                end
+                r[#r+1]={'$HIY$-$NOR$'} 
+            end
         end
         return r
     end
@@ -411,9 +425,9 @@ function grid:add(row)
     local result, headind, colsize = self.data, self.headind, self.colsize
     local title_style = grid.title_style
     local colbase = self.col_auto_size or grid.col_auto_size
-    local autohide= self.autohide or self.bypassemptyrs or grid.autohide or grid.bypassemptyrs
+    local autohide= self.autohide or self.bypassemptyrs or grid.autohide
     local rownum = grid.row_num
-    local null_value=env.set and env.set.NULL and env.set.NULL.value or ''
+    local null_value=env.set.NULL and env.set.get('NULL') or ''
     local maxsize = grid.col_size
     grid.colsize = self.colsize
     for k, v in pairs(row) do rs[k] = v end
@@ -474,8 +488,8 @@ function grid:add(row)
                 v=''
             end
             colsize[k][3],colsize[k][4]=nil
-        elseif type(v) ~= "string" or v == "" or v==null_value then
-            csize,v = strip_len(tostring(v) or "")
+        elseif type(v) ~= "string" or v == "" or (v==null_value) then
+            csize = strip_len(tostring(v) or "")
         else
             local grp = {}
             v = v:convert_ansi()
@@ -497,7 +511,7 @@ function grid:add(row)
                 elseif v=="" then
                     colsize[k][3],colsize[k][4]=""
                 end
-                if title_style ~= "none" then
+                if title_style ~= "none" and self.include_head then
                     v = grid.format_title(v)
                 end
             else
@@ -1127,6 +1141,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
 
     local function format_tables(tabs, is_wrap)
+        local autohide=grid.autohide
         local result = {}
         local max = 30
         for idx = 0, max do
@@ -1148,7 +1163,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         result[#result + 1] = format_tables(tab, false)
                     else
                         local topic,footprint,width, height, max_rows = tab.topic,tab.footprint,tab.width, tab.height, tab.max_rows
-                        local is_bypass1,is_bypass2,autosize1,autosize2 = grid.autohide or grid.bypassemptyrs,tab.autohide or tab.bypassemptyrs,grid.col_auto_size,tab.autosize
+                        local is_bypass1,is_bypass2,autosize1,autosize2 = grid.autohide,tab.autohide or tab.bypassemptyrs,grid.col_auto_size,tab.autosize
                         if autosize2 then grid.col_auto_size=autosize2 end
                         is_bypass2=is_bypass2==true and 'on' or is_bypass2==false and 'off' or is_bypass2 or is_bypass1
                         grid.autohide=is_bypass2
@@ -1183,7 +1198,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                 result[#result + 1] = tab
             end
         end
-
+        grid.autohide=autohide
         return _merge(result, is_wrap)
     end
 

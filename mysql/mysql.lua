@@ -8,6 +8,7 @@ mysql.module_list={
     "mysql_exe",
     "usedb",
     "show",
+    "info",
     "snap",
     "sql",
     "list",

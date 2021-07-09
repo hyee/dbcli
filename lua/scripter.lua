@@ -479,10 +479,16 @@ function scripter:after_script()
 end
 
 function scripter:check_ext_file(cmd)
-    local exist,c=os.exists(cmd,self.ext_name)
+    local exist,c,dir,flag=os.exists(cmd,self.ext_name)
+    if exists~='file' and self.last_external_path and not cmd:find(':',1,true) then
+        flag=true
+        exist,c=os.exists(env.join_path(self.last_external_path,cmd),self.ext_name)
+    end
     env.checkerr(exist=='file',"Cannot find this file: "..cmd)
     local target_dir=self:rehash(c,self.ext_name)
-    c=c:match('([^\\/]+)$'):upper()
+    dir,c=c:match('^(.-)([^\\/]+)$')
+    c=c:upper()
+    if not flag then self.last_external_path=dir end
     for k,v in pairs(target_dir) do
         if c:find(k,1,true) then return target_dir,k end
     end

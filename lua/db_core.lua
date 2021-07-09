@@ -263,7 +263,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
     local cols=#head
     if not titles[1] then return end
     local dtype=titles[1].data_typeName
-    local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML") or dtype:find("TEXT"))
+    local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML") or dtype:find("TEXT") or dtype:find("JSON"))
     
     null_value=null_value or ''
     if count~=0 then

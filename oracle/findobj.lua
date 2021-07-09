@@ -177,7 +177,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     local obj=obj_name:trim():upper()
     env.checkerr(bypass_error=='1' or obj~="","Please input the object name/id!")
 
-    if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
+    if cache_obj~=db.C.dict.cache_obj then cache_obj=nil end
     if not cache_obj then
     	cache_obj={}
     	local clock=os.clock()
