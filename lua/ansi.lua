@@ -4,7 +4,7 @@ local cfg
 local reader,writer,str_completer,arg_completer,add=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=true
-local pcall,type,select,pairs,tonumber,table=pcall,type,select,pairs,tonumber,table
+local pcall,type,select,pairs,tonumber,table,tostring=pcall,type,select,pairs,tonumber,table,tostring
 
 local enabled=isAnsiSupported
 --[[https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
@@ -352,6 +352,7 @@ local function _strip_ansi(str)
 end
 
 local ulen=console.ulen
+--returns byte length, char length, and final string after limiting the max length
 function string.ulen(s,maxlen)
     if s=="" then return 0,0,s end
     if not s then return nil end
@@ -378,13 +379,13 @@ function string.strip_ansi(str)
     return ansi.strip_ansi(str)
 end
 
-function ansi.strip_len(str)
-    local len1,len2= ansi.strip_ansi(str):ulen()
+function ansi.strip_len(str,siz)
+    local len1,len2= ansi.strip_ansi(str):ulen(siz)
     return len2
 end
 
-function string.strip_len(str)
-    return ansi.strip_len(str)
+function string.strip_len(str,siz)
+    return ansi.strip_len(str,siz)
 end
 
 local function cv(all,code)

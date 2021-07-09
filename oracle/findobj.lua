@@ -281,7 +281,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
 end
 
 local privs={}
-function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
+function db:check_access(obj_name,is_cache,is_set_env)
 	local obj=cache_obj[obj_name] or privs[obj_name]
 	if obj~=nil then 
 		if type(obj)=="table" and obj.accessible then 
@@ -291,7 +291,7 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
 		end
 	end
 
-	obj=self:check_obj(obj_name,bypass_error,is_set_env)
+	obj=self:check_obj(obj_name,'1',is_set_env)
 	
 	if not obj or not obj.object_id then
 		if is_cache==true then privs[obj_name]=0 end
@@ -359,12 +359,12 @@ local function rep(prefix,full,obj,suffix)
 	local o=obj:upper()
 	local p,s=o:sub(1,3),o:sub(4)
 	local t=full:replace(obj,(p=='ALL' and 'DBA' or p)..s)
-	if db:check_access(t,'1',nil,true) then
+	if db:check_access(t,true) then
 		return prefix..t..suffix
 	else
 		if p=='CDB' then
 			t=full:replace(obj,'DBA'..s)
-			if db:check_access(t,'1',nil,true) then return prefix..t..suffix end
+			if db:check_access(t,true) then return prefix..t..suffix end
 		end
 		if p=='ALL' then return prefix..full..suffix end
 		return prefix..full:replace(obj,'ALL'..s)..suffix

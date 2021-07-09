@@ -1122,6 +1122,7 @@ function env.onload(...)
     env.set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
     env.set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     env.set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
+    env.init.finalize(env)
     env.reset_title()
     console:setCommands(env.root_cmds)
     --load initial settings
@@ -1138,7 +1139,6 @@ function env.onload(...)
             end
         end
     end
-    env.init.finalize(env)
     env.IS_ENV_LOADED=true
 end
 

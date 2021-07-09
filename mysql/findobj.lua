@@ -104,7 +104,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
 end
 
 local privs={}
-function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
+function db:check_access(obj_name,is_set_env,is_cache)
 	local obj=cache_obj[obj_name] or privs[obj_name]
 	if obj~=nil then 
 		if type(obj)=="table" and obj.accessible then 
@@ -114,8 +114,8 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
 		end
 	end
 
-	obj=self:check_obj(obj_name,bypass_error,is_set_env)
-	if not obj or not obj.object_id then
+	obj=self:check_obj(obj_name,'1',is_set_env)
+	if not obj then
 		if is_cache==true then privs[obj_name]=0 end
 		return false 
 	end
@@ -124,7 +124,6 @@ function db:check_access(obj_name,bypass_error,is_set_env,is_cache)
     if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 end
     local err=pcall(db.internal_call,db,'select 1 from '..obj.full_name..' limit 1')
     cache_obj[o].accessible=err and 0 or 1
-    --env.checkerr(bypass_error=='1' or not err,"You don't have access right on: "..item.full_name)
     return not err and true or false
 end
 

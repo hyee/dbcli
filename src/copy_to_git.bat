@@ -29,7 +29,10 @@ cd ..
 copy data\*_sample.cfg  "%target%\data"
 xcopy  . "%target%" /E /Y  /exclude:.\src\excludes.txt
 
-if %copyflag%==1 XCOPY /E /Y .\src "%target%\src"
+if %copyflag%==1 (
+    XCOPY /E /Y .\src "%target%\src"
+    pause
+)
 
 if %copyflag%==2 goto :end
 set copyflag=2

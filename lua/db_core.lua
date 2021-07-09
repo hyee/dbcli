@@ -321,7 +321,7 @@ function ResultSet:print(res,conn,prefix,verticals)
         hdl=grid.new()
         hdl.verticals=verticals
         if #cols==1 and #result==2 then
-            cfg.set('colwrap',console:getScreenWidth())
+            cfg.set('colwrap',console:getScreenWidth()-#env.space*2)
         end
         for idx,row in ipairs(result) do 
             hdl:add(row)

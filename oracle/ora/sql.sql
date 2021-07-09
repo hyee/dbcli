@@ -36,7 +36,7 @@
         &V2  : default={:instance}
     --]]
 ]]*/
-set colwrap 150 feed off 
+set feed off 
 COL AVG_ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT USMHD2
 COL CELLIO,READ,WRITE,CELLIO,OFLIN,OFLOUT FORMAT KMG
 COL buff for tmb

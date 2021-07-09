@@ -32,7 +32,7 @@ function sql:validate_accessable(name,options,values)
         elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
             for obj in option:gmatch("([^/%s]+)") do
                 if obj:upper()~="DEFAULT" then
-                    local is_accessed=db:check_access(obj,'1')
+                    local is_accessed=db:check_access(obj,true)
                     if not is_accessed then
                         default=nil
                         check_flag=2

@@ -48,14 +48,16 @@ function mysql:connect(conn_str)
     
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
 
-    self:merge_props(
+    self:merge_props(--https://docs.pingcap.com/tidb/stable/java-app-best-practices
         {driverClassName="com.mysql.cj.jdbc.Driver",
          retrieveMessagesFromServerOnGetMessage='true',
-         allowPublicKeyRetrieval=true,
+         allowPublicKeyRetrieval='true',
          rewriteBatchedStatements='true',
          useCachedCursor=self.MAX_CACHE_SIZE,
+         useCursorFetch='true',
          useUnicode='true',
          useServerPrepStmts='true',
+         cachePrepStmts='true',
          characterEncoding='utf8',
          connectionCollation='utf8mb4_unicode_ci',
          useCompression='true',
@@ -72,7 +74,14 @@ function mysql:connect(conn_str)
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value([[select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,@@character_set_client]])
+    local info=self:get_value([[select database(),
+                                       version(),
+                                       CONNECTION_ID(),
+                                       user(),
+                                       @@hostname,
+                                       @@sql_mode,
+                                       @@port,
+                                       @@character_set_client]])
     table.clear(self.props)
     local props=self.props
     props.privs={}
@@ -87,6 +96,7 @@ function mysql:connect(conn_str)
         args.database=info[1] or ""
         args.hostname=url:match("^[^/%:]+")
         args.port=info[7]
+        self:check_readonly(cfg.get('READONLY'),self.conn:isReadOnly() and 'on' or 'off')
         if props.sub_version:lower():find('tidb') then
             props.tidb,props.branch=true,'tidb'
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
@@ -152,14 +162,6 @@ function mysql:onload()
         end
     end
 
-    --[[
-        select group_concat(concat('''',name,'''') order by name ) 
-        from(
-            select distinct coalesce(nullif(substring(name,1,instr(name," ")-1),''),name) as name 
-            from help_topic where help_category_id in(10,27,40,28,21,8,29)) o
-        where name not in('SET','DO','DUAL','JOIN','UNION','HELP','SHOW','USE','EXPLAIN','DESCRIBE','DESC','CONSTRAINT','CREATE')
-        order by 1
-    --]]
     env.set.rename_command('ENV')
     add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOCK','OPTIMIZE','PREPARE','PURGE')
     add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','WITH','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
@@ -183,12 +185,18 @@ function mysql:onload()
     env.rename_command("PRINT",{"PRINTVAR","PR"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
     env.rename_command("HELP",{"HELP","\\h"})
-    env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,self)
+    env.event.snoop('ON_SETTING_CHANGED',self.check_readonly,self)
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
          function(sep) if sep then env.set.doset("SQLTERMINATOR",';,'..sep..',\\g') end end,false,2)
 
     set_command(nil,{"PROMPT","\\R"},"Change your mysql prompt. Usage: @@NAME {<text>|default|back}",
         function(sep) env.set.doset("PROMPT",sep) end,false,2)
+end
+
+function mysql:check_readonly(name,value,org_value)
+    if name~='READONLY' or value==org_value or not self:is_connect() then return end
+    self.conn:setReadOnly(value=='on')
 end
 
 local ignore_errors={

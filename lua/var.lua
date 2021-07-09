@@ -1,4 +1,4 @@
-local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
+local env,string,java,math,table,tonumber,tostring=env,string,java,math,table,tonumber,tostring
 local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
 local rawset,rawget=rawset,rawget
@@ -661,7 +661,12 @@ function var.define_column(col,...)
             if type(obj.format_dir)=="string" then
                 obj.format_dir=obj.format_dir:gsub("-*(%d+)",dir..'%1')
             else
-                obj.format_dir='%'..dir..#col..'s'
+                local siz=0
+                for _,c in ipairs((obj.heading or col):strip_ansi():split(' *| *')) do
+                    local len=c:ulen()
+                    siz=siz<len and len or siz
+                end
+                obj.format_dir='%'..dir..siz..'s'
                 formats[#formats+1]=function(v)
                     if not v or v=='' then return v,1 end
                     return obj.format_dir:format(tostring(v)),1
