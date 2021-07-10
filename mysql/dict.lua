@@ -240,12 +240,12 @@ function dicts.load_dict(path,category)
     return data
 end
 
-local current_branch,url
+local current_branch,url,usr
 function dicts.on_after_db_conn(instance,sql,props)
-    if props and props.url~=url then
+    if props and (props.url~=url or props.user~=usr)  then
         dicts.load_dict(datapath,'all')
         dicts.cache_obj=nil
-        url=props.url
+        url,usr=props.url,props.user
     end
 end
 

@@ -1,4 +1,4 @@
-/*[[ Fuzzily search object. Usage: @@NAME <keyword> 
+/*[[ Fuzzily search objects. Usage: @@NAME <keyword> 
   --[[
     @ARGS: 1
   --]]

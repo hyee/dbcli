@@ -4,7 +4,6 @@ print Columns:
 print ========
 SELECT ordinal_position `#`,
        concat(' ',column_name) `Field`,
-       generation_expression `Expr`,
        CASE WHEN column_type LIKE 'enum%' AND LENGTH(column_type)>50 THEN 
             REPLACE(column_type,',',',\n     ')
        WHEN column_type LIKE 'set%' AND LENGTH(column_type)>50 THEN
@@ -16,6 +15,7 @@ SELECT ordinal_position `#`,
        column_key  `Key`,
        Extra `Extra`,
        privileges `Privs`,
+       generation_expression `Expr`,
        column_comment `Comment`
 FROM   information_schema.columns
 WHERE  table_schema=:object_owner

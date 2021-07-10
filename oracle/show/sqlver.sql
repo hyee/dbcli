@@ -35,17 +35,17 @@ col ela,avg_ela for usmhd2
 
 SELECT *
 FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT vers),1e6) vers,
-                 SUM(distinct ela) ela,SUM(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
-                 ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
+               SUM(distinct ela) ela,SUM(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
+               ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
                MAX(sql_text) sql_text
         FROM   (SELECT sql_id,
                        MAX(sql_text) sql_text, c, 
-                         SUM(DISTINCT childs) childs,
-                         sum(distinct vers) vers,
-                         SUM(distinct ela) ela,
-                         SUM(distinct avg_ela) avg_ela,
-                         SUM(val) val,
-                         MAX(length(c)) over() l
+                       SUM(DISTINCT childs) childs,
+                       SUM(distinct vers) vers,
+                       SUM(distinct ela) ela,
+                       SUM(distinct avg_ela) avg_ela,
+                       SUM(val) val,
+                       MAX(length(c)) over() l
                 FROM   TABLE(gv$(CURSOR(
                            SELECT /*+ordered DYNAMIC_SAMPLING(4)*/ 
                                   sql_id,

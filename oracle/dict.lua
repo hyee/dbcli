@@ -212,7 +212,7 @@ function dicts.set_cdbmode(name,value)
     cdbmode=value
     return value
 end
-local url
+local url,usr
 function dicts.on_after_db_conn(instance,sql,props)
     if db.props.isadb==true then
         local mode=''
@@ -240,9 +240,9 @@ function dicts.on_after_db_conn(instance,sql,props)
         dicts.db_dict_path=datapath
     end
 
-    if props and props.url~=url then
+    if props and (props.url~=url or props.user~=usr) then
         dicts.cache_obj=nil
-        url=props.url
+        url,usr=props.url,props.user
     end
     if dicts.current_dict and dicts.current_dict.path~=dicts.db_dict_path and os.exists(dicts.db_dict_path) then
         console.completer:resetKeywords()

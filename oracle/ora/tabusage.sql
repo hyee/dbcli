@@ -171,29 +171,29 @@ BEGIN
     $END
 
     $IF &check_access_index=1 $THEN
-       OPEN c3 for 
-        SELECT a.owner,
-               a.index_name,
-               (SELECT listagg(column_name || NULLIF(' ' || DESCEND, ' ASC'), ',') WITHIN GROUP(ORDER BY COLUMN_POSITION)
-                FROM   dba_ind_columns c
-                WHERE  c.index_owner = a.owner
-                AND    c.index_name = a.index_name) cols,
-               TOTAL_EXEC_COUNT EXECS,
-               TOTAL_ACCESS_COUNT accesses,
-               round(a.NUM_ROWS / GREATEST(a.DISTINCT_KEYS, 1), 2) card,
-               round(TOTAL_ROWS_RETURNED / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) avg_rtn,
-               ROUND(BUCKET_0_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_0 %",
-               ROUND(BUCKET_1_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1 %",
-               ROUND(BUCKET_2_10_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_2_10 %",
-               ROUND(BUCKET_11_100_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_11_100 %",
-               ROUND(BUCKET_101_1000_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_101_1K %",
-               ROUND(BUCKET_1000_PLUS_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1K+ %",
-               ROUND(BUCKET_1000_PLUS_ROWS_RETURNED / nullif(BUCKET_1000_PLUS_ACCESS_COUNT, 0), 2) "AVG_R_1K+"
-        FROM   dba_indexes a, dba_index_usage b
-        WHERE  a.owner = b.owner(+)
-        AND    a.index_name = b.name(+)
-        AND    a.table_owner = '&object_owner'
-        AND    a.table_name = '&object_name';
+        OPEN c3 for 
+            SELECT a.owner,
+                   a.index_name,
+                   (SELECT listagg(column_name || NULLIF(' ' || DESCEND, ' ASC'), ',') WITHIN GROUP(ORDER BY COLUMN_POSITION)
+                    FROM   dba_ind_columns c
+                    WHERE  c.index_owner = a.owner
+                    AND    c.index_name = a.index_name) cols,
+                   TOTAL_EXEC_COUNT EXECS,
+                   TOTAL_ACCESS_COUNT accesses,
+                   round(a.NUM_ROWS / GREATEST(a.DISTINCT_KEYS, 1), 2) card,
+                   round(TOTAL_ROWS_RETURNED / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) avg_rtn,
+                   ROUND(BUCKET_0_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_0 %",
+                   ROUND(BUCKET_1_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1 %",
+                   ROUND(BUCKET_2_10_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_2_10 %",
+                   ROUND(BUCKET_11_100_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_11_100 %",
+                   ROUND(BUCKET_101_1000_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_101_1K %",
+                   ROUND(BUCKET_1000_PLUS_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1K+ %",
+                   ROUND(BUCKET_1000_PLUS_ROWS_RETURNED / nullif(BUCKET_1000_PLUS_ACCESS_COUNT, 0), 2) "AVG_R_1K+"
+            FROM   dba_indexes a, dba_index_usage b
+            WHERE  a.owner = b.owner(+)
+            AND    a.index_name = b.name(+)
+            AND    a.table_owner = '&object_owner'
+            AND    a.table_name = '&object_name';
     $END
     :cur00 := ca;
     :cur01 := cb;

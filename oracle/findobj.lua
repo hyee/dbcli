@@ -382,10 +382,10 @@ function findobj.onload()
     env.event.snoop("AFTER_ORACLE_CONNECT",findobj.onreset)
 end
 
-local url
+local url,usr
 function findobj.onreset(instance,sql,props)
-    if props and props.url~=url then
-        url=props.url
+    if props and (props.url~=url or props.user~=usr)  then
+        url,usr=props.url,props.user
         cache_obj,privs,loaded={},{}
     end
 end

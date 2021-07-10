@@ -37,8 +37,8 @@ grid {
             GROUP BY pool) b
     ON     ((lower(a.name) LIKE '% pool %' AND b.pool like '% pool' AND LOWER(a.name) LIKE LOWER(b.pool || '%') OR --
              lower(a.name) NOT LIKE '% pool %' AND b.pool not like '% pool' and
-           (   a.name = 'Redo Buffers' AND b.pool = 'log_buffer' 
-               OR REPLACE(LOWER(a.name), ' ', '_') LIKE '%' || b.pool || '%')))
+           ( a.name = 'Redo Buffers' AND b.pool = 'log_buffer'  OR
+             REPLACE(LOWER(a.name), ' ', '_') LIKE '%' || b.pool || '%')))
     ORDER BY TOTAL_SIZE DESC
 ]],'|',[[--grid:{topic='Shared Pool Components'}
     SELECT * FROM (

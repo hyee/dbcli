@@ -38,8 +38,7 @@ local stmt=([[
         FROM   information_schema.events
         WHERE  lower(concat(event_schema, '.', event_name)) LIKE :obj
     ) M
-    ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END
-    LIMIT 1]]):gsub('@schemas@',sys_schemas)
+    ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END LIMIT 1]]):gsub('@schemas@',sys_schemas)
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('`','')
     env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")
@@ -74,7 +73,9 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         local rows=db:get_rows(sql)
         for _,obj in ipairs(rows) do
             local item={object_owner=obj[1],object_name=obj[2],object_type=obj[3]}
-            cache_obj[obj[2]:lower()],cache_obj[(obj[1]..'.'..obj[2]):lower()]=item,item
+            for _,n in ipairs{obj[2]:lower(),(obj[1]..'.'..obj[2]):lower()} do
+                if not cache_obj[n] then cache_obj[n]=item end
+            end
         end
         db.C.dict.cache_obj=cache_obj
     end
@@ -143,10 +144,10 @@ function db:check_function(func_name)
     return func.accessible==1
 end
 
-local url
+local url,usr
 function findobj.onreset(instance,sql,props)
-    if props and props.url~=url then
-        url=props.url
+    if props and (props.url~=url or props.user~=usr)  then
+        url,usr=props.url,props.user
         cache_obj,privs,loaded={},{}
     end
 end

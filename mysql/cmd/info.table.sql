@@ -49,7 +49,7 @@ ORDER  BY index_name,seq_in_index
         constraint_name `Constraint`,
         constraint_type `Type`,
         columns,
-        IFNULL(COALESCE(ck.check_clause,us.refs),'') `References`,
+        IFNULL(COALESCE(REPLACE(ck.check_clause,'\\''',''''),us.refs),'') `References`,
         IFNULL(rf.unique_constraint_name,'') `Ref Constraint`,
         IFNULL(rf.update_rule,'') 'On Update',
         IFNULL(rf.delete_rule,'') 'On Delete',

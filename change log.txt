@@ -1,3 +1,4 @@
+2021-07-11: + mysql : new script 'sql cols' to search coiumns 
 2021-07-10: + mysql : new command `info` to describe object
 2021-07-08: + mysql : support '<query>\g' to complete the input
                       support command 'charset' to switch client charset

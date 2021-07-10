@@ -8,32 +8,32 @@ db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 local rs_close,rs_isclosed,prep_close,prep_isclosed,prep_exec
 
 local function is_rsclosed(rs)
-	if type(rs)~='userdata' then return true end
-	if not rs_isclosed then rs_isclosed=rs.isClosed end
-	if not rs_isclosed then return true end
-	return rs_isclosed(rs)
+    if type(rs)~='userdata' then return true end
+    if not rs_isclosed then rs_isclosed=rs.isClosed end
+    if not rs_isclosed then return true end
+    return rs_isclosed(rs)
 end
 
 local function close_rs(rs)
-	if type(rs)~='userdata' then return nil end
-	if not rs_close then rs_close=rs.close end
-	if not rs_close then return nil end
-	pcall(rs_close,rs)
+    if type(rs)~='userdata' then return nil end
+    if not rs_close then rs_close=rs.close end
+    if not rs_close then return nil end
+    pcall(rs_close,rs)
     __stmts[rs]=nil
 end
 
 local function is_prepclosed(prep)
-	if type(prep)~='userdata' then return true end
-	if not prep_isclosed then prep_isclosed=prep.isClosed end
-	if not prep_isclosed then return true end
-	return prep_isclosed(prep)
+    if type(prep)~='userdata' then return true end
+    if not prep_isclosed then prep_isclosed=prep.isClosed end
+    if not prep_isclosed then return true end
+    return prep_isclosed(prep)
 end
 
 local function close_prep(prep)
-	if type(prep)~='userdata' then return nil end
-	if not prep_close then prep_close=prep.close end
-	if not prep_close then return nil end
-	pcall(prep_close,prep)
+    if type(prep)~='userdata' then return nil end
+    if not prep_close then prep_close=prep.close end
+    if not prep_close then return nil end
+    pcall(prep_close,prep)
 end
 
 function db_Types:set(typeName,value,conn)
@@ -492,9 +492,9 @@ function db_core:call_sql_method(event_name,sql,method,...)
         local code=''
 
         if obj.getErrorCode then
-            local code=obj:getErrorCode()
-            if code and not tostring(obj:getMessage()):find(code,1,true) then
-                code="ERROR "..code..": "
+            local code,sqlstate=obj:getErrorCode(),obj:getSQLState()
+            if code and not info.error:gsub("\n%s+at%s+.*$",""):find(code,1,true) then
+                code="ERROR "..code.. '('..sqlstate..')'..": "
                 info.error=info.error:gsub("(Exception: )",'%1'..code,1)
             else
                 code=''
@@ -1093,14 +1093,14 @@ function db_core:clearStatements(is_force)
                 end
 
                 if #caches<1 then
-                	close_prep(prep)
+                    close_prep(prep)
                     __stmts[prep],counter=nil,1
                 else
-                	caches.count=caches.count+1
-                	if caches.count >= cfg.get('SQLCACHESIZE') then
-                		close_prep(prep)
-                		__stmts[prep],counter=nil,1
-                	end
+                    caches.count=caches.count+1
+                    if caches.count >= cfg.get('SQLCACHESIZE') then
+                        close_prep(prep)
+                        __stmts[prep],counter=nil,1
+                    end
                 end
             elseif is_rsclosed(prep) then
                 close_prep(prep)
@@ -1110,7 +1110,7 @@ function db_core:clearStatements(is_force)
     else
         counter=1
         for prep,caches in pairs(__stmts) do
-        	close_prep(prep)
+            close_prep(prep)
         end
         table.clear(__stmts)
     end

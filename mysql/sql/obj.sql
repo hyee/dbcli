@@ -1,4 +1,4 @@
-/*[[List object that meet the input criteria. Usage: @@NAME [<owner>.]<object_name>[.<partition>]
+/*[[List the objects that meet the input criteria. Usage: @@NAME [<owner>.]<object_name>[.<partition>]
     --[[
         @ARGS: 1
     --]]

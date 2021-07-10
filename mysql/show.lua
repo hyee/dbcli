@@ -21,6 +21,55 @@ function show.run(...)
         if c=="VARIABLES" or c=="STATUS" or c=="COLLATION" then
             local text=(args[i+1] or ""):upper()
             if text~="" and not text:find("^LIKE") and not text:find("^WHERE") then
+                if k:upper()=='VAR' or k:upper()=='STATUS' then
+                    local vars=db:get_rows("SHOW "..c..";SHOW GLOBAL "..c)
+                    local names={}
+                    local rows={}
+                    local key=args[i+1]:gsub('%%','.-'):lower()
+                    for idx,dict in ipairs(vars) do
+                        table.remove(dict,1)
+                        for i,row in ipairs(dict) do
+                            local name=row[1]
+                            if name~='tidb_config' then
+                                local rec=names[name:lower()]
+                                if not rec then
+                                    rec={name}
+                                    names[name:lower()]=rec
+                                    rows[#rows+1]=rec
+                                end
+                                if idx==1 then
+                                    rec[2]=row[2]
+                                else
+                                    if row[2]==rec[2] then
+                                        rec[3]='<same>'
+                                    else
+                                        rec[3]=row[2]
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    for i=#rows,1,-1 do
+                        local row=rows[i]
+                        local found=false
+                        for j=1,3 do
+                            local val=row[j]
+                            if not val then 
+                                row[j]=''
+                            else
+                                if #val>50 and val:sub(1,128):find('=.-,') then
+                                    row[j]=table.concat(val:split(' *, *'),',\n')
+                                end
+                                if val:lower():match(key) then 
+                                    found=true
+                                end
+                            end
+                        end
+                        if not found then table.remove(rows,i) end
+                    end
+                    table.insert(rows,1,{"Variable Name","Session Value","Global Value"})
+                    return grid.print(rows)
+                end
                 env.printer.set_grep(text)
                 break
             end
@@ -47,7 +96,7 @@ function show.onload()
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
     abbrs["CLT"]="COLLATION"
-    env.set_command(nil,show.name, {"#Show database information",show.help},show.run,false,10)
+    env.set_command(nil,show.name, {"Show database information. External Usage: @@NAME <VAR|STATUS> <keyword>",show.help},show.run,false,10)
 end
 
 return show
