@@ -811,7 +811,7 @@ function db_core.log_param(params)
         for k,v in pairs(params) do
             if type(v)=='table' and v[1] then
                 tab[#tab+1]={
-                    (v[6] and v[6]..',' or  '')..v[2],
+                    (v[6] and v[6]..',' or  '')..table.concat(type(v[2])~='table' and {v[2]} or v[2]),
                     v[1]=='$' and 'IN' or v[6] and 'IN,OUT' or 'OUT',
                     k,
                     v[3],

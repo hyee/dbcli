@@ -30,9 +30,13 @@ local stmt=([[
 		FROM   information_schema.routines
 		WHERE  lower(concat(routine_schema, '.', routine_name)) LIKE :obj
 		UNION ALL
-		SELECT trigger_schema, trigger_name COLLATE utf8_general_ci, 'TRIGGER',NULL
+		SELECT trigger_schema, trigger_name, 'TRIGGER',NULL
 		FROM   information_schema.triggers
 		WHERE  lower(concat(trigger_schema, '.', trigger_name)) LIKE :obj
+		UNION ALL
+		SELECT event_schema, event_name, 'EVENT',NULL
+		FROM   information_schema.events
+		WHERE  lower(concat(event_schema, '.', event_name)) LIKE :obj
 	) M
 	ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END
 	LIMIT 1]]):gsub('@schemas@',sys_schemas)
@@ -106,7 +110,7 @@ end
 local privs={}
 function db:check_access(obj_name,is_set_env,is_cache)
 	local obj=cache_obj[obj_name] or privs[obj_name]
-	if obj~=nil then 
+	if obj~=nil then
 		if type(obj)=="table" and obj.accessible then 
 			return obj.accessible==1
 		elseif type(obj)=="number" then
@@ -122,9 +126,9 @@ function db:check_access(obj_name,is_set_env,is_cache)
 
 	local o=obj.target
     if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 end
-    local err=pcall(db.internal_call,db,'select 1 from '..obj.full_name..' limit 1')
-    cache_obj[o].accessible=err and 0 or 1
-    return not err and true or false
+    local err,msg=pcall(db.internal_call,db,'select 1 from '..obj.full_name..' limit 1')
+    cache_obj[o].accessible=err and 1 or 0
+    return err
 end
 
 function findobj.onreset()

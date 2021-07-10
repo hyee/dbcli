@@ -23,13 +23,13 @@ function sql:validate_accessable(name,options,values)
             default=nil
             for role in option:gmatch("([^/]+)") do
                 role=role:upper()
-                if role:upper()=="DEFAULT" or db.props.privs[role] then
+                if role:upper()=="DEFAULT" or db.props.privs[role] or db.props[role] then
                     default=option
                     break
                 end
             end
             expect=option
-        elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
+        elseif name:find("CHECK_ACCESS")==1 then--objects are sep with the / symbol
             for obj in option:gmatch("([^/%s]+)") do
                 if obj:upper()~="DEFAULT" then
                     local is_accessed=db:check_access(obj,true)

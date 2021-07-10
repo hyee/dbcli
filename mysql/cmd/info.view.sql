@@ -1,3 +1,5 @@
+COL VIEW_DEFINITION NOPRINT
+
 print Columns:
 print ========
 SELECT ordinal_position `#`,
@@ -19,3 +21,8 @@ FROM   information_schema.columns
 WHERE  table_schema=:object_owner
 AND    table_name=:object_name
 ORDER  BY 1;
+
+SELECT * 
+FROM   information_schema.views
+WHERE  table_schema=:object_owner
+AND    table_name=:object_name\G;

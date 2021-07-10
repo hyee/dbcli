@@ -52,11 +52,6 @@ function grid.format_title(v)
     if grid.title_style == "none" then
         return v
     end
-    if not v[grid.title_style] then
-        string.initcap = function(v1)
-            return (' ' .. v1):lower():gsub("([^%w])(%w)", function(a, b) return a .. b:upper() end):sub(2)
-        end
-    end
     return v[grid.title_style](v)
 end
 
@@ -217,6 +212,8 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local _, value
     local max_cols=12
     local null_value=env.set.NULL and env.set.get('NULL') or ''
+    local autohide=grid.autohide
+    if #rows<2 and (autohide=='on' or autohide=='all') then return {} end 
 
     local function get_value(title,r,c)
         _, value = grid.format_column(true, type(title) == "table" and title or {column_name = title}, rows[r][c], r-1)
@@ -241,7 +238,6 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local nor, hor = color("NOR"), color("HEADCOLOR")
 
     local r = {}
-    local autohide=grid.autohide
     if verticals and verticals>1 then
         maxlen=maxlen+3
         local width=console:getScreenWidth() - maxlen - 2 - #env.space*2
@@ -250,8 +246,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
         local siz
         local titles={}
         for k, t in ipairs(title) do
-            t=grid.format_title(t)
-            len1,len2,nv=t:rtrim():ulen(maxsize)
+            len1,len2,nv=grid.format_title(t):rtrim():ulen(maxsize)
             titles[k]=("%s %-" .. (maxlen+len1-len2) .. "s%s %s"):format(hor, nv, nor, '=')
         end
         local seq_size=#tostring(verticals)+3
@@ -294,9 +289,8 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local head=pivotsort=='head' and tostring(title[1]):lower() or (pivotsort~='on' and pivotsort~='off') and pivotsort or nil
     local _, value
     for k, v in ipairs(title) do
-        v=grid.format_title(v)
         len1,len2,nv=v:ulen(maxsize)
-        local row={("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, nv..(v:lower()==head and ' =>' or ''), nor, del)}
+        local row={("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, grid.format_title(nv)..(v:lower()==head and ' =>' or ''), nor, del)}
         if v:lower()==head then
             table.insert(r,1, row)
         else    
@@ -511,7 +505,7 @@ function grid:add(row)
                 elseif v=="" then
                     colsize[k][3],colsize[k][4]=""
                 end
-                if title_style ~= "none" and self.include_head then
+                if title_style ~= "none" and grid_pivot==0 then
                     v = grid.format_title(v)
                 end
             else
