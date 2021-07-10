@@ -1,8 +1,8 @@
 /*[[Show Top InnoDB buffer stats
 
-	--[[
-		@CHECK_ACCESS_BUFF: information_schema.innodb_buffer_page={1}
-	--]]
+    --[[
+        @CHECK_ACCESS_BUFF: information_schema.innodb_buffer_page={1}
+    --]]
 ]]*/
 ENV FEED OFF
 COL data_size format KMG

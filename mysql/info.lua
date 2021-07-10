@@ -3,7 +3,7 @@ local info={}
 
 local header="| %s `%s`.`%s`%s |"
 function info.desc(name,option)
-	env.checkhelp(name)
+    env.checkhelp(name)
     local rs,success,err
     local obj=db:check_obj(name,nil,true)
     local file=env.join_path(db.ROOT_PATH,'cmd','info.'..obj.object_type:lower()..'.sql')
@@ -15,6 +15,6 @@ function info.desc(name,option)
 end
 
 function info:onload()
-	env.set_command(nil,'info','Describe database object. Usage: @@NAME [owner.]<object>[.<partition>] [all]',info.desc,false,3)
+    env.set_command(nil,'info','Describe database object. Usage: @@NAME [owner.]<object>[.<partition>] [all]',info.desc,false,3)
 end
 return info

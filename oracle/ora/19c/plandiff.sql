@@ -1,8 +1,8 @@
 /*[[
-	Comparing Execution plan that available since 19c. Usage: @@NAME <plan_hash_value1> <plan_hash_value2>
+    Comparing Execution plan that available since 19c. Usage: @@NAME <plan_hash_value1> <plan_hash_value2>
 
-	Sample Output:
-	===============
+    Sample Output:
+    ===============
     ---------------------------------------------------------------------------------------------
       Current user           : SYS
       Total number of plans  : 2
@@ -59,10 +59,10 @@
     -----------------------------
      1. Query block SEL$1: Tables are different (0 tables of 1 match).
 
-	--[[
-		@ARGS: 2
-		@VER : 19={}
-	--]]
+    --[[
+        @ARGS: 2
+        @VER : 19={}
+    --]]
 ]]*/
 
 set feed off verify off

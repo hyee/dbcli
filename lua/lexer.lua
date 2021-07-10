@@ -4,8 +4,8 @@ local lexer=env.class()
 
 
 function lexer:ctor()
-	self.probes,self.data={},{open={},close={}}
-	self.name='lexer'
+    self.probes,self.data={},{open={},close={}}
+    self.name='lexer'
 end
 
 function lexer:run_command(cmd,...)
@@ -61,13 +61,13 @@ end
 
 
 function lexer:read(data,file,seq)
-	env.checkerr(file,'Please specify the input file path.')
+    env.checkerr(file,'Please specify the input file path.')
     local f=io.open(file,'rb')
     env.checkerr(f,"Unable to open file: %s",file)
     
     local start_line,end_line,target=self:check_file(f,file,tonumber(seq))
     if not start_line then
-    	start_line,end_line=1,1e8
+        start_line,end_line=1,1e8
     end
     local short_name=file:match('([^\\/]+)$')
     local lines,data={}
@@ -300,8 +300,8 @@ end
 
 
 function lexer:__onload()
-	if not self.probes then self.probes={} end
-	self:build_probes()
+    if not self.probes then self.probes={} end
+    self:build_probes()
     self.cmds={
         open=self.read,
         close=self.close,

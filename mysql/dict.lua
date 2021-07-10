@@ -204,6 +204,10 @@ end
 local function set_keywords(dict,category)
     dict=dict[category]
     if not dict then return end
+    local val=dict['bind_info']
+    if val then
+        print(type(val)=='table' and table.dump(val) or val)
+    end
     console:setKeywords(dict)
 end
 
@@ -236,13 +240,13 @@ function dicts.load_dict(path,category)
     return data
 end
 
-local current_branch
-function dicts.on_after_db_conn()
-    dicts.load_dict(datapath,'all')
-end
-
-function dicts.on_after_db_disc()
-    dicts.cache_obj=nil
+local current_branch,url
+function dicts.on_after_db_conn(instance,sql,props)
+    if props and props.url~=url then
+        dicts.load_dict(datapath,'all')
+        dicts.cache_obj=nil
+        url=props.url
+    end
 end
 
 function dicts.onload()
@@ -255,7 +259,6 @@ function dicts.onload()
             * all   : Build either dict and param
         param : Fuzzy search the parameters that stored in offline dictionary]],dicts.build_dict,false,3)
     event.snoop('AFTER_MYSQL_CONNECT',dicts.on_after_db_conn)
-    event.snoop('ON_DB_DISCONNECTED',dicts.on_after_db_disc)
     dicts.load_dict(datapath)
 end
 

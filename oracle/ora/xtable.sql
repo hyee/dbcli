@@ -1,9 +1,9 @@
 /*[[Show the v$views and column mappings relative to the specific x$table. Usage: @@NAME <x$ table name>
-	--[[
-		@ARGS: 1
-		@ver: 12.1={dbms_utility} default={sys.dbms_sql2}
-		@CHECK_ACCESS_DBA: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
-	--]]
+    --[[
+        @ARGS: 1
+        @ver: 12.1={dbms_utility} default={sys.dbms_sql2}
+        @CHECK_ACCESS_DBA: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
+    --]]
 ]]*/
 set feed off
 var cur REFCURSOR;
@@ -27,17 +27,17 @@ BEGIN
     FOR R IN (SELECT distinct regexp_replace(view_name, '^G?V_?\$', 'V$') n
               FROM   v$fixed_view_definition
               WHERE  ( regexp_like(substr(view_definition, 1, 3999) || ' ', '\W' || REPLACE(:V1, '$', '\$') || '\W', 'i') 
-              	    OR upper(:V1) IN(view_name,regexp_replace(view_name, '^G?V_?\$', 'V$')))
+                      OR upper(:V1) IN(view_name,regexp_replace(view_name, '^G?V_?\$', 'V$')))
               AND    LENGTH(:V1) >= 4) LOOP
         BEGIN
-        	&ver..expand_sql_text('select * from sys.' || r.n, text);
-	        IF instr(text,'"X$')=0 THEN
-	        	&ver..expand_sql_text('select * from sys.' || replace(r.n,'V$','V_$'), text);
-	        END IF;
-	    EXCEPTION WHEN OTHERS THEN
-	    	dbms_output.put_line('Unable to access or cannot find X$ table in view '||r.n);
-	    	continue;
-	    END;
+            &ver..expand_sql_text('select * from sys.' || r.n, text);
+            IF instr(text,'"X$')=0 THEN
+                &ver..expand_sql_text('select * from sys.' || replace(r.n,'V$','V_$'), text);
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            dbms_output.put_line('Unable to access or cannot find X$ table in view '||r.n);
+            continue;
+        END;
         sub := regexp_replace(text, '.*\(\s*(SELECT.*?X\$.*?)\) ".*', '\1', 1, 1, 'n');
         sel := regexp_replace(sub, '(.*)\s+(FROM\s+.*?)$', '\1');
         frm := SUBSTR(sub, LENGTH(sel) + 1);

@@ -4,7 +4,7 @@ set feed off
 pro x$kcbwds
 pro ========
 SELECT grouping_id(inst_id,dbwr_num) gid,
-	   nvl2(inst_id,''||inst_id,'*') inst,
+       nvl2(inst_id,''||inst_id,'*') inst,
        nvl2(dbwr_num,'DBW' || decode(sign(dbwr_num - 10), -1, '' || dbwr_num, chr(87 + dbwr_num)),'*') dbwr_num,
        nvl2(SET_ID,set_id,count(1)) set_id,
        SUM(cnum_set) "Work Set|Blocks",

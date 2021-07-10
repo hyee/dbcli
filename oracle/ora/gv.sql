@@ -1008,15 +1008,15 @@ BEGIN
     dbms_lob.writeappend(c, 9, '</ROWSET>');
     OPEN :cur1 FOR
         with src as(
-		    SELECT name,v,row_number() over(partition by name order by v) r 
-		    FROM (
-			    SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
-			           EXTRACTVALUE(COLUMN_VALUE,'/R/V') V
-			    FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R'))))
+            SELECT name,v,row_number() over(partition by name order by v) r 
+            FROM (
+                SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
+                       EXTRACTVALUE(COLUMN_VALUE,'/R/V') V
+                FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R'))))
             WHERE arg IS NULL OR upper(name) like arg or v like arg)
-	    SELECT name,
-	           '' "|",
-	           max(decode(mod(r-1,4),0,v)) V1,
+        SELECT name,
+               '' "|",
+               max(decode(mod(r-1,4),0,v)) V1,
                max(decode(mod(r-1,4),1,v)) V2,
                max(decode(mod(r-1,4),2,v)) V3,
                max(decode(mod(r-1,4),3,v)) V4
@@ -1024,17 +1024,17 @@ BEGIN
         group by name,floor((r-1)/4)
         order by 1,2;
 
-	OPEN :cur2 FOR
-	   WITH src AS(
-		    SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
-		           EXTRACTVALUE(COLUMN_VALUE,'/R/V') v
-		    FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R')))),
-	   diff as(
-	       select name,v,row_number() over(partition by name order by 1) r
-	       from   src a, (select * from dba_objects where owner in('SYS','PUBLIC') and object_type in('VIEW','SYNONYM')) b
-	       where a.v=b.object_name(+)
-	       and   b.object_name is null
-	       and   v is not null
+    OPEN :cur2 FOR
+       WITH src AS(
+            SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
+                   EXTRACTVALUE(COLUMN_VALUE,'/R/V') v
+            FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R')))),
+       diff as(
+           select name,v,row_number() over(partition by name order by 1) r
+           from   src a, (select * from dba_objects where owner in('SYS','PUBLIC') and object_type in('VIEW','SYNONYM')) b
+           where a.v=b.object_name(+)
+           and   b.object_name is null
+           and   v is not null
            and  (arg IS NULL OR upper(name) like arg or v like arg))
        SELECT name,'' "|",
               max(decode(mod(r-1,4),0,v)) V1,
@@ -1047,16 +1047,16 @@ BEGIN
 
     open :cur3 FOR
        WITH src AS(
-		    SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
-		           EXTRACTVALUE(COLUMN_VALUE,'/R/V') V
-		    FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R')))),
+            SELECT EXTRACTVALUE(COLUMN_VALUE,'/R/N') NAME,
+                   EXTRACTVALUE(COLUMN_VALUE,'/R/V') V
+            FROM TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c),'/ROWSET/R')))),
        db as ( SELECT MIN(object_name) v
-			FROM   DBA_OBJECTS
-			WHERE  OBJECT_TYPE IN ('VIEW', 'SYNONYM')
-			AND    owner IN ('PUBLIC', 'SYS')
-			AND    regexp_like(object_name, '^G?V\$')
+            FROM   DBA_OBJECTS
+            WHERE  OBJECT_TYPE IN ('VIEW', 'SYNONYM')
+            AND    owner IN ('PUBLIC', 'SYS')
+            AND    regexp_like(object_name, '^G?V\$')
                AND   (arg IS NULL OR object_name like arg)
-			GROUP  BY regexp_replace(OBJECT_NAME, '^G')),
+            GROUP  BY regexp_replace(OBJECT_NAME, '^G')),
        diff as (select v,rownum r from (select v from db minus select v from src order by 1))
        SELECT max(decode(mod(r-1,4),0,v)) V1,
               max(decode(mod(r-1,4),1,v)) V2,

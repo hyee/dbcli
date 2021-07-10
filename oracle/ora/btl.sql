@@ -1,13 +1,13 @@
 /*[[
-	Profile the input SQL commands with btl-report. Usage: @@NAME <directory_name> <SQL Commands>
-	If dbms_java does not exist, then execute @?/javavm/install/initjvm.sql with SYSDBA
+    Profile the input SQL commands with btl-report. Usage: @@NAME <directory_name> <SQL Commands>
+    If dbms_java does not exist, then execute @?/javavm/install/initjvm.sql with SYSDBA
     You may need to grant the JAVASYSPRIV access right to the user who will execute this script.
-	
-	Example:  @@NAME DATA_PUMP_DIR "exec dbms_lock.sleep(10)"
-	--[[
-		@ARGS：2
-		@CHECK_ACCESS_JAVA: sys.dbms_java={}
-	--]]
+    
+    Example:  @@NAME DATA_PUMP_DIR "exec dbms_lock.sleep(10)"
+    --[[
+        @ARGS：2
+        @CHECK_ACCESS_JAVA: sys.dbms_java={}
+    --]]
 ]]*/
 set feed off
 var file varchar2(300);

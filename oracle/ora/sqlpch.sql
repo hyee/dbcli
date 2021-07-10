@@ -1,9 +1,9 @@
 /*[[Create SQL Patch on specify SQL ID. Usage: @@NAME <SQL Id> "<Hint Text>"
-	--[[
-	@ALIAS  : SQLPATCH
-	@ARGS   : 2
+    --[[
+    @ALIAS  : SQLPATCH
+    @ARGS   : 2
     @CHECK_ACCESS_DBA: DBMS_SQLDIAG_INTERNAL={1} SYS.DBMS_SQLDIAG={0}
-	]]--
+    ]]--
 ]]*/
 SET FEED OFF VERIFY OFF
 VAR NAME VARCHAR2;

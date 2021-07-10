@@ -505,7 +505,7 @@ function grid:add(row)
                 elseif v=="" then
                     colsize[k][3],colsize[k][4]=""
                 end
-                if title_style ~= "none" and grid_pivot==0 then
+                if title_style ~= "none" and self.include_head then
                     v = grid.format_title(v)
                 end
             else

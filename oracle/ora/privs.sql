@@ -1,8 +1,8 @@
 /*[[Show object privileges. Usage: @@NAME <object_name>
-	--[[
-		@CHECK_ACCESS_TAB: dba_tab_privs={dba} default={all}
-		@CHECK_ACCESS_OWN: dba_tab_privs={OWNER} default={TABLE_SCHEMA}
-	--]]
+    --[[
+        @CHECK_ACCESS_TAB: dba_tab_privs={dba} default={all}
+        @CHECK_ACCESS_OWN: dba_tab_privs={OWNER} default={TABLE_SCHEMA}
+    --]]
 ]]*/
 ora _find_object "&V1" 1
 set feed off

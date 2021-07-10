@@ -29,15 +29,17 @@ function sql:validate_accessable(name,options,values)
                 end
             end
             expect=option
-        elseif name:find("CHECK_ACCESS")==1 then--objects are sep with the / symbol
+        elseif name:find("CHECK_ACCESS",1,true)==1 or name:find("CHECK_FUNC",1,true)==1 then--objects are sep with the / symbol
+            local func=name:find("CHECK_ACCESS",1,true)==1 and 'check_access' or 'check_function'
+            local info=name:find("CHECK_ACCESS",1,true)==1 and 'the accesses to: ' or 'the function'
             for obj in option:gmatch("([^/%s]+)") do
                 if obj:upper()~="DEFAULT" then
-                    local is_accessed=db:check_access(obj,true)
+                    local is_accessed=db[func](db,obj)
                     if not is_accessed then
                         default=nil
                         check_flag=2
                         expect_name="access"
-                        expect='the accesses to: '.. option
+                        expect=info .. option
                         break
                     end
                 end

@@ -1,14 +1,14 @@
 /*[[
   Show top objects in flashcache contents based on external table EXA$CACHED_OBJECTS. Usage: @@NAME [hits|misses|cachesize|<keyword>] [-detail|-group]
-	This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
-	
-	Parameters:
-		* hits|misses|cachedsize: order by column, defaults as order by hits desc
-		* -detail: don't group the data,instead, show the details of each cell
+    This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
+    
+    Parameters:
+        * hits|misses|cachedsize: order by column, defaults as order by hits desc
+        * -detail: don't group the data,instead, show the details of each cell
     * -group : group the data by object name
 
-	Sample output:
-	==============
+    Sample output:
+    ==============
     SQL> @@NAME SYS
     OWNER      OBJECT_NAME       SUBOBJECT_NAME    OBJECT_TYPE     OBJECT_ID DATA_OBJECT_ID RECS CELLS Reqs Hits Hit% Misses CachedSize ColumnarCache ColumnarCache% CachedWrite CachedKeep ColumnarKeep
     ----- ---------------------- -------------- ------------------ --------- -------------- ---- ----- ---- ---- ---- ------ ---------- ------------- -------------- ----------- ---------- ------------
@@ -21,8 +21,8 @@
   --[[
       @check_access_obj : EXA$CACHED_OBJECTS={}
       @check_access_pmem: EXA$PMEM_OBJECTS={union all SELECT 'PMEM' type, a.* from EXA$PMEM_OBJECTS a} default={}
-  		&grp1: default={COUNT(1) recs,COUNT(DISTINCT CELLNODE) cells} detail={cellnode,TABLESPACENUMBER TS#} 
-  		&grp2: default={} detail={,CELLNODE,TABLESPACENUMBER}
+          &grp1: default={COUNT(1) recs,COUNT(DISTINCT CELLNODE) cells} detail={cellnode,TABLESPACENUMBER TS#} 
+          &grp2: default={} detail={,CELLNODE,TABLESPACENUMBER}
       &grp3: {
             default={owner, nvl(object_name,'DB: '||dbuniquename) object_name, subobject_name, object_type, object_id, b.*} 
             group={owner,nvl(object_name,'DB: '||dbuniquename) object_name,regexp_substr(object_type,'^\S+') object_type,
@@ -45,7 +45,7 @@
           default={}
           group={group by type,owner,nvl(object_name,'DB: '||dbuniquename),regexp_substr(object_type,'^\S+') }
       }
-	--]]
+    --]]
 ]]*/
 
 col CACHEDSIZE,cachedwrite,cachedkeep,columnarkeep,columnarcache for kmg

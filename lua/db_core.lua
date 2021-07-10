@@ -133,7 +133,6 @@ function db_Types:load_sql_types(className)
                     return java.cast(result,'java.lang.String'):getBytes()
                 end
             end},
-
         [6]={getter='getObject',setter='setObject',
              handler=function(result,action,conn)
                 if action=="get" then
@@ -167,7 +166,7 @@ function db_Types:load_sql_types(className)
         TIMESTAMP= m2[8]
     }
     for k,v in java.fields(typ) do
-        if type(k) == "string" and k:upper()==k then
+        if type(k) == "string" and k:match('^[%u_%d]+$') and k~='NULL' and k~='UNKNOWN' then
             local m=m1[k] or (number_types[k] and m2[2]) or {getter="getString",setter="setString"}
             self[k]={id=v,name=k,getter=m.getter,setter=m.setter,handler=m.handler}
             self[v]=self[k]

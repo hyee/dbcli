@@ -3,18 +3,18 @@
         @check_version: 11.0={}
         @check_access: dba_outstanding_alerts/dba_alert_history={}
         @check_access_inc: {
-		    v$diag_incident={
-		        PRO Recent Problems:
-				PRO =================
-				SELECT * FROM (
-					SELECT * FROM table(gv$(cursor(select userenv('instance') inst,a.* from v$diag_problem a))) order by lastinc_time desc
-				) WHERE ROWNUM <=10;
-				PRO Recent Incidents:
-				PRO =================
-				SELECT * FROM (
-					SELECT * FROM table(gv$(cursor(select userenv('instance') inst,a.* from v$diag_incident a))) order by create_time desc
-				) WHERE ROWNUM <=30;}
-			default={}
+            v$diag_incident={
+                PRO Recent Problems:
+                PRO =================
+                SELECT * FROM (
+                    SELECT * FROM table(gv$(cursor(select userenv('instance') inst,a.* from v$diag_problem a))) order by lastinc_time desc
+                ) WHERE ROWNUM <=10;
+                PRO Recent Incidents:
+                PRO =================
+                SELECT * FROM (
+                    SELECT * FROM table(gv$(cursor(select userenv('instance') inst,a.* from v$diag_incident a))) order by create_time desc
+                ) WHERE ROWNUM <=30;}
+            default={}
         }
     --]]
 ]]*/

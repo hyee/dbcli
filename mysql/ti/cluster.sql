@@ -10,19 +10,19 @@ PRINT Cluser Info:
 PRINT ============
 SELECT *
 FROM (
-	SELECT Type,Instance,
-	       SUM(CASE WHEN n='cpu-cpu-physical-cores' THEN value END) `CPU|Cores`,
-	       SUM(CASE WHEN n='cpu-cpu-logical-cores' THEN value END) `CPU|Threads`,
-	       MAX(CASE WHEN n='cpu-cpu-frequency' THEN value END) `CPU|Freq`,
-	       SUM(CASE WHEN n='memory-capacity' THEN value END) `MeM|Total`,
-	       SUM(CASE WHEN n='disk-total' THEN value END) `Disk|Total`,
-	       SUM(CASE WHEN n='disk-used' THEN value END) `Disk|Used`,
-	       SUM(CASE WHEN n='disk-free' THEN value END) `Disk|free`
-	FROM   (SELECT *,
-		          lower(concat(DEVICE_TYPE,'-',NAME)) n,
-		          lower(device_name) dn
-		   FROM   INFORMATION_SCHEMA.CLUSTER_HARDWARE) C
-	GROUP BY Type,Instance) A
+    SELECT Type,Instance,
+           SUM(CASE WHEN n='cpu-cpu-physical-cores' THEN value END) `CPU|Cores`,
+           SUM(CASE WHEN n='cpu-cpu-logical-cores' THEN value END) `CPU|Threads`,
+           MAX(CASE WHEN n='cpu-cpu-frequency' THEN value END) `CPU|Freq`,
+           SUM(CASE WHEN n='memory-capacity' THEN value END) `MeM|Total`,
+           SUM(CASE WHEN n='disk-total' THEN value END) `Disk|Total`,
+           SUM(CASE WHEN n='disk-used' THEN value END) `Disk|Used`,
+           SUM(CASE WHEN n='disk-free' THEN value END) `Disk|free`
+    FROM   (SELECT *,
+                  lower(concat(DEVICE_TYPE,'-',NAME)) n,
+                  lower(device_name) dn
+           FROM   INFORMATION_SCHEMA.CLUSTER_HARDWARE) C
+    GROUP BY Type,Instance) A
 JOIN INFORMATION_SCHEMA.CLUSTER_INFO B
 USING (Type,Instance)
 ORDER BY 1,2;
@@ -61,8 +61,8 @@ SELECT Type,Instance,
        SUM(CASE WHEN n in('net-errin','net-errout') THEN value END) `Net|Errs`,
        SUM(CASE WHEN n in('net-dropin','net-dropout') THEN value END) `Net|Drops`
 FROM ( SELECT *,
-	          lower(concat(DEVICE_TYPE,'-',NAME)) n,
-	          lower(device_name) dn
-	   FROM   INFORMATION_SCHEMA.CLUSTER_LOAD) C
+              lower(concat(DEVICE_TYPE,'-',NAME)) n,
+              lower(device_name) dn
+       FROM   INFORMATION_SCHEMA.CLUSTER_LOAD) C
 GROUP BY type,instance
 ORDER BY 1,3 desc,2

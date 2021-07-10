@@ -156,6 +156,7 @@ function mysql:command_call(sql,...)
 end
 
 function mysql:onload()
+    self.db_types:load_sql_types('com.mysql.cj.MysqlType')
     local default_desc={"#MYSQL database SQL command",self.C.help.help_offline}
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do

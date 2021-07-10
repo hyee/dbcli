@@ -7,8 +7,8 @@ Options:
     -latch        : Show latch stats instead of active sessions
     -iostat       : Show I/O stats instead of active sessions
     -im           : Only list the system global stats relative to In-Memory
-	-filestat     : Show Tablespace and file stats instead of system global stats
-	-dlm          : Show info of gv$dlm_misc instead of system global stats
+    -filestat     : Show Tablespace and file stats instead of system global stats
+    -dlm          : Show info of gv$dlm_misc instead of system global stats
 Examples:
      @@NAME  10           : takes 2 snapshots within 10 seconds and report the delta stats
      @@NAME  10 . time    : takes 2 snapshots within 10 seconds and report the delta stats, as well as show the stats contain the word "time" 
@@ -278,9 +278,9 @@ Examples:
                     FROM   stat
                     GROUP  BY inst, tablespace_name, ROLLUP(file_name))  
                 WHERE UPPER(tablespace_or_file) LIKE upper(q'{%&V2%}')]]}，
-			
-			dlm={[[/*grid={topic='DLM Stats',include_zero=true,height=0}*/
-				SELECT /*+no_expand*/ &inst1  inst, 
+            
+            dlm={[[/*grid={topic='DLM Stats',include_zero=true,height=0}*/
+                SELECT /*+no_expand*/ &inst1  inst, 
                        substr(NAME,1,45) name, 
                        value
                 FROM  gv$dlm_misc
@@ -472,8 +472,8 @@ Examples:
                    SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
                    SUM(DECODE(n, 'physical reads direct', v))*bs "dxr",
                    SUM(DECODE(n, 'physical writes direct', v))*bs "dxw",
-				   SUM(CASE WHEN n LIKE '%scans (direct read)%' THEN v END) "dxscan",
-				   SUM(DECODE(n,'table scans (short tables)',v,'table scans (long tables)',v,'index fast full scans (full)',v)) "fscan",
+                   SUM(CASE WHEN n LIKE '%scans (direct read)%' THEN v END) "dxscan",
+                   SUM(DECODE(n,'table scans (short tables)',v,'table scans (long tables)',v,'index fast full scans (full)',v)) "fscan",
                    SUM(DECODE(n, 'redo size', v,'flashback log write bytes',v)) "Redo",
                    SUM(decode(n,'DBWR undo block writes',v))*bs "Undo",
             &ver   (select sum(w)*1024*1024 from (select &inst1 inst,SMALL_READ_MEGABYTES+SMALL_WRITE_MEGABYTES+LARGE_READ_MEGABYTES+LARGE_WRITE_MEGABYTES w from GV$IOSTAT_FUNCTION WHERE FUNCTION_NAME='DBWR' and &inst_filter) b where b.inst=a.inst) dbwr,
@@ -633,7 +633,7 @@ Examples:
                 ['hard']='[hard]*100/[parse]',
                 ['dxr']='[dxr]*100/[PhyRead]',
                 ['dxw']='[dxw]*100/[PhyWrite]',
-				['dxscan']='[dxscan]*100/[fscan]',
+                ['dxscan']='[dxscan]*100/[fscan]',
                 ['FcHit']='[FcHit]*100/[phyio]',
                 prun='[prun]*100/[IMCU]',
                 FLASH='[FLASH]*100/[IOPS]',
