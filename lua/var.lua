@@ -168,6 +168,9 @@ end
 
 function var.setInputs(name,args)
     var.inputs[name]=args
+    if args then
+        var.outputs[name]=nil
+    end
 end
 
 local var_pattern='%f[\\&](&+)([%w%_%$]+)(%.?)'
@@ -251,7 +254,6 @@ function var.after_db_exec(item)
     if isPrint=="on" then
         var.print(result)
     end
-    current_outputs=nil
 end
 
 function var.print(name)
@@ -331,13 +333,18 @@ function var.save(name,file)
     print("Data saved to "..file);
 end
 
+local allow_cmds={}
 function var.capture_before_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
     if env._CMDS[cmd] and env._CMDS[cmd].FILE:find('var') then
         return
     end
-    local sub=env._CMDS[cmd].ALIAS_TO or 'nil'
-    if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 and sub~='COL' and sub~='COLUMN' then
+    local sub=env._CMDS[cmd].ALIAS_TO or cmd
+    table.clear(allow_cmds)
+    for _,n in ipairs{var.cmd1,var.cmd2,var.cmd3,var.cmd4,'COL','COLUMN',env.set.name,'ENV'} do
+        allow_cmds[n]=1
+    end
+    if not allow_cmds[sub] then
         env.log_debug("var","Backup variables")
         if not var._prevent_restore then
             var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
@@ -539,6 +546,7 @@ function var.define_column(col,...)
         for k,v in ipairs(cols) do var.define_column(v,...) end
         return
     end
+
     local gramma={
         {{'ALIAS','ALI'},'*'},
         {{'CLEAR','CLE'}},
@@ -732,6 +740,7 @@ function var.trigger_column(field)
     index=obj.new_value
     if index and rowind>0 and current_outputs then
         current_outputs[index]=value or db_core.NOT_ASSIGNED
+        var.setInputs(index,current_outputs[index])
         if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 

@@ -105,7 +105,7 @@ function dicts.build_dict(typ,scope)
             end
             local flag=0
             local op=row[1]:match('%S+')
-            if row[1]~='SHOW' and op~='HELP' and env._CMDS[op] then
+            if row[1]~='SHOW' and op~='HELP' and op~='SELECT' and op~='WITH' and env._CMDS[op] then
                 local desc=(row[2]:sub(1,256)..'\n'):match('\n%s*('..row[1]:trim():gsub('%s+','[^\n]+')..'.-)\n%s*\n')
                 if not desc then 
                     desc,flag=row[1],1

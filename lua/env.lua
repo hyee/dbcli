@@ -549,7 +549,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     
     if isMain then
         if writer then env.ROOT_CMD=name end
-        collectgarbage("stop")
+        --collectgarbage("stop")
         env.log_debug("CMD",name,params)
     else
         if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
@@ -569,7 +569,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
     if isMain then
-        collectgarbage("restart")
+        --collectgarbage("restart")
         collectgarbage("collect")
         env.set_prompt(nil,env.PRI_PROMPT)
     end

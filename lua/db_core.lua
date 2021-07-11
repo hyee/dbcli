@@ -214,7 +214,7 @@ end
 
 --return one row for a result set, if packerounter EOF, then return nil
 --The first rows is the title
-function ResultSet:fetch(rs,conn)
+function ResultSet:fetch(rs,conn,null_value)
     local cols=self[rs]
     if not self[rs] then return self:getHeads(rs).__titles end
    
@@ -228,7 +228,7 @@ function ResultSet:fetch(rs,conn)
     for i=1,size,1 do
         local value=self:get(i,cols[i].data_type,rs,conn)
         value=type(value)=="string" and value or value
-        result[i]=value or ""
+        result[i]=value or null_value or ""
     end
 
     return result
@@ -1127,7 +1127,7 @@ function db_core:query(sql,args,prep_params)
 end
 
 --if the result contains more than 1 columns, then return an array, otherwise return the value of the 1st column
-function db_core:get_value(sql,args)
+function db_core:get_value(sql,args,null_value)
     local result = self:internal_call(sql,args)
     if not result or type(result)=="number" then
         return result
@@ -1135,8 +1135,8 @@ function db_core:get_value(sql,args)
         local rs,rtn={}
         for k,r in ipairs(result) do
             if type(r)=='userdata' then
-                self.resultset:fetch(r,self.conn)
-                rtn=self.resultset:fetch(r,self.conn)
+                self.resultset:fetch(r,self.conn,null_value)
+                rtn=self.resultset:fetch(r,self.conn,null_value)
                 rs[#rs+1]=#rtn==1 and rtn[1] or rtn
             else
                 rtn=r
@@ -1150,8 +1150,8 @@ function db_core:get_value(sql,args)
         return rs
     end
     --bypass the titles
-    self.resultset:fetch(result,self.conn)
-    local rtn=self.resultset:fetch(result,self.conn)
+    self.resultset:fetch(result,self.conn,null_value)
+    local rtn=self.resultset:fetch(result,self.conn,null_value)
     self.resultset:close(result)
     if type(rtn)~="table" then
         return rtn
@@ -1535,6 +1535,19 @@ function db_core:disconnect(feed)
     end
 end
 
+function db_core:set_time(name,value)
+    if not value or value=="" then
+         env.var.setInputs(name,"")
+        return "" 
+    end
+    if self.check_datetime then
+        self:assert_connect()
+        value=self:check_datetime(value) or value
+    end
+    print("Default",name,"set as",value)
+    env.var.setInputs(name,value)
+    return value
+end
 
 function db_core:__onload()
     self.root_dir=(self.__class.__className):gsub('[^\\/]+$','')
@@ -1580,7 +1593,8 @@ function db_core:__onload()
     txt=txt..'\n       var x refcursor;'
     txt=txt..'\n       exec open :x for select * from user_objects where rownum<10;'
     txt=txt..'\n       sql2csv user_objects x;'
-
+    env.var.setInputs('STARTTIME','')
+    env.var.setInputs('ENDTIME','')
     cfg.init("PRINTSIZE",1000,set_param,"db.query","Max rows to be printed for a select statement",'1-10000')
     cfg.init({"FETCHSIZE","ARRAY","ARRAYSIZE"},3000,set_param,"db.query","Rows to be prefetched from the resultset, 0 means auto.",'0-32767')
     cfg.init("SQLTIMEOUT",1200,set_param,"db.core","The max wait time(in second) for a single db execution",'10-86400')
@@ -1596,6 +1610,8 @@ function db_core:__onload()
     cfg.init("CSVSEP",",",set_param,"db.core","Define the default separator between CSV fields.")
     cfg.init("PROMPTEXP","on",set_param,"db.core","Controls whether to prompt input when export SQL data",'on,off')
     cfg.init("READONLY",'off',set_param,"db.core","When set to on, makes the database connection read-only.",'on,off')
+    cfg.init("starttime","",self.set_time,"db.core","Specify the default start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries",nil,self)
+    cfg.init("endtime","",self.set_time,"db.core","Specify the default end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries",nil,self)
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
     env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)

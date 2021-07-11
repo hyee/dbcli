@@ -563,7 +563,7 @@ function oracle:asql_single_line(...)
 end
 
 
-function oracle:check_date(string,fmt)
+function oracle:check_datetime(string,fmt)
     fmt=fmt or "YYMMDDHH24MI"
     local args={string and string~="" and string or " ",fmt,'#INTEGER','#VARCHAR'}
     self:internal_call([[

@@ -8,7 +8,7 @@ local cache={}
 
 local fmt='%s(select /*+merge*/ * from %s where %s=%s :others:)%s'
 local fmt1='%s(select /*+merge*/  %d inst_id,a.* from %s a where 1=1 :others:)%s'
-local instance,container,usr,dbid,starttime,endtime
+local instance,container,usr,dbid
 local cdbmode='off'
 local cdbstr='^[CDA][DBL][BAL]_'
 local noparallel='off'
@@ -83,14 +83,12 @@ function dicts.on_before_db_exec(item)
         end
     end
 
-    instance,container,usr,dbid,starttime,endtime=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema"),cfg.get("dbid"),cfg.get("STARTTIME"),cfg.get("ENDTIME")
+    instance,container,usr,dbid=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema"),cfg.get("dbid")
     if instance==0 then instance=tonumber(db.props.instance) end
     for k,v in ipairs{
         {'INSTANCE',instance and instance>0 and instance or ""},
         {'DBID',dbid and dbid>0 and dbid or ""},
         {'CON_ID',container and container>=0 and container  or ""},
-        {'STARTTIME',starttime},
-        {'ENDTIME',endtime},
         {'SCHEMA',usr},
         {'_SQL_ID',db.props.last_sql_id or ''},
         {'cdbmode',cdbmode~='off' and cdbmode or ''}
@@ -136,8 +134,6 @@ function dicts.set_title(name,value,orig)
                   tonumber(get("DBID"))>0   and "DBID="..get("DBID") or "",
                   tonumber(get("CONTAINER"))>-1   and "Con_id="..get("CONTAINER") or "",
                   get("SCHEMA")~=""   and "Schema="..get("SCHEMA") or "",
-                  get("STARTTIME")~='' and "Start="..get("STARTTIME") or "",
-                  get("ENDTIME")~=''   and "End="..get("ENDTIME") or "",
                   get("CDBMODE")~='off' and (get("CDBMODE"):upper().."=on") or "",
                   noparallel~='off' and "PX=off" or ""}
     for i=#title,1,-1 do
@@ -145,12 +141,6 @@ function dicts.set_title(name,value,orig)
     end
     title=table.concat(title,'   '):trim()
     env.set_title(title~='' and "Filter: ["..title.."]" or nil)
-end
-
-function dicts.check_time(name,value)
-    if not value or value=="" then return "" end
-    print("Time set as",db:check_date(value,'YYMMDDHH24MISS'))
-    return value:trim()
 end
 
 function dicts.set_instance(name,value)
@@ -228,7 +218,6 @@ function dicts.on_after_db_conn(instance,sql,props)
         cfg.force_set('cdbmode','default')
     end
     prev_container={}
-    --cfg.force_set('starttime','default')
     cfg.force_set('schema','default')
     cfg.force_set('container','default')
     cfg.force_set('dbid','default')
@@ -606,8 +595,6 @@ function dicts.onload()
     cfg.init("schema","",dicts.set_schema,"oracle","Auto-limit the schema of impacted tables. ","*")
     cfg.init({"container","con","con_id"},-1,dicts.set_container,"oracle","Auto-limit the con_id of impacted tables. -1: unlimited, 0: current, >0: specific instance","-1 - 32768")
     cfg.init("dbid",0,dicts.set_container,"oracle","Specify the dbid for AWR analysis")
-    cfg.init("starttime","",dicts.check_time,"oracle","Specify the start time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
-    cfg.init("endtime","",dicts.check_time,"oracle","Specify the end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries, mainly used for AWR")
     cfg.init("noparallel","off",dicts.set_noparallel,"oracle","Controls executing SQL statements in no parallel mode. refer to MOS 1114405.1","on,off");
     dicts.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}

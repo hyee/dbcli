@@ -13,7 +13,7 @@ mysql.module_list={
     "sql",
     "list",
     "ps",
-    "ti",
+    "tidb",
     "chart",
     "ssh",
     "dict",
@@ -227,16 +227,14 @@ function mysql:handle_error(info)
     end
 end
 
-function mysql:set_session(name,value)
-    self:assert_connect()
-    return self:exec(table.concat({"SET",name,value}," "))
-end
-
-function mysql:set(item)
-    if not self:is_connect() then return end
-    local cmd="SET "..table.concat(item," ")
-    item[1]=true
-    self:exec(cmd)
+function mysql:check_datetime(datetime)
+    local v=self:get_value([[select str_to_date(:1,'%y%m%d%H%i%s')]],{datetime},'')
+    if v=='' then
+        datetime=datetime:sub(3)
+        v=self:get_value([[select str_to_date(:1,'%y%m%d%H%i%s')]],{datetime},'')
+        env.checkerr(v~="","Invalid datetime format")
+    end
+    return datetime
 end
 
 function mysql:onunload()

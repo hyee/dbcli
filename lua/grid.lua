@@ -1,6 +1,7 @@
 local env, pairs, ipairs = env, pairs, ipairs
 local math, table, string, class, event = env.math, env.table, env.string, env.class, env.event
 local type,tostring,tonumber=type,tostring,tonumber
+local clear=table.clear
 local grid = class()
 local console = console
 local getWidth = console.getBufferWidth
@@ -218,7 +219,7 @@ function grid.line_wrap(text,width)
                 ln=ln+1
                 result[#result+1]=text:sub(pos,pos1)
                 lines[#lines+1]=size(table.concat(result,''))
-                table.clear(result)
+                clear(result)
                 pos=pos1+1
                 break
             end
@@ -448,7 +449,7 @@ local printables={
     ['\30']='\\30',
     ['\31']='\\31'
 }
-
+local empty={}
 function grid:add(row)
     if type(row) ~= "table" then return end
     local rs = {_org = {}}
@@ -521,7 +522,7 @@ function grid:add(row)
         elseif type(v) ~= "string" or v == "" or (v==null_value) then
             csize = strip_len(tostring(v) or "")
         else
-            local grp = {}
+            local grp = empty
             v = v:convert_ansi()
             if headind == 0 then
                 v = v:gsub("([^|\n\r]+)%c*[|\n]+%c*([^|\n\r]+)", function(a, b)
@@ -576,15 +577,20 @@ function grid:add(row)
                     end
                     if col_wrap > 0 and usize > col_wrap then
                         grp,usize,csize=grid.line_wrap(v,col_wrap)
+                        empty={}
                     end
                 end
             end
 
             if not grp[1] then
                 usize,csize,v=v:ulen(maxsize)
+            elseif #grp>1 then
+                v,empty=grp,{}
             else
-                v=#grp>1 and grp or grp[1]
+                v=grp[1]
+                clear(empty)
             end
+
             if csize==0 and v~='' then csize=1 end
 
             if lines < #grp then lines = #grp end

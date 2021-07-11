@@ -214,7 +214,7 @@ public class MyCompleter implements org.jline.reader.Completer {
                 keys = map.get(ary[i].toLowerCase());
                 sep = dot;
                 if (!(keys instanceof HashMap)) {
-                    if (i == 0 && pos == 0 && defaultSchema != null && !defaultSchema.equals("")) {
+                    if (i == 0 && pos == -1 && defaultSchema != null && !defaultSchema.equals("")) {
                         keys = map.get(defaultSchema.toLowerCase());
                         if (keys instanceof HashMap) {
                             k = defaultSchema + "." + k;
@@ -246,7 +246,6 @@ public class MyCompleter implements org.jline.reader.Completer {
                         list.add(new Candidate(prefix + sep + can, sep + can, null, null, null, null, true));
                 }
                 if (!usedefaultSchema) return;
-                return;
             }
             if (pos > 0) return;
             keysWordCompeleter.complete(lineReader, parsedLine, list);
