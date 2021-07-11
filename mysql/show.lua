@@ -96,7 +96,7 @@ function show.onload()
     abbrs["POS"]="PROFILES"
     abbrs["TRS"]="TRIGGERS"
     abbrs["CLT"]="COLLATION"
-    env.set_command(nil,show.name, {"Show database information. External Usage: @@NAME <VAR|STATUS> <keyword>",show.help},show.run,false,10)
+    env.set_command(nil,show.name, {"MySQL `SHOW` command. External Usage: @@NAME <VAR|STATUS> <keyword>",show.help},show.run,false,10)
 end
 
 return show

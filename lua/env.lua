@@ -484,8 +484,12 @@ local function _exec_command(name,params)
         local co,_,index=env.register_thread()
         co=co_stacks[index+1]
         if not co or coroutine.status(co)=='dead' then
-            co=coroutine.create(function(f) while f do f=coroutine.yield(f[1](table.unpack(f,2))) end end)
-            --print(co)
+            co=coroutine.create(
+                function(f) 
+                    while f do 
+                        f=coroutine.yield(f[1](table.unpack(f,2))) 
+                    end 
+                end)
         end
         env.register_thread(co)
         args[1]=func
@@ -543,20 +547,19 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     is_internal,arg_text=is_internal or false,arg_text or ""
     env.CURRENT_CMD=name
     
-    if event then
-        if isMain then
-            if writer then env.ROOT_CMD=name end
-            --collectgarbage("collect")
-            env.log_debug("CMD",name,params)
-        else
-            if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
-            env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
-        end
-        
-        if event and not is_internal then
-            name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text}))) 
-        end
+    if isMain then
+        if writer then env.ROOT_CMD=name end
+        collectgarbage("stop")
+        env.log_debug("CMD",name,params)
+    else
+        if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
+        env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
     end
+    
+    if event and not is_internal then
+        name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text}))) 
+    end
+
     local res={pcall(_exec_command,name,params,arg_text)}
     if not env then return end
     local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
@@ -566,6 +569,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
     if isMain then
+        collectgarbage("restart")
         collectgarbage("collect")
         env.set_prompt(nil,env.PRI_PROMPT)
     end

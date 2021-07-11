@@ -12,7 +12,7 @@ var.inputs=setmetatable({},{
     __pairs=function(self)
         return pairs(ip)
     end,
-    __newindex=function(self,k,v) 
+    __newindex=function(self,k,v)
         rawset(ip,k,v)
     end})
 
@@ -213,6 +213,7 @@ function var.update_text(item,pos,params)
     if org_txt then return item[1] end
 end
 
+local current_outputs
 function var.before_db_exec(item)
     if cfg.get("define")~='on' then return end
     local db,sql,args,params=table.unpack(item)
@@ -224,8 +225,8 @@ function var.before_db_exec(item)
             end
         end
     end
-
     var.update_text(item,2,params)
+    current_outputs=args
 end
 
 function var.after_db_exec(item)
@@ -250,6 +251,7 @@ function var.after_db_exec(item)
     if isPrint=="on" then
         var.print(result)
     end
+    current_outputs=nil
 end
 
 function var.print(name)
@@ -728,8 +730,8 @@ function var.trigger_column(field)
     end
     
     index=obj.new_value
-    if index then
-        var.inputs[index],var.outputs[index]=value or db_core.NOT_ASSIGNED,nil
+    if index and rowind>0 and current_outputs then
+        current_outputs[index]=value or db_core.NOT_ASSIGNED
         if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 

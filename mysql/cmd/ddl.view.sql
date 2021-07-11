@@ -1,0 +1,5 @@
+ENV COLWRAP 120
+COL  "Create View" new_value ddl
+SHOW CREATE VIEW `&object_owner`.`&object_name`
+
+save ddl &object_owner..&object_name..sql

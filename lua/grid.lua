@@ -192,6 +192,42 @@ function grid.sort(rows, cols, bypass_head)
     return rows
 end
 
+function grid.line_wrap(text,width)
+    width=math.max(1,width-30)
+    local len,result,pos,pos1,c,p=#text,{},1
+    local pt="[|),%] =]"
+    local usize,csize,l1,l2=0,0
+    local function size(line)
+        l1, l2 = line:ulen()
+        usize=usize<l1 and l1 or usize
+        csize=csize<l2 and l2 or csize
+        return line
+    end
+
+    local lines={}
+    while true do
+        result[#result+1]=text:sub(pos,pos+width-1)
+        pos=pos+width
+        pos1=pos
+        local ln=0
+        while true do
+            pos1=pos1+1
+            c=p or text:sub(pos1,pos1)
+            p=text:sub(pos1+1,pos1+1)
+            if c=='' or (c:find(pt) and not p:find(pt)) then
+                ln=ln+1
+                result[#result+1]=text:sub(pos,pos1)
+                lines[#lines+1]=size(table.concat(result,''))
+                table.clear(result)
+                pos=pos1+1
+                break
+            end
+        end
+        if len<pos then break end
+    end
+    return lines,usize,csize
+end
+
 function grid.show_pivot(rows, col_del,pivotsort)
     local keys = {}
     --if not title then print(table.dump(rows)) end
@@ -539,17 +575,7 @@ function grid:add(row)
                         end
                     end
                     if col_wrap > 0 and usize > col_wrap then
-                        v=v:gsub('%s%s+',' ')
-                        grp={}
-                        usize,csize=0,0
-                        while v and v ~= "" do
-                            p=v:sub(1, col_wrap)
-                            v = v:sub(col_wrap + 1)
-                            grp[#grp+1]=p
-                            l, len = p:ulen()
-                            usize=usize<l and l or usize
-                            csize=csize < len and len or csize
-                        end
+                        grp,usize,csize=grid.line_wrap(v,col_wrap)
                     end
                 end
             end

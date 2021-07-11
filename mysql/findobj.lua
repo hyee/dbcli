@@ -21,7 +21,7 @@ local stmt=([[
         WHERE   matches>0
         UNION ALL
         SELECT DISTINCT 
-               index_schema, index_name COLLATE utf8_general_ci, index_type,NULL
+               index_schema, index_name COLLATE utf8_general_ci, 'INDEX',NULL
         FROM   information_schema.statistics
         WHERE  index_name!='PRIMARY'
         AND    lower(concat(index_schema, '.', index_name)) LIKE :obj
@@ -57,7 +57,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 WHERE  LOWER(table_schema) IN @schemas@
                 UNION ALL
                 SELECT DISTINCT 
-                       index_schema, index_name COLLATE utf8_general_ci, index_type
+                       index_schema, index_name COLLATE utf8_general_ci, 'INDEX'
                 FROM   information_schema.statistics
                 WHERE  index_name!='PRIMARY'
                 AND    LOWER(index_schema) IN @schemas@
