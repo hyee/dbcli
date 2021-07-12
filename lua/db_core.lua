@@ -672,7 +672,6 @@ function db_core:parse(sql,params,prefix,prep,vname)
     self:check_params(sql,prep,bind_info,params)
 
     if #bind_info==0 then return prep,sql,params end
-    
 
     for k,v in ipairs(bind_info) do
         prep[v[func]](prep,k,v[value])

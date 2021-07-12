@@ -210,7 +210,8 @@ function mysql:check_readonly(name,value,org_value)
 end
 
 local ignore_errors={
-    ['No operations allowed after statement closed']='Connection is lost, please login again.'
+    ['No operations allowed after statement closed']='Connection is lost, please login again.',
+    ['Software caused connection abort']='Connection is lost, please login again.'
 }
 
 function mysql:handle_error(info)

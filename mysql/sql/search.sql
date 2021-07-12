@@ -1,6 +1,13 @@
-/*[[ Fuzzily search objects. Usage: @@NAME <keyword> 
+/*[[ Fuzzily search objects. Usage: @@NAME <keyword> [-u | -f"<filter>"]
+    -f"<filter>": Customize the other `WHERE` clause
+    -u          : Only list the statements for current database
   --[[
-    @ARGS: 1
+        @ARGS: 1
+        &filter: {
+            default={1=1}
+            f={}
+            u={`Schema`=database()}
+        }
   --]]
 ]]*/
 env feed off
@@ -58,6 +65,6 @@ FROM   (SELECT table_schema `Schema`,
                'information_schema.triggers'
         FROM   information_schema.triggers
         WHERE  upper(concat(trigger_schema, '.', trigger_name)) LIKE @target) AS M
-WHERE  @target <> '%%'
-order by case when `Schema`=database() then 0 else 1 end
+WHERE &FILTER
+ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END
 limit 100;

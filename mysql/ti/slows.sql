@@ -12,7 +12,7 @@
             }
 
             f={}
-            u={User=database()}
+            u={user() like concat(User,'@%')}
         }
     --]]--
 ]]*/

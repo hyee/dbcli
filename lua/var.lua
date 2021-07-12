@@ -2,9 +2,9 @@ local env,string,java,math,table,tonumber,tostring=env,string,java,math,table,to
 local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
 local rawset,rawget=rawset,rawget
-local cast,ip=java.cast,{}
+local cast,ip,op=java.cast,{},{}
 local type,pairs,ipairs=type,pairs,ipairs
-var.outputs,var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{},table.strong{}
+var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{}
 var.inputs=setmetatable({},{
     __index=function(self,k)
         return rawget(ip,k)
@@ -14,6 +14,17 @@ var.inputs=setmetatable({},{
     end,
     __newindex=function(self,k,v)
         rawset(ip,k,v)
+    end})
+
+var.outputs=setmetatable({},{
+    __index=function(self,k)
+        return rawget(op,k)
+    end,
+    __pairs=function(self)
+        return pairs(op)
+    end,
+    __newindex=function(self,k,v)
+        rawset(op,k,v)
     end})
 
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
@@ -47,8 +58,15 @@ function var.get_input(name)
 end
 
 function var.import_context(global,input,output,cols)
-    if type(output)=='table' then 
-        var.outputs=output
+    if type(output)=='table' then
+        for k,v in pairs(output) do
+            if var.outputs[k]~=v then
+               var.outputs[k]=v
+            end 
+        end
+        for k,v in pairs(var.outputs) do
+            if output[k]==nil then var.outputs[k]=nil end
+        end
     else
         output=table.strong{}
     end
@@ -236,7 +254,8 @@ function var.after_db_exec(item)
     local db,sql,args,_,params=table.unpack(item)
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(params) do
-        if var.inputs[k] and type(v) ~= "table" and v~=db_core.NOT_ASSIGNED then
+        if var.inputs[k] and type(v) ~= "table" and v~=db_core.NOT_ASSIGNED 
+            and not (type(v)=='string' and v:sub(1,1)=='#' and var.types[v:sub(2)]) then
             var.inputs[k]=v
         end
     end
@@ -738,6 +757,7 @@ function var.trigger_column(field)
     end
     
     index=obj.new_value
+
     if index and rowind>0 and current_outputs then
         current_outputs[index]=value or db_core.NOT_ASSIGNED
         var.setInputs(index,current_outputs[index])

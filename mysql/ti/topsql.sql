@@ -16,21 +16,27 @@
         }
     --]]--
 ]]*/
-COL ela_total,ela_max,ela_min,ela_avg FOR USMHD2
+COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,Avg|Commit,Avg|Wait,Avg|Backoff" FOR USMHD2
 SELECT concat(substr(digest,1,18),' ..') AS digest,
        DATE_FORMAT(MIN(summary_begin_time),'%m%d-%H:%i') first_seen,
        DATE_FORMAT(MAX(summary_end_time),'%m%d-%H:%i') last_seen,
        COUNT(1) `rows`,
        SUM(exec_count) AS execs,
-       SUM(sum_latency)/1e3 AS ela_total,
-       MAX(max_latency)/1e3 AS ela_max,
-       MIN(min_latency)/1e3 AS ela_min,
-       CAST(SUM(exec_count * avg_latency) / SUM(exec_count) AS signed)/1e3 AS ela_avg,
+       SUM(sum_latency)/1e3 AS `Total|Ela`,
+       '|' `|`,
+       MAX(max_latency)/1e3 AS `Max|Ela`,
+       SUM(exec_count * avg_latency) / SUM(exec_count)/1e3 AS `Avg|Ela`,
+       SUM(exec_count * avg_parse_latency) / SUM(exec_count)/1e3 `Avg|Parse`,
+       SUM(exec_count * avg_compile_latency) / SUM(exec_count)/1e3 `Avg|Compile`,
+       SUM(exec_count * avg_process_time) / SUM(exec_count)*1e6 `Avg|Process`,
+       SUM(exec_count * avg_wait_time) / SUM(exec_count)*1e6 `Avg|Wait`,
+       SUM(exec_count * avg_backoff_time) / SUM(exec_count)*1e6  `Avg|Backoff`,
+       SUM(exec_count * avg_commit_time) / SUM(exec_count)*1e6 `Avg|Wait`,
+       '|' `|`,
        any_value(schema_name) AS schema_name,
-       -- any_value(table_names) AS table_names,
        COUNT(DISTINCT plan_digest) AS plans,
        any_value(substr(replace(replace(replace(replace(trim(digest_text),'\n',' '),' ','<>'),'><',''),'<>',' '),1,150)) sql_text
 FROM   information_schema.cluster_statements_summary_history
 WHERE  &filter
 GROUP  BY schema_name, digest
-ORDER  BY ela_total DESC LIMIT 50
+ORDER  BY `Total|Ela` DESC LIMIT 50
