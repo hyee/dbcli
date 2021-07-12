@@ -11,7 +11,7 @@
                 SELECT PLAN
                 FROM   information_schema.cluster_statements_summary_history
                 WHERE  digest=:did
-                LIMIT  1
+                ORDER  BY summary_end_time DESC LIMIT  1
             }
 
             default={}

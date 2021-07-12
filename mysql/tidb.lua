@@ -69,7 +69,7 @@ function tidb:parse_plan(plan)
     grid.print(rows)
 end
 
-function tidb:onload()
+function tidb:finalize()
     env.set_command(self,"tiplan",nil,self.parse_plan,false,2)
 end
 

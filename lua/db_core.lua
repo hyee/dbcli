@@ -319,7 +319,7 @@ function ResultSet:print(res,conn,prefix,verticals)
     if pivot==0 and not verticals then
         hdl=grid.new()
         hdl.verticals=verticals
-        if #cols==1 and #result==2 then
+        if #cols==1 and #result==2 and cfg.get('colwrap')==0 then
             cfg.set('colwrap',console:getScreenWidth()-#env.space*2)
         end
         for idx,row in ipairs(result) do 

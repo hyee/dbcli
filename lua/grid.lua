@@ -538,9 +538,9 @@ function grid:add(row)
                 end,1)
                 local v1=v:strip_ansi()
                 if #v1<=3 and v1:find('^%W+$') and v1~='#' and v1~='%' then 
-                    colsize[k][3],colsize[k][4]=v,grid.title_del=='-' and v:gsub('[%*|:~]','+') or v
+                    colsize[k][3]=v
                 elseif v=="" then
-                    colsize[k][3],colsize[k][4]=""
+                    colsize[k][3]=""
                 end
                 if title_style ~= "none" and self.include_head then
                     v = grid.format_title(v)
@@ -560,7 +560,7 @@ function grid:add(row)
                 if colsize[k][3] and v~=colsize[k][3] and v~="" then
                     local v1=v:strip_ansi()
                     if not v1:match('^%W$') then
-                        colsize[k][3],colsize[k][4]=nil
+                        colsize[k][3]=nil
                     end
                 end
 
@@ -716,7 +716,6 @@ function grid:wellform(col_del, row_del)
     local pivot = grid.pivot
     local indx = rownum == "on" and 1 or 0
     fmt = col_del:gsub("^%s+", "")
-    row_dels = fmt
     local format_func = grid.fmt
     grid.colsize = self.colsize
     if type(self.ratio_cols) == "table" and grid.pivot == 0 then
@@ -759,13 +758,19 @@ function grid:wellform(col_del, row_del)
     local seps={}
     local prev,next,prev_sep,prev_none_zero,del={},nil,-1,-1
     local cols=#colsize
+    local function calc_col_sep(sep,row_sep)
+        return row_sep:find('[~#=%-%*%+]') and sep:gsub('[|:]','+') or sep
+    end
+
+    row_dels = calc_col_sep(fmt,row_del)
+
     for k, v in ipairs(colsize) do
-        if max_siz==0 and k>1 then v[3],v[4]=nil,nil end
+        if max_siz==0 and k>1 then v[3]=nil end
         siz,seps[k]=v[1],v[3]
         if seps[k] then
             if prev_none_zero<=prev_sep then 
                 siz=0
-                v[4]=nil
+                v[3]=nil
             end
             prev_sep=k
         elseif siz>0 then
@@ -802,15 +807,14 @@ function grid:wellform(col_del, row_del)
                 break
             end
         end
-        title_dels[k]=v[4] or reps(not is_empty and grid.title_del or " ", siz)
+        title_dels[k]=(v[3] and calc_col_sep(v[3],grid.title_del)) or reps(not is_empty and grid.title_del or " ", siz)
         
         if row_del ~= "" then
-            row_dels = row_dels .. row_del:rep(siz) .. del
+            row_dels = row_dels .. row_del:rep(siz) .. calc_col_sep(del,row_del)
         end
         prev=v
         max_siz = max_siz < siz and siz or max_siz
     end
-
     if prev_none_zero<=prev_sep then 
         for k,v in pairs(seps) do
             if k>=prev_none_zero and #v>0 then 
@@ -818,6 +822,7 @@ function grid:wellform(col_del, row_del)
             end
         end
     end
+
     if max_siz==0 then return {},{}  end
 
     linesize = self.linesize
@@ -828,7 +833,7 @@ function grid:wellform(col_del, row_del)
     local cut = self.cut
     if row_del ~= "" then
         row_dels = row_dels:gsub("%s", row_del)
-        output[#output+1]=row_dels:gsub("[^%" .. row_del .. "]", row_del)
+        output[#output+1]=row_dels
         rows[#rows+1]=cut(output[#output])
     end
 
@@ -870,6 +875,9 @@ function grid:wellform(col_del, row_del)
                 for k1,v1 in ipairs(title_dels) do
                     v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
                 end
+                if output[#output]==row_dels then
+                    output[#output],rows[#rows]=nil
+                end
             end
         end
 
@@ -885,7 +893,7 @@ function grid:wellform(col_del, row_del)
 
         output[#output+1]=v
 
-        if filter_flag == 1 then 
+        if filter_flag == 1 then
             rows[#rows+1]=row 
         end
         
@@ -894,7 +902,7 @@ function grid:wellform(col_del, row_del)
                 rows[#rows+1]=cut(row_dels)
                 output[#output+1]=row_dels
             elseif v[0] == 0 then
-                output[#output+1]=format_func(fmt, table.unpack(title_dels))
+                output[#output+1]=format_func(calc_col_sep(fmt,row_del), table.unpack(title_dels))
                 rows[#rows+1]=cut(output[#output])
             end
         end
