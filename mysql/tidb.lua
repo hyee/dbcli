@@ -71,6 +71,9 @@ end
 
 function tidb:finalize()
     env.set_command(self,"tiplan",nil,self.parse_plan,false,2)
+    for _,n in ipairs{'TRACE','MODIFY','ADMIN','BACKUP','RECOVER','RESTORE','FLASHBACK'} do
+        env.set_command(db,n,"#TiDB command",db.command_call,true,1,true)
+    end
 end
 
 return tidb.new()

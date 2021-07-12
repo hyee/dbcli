@@ -125,16 +125,21 @@ function system:call_process(cmd,is_native)
         local do_redirect=false
 
         if not self.process or not is_native then
-            self.startup_cmd,do_redirect=self:get_startup_cmd(args,is_native)
-            if #args>0 then is_native = true end
-            if not self.startup_cmd then return end
             local boot_cmd=self.boot_cmd
             if not boot_cmd then
                 boot_cmd=self.executable or self.name
-                if env.IS_WINDOWS and not boot_cmd:find('.',1,true) then boot_cmd=boot_cmd..'.exe' end 
+                boot_cmd=type(boot_cmd)=='table' and boot_cmd or {boot_cmd}
+                for i,cmd in ipairs(boot_cmd) do
+                    if env.IS_WINDOWS and not cmd:find('.',1,true) then boot_cmd[i]=cmd..'.exe' end
+                end
                 boot_cmd=os.find_extension(boot_cmd)
+                self.boot_cmd=boot_cmd
             end
 
+            self.startup_cmd,do_redirect=self:get_startup_cmd(args,is_native)
+            if #args>0 then is_native = true end
+            if not self.startup_cmd then return end
+            
             table.insert(self.startup_cmd,1,boot_cmd)
             self:set_work_dir(self.work_dir,true)
             env.log_debug("subsystem","Command : " ..table.concat(self.startup_cmd," "))

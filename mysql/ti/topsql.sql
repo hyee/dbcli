@@ -7,7 +7,7 @@
         &filter: {
             default={
                  summary_end_time BETWEEN
-                    ifnull(str_to_date(NULLIF('&V1',''),'%y%m%d%H%i%s'),date_add(now(),interval -7 day)) AND
+                    ifnull(str_to_date(NULLIF('&V1',''),'%y%m%d%H%i%s'),date_add(now(),interval -3 day)) AND
                     ifnull(str_to_date(NULLIF('&V2',''),'%y%m%d%H%i%s'),date_add(now(),interval 10 day))
             }
 
@@ -20,6 +20,7 @@ COL ela_total,ela_max,ela_min,ela_avg FOR USMHD2
 SELECT concat(substr(digest,1,18),' ..') AS digest,
        DATE_FORMAT(MIN(summary_begin_time),'%m%d-%H:%i') first_seen,
        DATE_FORMAT(MAX(summary_end_time),'%m%d-%H:%i') last_seen,
+       COUNT(1) `rows`,
        SUM(exec_count) AS execs,
        SUM(sum_latency)/1e6 AS ela_total,
        MAX(max_latency)/1e6 AS ela_max,

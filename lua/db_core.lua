@@ -1522,6 +1522,16 @@ function db_core:merge_props(src,target)
     return target
 end
 
+local function load_titles()
+    local title={}
+    for _,n in ipairs{"STARTTIME","ENDTIME"} do
+        if env.var.inputs[n] and env.var.inputs[n]~="" then
+            title[#title+1]=n:lower().."="..env.var.inputs[n]
+        end
+    end
+    env.set_title(table.concat(title,'   '))
+end
+
 function db_core:disconnect(feed)
     if self.conn then
         loader:closeWithoutWait(self.conn)
@@ -1530,22 +1540,22 @@ function db_core:disconnect(feed)
         env.set_prompt(nil,nil,nil,2)
         env.set_prompt(nil,"SQL")
         env.set_title("",nil,self.__class.__className)
+        load_titles()
         event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end
 end
 
 function db_core:set_time(name,value)
-    if not value or value=="" then
-         env.var.setInputs(name,"")
-        return "" 
+    if value~='' then
+        if self.check_datetime then
+            self:assert_connect()
+            value=self:check_datetime(value) or value
+        end
+        print("Default",name,"set as",value)
     end
-    if self.check_datetime then
-        self:assert_connect()
-        value=self:check_datetime(value) or value
-    end
-    print("Default",name,"set as",value)
     env.var.setInputs(name,value)
+    load_titles()
     return value
 end
 

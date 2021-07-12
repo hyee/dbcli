@@ -52,7 +52,9 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         local sql=([[
             SELECT *
             FROM (
-                SELECT table_schema AS `SCHEMA`, table_name AS `NAME`, SUBSTRING_INDEX(table_type, ' ', -1) AS `TYPE`
+                SELECT table_schema `SCHEMA`, 
+                       table_name `NAME`, 
+                       SUBSTRING_INDEX(REPLACE(table_type,'SYSTEM VIEW','TABLE'), ' ', -1) AS `TYPE`
                 FROM   information_schema.tables
                 WHERE  LOWER(table_schema) IN @schemas@
                 UNION ALL

@@ -25,7 +25,7 @@ function mysql:ctor(isdefault)
     self.C,self.props={},{}
     self.JDBC_ADDRESS='https://mvnrepository.com/artifact/mysql/mysql-connector-java'
 end
-
+local native_cmds={}
 function mysql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
@@ -87,6 +87,12 @@ function mysql:connect(conn_str)
     local props=self.props
     props.privs={}
     if info then
+        --[[
+        for _,n in ipairs(native_cmds) do
+            local c=self:get_value('select count(1) from mysql.help_topic where name like :1',{n..'%'})
+            if c==0 then print(n) end
+        end
+        --]]
         props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[%W%.]+([%w%.]*)')
         props.server=info[5]
         props.db_user=info[4]:match("([^@]+)")
@@ -159,8 +165,9 @@ function mysql:onload()
     self.db_types:load_sql_types('com.mysql.cj.MysqlType')
     local default_desc={"#MYSQL database SQL command",self.C.help.help_offline}
     local function add_default_sql_stmt(...)
-        for i=1,select('#',...) do
-            set_command(self,select(i,...), default_desc,self.command_call,true,1,true)
+        for _,cmd in ipairs({...}) do
+            set_command(self,cmd, default_desc,self.command_call,true,1,true)
+            native_cmds[#native_cmds+1]=type(cmd)=='table' and cmd[1] or cmd
         end
     end
 

@@ -1,4 +1,8 @@
 COL "Create Table" new_value ddl
+COL "Create View" new_value ddl
+COL "VIEW,TABLE" NOPRINT
+ENV COLWRAP 120
+
 SHOW CREATE TABLE `&object_owner`.`&object_name`;
 SELECT CONCAT('ALTER TABLE `',
               TABLE_NAME,
