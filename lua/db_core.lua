@@ -439,8 +439,8 @@ function db_core:ctor()
     self.__stmts = __stmts
     self.test_connection_sql="SELECT 1"
     self.type="unknown"
-    env.set_command(self,"commit",nil,self.commit,false,1)
-    env.set_command(self,"rollback",nil,self.rollback,false,1)
+    env.set_command(self,"commit","#commit",self.commit,false,1)
+    env.set_command(self,"rollback","#rollback",self.rollback,false,1)
 end
 
 

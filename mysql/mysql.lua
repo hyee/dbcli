@@ -17,6 +17,7 @@ mysql.module_list={
     "chart",
     "ssh",
     "dict",
+    "autotrace",
     "mysqluc"
 }
 

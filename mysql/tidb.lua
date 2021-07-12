@@ -25,28 +25,25 @@ function tidb:parse_plan(plan)
     plan=plan:gsub('\r',''):gsub('\t','    '):split('\n')
     local header={}
     local curr,prev=nil
-    
-    local operator,ped
+    local infos,ped={}
     for n,s,c,st,ed in (plan[1]:rtrim()..' '):gsplit('%s+') do
         if not ped then ped=ed end
         if n:lower():find('^info') then
             prev.name=prev.name..' '..n
             prev.stop=ed
+            infos[#infos+1]=#header
         elseif n:trim()~="" then 
             header[#header+1]={name=n,start=st-#n,stop=ed}
             curr=header[#header]
-            if n:find('operator') then
-                operator=#header
-            end
             prev=curr
-        else
-            print(n:byte(1,#n))
         end
     end
-    if operator then
-        operator=table.remove(header,operator)
-        header[#header+1]=operator
+
+    for i=#infos,1,-1 do 
+        infos[i]=table.remove(header,infos[i])
+        header[#header+1]=infos[i]
     end
+
     prev.stop=-1
     local rows={{}}
     for i=2,#plan do
@@ -57,8 +54,10 @@ function tidb:parse_plan(plan)
             row[j]=line:sub(n.start,n.stop)
             row[j]=j==1 and row[j]:rtrim() or row[j]:trim()
             row[j]=tonumber(row[j]) or row[j]
-            if n==operator then
+            if n.name:lower():find('^oper') then
                 row[j]=row[j]:gsub('|','\n|')
+            elseif n.name:lower():find('^exe') then
+                row[j]=row[j]:gsub(',%s*',',\n')
             elseif row[j]=='N/A' then
                 row[j]=''
             end

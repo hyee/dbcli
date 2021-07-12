@@ -129,7 +129,7 @@ function db:check_access(obj_name,is_set_env,is_cache)
 
     local o=obj.target
     if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 end
-    local err,msg=pcall(db.internal_call,db,'select 1 from '..obj.full_name..' limit 1')
+    local err,msg=pcall(db.internal_call,db,'select 1 from '..obj.full_name..' where 1=2')
     cache_obj[o].accessible=err and 1 or 0
     return err
 end
