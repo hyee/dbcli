@@ -36,13 +36,31 @@ function mysql:connect(conn_str)
         args.password=pwd
         conn_str=string.format("%s/%s@%s",usr,pwd,url)
     else
+        
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)[/:](.*)@(.+)")
         if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
         args={user=usr,password=pwd}
         if conn_desc:match("%?.*=.*") then
+            local use_ssl=0
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
-                args[k]=v
+                if k:lower()=='ssl_key' or k=='trustCertificateKeyStoreUrl' then
+                    local typ,ssl=os.exists(v)
+                    env.checkerr(typ=='file' and ssl,'Cannot find SSL TrustStore file at: '..v)
+                    if ssl:find(':') and ssl:sub(1,1)~='/' then ssl='/'..ssl end
+                    args['trustCertificateKeyStoreUrl']='file://'..ssl:gsub('\\','/')
+                    args['verifyServerCertificate']='true'
+                    args['useSSL']='true'
+                    args['sslMode']='PREFERRED'
+                    use_ssl=use_ssl+1
+                elseif k:lower()=='ssl_pwd' or  k:lower()=='ssl_password' or k=='trustCertificateKeyStorePassword' then
+                    env.checkerr(#v>=6,"Incorrect SSL TrustStore passowrd, it's length should not be less than 6 chars.")
+                    args['trustCertificateKeyStorePassword']=v
+                    use_ssl=use_ssl+2
+                else    
+                    args[k]=v
+                end
             end
+            env.checkerr(use_ssl==0 or use_ssl==3,"SSL TrustStore file or passowrd is missing.")
             conn_desc=conn_desc:gsub("%?.*","")
         end
         usr,pwd,url,args.url=args.user,args.password,conn_desc,"jdbc:mysql://"..conn_desc
@@ -177,14 +195,18 @@ function mysql:onload()
     add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','WITH','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
     add_default_sql_stmt('IMPORT','LOAD','TABLE','VALUES','BEGIN','DECLARE','INSTALL','UNINSTALL','RESTART','SHUTDOWN','GET','CLONE')
     local  conn_help = [[
-        Connect to mysql database. Usage: @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
-                                       or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
-                                       or @@NAME <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
+        Connect to mysql database. 
+        Usage: 
+              @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
+           or @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>]?ssl_key=<jks_path>&ssl_pwd=<jks_password>[&<properties>]
+           or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
+           or @@NAME <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
 
         Refer to "MySQL Connector/J Developer Guide" chapter 5.1 "Setting Configuration Propertie" for the available properties  
         Example:  @@NAME root/@localhost      --if not specify the port, then it is 3306
                   @@NAME root/root@localhost:3310
                   @@NAME root/root@localhost:3310/test?useCompression=false
+                  @@NAME root/root@localhost:3310/test?ssl_key=/home/hyee/trust.jks&ssl_pwd=123456
                   @@NAME root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)

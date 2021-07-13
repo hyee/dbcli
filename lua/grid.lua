@@ -617,6 +617,7 @@ function grid:add(row)
             end
             colsize[k][1] = csize
         end
+        colsize[k].org_size=math.max(colsize[k].org_size or 0,csize)
         if autohide=='col' or autohide=='all' then
             if headind==0 then 
                 colsize[k].head_size, colsize[k][1]=colsize[k][1],0
@@ -626,7 +627,6 @@ function grid:add(row)
                 colsize[k][1],colsize[k].head_size=csize
             end
         end
-        colsize[k].org_size=math.max(colsize[k].org_size or 0,colsize[k][1])
         rsize = not colsize[k][3] and rsize < csize and csize or rsize
     end
     
@@ -825,10 +825,11 @@ function grid:wellform(col_del, row_del)
     end
 
     if max_siz==0 then
-        if grid.autohide=='on' and grid.autohide=='all' then return {},{} end
-        for k,v in ipairs(colsize) do
-            v[1]=v.org_size
-            max_siz=max_siz+v[1]
+        if grid.autohide=='off' or grid.autohide=='col' then
+            for k,v in ipairs(colsize) do
+                v[1]=v.org_size
+                max_siz=max_siz+v[1]
+            end
         end
         if max_siz>0 then
             return self:wellform(col_del, row_del)
