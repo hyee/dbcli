@@ -90,6 +90,7 @@ function mysql:connect(conn_str)
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
     for k,v in pairs(args) do args[k]=tostring(v) end
+    local data_source=java.new('com.mysql.cj.jdbc.MysqlDataSource')
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -191,8 +192,8 @@ function mysql:onload()
     end
 
     env.set.rename_command('ENV')
-    add_default_sql_stmt('SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOCK','OPTIMIZE','PREPARE','PURGE')
-    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','WITH','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
+    add_default_sql_stmt({"SELECT","WITH"},'SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOCK','OPTIMIZE','PREPARE','PURGE')
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
     add_default_sql_stmt('IMPORT','LOAD','TABLE','VALUES','BEGIN','DECLARE','INSTALL','UNINSTALL','RESTART','SHUTDOWN','GET','CLONE')
     local  conn_help = [[
         Connect to mysql database. 
@@ -214,7 +215,7 @@ function mysql:onload()
     env.rename_command("HOST",{"SYSTEM","\\!","!"})
     env.rename_command("TEE",{"WRITE"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
-    env.rename_command("PRINT",{"PRINTVAR","PR"})
+    env.rename_command("PRINT",{"PRINTVAR","PRI"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
     env.rename_command("HELP",{"HELP","\\h"})
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self)

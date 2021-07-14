@@ -36,7 +36,7 @@ COL "Avg|Keys" for tmb2
 SELECT concat(substr(digest,1,18),' ..') AS digest,
        IFNULL((SELECT MAX('Yes') FROM information_schema.&inst.slow_query s WHERE s.digest=h.digest),'') `Slow`,
        COUNT(DISTINCT plan_digest) AS `Plans`,
-       DATE_FORMAT(MAX(summary_end_time),'%m%d-%H:%i') last_seen,
+       DATE_FORMAT(MAX(last_seen),'%m%d-%H:%i') last_seen,
        COUNT(1) `Count`,
        SUM(exec_count) AS `Execs`,
        '|' `|`,

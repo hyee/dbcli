@@ -211,12 +211,11 @@ function oracle:connect(conn_str)
     prompt=prompt or args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
-    local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.working_db_link=nil
     self.props={privs={}}
     args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
-
-    self.conn,args=self.super.connect(self,args,data_source)
+    self.data_source=java.new('oracle.jdbc.pool.OracleDataSource')
+    self.conn,args=self.super.connect(self,args,self.data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
@@ -659,8 +658,7 @@ function oracle:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback','associate','disassociate')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment','call')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-    set_command(self,"select",   default_desc,        self.query     ,true,1,true)
-    set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)
+    set_command(self,{"SELECT","WITH"},   default_desc,        self.query     ,true,1,true)
     set_command(self,{"execute","exec"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.query  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)

@@ -11,16 +11,16 @@
     --]]--
 ]]*/
 
-COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,Avg|Commit,Avg|Wait,Avg|Commit,Avg|Backoff,Avg|TiKV,Avg|CopProx,Avg|CopWait,Avg|TiPD" FOR USMHD2
+COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,Avg|Commit,Avg|Wait,Avg|Commit,Avg|Retry,Avg|Backoff,Avg|TiKV,Avg|CopProx,Avg|CopWait,Avg|TiPD" FOR USMHD2
 COL "Avg|Disk,Avg|RocksDB,Avg|Writ,Avg|Mem" for kmg2
 COL "Avg|Keys" for tmb2
 
 SELECT DATE_FORMAT(summary_end_time,'%m%d %H')  `# Hour`,
-       DATE_FORMAT(MAX(summary_end_time),'%m%d-%H:%i') last_seen,
+       DATE_FORMAT(MAX(last_seen),'%m%d-%H:%i:%s') last_seen,
        SUM(exec_count) `Execs`,
        SUM(sum_errors) `Errs`,
        SUM(sum_warnings) `Warns`,
-       SUM(sum_cop_task_num) `Cops`,
+       SUM(sum_exec_retry) `Retry`,
        '|' `|`,
        SUM(sum_latency)/1e3 `Total|Ela`,
        MAX(max_latency)/1e3 `Max|Ela`,
@@ -36,7 +36,9 @@ SELECT DATE_FORMAT(summary_end_time,'%m%d %H')  `# Hour`,
        SUM(exec_count * avg_backoff_time) / SUM(exec_count)/1e3  `Avg|Backoff`,
        SUM(exec_count * avg_kv_time) / SUM(exec_count)/1e3  `Avg|TiKV`,
        SUM(exec_count * avg_pd_time) / SUM(exec_count)/1e3  `Avg|TiPD`,
+       SUM(exec_count * sum_exec_retry_time) / SUM(exec_count)/1e3  `Avg|Retry`,
        '|' `|`,
+       ROUND(SUM(sum_cop_task_num) / SUM(exec_count),1) `Avg|Cops`,
        SUM(exec_count * avg_total_keys) / SUM(exec_count)  `Avg|Keys`,
        SUM(exec_count * avg_mem) / SUM(exec_count)  `Avg|Mem`,
        SUM(exec_count * avg_disk) / SUM(exec_count)  `Avg|Disk`,

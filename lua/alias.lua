@@ -52,6 +52,7 @@ function alias.parser(s, default_value)
     return '$'..s..(default_value and ('['..default_value..']') or '')
 end
 
+local vertical_pattern=env.VERTICAL_PATTERN
 function alias.make_command(name, args, is_print)
     name = name:upper()
     if alias.cmdlist[name] and env._CMDS[name] and env._CMDS[name].FUNC == alias.run_command then
@@ -64,7 +65,7 @@ function alias.make_command(name, args, is_print)
         for i = 1, 99 do
             local v = alias.args[i] or ""
             if i==#args and v~='' then
-                v=v:gsub('(\\G%d*)$',function(s) is_pivot=s;return '' end)
+                v=v:gsub(vertical_pattern,function(s) is_pivot='\\G'..s;return '' end)
             end
             if v:find("%s") and not v:find('"') then v = '"' .. v .. '"' end
             alias.args[i] = v

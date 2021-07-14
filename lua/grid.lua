@@ -5,6 +5,7 @@ local clear=table.clear
 local grid = class()
 local console = console
 local getWidth = console.getBufferWidth
+local getScreenWidth=console.getScreenWidth
 local reps=string.rep
 local params = {
     [{'HEADSEP', 'HEADDEL'}] = {name = "title_del", default = '-', desc = "The delimiter to devide header and body when printing a grid"},
@@ -252,9 +253,20 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local autohide=grid.autohide
     if #rows<2 and (autohide=='on' or autohide=='all') then return {} end 
 
+    local col_wrap = grid.col_wrap
+    local linesize = grid.linesize
+    if linesize <= 10 then linesize = math.max(60,getScreenWidth(console) - (#env.space) * 2 - 45) end
+    if maxsize>=1024 and col_wrap==0 then
+        col_wrap=linesize
+    end
+
     local function get_value(title,r,c)
         _, value = grid.format_column(true, type(title) == "table" and title or {column_name = title}, rows[r][c], r-1)
         len1,len2,nv=tostring(value or null_value):trim():ulen(maxsize)
+        if col_wrap > 0 and len1 > col_wrap and not nv:sub(1,1024):find('\n',1,true) then
+            value,len1,len2=grid.line_wrap(nv,col_wrap)
+            nv=table.concat(value,'\n')
+        end
         max_cols=max_cols<len2 and len2 or max_cols
         return nv
     end
@@ -460,6 +472,8 @@ function grid:add(row)
     local rownum = grid.row_num
     local null_value=env.set.NULL and env.set.get('NULL') or ''
     local maxsize = grid.col_size
+    local linesize = self.linesize
+    if linesize <= 10 then linesize = getWidth(console) - (#env.space) * 2 end
     grid.colsize = self.colsize
     for k, v in pairs(row) do rs[k] = v end
     if self.headind == -1 then
@@ -568,9 +582,6 @@ function grid:add(row)
                     v=grp[1]
                     local col_wrap = grid.col_wrap
                     if cols==1 and maxsize>=1024 and headind<2 then
-                        local linesize = self.linesize
-                        if linesize <= 10 then linesize = getWidth(console) end
-                        linesize = linesize - (#env.space) * 2
                         if usize>math.max(linesize,maxsize)  then
                             col_wrap=col_wrap==0 and linesize or math.min(linesize,col_wrap)
                         end

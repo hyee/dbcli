@@ -275,12 +275,13 @@ function var.after_db_exec(item)
     end
 end
 
+local vertical_pattern,verticals=env.VERTICAL_PATTERN
 function var.print(name)
     local db=var.current_db
     if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
-        local verticals
-        name=name:gsub('%s*\\G(%d*)%s*$', function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
+        verticals,env.VERTICALS=env.VERTICALS
+        name=name:gsub(vertical_pattern, function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
         local typ,f=os.exists(name)
         if typ=='file' then
             f=io.open(f,'r')

@@ -189,12 +189,12 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         else if (pasteCount == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
         else if (pasteCount > 0 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
         else if (pasteCount > 0 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
+        if (latch != null) latch.countDown();
         //Check remaining input chars and determine if enter paste mode
         if (enablePaste && beginIdx != bpl && pasteCount == 0 && Character.isWhitespace(c) && reader.available() >= 3) {
             this.slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_BEGIN);
             prevTime = System.currentTimeMillis();
             pasteCount = 1;
-            if (latch != null) latch.countDown();
             //insert one more space to bypass the completor's detection if the first pasted char is tab
             if (c == '\t') {
                 this.slaveInputPipe.write(' ');

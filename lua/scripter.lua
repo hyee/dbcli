@@ -141,7 +141,7 @@ function scripter:parse_args(sql,args,print_args,cmd)
             return rest..s
         end)
         if (rest or '')~='' and cnt==0 and value:trim()=='' then 
-            value=(value==' ' and '' or value)..rest 
+            value=rest
         else
             value=value:sub(1,-2)
         end

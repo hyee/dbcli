@@ -825,6 +825,7 @@ function db_core.log_param(params)
 end
 
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
+local vertical_pattern,verticals=env.VERTICAL_PATTERN
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
@@ -857,10 +858,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.autocommit=autocommit
     end
     
-    local verticals
+    verticals,env.VERTICALS=env.VERTICALS
     if is_not_prep then
-        sql=sql:sub(1,-128)..
-            sql:sub(-127):gsub('%s*\\G(%d*)%s*$',
+        sql=sql:sub(1,-128)..sql:sub(-127):gsub(vertical_pattern,
                 function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
         sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
         if type(sql)~="string" then
