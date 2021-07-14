@@ -525,7 +525,7 @@ function grid:add(row)
             local grp = empty
             v = v:convert_ansi()
             if headind == 0 then
-                v = v:gsub("([^|\n\r]+)%c*[|\n]+%c*([^|\n\r]+)", function(a, b)
+                v = v:gsub("([^|\n\r]+)%c*[|\n]%c*([^|\n\r]+)", function(a, b)
                     local len11,len12,len21,len22
                     len11,len12,a=a:ulen(maxsize)
                     len21,len22,b=b:ulen(maxsize)
@@ -845,8 +845,7 @@ function grid:wellform(col_del, row_del)
     
     local cut = self.cut
     if row_del ~= "" then
-        row_dels = row_dels:gsub("%s", row_del)
-        output[#output+1]=row_dels
+        output[#output+1]=row_dels:gsub("%s", row_del)
         rows[#rows+1]=cut(output[#output])
     end
 
@@ -912,6 +911,7 @@ function grid:wellform(col_del, row_del)
         
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
             if not v.sep and #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
+                row_dels=row_dels:gsub('%s',row_del)
                 rows[#rows+1]=cut(row_dels)
                 output[#output+1]=row_dels
             elseif v[0] == 0 then

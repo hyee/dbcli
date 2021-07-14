@@ -140,8 +140,8 @@ function scripter:parse_args(sql,args,print_args,cmd)
             if not rest or rest=='' then return s end
             return rest..s
         end)
-        if rest and cnt==0 and value:trim()=='' then 
-            value=value..rest 
+        if (rest or '')~='' and cnt==0 and value:trim()=='' then 
+            value=(value==' ' and '' or value)..rest 
         else
             value=value:sub(1,-2)
         end
@@ -299,11 +299,11 @@ function scripter:parse_args(sql,args,print_args,cmd)
                                        option,
                                        default==option and "Y" or "N",
                                        select==option and "Y" or "N",
-                                       strip(text)}
+                                       text:find([[^['"_&:]+]]) and strip(text) or ('"'..strip(text)..'"')}
                     end
                 end
             end
-            rows1[#rows1+1]={k,strip(org[1] or ""),(org[2] or ''),strip(new)}
+            rows1[#rows1+1]={k,strip(org[1] or ""),(org[2] or ''),new:find([[^['"_&:]+]]) and strip(new) or ('"'..strip(new)..'"')}
         end
 
         for k,v in pairs(env.var.inputs) do

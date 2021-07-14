@@ -22,7 +22,7 @@ function show.run(...)
             local text=(args[i+1] or ""):upper()
             if text~="" and not text:find("^LIKE") and not text:find("^WHERE") then
                 if k:upper()=='VAR' or k:upper()=='STATUS' then
-                    local vars=db:get_rows("SHOW "..c..";SHOW GLOBAL "..c)
+                    local vars=db:get_rows("SHOW SESSION "..c..";SHOW GLOBAL "..c)
                     local names={}
                     local rows={}
                     local key=args[i+1]:gsub('%%','.-'):lower()

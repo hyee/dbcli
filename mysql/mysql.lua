@@ -45,7 +45,7 @@ function mysql:connect(conn_str)
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
                 if k:lower()=='ssl_key' or k=='trustCertificateKeyStoreUrl' then
                     local typ,ssl=os.exists(v)
-                    env.checkerr(typ=='file' and ssl,'Cannot find SSL TrustStore file at: '..v)
+                    env.checkerr(typ=='file','Cannot find SSL TrustStore file: '..v)
                     if ssl:find(':') and ssl:sub(1,1)~='/' then ssl='/'..ssl end
                     args['trustCertificateKeyStoreUrl']='file://'..ssl:gsub('\\','/')
                     args['verifyServerCertificate']='true'
@@ -60,7 +60,6 @@ function mysql:connect(conn_str)
                     args[k]=v
                 end
             end
-            env.checkerr(use_ssl==0 or use_ssl==3,"SSL TrustStore file or passowrd is missing.")
             conn_desc=conn_desc:gsub("%?.*","")
         end
         usr,pwd,url,args.url=args.user,args.password,conn_desc,"jdbc:mysql://"..conn_desc
@@ -106,6 +105,7 @@ function mysql:connect(conn_str)
     local props=self.props
     props.privs={}
     if info then
+        pcall(self.internal_call,self,[[set sql_mode='TRADITIONAL,ANSI']])
         --[[
         for _,n in ipairs(native_cmds) do
             local c=self:get_value('select count(1) from mysql.help_topic where name like :1',{n..'%'})
@@ -198,12 +198,12 @@ function mysql:onload()
         Connect to mysql database. 
         Usage: 
               @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
-           or @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>]?ssl_key=<jks_path>&ssl_pwd=<jks_password>[&<properties>]
+           or @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>]?ssl_key=<jks_path>[&ssl_pwd=<jks_password>][&<properties>]
            or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
            or @@NAME <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
 
         Refer to "MySQL Connector/J Developer Guide" chapter 5.1 "Setting Configuration Propertie" for the available properties  
-        Example:  @@NAME root/@localhost      --if not specify the port, then it is 3306
+        Example:  @@NAME root/@localhost          -- if not specify the port, then it is 3306
                   @@NAME root/root@localhost:3310
                   @@NAME root/root@localhost:3310/test?useCompression=false
                   @@NAME root/root@localhost:3310/test?ssl_key=/home/hyee/trust.jks&ssl_pwd=123456

@@ -1,6 +1,12 @@
 /*[[List Top SQLs. Usage: @@NAME [<yymmddhh24mi> [<yymmddhh24mi>] | -f"<filter>" | -u]
     -f"<filter>": Customize the `WHERE` clause
     -u          : Only list the statements for current user
+    
+    Parameters:
+        * tidb_enable_slow_log (default: on)
+        * tidb_slow_log_threshold (default: 300ms)
+        * tidb_slow_query_file
+        * tidb_expensive_query_time_threshold (default: 60s)
     --[[--
         &V1: default={&STARTTIME}
         &V2: default={&ENDTIME}
