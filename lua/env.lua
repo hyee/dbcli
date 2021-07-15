@@ -1244,7 +1244,7 @@ end
 
 function env.write_cache(file,txt,is_Binary)
     if type(txt)~='string' then return end
-    local dest=env._CACHE_PATH..file
+    local dest=env.join_path(env._CACHE_PATH,file)
     file=dest
     local f=io.open(file,'w'..(is_Binary==true and 'b' or ''))
     if not f then

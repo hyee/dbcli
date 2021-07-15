@@ -121,7 +121,7 @@ function mysql:connect(conn_str)
         props.sql_mode=info[6]
         props.charset=info[8]
         args.database=info[1] or ""
-        args.hostname=url:match("^[^/%:]+")
+        args.hostname=props.server
         args.port=info[7]
         self:check_readonly(cfg.get('READONLY'),self.conn:isReadOnly() and 'on' or 'off')
         if props.sub_version:lower():find('tidb') then
