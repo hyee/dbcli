@@ -140,6 +140,7 @@ SELECT /*+monitor no_merge(a)*/ inst_id,
         FROM   gv$im_column_level c
         WHERE  c.inst_id = b.inst_id
         AND    c.owner = a.owner
+        AND    c.inmemory_compression!='NO INMEMORY'
         AND    c.table_name = a.segment_name) im_cols,
        SUM(inmemory_size) im_size,
        SUM(bytes) total_size,

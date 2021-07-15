@@ -1426,7 +1426,7 @@ function db_core.check_completion(cmd,other_parts)
         end
         return false,other_parts
     end
-    if action=="WITH" then match=match:gsub('[%s;]+$','') end
+    --if action=="WITH" then match=match:gsub('[%s;]+$','') end
     return true,match
 end
 

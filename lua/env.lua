@@ -965,7 +965,7 @@ function env.safe_call(func,...)
     return rtn
 end
 
-env.VERTICALS,env.VERTICAL_PATTERN=nil,'%s*\\G(%d*)%s*$'
+env.VERTICALS,env.VERTICAL_PATTERN=nil,'%f[\\]\\G(%d*)%s*$'
 
 function env.set_endmark(name,value)
     if not value then return end
@@ -974,27 +974,31 @@ function env.set_endmark(name,value)
     local k=0
     for v in value:gmatch('[^ ,]+') do
         k=k+1
-        p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '\\'..s end)
+        p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '%f[\\]\\'..s end)
         local c=p[k]:gsub("(.?)([%$%(%)%^%.])",function(a,b) return a..(a=="%" and "" or "%")..b end)
         p[k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
     end
 
     env.COMMAND_SEPS=p
     local vertical_pattern=env.VERTICAL_PATTERN
+    local zero,G='\0','\\G'
     env.COMMAND_SEPS.match=function(s)
         local s1,s2=s:sub(1,-33),s:sub(-32)
         local idx,c,r,r1=0
-        for i=1,2 do
+        for i=1,1 do
             if i==2 and not idx then break end
-            if s2:sub(-1)=='\0' then
-                s2,r,idx=s2:sub(1,-2),'\0',2
+            if s2:sub(-1)==zero then
+                s2,r,idx=s2:sub(1,-2),zero,2
             end
-            s2=s2:gsub(vertical_pattern,
-                function(c)
-                    env.VERTICALS=tonumber(c) or env.set.get("printsize")
-                    r,idx='\\G',2
-                return '' end)
+            if r~=G then
+                s2=s2:gsub(vertical_pattern,
+                    function(c)
+                        env.VERTICALS=tonumber(c) or env.set.get("printsize")
+                        r,idx=G,2
+                    return '' end)
+            end
             for i,v in ipairs(p) do
+                if r1 then break end
                 c,r1=s2:match(v)
                 if c then
                     s2,r,idx=c,r1,i
