@@ -11,7 +11,7 @@
     --]]--
 ]]*/
 
-COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,Avg|Commit,Avg|Wait,Avg|Commit,Avg|Retry,Avg|Backoff,Avg|TiKV,Avg|CopProx,Avg|CopWait,Avg|TiPD" FOR USMHD2
+COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,2PC -|PreWr,2PC -|Commit,Avg|Wait,Avg|Commit,Avg|Retry,Avg|Backoff,Avg|TiKV,Avg|CopProx,Avg|CopWait,Avg|TiPD" FOR USMHD2
 COL "Avg|Disk,Avg|RocksDB,Avg|Writ,Avg|Mem" for kmg2
 COL "Avg|Keys" for tmb2
 
@@ -32,8 +32,9 @@ SELECT DATE_FORMAT(summary_end_time,'%m%d %H')  `# Hour`,
        SUM(exec_count * avg_wait_time) / SUM(exec_count)/1e3 `Avg|Wait`,
        SUM(exec_count * max_cop_process_time) / SUM(exec_count)/1e3  `Avg|CopProx`,
        SUM(exec_count * max_cop_wait_time) / SUM(exec_count)/1e3  `Avg|CopWait`,
-       SUM(exec_count * avg_commit_time) / SUM(exec_count)/1e3 `Avg|Commit`,
-       SUM(exec_count * avg_backoff_time) / SUM(exec_count)/1e3  `Avg|Backoff`,
+       SUM(exec_count * avg_prewrite_time) / SUM(exec_count)/1e3 `2PC -|PreWr`,
+       SUM(exec_count * avg_commit_time) / SUM(exec_count)/1e3 `2PC -|Commit`,
+       SUM(exec_count * avg_backoff_total_time) / SUM(exec_count)/1e3  `Avg|Backoff`,
        SUM(exec_count * avg_kv_time) / SUM(exec_count)/1e3  `Avg|TiKV`,
        SUM(exec_count * avg_pd_time) / SUM(exec_count)/1e3  `Avg|TiPD`,
        SUM(exec_count * sum_exec_retry_time) / SUM(exec_count)/1e3  `Avg|Retry`,

@@ -99,14 +99,14 @@ function mysql:connect(conn_str)
                                        CONNECTION_ID(),
                                        user(),
                                        @@hostname,
-                                       @@sql_mode,
+                                       @@global.sql_mode,
                                        @@port,
                                        @@character_set_client]])
     table.clear(self.props)
     local props=self.props
     props.privs={}
     if info then
-        pcall(self.internal_call,self,[[set sql_mode='TRADITIONAL,ANSI']])
+        pcall(self.internal_call,self,"set sql_mode='"..info[6]..",ANSI'")
         --[[
         for _,n in ipairs(native_cmds) do
             local c=self:get_value('select count(1) from mysql.help_topic where name like :1',{n..'%'})

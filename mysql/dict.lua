@@ -294,8 +294,8 @@ end
 function dicts.onload()
     env.set_command(nil,'DICT',[[
         Show or create dictionary for auto completion. Usage: @@NAME {<init|public [all|dict|param]>} | {<obj|param> <keyword>}
-        init  : Create a separate offline dictionary that only used for current database
-        public: Create a public offline dictionary(file oracle/dict.pack), which accepts following options
+        init  : Create a separate offline dictionary that only used for current server
+        public: Create a public offline dictionary(file mysql/dict.pack)
         param : Fuzzy search the parameters that stored in offline dictionary]],dicts.build_dict,false,3)
     event.snoop('AFTER_MYSQL_CONNECT',dicts.on_after_db_conn)
     dicts.load_dict(datapath)

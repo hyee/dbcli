@@ -8,7 +8,14 @@ local words,abbrs={
     'TRIGGER','VARIABLES','VIEW','WARNINGS','LIKE','WHERE'}
 
 local show={name="SHOW"}
-
+local greps={
+    VARIABLES=1,
+    STATUS=1,
+    COLLATION=1,
+    TABLES=1,
+    EVENTS=1,
+    DATABASES=1
+}
 function show.run(...)
     local args={...}
     env.checkhelp(args[1])
@@ -18,7 +25,7 @@ function show.run(...)
     for i,k in ipairs(args) do
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
         local c=cmd[#cmd]:upper()
-        if c=="VARIABLES" or c=="STATUS" or c=="COLLATION" then
+        if greps[c] then
             local text=(args[i+1] or ""):upper()
             if text~="" and not text:find("^LIKE") and not text:find("^WHERE") then
                 if k:upper()=='VAR' or k:upper()=='STATUS' then
@@ -65,12 +72,17 @@ function show.run(...)
                                 end
                             end
                         end
-                        if not found then table.remove(rows,i) end
+                        if not found then 
+                            table.remove(rows,i) 
+                        elseif row[1]=='sql_mode' then
+                            row[2],row[3]=row[2]:gsub(',',',\n'),row[3]:gsub(',',',\n')
+                        end
                     end
                     table.insert(rows,1,{"Variable Name","Session Value","Global Value"})
                     return grid.print(rows)
+                else
+                    env.printer.set_grep(text:gsub('%%','.-'))
                 end
-                env.printer.set_grep(text)
                 break
             end
         end

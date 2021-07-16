@@ -170,9 +170,11 @@ function printer.spool(file,option)
         return
     end
     if file:upper()=="OFF" or option=="OFF" or printer.hdl then
-        if printer.hdl then pcall(printer.hdl.close,printer.hdl) end
-        if env.set and env.set.get("feed")=="on" then
-            printer.rawprint(env.space..'Output is written to "'..printer.file..'".')
+        if printer.hdl then 
+            pcall(printer.hdl.close,printer.hdl)
+            if env.set and env.set.get("feed")=="on" then
+                printer.rawprint(env.space..'Output is written to "'..printer.file..'".')
+            end
         end
         printer.hdl=nil
         printer.file=nil

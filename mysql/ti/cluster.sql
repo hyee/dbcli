@@ -8,6 +8,21 @@ COL "CPU|Freq" JUSTIFY RIGHT
 
 PRINT Cluser Info:
 PRINT ============
+WITH mp AS(
+    SELECT *
+    FROM   (SELECT instance,
+                   type,
+                   h.value mp,
+                   c.value data_dir,
+                   h.device_name,
+                   row_number() OVER(PARTITION BY instance, type ORDER BY h.value DESC) r
+            FROM   INFORMATION_SCHEMA.CLUSTER_HARDWARE H
+            JOIN   INFORMATION_SCHEMA.CLUSTER_CONFIG C
+            USING  (instance, type)
+            WHERE  h.device_type = 'disk'
+            AND    c.key LIKE '%data-dir'
+            AND    instr(c.value, h.value) = 1) mp
+    WHERE  r = 1)
 SELECT *
 FROM (
     SELECT Type,Instance,
@@ -15,13 +30,17 @@ FROM (
            SUM(CASE WHEN n='cpu-cpu-logical-cores' THEN value END) `CPU|Threads`,
            MAX(CASE WHEN n='cpu-cpu-frequency' THEN value END) `CPU|Freq`,
            SUM(CASE WHEN n='memory-capacity' THEN value END) `MeM|Total`,
-           SUM(CASE WHEN n='disk-total' THEN value END) `Disk|Total`,
-           SUM(CASE WHEN n='disk-used' THEN value END) `Disk|Used`,
-           SUM(CASE WHEN n='disk-free' THEN value END) `Disk|free`
+           SUM(CASE WHEN n='disk-total' AND mp IS NOT NULL THEN value END) `Disk|Total`,
+           SUM(CASE WHEN n='disk-used'  AND mp IS NOT NULL THEN value END) `Disk|Used`,
+           SUM(CASE WHEN n='disk-free'  AND mp IS NOT NULL THEN value END) `Disk|free`,
+           IFNULL(MAX(CASE WHEN n='disk-fstype' AND mp IS NOT NULL THEN value END),'') `Disk|FS`,
+           IFNULL(MAX(data_dir),'') `Data-Dir`,
+           '|' `|`
     FROM   (SELECT *,
                   lower(concat(DEVICE_TYPE,'-',NAME)) n,
                   lower(device_name) dn
-           FROM   INFORMATION_SCHEMA.CLUSTER_HARDWARE) C
+           FROM   INFORMATION_SCHEMA.CLUSTER_HARDWARE H
+           LEFT   JOIN MP USING (instance,type,device_name)) C
     GROUP BY Type,Instance) A
 JOIN INFORMATION_SCHEMA.CLUSTER_INFO B
 USING (Type,Instance)
@@ -29,6 +48,21 @@ ORDER BY 1,2;
 
 PRINT Cluser Load:
 PRINT ============
+WITH mp AS(
+    SELECT *
+    FROM   (SELECT instance,
+                   type,
+                   h.value mp,
+                   c.value data_dir,
+                   h.device_name,
+                   row_number() OVER(PARTITION BY instance, type ORDER BY h.value DESC) r
+            FROM   INFORMATION_SCHEMA.CLUSTER_HARDWARE H
+            JOIN   INFORMATION_SCHEMA.CLUSTER_CONFIG C
+            USING  (instance, type)
+            WHERE  h.device_type = 'disk'
+            AND    c.key LIKE '%data-dir'
+            AND    instr(c.value, h.value) = 1) mp
+    WHERE  r = 1)
 SELECT Type,Instance,
        '|' `|`,
        SUM(CASE WHEN n='cpu-load1' THEN value END) `Load|1min`,
@@ -60,7 +94,7 @@ SELECT Type,Instance,
        SUM(CASE WHEN n in('net-rx-errors/s','net-tx-errors/s') THEN value END) `Net|ErrPS`,
        SUM(CASE WHEN n in('net-errin','net-errout') THEN value END) `Net|Errs`,
        SUM(CASE WHEN n in('net-dropin','net-dropout') THEN value END) `Net|Drops`
-FROM ( SELECT *,
+FROM  (SELECT *,
               lower(concat(DEVICE_TYPE,'-',NAME)) n,
               lower(device_name) dn
        FROM   INFORMATION_SCHEMA.CLUSTER_LOAD) C

@@ -29,9 +29,10 @@
         &inst: default={cluster_} local={} 
     --]]--
 ]]*/
-COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,Avg|Commit,Avg|Wait,Avg|Commit,Avg|Backoff,Avg|TiKV,Avg|Cop,Avg|TiPD" FOR USMHD2
+COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Parse,Avg|Compile,Avg|Process,Avg|Commit,Avg|Wait,2PC -|PreWr,2PC -|Commit,Avg|Backoff,Avg|TiKV,Avg|Cop,Avg|TiPD" FOR USMHD2
 COL "Avg|Disk,Avg|RocksDB" for kmg2
 COL "Avg|Keys" for tmb2
+COL "Cache|Hit" pct2
 
 SELECT concat(substr(digest,1,18),' ..') AS digest,
        IFNULL((SELECT MAX('Yes') FROM information_schema.&inst.slow_query s WHERE s.digest=h.digest),'') `Slow`,
@@ -48,14 +49,16 @@ SELECT concat(substr(digest,1,18),' ..') AS digest,
        SUM(exec_count * avg_compile_latency) / SUM(exec_count)/1e3 `Avg|Compile`,
        SUM(exec_count * avg_process_time) / SUM(exec_count)/1e3 `Avg|Process`,
        SUM(exec_count * avg_wait_time) / SUM(exec_count)/1e3 `Avg|Wait`,
-       SUM(exec_count * max_cop_wait_time) / SUM(exec_count)/1e3  `Avg|Cop`,
-       SUM(exec_count * avg_commit_time) / SUM(exec_count)/1e3 `Avg|Commit`,
-       SUM(exec_count * avg_backoff_time) / SUM(exec_count)/1e3  `Avg|Backoff`,
+       SUM(exec_count * (max_cop_wait_time+max_cop_process_time)) / SUM(exec_count)/1e3  `Avg|Cop`,
+       SUM(exec_count * avg_prewrite_time) / SUM(exec_count)/1e3 `2PC -|PreWr`,
+       SUM(exec_count * avg_commit_time) / SUM(exec_count)/1e3 `2PC -|Commit`,
+       SUM(exec_count * avg_backoff_total_time) / SUM(exec_count)/1e3  `Avg|Backoff`,
        SUM(exec_count * avg_kv_time) / SUM(exec_count)/1e3  `Avg|TiKV`,
        SUM(exec_count * avg_pd_time) / SUM(exec_count)/1e3  `Avg|TiPD`,
        '|' `|`,
        SUM(exec_count * avg_disk) / SUM(exec_count)  `Avg|Disk`,
        SUM(exec_count * avg_rocksdb_block_read_byte) / SUM(exec_count)  `Avg|RocksDB`,
+       SUM(exec_count *avg_rocksdb_block_cache_hit_count)/NULLIF(SUM(exec_count *avg_rocksdb_block_read_count),0) `Cache|Hit`,
        SUM(exec_count * avg_total_keys) / SUM(exec_count)  `Avg|Keys`,
        '|' `|`,
        any_value(substr(replace(replace(replace(replace(trim(digest_text),'\n',' '),' ','<>'),'><',''),'<>',' '),1,150)) sql_text
