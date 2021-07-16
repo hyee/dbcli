@@ -37,7 +37,7 @@ function show.run(...)
                         table.remove(dict,1)
                         for i,row in ipairs(dict) do
                             local name=row[1]
-                            if name~='tidb_config' then
+                            if name~='tidb_config' or text:lower()=='tidb_config' then
                                 local rec=names[name:lower()]
                                 if not rec then
                                     rec={name}

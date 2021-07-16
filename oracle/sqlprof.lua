@@ -403,15 +403,17 @@ DECLARE --Better for this script to have the access on gv$sqlarea
     sq_id     VARCHAR2(30):='@sql_id@';
 BEGIN
     BEGIN 
-        EXECUTE IMMEDIATE q'[select * from (
-                                     SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 AND ROWNUM<2
-                                     union all 
-                                     SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1 AND ROWNUM<2
-                                     union all 
-                                     SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor 
-                                     WHERE SQL_ID=:1 AND IS_FULL_SQLTEXT='Y'
-                                     AND   SQL_TEXT IS NOT NULL AND ROWNUM<2) 
-                                   where rownum<2]' 
+        EXECUTE IMMEDIATE q'[SELECT * FROM (
+                                 SELECT SQL_FULLTEXT FROM gv$sqlarea
+                                 WHERE SQL_ID=:1 AND ROWNUM<2
+                                 UNION ALL
+                                 SELECT SQL_TEXT FROM dba_hist_sqltext
+                                 WHERE SQL_ID=:1 AND ROWNUM<2
+                                 UNION ALL
+                                 SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor 
+                                 WHERE SQL_ID=:1 AND IS_FULL_SQLTEXT='Y'
+                                 AND   SQL_TEXT IS NOT NULL AND ROWNUM<2
+                             ) WHERE ROWNUM<2]' 
         INTO sql_txt USING sq_id,sq_id,sq_id;
     EXCEPTION WHEN OTHERS THEN NULL;END;
     IF sql_txt IS NULL THEN

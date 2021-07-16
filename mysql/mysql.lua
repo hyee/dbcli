@@ -127,6 +127,7 @@ function mysql:connect(conn_str)
         if props.sub_version:lower():find('tidb') then
             props.tidb,props.branch=true,'tidb'
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
+            pcall(self.internal_call,self,"set tidb_multi_statement_mode=ON")
         elseif props.sub_version:lower():find('maria') then
             props.maria,props.branch=true,'maria'
             props.sub_version=nil
@@ -163,12 +164,12 @@ function mysql:exec(sql,...)
     end
     
     if is_not_prep then sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2] end
-    local result=self.super.exec(self,sql,...)
+    local result,verticals=self.super.exec(self,sql,...)
     if is_not_prep and not bypass then 
         event("AFTER_MYSQL_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
     end
-    return result
+    return result,verticals
 end
 
 function mysql:command_call(sql,...)
@@ -176,9 +177,8 @@ function mysql:command_call(sql,...)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
     env.checkhelp(#env.parse_args(2,sql)>1)
-    local result,verticals=self.super.exec(self,sql,{args})
-    if not bypass then event("BEFORE_MYSQL_EXEC",self,sql,args,result) end
-    self:print_result(result,sql)
+    local result,verticals=self.super.exec(self,sql,{args},nil,nil,true)
+    if not bypass then event("AFTER_MYSQL_EXEC",self,sql,args,result) end
 end
 
 function mysql:onload()
