@@ -1,8 +1,10 @@
 /*[[List Top SQLs. Usage: @@NAME [{<yymmddhh24mi> [<yymmddhh24mi>}  | {-snap <secs>} | {-sql <digest>} | -f"<filter>" | -u ] [-local]
-    -snap       : Only list the recent SQLs within <secs> seconds. Defaults to list the SQLs within 7 days.
-    -f"<filter>": Customize the `WHERE` clause
-    -u          : Only list the statements for current user
-    -local      : Only list the the SQLs exist in local instance
+
+    -sql <digest>: Only list the stats for the specific digest, as well as showing the sql text and execution plan     
+    -snap <secs> : Only list the recent SQLs within <secs> seconds. Defaults to list the SQLs within 7 days.
+    -f"<filter>" : Customize the `WHERE` clause
+    -u           : Only list the statements for current user
+    -local       : Only list the the SQLs exist in local instance
 
     Parameters:
         * tidb_enable_slow_log (default: on)

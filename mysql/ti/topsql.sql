@@ -1,9 +1,11 @@
 /*[[List Top SQLs. Usage: @@NAME {[<yymmddhh24mi> [<yymmddhh24mi>]}  | {-snap <secs>} | {-sql <digest>} | [-f"<filter>" | -u ] [-local] [-current]
-    -f"<filter>": Customize the `WHERE` clause
-    -snap       : Only list the recent SQLs within <secs> seconds. Defaults to list the SQLs within 7 days.
-    -u          : Only list the SQLs for current database
-    -current    : Only list the the SQLs exist in "[cluster_]statements_summary",otherwise use the *history view
-    -local      : Only list the the SQLs exist in local instance
+
+    -sql <digest>: Only list the stats for the specific digest, as well as showing the sql text and execution plan     
+    -snap <secs> : Only list the recent SQLs within <secs> seconds. Defaults to list the SQLs within 7 days.
+    -f"<filter>" : Customize the `WHERE` clause
+    -u           : Only list the SQLs for current database
+    -current     : Only list the the SQLs exist in "[cluster_]statements_summary",otherwise use the *history view
+    -local       : Only list the the SQLs exist in local instance
 
     Parameters:
         * tidb_enable_stmt_summary (default: 1)
@@ -41,7 +43,7 @@ ENV FEED OFF
 COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Retry,Avg|Parse,Avg|Compile,Cop|Prox,Avg|Commit,Cop|Wait,2PC ->|PreWri,2PC ->|Commit,Avg|Backoff,Avg|TiKV,Avg|Cop,Avg|TiPD" FOR USMHD2
 COL "Avg|Disk,Avg|RocksDB" for kmg2
 COL "Avg|Keys,Execs,Retry" for tmb2
-COL "Cache|Hit" pct2
+COL "Cache|Hit" for pct2
 
 SELECT &hour &grp,
        IFNULL((SELECT MAX('Yes') FROM information_schema.&inst.slow_query s WHERE s.digest=h.digest),'') `Slow`,
@@ -71,7 +73,7 @@ SELECT &hour &grp,
        '|' `|`,
        SUM(exec_count * avg_disk) / SUM(exec_count)  `Avg|Disk`,
        SUM(exec_count * avg_rocksdb_block_read_byte) / SUM(exec_count)  `Avg|RocksDB`,
-       SUM(exec_count * avg_rocksdb_block_cache_hit_count)/NULLIF(SUM(exec_count*avg_rocksdb_block_read_count),0) `Cache|Hit`,
+       SUM(exec_count * avg_rocksdb_block_cache_hit_count)/NULLIF(SUM(exec_count*(avg_rocksdb_block_cache_hit_count+avg_rocksdb_block_read_count)),0) `Cache|Hit`,
        SUM(exec_count * avg_total_keys) / SUM(exec_count)  `Avg|Keys`,
        '|' `|`,
        &tail

@@ -36,7 +36,6 @@ function mysql:connect(conn_str)
         args.password=pwd
         conn_str=string.format("%s/%s@%s",usr,pwd,url)
     else
-        
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)[/:](.*)@(.+)")
         if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
         args={user=usr,password=pwd}
@@ -113,18 +112,20 @@ function mysql:connect(conn_str)
             if c==0 then print(n) end
         end
         --]]
-        props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[%W%.]+([%w%.]*)')
-        props.server=info[5]
+        props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[^%w%.]*([%w%.]*)')
+        props.db_server=info[5]
         props.db_user=info[4]:match("([^@]+)")
         props.db_conn_id=tostring(info[3])
         props.database=info[1] or ""
         props.sql_mode=info[6]
         props.charset=info[8]
         args.database=info[1] or ""
-        args.hostname=props.server
+        args.hostname=props.db_server
         args.port=info[7]
         self:check_readonly(cfg.get('READONLY'),self.conn:isReadOnly() and 'on' or 'off')
-        if props.sub_version:lower():find('tidb') then
+        if props.sub_version=='' then
+            props.sub_version='Oracle'
+        elseif props.sub_version:lower():find('tidb') then
             props.tidb,props.branch=true,'tidb'
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
             pcall(self.internal_call,self,"set tidb_multi_statement_mode=ON")
@@ -135,13 +136,12 @@ function mysql:connect(conn_str)
             props.branch,props[props.sub_version:lower()]=props.sub_version:lower(),true
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
         end
-        env._CACHE_PATH=env.join_path(env._CACHE_BASE,props.server,'')
+        env._CACHE_PATH=env.join_path(env._CACHE_BASE,props.db_server,'')
         loader:mkdir(env._CACHE_PATH)
-
         env.set_title(('MySQL v%s(%s)   Server: %s   CID: %s'):format(
                 props.db_version,
                 (props.branch or '')..(props.branch and props.sub_version and ' v' or '')..(props.sub_version or ''),
-                props.server,
+                props.db_server,
                 props.db_conn_id))
     end
     if (tonumber(self.props.db_version:match("^%d+%.%d")) or 1)<5.5 then
@@ -172,13 +172,20 @@ function mysql:exec(sql,...)
     return result,verticals
 end
 
+local cmd_no_arguments={
+    SHUTDOWN=1
+}
 function mysql:command_call(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
-    env.checkhelp(#env.parse_args(2,sql)>1)
+    local params=env.parse_args(2,sql)
+    env.checkhelp(#params>1 or cmd_no_arguments[params[1]])
     local result,verticals=self.super.exec(self,sql,{args},nil,nil,true)
-    if not bypass then event("AFTER_MYSQL_EXEC",self,sql,args,result) end
+    if not bypass then 
+        self.print_feed(sql,result)
+        event("AFTER_MYSQL_EXEC",self,sql,args,result)
+    end
 end
 
 function mysql:onload()

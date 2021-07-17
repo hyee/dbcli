@@ -36,8 +36,7 @@ function dicts.build_dict(typ,scope)
         [[SHOW VARIABLES]],
         [[SELECT concat(lower(table_schema), '.', lower(table_name))
           FROM   INFORMATION_SCHEMA.TABLES
-          WHERE  lower(table_schema) IN
-                 ('information_schema', 'sys', 'mysql', 'performance_schema', 'metrics_schema', 'sys', 'ndbinfo')]],
+          WHERE  lower(table_schema) IN ('information_schema', 'sys', 'mysql', 'performance_schema', 'metrics_schema', 'sys', 'ndbinfo')]],
         [[SELECT lower(word) from INFORMATION_SCHEMA.KEYWORDS where length(word)>5]],
         [[SELECT lower(a.name)
           FROM   mysql.help_topic AS a

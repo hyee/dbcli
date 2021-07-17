@@ -858,7 +858,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         self.autocommit=autocommit
     end
     
-    verticals,env.VERTICALS=env.VERTICALS
+    verticals,env.VERTICALS=env.VERTICALS or self.VERTICALS
     if is_not_prep then
         sql=sql:sub(1,-128)..sql:sub(-127):gsub(vertical_pattern,
                 function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
