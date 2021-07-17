@@ -472,8 +472,6 @@ function grid:add(row)
     local rownum = grid.row_num
     local null_value=env.set.NULL and env.set.get('NULL') or ''
     local maxsize = grid.col_size
-    local linesize = self.linesize
-    if linesize <= 10 then linesize = getWidth(console) - (#env.space) * 2 end
     grid.colsize = self.colsize
     for k, v in pairs(row) do rs[k] = v end
     if self.headind == -1 then
@@ -582,6 +580,8 @@ function grid:add(row)
                     v=grp[1]
                     local col_wrap = grid.col_wrap
                     if cols==1 and maxsize>=1024 and headind<2 then
+                        local linesize = self.linesize
+                        if linesize <= 10 then linesize = getWidth(console) - (#env.space) * 2 end
                         if usize>math.max(linesize,maxsize)  then
                             col_wrap=col_wrap==0 and linesize or math.min(linesize,col_wrap)
                         end

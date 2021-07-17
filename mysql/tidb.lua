@@ -38,6 +38,7 @@ function tidb:parse_plan(plan)
             prev=curr
         end
     end
+    if #header==0 then return end
 
     for i=#infos,1,-1 do 
         infos[i]=table.remove(header,infos[i])

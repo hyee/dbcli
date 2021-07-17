@@ -3,9 +3,22 @@ local cfg,grid=table.strong({name='SET'}),env.grid
 local maxvalsize=20
 local file='setting.dat'
 local root_cmd
+local rawget,rawset=rawget,rawset
 cfg._backup=nil
 cfg._plugins=table.strong()
 local cmds={}
+
+cfg.current_config={}
+local meta={
+    __index=function(self,k)
+        if k~='value' then return rawget(self,k) end
+        return rawget(cfg.current_config,rawget(self,'base_name'))
+    end,
+    __newindex=function(self,k,v)
+        if k~='value' then return rawset(self,k,v) end
+        rawset(cfg.current_config,rawget(self,'base_name'),v)
+    end
+}
 
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
@@ -92,8 +105,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         return env.warn("Environment parameter '%s' has been defined in %s!",name,cfg.exists(name).src)
     end
     if not cfg[name] then cfg[name]={} end
-    cfg[name]={
-        value=defaultvalue,
+    cfg[name]=setmetatable({
         abbr=abbr,
         default=defaultvalue,
         func=validate,
@@ -105,7 +117,9 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         abbr=abbr,
         base_name=name,
         instance=(type(instance)=="table" or type(instance)=="userdata") and instance
-    }
+    },meta)
+    cfg[name].value=defaultvalue
+
     for k,v in ipairs(abbr) do
         if type(v)=="string" and v~="" then
             abbr[k],cfg._commands[v:upper()]=v:upper(),cfg[name]
@@ -282,6 +296,7 @@ function cfg.backup()
             for item,value in pairs(v) do
                 backup[k][item]=value
             end
+            backup[k].value=v.value
         end
     end
     env.log_debug("set","Start backup")

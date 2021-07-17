@@ -1,3 +1,9 @@
+/*[[Show table info
+    --[[
+        @CHECK_USER_TIDB: tidb={LEFT JOIN information_schema.table_storage_stats USING(table_schema,table_name)} default={}
+    --]]
+]]*/
+
 sql @info.view.sql
 
 print Indexes and Constraints:
@@ -8,10 +14,11 @@ ENV PIVOT 1 PIVOTSORT OFF
 
 print Table and Partition Info:
 print =========================
-SELECT A.*,(DATA_LENGTH + INDEX_LENGTH) `Size`
-FROM   information_schema.tables A
-WHERE  table_schema=:object_owner
-AND    table_name=:object_name
+SELECT A.*,(DATA_LENGTH + INDEX_LENGTH + IFNULL(data_free,0)) `Size`
+FROM   (
+    SELECT * FROM information_schema.tables &CHECK_USER_TIDB
+    WHERE  table_schema=:object_owner
+    AND    table_name=:object_name) A
 ;SELECT concat(partition_method, ' (', partition_expression, ')') `Partition By`,
        COUNT(DISTINCT partition_name) `Partitions`,
        concat(subpartition_method, ' (', subpartition_expression, ')') `Subpartition By`,

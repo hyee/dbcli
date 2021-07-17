@@ -22,8 +22,7 @@ function sql:validate_accessable(name,options,values)
             expect_name="user"
             default=nil
             for role in option:gmatch("([^/]+)") do
-                role=role:upper()
-                if role:upper()=="DEFAULT" or db.props.privs[role] or db.props[role] then
+                if role=="DEFAULT" or db.props.privs[role] or db.props[role] or db.props[role:lower()] then
                     default=option
                     break
                 end

@@ -449,6 +449,7 @@ function scripter:get_script(cmd,args,print_args)
 end
 
 function scripter:run_script(cmds,...)
+    env.VERTICALS=nil
     local g_cmd,g_sql,g_args,g_files,index={},{},{},{},0
     for cmd in (cmds or ""):gsplit(',',true) do
         if cmd:sub(1,1)~='@' and cmd:find(env.PATH_DEL,1,true) then cmd='@'..cmd end

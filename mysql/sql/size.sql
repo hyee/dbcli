@@ -7,6 +7,7 @@
                 f={}
                 u={table_schema=database()}
             }
+            @check_user_tidb: tidb={,Tidb_Pk_Type} default={}
     --]]--
 ]]*/
 COL size,table_size,index_size,free_size for kmg2
@@ -25,7 +26,7 @@ SELECT table_schema,
        SUM(data_free)    free_size,
        SUM(table_rows)   table_rows,
        AVG(NULLIF(avg_row_length,0)) avg_row_length,
-       engine,
+       engine &check_user_tidb,
        IFNULL(GROUP_CONCAT(DISTINCT tablespace_name SEPARATOR ', '),'') tablespaces,
        any_value(collation) collation
 FROM   information_schema.partitions t
@@ -34,9 +35,9 @@ JOIN   (SELECT table_schema,
         FROM   information_schema.tables
         GROUP  BY table_schema) c
 USING  (table_schema)
-JOIN   (SELECT table_schema,table_name,engine,table_collation collation from information_schema.tables) t1
+JOIN   (SELECT table_schema,table_name,engine,table_collation collation &check_user_tidb from information_schema.tables) t1
 USING  (table_schema,table_name)
 WHERE  (&filter)
-GROUP  BY table_schema, table_name,engine
+GROUP  BY table_schema, table_name,engine &check_user_tidb
 HAVING SUM(data_length)>0 AND SUM(table_rows)>0
 ORDER  BY size DESC LIMIT 100;
