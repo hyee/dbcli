@@ -39,8 +39,8 @@
         &inst: default={cluster_} local={} 
     --]]--
 ]]*/
-ENV FEED OFF
-COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Retry,Avg|Parse,Avg|Compile,Cop|Prox,Avg|Commit,Cop|Wait,2PC ->|PreWri,2PC ->|Commit,Avg|Backoff,Avg|TiKV,Avg|Cop,Avg|TiPD" FOR USMHD2
+ENV FEED OFF AUTOHIDE COL
+COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Retry,Avg|Parse,Avg|Compile,Cop|Prox,Avg|Commit,Cop|Wait,2PC ->|PreWri,2PC ->|Commit,Avg|Backoff,Avg|Latch,Avg|Lock,Avg|TiKV,Avg|Cop,Avg|TiPD" FOR USMHD2
 COL "Avg|Disk,Avg|RocksDB" for kmg2
 COL "Avg|Keys,Execs,Retry" for tmb2
 COL "Cache|Hit" for pct2
@@ -55,7 +55,7 @@ SELECT &hour &grp,
        '|' `|`,
        SUM(sum_latency)/1e3 AS `Total|Ela`,
        MAX(max_latency)/1e3 AS `Max|Ela`,
-       SUM(exec_count * avg_latency) / SUM(exec_count)/1e3 AS `Avg|Ela`,
+       SUM(sum_latency) / SUM(exec_count)/1e3 AS `Avg|Ela`,
        SUM(sum_exec_retry_time)/ SUM(exec_count)/1e3 AS `Avg|Retry`,
        '|' `|`,
        SUM(exec_count * avg_pd_time) / SUM(exec_count)/1e3  `Avg|TiPD`,
@@ -69,10 +69,12 @@ SELECT &hour &grp,
        SUM(exec_count * avg_kv_time) / SUM(exec_count)/1e3  `Avg|TiKV`,
        SUM(exec_count * avg_prewrite_time) / SUM(exec_count)/1e3 `2PC ->|PreWri`,
        SUM(exec_count * avg_commit_time) / SUM(exec_count)/1e3 `2PC ->|Commit`,
-       SUM(exec_count * avg_backoff_total_time) / SUM(exec_count)/1e3  `Avg|Backoff`,
+       NULLIF(ROUND(SUM(exec_count * avg_local_latch_wait_time) / SUM(exec_count)/1e3,2),0)  `Avg|Latch`,
+       NULLIF(ROUND(SUM(exec_count * avg_resolve_lock_time) / SUM(exec_count)/1e3,2),0)  `Avg|Lock`,
+       NULLIF(ROUND(SUM(exec_count * avg_backoff_total_time) / SUM(exec_count)/1e3,2),0)  `Avg|Backoff`,
        '|' `|`,
-       SUM(exec_count * avg_disk) / SUM(exec_count)  `Avg|Disk`,
-       SUM(exec_count * avg_rocksdb_block_read_byte) / SUM(exec_count)  `Avg|RocksDB`,
+       NULLIF(ROUND(SUM(exec_count * avg_disk) / SUM(exec_count),2),0)  `Avg|Disk`,
+       NULLIF(ROUND(SUM(exec_count * avg_rocksdb_block_read_byte) / SUM(exec_count),2),0)  `Avg|RocksDB`,
        SUM(exec_count * avg_rocksdb_block_cache_hit_count)/NULLIF(SUM(exec_count*(avg_rocksdb_block_cache_hit_count+avg_rocksdb_block_read_count)),0) `Cache|Hit`,
        SUM(exec_count * avg_total_keys) / SUM(exec_count)  `Avg|Keys`,
        '|' `|`,

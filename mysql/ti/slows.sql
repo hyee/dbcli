@@ -38,9 +38,9 @@
     --]]--
 ]]*/
 ENV FEED OFF AUTOHIDE COL
-COL "Total|Ela,Avg|Ela,Avg|Retry,Avg|Backoff,Avg|TiKV,Avg|TiPD,Avg|Parse,Avg|Compile,Avg|ReWrite,Sub|Query,Avg|Optim,2PC ->|PreWri,2PC ->|Commit,Cop|Time,Cop|Prox,Cop|Wait" FOR USMHD2
+COL "Total|Ela,Avg|Ela,Avg|Retry,Avg|Backoff,Avg|TiKV,Avg|TiPD,Avg|Parse,Avg|Compile,Avg|ReWrite,Sub|Query,Avg|Optim,2PC ->|PreWri,2PC ->|Commit,Avg|Latch,Avg|Lock,Cop|Time,Cop|Prox,Cop|Wait" FOR USMHD2
 COL "Write|Size,Mem|Max,Disk|Max" FOR KMG2
-COL "Write_Keys,Cop|Keys,Cop|Tasks,execs,retry" FOR TMB2
+COL "Write|Keys,Cop|Keys,Cop|Tasks,execs,retry" FOR TMB2
 
 SELECT &hour &grp,
        DATE_FORMAT(MIN(Time),'%m%d-%H:%i') first_seen,
@@ -62,11 +62,13 @@ SELECT &hour &grp,
        AVG(PD_total)*1e6 `Avg|TiPD`,
        NULLIF(AVG(Prewrite_time)*1e6,0) `2PC ->|PreWri`,
        NULLIF(AVG(Commit_time)*1e6,0) `2PC ->|Commit`,
-       NULLIF(AVG(Write_Keys),0) `Write|Keys`,
+       NULLIF(ROUND(AVG(Write_Keys)),0) `Write|Keys`,
        NULLIF(AVG(Write_size),0) `Write|Size`,
        NULLIF(AVG(Prewrite_region),0) 'PreWri|Region',
        '|' `|`,
        AVG(KV_total)*1e6 `Avg|TiKV`,
+       NULLIF(AVG(local_latch_wait_time)*1e6,0) `Avg|Latch`,
+       NULLIF(AVG(resolve_lock_time+LockKeys_time)*1e6,0) `Avg|Lock`,
        AVG(Cop_time)*1e6 `Cop|Time`,
        NULLIF(AVG(Process_time)*1e6,0) `Cop|Prox`,
        NULLIF(AVG(Wait_time)*1e6,0) `Cop|Wait`,
