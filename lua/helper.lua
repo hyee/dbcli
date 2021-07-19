@@ -1,6 +1,6 @@
 local env,java=env,java
 local runtime=java.require("java.lang.Runtime",true):getRuntime()
-local helper={}
+local helper=env.class()
 
 function helper.jvm()
     local grid=env.grid
@@ -85,11 +85,14 @@ function helper.env(target,depth)
     local e=terminal.encoding(terminal)
     
     
+    
+    add("Memory.JVM.Used(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
     add("Memory.LUA(KB)",math.floor(collectgarbage("count")))
-    add("Memory.JVM(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
+    add("Memory.JVM.Free(KB)",math.floor(runtime:freeMemory()/1024))
     if rows[2][1] and rows[2][2] then
-        add("Memory.Total(KB)",rows[2][1]+rows[2][2])
+        add("Memory.Total(KB)",rows[2][1]+rows[2][2]+rows[2][3])
     end
+    add("TERM",console.terminal:getType())
     add("CodePoint",e)
     add("ENV.locale",os.setlocale())
     local prefix=env.WORK_DIR:len()+1
@@ -112,7 +115,7 @@ function helper.env(target,depth)
         add('env.'..k,v)
     end
     if math.fmod(#rows[1],2)==1 then
-        add("","")
+        add("Memory.Used(KB)",rows[2][1]+rows[2][2])
     end
     add('package.path',package.path:gsub(';',';\n'))
     add('package.cpath',package.cpath:gsub(';',';\n'))
@@ -121,11 +124,12 @@ function helper.env(target,depth)
 end
 
 function helper.colorful(helps,target)
+    local is_more=target=='MORE'
     if helps:find('^[Nn]o ') then return helps end
     target=target:gsub(',.+','')
     helps='\n'..(helps:gsub('^%s*\n',''):gsub('\t','    '))
     local spaces=helps:match("\n( +)%S") or ""
-    helps=helps:gsub("\r?\n"..spaces,"\n"):gsub("%s+$",""):sub(2)
+    helps=helps:gsub("\r?\n\r?"..spaces,"\n"):rtrim():sub(2)
 
     helps=helps:gsub('^(%s*[^\n\r]+)[Uu]sage[: ]+(@@NAME)([^\r\n]*)',function(prefix,name,line)
         local s=prefix..'\n'..string.rep('=',#(prefix:trim())+#target+2)..'\n$USAGECOLOR$Usage:$COMMANDCOLOR$ '..name:gsub(',.+','')..'$NOR$'
@@ -134,12 +138,11 @@ function helper.colorful(helps,target)
  
     helps=(target=='' and '' or ('$USAGECOLOR$'..target:upper()..':$NOR$ '))..helps
     helps=helps:gsub("@@NAME",target:lower())
-
     local grid=env.grid
     local is_table
     helps=helps:gsub('%[(%s*|.-|)%s*%]',function(s)
         local tab,s0=grid.new(),s..' '
-        local space=s:match('( *)|') or ''
+        local indent=s:match('( *)|') or ''
         local _,cfg=grid.get_config(s0)
         local cols=0
         s0:gsub('\\|','\1'):gsub('[^\n%S]*(|[^\r\n]+|)%s+',function(s1)
@@ -166,7 +169,7 @@ function helper.colorful(helps,target)
         if #tab.data==0 then return s end
         for k,v in pairs(cfg) do tab[k]=v end
         is_table=true
-        return space..table.concat(grid.merge({tab}),'\n'..space)
+        return indent..table.concat(grid.merge({tab}),'\n'..indent)
     end)
 
     local keys={
@@ -189,7 +192,7 @@ function helper.colorful(helps,target)
     return helps:rtrim()..'\n',is_table
 end
 
-function helper.helper(cmd,...)
+function helper.help(cmd,...)
     local grid,_CMDS=env.grid,env._CMDS
     local rows={}
     if cmd and cmd:sub(1,1)~="-" then
@@ -202,7 +205,7 @@ function helper.helper(cmd,...)
         if type(_CMDS[cmd].HELPER) =="function" then
             local args,sub= _CMDS[cmd].OBJ and {_CMDS[cmd].OBJ,cmd,...} or {cmd,...}
             helps,sub = (_CMDS[cmd].HELPER)(table.unpack(args))
-            helps = helps or "No help information."
+            helps = helps or ""
             target= table.concat({cmd,sub}," ")
         else
             helps = _CMDS[cmd].HELPER or ""
@@ -212,7 +215,7 @@ function helper.helper(cmd,...)
         if helps=="" then return end
         helps,target=helper.colorful(helps,target)
         if not target then return print(helps) end
-        return print(helps,'__PRINT_COLUMN_')
+        return print(env.space..helps:gsub('\n','\n'..env.space),'__PRINT_COLUMN_')
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then
@@ -223,9 +226,9 @@ function helper.helper(cmd,...)
         return os.execute(cmd)
     elseif cmd=="-modules" then
         local row=grid.new()
-        row:add{"#","Module","Total Time(ms)","Load Time(ms)","Init Time(ms)"}
+        row:add{"#","Module","Total Time(ms)","Load Time(ms)","Init Time(ms)","Memory(K)"}
         for k,v in pairs(env._M) do
-            row:add{v.load_seq,k,math.round((v.load+v.onload)*1000),math.round(v.load*1000),math.round(v.onload*1000)}
+            row:add{v.load_seq,k,math.round((v.load+v.onload)*1000),math.round(v.load*1000),math.round(v.onload*1000),v.memory and math.round(v.memory) or ''}
         end
         row:sort(1)
         row:add_calc_ratio(3)
@@ -253,8 +256,8 @@ function helper.helper(cmd,...)
                           oraclepki='/dump/',
                           osdt_cert='/dump/',
                           osdt_core='/dump/',
-                          --orai18n='/dump/',
-                          xdb='/dump/'} do
+                          xdb='/dump/',
+                          ['mysql-connector']='/dump/'} do
             local dir=env.join_path(env.WORK_DIR..'/dump/'..f)
             local jar=env.join_path(target..'/lib/'..p..f..'.jar')
             if p:sub(1,1)=='/' then jar=env.join_path(env.WORK_DIR..p..f..'.jar') end
@@ -320,7 +323,8 @@ function helper.helper(cmd,...)
             end
         end
     end
-    print("Available comands:\n===============")
+    if env.help.prefix then print("==================\n"..env.help.prefix.."\n") end
+    print("Available comands:\n==================")
     grid.sort(rows,1,true)
     grid.print(rows)
     return ""
@@ -338,7 +342,7 @@ function helper.desc()
                 -verbose [class] :  dump a class or classes from verbose.log into dir "dump"
                 -dump            :  dump classed of current process into dir "dump"
                 -buildjar        :  build jars from in dir "dump"
-                -modules         :  show loaded modules
+                -modules         :  show loaded modules(load time,memories,etc)
         Other commands:
             help                             To brief the available commands(excluding hiddens)
             help <command>                   To show the help detail of a specific command
@@ -346,5 +350,9 @@ function helper.desc()
      ]]
 end
 
-env.set_command(nil,'help',helper.desc,helper.helper,false,9)
+function helper:__onload()
+    env.help=self
+    env.set_command(nil,'help',self.desc,self.help,false,9)
+end
+
 return helper

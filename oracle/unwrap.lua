@@ -1107,7 +1107,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {'unc_bytes','Unzip|Bytes'},
         {'elig_bytes','Elig|Bytes'},
         {'ret_bytes','Return|Bytes'},
-        {'cell_offload_efficiency2','Eff|Rate'},
+        {'cell_offload_efficiency2','Eff|Rate2'},
+        {'cell_offload_efficiency','Eff|Rate'},
         {'|','|'},
         {'top_event','Top Event'},
         {'aas_rate','AAS%'},
@@ -1202,7 +1203,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             
             if slaves and row.px_set then
-                for i=aas_idx,statset.seqs.cell_offload_efficiency2-1 do --exclude offload efficiency
+                for i=aas_idx,statset.seqs.cell_offload_efficiency-1 do --exclude offload efficiency
                     local v=row[i]
                     if type(v)=='string' then v=tonumber(v:strip_ansi()) end
                     if v then
@@ -2203,7 +2204,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 '|',
                 strip_quote(p.object_alias),
                 '|',
-                strip_quote(qb and qb:sub(2) or nil),
+                strip_quote(qb and qb:gsub('^@','') or nil),
             }
             attrs.lines[id]=lines[#lines]
             if child then lvs[depth]=child==3 and ' ' or child_fmt:format(child_color,child_sep) end
@@ -2393,7 +2394,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         file=file..'_'..sql_id
     end
     print("\nSQL Monitor report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text))
+    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text:convert_ansi()))
     if seq then
         if sqlstat[2] then 
             sqlstat[2][1]=tostring(seq):lpad(3)..': '..sql_id
@@ -2988,7 +2989,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
 
     text=table.concat(text,'\n')..'\n'
     print("\nSQL Detail report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Detail report in color written to "..env.save_data(file..'.ans',text))
+    print("SQL Detail report in color written to "..env.save_data(file..'.ans',text:convert_ansi()))
 end
 
 local function unwrap_plsql(obj,rows,file)
@@ -3130,15 +3131,15 @@ function unwrap.unwrap(obj,ext,prefix)
             end
         end
 
-        for p,func in pairs{[sqlmon_pattern]=unwrap.analyze_sqlmon,
-                            [sqldetail_pattern]=unwrap.analyze_sqldetail} do
+        for _,func in ipairs{{sqldetail_pattern,unwrap.analyze_sqldetail},
+                             {sqlmon_pattern,unwrap.analyze_sqlmon}} do
             local sql_list={}
-            local _,cnt=text:gsub(p,function(s) sql_list[#sql_list+1]=s;return '' end)
+            local _,cnt=text:gsub(func[1],function(s) sql_list[#sql_list+1]=s;return '' end)
             if cnt>1 then
                 local prefix=obj:gsub('[^\\/%w][^\\/]+$','')
                 local result
                 for i,sqlmon in ipairs(sql_list) do
-                    local row=load_report(func,sqlmon,prefix,i)
+                    local row=load_report(func[2],sqlmon,prefix,i)
                     if not result then 
                         result=row
                     else
@@ -3147,7 +3148,7 @@ function unwrap.unwrap(obj,ext,prefix)
                 end
                 grid.merge({result},true)
             else
-                load_report(func,text,obj)
+                load_report(func[2],text,obj)
             end
         end
 

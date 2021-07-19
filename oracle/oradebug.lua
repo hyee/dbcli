@@ -333,8 +333,7 @@ local function load_ext()
               oradebug session_event wait_event[all] trace('\nevent="%", p1=%, p2=%, p3=%, ela=%, tstamp=% shortstack=%', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), evargn(7),shortstack())
               oradebug event wait_event["latch: ges resource hash list"] {wait: minwait=8000} trace(''event "%", p1 %, p2 %, p3 %, wait time % Stk=%'', evargs(5), evargn(2), evargn(3),evargn(4), evargn(1), shortstack())
             ]]
-        },
-        MILLSAP={'11g+ Trace 10046 events',"oradebug event Millsap {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12"}
+        }
     }
 
     ext={
@@ -696,9 +695,9 @@ local function load_ext()
                 * 37 Yields the maximum level of tracing, without using the buffer]],
             [[oradebug session_event 10046 trace name context forever,level 12
               oradebug session_event 10046 trace name context off
-              oradebug session_event 10046 trace name context level 12, lifetime 10000, after 5000 occurrences
-              oradebug event Millsap {process : pname = dw | pname =dm} wait=true, bind=true,plan_stat=all_executions ,level=12]]},
+              oradebug session_event 10046 trace name context level 12, lifetime 10000, after 5000 occurrences]]},
             {'crash','Kill the specific session','oradebug event immediate crash'},
+            {'controlc','Cancel the sql when it matches','oradebug event trace[SQL_Execution.*] [SQL: ...]{occurence:end_after 3} controlc_signal()'},
             {'deadlock','Dump deadlocks',
             [[oradebug event deadlock trace name hanganalyze_global
             oradebug event 60 trace name hanganalyze level 4
@@ -905,7 +904,8 @@ function oradebug.load_dict()
         local keywords={}
         for k,v in pairs(keys) do keywords[#keywords+1]=k end
         console:setSubCommands({oradebug=data._keys,odb=data._keys})
-        env.log_debug('extvars','Loaded dictionry '..datapath)
+        table.clear(keys)
+        env.log_debug('dict','Loaded dictionry '..datapath)
     end)
 
 end
@@ -1157,7 +1157,7 @@ function oradebug.profile(sid,samples,interval,event)
             env.checkerr(inst==db.props.instance,'Cannot profile the remote instance: '..inst)
             samples=tonumber(samples) or 100
             interval=tonumber(interval) or samples>=500 and 0.01 or 0.1
-            local prep=db.conn:prepareStatement([[select 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
+            local prep=db.conn:prepareStatement([[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
             local clock=os.clock()
             out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
             print("Sampling complete within "..(os.clock()-clock).." secs.")
@@ -1442,7 +1442,7 @@ function oradebug.run(action,args)
                                 end
                                 target=target..n
                                 usage[#usage+1]='\n'..string.rep('=',#target+2)..'\n|'..target..'|\n'..string.rep('-',#target+2)
-                                usage[#usage+1]=env.helper.colorful(d.usage,'')
+                                usage[#usage+1]=env.help.colorful(d.usage,'')
                             end
                         elseif (n:upper():find(action) or d.desc:upper():find(action) or (d.usage or ''):upper():find(action)) then
                             libs1[name][k][n]=d

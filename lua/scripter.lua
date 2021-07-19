@@ -140,10 +140,9 @@ function scripter:parse_args(sql,args,print_args,cmd)
             if not rest or rest=='' then return s end
             return rest..s
         end)
-        if rest and cnt==0 and value:trim()=='' then 
-            value=value..rest 
-        else
-            value=value:sub(1,-2)
+        value=value:sub(1,-2)
+        if (rest or '')~='' and cnt==0 and value:trim()=='' then 
+            value=value..rest
         end
         return value
     end
@@ -184,7 +183,7 @@ function scripter:parse_args(sql,args,print_args,cmd)
                             if k=='@ARGS' and not print_args then
                                 local min=tonumber(v)
                                 if min and #args<min then
-                                    env.helper.helper(self:get_command(),cmd)
+                                    env.help.help(self:get_command(),cmd)
                                     env.checkerr(false,'Please input at least '..min..' parameter(s).')
                                 end
                             end
@@ -299,11 +298,11 @@ function scripter:parse_args(sql,args,print_args,cmd)
                                        option,
                                        default==option and "Y" or "N",
                                        select==option and "Y" or "N",
-                                       strip(text)}
+                                       text:find([[^['"_&:]+]]) and strip(text) or ('"'..strip(text)..'"')}
                     end
                 end
             end
-            rows1[#rows1+1]={k,strip(org[1] or ""),(org[2] or ''),strip(new)}
+            rows1[#rows1+1]={k,strip(org[1] or ""),(org[2] or ''),new:find([[^['"_&:]+]]) and strip(new) or ('"'..strip(new)..'"')}
         end
 
         for k,v in pairs(env.var.inputs) do
@@ -355,8 +354,7 @@ function scripter:run_sql(sql,args,cmds)
     
     local echo=cfg.get("echo"):lower()=="on"
     if #env.RUNNING_THREADS == 2 then
-        cfg.set("define","on")
-        cfg.set("verify","on")
+        cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT")
     end
     local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do
@@ -385,11 +383,14 @@ function scripter:get_script(cmd,args,print_args)
         for k,v in pairs(self.cmdlist) do
             keys[k]=type(v)=="table" and v.desc or nil
         end
-        if env.IS_ENV_LOADED then console:setSubCommands(list) end
+        if env.IS_ENV_LOADED then 
+            console:setSubCommands(list)
+            table.clear(list)
+        end
     end
 
     if not cmd or cmd:match('^%s*$') then
-        return env.helper.helper(self:get_command())
+        return env.help.help(self:get_command())
     end
     local org=cmd
     cmd=cmd:trim():upper()
@@ -405,7 +406,7 @@ function scripter:get_script(cmd,args,print_args)
     if cmd=="-R" then
         return
     elseif cmd=="-H" then
-        return  env.helper.helper(self:get_command(),args[1])
+        return  env.help.help(self:get_command(),args[1])
     elseif cmd=="-G" then
         env.checkerr(args[1],"Please specify the command name!")
         cmd,is_get=args[1] and args[1]:upper() or "/",true
@@ -424,14 +425,14 @@ function scripter:get_script(cmd,args,print_args)
         cmd,print_args=args[1] and args[1]:upper() or "/",true
         table.remove(args,1)
     elseif cmd=="-S" then
-        return env.helper.helper(self:get_command(),"-S",table.unpack(args))
+        return env.help.help(self:get_command(),"-S",table.unpack(args))
     end
 
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then
         target_dir,file=self:check_ext_file(org:sub(2))
         env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..org:sub(2))
-        if not file then return env.helper.helper(self:get_command(),org) end
+        if not file then return env.help.help(self:get_command(),org) end
         cmd,file=file,target_dir[file].path
     elseif self.cmdlist[cmd] then
         file=self.cmdlist[cmd].path
@@ -441,18 +442,14 @@ function scripter:get_script(cmd,args,print_args)
     --[[No idea of why this operation can trigger lua gc on var.inputs (e.g.: ora actives)]] --
     local succ,sql=pcall(readFile,loader,file,10485760)
     env.checkerr(succ,tostring(sql))
-    
 
-    --local f=io.open(file)
-    --env.checkerr(f,"Cannot find this script!")
-    --local sql=f:read(10485760)
-    --f:close()
     if is_get then return print(sql) end
     args=self:parse_args(sql,args,print_args,cmd)
     return sql,args,print_args,file,cmd
 end
 
 function scripter:run_script(cmds,...)
+    self.db.VERTICALS=env.VERTICALS
     local g_cmd,g_sql,g_args,g_files,index={},{},{},{},0
     for cmd in (cmds or ""):gsplit(',',true) do
         if cmd:sub(1,1)~='@' and cmd:find(env.PATH_DEL,1,true) then cmd='@'..cmd end
@@ -475,6 +472,7 @@ function scripter:run_script(cmds,...)
 end
 
 function scripter:after_script()
+    self.db.VERTICALS=nil
     if self._backup_context then
         env.var.import_context(self._backup_context)
         self._backup_context=nil
@@ -482,10 +480,16 @@ function scripter:after_script()
 end
 
 function scripter:check_ext_file(cmd)
-    local exist,c=os.exists(cmd,self.ext_name)
+    local exist,c,dir,flag=os.exists(cmd,self.ext_name)
+    if exists~='file' and self.last_external_path and not cmd:find(':',1,true) then
+        flag=true
+        exist,c=os.exists(env.join_path(self.last_external_path,cmd),self.ext_name)
+    end
     env.checkerr(exist=='file',"Cannot find this file: "..cmd)
     local target_dir=self:rehash(c,self.ext_name)
-    c=c:match('([^\\/]+)$'):upper()
+    dir,c=c:match('^(.-)([^\\/]+)$')
+    c=c:upper()
+    if not flag then self.last_external_path=dir end
     for k,v in pairs(target_dir) do
         if c:find(k,1,true) then return target_dir,k end
     end
@@ -554,11 +558,9 @@ function scripter:helper(_,cmd,search_key)
             table.insert(rows[1],'_Undocumented_')
             table.insert(rows[2],undocs)
         end
-        env.set.set("PIVOT",-1)
+        env.set.set("PIVOT",-1,"PIVOTSORT","ON","HEADSEP",":")
         env.checkerr(#rows[1]>0,'No result for the specific input.')
-        env.set.set("HEADDEL",":")
         help=help..grid.tostring(rows)
-        env.set.restore("HEADDEL")
         return help
     end
     cmd = cmd:upper()
@@ -584,6 +586,7 @@ end
 
 function scripter:__onload()
     --env.checkerr(self.script_dir,"Cannot find the script dir for the '"..self:get_command().."' command!")
+    if not self.script_dir then return end
     self.db=self.db or env.db_core.__instance
     self.short_dir=self.script_dir:match('([^\\/]+)$')
     self.extend_dirs=env.set.get_config(self.__className..".extension")
@@ -600,5 +603,5 @@ function scripter:__onload()
     --env.uv.thread.new(function(o) if not o.cmdlist then o:run_script("-r") end end,self)
     if not self.cmdlist then self:run_script("-r") end
 end
-
+scripter.finalize='N/A'
 return scripter

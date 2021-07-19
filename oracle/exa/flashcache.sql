@@ -1,6 +1,6 @@
 /*[[
-	show flashcache based on EXA$FLASHCACHE. Usage: @@NAME [<cell>]
-	To run this script, please make sure "oracle/shell/create_exa_external_tables.sh" is installed in current instance.
+    show flashcache based on EXA$FLASHCACHE. Usage: @@NAME [<cell>]
+    To run this script, please make sure "oracle/shell/create_exa_external_tables.sh" is installed in current instance.
   --[[
       @check_access_obj: EXA$FLASHCACHE={}
   --]]

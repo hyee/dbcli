@@ -171,13 +171,6 @@ Command Overview
     * `describe/desc` :Describe Oracle object, provides more features than that of `sqlplus`
     * `xplan` :Show execution plan for input `SQL text/ID`, as well as downloading the 10053 trace file if specify the `-10053` option
 
-* **DB2 Database(to be enhanced)**
-  * _SQL_
-    * `*` :Supports almost all DB2 database SQL statements, be noted that all SQL commands should be ended with `;`, or `/` in a new line
-  * _Scripting_
-    * `sql` :Inherited from the scripting engine, to run scripts which contains a batches of all available commands
-  * _Admin_
-    * `ADM` :Run db2 `ADMIN_CMD` commands
 
 * **MySQL Database(to be enhanced)**
   * _SQL_
@@ -187,11 +180,14 @@ Command Overview
     * `mysqluc` :Switch to `mysqluc.exe` with same login plus other input parameters
     * `source` or `\.` or `ms` :Switch to `mysql.exe` with same login to execute the target script
   * _Scripting_
-    * `sql` :Inherited from the scripting engine, to run scripts which contains a batches of all available commands
+    * `sql` :Inherited from the scripting engine, to run the script which contains a batches of all available commands
+    * `ps`  :Similar to `sql` except that it's based on `performance_schema`
+    * `ti`  :Similar to `sql` except that it's for `TiDB` only
+    * `list`:Similar to `sql` except that it accepts no parameters
   * _Others_
-    * `show` : A bit different from the native `show`, provides more features such as fuzzy search.
     * `?` or `\?` : A bit different from the native `\?`, provides more features
     * `N/A` : Some commands are similar to the native `mysql` console
+    * `info`: Describes object more detail
 
 * **PostgreSQL Database(to be enhanced)**
   * _SQL_

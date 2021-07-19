@@ -23,10 +23,10 @@
     X$QESRSTATALL PHADD_QESRS   GV$SQL_PLAN_STATISTICS_ALL
 
 
-	--[[
-		@ARGS: 1
-		&V2: default={&instance}
-	--]]
+    --[[
+        @ARGS: 1
+        &V2: default={&instance}
+    --]]
 ]]*/
 set feed off
 var c REFCURSOR;
@@ -38,9 +38,9 @@ DECLARE
     i    PLS_INTEGER:=0;
 BEGIN
     FOR r IN (SELECT kqftanam t, 
-    	             listagg(c.kqfconam,',') within group(order by c.kqfconam) cols,
-    	             'CASE :addr '||listagg('WHEN '||c.kqfconam||' THEN '''||c.kqfconam||'''',' ') within group(order by c.kqfconam)||' END' info,
-    	             (select listagg(view_name,',') within group(order by view_name) from v$fixed_view_definition where instr(lower(view_definition),lower(kqftanam))>0) refs
+                     listagg(c.kqfconam,',') within group(order by c.kqfconam) cols,
+                     'CASE :addr '||listagg('WHEN '||c.kqfconam||' THEN '''||c.kqfconam||'''',' ') within group(order by c.kqfconam)||' END' info,
+                     (select listagg(view_name,',') within group(order by view_name) from v$fixed_view_definition where instr(lower(view_definition),lower(kqftanam))>0) refs
               FROM   x$kqfta t, x$kqfco c
               WHERE  c.kqfcotab = t.indx
               AND    lower(kqftanam) NOT IN ('x$ksmsp','x$ktuqqry')

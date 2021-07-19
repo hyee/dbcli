@@ -13,6 +13,7 @@ local grep_fmt="%1"
 local more_text={lines=0}
 local termout='on'
 local getWidth = console.getBufferWidth
+local terminal=terminal
 
 function printer.set_termout(name,value)
     termout=value
@@ -38,7 +39,14 @@ function printer.clear_buffered_output()
 end
 
 function printer.set_more(stmt)
-    env.checkerr(stmt,"Usage: more <select statement>|<other command>")
+    env.checkhelp(stmt)
+    local typ,file=os.exists(stmt,'txt')
+    if file then
+        local text=env.load_data(file,false)
+        env.checkerr(text,"Cannot read file: "..file)
+        out.isMore=false
+        return printer.more(text)
+    end
     printer.is_more=true
     out.isMore=true
     if stmt:upper()~='LAST' and stmt:upper()~='L' then
@@ -57,7 +65,7 @@ function printer.more(output)
         pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
     else
         local stack,lines=output:gsub('\n',"")
-        if env.ansi then output=env.ansi.convert_ansi(output) end
+        if output.convert_ansi then output=output:convert_ansi() end
         pcall(console.less,console,output,0,#(env.space),lines)
     end
 end
@@ -90,14 +98,14 @@ function printer.print(...)
     end
 
     output=table.concat(output,' ')
-    if env.ansi then output=env.ansi.convert_ansi(output) end
+    if output.convert_ansi then output=output:convert_ansi() end
     output,rows=output:gsub("([^\n\r]*)([\n\r]*)",function(s,sep)
         if printer.grep_text and not ignore then
             s,found=s:gsub(printer.grep_text,grep_fmt)
             if not (found>0 and not printer.grep_dir or printer.grep_dir and found==0) then
                 return ''
-            elseif env.ansi then
-                s=env.ansi.convert_ansi(s)
+            elseif s.convert_ansi then
+                s=s:convert_ansi()
             end
         end
         if column then
@@ -119,7 +127,7 @@ function printer.print(...)
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
         if ignore~='__BYPASS_GREP__' and (printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html') then
-            pcall(printer.tee_hdl.write,printer.tee_hdl,strip_ansi(output).."\n")
+            pcall(printer.tee_hdl.write,printer.tee_hdl,(printer.tee_type=='ans' and output or strip_ansi(output)).."\n")
         end
     end
 
@@ -137,7 +145,7 @@ function printer.print_grid(text)
 end
 
 function printer.write(output)
-    if env.ansi then output=env.ansi.convert_ansi(output) end
+    if output.convert_ansi then output=output:convert_ansi() end
     write(console,output)
 end
 
@@ -162,9 +170,11 @@ function printer.spool(file,option)
         return
     end
     if file:upper()=="OFF" or option=="OFF" or printer.hdl then
-        if printer.hdl then pcall(printer.hdl.close,printer.hdl) end
-        if env.set and env.set.get("feed")=="on" then
-            printer.rawprint(env.space..'Output is written to "'..printer.file..'".')
+        if printer.hdl then 
+            pcall(printer.hdl.close,printer.hdl)
+            if env.set and env.set.get("feed")=="on" then
+                printer.rawprint(env.space..'Output is written to "'..printer.file..'".')
+            end
         end
         printer.hdl=nil
         printer.file=nil
@@ -320,7 +330,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
         end
         hdl:write("\n")
     elseif type(str)=="string" then
-        pcall(hdl.write,hdl,env.space..strip_ansi(str):rtrim().."\n")
+        pcall(hdl.write,hdl,env.space..(printer.tee_type=='ans' and str:convert_ansi() or strip_ansi(str)):rtrim().."\n")
     end
 end
 
@@ -363,9 +373,14 @@ function printer.edit_buffer(file,default_file,text)
     end 
 end
 
+function printer.setTermType(name,typ)
+    typ=tonumber(typ)
+    terminal:switchWriter(typ-1);
+    return terminal:currentWriter()+1;
+end
+
 _G.print=printer.print
 _G.rawprint=printer.rawprint
-
 function printer.onload()
     if env.ansi then
         NOR = env.ansi.string_color('NOR') 
@@ -381,9 +396,19 @@ function printer.onload()
     end
     BOLD=BOLD..'%1'..NOR
     local tee_help=[[
-    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>|<file>+} <other command> (support pipe(|) operation)
-        or <other command>|@@NAME {+|.|[+]<file>|<file>+}
-    When <other command> is a query, then the output can be same to the screen output/csv file/html file which depends on the file extension. ]]
+    Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>} <other command> (support pipe(|) operation)
+        or <other command>|@@NAME {+|.|[+]<file>}
+    Target:
+         <file> : write the output into <file> with override mode
+        +<file> : write the output into <file> with append mode
+              . : write the output into "last_output.txt" with override mode
+              + : write the output into "last_output.txt" with append mode
+    File extentions:
+           .html: if the output is a query result, then save it as HTML format
+           .csv : if the output is a query result, then save it as CSV format
+           .ans : keep the output's ANSI color escapes
+        <others>: remove output's ANSI color escapes
+    ]]
 
     local grep_help=[[
     Filter matched text from the output. Usage: @@NAME <keyword|-keyword> <other command>  (support pipe(|) operation), -keyword means exclude.
@@ -392,7 +417,7 @@ function printer.onload()
     ]]
 
     local more_help=[[
-    Similar to Linux 'less' command. Usage: @@NAME <other command>|last|l  (support pipe(|) operation)
+    Similar to Linux 'less' command. Usage: @@NAME <other command>|<file>|last|l  (support pipe(|) operation)
         last : Display the last output on less mode
         l    : Same to 'last'
     
@@ -418,8 +443,8 @@ function printer.onload()
      | )        Right       | Right half window         |
      |-                     |-                          |
      | /pattern             | Search pattern            |
-     | n        Alt+N       | Search Forward            |
-     | N        ^N          | Search Backward           |]
+     | n        Alt+n       | Search Forward            |
+     | N        ALT+N       | Search Backward           |]
 
     Example: select * from dba_objects|@@NAME
     ]]
@@ -432,5 +457,8 @@ function printer.onload()
     env.ansi.define_color("GREPCOLOR","BBLU;HIW","ansi.grid","Define highlight color for the grep command, type 'ansi' for more available options")
     env.set.init("TERMOUT",termout,printer.set_termout,"core","Controls the display of output generated by commands executed from a script","on,off")
     env.set.init({"EDITOR",'_EDITOR'},env.IS_WINDOWS and 'notepad' or 'vi',printer.set_editor,"core","The editor to edit the buffer")
+    if terminal.infoComps then
+       env.set.init({"TERMTYPE",'_EDITOR'},terminal:currentWriter()+1,printer.setTermType,"core","Set Terminal Type. 1-Win10 2-ConEmu","1,2")
+    end;
 end
 return printer

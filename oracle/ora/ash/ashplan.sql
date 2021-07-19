@@ -686,7 +686,7 @@ plan_line_xplan AS
                max(max_dop) over(partition by x.phv),'    DoP: '||max(max_dop) over(partition by x.phv),
                '    DoP: '||min(min_dop) over(partition by x.phv)||'-'||max(max_dop) over(partition by x.phv))
        ||'    Period: ['||to_char(min(begin_time) over(partition by x.phv),'yyyy/mm/dd hh24:mi:ss') ||' -- '
-            ||to_char(min(end_time) over(partition by x.phv),'yyyy/mm/dd hh24:mi:ss')||']' time_range,
+            ||to_char(max(end_time) over(partition by x.phv),'yyyy/mm/dd hh24:mi:ss')||']' time_range,
        '| Plan Hash Value(s)   : '||max(phvs) over(partition by x.phv) phvs
   FROM  (SELECT x.*,
                 nvl(regexp_substr(prefix,'\d+')+0,least(-1,r-MIN(nvl2(regexp_substr(prefix,'\d+'),r,NULL)) OVER(PARTITION BY phv))) ID

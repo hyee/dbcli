@@ -1,10 +1,10 @@
-local env,string,java,math,table,tonumber=env,string,java,math,table,tonumber
+local env,string,java,math,table,tonumber,tostring=env,string,java,math,table,tonumber,tostring
 local grid,snoop,callback,cfg,db_core=env.grid,env.event.snoop,env.event.callback,env.set,env.db_core
 local var=env.class()
 local rawset,rawget=rawset,rawget
-local cast,ip=java.cast,{}
+local cast,ip,op=java.cast,{},{}
 local type,pairs,ipairs=type,pairs,ipairs
-var.outputs,var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{},table.strong{}
+var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{}
 var.inputs=setmetatable({},{
     __index=function(self,k)
         return rawget(ip,k)
@@ -12,8 +12,19 @@ var.inputs=setmetatable({},{
     __pairs=function(self)
         return pairs(ip)
     end,
-    __newindex=function(self,k,v) 
+    __newindex=function(self,k,v)
         rawset(ip,k,v)
+    end})
+
+var.outputs=setmetatable({},{
+    __index=function(self,k)
+        return rawget(op,k)
+    end,
+    __pairs=function(self)
+        return pairs(op)
+    end,
+    __newindex=function(self,k,v)
+        rawset(op,k,v)
     end})
 
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
@@ -47,8 +58,15 @@ function var.get_input(name)
 end
 
 function var.import_context(global,input,output,cols)
-    if type(output)=='table' then 
-        var.outputs=output
+    if type(output)=='table' then
+        for k,v in pairs(output) do
+            if var.outputs[k]~=v then
+               var.outputs[k]=v
+            end 
+        end
+        for k,v in pairs(var.outputs) do
+            if output[k]==nil then var.outputs[k]=nil end
+        end
     else
         output=table.strong{}
     end
@@ -87,7 +105,7 @@ end
 
 function var.setOutput(name,datatype,desc)
     if not name then
-        return env.helper.helper("VAR")
+        return env.help.help("VAR")
     end
 
     name=name:upper()
@@ -168,8 +186,12 @@ end
 
 function var.setInputs(name,args)
     var.inputs[name]=args
+    if args then
+        var.outputs[name]=nil
+    end
 end
 
+local var_pattern='%f[\\&](&+)([%w%_%$]+)(%.?)'
 function var.update_text(item,pos,params)
     local org_txt
     if type(item)=="string" then
@@ -199,19 +221,20 @@ function var.update_text(item,pos,params)
     while count>0 do
         count=0
         for k,v in pairs(params) do
-            if type(v)=="string" then params[k]=v:gsub('%f[\\&](&+)([%w%_%$]+)(%.?)',repl) end
+            if type(v)=="string" then params[k]=v:gsub(var_pattern,repl) end
         end
     end
 
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub('%f[\\&](&&?)([%w%_%$]+)(%.?)',repl)
+        item[pos]=item[pos]:gsub(var_pattern,repl)
     end
 
     if org_txt then return item[1] end
 end
 
+local current_outputs
 function var.before_db_exec(item)
     if cfg.get("define")~='on' then return end
     local db,sql,args,params=table.unpack(item)
@@ -223,15 +246,16 @@ function var.before_db_exec(item)
             end
         end
     end
-
     var.update_text(item,2,params)
+    current_outputs=args
 end
 
 function var.after_db_exec(item)
     local db,sql,args,_,params=table.unpack(item)
     local result,isPrint={},cfg.get("PrintVar")
     for k,v in pairs(params) do
-        if var.inputs[k] and type(v) ~= "table" and v~=db_core.NOT_ASSIGNED then
+        if var.inputs[k] and type(v) ~= "table" and v~=db_core.NOT_ASSIGNED 
+            and not (type(v)=='string' and v:sub(1,1)=='#' and var.types[v:sub(2)]) then
             var.inputs[k]=v
         end
     end
@@ -251,10 +275,13 @@ function var.after_db_exec(item)
     end
 end
 
+local vertical_pattern,verticals=env.VERTICAL_PATTERN
 function var.print(name)
     local db=var.current_db
     if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
+        verticals,env.VERTICALS=env.VERTICALS
+        name=name:gsub(vertical_pattern, function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
         local typ,f=os.exists(name)
         if typ=='file' then
             f=io.open(f,'r')
@@ -267,7 +294,7 @@ function var.print(name)
             local obj=var.inputs[name]
             env.checkerr(obj,'Target variable[%s] does not exist!',name)
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)))
+                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)),verticals)
                 var.outputs[name]="#CURSOR"
             elseif type(obj)=='table' then
                 grid.print(obj,nil,nil,nil,nil,prefix,"\n")
@@ -326,13 +353,18 @@ function var.save(name,file)
     print("Data saved to "..file);
 end
 
+local allow_cmds={}
 function var.capture_before_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
     if env._CMDS[cmd] and env._CMDS[cmd].FILE:find('var') then
         return
     end
-    local sub=env._CMDS[cmd].ALIAS_TO or 'nil'
-    if sub~=var.cmd1 and sub~=var.cmd2 and sub~=var.cmd3 and sub~=var.cmd4 and sub~='COL' and sub~='COLUMN' then
+    local sub=env._CMDS[cmd].ALIAS_TO or cmd
+    table.clear(allow_cmds)
+    for _,n in ipairs{var.cmd1,var.cmd2,var.cmd3,var.cmd4,'COL','COLUMN',env.set.name,'ENV'} do
+        allow_cmds[n]=1
+    end
+    if not allow_cmds[sub] then
         env.log_debug("var","Backup variables")
         if not var._prevent_restore then
             var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
@@ -534,6 +566,7 @@ function var.define_column(col,...)
         for k,v in ipairs(cols) do var.define_column(v,...) end
         return
     end
+
     local gramma={
         {{'ALIAS','ALI'},'*'},
         {{'CLEAR','CLE'}},
@@ -619,7 +652,7 @@ function var.define_column(col,...)
                 local res,msg=pcall(fmt.applyPattern,fmt,arg)
                 obj.format_dir='%'..#arg..'s'
                 func=function(v)
-                    if not tonumber(v) then return s,1 end
+                    if not tonumber(v) then return v,1 end
                     local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,cast(v,'java.math.BigDecimal')))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
@@ -648,7 +681,7 @@ function var.define_column(col,...)
             obj.heading=arg
             i=i+1
             valid=true
-        elseif args[i]=='JUSTIFY' or args[i]=='JUS' and #formats>0 then
+        elseif args[i]=='JUSTIFY' or args[i]=='JUS' then
             local arg=arg and arg:upper()
             local dir
             if arg then
@@ -657,6 +690,17 @@ function var.define_column(col,...)
             env.checkerr(dir,'Format:  COL[UMN] <column> FOR[MAT] <format> JUS[TIFY] [LEFT|L|RIGHT|R].')
             if type(obj.format_dir)=="string" then
                 obj.format_dir=obj.format_dir:gsub("-*(%d+)",dir..'%1')
+            else
+                local siz=0
+                for _,c in ipairs((obj.heading or col):strip_ansi():split(' *| *')) do
+                    local len=c:ulen()
+                    siz=siz<len and len or siz
+                end
+                obj.format_dir='%'..dir..siz..'s'
+                formats[#formats+1]=function(v)
+                    if not v or v=='' then return v,1 end
+                    return obj.format_dir:format(tostring(v)),1
+                end
             end
             i=i+1
             valid=true
@@ -667,7 +711,7 @@ function var.define_column(col,...)
     end
     if #formats>0 then
         obj.format=function(v,rownum,grid)
-            local is_number,tmp
+            local org,is_number,v1,tmp=org
             for _,func in ipairs(formats) do
                 v,tmp=func(v,rownum,grid)
                 if tmp then is_number=true end
@@ -714,8 +758,10 @@ function var.trigger_column(field)
     end
     
     index=obj.new_value
-    if index then
-        var.inputs[index],var.outputs[index]=value or db_core.NOT_ASSIGNED,nil
+
+    if index and rowind>0 and current_outputs then
+        current_outputs[index]=value or db_core.NOT_ASSIGNED
+        var.setInputs(index,current_outputs[index])
         if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 

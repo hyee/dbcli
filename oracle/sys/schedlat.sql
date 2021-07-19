@@ -44,7 +44,7 @@ PROMPT ===========================================================
 SELECT *
 FROM   (SELECT *
         FROM   TABLE(GV$(CURSOR(
-        	    SELECT userenv('instance') inst, sample_start_time, sample_end_time, sched_delay_micro sched_delay
+                SELECT userenv('instance') inst, sample_start_time, sample_end_time, sched_delay_micro sched_delay
                 FROM   sys.x$kso_sched_delay_history
                 WHERE  sched_delay_micro != 0)))
         ORDER  BY 2 DESC)
@@ -55,7 +55,7 @@ PROMPT =====================================================
 SELECT *
 FROM   TABLE(GV$(CURSOR (
           SELECT ROW_NUMBER() OVER(ORDER BY FLOOR(1440*(SYSDATE-sample_start_time)/NVL(0+regexp_substr(:V1,'^\d+$'),5))) BUCKET#,
-          		 userenv('instance') inst,
+                 userenv('instance') inst,
                  MIN(sample_start_time) history_begin_time,
                  MAX(sample_end_time) history_end_time,
                  MAX(sched_delay_micro) max_latency,

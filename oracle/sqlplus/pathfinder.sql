@@ -750,7 +750,7 @@ DECLARE
     put('DEF pathfinder_testid = "'||l_unique_id||'"');
 
     IF (p_alter_session != 'BASELINE') THEN
-    	put(p_alter_session);  
+        put(p_alter_session);  
     END IF;
 
     put('@&&pathfinder_script.');             

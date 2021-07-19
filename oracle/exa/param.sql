@@ -1,7 +1,7 @@
 /*[[
-	List cell parameters based on external table EXA$CELLPARAMS. Usage: @@NAME [<keywords>]
-	This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
-	--[[
+    List cell parameters based on external table EXA$CELLPARAMS. Usage: @@NAME [<keywords>]
+    This script relies on external table EXA$CACHED_OBJECTS which is created by shell script "oracle/shell/create_exa_external_tables.sh" with the oracle user
+    --[[
       @check_access_obj: EXA$CELLPARAMS_AGG={}
     --]]
 ]]*/

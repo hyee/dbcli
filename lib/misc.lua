@@ -11,23 +11,26 @@ function os.shell(cmd,args)
 end
 
 function os.find_extension(exe,ignore_errors)
-    local err='Cannot find executable "'..exe..'" in the default path, please add it into EXT_PATH of file data/'..(env.IS_WINDOWS and 'init.cfg' or 'init.conf')
-    if exe:find('[\\/]') then
-        local type,file=os.exists(exe)
-        if not ignore_errors then env.checkerr(type,err) end
-        return file
+    local exes=type(exe)=='string' and {exe} or exe
+    local err='Cannot find executable "'..exes[1]..'" in the default path, please add it into EXT_PATH of file data'..env.PATH_DEL..(env.IS_WINDOWS and 'init.cfg' or 'init.conf')
+    for _,exe in ipairs(exes) do 
+        if exe:find('[\\/]') then
+            local type,file=os.exists(exe)
+            if not ignore_errors then env.checkerr(type,err) end
+            return file
+        end
+        exe='"'..env.join_path(exe):trim('"')..'"'
+        local nul=env.IS_WINDOWS and "NUL" or "/dev/null"
+        local cmd=string.format("%s %s 2>%s", env.IS_WINDOWS and "where " or "which ",exe,nul)
+        local f=io.popen(cmd)
+        local path
+        for file in f:lines() do
+            path=file
+            break
+        end
+        if path then return path end
     end
-    exe='"'..env.join_path(exe):trim('"')..'"'
-    local nul=env.IS_WINDOWS and "NUL" or "/dev/null"
-    local cmd=string.format("%s %s 2>%s", env.IS_WINDOWS and "where " or "which ",exe,nul)
-    local f=io.popen(cmd)
-    local path
-    for file in f:lines() do
-        path=file
-        break
-    end
-    if not ignore_errors then env.checkerr(path,err) end
-    return path
+    env.checkerr(ignore_errors,err)
 end
 
 --Continus sep would return empty element

@@ -33,11 +33,11 @@
         @ARGS: 1
         @11G : 11.2={} DEFAULT={--}
         @12c : 18.1={} DEFAULT={--}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
         @CON : 12.1={,CON_DBID} DEFAULT={}
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
         &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
         @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
+        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     ]]--
 ]]*/
 

@@ -1,9 +1,9 @@
 /*[[
-	Show SQL Share cursors (gv$sql_shared_cursor). Usage: @@NAME [-s"<sql_id>"] [-i"<inst_id>"]
+    Show SQL Share cursors (gv$sql_shared_cursor). Usage: @@NAME [-s"<sql_id>"] [-i"<inst_id>"]
 
-	Sample Outputs:
-	===============
-	SQL> @@NAME
+    Sample Outputs:
+    ===============
+    SQL> @@NAME
        SQL_ID     CHILDS VERS   ELA     AVG_ELA |  MISMATCH_REASONS
     ------------- ------ ---- -------- -------- - ---------------------------------------------------------------------------------------------------------------------------
     6dhs74d4au081    190  189   25.84s    9.88s |  PQ_SLAVE_MISMATCH      = 173 | OPTIMIZER_MISMATCH     = 107 | USE_FEEDBACK_STATS     =   8 | TOP_LEVEL_RPI_CURSOR   =   5
@@ -14,8 +14,8 @@
     0ctk7jpux5chm     84   84   22.27s  23.74ms |  OPTIMIZER_MISMATCH     =  67 | USE_FEEDBACK_STATS     =  67 | BIND_EQUIV_FAILURE     =  17 | LOAD_OPTIMIZER_STATS   =   4
     6yxprcw0ax14g     83   83   18.92s    1.76s |  OPTIMIZER_MISMATCH     =  68 | PQ_SLAVE_MISMATCH      =  40 | TOP_LEVEL_RPI_CURSOR   =  20 | USE_FEEDBACK_STATS     =  13
     87gaftwrm2h68     81   78    1.21m   1.17ms |  OPTIMIZER_MISMATCH     =  78 | PURGED_CURSOR          =   3
-	
-	SQL> @@NAME -s"6dhs74d4au081"
+    
+    SQL> @@NAME -s"6dhs74d4au081"
        SQL_ID     CHILDS VERS  ELA   AVG_ELA |      MISMATCH_REASONS
     ------------- ------ ---- ------ ------- - --------------------------
     6dhs74d4au081    190  189 25.84s   9.88s |  PQ_SLAVE_MISMATCH   = 173
@@ -23,11 +23,11 @@
                                                 USE_FEEDBACK_STATS  =   8
                                                 TOP_LEVEL_RPI_CURSOR=   5
 
-	--[[
-		&sql_id : default={} s={and sql_id='&0'}
-		&sep    : default={' | '} s={chr(10)||' '}
+    --[[
+        &sql_id : default={} s={and sql_id='&0'}
+        &sep    : default={' | '} s={chr(10)||' '}
     &inst1  : default={:instance} i={0+'&0'}
-	--]]
+    --]]
 
 ]]*/
 
@@ -35,17 +35,17 @@ col ela,avg_ela for usmhd2
 
 SELECT *
 FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT vers),1e6) vers,
-	             SUM(distinct ela) ela,SUM(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
-	             ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
+               SUM(distinct ela) ela,SUM(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
+               ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
                MAX(sql_text) sql_text
         FROM   (SELECT sql_id,
                        MAX(sql_text) sql_text, c, 
-          	           SUM(DISTINCT childs) childs,
-          	           sum(distinct vers) vers,
-          	           SUM(distinct ela) ela,
-          	           SUM(distinct avg_ela) avg_ela,
-          	           SUM(val) val,
-          	           MAX(length(c)) over() l
+                       SUM(DISTINCT childs) childs,
+                       SUM(distinct vers) vers,
+                       SUM(distinct ela) ela,
+                       SUM(distinct avg_ela) avg_ela,
+                       SUM(val) val,
+                       MAX(length(c)) over() l
                 FROM   TABLE(gv$(CURSOR(
                            SELECT /*+ordered DYNAMIC_SAMPLING(4)*/ 
                                   sql_id,

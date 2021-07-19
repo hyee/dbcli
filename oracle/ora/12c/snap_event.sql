@@ -33,10 +33,10 @@
      PX Deq: Slave Session Stats             5.44ms   42.40 128.23us| 0.27  4.36  3.48  3.27  1.87  1.84  6.20  16.91  41.10  18.05  2.62
      oracle thread bootstrap                 4.22ms    0.20  21.11ms|                                                                                       100
      ...
-	--[[
+    --[[
         @ver: 12={}
-		@CHECK_ACCESS_SL: SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
-		&v1: default={10}
+        @CHECK_ACCESS_SL: SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
+        &v1: default={10}
         &u : t={*log(2,slot_time*2)} c={}
         &calc: default={ratio_to_report(SUM(svalue * r  &u)) OVER(PARTITION BY inst,wait_class,event) * 100} n={SUM(svalue * r  &u)}
         &filter: {
@@ -60,7 +60,7 @@
             w={lower('&0') in (lower(event),lower(wait_class))},
             f={}
         }
-	--]]
+    --]]
 ]]*/
 set COLAUTOSIZE trim sep4k on
 col Time/s,avg_time for usmhd2

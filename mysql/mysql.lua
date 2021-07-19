@@ -3,23 +3,30 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local mysql=env.class(env.db_core)
 mysql.module_list={
+    "help",
+    "findobj",
     "mysql_exe",
     "usedb",
     "show",
+    "info",
     "snap",
     "sql",
+    "list",
+    "ps",
+    "tidb",
     "chart",
     "ssh",
+    "dict",
+    "autotrace",
     "mysqluc"
 }
 
 function mysql:ctor(isdefault)
     self.type="mysql"
     self.C,self.props={},{}
-    self.C,self.props={},{}
-    self.JDBC_ADDRESS='http://dev.mysql.com/downloads/connector/j/'
+    self.JDBC_ADDRESS='https://mvnrepository.com/artifact/mysql/mysql-connector-java'
 end
-
+local native_cmds={}
 function mysql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
@@ -33,8 +40,24 @@ function mysql:connect(conn_str)
         if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
         args={user=usr,password=pwd}
         if conn_desc:match("%?.*=.*") then
+            local use_ssl=0
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
-                args[k]=v
+                if k:lower()=='ssl_key' or k=='trustCertificateKeyStoreUrl' then
+                    local typ,ssl=os.exists(v)
+                    env.checkerr(typ=='file','Cannot find SSL TrustStore file: '..v)
+                    if ssl:find(':') and ssl:sub(1,1)~='/' then ssl='/'..ssl end
+                    args['trustCertificateKeyStoreUrl']='file://'..ssl:gsub('\\','/')
+                    args['verifyServerCertificate']='true'
+                    args['useSSL']='true'
+                    args['sslMode']='PREFERRED'
+                    use_ssl=use_ssl+1
+                elseif k:lower()=='ssl_pwd' or  k:lower()=='ssl_password' or k=='trustCertificateKeyStorePassword' then
+                    env.checkerr(#v>=6,"Incorrect SSL TrustStore passowrd, it's length should not be less than 6 chars.")
+                    args['trustCertificateKeyStorePassword']=v
+                    use_ssl=use_ssl+2
+                else    
+                    args[k]=v
+                end
             end
             conn_desc=conn_desc:gsub("%?.*","")
         end
@@ -43,47 +66,88 @@ function mysql:connect(conn_str)
     
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
 
-    self:merge_props(
+    self:merge_props(--https://docs.pingcap.com/tidb/stable/java-app-best-practices
         {driverClassName="com.mysql.cj.jdbc.Driver",
          retrieveMessagesFromServerOnGetMessage='true',
-         allowPublicKeyRetrieval=true,
-         --clientProgramName='SQL Developer',
+         allowPublicKeyRetrieval='true',
+         rewriteBatchedStatements='true',
          useCachedCursor=self.MAX_CACHE_SIZE,
+         useCursorFetch='true',
          useUnicode='true',
          useServerPrepStmts='true',
-         characterEncoding='UTF8',
+         cachePrepStmts='true',
+         characterEncoding='utf8',
+         connectionCollation='utf8mb4_unicode_ci',
          useCompression='true',
          callableStmtCacheSize=10,
          enableEscapeProcessing='false',
          allowMultiQueries="true",
          useSSL='false',
          serverTimezone='UTC',
+         zeroDateTimeBehavior='convertToNull'
         },args)
-    
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
     for k,v in pairs(args) do args[k]=tostring(v) end
+    local data_source=java.new('com.mysql.cj.jdbc.MysqlDataSource')
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value([[
-        select database(),version(),CONNECTION_ID(),user(),@@hostname,@@sql_mode,@@port,plugin_version 
-        from   INFORMATION_SCHEMA.PLUGINS
-        where  plugin_name='InnoDB']])
-    self.props.db_version,self.props.server=info[8]:match('^([%d%.]+)'),info[5]
-    self.props.db_user=info[4]:match("([^@]+)")
-    self.props.db_conn_id=tostring(info[3])
-    self.props.database=info[1] or ""
-    self.props.sql_mode=info[6]
-    args.database=info[1] or ""
-    args.hostname=url:match("^[^/%:]+")
-    args.port=info[7]
-    self.connection_info=args
-    if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
-    if tonumber(self.props.db_version:match("^%d+%.%d"))<5.5 then
+    local info=self:get_value([[select database(),
+                                       version(),
+                                       CONNECTION_ID(),
+                                       user(),
+                                       @@hostname,
+                                       @@global.sql_mode,
+                                       @@port,
+                                       @@character_set_client]])
+    table.clear(self.props)
+    local props=self.props
+    props.privs={}
+    if info then
+        pcall(self.internal_call,self,"set sql_mode='"..info[6]..",ANSI'")
+        --[[
+        for _,n in ipairs(native_cmds) do
+            local c=self:get_value('select count(1) from mysql.help_topic where name like :1',{n..'%'})
+            if c==0 then print(n) end
+        end
+        --]]
+        props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[^%w%.]*([%w%.]*)')
+        props.db_server=info[5]
+        props.db_user=info[4]:match("([^@]+)")
+        props.db_conn_id=tostring(info[3])
+        props.database=info[1] or ""
+        props.sql_mode=info[6]
+        props.charset=info[8]
+        args.database=info[1] or ""
+        args.hostname=props.db_server
+        args.port=info[7]
+        self:check_readonly(cfg.get('READONLY'),self.conn:isReadOnly() and 'on' or 'off')
+        if props.sub_version=='' then
+            props.sub_version='Oracle'
+        elseif props.sub_version:lower():find('tidb') then
+            props.tidb,props.branch=true,'tidb'
+            props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
+            pcall(self.internal_call,self,"set tidb_multi_statement_mode=ON")
+        elseif props.sub_version:lower():find('maria') then
+            props.maria,props.branch=true,'maria'
+            props.sub_version=nil
+        elseif props.sub_version:find('^%a') then
+            props.branch,props[props.sub_version:lower()]=props.sub_version:lower(),true
+            props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
+        end
+        env._CACHE_PATH=env.join_path(env._CACHE_BASE,props.db_server,'')
+        loader:mkdir(env._CACHE_PATH)
+        env.set_title(('MySQL v%s(%s)   Server: %s   CID: %s'):format(
+                props.db_version,
+                (props.branch or '')..(props.branch and props.sub_version and ' v' or '')..(props.sub_version or ''),
+                props.db_server,
+                props.db_conn_id))
+    end
+    if (tonumber(self.props.db_version:match("^%d+%.%d")) or 1)<5.5 then
         env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
     end
-    env.set_title(('%s - User: %s   CID: %s   Version: %s(InnoDB-%s)'):format(self.props.server,self.props.db_user,self.props.db_conn_id,info[2],info[8]))
+    self.connection_info=args
     if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
     print("Database connected.")
 end
@@ -100,150 +164,126 @@ function mysql:exec(sql,...)
     end
     
     if is_not_prep then sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2] end
-    local result=self.super.exec(self,sql,...)
+    local result,verticals=self.super.exec(self,sql,...)
     if is_not_prep and not bypass then 
         event("AFTER_MYSQL_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
     end
-    return result
+    return result,verticals
 end
 
+local cmd_no_arguments={
+    SHUTDOWN=1
+}
 function mysql:command_call(sql,...)
     local bypass=self:is_internal_call(sql)
     local args=type(select(1,...)=="table") and ... or {...}
     sql=event("BEFORE_MYSQL_EXEC",{self,sql,args}) [2]
-    env.checkhelp(#env.parse_args(2,sql)>1)
-    local result=self.super.exec(self,sql,{args})
-    if not bypass then event("BEFORE_MYSQL_EXEC",self,sql,args,result) end
-    self:print_result(result,sql)
+    local params=env.parse_args(2,sql)
+    env.checkhelp(#params>1 or cmd_no_arguments[params[1]])
+    local result,verticals=self.super.exec(self,sql,{args},nil,nil,true)
+    if not bypass then 
+        self.print_feed(sql,result)
+        event("AFTER_MYSQL_EXEC",self,sql,args,result)
+    end
 end
 
 function mysql:onload()
-    local default_desc={"#MYSQL database SQL command",self.help_topic}
+    self.db_types:load_sql_types('com.mysql.cj.MysqlType')
+    local default_desc={"#MYSQL database SQL command",self.C.help.help_offline}
     local function add_default_sql_stmt(...)
-        for i=1,select('#',...) do
-            set_command(self,select(i,...), default_desc,self.command_call,true,1,true)
+        for _,cmd in ipairs({...}) do
+            set_command(self,cmd, default_desc,self.command_call,true,1,true)
+            native_cmds[#native_cmds+1]=type(cmd)=='table' and cmd[1] or cmd
         end
     end
 
-    --[[
-        select group_concat(concat('''',name,'''') order by name ) 
-        from(
-            select distinct coalesce(nullif(substring(name,1,instr(name," ")-1),''),name) as name 
-            from help_topic where help_category_id in(10,27,40,28,21,8,29)) o
-        where name not in('SET','DO','DUAL','JOIN','UNION','HELP','SHOW','USE','EXPLAIN','DESCRIBE','DESC','CONSTRAINT','CREATE')
-        order by 1
-    --]]
-
-    add_default_sql_stmt('DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOAD','LOCK','OPTIMIZE','PREPARE','PURGE')
-    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','SELECT','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
-
+    env.set.rename_command('ENV')
+    add_default_sql_stmt({"SELECT","WITH"},'SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOCK','OPTIMIZE','PREPARE','PURGE')
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
+    add_default_sql_stmt('IMPORT','LOAD','TABLE','VALUES','BEGIN','DECLARE','INSTALL','UNINSTALL','RESTART','SHUTDOWN','GET','CLONE')
     local  conn_help = [[
-        Connect to mysql database. Usage: @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
-                                       or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
-                                       or @@NAME <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
+        Connect to mysql database. 
+        Usage: 
+              @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>][?<properties>]
+           or @@NAME <user>{:|/}<password>@<host>[:<port>][/<database>]?ssl_key=<jks_path>[&ssl_pwd=<jks_password>][&<properties>]
+           or @@NAME <user>{:|/}<password>@[host1][:port1][,[host2][:port2]...][/database][?properties]
+           or @@NAME <user>{:|/}<password>@address=(key1=value)[(key2=value)...][,address=(key3=value)[(key4=value)...][/database][?properties]
 
         Refer to "MySQL Connector/J Developer Guide" chapter 5.1 "Setting Configuration Propertie" for the available properties  
-        Example:  @@NAME root/@localhost      --if not specify the port, then it is 3306
+        Example:  @@NAME root/@localhost          -- if not specify the port, then it is 3306
                   @@NAME root/root@localhost:3310
                   @@NAME root/root@localhost:3310/test?useCompression=false
+                  @@NAME root/root@localhost:3310/test?ssl_key=/home/hyee/trust.jks&ssl_pwd=123456
                   @@NAME root:root@address=(protocol=tcp)(host=primaryhost)(port=3306),address=(protocol=tcp)(host=secondaryhost1)(port=3310)(user=test2)/test
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    set_command(self,"create",   default_desc,  self.command_call      ,self.check_completion,1,true)
-    set_command(self,{"?","\\?"},nil,self.help_topic,false,9)
-
-    env.set.change_default("null","NULL")
-    env.event.snoop("ON_HELP_NOTFOUND",self.help_topic,self)
-    env.event.snoop("ON_SET_NOTFOUND",self.set,self)
-    env.event.snoop("BEFORE_EVAL",self.on_eval,self)
-    env.rename_command("TEE",{"write"})
+    set_command(self,"create",   default_desc, self.command_call,self.check_completion,1,true)
+    env.rename_command("HOST",{"SYSTEM","\\!","!"})
+    env.rename_command("TEE",{"WRITE"})
     env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
-    env.rename_command("PRINT","PRINTVAR")
+    env.rename_command("PRINT",{"PRINTVAR","PRI"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
     env.rename_command("HELP",{"HELP","\\h"})
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,self)
+    env.event.snoop('ON_SETTING_CHANGED',self.check_readonly,self)
     set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
-         function(sep)
-            if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("SQLTERMINATOR",sep)
-            else
-                env.set.doset("SQLTERMINATOR",sep)
-            end
-        end,false,2)
-    self.C={}
+         function(sep) if sep then env.set.doset("SQLTERMINATOR",';,'..sep..',\\g') end end,false,2)
 
     set_command(nil,{"PROMPT","\\R"},"Change your mysql prompt. Usage: @@NAME {<text>|default|back}",
-        function(sep)
-            if #env.RUNNING_THREADS<=2 then
-                return env.set.force_set("PROMPT",sep)
+        function(sep) env.set.doset("PROMPT",sep) end,false,2)
+end
+
+function mysql:check_readonly(name,value,org_value)
+    if name~='READONLY' or value==org_value or not self:is_connect() then return end
+    self.conn:setReadOnly(value=='on')
+end
+
+local ignore_errors={
+    ['No operations allowed after statement closed']='Connection is lost, please login again.',
+    ['Software caused connection abort']='Connection is lost, please login again.'
+}
+
+function mysql:handle_error(info)
+    for k,v in pairs(ignore_errors) do
+        if info.error:lower():find(k:lower(),1,true) then
+            info.sql=nil
+            if v~='default' then
+                info.error=v
             else
-                env.set.doset("PROMPT",sep)
+                info.error=info.error:match('^([^\n\r]+)')
             end
-        end,false,2)
-end
-
-function mysql:on_eval(line)
-    --[[
-    local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
-    if not first or near=="\\" then return end
-    if near==env.COMMAND_SEPS[1] then near="" end
-    if not env.pending_command() then
-
-    end
-    --]]
-    local c=line[1]:sub(-2)
-    if c:lower()=="\\g" then
-        line[1]=line[1]:sub(1,-3)..'\0'
-        if c=="\\G" then
-            env.set.doset("PIVOT",20)
+            return info
         end
     end
-end
-
-function mysql:set_session(name,value)
-    self:assert_connect()
-    return self:exec(table.concat({"SET",name,value}," "))
-end
-
-function mysql:help_topic(...)
-    local keyword=table.concat({...}," "):upper():trim()
-    local liker={keyword:find("%$") and keyword or (keyword.."%")}
-    local desc
-    env.set.set("feed","off")
-    local help_table=" from mysql.help_topic as a join mysql.help_category as b using(help_category_id) "
-    if keyword=="C" or keyword=="CONTENTS" then
-        self:query("select help_category_id as `Category#`,b.name as `Category`,group_concat(distinct coalesce(nullif(substring(a.name,1,instr(a.name,' ')-1),''),a.name) order by a.name) as `Keywords`"..help_table.."group by help_category_id,b.name order by 2")
-    elseif keyword:find("^SEARCH%s+") or keyword:find("^S%s+") then
-        keyword=keyword:gsub("^[^%s+]%s+","")
-        liker={keyword:find("%$") and keyword or ("%"..keyword.."%")}
-        self:query("select a.name,b.name as category,a.url"..help_table.."where (upper(a.name) like :1 or upper(b.name) like :1) order by a.name",liker)
-    else
-        local topic=self:get_value("select 1"..help_table.."where upper(b.name)=:1 or convert(help_category_id,char)=:1",{keyword})
-        if topic then
-            self:query("select a.name,b.name as category,a.url"..help_table.." where upper(b.name)=:1 or convert(help_category_id,char)=:1 order by a.name",{keyword})
-        else
-            local topic=self:get_value("select a.name,description,example,b.name as category"..help_table.."where a.name like :1 order by a.name limit 1",liker)
-            env.checkerr(topic,"No such topic: "..keyword)
-            topic[1]='Name:  '..topic[4].." / "..topic[1]
-            local desc='$HEADCOLOR$'..topic[1].."$NOR$ \n"..('='):rep(#topic[1])
-                      ..(" \n"..topic[2]:gsub("^%s*Syntax:%s*","")):gsub("\r?\n","\n  ")
-            if (topic[3] or ""):trim()~="" then
-                desc=desc.."\n$HEADCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n","\n  "))
-            end
-            print(ansi.convert_ansi((desc:gsub("%s+$",""))))
-        end
+    local line,col=info.error:sub(1,1024):match('line (%d+) column (%d+)')
+    if not line then
+        line=info.error:sub(1,1024):match('at line (%d+) *[\r\n]+')
+    end
+    info.row,info.col=line,col or (line and 0 or nil)
+    if line then
+        info.error=info.error:gsub('You have an error.-syntax to use','Syntax error at',1)
     end
 end
 
-function mysql:set(item)
-    if not self:is_connect() then return end
-    local cmd="SET "..table.concat(item," ")
-    item[1]=true
-    self:exec(cmd)
+function mysql:check_datetime(datetime)
+    local v=self:get_value([[select str_to_date(:1,'%y%m%d%H%i%s')]],{datetime},'')
+    if v=='' then
+        datetime=datetime:sub(3)
+        v=self:get_value([[select str_to_date(:1,'%y%m%d%H%i%s')]],{datetime},'')
+        env.checkerr(v~="","Invalid datetime format")
+    end
+    return datetime
 end
 
 function mysql:onunload()
     env.set_title("")
+end
+
+function mysql:finalize()
+    env.set.change_default("NULL","NULL")
+    env.set.change_default("AUTOCOMMIT","on")
+    env.set.change_default("SQLTERMINATOR",";,$$,\\g")
 end
 
 return mysql.new()

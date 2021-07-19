@@ -109,4 +109,4 @@ wait
 trap '' TSTP &>/dev/null
 
 chmod  777 ./lib/$os/luajit &>/dev/null
-./lib/$os/luajit ./lib/bootstrap.lua "$_java" $*
+exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$@"

@@ -10,7 +10,6 @@ pgsql.module_list={
 function pgsql:ctor(isdefault)
     self.type="pgsql"
     self.C,self.props={},{}
-    self.C,self.props={},{}
     self.JDBC_ADDRESS='https://jdbc.postgresql.org/download.html'
 end
 
@@ -56,6 +55,7 @@ function pgsql:connect(conn_str)
     self.conn=java.cast(self.conn,"org.postgresql.jdbc.PgConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local info=self:get_value([[select current_database(),substring(version() from '[0-9\.]+'),current_user,inet_server_addr(),inet_server_port(),pg_backend_pid()]])
+    table.clear(self.props)
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.database=info[1] or ""
@@ -110,8 +110,6 @@ function pgsql:onload()
         end
     end
 
-
-
     add_default_sql_stmt('ABORT','ALTER','ANALYZE','BEGIN','CHECKPOINT','CLOSE','CLUSTER','COMMENT','COPY','DEALLOCATE','DECLARE')
     add_default_sql_stmt('DELETE','DISCARD','DROP','END','EXECUTE','EXPLAIN','FETCH','GRANT','IMPORT','INSERT','LISTEN','LOAD','LOCK','MOVE','NOTIFY','PREPARE')
     add_default_sql_stmt('REASSIGN','REFRESH','REINDEX','RELEASE','RESET','REVOKE','SECURITY','SELECT','START','TRUNCATE','UNLISTEN','UPDATE','VACUUM','WITH')
@@ -126,7 +124,6 @@ function pgsql:onload()
     env.set.change_default("null","NULL")
     env.set.change_default("autocommit","on")
     env.event.snoop("ON_SET_NOTFOUND",self.set,self)
-    env.event.snoop("BEFORE_EVAL",self.on_eval,self)
     env.event.snoop('ON_SQL_PARSE_ERROR',self.handle_error,self,1)
     self.C={}
     self.source_objs.DO=1
@@ -145,24 +142,6 @@ function pgsql:handle_error(info)
     return info;
 end
 
-function pgsql:on_eval(line)
-    --[[
-    local first,near,symbol,rest=line:match("^(.*)(.)\\([gG])(.*)")
-    if not first or near=="\\" then return end
-    if near==env.COMMAND_SEPS[1] then near="" end
-    if not env.pending_command() then
-
-    end
-    --]]
-    local c=line[1]:sub(-2)
-    if c:lower()=="\\g" then
-        line[1]=line[1]:sub(1,-3)..'\0'
-        if c=="\\G" then
-            env.set.doset("PIVOT",20)
-        end
-    end
-end
-
 function pgsql:set_session(name,value)
     self:assert_connect()
     return self:exec(table.concat({"SET",name,value}," "))
@@ -177,6 +156,10 @@ end
 
 function pgsql:onunload()    
     env.set_title("")
+end
+
+function pgsql:finalize()
+    env.set.change_default("SQLTERMINATOR",";,\\n%s*/,\\g")
 end
 
 return pgsql.new()

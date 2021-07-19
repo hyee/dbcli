@@ -29,7 +29,7 @@ SELECT * FROM DBA_HIST_WR_CONTROL &check_access_tab;
 
 PRO Instance Info:
 PRO ==============
-SELECT * FROM DBA_HIST_DATABASE_INSTANCE ORDER BY startup_time DESC;
+SELECT * FROM (SELECT * FROM DBA_HIST_DATABASE_INSTANCE ORDER BY startup_time DESC) WHERE ROWNUM<=30;
 
 PRO Snapshot Info:
 PRO ==============
@@ -59,17 +59,19 @@ chain AS
   CONNECT BY grp=prior grp
          AND seq=prior seq+1
          AND st BETWEEN PRIOR st and PRIOR et)
-SELECT &con dbid,
-       dbname,
-       &agg insts,
-       MIN(INSTANCE_STARTUP) INSTANCE_STARTUP,
-       MIN(st) begin_interval_time,
-       MAX(et) end_interval_time,
-       ROUND((MAX(et) - MIN(st))*1440) duration,
-       MIN(begin_snap_id) begin_snap_id,
-       MAX(end_snap_id) end_snap_id,
-       MAX(end_snap_id) - MIN(begin_snap_id) snapshots,
-       MIN(interval_min) interval_min
-FROM   r natural join (SELECT distinct seq,root_seq FROM chain WHERE root_seq NOT IN (SELECT seq FROM chain WHERE seq != root_seq)) c 
-GROUP  BY root_seq, &con dbid, dbname
-ORDER BY  end_interval_time DESC;
+SELECT * FROM (
+    SELECT &con dbid,
+           dbname,
+           &agg insts,
+           MIN(INSTANCE_STARTUP) INSTANCE_STARTUP,
+           MIN(st) begin_interval_time,
+           MAX(et) end_interval_time,
+           ROUND((MAX(et) - MIN(st))*1440) duration,
+           MIN(begin_snap_id) begin_snap_id,
+           MAX(end_snap_id) end_snap_id,
+           MAX(end_snap_id) - MIN(begin_snap_id) snapshots,
+           MIN(interval_min) interval_min
+    FROM   r natural join (SELECT distinct seq,root_seq FROM chain WHERE root_seq NOT IN (SELECT seq FROM chain WHERE seq != root_seq)) c 
+    GROUP  BY root_seq, &con dbid, dbname
+    ORDER BY  end_interval_time DESC
+) WHERE ROWNUM<=50;

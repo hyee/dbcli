@@ -1,4 +1,33 @@
-2021-06-28: + oracle: new script 'show autotask'
+2021-07-18: + mysql : new script 'ti qps' 
+2021-07-16: + mysql : new script 'sql size' 
+2021-07-13: + mysql : new script 'ti sqlstats' 
+2021-07-12: + mysql : new script 'ti actives','ti topsql'  and 'ti slows' 
+2021-07-11: + mysql : new script 'sql cols' to search coiumns 
+2021-07-10: + mysql : new command `info` to describe object
+2021-07-08: + mysql : support '<query>\g' to complete the input
+                      support command 'charset' to switch client charset
+                      new command 'ps topsql' and 'ti cluster'
+                      sync option 'env readonly' to server-side '@@session.transaction_read_only' variable
+2021-07-07: + mysql : new command set 'list' for the scripts without parameters
+                      new command 'sql obj' to find object by name, and 'sql search' to fuzzy search object
+                      new command set 'ti' for TiDB only
+                      new command 'ti locks' to show data locks
+2021-07-06: + public: support "<query>\G[<rows>]" to print result vertically
+2021-07-05: * mysql : rename some dbcli commands to avoid conflicting with native mysql client:
+                      set->env, host->system, tee->write, spool->tee, print->pr
+2021-07-04: + mysql : support offline help documents
+2021-07-02: + mysql : support auto-complete for mysql
+2021-06-27: + public: new option 'set termtype'(Win10+ only) to switch terminal emulation
+2021-06-27: + public: 'tee <file.ans>' to keep the ANSI escapes
+2021-06-25: + oracle: 'sqlprof <sql_id> <outline text>|<xml>'
+            + public: 'print <file>' and 'more <file>'
+2021-06-24: * public: upgrade libs: jansi => v2.3.3(jar name keeps unchanged), jna => v5.8, jline => v3.20, ConEmu => v210620, NuProcess => v2.0.2
+                      compatible fixs regards to lib upgrades
+                      add '.limit(120)' in LineReaderImpl.doList to limit the maximum output candidates
+                      enhance the completer logics
+                      enhance the 'less' logics, inluding changing some some Jline3 functions as public to accomplish the enhancement
+===================================== v1.8 ============================================================================================
+2021-06-18: + oracle: new script 'show autotask'
 2021-04-30: + oracle: new script 'ora lfs' to analyze the 'log file sync' event
 2021-01-30: * public: upgrade lib ConEmu to build 210128
 2021-01-24: + public: new option 'set internal on/off'

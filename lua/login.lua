@@ -26,34 +26,39 @@ function login.generate_name(url,props)
     if url:find('@$') then return props.user end
     local url1=url
     url=url1:match("//([^&%?]+)")
+
     if not url then 
         url=(('@'..url1):match("@/?([^@]+)$") or ""):match('^[^%?]+')
         if not url then url=url1 end
     end
     
     url=url:gsub('([%.%:])([%w%-%_]+)',function(a,b)
-        if a=='.' and b:match('^(%d+)$') then
+        if b:match('^(%d+)$') then
             return a..b
         else
             return ''
         end
     end)
-    return (props.user..'@'..url):lower()
+
+    return (props.user..'@'..url):lower(),(props.user..'@'..url:gsub(':%d+(%W)','%1'))
 end
 
 function login.capture(db,url,props)
-    local typ=env.set.get("database")
+    local typ,url1=env.set.get("database")
     login.load()
-    url=login.generate_name(url,props)
+    url,url1=login.generate_name(url,props)
     local d=os.date('*t',os.time())
     props.password,props.lastlogin=env.packer.pack_str(props.password),string.format("%d-%02d-%02d %02d:%02d:%02d",d.year,d.month,d.day,d.hour,d.min,d.sec)
     if not login.list[typ] then login.list[typ]={} end
     local list=login.list[typ]
-    if list[url] then
-        props.alias=list[url].alias
-        props.ssh_link=list[url].ssh_link
-        props.forwards=list[url].forwards
+    local data=list[url] or list[url1]
+    if data then
+        props.alias=data.alias
+        props.ssh_link=data.ssh_link
+        props.forwards=data.forwards
     end
+    if url~=url1 and list[url1] then list[url1]=nil end
+
     if type(db)=="string" then props.connect_object=db end
     list[url]=props
     login.save()
@@ -140,7 +145,7 @@ function login.search(id,filter,url_filter)
             if (not filter and not url_filter) or (k:find(filter or "",1,true)  and v.url:find(url_filter or "",1,true)) then
                 counter=counter+1
                 if counter==1 then account=k end
-                grid.add(hdl,{ind,v.alias or "",k,v.user,v.ssh_link or "",v.url,v.lastlogin})
+                grid.add(hdl,{ind,v.alias or "",k:gsub(':%d+(%W)','%1'),v.user,v.ssh_link or "",v.url,v.lastlogin})
                 if id=="-d" then
                     list[k]=nil
                 end

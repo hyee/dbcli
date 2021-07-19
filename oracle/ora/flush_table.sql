@@ -1,9 +1,9 @@
 /*[[
-	Invalidates all cursors present in gv$sql which refer to the specific table. Usage: @@NAME [owner.]<table>[.partition] [<column_name>]
-	--[[
-		@check_access_dba: dba_tab_cols={dba_} default={all_}
+    Invalidates all cursors present in gv$sql which refer to the specific table. Usage: @@NAME [owner.]<table>[.partition] [<column_name>]
+    --[[
+        @check_access_dba: dba_tab_cols={dba_} default={all_}
         @ARGS: 1
-	--]]
+    --]]
 ]]*/
 ora _find_object "&V1"
 DECLARE

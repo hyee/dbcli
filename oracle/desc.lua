@@ -1225,11 +1225,11 @@ function desc.desc(name,option)
         if rs[2]==""  then rs[2],rs[3]=rs[3],rs[2] end
         print(dels)
         cfg.set("PIVOT",1)
-        db:query([[SELECT * FROM ALL_OBJECTS WHERE OWNER=:1 AND OBJECT_NAME=:2 AND nvl(SUBOBJECT_NAME,' ')=nvl(:3,' ')]],rs)
+        db:dba_query([[SELECT * FROM ALL_OBJECTS WHERE OWNER=:1 AND OBJECT_NAME=:2 AND nvl(SUBOBJECT_NAME,' ')=nvl(:3,' ')]],rs)
     end
 
     cfg.temp("feed",feed,true)
 end
 
-env.set_command(nil,{"describe","desc"},'Describe datbase object. Usage: @@NAME {[owner.]<object>[.partition] | [owner.]<pkg|typ>[.<function|procedure>]}',desc.desc,false,3)
+env.set_command(nil,{"describe","desc"},'Describe database object. Usage: @@NAME [owner.]<object>[.<partition>|.<sub_program>] [all]',desc.desc,false,3)
 return desc

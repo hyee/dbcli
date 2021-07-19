@@ -224,7 +224,6 @@ function env.check_cmd_end(cmd,other_parts,stmt)
     end
 
     local match,typ,index = env.COMMAND_SEPS.match(prev..other_parts)
-    --print(match,other_parts)
     if index==0 then
         return false,other_parts
     end
@@ -249,11 +248,10 @@ end
 env.root_cmds={}
 local function _new_command(obj,cmd,help_func,call_func,is_multiline,parameters,is_dbcmd,allow_overriden,is_pipable,color,is_blocknewline)
     local abbr={}
-
+    if not cmd then return end
     if not parameters then
         env.raise("Incompleted command["..cmd.."], number of parameters is not defined!")
     end
-
 
     local cmds=type(cmd)~="table" and {cmd} or cmd
     
@@ -324,12 +322,14 @@ end
 
 function env.rename_command(name,new_name)
     local info=_CMDS[name]
-    env.checkerr(info,"No such command: "..name)
+    if not info then return end
+    local old_name={}
     for k,v in pairs(_CMDS.___ABBR___) do
         if _CMDS[k]==info then
-            _CMDS[k]=nil 
+            old_name[#old_name+1],_CMDS[k]=k
         end
     end
+
     if type(new_name)=="string" then
         info.ABBR=""
         new_name={new_name}
@@ -338,9 +338,11 @@ function env.rename_command(name,new_name)
     end
     
     for k,v in ipairs(new_name) do
+        new_name[k]=v:upper()
         _CMDS.___ABBR___[v:upper()]=new_name[1]:upper()
     end
     _CMDS[new_name[1]:upper()]=info
+    console:renameCommand(old_name,new_name)
 end
 
 function env.get_command_by_source(list)
@@ -405,9 +407,8 @@ function env.format_error(src,errmsg,...)
     end
 
     env.log_debug("ERROR",errmsg)
-    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u%u%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
-
-        errmsg,count=errmsg:gsub('^.-(%u%u%u%-%d%d%d%d%d)','%1') 
+    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u+%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
+        errmsg,count=errmsg:gsub('^.-(%u%u+%-%d%d%d%d%d)','%1') 
         if count==0 then
             errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+%w*Exception:%s*","")
         end
@@ -465,7 +466,7 @@ function env.checkerr(result,index,msg,...)
 end
 
 function env.checkhelp(arg)
-    env.checkerr(arg,env.helper.helper,env.CURRENT_CMD)
+    env.checkerr(arg,env.help.help,env.CURRENT_CMD)
 end
 
 local co_stacks={}
@@ -483,8 +484,12 @@ local function _exec_command(name,params)
         local co,_,index=env.register_thread()
         co=co_stacks[index+1]
         if not co or coroutine.status(co)=='dead' then
-            co=coroutine.create(function(f) while f do f=coroutine.yield(f[1](table.unpack(f,2))) end end)
-            --print(co)
+            co=coroutine.create(
+                function(f) 
+                    while f do 
+                        f=coroutine.yield(f[1](table.unpack(f,2))) 
+                    end 
+                end)
         end
         env.register_thread(co)
         args[1]=func
@@ -542,20 +547,19 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     is_internal,arg_text=is_internal or false,arg_text or ""
     env.CURRENT_CMD=name
     
-    if event then
-        if isMain then
-            if writer then env.ROOT_CMD=name end
-            --collectgarbage("collect")
-            env.log_debug("CMD",name,params)
-        else
-            if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
-            env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
-        end
-        
-        if event and not is_internal then
-            name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text}))) 
-        end
+    if isMain then
+        if writer then env.ROOT_CMD=name end
+        --collectgarbage("stop")
+        env.log_debug("CMD",name,params)
+    else
+        if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
+        env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
     end
+    
+    if event and not is_internal then
+        name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text}))) 
+    end
+
     local res={pcall(_exec_command,name,params,arg_text)}
     if not env then return end
     local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
@@ -565,6 +569,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
     if isMain then
+        --collectgarbage("restart")
         collectgarbage("collect")
         env.set_prompt(nil,env.PRI_PROMPT)
     end
@@ -925,14 +930,12 @@ function env.modify_command(_,key_event)
     end
 end
 
+local callbacks={}
 function env.eval_line(lines,exec,is_internal,is_skip)
     if env.event then
-        lines=env.event.callback('BEFORE_EVAL',{lines})[1]
+        callbacks[1]=lines
+        lines=env.event.callback('BEFORE_EVAL',callbacks)[1]
     end
-    if type(lines)~="string" then
-        print(debug.traceback())
-        return nil 
-    end 
     local stack=lines:split("[\n\r]+")
     for index,line in ipairs(stack) do
         if index==#stack then
@@ -962,29 +965,47 @@ function env.safe_call(func,...)
     return rtn
 end
 
+env.VERTICALS,env.VERTICAL_PATTERN=nil,'%f[\\]\\G(%d*)%s*$'
+
 function env.set_endmark(name,value)
+    if not value then return end
     if value:gsub('[\\%%]%a',''):match('[%w]') then return print('The delimiter cannot be alphanumeric characters. ') end;
-    local p={value:gsub("\\+",'\\'):match("^([^, ]+)( *,? *(.*))$")}
-    table.remove(p,2)
-    for k,v in ipairs(p) do
-        p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '\\'..s end)
+    local p={}
+    local k=0
+    for v in value:gmatch('[^ ,]+') do
+        k=k+1
+        p[k]=v:gsub('\\(%w)',function(s) return s=='n' and '\n' or s=='r' and '\r' or s=='t' and '\t' or '%f[\\]\\'..s end)
         local c=p[k]:gsub("(.?)([%$%(%)%^%.])",function(a,b) return a..(a=="%" and "" or "%")..b end)
-        p["p"..k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
-        p[k]=p[k]:gsub("([^%+%*%?%-])[%+%*%?%-]","%1"):gsub("%%.","")
+        p[k]="^(.-)[ \t]*("..c..(#(c:gsub("%%",""))==1 and "+" or "")..")[ \t%z]*$"
     end
-    if p[2]=="" then p[2],p["p2"]=p[1],p["p1"] end
 
     env.COMMAND_SEPS=p
+    local vertical_pattern=env.VERTICAL_PATTERN
+    local zero,G='\0','\\G'
     env.COMMAND_SEPS.match=function(s)
-        local s1,s2=s:sub(1,-129),s:sub(-128)
-        local c,r=s2:match(p["p1"])
-        if c then return s1..c,r,1 end
-        c,r=s2:match(p["p2"])
-        if c then return s1..c,r,2 end
-        if s:sub(-1)=='\0' then
-            return s:sub(1,-2),'\0',2
+        local s1,s2=s:sub(1,-33),s:sub(-32)
+        local idx,c,r,r1=0
+        for i=1,1 do
+            if i==2 and not idx then break end
+            if s2:sub(-1)==zero then
+                s2,r,idx=s2:sub(1,-2),zero,2
+            end
+            if r~=G then
+                s2=s2:gsub(vertical_pattern,
+                    function(c)
+                        env.VERTICALS=tonumber(c) or env.set.get("printsize")
+                        r,idx=G,2
+                    return '' end)
+            end
+            for i,v in ipairs(p) do
+                if r1 then break end
+                c,r1=s2:match(v)
+                if c then
+                    s2,r,idx=c,r1,i
+                end
+            end
         end
-        return s,nil,0
+        return s1..s2,r,idx
     end
     return value
 end
@@ -1095,7 +1116,7 @@ function env.onload(...)
     if env.set and env.set.init then
         env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
-        env.set.init({"sqlterminator","COMMAND_ENDMARKS"},line_terminators,env.set_endmark,
+        env.set.init({"sqlterminator","END_MARKERS"},line_terminators,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
@@ -1123,6 +1144,7 @@ function env.onload(...)
     env.set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
     env.set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     env.set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)
+    env.init.finalize(env)
     env.reset_title()
     console:setCommands(env.root_cmds)
     --load initial settings
@@ -1184,8 +1206,10 @@ function env.load_data(file,isUnpack,callback)
         end
         local txt=f:read("*a")
         f:close()
-        if not txt or txt:gsub("[\n\t%s\r]+","")=="" then return {} end
-        return isUnpack==false and txt or env.MessagePack.unpack(txt)
+        if not txt or txt:gsub("[\n\t%s\r]+","")=="" then 
+            return isUnpack~=false and {} or nil 
+        end
+        return isUnpack~=false and env.MessagePack.unpack(txt) or txt
     else
         env.uv.async_read(file,32*1024*1024,function(err,result)
             if err then return end
@@ -1220,7 +1244,7 @@ end
 
 function env.write_cache(file,txt,is_Binary)
     if type(txt)~='string' then return end
-    local dest=env._CACHE_PATH..file
+    local dest=env.join_path(env._CACHE_PATH,file)
     file=dest
     local f=io.open(file,'w'..(is_Binary==true and 'b' or ''))
     if not f then

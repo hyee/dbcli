@@ -10,11 +10,8 @@ db2.module_list={
     "ssh",
 }
 
-
-
 function db2:ctor(isdefault)
     self.type="db2"
-    self.C,self.props={},{}
     self.C,self.props={},{}
 end
 
@@ -77,6 +74,7 @@ function db2:connect(conn_str)
     self.conn=java.cast(self.conn,"com.ibm.db2.jcc.DB2Connection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local version=self:get_value("select SERVICE_LEVEL FROM TABLE(sysproc.env_get_inst_info())")
+    table.clear(self.props)
     self.props.db_version=version:gsub('DB2',''):match('([%d%.]+)')
     self.props.db_user=args.user:upper()
     self.props.database=database
@@ -152,7 +150,6 @@ function db2:onload()
         set_command(self,k, default_desc,self.admin_cmd,true,1,true)
     end
     set_command(self,'adm', 'Run procedure ADMIN_CMD. Usage: adm <statement>',self.admin_cmd,true,2,true)
-    self.C={}
     --env.event.snoop('ON_SQL_ERROR',self.handle_error,nil,1)
 end
 

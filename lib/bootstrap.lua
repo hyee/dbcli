@@ -101,9 +101,9 @@ luv.os_setenv("PATH",table.concat(path,psep))
 
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify',
-				'-XX:MaxPermSize='..(dlldir=='x86' and '128m' or '256m'),
+				'-XX:MaxPermSize=128m',
 				'-Xms64m',
-				'-Xmx'..(dlldir=='x86' and '512m' or '1024m'),
+				'-Xmx'..(dlldir=='x86' and '512m' or '2048m'),
 			    '-XX:+UseStringDeduplication','-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
 			    '-Dfile.encoding='..charset,
 			    '-Duser.language=en','-Duser.region=US','-Duser.country=US',
@@ -114,23 +114,24 @@ local options ={'-noverify',
 for _,param in ipairs(other_options) do options[#options+1]=param end
 local javavm = require("javavm",true)
 javavm.create(table.unpack(options))
+_G.__jvmclock=os.clock()-clock
+clock=os.clock()
 local destroy=javavm.destroy
 loader = java.require("org.dbcli.Loader",true).get()
 console=loader.console
 terminal,reader,writer=console.terminal,console.reader,console.writer
-
 local m,_env,_loaded=_ENV or _G,{},{}
 for k,v in pairs(m) do _env[k]=v end
 if m.loaded then for k,v in pairs(m.loaded) do _loaded[k]=v end end
 
 local input=loader:getInputPath()
-
 if input:find('[\127-\254]') then
 	print('DBCLI cannot be launched from a Unicode path!')
 	os.exit(1)
 end
+
 _G.__loadclock=os.clock()-clock
-local clock=os.clock()
+clock=os.clock()
 while true do
 	_G.__startclock=os.clock()
 	local input,err=loadfile(resolve(input),'bt',_env)

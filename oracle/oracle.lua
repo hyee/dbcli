@@ -20,7 +20,7 @@ oracle.module_list={
     "rac",
     "chart",
     "ssh",
-    "extvars",
+    "dict",
     "oradebug",
     "sqlcl",
     "adb",
@@ -211,12 +211,11 @@ function oracle:connect(conn_str)
     prompt=prompt or args.jdbc_alias or url:gsub('.*@','')
     if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
     env.set_title("")
-    local data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.working_db_link=nil
     self.props={privs={}}
     args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
-
-    self.conn,args=self.super.connect(self,args,data_source)
+    self.data_source=java.new('oracle.jdbc.pool.OracleDataSource')
+    self.conn,args=self.super.connect(self,args,self.data_source)
     self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
@@ -442,11 +441,10 @@ function oracle:parse(sql,params)
         else
             typ='VARCHAR'
         end
-
         if v==nil then
             if counter<2 then counter=counter+2 end
-        else
-            if counter~=1 and counter~=3 then counter=counter+1 end
+        elseif math.fmod(counter,2)==0 then 
+            counter=counter+1
         end
 
         local typename,typeid=typ,self.db_types[typ].id
@@ -514,7 +512,7 @@ function oracle:parse(sql,params)
         return prep,org_sql,params
     elseif counter>1 then
         return self.super.parse(self,org_sql,params,':',':')
-    else 
+    else
         org_sql=sql
     end
 
@@ -564,7 +562,7 @@ function oracle:asql_single_line(...)
 end
 
 
-function oracle:check_date(string,fmt)
+function oracle:check_datetime(string,fmt)
     fmt=fmt or "YYMMDDHH24MI"
     local args={string and string~="" and string or " ",fmt,'#INTEGER','#VARCHAR'}
     self:internal_call([[
@@ -578,8 +576,6 @@ function oracle:check_date(string,fmt)
     return args[4]
 end
 
-local is_executing=false
-
 local ignore_errors={
     ['ORA-00028']='Connection is lost, please login again.',
     ['socket']='Connection is lost, please login again.',
@@ -590,11 +586,6 @@ local ignore_errors={
 }
 
 function oracle:handle_error(info)
-    if is_executing then
-        info.sql=nil
-        return
-    end
-
     for k,v in pairs(ignore_errors) do
         if info.error:lower():find(k:lower(),1,true) then
             info.sql=nil
@@ -667,8 +658,7 @@ function oracle:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback','associate','disassociate')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment','call')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-    set_command(self,"select",   default_desc,        self.query     ,true,1,true)
-    set_command(self,"with",   default_desc,        self.query     ,self.check_completion,1,true)
+    set_command(self,{"SELECT","WITH"},   default_desc,        self.query     ,true,1,true)
     set_command(self,{"execute","exec"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.query  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)

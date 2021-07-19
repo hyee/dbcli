@@ -9,14 +9,15 @@ if not env then return print(err) end
 
 env=env()
 env.onload(...)
-local print=env.printer.print
-print("--------------------------------------------------------------------------------------------------------------------------------------")
-print("| DBCLI, type 'conn' to connect to db, or 'help' for more information. (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)|")
-print("======================================================================================================================================")
+local print=env.printer and env.printer.print or print
+print("-------------------------------DBCLI------------------------------------")
+print("| Type 'conn' to connect to db, or 'help' for more information.        |")
+print("| (c)2014-2016 hyee, MIT license (https://github.com/hyee/dbcli)       |")
+print("========================================================================")
 
 if console:getBufferWidth()<=console:getScreenWidth() then
-	print("* Your terminal doesn't support horizontal scrolling, chars longer than screen width default to be trimmed.")
-	print("  Please run 'set linesize <cols>' to a larger value if preferred folding the long lines rather than trimming.")
+    print("* Your terminal doesn't support horizontal scrolling, chars longer than screen width default to be trimmed.")
+    print("  Please run 'set linesize <cols>' to a larger value if preferred folding the long lines rather than trimming.")
 end
 console.isSubSystem=false
 --print(console:getScreenWidth(),console:getScreenHeight())

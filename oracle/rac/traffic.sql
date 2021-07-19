@@ -37,8 +37,8 @@ _lm_tickets allocates the number of flow control tickets that lms uses to send m
 
 Setting _gc_policy_minimum to 15000 or larger makes DRM to occur much less frequently.  
   Setting this is preferable than disabling the DRM for most databases.
-	--[[
-		@CHECK_USER_SYSDBA: SYSDBA={},default={--} 
+    --[[
+        @CHECK_USER_SYSDBA: SYSDBA={},default={--} 
     @check_access_traffic: {
           GV$GES_TRAFFIC_CONTROLLER={GV$GES_TRAFFIC_CONTROLLER}
           SYS.x$kjitrft={
@@ -57,7 +57,7 @@ Setting _gc_policy_minimum to 15000 or larger makes DRM to occur much less frequ
             FROM   table(gv$(cursor(select * from SYS.x$kjitrft)))
           }
       }
-	--]]
+    --]]
 ]]*/
 SET FEED OFF
 select * from (&check_access_traffic);

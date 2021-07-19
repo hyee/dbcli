@@ -35,13 +35,13 @@ function alias.rehash()
 end
 
 function alias.parser(s, default_value)
-    if s ~= "*" then
+    if tonumber(s) then
         local v = tonumber(s)
         if v < 1 or v > 9 then return ("$" .. s) .. (default_value and '[' .. default_value .. ']' or '') end
         if (not alias.args[v] or alias.args[v] == "") and default_value then alias.args[v] = default_value end
         alias.rest[v] = ""
         return alias.args[v]
-    else
+    elseif s=='*' then
         for i = #alias.rest, 1, -1 do
             if alias.rest[i] == "" then table.remove(alias.rest, i) end
         end
@@ -49,8 +49,10 @@ function alias.parser(s, default_value)
         alias.rest = {}
         return res
     end
+    return '$'..s..(default_value and ('['..default_value..']') or '')
 end
 
+local vertical_pattern=env.VERTICAL_PATTERN
 function alias.make_command(name, args, is_print)
     name = name:upper()
     if alias.cmdlist[name] and env._CMDS[name] and env._CMDS[name].FUNC == alias.run_command then
@@ -59,16 +61,20 @@ function alias.make_command(name, args, is_print)
         target = target .. " $*"
         alias.args = args
         alias.rest = {}
+        local is_pivot=''
         for i = 1, 99 do
             local v = alias.args[i] or ""
+            if i==#args and v~='' then
+                v=v:gsub(vertical_pattern,function(s) is_pivot='\\G'..s;return '' end)
+            end
             if v:find("%s") and not v:find('"') then v = '"' .. v .. '"' end
             alias.args[i] = v
             alias.rest[i] = v
         end
-        target = target:gsub("%$(%d+)%[(.-)%]", alias.parser)
-        target = target:gsub("%f[\\%$]%$([%d%*]+)", alias.parser)
-        target = target:gsub("%s+$", "")
-        target = target:gsub("\\%$", "$")
+        target = target:gsub("%$(%d%w*)%[(.-)%]", alias.parser)
+        target = target:gsub("%f[%w%$%%]%$([%d%*]%w*)", alias.parser)
+        --target = target:gsub("%s+$", "")
+        target = target:gsub("[%$%%](%$[%d%*])", "%1")..is_pivot
         --if env.COMMAND_SEPS.match(target)==target then target=target..env.COMMAND_SEPS[1] end
         if is_print ~= false and type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ ' .. target)

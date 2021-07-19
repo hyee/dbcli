@@ -3,8 +3,22 @@ local cfg,grid=table.strong({name='SET'}),env.grid
 local maxvalsize=20
 local file='setting.dat'
 local root_cmd
+local rawget,rawset=rawget,rawset
 cfg._backup=nil
 cfg._plugins=table.strong()
+local cmds={}
+
+cfg.current_config={}
+local meta={
+    __index=function(self,k)
+        if k~='value' then return rawget(self,k) end
+        return rawget(cfg.current_config,rawget(self,'base_name'))
+    end,
+    __newindex=function(self,k,v)
+        if k~='value' then return rawset(self,k,v) end
+        rawset(cfg.current_config,rawget(self,'base_name'),v)
+    end
+}
 
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
@@ -62,9 +76,9 @@ function cfg.change_default(name,value)
     local item=cfg.exists(name)
     env.checkerr(item,"No Such setting: %s",name)
     if cfg.get(name)==item.default then
-        cfg.force_set(name,value)
+        value=cfg.force_set(name,value)
     end
-    item.default=value
+    if value then item.default=value end
 end
 
 function cfg.get_config(name,value)
@@ -91,8 +105,7 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         return env.warn("Environment parameter '%s' has been defined in %s!",name,cfg.exists(name).src)
     end
     if not cfg[name] then cfg[name]={} end
-    cfg[name]={
-        value=defaultvalue,
+    cfg[name]=setmetatable({
         abbr=abbr,
         default=defaultvalue,
         func=validate,
@@ -104,7 +117,9 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         abbr=abbr,
         base_name=name,
         instance=(type(instance)=="table" or type(instance)=="userdata") and instance
-    }
+    },meta)
+    cfg[name].value=defaultvalue
+
     for k,v in ipairs(abbr) do
         if type(v)=="string" and v~="" then
             abbr[k],cfg._commands[v:upper()]=v:upper(),cfg[name]
@@ -281,6 +296,7 @@ function cfg.backup()
             for item,value in pairs(v) do
                 backup[k][item]=value
             end
+            backup[k].value=v.value
         end
     end
     env.log_debug("set","Start backup")
@@ -290,7 +306,7 @@ end
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
-    if command[1]~='SET' and cmd.ALIAS_TO~='SET' and command[1]~='HELP' then
+    if not cmds[command[1]] and not cmds[cmd.ALIAS_TO] and command[1]~='HELP' then
         env.log_debug("set","taking full backup",command[1])
         cfg._backup=cfg.backup()
     else
@@ -307,6 +323,10 @@ function cfg.capture_after_cmd(cmd,args)
     cfg._backup=nil
 end
 
+function cfg.reset_backup()
+    cfg._backup=nil
+end
+
 function cfg.on_env_load()
     local list,keys={},{}
     for k,v in pairs(cfg) do
@@ -316,15 +336,28 @@ function cfg.on_env_load()
             end
         end
     end
-    list['SET']=keys
+    for _,n in ipairs(cmds) do list[n]=keys end
     console:setSubCommands(list)
 end
 
+function cfg.rename_command(new)
+    if type(new)=='string' then new={new} end
+    env.rename_command(cfg.name,new)
+    cfg.name=new[1]:upper()
+    table.clear(cmds)
+    for _,n in ipairs(new) do
+        n=n:upper()
+        cmds[#cmds+1]=n
+        cmds[n]=#cmds
+    end
+end
+
 function cfg.onload()
+    cfg.rename_command{cfg.name,'ENV'}
     env.event.snoop("BEFORE_COMMAND",cfg.capture_before_cmd)
     env.event.snoop("AFTER_COMMAND",cfg.capture_after_cmd)
     env.event.snoop("ON_ENV_LOADED",cfg.on_env_load)
-    env.set_command{obj=nil,cmd=cfg.name, 
+    env.set_command{obj=nil,cmd=cmds, 
                     help_func="Set environment parameters. Usage: @@NAME [-a] | {[-p] <name1> [<value1|DEFAULT|BACK> [name2 ...]]}",
                     call_func=cfg.doset,
                     is_multiline=false,parameters=99,color="PROMPTCOLOR"}

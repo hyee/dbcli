@@ -213,9 +213,9 @@ BEGIN
                 SELECT STATEMENT_ID,ID, DECODE(STATS, LAG(STATS) OVER(ORDER BY ID), 'Y', 'N') is_Delete
                 FROM   (SELECT STATEMENT_ID,
                                NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                               MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) ||
+                               MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) ||
                                CHR(1) ||
-                               MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1))) ||
+                               MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) ||
                                CHR(1) || MAX(q.cost) || CHR(1) || MAX(bytes) || CHR(1) || MAX(cardinality) keep(dense_rank FIRST ORDER BY id) || CHR(1) || SUM(nvl2(object_owner, cardinality, 0)) STATS
                         FROM   PLAN_TABLE q
                         WHERE  STATEMENT_ID NOT LIKE '%BASELINE_%'
@@ -258,8 +258,8 @@ BEGIN
     FOR r IN (WITH plans AS
                   (SELECT STATEMENT_ID,
                           NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                          MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                          MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash2
+                          MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
+                          MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2
                    FROM   PLAN_TABLE q
                    GROUP  BY STATEMENT_ID)
               SELECT MIN(STATEMENT_ID) id, 

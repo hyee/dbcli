@@ -8,8 +8,8 @@ function mysql_exe:ctor()
     self.command={"source",'\\.',"ms"}
     self.support_redirect=false
     self.name="mysql"
-    self.executable="mysql"
-    self.description="Switch to mysql.exe with same login, the default working folder is 'mysql/mysql'. Usage: @@NAME [-n|-d<work_path>] [other args]"
+    self.executable={"mysql","mysqlsh"}
+    self.description="Switch to native mysql client with same login, the default working folder is 'mysql/mysql'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run mysql script under the "mysql" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."mysql",nil
     self.prompt_pattern="^(.+[>\\$#@] *| *\\d+ +)$"
@@ -48,13 +48,22 @@ end
 function mysql_exe:get_startup_cmd(args,is_native)
     db:assert_connect()
     local conn=db.connection_info
-    local props={"--default-character-set=utf8",'-n','-u',conn.user,'-P',conn.port,'-h',conn.hostname}
+    local props={'-u',conn.user,'-P',conn.port,'-h',conn.hostname}
     if db.props.database~="" then
         props[#props+1]="--database="..db.props.database
     end
     local pwd=packer.unpack_str(conn.password)
     if (pwd or "")~="" then
         props[#props+1]="--password="..pwd
+    end
+
+    if self.boot_cmd:find("mysqlsh") then
+        props[#props+1]='--sqlc'
+        if (pwd or "")=="" then
+            props[#props+1]="--no-password"
+        end
+    else
+        props[#props+1],props[#props+2]="--default-character-set=utf8",'--unbuffered'
     end
     if self.work_dir==self.script_dir or self.work_dir==self.extend_dirs then
         self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH

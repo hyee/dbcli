@@ -34,11 +34,11 @@ BEGIN
                     RETURN SYSTIMESTAMP;
                 END;
                 SELECT reason_name,
-				       bytes,
-				       reqs,
-				       ratio_to_report(reqs) over() "%",
-				       round(bytes / nullif(reqs,0), 2) avg_bytes,
-				       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
+                       bytes,
+                       reqs,
+                       ratio_to_report(reqs) over() "%",
+                       round(bytes / nullif(reqs,0), 2) avg_bytes,
+                       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
                 FROM (
                     SELECT /*+ordered use_nl(timer stat) no_expand*/
                            reason_name,n,
@@ -54,14 +54,14 @@ BEGIN
         OPEN :cur FOR v_stmt USING v,v;
     ELSIF :typ='g' THEN
         OPEN :cur FOR
-      			SELECT reason_name,
-      			       bytes,
-      			       reqs,
-      			       ratio_to_report(reqs) over() "%",
-      			       round(bytes / nullif(reqs,0), 2) avg_bytes,
-      			       CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
-      			FROM   (SELECT reason_name, nvl(METRIC_TYPE,'reqs') n, SUM(metric_value) v 
-      				      FROM  (select reason_name,metric_type,metric_value 
+                  SELECT reason_name,
+                         bytes,
+                         reqs,
+                         ratio_to_report(reqs) over() "%",
+                         round(bytes / nullif(reqs,0), 2) avg_bytes,
+                         CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
+                  FROM   (SELECT reason_name, nvl(METRIC_TYPE,'reqs') n, SUM(metric_value) v 
+                            FROM  (select reason_name,metric_type,metric_value 
                            from   v$cell_ioreason
                            union all
                            select decode(r,1,'Scrub reads','Internal IO'),
@@ -69,11 +69,11 @@ BEGIN
                            from   v$cell_global,
                                   (SELECT 1 R FROM DUAL UNION ALL SELECT 2 FROM DUAL)
                            where  metric_name in('Scrub reads','Scrub read bytes'))
-      				      WHERE (v IS NULL OR (&FILTER)) 
-      				      GROUP BY reason_name, METRIC_TYPE
+                            WHERE (v IS NULL OR (&FILTER)) 
+                            GROUP BY reason_name, METRIC_TYPE
                     HAVING v IS NOT NULL OR sum(metric_value)>0)
-      			PIVOT(MAX(v) FOR n IN('bytes' bytes, 'reqs' reqs))
-      			ORDER  BY reqs DESC;
+                  PIVOT(MAX(v) FOR n IN('bytes' bytes, 'reqs' reqs))
+                  ORDER  BY reqs DESC;
     ELSE
         OPEN :cur FOR
             SELECT a.*,

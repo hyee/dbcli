@@ -1,7 +1,7 @@
 /*[[Show audit configurations
-	--[[
-		@12c: 12.1={} default={--}
-	--]]
+    --[[
+        @12c: 12.1={} default={--}
+    --]]
 ]]*/
 SET FEED OFF
 COL BYTES,INITIAL_EXTENT,NEXT_EXTENT FOR KMG
