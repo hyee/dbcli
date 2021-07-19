@@ -36,7 +36,11 @@ function dicts.build_dict(typ,scope)
         [[SHOW VARIABLES]],
         [[SELECT concat(lower(table_schema), '.', lower(table_name))
           FROM   INFORMATION_SCHEMA.TABLES
-          WHERE  lower(table_schema) IN ('information_schema', 'sys', 'mysql', 'performance_schema', 'metrics_schema', 'sys', 'ndbinfo')]],
+          @FILTER@
+          UNION  ALL
+          SELECT concat(lower(routine_schema), '.', lower(routine_name))
+          FROM   (SELECT A.*,routine_schema table_schema FROM INFORMATION_SCHEMA.ROUTINES A) A
+          @FILTER@]],
         [[SELECT lower(word) from INFORMATION_SCHEMA.KEYWORDS where length(word)>5]],
         [[SELECT lower(a.name)
           FROM   mysql.help_topic AS a
@@ -46,7 +50,7 @@ function dicts.build_dict(typ,scope)
           AND    length(a.name) > 3
           AND    instr(a.name, ' ') = 0]],
     }
-    local dict,path,doc,helppath,_categories
+    local dict,path,doc,helppath,_categories,filter
     if typ=='param' then
         path=current_dict_exists and current_dict or datapath
         scope=(scope or ''):lower():gsub('%%','.-')
@@ -80,6 +84,7 @@ function dicts.build_dict(typ,scope)
         grid.print(rows)
         return
     elseif typ=='public' then
+        filter=[[WHERE lower(table_schema) IN ('information_schema', 'sys', 'mysql', 'performance_schema', 'metrics_schema', 'ndbinfo')]]
         path=datapath
         if os.exists(path) then
             dict=dicts.load_dict(path,false)
@@ -92,7 +97,8 @@ function dicts.build_dict(typ,scope)
         end
         _categories=doc._categories or {}
         doc._categories=_categories
-    elseif typ=='dict' then
+    elseif typ=='init' then
+        filter=''
         db:assert_connect()
         path=current_dict
         if path==nil then return end
@@ -104,7 +110,7 @@ function dicts.build_dict(typ,scope)
     if dict==nil then dict={keywords={},commands={}} end
     local count,done,rows=0
     for i,sql in ipairs(sqls) do
-        done,rows=pcall(db.get_rows,db,sql)
+        done,rows=pcall(db.get_rows,db,sql:gsub('@FILTER@',filter))
         if done then
             table.remove(rows,1)
             if i==1 then
