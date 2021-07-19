@@ -207,7 +207,7 @@ BEGIN
                           nvl2(delta_pct,'  ',''))||NAME NAME,
                micro "Count or us",cnt,avg_time value,delta_time delta,delta_pct pct,
                DECODE(NAME,
-                     'log file parallel write','_use_single_log_writer/_high_priority_processes/_adaptive_scalable_log_writer_enable_worker_aging/threshold',
+                     'log file parallel write','_use_single_log_writer/_max_outstanding_log_writes/_high_priority_processes/_adaptive_scalable_log_writer_enable_worker_aging/threshold',
                      'LGWR any worker group','All LGWR slave groups busy doing write',
                      'LGWR all worker groups','LGWR waiting for all groups to finish action (e.g., close log for log switch)',
                      'LGWR intra group IO completion','Uneven slave write I/O time within slave group',
