@@ -105,13 +105,13 @@ function mysql:connect(conn_str)
     local props=self.props
     props.privs={}
     if info then
-        pcall(self.internal_call,self,"set sql_mode='"..info[6]..",ANSI'")
         --[[
         for _,n in ipairs(native_cmds) do
             local c=self:get_value('select count(1) from mysql.help_topic where name like :1',{n..'%'})
             if c==0 then print(n) end
         end
         --]]
+        local sql="set group_concat_max_len=4194304,sql_mode='"..info[6]..",ANSI'"
         props.db_version,props.sub_version=info[2]:match('^([%d%.]+%d)[^%w%.]*([%w%.]*)')
         props.db_server=info[5]
         props.db_user=info[4]:match("([^@]+)")
@@ -128,7 +128,7 @@ function mysql:connect(conn_str)
         elseif props.sub_version:lower():find('tidb') then
             props.tidb,props.branch=true,'tidb'
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
-            pcall(self.internal_call,self,"set tidb_multi_statement_mode=ON")
+            sql=sql..",tidb_multi_statement_mode=ON"
         elseif props.sub_version:lower():find('maria') then
             props.maria,props.branch=true,'maria'
             props.sub_version=nil
@@ -136,6 +136,7 @@ function mysql:connect(conn_str)
             props.branch,props[props.sub_version:lower()]=props.sub_version:lower(),true
             props.sub_version=info[2]:match(props.sub_version..'.-([%d%.]+%d)')
         end
+        pcall(self.internal_call,self,sql)
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,props.db_server,'')
         loader:mkdir(env._CACHE_PATH)
         env.set_title(('MySQL v%s(%s)   Server: %s   CID: %s'):format(
