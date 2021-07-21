@@ -1,3 +1,4 @@
+2021-07-21: + mysql : new script 'ti CPU' 
 2021-07-19: + mysql : new script 'ti timing' 
 2021-07-18: + mysql : new script 'ti qps' 
 2021-07-16: + mysql : new script 'sql size' 

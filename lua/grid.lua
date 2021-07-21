@@ -771,7 +771,7 @@ function grid:wellform(col_del, row_del)
     local prev,next,prev_sep,prev_none_zero,del={},nil,-1,-1
     local cols=#colsize
     local function calc_col_sep(sep,row_sep)
-        return row_sep:find('[~#=%-%*%+]') and sep:gsub('[|:]','+') or sep
+        return row_sep:find('[~#=%-%*%+]') and sep:gsub('[|:]','+'):gsub('[\\/]',row_sep) or sep
     end
 
     row_dels = calc_col_sep(fmt,row_del)
@@ -874,7 +874,7 @@ function grid:wellform(col_del, row_del)
         for k1,v1 in pairs(seps) do
             v[k1]=v1
         end
-
+        local fmt1
         if v[0] == 0 then
             for col, value in ipairs(v) do
                 local pad = colsize[col][1] - #value
@@ -894,6 +894,7 @@ function grid:wellform(col_del, row_del)
                (v2=='' or v2==v1 or v2:find('^%W+$')) and
                (v3=='' or v3==v1 or v3:find('^%W+$')) 
             then
+                fmt1=calc_col_sep(fmt,v[1])
                 local c=v[1]
                 for k1,v1 in ipairs(title_dels) do
                     v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
@@ -904,7 +905,7 @@ function grid:wellform(col_del, row_del)
             end
         end
 
-        v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt
+        v.format_func,v.fmt=format_func,v[0] == 0 and head_fmt or fmt1 or fmt
         local row = cut(v, v.format_func,v.fmt, v[0] == 0)
 
         if v[0] == 0 then
@@ -926,7 +927,7 @@ function grid:wellform(col_del, row_del)
                 rows[#rows+1]=cut(row_dels)
                 output[#output+1]=row_dels
             elseif v[0] == 0 then
-                output[#output+1]=format_func(calc_col_sep(fmt,row_del), table.unpack(title_dels))
+                output[#output+1]=format_func(calc_col_sep(fmt,grid.title_del), table.unpack(title_dels))
                 rows[#rows+1]=cut(output[#output])
             end
         end

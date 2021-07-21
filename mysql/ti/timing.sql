@@ -1,6 +1,6 @@
 /*[[Show TiDB metrics time modules within 10 minutes. Usage: @@NAME [<instance> | {-m <metric_name>}]  [-a]
     -m <metric_name>: The <metric_name> that can be found as table of metrics_schema.<metric_name>_*
-    -a              : Use metrics_summary as the source table 
+    -a              : Use metrics_summary as the source table to query the stats within 30 minutes
     --[[
         &filter: default={value>0 and (\'&V1\' IS NULL OR lower(instance) LIKE lower(concat(\'%&V1%\')))}
         &grp   : default={--}     a={}
@@ -13,8 +13,8 @@
     --]]
 ]]*/
 
-COL "time,duration,avg_time,Avg|Time,Avg|Dur,0 Min|Time,1 Min|Time,2 Min|Time,3 Min|Time,4 Min|Time,5 Min|Time,6 Min|Time,7 Min|Time,8 Min|Time,9 Min|Time" FOR usmhd2
-COL "count,Avg|Count,0 Min|Count,1 Min|Count,2 Min|Count,3 Min|Count,4 Min|Count,5 Min|Count,6 Min|Count,7 Min|Count,8 Min|Count,9 Min|Count" FOR TMB2
+COL "max|time,max|duration,time,duration,avg_time,Avg|Time,Avg|Dur,0 Min|Time,1 Min|Time,2 Min|Time,3 Min|Time,4 Min|Time,5 Min|Time,6 Min|Time,7 Min|Time,8 Min|Time,9 Min|Time" FOR usmhd2
+COL "max|count,count,Avg|Count,0 Min|Count,1 Min|Count,2 Min|Count,3 Min|Count,4 Min|Count,5 Min|Count,6 Min|Count,7 Min|Count,8 Min|Count,9 Min|Count" FOR TMB2
 col qry new_value qry noprint
 
 &c1./*
@@ -93,7 +93,7 @@ ORDER BY `Avg|Time` DESC;
 col minute break -
 env colsep |
 
-SELECT IFNULL(concat('select A.*,time/count avg_time from (\n',group_concat(qry ORDER BY n separator '\n'),'\n) A order by Minute desc,time desc'),'SELECT ''No such metrics'' error') qry
+SELECT IFNULL(concat('select A.*,time/count `Avg_Time` from (\n',group_concat(qry ORDER BY n separator '\n'),'\n) A order by Minute desc,time desc'),'SELECT ''No such metrics'' error') qry
 FROM (
 SELECT concat(IF(n = 'A1', '  SELECT * FROM ', '  JOIN '),
               qry,
@@ -139,23 +139,28 @@ ECHO ===========================================================================
 
 &c3./*
 SELECT n `Metric Name`,
-       MAX(IF(t='time',s,0)) `Time`,
-       MAX(IF(t='count',s,0)) `Count`,
-       MAX(IF(t='duration',s,0)) `Duration`,
-       MAX(IF(t='time',s,0))/NULLIF(MAX(IF(t='count',s,NULL)),0) `avg_time`,
-       MAX(IF(t='count',c,NULL)) COMMENT
+       MAX(IF(t='time',s*adj,0)) `Time`,
+       MAX(IF(t='count',s*adj,0)) `Count`,
+       MAX(IF(t='time',s*adj,0))/NULLIF(MAX(IF(t='count',s*adj,NULL)),0) `Avg_Time`,
+       MAX(IF(t='duration',s*adj,0)) `Duration`,
+       '|' `|`,
+       SUM(IF(t='time',max_value*adj/60,0)) `Max|Time`,
+       SUM(IF(t='count',max_value*adj/60,0)) `Max|Count`,
+       AVG(IF(t='duration',max_value*adj,NULL)) `Max|Duration`,
+       '|' `|`,
+       MAX(IF(t='count',COMMENT,NULL)) COMMENT
 FROM (
-    SELECT lower(REPLACE(REPLACE(metrics_name, concat('_', substring_index(metrics_name, '_', -1)), ''), '_total', '')) n,
-           substring_index(metrics_name, '_', -1) t,
-           sum_value*CASE WHEN substring_index(metrics_name, '_', -1) IN('duration','time') THEN 
-                          CASE WHEN metrics_name LIKE 'tidb_batch_client_wait%' THEN 1e-3 
-                               WHEN metrics_name LIKE 'tidb_get_token%' THEN 1
-                               ELSE 1e6
-                          END
-                          ELSE 1
-                     END s,
-           COMMENT c
-    FROM   information_schema.metrics_summary
+    SELECT lower(REPLACE(REPLACE(metrics_name, concat('_', t), ''), '_total', '')) n,
+           IF(t='duration',avg_value,sum_value/31/60) s,
+           CASE WHEN t IN('duration','time') THEN 
+                CASE WHEN metrics_name LIKE 'tidb_batch_client_wait%' THEN 1e-3 
+                     WHEN metrics_name LIKE 'tidb_get_token%' THEN 1
+                     ELSE 1e6
+                END
+                ELSE 1
+           END adj,
+           a.*
+    FROM   (SELECT a.*,substring_index(metrics_name, '_', -1) t FROM information_schema.metrics_summary a) a
     WHERE  SUM_VALUE > 0
     AND    lower(metrics_name) NOT LIKE 'tidb_connection_idle%'
     AND    lower(metrics_name) regexp '(_total_count|_total_time|_duration)$') A
@@ -169,28 +174,30 @@ ORDER BY `Time` DESC;
 col "Metric Name" break -
 env colsep |
 
-SELECT n `Metric Name`,
+SELECT concat(n,'/sec') `Metric Name`,
        label `Label`,
        count(DISTINCT inst) `Instances`,
-       SUM(IF(t='time',s,0)) `Time`,
-       SUM(IF(t='count',s,0)) `Count`,
-       AVG(IF(t='duration',s,NULL)) `Duration`,
-       SUM(IF(t='time',s,0))/NULLIF(SUM(IF(t='count',s,NULL)),0) `Avg_Time`,
-       MAX(IF(t='count',c,NULL)) COMMENT
+       SUM(IF(t='time',s*adj,0)) `Time`,
+       SUM(IF(t='count',s*adj,0)) `Count`,
+       AVG(IF(t='duration',s*adj,NULL)) `Duration`,
+       SUM(IF(t='time',s*adj,0))/NULLIF(SUM(IF(t='count',s*adj,NULL)),0) `Avg_Time`,
+       '|/|' `|/|`,
+       SUM(IF(t='time',max_value*adj/60,0)) `Max|Time`,
+       SUM(IF(t='count',max_value*adj/60,0)) `Max|Count`,
+       AVG(IF(t='duration',max_value*adj,NULL)) `Max|Duration`
 FROM (
-    SELECT REPLACE(REPLACE(metrics_name, concat('_', substring_index(metrics_name, '_', -1)), ''), '_total', '') n,
-           label,
-           substring_index(metrics_name, '_', -1) t,
-           sum_value*CASE WHEN substring_index(metrics_name, '_', -1) IN('duration','time') THEN 
-                          CASE WHEN metrics_name LIKE 'tidb_batch_client_wait%' THEN 1e-3 
-                               WHEN metrics_name LIKE 'tidb_get_token%' THEN 1
-                               ELSE 1e6
-                          END
-                          ELSE 1
-                     END s,
-           COMMENT c,
-           Instance inst
-    FROM   information_schema.metrics_summary_by_label
+    SELECT lower(REPLACE(REPLACE(metrics_name, concat('_', t), ''), '_total', '')) n,
+           Instance inst,
+           IF(t='duration',avg_value,sum_value/31/60) s,
+           CASE WHEN t IN('duration','time') THEN 
+                CASE WHEN metrics_name LIKE 'tidb_batch_client_wait%' THEN 1e-3 
+                     WHEN metrics_name LIKE 'tidb_get_token%' THEN 1
+                     ELSE 1e6
+                END
+                ELSE 1
+           END adj,
+           a.*
+    FROM   (SELECT a.*,substring_index(metrics_name, '_', -1) t FROM information_schema.metrics_summary_by_label a) a
     WHERE  SUM_VALUE > 0
     AND    lower(metrics_name) regexp '(_total_time|_total_count|_duration)$'
     AND    lower(metrics_name) LIKE lower('%&V1%')) A
