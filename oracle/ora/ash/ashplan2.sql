@@ -87,7 +87,6 @@ qry AS
          coalesce(child_number, plan_hash_value,0) plan_hash,
          inst_id
   FROM   sql_plan_data),
-
 ash_detail as (
     SELECT H.*,costs SECS
     FROM (
@@ -148,7 +147,6 @@ ash_detail as (
             WHERE  :V1 in(sql_id,top_level_sql_id)
             AND    sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
                                    AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)) H) H) ,
-
 ash as(SELECT b.*,
               ROUND(SUM(AAS) OVER(PARTITION BY SQL_ID,SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv
        FROM (select /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
@@ -264,7 +262,7 @@ ash_data AS(
     SELECT /*+materialize no_expand no_merge(a) no_merge(b)*/*
     FROM   ordered_hierarchy_data a
     LEFT   JOIN ash_base b
-    USING     (ID)
+    USING  (ID)
 ) ,
 xplan AS
  (SELECT rownum r,plan_table_output output

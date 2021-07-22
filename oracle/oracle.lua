@@ -145,7 +145,7 @@ function oracle:connect(conn_str)
                     conn_str=(url or conn_str)..'@'..two_task..(isdba and (' as '..isdba) or '')
                     return self:connect(conn_str)
                 elseif (idx==1 or not pwd or pwd=='') and isdba then
-                    env.checkerr(home and os.getenv("ORACLE_SID"),"Environment variable ORACLE_HOME/ORACLE_SID is not found, cannot login with oci driver!")
+                    env.checkerr(home and (os.getenv("ORACLE_PDB_SID") or os.getenv("ORACLE_SID")),"Environment variable ORACLE_HOME/ORACLE_PDB_SID/ORACLE_SID is not found, cannot login with oci driver!")
                     driver,usr,pwd,conn_desc,url="oci8",usr or "sys","sys","/ as sysdba",""
                 end
             end

@@ -2802,7 +2802,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
     detail_plan_activity()
 
     local function detail_plan_lines()
-        local header={'*','Id','Ord','|','AAS','Pct','|','Top Event','AAS%','|','Operation','|','Object','|','Distrib','|','Pred','|','Est|Card','Est|Cost','IO|Cost','Avg|Bytes','|','Query|Block','|','Alias|Name'}
+        local header={'Id','Ord','|','AAS','Pct','|','Top Event','AAS%','|','Operation','|','Object','|','Distrib','|','Pred','|','Est|Card','Est|Cost','IO|Cost','Avg|Bytes','|','Query|Block','|','Alias|Name'}
         local cols={}
         for c,v in ipairs(header) do
             if v:find('^%u') then
@@ -2836,7 +2836,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             end
 
             table.sort(plan_lines,function(a,b) return tonumber(a._attr.id)<tonumber(b._attr.id) end)
-
+            local id_fmt='%1s%'..#tostring(#plan_lines)..'s'
             for _,op in ipairs(plan_lines) do
                 local attr=op._attr
                 local id=tonumber(attr.id)
@@ -2860,7 +2860,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 tier[depth],hier_idx=node,depth
 
                 local object= op.object or (alias and ('$REV$'..alias:gsub('@.*',''):gsub('"','')..'$NOR$')) or op.node or ''
-                row[cols.id]=id
+                row[cols.id]=id_fmt:format(' ',id)
                 row[cols.operation]=(attr.name or '')..' '..(attr.options or '')
                 row[cols.object]=(object:sub(1,1)==':' and '' or ' ')..object
                 row[cols.est_card]=op.card
@@ -2871,7 +2871,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 row[cols.alias_name]=alias
                 process_qb(qbs,qb,alias,id,depth)
                 if op.predicates then
-                    row[1]='*'
+                    row[cols.id]=id_fmt:format('*',id)
                     for k,v in pair(op.predicates) do
                         process_pred(preds,id,v._attr.type,v[1],op,op.object_alias)
                     end
@@ -2954,7 +2954,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             for i=2,#rows do
                 c=rows[i][ord]
                 n=rows[i+1] and rows[i+1][ord]
-                local id=rows[i][cols.id]
+                local id=tonumber(rows[i][cols.id]:match('%d+'))
                 if p and n and n==c-1 and #cids[id]>0 then
                     if p==c+1 then
                         c='^'

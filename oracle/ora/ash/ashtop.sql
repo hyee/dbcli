@@ -85,7 +85,8 @@
       @top_sql: 11.1={top_level_sql_id,} default={}
     ]]--
 ]]*/
-col reads,writes,AVG_IO format KMG
+col reads,writes format KMG
+col AVG_IO for tmb
 WITH ASH_V AS(
     SELECT a.*,
            decode(:fields,'wait_class',' ',

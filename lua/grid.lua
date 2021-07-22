@@ -291,7 +291,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
         maxlen=maxlen+3
         local width=console:getScreenWidth() - maxlen - 2 - #env.space*2
         local cname='Column Value'
-        r[1]={'','|',"#",'|','Column Name',cname}
+        r[1]={'|',"#",'|','Column Name',cname}
         local siz
         local titles={}
         for k, t in ipairs(title) do
@@ -315,7 +315,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
                 nv=tops[i] and tops[i][j] or get_value(t,i+1,j)
                 empties[idx]=(empties[idx] or 0) + (nv~='' and nv~=null_value and 1 or 0)
                 if not r[idx] then
-                    r[idx]={'','|',i,'|',v,nv}
+                    r[idx]={'|',i,'|',v,nv}
                 else
                     siz=#r[idx]
                     r[idx][siz+1],r[idx][siz+2],r[idx][siz+3],r[idx][siz+4]='|',i,'|',' '..nv
@@ -537,7 +537,7 @@ function grid:add(row)
             local grp = empty
             v = v:convert_ansi()
             if headind == 0 then
-                v = v:gsub("([^|\n\r]+)%c*[|\n]%c*([^|\n\r]+)", function(a, b)
+                v = v:gsub('[\n\r]+',''):gsub("([^|]+)%c*|%c*([^|]+)", function(a, b)
                     local len11,len12,len21,len22
                     len11,len12,a=a:ulen(maxsize)
                     len21,len22,b=b:ulen(maxsize)
@@ -573,6 +573,8 @@ function grid:add(row)
                     local v1=v:strip_ansi()
                     if not v1:match('^%W$') then
                         colsize[k][3]=nil
+                    elseif k==1 then
+                        rsize=1
                     end
                 end
 
@@ -775,12 +777,11 @@ function grid:wellform(col_del, row_del)
     end
 
     row_dels = calc_col_sep(fmt,row_del)
-
     for k, v in ipairs(colsize) do
         if max_siz==0 and k>1 then v[3]=nil end
         siz,seps[k]=v[1],v[3]
         if seps[k] then
-            if prev_none_zero<=prev_sep then 
+            if prev_none_zero<=prev_sep and k>1 then 
                 siz=0
                 v[3]=nil
             end
@@ -872,7 +873,9 @@ function grid:wellform(col_del, row_del)
 
         --adjust the title style(middle)
         for k1,v1 in pairs(seps) do
-            v[k1]=v1
+            if not (k1==1 and v.rsize<=1 and (v1 or '')~='') then
+                v[k1]=v1
+            end
         end
         local fmt1
         if v[0] == 0 then

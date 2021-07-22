@@ -20,68 +20,70 @@ col qry new_value qry noprint
 &c1./*
 
 WITH r AS
- (SELECT REPLACE(A.table_name, '_' || substring_index(table_name, '_', -2), '') t
-  FROM   information_schema.METRICS_TABLES A
-  JOIN   (SELECT DISTINCT table_name
+ (SELECT REPLACE(A.table_name, concat('_',suffix), '') t
+  FROM   information_schema.metrics_tables A
+  JOIN   (SELECT DISTINCT table_name, substring_index(table_name, '_', -2) suffix
          FROM   information_schema.COLUMNS
          WHERE  UPPER(COLUMN_NAME) = 'INSTANCE'
          AND    UPPER(TABLE_SCHEMA) = 'METRICS_SCHEMA') B
   USING  (table_name)
-  WHERE  substring_index(table_name, '_', -2) IN ('total_time', 'total_count')
+  WHERE  suffix IN ('total_time', 'total_count')
   GROUP  BY t
   HAVING COUNT(1) = 2 AND t NOT IN('tidb_connection_idle')
   ORDER  BY 1)
 SELECT group_concat(qry ORDER BY qry separator ' union all\n') qry
-FROM   (SELECT 'select ''' || t || ''', time, instance, ''t'',value from metrics_schema.' || t || '_total_time where &filter' qry
+FROM   (SELECT concat('select ''' , t , ''', time, instance, ''t'',value from metrics_schema.' , t , '_total_time where &filter') qry
         FROM   r
         UNION ALL
-        SELECT 'select ''' || t || ''', time, instance, ''c'',value from metrics_schema.' || t || '_total_count where &filter'
+        SELECT concat('select ''' , t , ''', time, instance, ''c'',value from metrics_schema.' , t , '_total_count where &filter')
         FROM   r);
 
 WITH R(n,time,instance,t,v) AS(&qry)
 SELECT n `Unit: per second|Metric Name`,
-       '|' `|`,
+       MAX(jobs) `Inst|Type`,
        MAX(inst) `Inst|Count`,
+       '|' `|`,
        AVG(if(t='t',v,NULL)) `Avg|Time`,
        AVG(if(t='c',v,NULL)) `Avg|Count`,
        Round(AVG(if(t='t',v,NULL))/AVG(if(t='c',v,NULL)),2) `Avg|Dur`,
        '|'  `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(now(),'%m%d-%H:%i'),v,0)) `0 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(now(),'%m%d-%H:%i'),v,0)) `0 Min|Count`,
+       MAX(if(t='t' AND ts=0,v,0)) `0 Min|Time`,
+       MAX(if(t='c' AND ts=0,v,0)) `0 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -1 minute),'%m%d-%H:%i'),v,0)) `1 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -1 minute),'%m%d-%H:%i'),v,0)) `1 Min|Count`,
+       MAX(if(t='t' AND ts=1,v,0)) `1 Min|Time`,
+       MAX(if(t='c' AND ts=1,v,0)) `1 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -2 minute),'%m%d-%H:%i'),v,0)) `2 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -2 minute),'%m%d-%H:%i'),v,0)) `2 Min|Count`,
+       MAX(if(t='t' AND ts=2,v,0)) `2 Min|Time`,
+       MAX(if(t='c' AND ts=2,v,0)) `2 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -3 minute),'%m%d-%H:%i'),v,0)) `3 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -3 minute),'%m%d-%H:%i'),v,0)) `3 Min|Count`,
+       MAX(if(t='t' AND ts=3,v,0)) `3 Min|Time`,
+       MAX(if(t='c' AND ts=3,v,0)) `3 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -4 minute),'%m%d-%H:%i'),v,0)) `4 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -4 minute),'%m%d-%H:%i'),v,0)) `4 Min|Count`,
+       MAX(if(t='t' AND ts=4,v,0)) `4 Min|Time`,
+       MAX(if(t='c' AND ts=4,v,0)) `4 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -5 minute),'%m%d-%H:%i'),v,0)) `5 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -5 minute),'%m%d-%H:%i'),v,0)) `5 Min|Count`,
+       MAX(if(t='t' AND ts=5,v,0)) `5 Min|Time`,
+       MAX(if(t='c' AND ts=5,v,0)) `5 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -6 minute),'%m%d-%H:%i'),v,0)) `6 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -6 minute),'%m%d-%H:%i'),v,0)) `6 Min|Count`,
+       MAX(if(t='t' AND ts=6,v,0)) `6 Min|Time`,
+       MAX(if(t='c' AND ts=6,v,0)) `6 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -7 minute),'%m%d-%H:%i'),v,0)) `7 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -7 minute),'%m%d-%H:%i'),v,0)) `7 Min|Count`,
+       MAX(if(t='t' AND ts=7,v,0)) `7 Min|Time`,
+       MAX(if(t='c' AND ts=7,v,0)) `7 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -8 minute),'%m%d-%H:%i'),v,0)) `8 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -8 minute),'%m%d-%H:%i'),v,0)) `8 Min|Count`,
+       MAX(if(t='t' AND ts=8,v,0)) `8 Min|Time`,
+       MAX(if(t='c' AND ts=8,v,0)) `8 Min|Count`,
        '|' `|`,
-       MAX(if(t='t' AND ts=DATE_FORMAT(date_add(now(), interval -9 minute),'%m%d-%H:%i'),v,0)) `9 Min|Time`,
-       MAX(if(t='c' AND ts=DATE_FORMAT(date_add(now(), interval -9 minute),'%m%d-%H:%i'),v,0)) `9 Min|Count`
+       MAX(if(t='t' AND ts=9,v,0)) `9 Min|Time`,
+       MAX(if(t='c' AND ts=9,v,0)) `9 Min|Count`
 FROM (
     SELECT n,
-           DATE_FORMAT(time,'%m%d-%H:%i') ts,
+           floor(time_to_sec(timediff(now(),time))/60) ts,
            t,
+           group_concat(DISTINCT job order by job separator ', ') jobs,
            count(distinct instance) inst,
            round(SUM(v)/60*CASE WHEN t='t' AND n='tidb_batch_client_wait' THEN 1e-3 WHEN t='t' and n!='tidb_get_token' THEN 1E6 ELSE 1 END,2) v
-    FROM   r
+    FROM   r LEFT JOIN (select distinct instance,job from metrics_schema.process_cpu_usage) r1 USING(instance)
     GROUP  BY n,ts,t) A
 GROUP BY n
 ORDER BY `Avg|Time` DESC;
@@ -95,28 +97,29 @@ env colsep |
 
 SELECT IFNULL(concat('select A.*,time/count `Avg_Time` from (\n',group_concat(qry ORDER BY n separator '\n'),'\n) A order by Minute desc,time desc'),'SELECT ''No such metrics'' error') qry
 FROM (
-SELECT concat(IF(n = 'A1', '  SELECT * FROM ', '  JOIN '),
+SELECT concat(IF(n = 'A1', '  SELECT * FROM\n    ', '    JOIN  '),
               qry,
               ' ',
               n,
               IF(n = 'A1', '', CONCAT(' USING(', concat_ws(',', 'Minute', cols), ')'))) qry,n
 FROM   (SELECT concat_ws(' ','(SELECT',
-                      concat_ws(',',
-                                'DATE_FORMAT(time,''%m-%d %H:%i'') Minute',
-                                cols,
-                                IF(unit = 'time','Count(1) Instances',null),
-                                CONCAT(IF(unit = 'duration', 'AVG(value)', 'SUM(value)/60'),
-                                       CASE WHEN unit = 'count' OR table_name LIKE 'tidb_get_token%' THEN ' '
-                                            WHEN unit!= 'count' AND table_name like 'tidb_batch_client_wait%' THEN '*1e-3 '
-                                            ELSE '*1e6 '
-                                       END,
-                                       unit)),
-                      'from',
-                      'metrics_schema.',
-                      table_name,
-                      'where value>0',
-                      concat_ws(',', 'group by Minute', cols),
-                      ')') qry,
+                  concat_ws(',',
+                            'DATE_FORMAT(time,''%m-%d %H:%i'') Minute',
+                            cols,
+                            IF(unit = 'time','group_concat(DISTINCT job order by job separator \', \') type,Count(1) Instances',null),
+                            CONCAT(IF(unit = 'duration', 'AVG(value)', 'SUM(value)/60'),
+                                   CASE WHEN unit = 'count' OR table_name LIKE 'tidb_get_token%' THEN ' '
+                                        WHEN unit!= 'count' AND table_name like 'tidb_batch_client_wait%' THEN '*1e-3 '
+                                        ELSE '*1e6 '
+                                   END,
+                                   unit)),
+                  'from',
+                  'metrics_schema.',
+                  table_name,
+                  IF(unit = 'time','r LEFT JOIN (select distinct instance,job from metrics_schema.process_cpu_usage) r1 USING(instance)',''),
+                  'where value>0',
+                  concat_ws(',', 'group by Minute', cols),
+                  ')') qry,
                CASE unit WHEN 'time' THEN 'A1' WHEN 'count' THEN 'A2' ELSE 'A3' END n,
                cols
         FROM   information_schema.METRICS_TABLES A
@@ -176,6 +179,7 @@ env colsep |
 
 SELECT concat(n,'/sec') `Metric Name`,
        label `Label`,
+       group_concat(DISTINCT job order by job separator ', ') `Types`,
        count(DISTINCT inst) `Instances`,
        SUM(IF(t='time',s*adj,0)) `Time`,
        SUM(IF(t='count',s*adj,0)) `Count`,
@@ -201,6 +205,7 @@ FROM (
     WHERE  SUM_VALUE > 0
     AND    lower(metrics_name) regexp '(_total_time|_total_count|_duration)$'
     AND    lower(metrics_name) LIKE lower('%&V1%')) A
+LEFT   JOIN (select distinct instance,job from metrics_schema.process_cpu_usage) r1 USING(instance)
 GROUP BY n,label
 HAVING `Time`>0 AND `Count`>0
 ORDER BY n,`Time` DESC;
