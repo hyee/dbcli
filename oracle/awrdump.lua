@@ -498,12 +498,13 @@ function awr.extract_addm(starttime,endtime,instances,container)
     end
 end
 
+
 function awr.onload()
-    env.set_command(nil,{"awrrpt","awrdump"},"Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_awr,false,5)
+    env.set_command(nil,{"awrrpt"},"Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_awr,false,5)
     env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_awr_diff,false,7)
     env.set_command(nil,"addmdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_addm_diff,false,7)
-    env.set_command(nil,{"ashrpt","ashdump"},"Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
-    env.set_command(nil,{"addmrpt","addmdump"},"Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_addm,false,5)
+    env.set_command(nil,{"ashrpt"},"Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
+    env.set_command(nil,{"addmrpt"},"Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_addm,false,5)
 end
 
 return awr

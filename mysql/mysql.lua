@@ -68,7 +68,6 @@ function mysql:connect(conn_str)
 
     self:merge_props(--https://docs.pingcap.com/tidb/stable/java-app-best-practices
         {driverClassName="com.mysql.cj.jdbc.Driver",
-         retrieveMessagesFromServerOnGetMessage='true',
          allowPublicKeyRetrieval='true',
          rewriteBatchedStatements='true',
          useCachedCursor=self.MAX_CACHE_SIZE,

@@ -255,7 +255,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
 
     local col_wrap = grid.col_wrap
     local linesize = grid.linesize
-    if linesize <= 10 then linesize = math.max(60,getScreenWidth(console) - (#env.space) * 2 - 45) end
+    if linesize <= 10 then linesize = math.max(60,getScreenWidth(console) - (#env.space) * 2) end
     if maxsize>=1024 and col_wrap==0 then
         col_wrap=linesize
     end
@@ -263,7 +263,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
     local function get_value(title,r,c)
         _, value = grid.format_column(true, type(title) == "table" and title or {column_name = title}, rows[r][c], r-1)
         len1,len2,nv=tostring(value or null_value):trim():ulen(maxsize)
-        if col_wrap > 0 and len1 > col_wrap and not nv:sub(1,1024):find('\n',1,true) then
+        if col_wrap > 0 and len2 > col_wrap and not nv:sub(1,1024):find('\n',1,true) then
             value,len1,len2=grid.line_wrap(nv,col_wrap)
             nv=table.concat(value,'\n')
         end
@@ -570,11 +570,15 @@ function grid:add(row)
                 end
 
                 if colsize[k][3] and v~=colsize[k][3] and v~="" then
-                    local v1=v:strip_ansi()
-                    if not v1:match('^%W$') then
+                    if k==1 then
+                        local v1=v:strip_ansi()
+                        if not v1:match('^%W$') then
+                            colsize[k][3]=nil
+                        else
+                            rsize=1
+                        end
+                    else
                         colsize[k][3]=nil
-                    elseif k==1 then
-                        rsize=1
                     end
                 end
 
@@ -595,6 +599,7 @@ function grid:add(row)
                 end
             end
 
+            if lines < #grp then lines = #grp end
             if not grp[1] then
                 usize,csize,v=v:ulen(maxsize)
             elseif #grp>1 then
@@ -606,8 +611,6 @@ function grid:add(row)
 
             if csize==0 and v~='' then csize=1 end
 
-            if lines < #grp then lines = #grp end
-            
             if self.colinfo[k].is_number then
                 colsize[k][2] = 1
             elseif headind > 0 then
@@ -649,11 +652,13 @@ function grid:add(row)
         tmp=r
     end
 
+    rs.rsize=rsize
     if rsize>0 or autohide=='off' or headind==0 then
-        if lines == 1 then add_row(rs)
+        if lines == 1 then
+            add_row(rs)
         else
             for i = 1, lines, 1 do
-                local r = table.new(#rs, 2)
+                local r = table.new(#rs, 3)
                 r[0], r._org = rs[0], rs._org
                 for k = 1, cols do
                     local v = rs[k]
@@ -672,12 +677,13 @@ function grid:add(row)
                     end
                     r[k] = v[i] == nil and "" or v[i]
                 end
+                r.rsize=rsize
                 add_row(r)
             end
             rs=tmp
         end
     end
-    rs.rsize=rsize
+    
     self.headind = headind + (rsize==0 and autohide~='off' and headind>0 and 0 or 1)
     local sep=self.break_groups.__SEP__
     if headind>1 and sep~=nil then
@@ -764,7 +770,6 @@ function grid:wellform(col_del, row_del)
         end
         self.ratio_cols = nil
     end
-
     --Generate row formatter
     local color = env.ansi.get_color
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
@@ -865,12 +870,23 @@ function grid:wellform(col_del, row_del)
         head_fmt=head_fmt:sub(2,-2)
         fmt=fmt:sub(2,-2)
     end
-    
+
     local len = #result
     for k, v in ipairs(result) do
         local filter_flag, match_flag = 1, 0
         while #v < #colsize do v[#v+1]='' end
 
+        local is_row_sep
+        if v[0]~=0 and v.rsize==1 and type(v[1])=='string' then 
+            local v1=v[1]:strip_ansi()
+            local v2=tostring(v[2] or ''):strip_ansi()
+            local v3=tostring(v[3] or ''):strip_ansi()
+            if v1:find('[~#|=@_:<>&/\\%$%-%+%*%.]') and
+               (v2=='' or v2==v1 or v2:find('^%W+$')) and
+               (v3=='' or v3==v1 or v3:find('^%W+$') or v[3]==seps[3]) 
+            then
+                is_row_sep=true
+        end
         --adjust the title style(middle)
         for k1,v1 in pairs(seps) do
             if not (k1==1 and v.rsize<=1 and (v1 or '')~='') then
@@ -889,14 +905,7 @@ function grid:wellform(col_del, row_del)
                     end
                 end
             end
-        elseif v.rsize==1 and type(v[1])=='string' then 
-            local v1=v[1]:strip_ansi()
-            local v2=tostring(v[2] or ''):strip_ansi()
-            local v3=tostring(v[3] or ''):strip_ansi()
-            if v1:find('[~#|=@_:<>&/\\%$%-%+%*%.]') and
-               (v2=='' or v2==v1 or v2:find('^%W+$')) and
-               (v3=='' or v3==v1 or v3:find('^%W+$')) 
-            then
+        elseif is_row_sep then
                 fmt1=calc_col_sep(fmt,v[1])
                 local c=v[1]
                 for k1,v1 in ipairs(title_dels) do
