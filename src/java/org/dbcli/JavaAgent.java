@@ -202,28 +202,37 @@ public class JavaAgent implements ClassFileTransformer {
             int counter = 0;
             String suffix;
             for (String clz : classes) {
-
                 String cl = clz;
                 if (cl.endsWith(".class")) cl = cl.substring(0, cl.lastIndexOf(".class"));
                 cl = cl.replace(".", "/").replace("\\", "");
                 byte[] classFileBuffer = getClassBuffer(cl, null);
                 suffix = ".class";
                 if (classFileBuffer == null) {
-                    URL url = new URL("jar:file:" + source + "!/" + clz);
+                    byte[] buffer = new byte[16384];
+                    int c;
                     int idx = clz.lastIndexOf(".");
                     if (idx == -1) suffix = "";
                     else {
                         suffix = clz.substring(idx);
                         cl = clz.substring(0, idx);
                     }
-                    byte[] buffer = new byte[16384];
-                    int c;
-                    try (InputStream in = url.openStream(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
-                        while ((c = in.read(buffer)) > 0) bos.write(buffer, 0, c);
-                        classFileBuffer = bos.toByteArray();
-                    } catch (Exception e1) {
-                        System.out.println("Cannot load file " + clz);
-                        continue;
+                    if (!clz.endsWith(".class")) {
+                        try (InputStream in = JavaAgent.class.getResourceAsStream("/" + clz); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                            while ((c = in.read(buffer)) > 0) bos.write(buffer, 0, c);
+                            classFileBuffer = bos.toByteArray();
+                        } catch (Exception e1) {
+                            System.out.println("Cannot load " + clz);
+                        }
+                    }
+                    if (classFileBuffer == null) {
+                        URL url = new URL(("jar:file:" + source + "!/" + clz).replace("//", "/"));
+                        try (InputStream in = url.openStream(); ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
+                            while ((c = in.read(buffer)) > 0) bos.write(buffer, 0, c);
+                            classFileBuffer = bos.toByteArray();
+                        } catch (Exception e1) {
+                            System.out.println("Cannot load file " + clz);
+                            continue;
+                        }
                     }
                 }
                 String dir = cl.substring(0, cl.lastIndexOf('/') + 1);

@@ -66,6 +66,7 @@ zip -r -9 -q ..\dbcli_nojre.zip dbcli -x "dbcli\jre\*" "dbcli\jre_linux\*"
 del /F /Q .\dbcli\oracle\orai18n.*
 del /F /Q .\dbcli\lib\x86\luv_winxp.dll
 copy /Y "%dump%\*.jar.pack.gz" .\dbcli\oracle
-move /Y .\dbcli\oracle\mysql* .\dbcli\mysql
+del /F /Q .\dbcli\oracle\mysql*
+rem move /Y .\dbcli\oracle\mysql* .\dbcli\mysql
 zip -r -9 -q ..\dbcli_oracle_lite.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\docs\*" "dbcli\jre_linux\*" "dbcli\mysql\*" "dbcli\pgsql\*" "dbcli\db2\*" "dbcli\bin\*"
 zip -r -9 -q ..\dbcli_mysql_lite.zip  dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\docs\*" "dbcli\jre_linux\*" "dbcli\oracle\*" "dbcli\pgsql\*" "dbcli\db2\*" "dbcli\bin\*"

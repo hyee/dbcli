@@ -770,6 +770,7 @@ function grid:wellform(col_del, row_del)
         end
         self.ratio_cols = nil
     end
+
     --Generate row formatter
     local color = env.ansi.get_color
     local nor, hor, hl = color("NOR"), color("HEADCOLOR"), color("GREPCOLOR")
@@ -870,7 +871,7 @@ function grid:wellform(col_del, row_del)
         head_fmt=head_fmt:sub(2,-2)
         fmt=fmt:sub(2,-2)
     end
-
+    
     local len = #result
     for k, v in ipairs(result) do
         local filter_flag, match_flag = 1, 0
@@ -886,10 +887,11 @@ function grid:wellform(col_del, row_del)
                (v3=='' or v3==v1 or v3:find('^%W+$') or v[3]==seps[3]) 
             then
                 is_row_sep=true
+            end
         end
         --adjust the title style(middle)
         for k1,v1 in pairs(seps) do
-            if not (k1==1 and v.rsize<=1 and (v1 or '')~='') then
+            if not (k1==1 and is_row_sep) then
                 v[k1]=v1
             end
         end
@@ -906,14 +908,13 @@ function grid:wellform(col_del, row_del)
                 end
             end
         elseif is_row_sep then
-                fmt1=calc_col_sep(fmt,v[1])
-                local c=v[1]
-                for k1,v1 in ipairs(title_dels) do
-                    v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
-                end
-                if output[#output]==row_dels then
-                    output[#output],rows[#rows]=nil
-                end
+            fmt1=calc_col_sep(fmt,v[1])
+            local c=v[1]
+            for k1,v1 in ipairs(title_dels) do
+                v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
+            end
+            if output[#output]==row_dels then
+                output[#output],rows[#rows]=nil
             end
         end
 
