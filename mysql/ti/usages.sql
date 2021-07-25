@@ -102,7 +102,6 @@ col "TiKv|Capacity,TiKV|Free,TiKV|Used,Engine|Default,Engine|Raft,Engine|Lock,En
 SELECT * FROM 
 (SELECT INSTANCE `TiKV|Instance`,
         MAX(IF(type='capacity',VALUE,0)) `TiKV|Capacity`,
-        MAX(IF(type='capacity',VALUE,0))-MAX(IF(type='available',VALUE,0)) `TiKV|Used`,
         MAX(IF(type='available',VALUE,0)) `TiKV|Free`
  FROM   metrics_schema.tikv_store_size
  WHERE  Time>=date_add(now(),interval -1 minute)
@@ -140,8 +139,8 @@ LEFT JOIN (
 LEFT JOIN (
  SELECT INSTANCE `TiKV|Instance`,
         '|' `|`,
-        SUM(IF(db='kv',VALUE,0)) `Cache|KV`,
-        SUM(IF(db='raft',VALUE,0)) `Cache|Raft`
+        MAX(IF(db='kv',VALUE,0)) `Cache|KV`,
+        MAX(IF(db='raft',VALUE,0)) `Cache|Raft`
  FROM   metrics_schema.tikv_block_cache_size
  WHERE  Time>=date_add(now(),interval -1 minute)
  GROUP  BY Instance
