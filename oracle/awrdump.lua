@@ -3,7 +3,7 @@ local awr={}
 
 function awr.get_snap_time(time)
     local t=db:get_value("select max(to_char(end_interval_time+0,'yymmddhh24miss')) from dba_hist_snapshot where snap_id=regexp_substr(:1,'\\d+')",{time})
-    return t~="" and t or db:check_date(time)
+    return t~="" and t or db:check_datetime(time)
 end
 
 function awr.get_range(starttime,endtime,instances,container)

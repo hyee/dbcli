@@ -5,7 +5,7 @@
     Parameters:
         * hits|misses|cachedsize: order by column, defaults as order by hits desc
         * -detail: don't group the data,instead, show the details of each cell
-    * -group : group the data by object name
+        * -group : group the data by object name
 
     Sample output:
     ==============

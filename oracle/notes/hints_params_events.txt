@@ -193,6 +193,8 @@ Fix Controls:
     6708183 :  allow dynamic sampling on table functions
     8619631 :  Allow hash aggregation for insert select except for plsql calls
     13905599:  enable(or _optimizer_use_gtt_session_stats=false) to disable sharing execution plan for GTT across sessions which could bypass dynamic sampling on GTT and thus lead to wrong execution plan
+    28345522:  Long Parse Time and excessive memory for Query with Multiple Tables in Join Order
+    8644935:   disable to fix the skew/wrong result issue when execution plan has either "UNION ALL" and "BROADCASE/HASH LOCAL"
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
