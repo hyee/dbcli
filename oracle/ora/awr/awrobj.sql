@@ -161,8 +161,7 @@ Stats AS (
             FROM   QRY,&check_access_pdb.SQL_PLAN a
             WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
             AND    A.OBJECT_OWNER LIKE QRY.OWNER
-            AND    QRY.DBID=A.DBID
-            AND    options != 'SAMPLE') a
+            AND    QRY.DBID=A.DBID) a
     JOIN &check_access_pdb.Sqlstat hs USING(DBID,plan_hash_value)
     JOIN &check_access_pdb.snapshot s USING(DBID,snap_id,instance_number)
     WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 

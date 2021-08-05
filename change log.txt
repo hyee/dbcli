@@ -1,3 +1,4 @@
+2021-08-05: + oracle: new script 'ora awrextr/awrload' 
 2021-07-21: + mysql : new script 'ti usages' 
 2021-07-19: + mysql : new script 'ti timing' 
 2021-07-18: + mysql : new script 'ti qps' 
