@@ -20,7 +20,7 @@ BEGIN
     dbms_output.disable;
     dbms_output.enable;
     BEGIN
-        dbms_result_cache.memory_report(true);
+        execute immediate 'begin sys.dbms_result_cache.memory_report(true);end;';
     EXCEPTION WHEN OTHERS THEN
         l_err := sqlerrm;
     END;

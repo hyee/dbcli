@@ -1795,7 +1795,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local id=tonumber(attr.line) or 0
             local info=infos[id]
             if not ids[id] then ids[id]={-1,nil,events={}} end
-            if attr.plsql_id and attr.plsql_name and attr.plsql_name~='Unavailable' then plsqls[attr.plsql_id]=attr.plsql_name end
+            if attr.plsql_name and attr.plsql_name~='Unavailable' then
+                attr.plsql_name=attr.plsql_name:gsub('^.-%.','')
+            else
+                attr.plsql_name=nil
+            end
+            if attr.plsql_id and attr.plsql_name then plsqls[attr.plsql_id]=attr.plsql_name end
             if attr.step then
                 attr.step=attr.step:gsub('PX Server%(s%) %- ','[PX] ')
                 attr.step=attr.step:gsub('QC %- ','[QC] ')
@@ -1805,7 +1810,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 attr.class or attr.other_sql_class, --wait class
                 attr.event or --event
                     attr.sql and ('SQL: '..attr.sql) or 
-                    attr.none_sql and ('SQL: '..attr.none_sql) or 
+                    attr.none_sql and ('SQL: '..attr.none_sql) or
+                    attr.plsql_name and ('PLSQL: '..attr.plsql_name) or 
                     attr.plsql_id and ('PLSQL: '..(plsqls[attr.plsql_id] or attr.plsql_id)) or 
                     attr.top_sql_id and ('Top-SQL: ' .. attr.top_sql_id) or
                     attr.step or nil,
@@ -2735,6 +2741,10 @@ function unwrap.analyze_sqldetail(text,file,seq)
                     end
                     if v1 and n:find('_time',1,true) then
                         env.var.define_column(n,'for','usmhd2')
+                    elseif v1 and n:find('_byte',1,true) then
+                        env.var.define_column(n,'for','kmg2')
+                    elseif v1 and n:find('_reqs',1,true) then
+                        env.var.define_column(n,'for','tmb2')
                     end
                     row[idx]=v1 or v
                 end

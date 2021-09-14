@@ -82,7 +82,7 @@ function awr.dump_report(stmt,starttime,endtime,instances,container)
 end
 
 function awr.extract_period()
-    return [[PROCEDURE get_range(p_start VARCHAR2,p_end VARCHAR2,p_inst VARCHAR2,dbid OUT INT, st OUT INT, ed OUT INT, stim OUT DATE, etim OUT DATE) IS
+    return [[PROCEDURE get_range(p_start VARCHAR2,p_end VARCHAR2,p_inst VARCHAR2,did IN OUT INT, st OUT INT, ed OUT INT, stim OUT DATE, etim OUT DATE) IS
             s DATE;
             e DATE;
         BEGIN
@@ -98,8 +98,8 @@ function awr.extract_period()
                 END;
             END;
 
-            SELECT dbid,least(st,ed) st,greatest(st,ed),least(stim,etim),greatest(stim,etim)
-            INTO dbid,st,ed,stim,etim
+            SELECT nvl(dbid,did),least(st,ed) st,greatest(st,ed),least(stim,etim),greatest(stim,etim)
+            INTO did,st,ed,stim,etim
             FROM (
                 SELECT max(dbid) dbid,
                        max(st)+0 st,
@@ -111,6 +111,7 @@ function awr.extract_period()
                                nvl(min(decode(sign(end_interval_time+3e-4-e),-1,null,snap_id)),max(snap_id)) ed
                         FROM   Dba_Hist_Snapshot
                         WHERE  begin_interval_time-3e-4 <= e and end_interval_time+3e-4>=s
+                        AND    dbid=NVL(did,dbid)
                         AND    (p_inst IS NULL OR instr(',' || p_inst || ',', ',' || instance_number || ',') > 0)
                         GROUP  BY DBID
                         ORDER  BY 2 DESC) a
@@ -122,8 +123,8 @@ function awr.extract_period()
                 RAISE_APPLICATION_ERROR(-20001,'Invalid snapshots specified. End_snap('||ed||') must be greater than begin_snap('||st||')');
             END IF;
 
-            IF dbid IS NULL THEN
-                SELECT dbid INTO dbid FROM v$database;
+            IF did IS NULL THEN
+                SELECT dbid INTO did FROM v$database;
             END IF;
         END;]]
 end
@@ -146,7 +147,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             dbid          INT;
             st            INT;
             ed            INT;
-            dbid2         INT;
+            dbid2         INT;--:=1877023642;
             st2           INT;
             ed2           INT;
             rc            SYS_REFCURSOR;
@@ -240,6 +241,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                     IF ed2 IS NULL THEN
                         OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed));
                     ELSE
+                        --OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(986420298,'',1004,1020,1877023642,'',24306,24314));
                         OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(dbid,inst,st,ed,dbid2,inst,st2,ed2));
                     END IF;
                 $END

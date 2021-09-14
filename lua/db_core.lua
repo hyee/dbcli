@@ -111,7 +111,7 @@ function db_Types:load_sql_types(className)
                     local succ,len=pcall(result.length,result)
                     if not succ then return nil end
                     local str=result:getSubString(1,len)
-                    result:free()
+                    pcall(result.free,result)
                     return str
                 end
                 return result
@@ -124,7 +124,7 @@ function db_Types:load_sql_types(className)
                     local succ,len=pcall(result.length,result)
                     if not succ then return nil end
                     local str=result:getBytes(1,israw and len or math.min(255,len))
-                    result:free()
+                    pcall(result.free,result)
                     if not israw then
                         str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
                     end
