@@ -356,6 +356,7 @@ local function load_ext()
              [[oradebug setmypid
                 oradebug unlimit
                 oradebug setinst all
+                oradebug -g all hanganalyze 3
                 oradebug -g def hanganalyze 5
                 oradebug -g def dump systemstate 266]]
             }
@@ -699,9 +700,8 @@ local function load_ext()
             {'crash','Kill the specific session','oradebug event immediate crash'},
             {'controlc','Cancel the sql when it matches','oradebug event trace[SQL_Execution.*] [SQL: ...]{occurence:end_after 3} controlc_signal()'},
             {'deadlock','Dump deadlocks',
-            [[oradebug event deadlock trace name hanganalyze_global
+            [[oradebug event deadlock trace name hanganalyze_global level 3
             oradebug event 60 trace name hanganalyze level 4
-            oradebug event 60 trace name hanganalyze_global
             oradebug session_event 60 trace name hanganalyze_global level 4, forever; -
             |                      name heapdump level 29, forever; -
             |                      name systemstate level 266, lifetime 1; -

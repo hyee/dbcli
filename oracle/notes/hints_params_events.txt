@@ -61,8 +61,8 @@ Parameters
     _hwm_sync_threshold: defaults to 10, setting to 100(support session level) will keep the HHWM and LHWM in sync during bulk/direct data load(Doc ID 726653.1), to fix low/high water mark not sync issue on  UNIFORM tablespace leading to smart scan not taken plan in parallel query, for existing segment, run DBMS_SPACE_ADMIN.ASSM_SEGMENT_SYNCHWM(...,check_only=1/0) to check/sync HWM.
     _enable_columnar_cache: refer to 'help exa offload'
     _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), set to 0 can avoid spilling to temp I/O
-    _smm_max_size: The maximum work area size for single process, defaults to _pga_max_size/5 when sga is large
-    _smm_px_max_size: maximum total work area size per parallel query where dop>5, defaults to pga_aggregate_target/2
+    _smm_max_size: The maximum work area size(in KB) for single process, defaults to 1GB when pga is large. Also impacts the number of hash join/group slots(slots*_smm_auto_max_io_size<=_smm_max_size) 
+    _smm_px_max_size: maximum total work area size(in KB) per parallel query where dop>5, defaults to pga_aggregate_target/2
     _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
     _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF  
     _oltp_compress_dbg: controls OLTP compression. 
@@ -147,7 +147,10 @@ Parameters
         131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
     _cursor_reload_failure_threshold: prevents multiple sessions to experience reload failures for the same cursor. reduce library/mutex lock
     _slave_mapping_enabled: use to disable px "LOCAL" distribution that can lead to skew
-    
+    _cell_cache_thrashing_detection_tolerance(cell): set to 1 to reduce high latency of direct path read/write temp in Exadata, relative cell param: _cell_fc_lw_max_percentage(default 20%)
+    _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
+    _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20
+    _windowfunc_optimization_settings: set to 2 to avoid 'WINDOW CHILD PUSHED RANK' in px query
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 
@@ -194,7 +197,9 @@ Fix Controls:
     8619631 :  Allow hash aggregation for insert select except for plsql calls
     13905599:  enable(or _optimizer_use_gtt_session_stats=false) to disable sharing execution plan for GTT across sessions which could bypass dynamic sampling on GTT and thus lead to wrong execution plan
     28345522:  Long Parse Time and excessive memory for Query with Multiple Tables in Join Order
-    8644935:   disable to fix the skew/wrong result issue when execution plan has either "UNION ALL" and "BROADCASE/HASH LOCAL"
+    8644935 :  disable to fix the skew/wrong result issue when execution plan has either "UNION ALL" and "BROADCASE/HASH LOCAL"
+    30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
+    33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

@@ -95,10 +95,11 @@ BEGIN
         BEGIN
             FOR i IN 1..6 LOOP
                 v_c :=substr(rid,i,1);
-                v_p :=CASE WHEN v_c >= 'a' THEN  71
+                v_p :=CASE WHEN v_c  = '+' THEN  -19
+                           WHEN v_c  = '/' THEN  -16
+                           WHEN v_c >= 'a' THEN  71
                            WHEN v_c >= 'A' THEN  65
-                           WHEN v_c >= '0' THEN  -4
-                           WHEN v_c  = '+' THEN  -19
+                           WHEN v_c >= '0' THEN  -4                           
                            ELSE -18
                       END;
                 v_id := v_id+(ascii(v_c)-v_p)*power(64,6-i);
@@ -149,6 +150,7 @@ BEGIN
             EXIT WHEN v_rids.COUNT = 0;
             FOR I IN 1 .. v_rids.COUNT LOOP
                 extr(v_recs(i));
+                v_stmt:=utl_lms.format_message(q'[sys.dbms_compression.get_compression_type('%s', '%s', '%s', '%s')]',v_own, v_nam, v_rids(i), v_sub);
                 v_ctyp := sys.dbms_compression.get_compression_type(v_own, v_nam, v_rids(i), v_sub);
                 IF v_pid != v_oid OR v_ptyp != v_ctyp THEN
                     flush_xml;
@@ -166,6 +168,7 @@ BEGIN
         &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"='||v_sm||'  "_serial_direct_read"='||v_dx;
     EXCEPTION WHEN OTHERS THEN
         &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"='||v_sm||'  "_serial_direct_read"='||v_dx;
+        dbms_output.put_line(v_stmt);
         RAISE;
     END;
 

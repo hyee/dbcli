@@ -106,7 +106,7 @@ FROM(
                PLSEXEC_TIME+JAVEXEC_TIME PLSQL,
                cellio,oflin,oflout,
                greatest(disk_reads,phyread) READ,
-               nvl(phywrite,direct_writes) WRITE,
+               nvl(phywrite,0)+nvl(direct_writes,0) WRITE,
                buffer_gets buff,
                a.rows_processed rows#,
                a.fetches,

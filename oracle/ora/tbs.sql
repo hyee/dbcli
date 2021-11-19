@@ -93,7 +93,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                        'Permanent' IS_TEMP,
                        max(IOPS) IOPS,MAX(MBPS) MBPS,MAX(latency) latency
                 FROM   &CON.FREE_SPACE a 
-                JOIN  (select /*+no_merge*/ 
+                LEFT JOIN (select /*+no_merge*/ 
                               file_id,&cid2 &cname,
                               SUM((PHYSICAL_READS+PHYSICAL_WRITES)*60/INTSIZE_CSEC) IOPS,
                               SUM((PHYSICAL_BLOCK_READS+PHYSICAL_BLOCK_WRITES)*60/INTSIZE_CSEC) MBPS,

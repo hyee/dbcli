@@ -166,7 +166,7 @@ function xplan.explain(fmt,sql)
           CONNECT BY PRIOR id = pid
           ORDER  SIBLINGS BY position desc,id DESC),
         ordered_hierarchy_data AS
-         (SELECT A.*,
+         (SELECT /*+materialize*/A.*,
                 CASE 
                     WHEN nvl(ap,sc) IS NOT NULL THEN 'A'
                 END||CASE 

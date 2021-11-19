@@ -458,7 +458,7 @@ hierarchy_data AS
   CONNECT BY PRIOR id = pid AND phv=PRIOR phv 
   ORDER  SIBLINGS BY pos desc,id DESC),
 ordered_hierarchy_data AS
- (SELECT a.*,
+ (SELECT /*+materialize*/ a.*,
          CASE 
              WHEN nvl(ap,ac) IS NOT NULL THEN 'A'
          END||CASE 

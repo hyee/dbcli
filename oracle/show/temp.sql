@@ -1,7 +1,7 @@
 /*[[Show temp tablespace usage.]]*/
 set feed off
 col BYTES_CACHED,BYTES_USED,bytes for kmg
-select  DISTINCT * from gv$temp_extent_pool order by 2,3,1;
+select DISTINCT * from gv$temp_extent_pool order by 2,3,1;
 
 SELECT /*+ ordered opt_param('cursor_sharing' 'force')*/
      B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,
@@ -22,4 +22,5 @@ FROM   gv$tempseg_usage A, gV$SESSION B, gv$PROCESS P,
 WHERE  A.SESSION_ADDR = B.SADDR
 AND    B.PADDR = P.ADDR
 AND    a.inst_id = b.inst_id
-AND    b.inst_id = p.inst_id;
+AND    b.inst_id = p.inst_id
+ORDER  BY BYTES DESC;

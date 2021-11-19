@@ -35,6 +35,7 @@ ansicon.exe
 .cfg
 .zip
 .7z
+.iml
 jnlua.c
 Makefile
 dbcli_*

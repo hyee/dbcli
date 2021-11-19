@@ -331,7 +331,7 @@ hierarchy_data AS
   CONNECT BY PRIOR id = parent_id
   ORDER  SIBLINGS BY position desc,id DESC),
 ordered_hierarchy_data AS
-(SELECT A.*,
+(SELECT /*+materialize*/ A.*,
         CASE 
             WHEN nvl(ap,sc) IS NOT NULL THEN 'A'
         END||CASE 

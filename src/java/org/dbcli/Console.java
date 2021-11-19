@@ -9,6 +9,7 @@ import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
+import org.jline.terminal.Size;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
@@ -152,6 +153,8 @@ public final class Console {
     public void initDisplay() {
         display = new More.Play(terminal, false);
         display.init(false);
+        Size size=terminal.getSize();
+        display.resize(size.getRows(), size.getColumns());
     }
 
     public void exitDisplay() {

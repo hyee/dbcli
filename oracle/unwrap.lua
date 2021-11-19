@@ -557,7 +557,7 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
         pr(grid.tostring(preds))
         env.var.define_column('id','clear')
     end
-
+    
     if #outlines>0 then
         title('Optimizer Environments & Outlines')
         table.sort(outlines,function(a,b)

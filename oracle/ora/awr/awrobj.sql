@@ -32,7 +32,7 @@
     --[[
         @ARGS: 1
         @11G : 11.2={} DEFAULT={--}
-        @12c : 18.1={} DEFAULT={--}
+        @12c : 19.1={} DEFAULT={--}
         @CON : 12.1={,CON_DBID} DEFAULT={}
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
         &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}

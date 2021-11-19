@@ -498,6 +498,12 @@ FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcach
 			cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumplru,0,2,3)"' (where parameter=2 means medium-level dump' parameter=3 means for all lru lists.)
 			cellcli -e 'alter cell events = "trace[cellsrv_flash_cache_layer] disk=high,memory=high"'
 			cellcli -e 'alter cell events = "trace[cellsrv_flash_cache_layer] off"'
+            --to fix large IO throttling which could cause 'direct path read'
+            alter cell events = "cellsrv.cellsrv_iorm_ctl[MAX_LIO] opval=250"  --_cell_iorm_max_lio
+            alter cell events = "cellsrv.cellsrv_iorm_ctl[WL_MODE] opval=1" --_cell_iorm_wl_mode
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_oflsrv_fplib_passthru_timeout_msec', 20000)";
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_max_iops', 120)";
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 10)";
 Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_storidx('dumpridx','all',0, 0,0)"'
                   cellcli -e 'alter cell offloadgroupEvents = "immediate cellsrv.cellsrv_storidx(dumpridx,all, 0, 0, 0)"'
 		          #1: dumpridx/purge/enable/disable

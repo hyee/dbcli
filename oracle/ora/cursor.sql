@@ -7,7 +7,8 @@
         &V10: s={}, o={(select event from v$session where sid=a.sid) event,}
         @type: 11.2={,cursor_type} default={}
         @dir : 11.2={instr(cursor_type,'OPEN'),} default={}
-        @aggs: 11.2={regexp_replace(listagg(to_name,',') within group(order by to_name),'([^,]+)(,\1)+','\1')},default={to_char(wmsys.wm_concat(DISTINCT to_name))}
+        @overflow: 19.1={distinct to_name,',' on overflow truncate} default={to_name,','}
+        @aggs: 12.2={regexp_replace(listagg(&overflow) within group(order by to_name),'([^,]+)(,\1)+','\1')},default={to_char(wmsys.wm_concat(DISTINCT to_name))}
     ]]--
 ]]*/
 
