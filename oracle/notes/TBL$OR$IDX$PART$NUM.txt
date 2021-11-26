@@ -36,30 +36,42 @@ commit;
 
 SELECT a.*,
        DBMS_MVIEW.PMARKER(a.rowid) pmaker, --partition object id
+       DBMS_ROWID.ROWID_OBJECT(a.rowid) ROWID_OBJECT,
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 0, 0, a.AREA, a.DISTRICT, A.REC_NUM) tbl0, --unique (sub)partition physical position
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 1, 0, a.AREA, a.DISTRICT) tbl1, --dba_tab_partitions.partition_position
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 2, 0, A.REC_NUM) tbl2, --dba_tab_subpartitions.subpartition_position
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 3, 0, a.AREA, a.DISTRICT, A.REC_NUM) tbl3, --subparitition object id
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 4, 0, a.AREA, a.DISTRICT) tbl4, --partition object id
+       TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 0, 65535, a.AREA, a.DISTRICT, A.REC_NUM) tbl5,
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 0, 0, ROWID) r0,
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 1, 0, ROWID) r1,
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 3, 0, ROWID) r3,
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 4, 0, ROWID) r4,
        TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 6, 0, ROWID) r6, --unique (sub)partition physical position
-       TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 7, 0, ROWID) r7  --unique (sub)partition physical position
+       TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 7, 0, ROWID) r7, --unique (sub)partition physical position
+       TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 0, 65535, ROWID) r8
 FROM   test_tbl a;
 
-AREA DISTRICT REC_NUM  PMAKER TBL0 TBL1 TBL2  TBL3    TBL4   R0 R1   R3      R4    R6 R7
----- -------- ------- ------- ---- ---- ---- ------- ------- -- -- ------- ------- -- --
-  10 A              5 1047380    1    1    1 1047380 1047374  1  1 1047380 1047374  1  1
-  10 A             15 1047381    2    1    2 1047381 1047374  2  1 1047381 1047374  2  2
-  10 B              5 1047382    3    2    1 1047382 1047375  3  2 1047382 1047375  3  3
-  10 B             15 1047383    4    2    2 1047383 1047375  4  2 1047383 1047375  4  4
-  10 C              5 1047384    5    3    1 1047384 1047376  5  3 1047384 1047376  5  5
-  10 C             15 1047385    6    3    2 1047385 1047376  6  3 1047385 1047376  6  6
-  20 A              5 1047386    7    4    1 1047386 1047377  7  4 1047386 1047377  7  7
-  20 A             15 1047387    8    4    2 1047387 1047377  8  4 1047387 1047377  8  8
-  20 B              5 1047388    9    5    1 1047388 1047378  9  5 1047388 1047378  9  9
-  20 B             15 1047389   10    5    2 1047389 1047378 10  5 1047389 1047378 10 10
-  20 C              5 1047390   11    6    1 1047390 1047379 11  6 1047390 1047379 11 11
-  20 C             15 1047391   12    6    2 1047391 1047379 12  6 1047391 1047379 12 12
+AREA DISTRICT REC_NUM PMAKER ROWID_OBJECT TBL0 TBL1 TBL2  TBL3   TBL4  TBL5 R0 R1   R3     R4   R6 R7 R8
+---- -------- ------- ------ ------------ ---- ---- ---- ------ ------ ---- -- -- ------ ------ -- -- --
+  10 A              5 118853       118853    1    1    1 118853 118847    1  1  1 118853 118847  1  1  1
+  10 A             15 118854       118854    2    1    2 118854 118847    2  2  1 118854 118847  2  2  2
+  10 B              5 118855       118855    3    2    1 118855 118848    3  3  2 118855 118848  3  3  3
+  10 B             15 118856       118856    4    2    2 118856 118848    4  4  2 118856 118848  4  4  4
+  10 C              5 118857       118857    5    3    1 118857 118849    5  5  3 118857 118849  5  5  5
+  10 C             15 118858       118858    6    3    2 118858 118849    6  6  3 118858 118849  6  6  6
+  20 A              5 118859       118859    7    4    1 118859 118850    7  7  4 118859 118850  7  7  7
+  20 A             15 118860       118860    8    4    2 118860 118850    8  8  4 118860 118850  8  8  8
+  20 B              5 118861       118861    9    5    1 118861 118851    9  9  5 118861 118851  9  9  9
+  20 B             15 118862       118862   10    5    2 118862 118851   10 10  5 118862 118851 10 10 10
+  20 C              5 118863       118863   11    6    1 118863 118852   11 11  6 118863 118852 11 11 11
+  20 C             15 118864       118864   12    6    2 118864 118852   12 12  6 118864 118852 12 12 12
+
+
+select * from test_tbl partition for(10,'A');
+select * from test_tbl subpartition for(10,'A',5);
+select * from test_tbl partition(TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 1, 0,10,'A'));
+select * from test_tbl partition(TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 0, 0,10,'A',5));
+select * from test_tbl subpartition(TBL$OR$IDX$PART$NUM("TEST_TBL", 0, 0, 0,10,'A',5));
+select * from test_tbl partition(DATAOBJ_TO_MAT_PARTITION(TEST_TBL,118853));  --data_object_id
+select * from test_tbl subpartition(DATAOBJ_TO_MAT_PARTITION(TEST_TBL,118853));

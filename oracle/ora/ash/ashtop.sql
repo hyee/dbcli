@@ -3,6 +3,7 @@
   
   Options:
   ========
+        -wall: order by wall clock
       Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
         -e   : group by event
         -sql : group by event+sql_id (default)
@@ -82,10 +83,13 @@
       @V11    : 11.2={} default={--}
       @V12    : 12.2={} default={--}
       @top_sql: 11.1={top_level_sql_id,} default={}
+      &wall   : default={} wall={count(distinct bucket#)*&base wall,}
+      &wall1  : default={} wall={--}
     ]]--
 ]]*/
 col reads,writes format KMG
 col AVG_IO for tmb
+COL WALL,SECS,AAS FOR smhd2
 WITH ASH_V AS(
     SELECT a.*,
            decode(:fields,'wait_class',' ',
@@ -141,9 +145,10 @@ WITH ASH_V AS(
                     end),''||current_obj#)  obj,
                 nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
                 SUBSTR(a.program,-6) PRO_,&unit c,&CPU CPU
-              , TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw
-              , TO_CHAR(p2, 'fm0XXXXXXXXXXXXXXX') p2raw
-              , TO_CHAR(p3, 'fm0XXXXXXXXXXXXXXX') p3raw
+              , floor((sample_time+0-date'1970-1-1')*86400/&base) bucket#
+              , lpad(sys_op_numtoraw(p1),16,'0') p1raw
+              , lpad(sys_op_numtoraw(p2),16,'0') p2raw
+              , lpad(sys_op_numtoraw(p3),16,'0') p3raw
               , nvl(event,nullif('['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']','[]')) event_name
         &v11  , SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS OPERATION
         &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
@@ -168,13 +173,13 @@ WITH ASH_V AS(
     WHERE &filter and (&more_filter))
 SELECT * FROM (
     SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true) */
-        round(SUM(c))                                                   Secs
+        &wall round(SUM(c)) Secs
       , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
-      , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
-      , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
-      , event_name event
+      &wall1 , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
+      &wall1 , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
+      &wall1 , event_name event
       , &fields &IOS
       , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
@@ -193,7 +198,8 @@ SELECT * FROM (
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM ASH_V A
-    GROUP BY nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,a.u_id,event_name,&fields
-    ORDER BY secs DESC nulls last,&fields
+    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,event_name,
+             a.u_id,&fields
+    ORDER BY 1 desc,secs DESC nulls last,&fields
 )
 WHERE ROWNUM <= 50;

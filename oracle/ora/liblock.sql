@@ -133,6 +133,8 @@ WITH LP AS (
                  MODE_REQUESTED,MODE_HELD,
                  DECODE(MODE_HELD, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') held_mode,
                  DECODE(MODE_REQUESTED, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') req_mode,
+                 case when h.p3text='100*mode+namespace' then trunc(p3/4294967296) end object_id,
+                 case when h.p3text='100*mode+namespace' then trunc(p3 / 65536) end namespace,
                  nullif(d.to_owner || '.', '.') || d.to_name object_name,
                  h.sid || ',' || h.serial# || ',@' || USERENV('instance') session#,
                  d.type object_type,
@@ -156,7 +158,8 @@ WITH LP AS (
         )))
 SELECT /*+no_expand*/distinct
        nvl(h.lock_type,w.lock_type) lock_type,
-       nvl(h.handler,w.handler) object_handle, 
+       nvl(h.handler,w.handler) object_handle,
+       nvl(h.object_id,w.object_id) object_id,
        nvl(h.object_name,w.object_name) object_name,
        nvl(h.object_type,w.object_type) object_type,
        h.session# holding_session, nvl(h.held_mode,w.held_mode) hold_mode,  
