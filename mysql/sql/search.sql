@@ -66,5 +66,5 @@ FROM   (SELECT table_schema `Schema`,
         FROM   information_schema.triggers
         WHERE  upper(concat(trigger_schema, '.', trigger_name)) LIKE @target) AS M
 WHERE &FILTER
-ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END
+ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END,1,2
 limit 100;

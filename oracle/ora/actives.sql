@@ -118,7 +118,7 @@ BEGIN
                              FROM   v$session s,
                                     (select /*+no_merge*/ 
                                              program_line#,program_id,plan_hash_value,sql_id,child_number,
-                                             substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text,
+                                             substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 512) sql_text,
                                              round(decode(b.child_number,0,b.elapsed_time * 1e-6 / (1 + b.executions), 86400 * (SYSDATE - to_date(b.last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
                                      from v$sql b where users_executing > 0) sq
                              WHERE   s.sql_id=sq.sql_id(+)
@@ -148,7 +148,7 @@ BEGIN
                    sql_child_number child,
                    a.event,
                    ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)/60),1) waited,
-                   &fields,sql_text
+                   &fields,substr(sql_text,1,200) sql_text
             FROM   s4 a
             WHERE  (&filter) AND (&Filter2)
             ORDER  BY r}';

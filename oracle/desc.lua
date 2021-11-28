@@ -612,17 +612,18 @@ local desc_sql={
         AND    a.column_name=c.cname(+)
         ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force') opt_param('_connect_by_use_union_all','old_plan_mode')*/ I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
-                   PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                            SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                            FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                            START  WITH column_position = 1
-                            CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
-                   nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
-                            SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                            FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
-                            START  WITH column_position = 1
-                            CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
+        WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ 
+                           I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+                           PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                    SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                    FROM   (SELECT /*+no_merge*/* FROM all_part_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                    START  WITH column_position = 1
+                                    CONNECT BY PRIOR column_position = column_position - 1]'),'//V') PARTITIONED_BY,
+                           nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                    SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                    FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                    START  WITH column_position = 1
+                                    CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
                     FROM   ALL_INDEXES I,ALL_PART_INDEXES C
                     WHERE  C.OWNER(+) = I.OWNER
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
@@ -655,8 +656,10 @@ local desc_sql={
         AND    C.INDEX_NAME = e.INDEX_NAME(+)
         AND    C.INDEX_OWNER = e.INDEX_OWNER(+)
         AND    C.column_position = e.column_position(+)
-        AND    c.table_owner = E.table_owner(+)
-        AND    c.table_name =e.table_name(+)
+        AND    :owner = c.table_owner
+        AND    :object_name =c.table_name
+        AND    :owner = E.table_owner(+)
+        AND    :object_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false')
@@ -670,7 +673,7 @@ local desc_sql={
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c)
+        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c) cardinality(a 1)
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
@@ -688,6 +691,8 @@ local desc_sql={
                 AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
                 AND    A.OWNER = C.OWNER(+)
                 AND    A.CONSTRAINT_NAME = C.CONSTRAINT_NAME(+)
+                AND    :owner = c.owner(+)
+                AND    :object_name =c.table_name(+)
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
     [[/*grid={topic='ALL_TABLES', pivot=1}*/ 

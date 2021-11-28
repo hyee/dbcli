@@ -32,7 +32,7 @@
     --[[
         @ARGS: 1
         @11G : 11.2={} DEFAULT={--}
-        @12c : 18.1={} DEFAULT={--}
+        @12c : 19.1={} DEFAULT={--}
         @CON : 12.1={,CON_DBID} DEFAULT={}
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
         &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
@@ -161,8 +161,7 @@ Stats AS (
             FROM   QRY,&check_access_pdb.SQL_PLAN a
             WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
             AND    A.OBJECT_OWNER LIKE QRY.OWNER
-            AND    QRY.DBID=A.DBID
-            AND    options != 'SAMPLE') a
+            AND    QRY.DBID=A.DBID) a
     JOIN &check_access_pdb.Sqlstat hs USING(DBID,plan_hash_value)
     JOIN &check_access_pdb.snapshot s USING(DBID,snap_id,instance_number)
     WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 

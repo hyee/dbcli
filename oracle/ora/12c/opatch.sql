@@ -19,7 +19,7 @@ FROM   (SELECT patchset_id,
                CEIL(seq / 400) grp,
                seq,
                DECODE(MOD(seq-1, 10), 0, CHR(10), '') sep
-        FROM   XMLTABLE('/patches/patch' PASSING dbms_qopatch.GET_OPATCH_LIST COLUMNS --
+        FROM   XMLTABLE('/patches/patch' PASSING sys.dbms_qopatch.GET_OPATCH_LIST COLUMNS --
                         patchset_id VARCHAR2(30) PATH 'constituent',
                         patch_ID INT PATH 'patchID',
                         patch_uid INT PATH 'uniquePatchID',

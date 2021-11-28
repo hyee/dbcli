@@ -38,9 +38,14 @@ ORCL> ora tbs SYSTEM
         &cname  : default={fid} cdb={con_id}
         &con    : default={dba_} cdb={cdb_}
         &pname  : default={&cname} cdb={(select name from v$containers b where b.con_id=a.con_id) pdb}
+        @attr11  : 11.2={} default={--}
+        @attr12  : 12.2={} default={--}
+        @attr18  : 18.1={} default={--}
+        @attr19  : 19.1={} default={--}
     --]]
 ]]*/
 set printsize 1000
+set autohide col
 col MAX_SIZE format KMG
 col FILE_SIZE format KMG
 col USED_SPACE format KMG
@@ -62,7 +67,8 @@ SELECT &pname,
        ROUND(100*(SPACE - NVL(FREE_SPACE, 0))/nullif(siz, 0),2) "USED(%)",
        IOPS,MBPS,latency,
        FSFI "FSFI(%)",
-       g location
+       g location,
+       attrs
 FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_pushdown','false')*/
               &cname,
               decode(grouping_id(TABLESPACE_NAME,file_id),0,null,3,'TOTAL('||IS_TEMP||')',nvl2(:V1,'','  ')||TABLESPACE_NAME) TABLESPACE_NAME,
@@ -72,9 +78,12 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
               sum(nvl(hwm_block*blocksiz,space)) HWM_SPACE,
               SUM(siz) siz,
               SUM(space) SPACE,
-              ROUND(SUM(IOPS)) IOPS,SUM(MBPS*blocksiz) MBPS,round(1E4*SUM(latency)/nullif(SUM(IOPS),0)) latency,
+              NULLIF(ROUND(SUM(IOPS)),0) IOPS,
+              NULLIF(SUM(MBPS*blocksiz),0) MBPS,
+              NULLIF(round(1E4*SUM(latency)/nullif(SUM(IOPS),0)),0) latency,
               IS_TEMP,
-              decode(grouping_id(file_id),0,max(file_name),&CHECK_ACCESS) g
+              decode(grouping_id(file_id),0,max(file_name),&CHECK_ACCESS) g,
+              decode(grouping_id(TABLESPACE_NAME,file_id),0,MAX(F.ATTRS),1,MAX(T.ATTRS)) attrs
         FROM(
             SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
             FROM (
@@ -91,9 +100,14 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                        max(b.file_name) file_name,
                        max(decode(seq,1,regexp_substr(b.file_name, '^.[^\\/]+'))) loc,
                        'Permanent' IS_TEMP,
-                       max(IOPS) IOPS,MAX(MBPS) MBPS,MAX(latency) latency
+                       max(IOPS) IOPS,MAX(MBPS) MBPS,MAX(latency) latency,
+                       MAX(TRIM(',' FROM REGEXP_REPLACE(
+                          DECODE(STATUS,'AVAILABLE','',STATUS||',')||
+                          DECODE(ONLINE_STATUS,'ONLINE','',ONLINE_STATUS||',')||
+                          'NEXT '||DECODE(AUTOEXTENSIBLE,'YES',TRIM(DBMS_XPLAN.FORMAT_SIZE2(INCREMENT_BY)),'0')||
+                          '',',+',','))) attrs
                 FROM   &CON.FREE_SPACE a 
-                JOIN  (select /*+no_merge*/ 
+                LEFT JOIN (select /*+no_merge*/ 
                               file_id,&cid2 &cname,
                               SUM((PHYSICAL_READS+PHYSICAL_WRITES)*60/INTSIZE_CSEC) IOPS,
                               SUM((PHYSICAL_BLOCK_READS+PHYSICAL_BLOCK_WRITES)*60/INTSIZE_CSEC) MBPS,
@@ -116,7 +130,11 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                        null hwm_block,
                        max(f.file_name) file_name,
                        max(decode(seq,1,loc)) loc,
-                       'Temporary',NULL,NULL,NULL
+                       'Temporary',NULL,NULL,NULL,
+                       MAX(TRIM(',' FROM REGEXP_REPLACE(
+                          DECODE(STATUS,'AVAILABLE','',STATUS||',')||
+                          'NEXT '||DECODE(AUTOEXTENSIBLE,'YES',TRIM(DBMS_XPLAN.FORMAT_SIZE2(INCREMENT_BY)),'0')||
+                          '',',+',','))) attrs
                 FROM   (select distinct * from v$TEMP_SPACE_HEADER) h
                 LEFT   JOIN (select distinct * from v$Temp_extent_pool) p 
                 USING  (file_id,&cid,tablespace_name)
@@ -124,7 +142,26 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                 USING  (file_id,&cid,tablespace_name)
                 WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
                 GROUP  BY tablespace_name,FILE_ID,&cid2
-            ) A)
+            ) A) F JOIN (
+                SELECT TABLESPACE_NAME,
+                     TRIM(',' FROM REGEXP_REPLACE(
+                         (SELECT '#'||TS#||',' FROM v$tablespace WHERE name=tablespace_name)||
+                         DECODE(STATUS,'ONLINE','',STATUS||',')||
+                         DECODE(CONTENTS,'UNDO','UNDO,')||
+                         DECODE(LOGGING,'NOLOGGING','NOLOGGING,')||
+                         DECODE(ALLOCATION_TYPE,'UNIFORM','UNIFORM-'||TRIM(DBMS_XPLAN.FORMAT_SIZE2(NEXT_EXTENT))||',')||
+                         DECODE(SEGMENT_SPACE_MANAGEMENT,'MANUAL','LMT,')||
+                         &attr11 DECODE(BIGFILE,'YES','BIGFILE,')||
+                         &attr11 DECODE(ENCRYPTED,'YES','TDE,')||
+                         &attr11 DECODE(PLUGGED_IN,'YES','PLUGIN,')||
+                         &attr11 DECODE(PREDICATE_EVALUATION,NULL,'','STORAGE','','PRED: '||PREDICATE_EVALUATION)||
+                         &attr11 COMPRESS_FOR||','||
+                         &attr12 DECODE(CHUNK_TABLESPACE,'Y','CHUNK,')||
+                         &attr12 DECODE(SHARED,'SHARED','',SHARED||',')||
+                         &attr12 NVL2(INDEX_COMPRESS_FOR,'INDEX-'||INDEX_COMPRESS_FOR||',','')||
+                         &attr12 NVL2(DEF_INMEMORY_COMPRESSION,'DBIM-'||DEF_INMEMORY_COMPRESSION||'-PRIOR '||DEF_INMEMORY_PRIORITY||'-DISTRIB '||DEF_INMEMORY_DUPLICATE,'')||
+                         '',',+',',')) AS ATTRS
+              FROM &CON.tablespaces) T USING(TABLESPACE_NAME)
         GROUP BY  &cname,IS_TEMP,ROLLUP(TABLESPACE_NAME,FILE_ID)
         HAVING (:V1 IS NOT NULL AND grouping_id(TABLESPACE_NAME)<1) OR (:V1 IS NULL AND FILE_ID IS NULL)) a
 ORDER  BY 1,IS_TEMP,USED_SPACE DESC,TABLESPACE_NAME DESC NULLS LAST;

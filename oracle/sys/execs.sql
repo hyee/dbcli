@@ -26,6 +26,7 @@
           3 SYS.DBMS_STATS_INTERNAL            11 PACKAGE BODY          28938
     --[[
         &V2: default={&instance}
+        @overflow: 12.2={distinct sql_id,',' on overflow truncate} default={decode(seq,1,decode(sign(100-SQL_SEQ),1,CASE WHEN SEQ=1 THEN sql_id END)),','}
     --]]
 ]]*/
 ora _find_object "&V1" 1
@@ -38,7 +39,7 @@ SELECT * FROM (
                max(kept) kept,max(MARKHOT) MARKHOT,
                count(distinct sql_id) sqls,
                sum(sql_execs) sql_execs,
-               decode(flag,2,max(full_hash),listagg(decode(seq,1,decode(sign(100-SQL_SEQ),1,sql_id)),',') within group(order by sql_execs desc nulls last)) sql_ids
+               decode(flag,2,max(full_hash),listagg(&overflow) within group(order by sql_execs desc nulls last)) sql_ids
         FROM (
             SELECT /*+ ordered use_hash(d) use_hash(c) no_expand*/
                    o.inst_id,
@@ -87,7 +88,7 @@ SELECT * FROM (
                    c.KGLOBT05 sql_execs,
                    decode(:V1,c.KGLOBT03,2,1) flag,
                    decode(nvl(c.KGLOBT09,0),0,c.KGLNAHSV) full_hash,
-                   dense_rank() over(partition by o.kglnahsh,o.kglhdadr order by c.KGLOBT05 desc nulls last) SQL_SEQ,
+                   row_number() over(partition by o.kglnahsh,o.kglhdadr order by c.KGLOBT05 desc nulls last) SQL_SEQ,
                    row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
             FROM   sys.x$kglob o, 
                    (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 

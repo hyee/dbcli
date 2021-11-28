@@ -1,4 +1,6 @@
-/*[[Check related objects for 'latch: cache buffers chains' event. Usage: @@NAME [<sid>|<sql_id>] [inst_id] ]]*/
+/*[[Check related objects for 'latch: cache buffers chains' event. Usage: @@NAME [<sid>|<sql_id>] [inst_id] 
+    relative parameters: _db_block_hash_latches,_cursor_db_buffers_pinned
+]]*/
 /*
 X$BH Fixed Table Buffer Cache Diagram
 

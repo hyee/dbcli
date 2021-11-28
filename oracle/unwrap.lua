@@ -314,6 +314,193 @@ local function process_qb(qbs,qb,alias,id,depth)
     end
 end
 
+function unwrap.parse_qb_registry(reg,qbs,src)
+    if type(reg)=='string' then
+        local content=handler:new()
+        local parser =xml2lua.parser(content)
+        parser:parse(reg)
+        reg=content.root.qb_registry
+    end
+    if type(reg)~='table' then return end
+    local origins={
+        [0]='NOT NAMED',
+        [1]='ALLOCATE',
+        [2]='',
+        [3]='HINT',
+        [4]='COPY',
+        [5]='SAVE',
+        [6]='REWRITE',
+        [7]='PUSH_PRED',
+        [8]='STAR TRANSFORM SUBQUERY',
+        [9]='COMPLEX VIEW MERGE',
+        [10]='COMPLEX SUBQUERY UNNEST',
+        [11]='USE_CONCAT',
+        [12]='SUBQ INTO VIEW FOR COMPLEX UNNEST',
+        [13]='PROJECTION VIEW FOR CVM',
+        [14]='GROUPING SET TO UNION',
+        [15]='SPLIT/MERGE QUERY BLOCKS',
+        [16]='COPY PARTITION VIEW',
+        [17]='RESTORE',
+        [18]='MERGE',
+        [19]='UNNEST',
+        [20]='STAR_TRANSFORMATION',
+        [21]='INDEX JOIN',
+        [22]='STAR TRANSFORM TEMP TABLE',
+        [23]='MAP QUERY BLOCK',
+        [24]='VIEW ADDED',
+        [25]='SET QUERY BLOCK',
+        [26]='QUERY BLOCK TABLES CHANGED',
+        [27]='QUERY BLOCK SIGNATURE CHANGED',
+        [28]='MV UNION QUERY BLOCK',
+        [29]='EXPAND_GSET_TO_UNION',
+        [30]='PULL_PRED',
+        [31]='PREDICATES ADDED TO QUERY BLOCK',
+        [32]='OLD_PUSH_PRED',
+        [33]='ELIMINATE_OBY',
+        [34]='ELIMINATE_JOIN',
+        [35]='OUTER_JOIN_TO_INNER',
+        [36]='STAR ELIMINATE_JOIN',
+        [37]='BITMAP ELIMINATE_JOIN',
+        [38]='CONNECT_BY_COST_BASED',
+        [39]='CONNECT_BY_FILTERING',
+        [40]='NO_CONNECT_BY_FILTERING',
+        [41]='CONNECT BY START WITH QUERY BLOCK',
+        [42]='CONNECT BY FULL SCAN QUERY BLOCK',
+        [43]='PLACE_GROUP_BY',
+        [44]='NO_CONNECT_BY_FILTERING COMBINE',
+        [45]='VIEW ON SELECT DISTINCT',
+        [46]='COALESCE_SQ',
+        [47]='QUERY HAS COALESCE_SQ',
+        [48]='TRANSFORM_DISTINCT_AGG',
+        [49]='CONNECT_BY_ELIM_DUPS',
+        [50]='CONNECT_BY_CB_WHR_ONLY',
+        [51]='EXPAND_TABLE',
+        [52]='TABLE EXPANSION BRANCH',
+        [53]='FACTORIZE_JOIN',
+        [54]='PLACE_DISTINCT',
+        [55]='JOIN FACTORIZATION BRANCH QUERY BLOCK',
+        [56]='TABLE_LOOKUP_BY_NL',
+        [57]='FULL_OUTER_JOIN_TO_OUTER',
+        [58]='OUTER_JOIN_TO_ANTI',
+        [59]='VIEW DECORRELATE',
+        [60]='QUERY DECORRELATE',
+        [61]='NOT EXISTS SQ ADDED',
+        [62]='BRANCH WITH OUTER JOIN',
+        [63]='BRANCH WITH ANTI JOIN',
+        [64]='UNION ALL FOR FULL OUTER JOIN',
+        [65]='VECTOR_TRANSFORM',
+        [66]='VECTOR TRANSFORMATION TEMP TABLE',
+        [67]='QUERY ANSI_REARCH',
+        [68]='VIEW ANSI_REARCH',
+        [69]='ELIM_GROUPBY',
+        [70]='UAL BRANCH OF UNNESTED SUBQUERY',
+        [71]='BUSHY_JOIN',
+        [72]='ELIMINATE_SQ',
+        [73]='OR EXPANSION UNION ALL BRANCH',
+        [74]='OR_EXPAND',
+        [75]='USE_DAGG_UNION_ALL_GSETS',
+        [76]='MATERIALIZED WITH CLAUSE',
+        [77]='STATISTCS BASED TRANSFORMED QB',
+        [78]='PQ TABLE EXPANSION',
+        [79]='LEFT OUTER JOIN TRANSFORMED TO BOTH INNER AND ANTI',
+        [80]='SHARD TEMP TABLE',
+        [81]='BRANCH OF COMPLEX UNNESTED SET QUERY BLOCK',
+        [82]='DAGG_OPTIM_GSETS'}
+    local function push(qb,parent,final)
+        local q=qbs[qb] or {childs={},parents={},objs={},qb=qb}
+        local pos=qb:find('@',1,true)
+        if parent then
+            if final=='y' then
+                table.insert(q.parents,1,parent)
+            else
+                q.parents[#q.parents+1]=parent
+            end
+            if pos and pos>1 then
+                parent.objs[q.qb]=q
+            else
+                parent.childs[#parent.childs+1]=q
+            end
+        end
+        qbs[qb]=q
+        return q
+    end
+
+    local alias='"%s"@"%s"'
+    for k,q in pair(reg.q) do
+        if type(q.n)=='string' then
+            local qb=push(qb_name(q.n))
+            local attr=q._attr or {}
+            if attr.o then
+                qb.o=origins[tonumber(attr.o)] or attr.o
+            end
+
+            if q.p then push(qb_name(q.p),qb,attr.f) end
+            for _,o in pair(q.i and q.i.o) do
+                local n=o.v:gsub('"','')
+                local pos=n:find('@',1,true)
+                local p
+                if pos and pos>1 then
+                    p=qb_name(n:sub(pos+1))
+                    p=qbs[p] or push(p,qb,attr.f)
+                    n='"'..n:gsub('@','"@"')..'"'
+                else
+                    n=qb_name(n)
+                end
+                local obj=push(n,qb,attr.f)
+                if p then p.objs[obj.qb]=obj end
+            end
+
+            for _,o in pair(q.f and q.f.h) do
+                local obj=push(alias:format(o.t,o.s),qb,attr.f)
+                local p=qb_name(o.s)
+                p=qbs[p] or push(p,qb,attr.f)
+                p.objs[obj.qb]=obj
+            end
+        end
+    end
+    return type(src)=='table' and unwrap.print_qb_registry(qbs,src) or qbs
+end
+
+function unwrap.print_qb_registry(qb_transforms,qbs)
+    local tops={}
+    for qb,v in pairs(qb_transforms) do
+        local o=qbs[qb]
+        if o then
+            if type(o)=='number' then
+                v.line=o
+            else
+                v.min,v.max=o.min,o.max
+            end
+        end
+        if #v.parents==0 and (#v.childs>0 or (v.o or '')~='') then
+            tops[#tops+1]={v,v.line or v.min or 0}
+        end
+    end
+    if #tops==0 then return {} end
+    table.sort(tops,function(a,b) return a[2]<b[2] end)
+    local rows={{"Hierachy (Final <- Init)","Objects"}}
+    local function to_list(list,func)
+        local items={}
+        for _,qb in (func or pairs)(list) do
+            items[#items+1]=qb.qb:gsub('"',""):ltrim('@')
+        end
+        return table.concat(items,'; ')
+    end
+    local function walk(qb,indent,siblings)
+        local comment=qb.o
+        rows[#rows+1]={indent..qb.qb:gsub('"',""):sub(2)..(comment~='' and (' ('..comment..')') or ''),to_list(qb.objs)}
+        local l=#qb.childs
+        for i,c in ipairs(qb.childs) do
+            walk(c,indent..(siblings and '|' or ' ')..' ',i<l)
+        end
+    end
+    for _,qb in ipairs(tops) do
+        walk(qb[1],'')
+    end
+    --print(table.dump(qb_transforms))
+    return rows
+end
+
 local function parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skp)
     if type(xml)~='table' then return end
     for k,v in pair(xml.info) do
@@ -337,18 +524,7 @@ local function parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skp)
         end
     end
 
-    if xml.qb_registry then
-        for k,q in pair(xml.qb_registry.q) do
-            if type(q.n)=='string' and type(q.p)=='string' then
-                qb_transforms[qb_name(q.p)]=qb_name(q.n)
-                for _,o in pair(q.i and q.i.o) do
-                    if o.v then
-                        qb_transforms[qb_name(o.v)]=qb_name(q.n)
-                    end
-                end
-            end
-        end
-    end
+    unwrap.parse_qb_registry(xml.qb_registry,qb_transforms)
 
     if xml.outline_data then
         for k,v in pair(xml.outline_data.hint) do
@@ -557,7 +733,8 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
         pr(grid.tostring(preds))
         env.var.define_column('id','clear')
     end
-
+    
+    local qb_hiers=unwrap.print_qb_registry(qb_transforms,qbs)
     if #outlines>0 then
         title('Optimizer Environments & Outlines')
         table.sort(outlines,function(a,b)
@@ -565,45 +742,37 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
                 if c[1]=='' and c[2]:find('"') then
                     local hint=(' '..c[2]..' '):gsub('([^'..object_pattern..'"@%.])','%1%1')
                     local list={}
+                    local objs=0
                     hint:gsub('([^%."@])(@?"['..object_pattern..'"@%.]+")([^%."@])',function(p,c,s)
                         local pos=c:find('@',1,true)
                         if not pos then return p..c..s end
-                        local n=c
-                        local qb=qbs[n]
-                        while not qb do
-                            n=qb_name(n)
-                            qb=qbs[n]
-                            if not qb then
-                                n=qb_transforms[n] 
-                                if not n then break end
-                                qb=qbs[n]
+                        local n=pos>1 and ('"'..c:gsub('"',''):gsub('@','"@"')..'"') or qb_name(c)
+                        local qb=qbs[n] 
+                        if not qb then
+                            qb=qb_transforms[n]
+                            if qb and qb.parents[1] and qb.parents[1].min then 
+                                qb=qb.parents[1]
                             end
                         end
+                        if pos>1 then objs=objs+1 end
                         if type(qb)=='table' then
-                            list[2]=qb
+                            if qb.line then
+                                if not list[1] then list[1]={} end
+                                list[1][#list[1]+1]=qb.line
+                            else
+                                list[2]=qb
+                            end
                         elseif qb then
                             if not list[1] then list[1]={} end
                             list[1][#list[1]+1]=qb
-                        elseif pos>1 then
-                            list.missing=(list.missing or 0)+1
-                            n,qb=c:sub(1,pos-1),c:sub(pos)
-                            while qb_transforms[qb] do
-                                qb=qb_transforms[qb]
-                                local n1=qbs[n..qb]
-                                if n1 then
-                                    if not list[1] then list[1]={} end
-                                    list[1][#list[1]+1]=n1
-                                    list.missing=list.missing-1
-                                    break
-                                end
-                            end
-                            if list.missing==0 then list.missing=nil end
+                        else
+                            list.missing=true
                         end
                         return p..c..s
                     end)
-                    if list[1] and #list[1]==1 and not (list.missing or list[2])  then 
+                    if list[1] and objs==1 then 
                         c[1]=xid:format(list[1][1])
-                    elseif list[2] then
+                    elseif list[2] and list[2].min then
                         if not list[1] or list[2].min==list[2].max then
                             c[1]=xid:format(list[2].min)
                         else
@@ -631,8 +800,14 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
                 return a[2]<b[2]
             end
         end)
+
         table.insert(outlines,1,{'Scope','Content'})
         pr(grid.tostring(outlines))
+    end
+
+    if #qb_hiers>0 then
+        title('Query Block Hierachies')
+        pr(grid.tostring(qb_hiers))
     end
 end
 
@@ -1795,7 +1970,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local id=tonumber(attr.line) or 0
             local info=infos[id]
             if not ids[id] then ids[id]={-1,nil,events={}} end
-            if attr.plsql_id and attr.plsql_name and attr.plsql_name~='Unavailable' then plsqls[attr.plsql_id]=attr.plsql_name end
+            if attr.plsql_name and attr.plsql_name~='Unavailable' then
+                attr.plsql_name=attr.plsql_name:gsub('^.-%.','')
+            else
+                attr.plsql_name=nil
+            end
+            if attr.plsql_id and attr.plsql_name then plsqls[attr.plsql_id]=attr.plsql_name end
             if attr.step then
                 attr.step=attr.step:gsub('PX Server%(s%) %- ','[PX] ')
                 attr.step=attr.step:gsub('QC %- ','[QC] ')
@@ -1805,7 +1985,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 attr.class or attr.other_sql_class, --wait class
                 attr.event or --event
                     attr.sql and ('SQL: '..attr.sql) or 
-                    attr.none_sql and ('SQL: '..attr.none_sql) or 
+                    attr.none_sql and ('SQL: '..attr.none_sql) or
+                    attr.plsql_name and ('PLSQL: '..attr.plsql_name) or 
                     attr.plsql_id and ('PLSQL: '..(plsqls[attr.plsql_id] or attr.plsql_id)) or 
                     attr.top_sql_id and ('Top-SQL: ' .. attr.top_sql_id) or
                     attr.step or nil,
@@ -2735,6 +2916,10 @@ function unwrap.analyze_sqldetail(text,file,seq)
                     end
                     if v1 and n:find('_time',1,true) then
                         env.var.define_column(n,'for','usmhd2')
+                    elseif v1 and n:find('_byte',1,true) then
+                        env.var.define_column(n,'for','kmg2')
+                    elseif v1 and n:find('_reqs',1,true) then
+                        env.var.define_column(n,'for','tmb2')
                     end
                     row[idx]=v1 or v
                 end
@@ -2802,7 +2987,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
     detail_plan_activity()
 
     local function detail_plan_lines()
-        local header={'*','Id','Ord','|','AAS','Pct','|','Top Event','AAS%','|','Operation','|','Object','|','Distrib','|','Pred','|','Est|Card','Est|Cost','IO|Cost','Avg|Bytes','|','Query|Block','|','Alias|Name'}
+        local header={'Id','Ord','|','AAS','Pct','|','Top Event','AAS%','|','Operation','|','Object','|','Distrib','|','Pred','|','Est|Card','Est|Cost','IO|Cost','Avg|Bytes','|','Query|Block','|','Alias|Name'}
         local cols={}
         for c,v in ipairs(header) do
             if v:find('^%u') then
@@ -2836,7 +3021,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             end
 
             table.sort(plan_lines,function(a,b) return tonumber(a._attr.id)<tonumber(b._attr.id) end)
-
+            local id_fmt='%1s%'..#tostring(#plan_lines)..'s'
             for _,op in ipairs(plan_lines) do
                 local attr=op._attr
                 local id=tonumber(attr.id)
@@ -2860,7 +3045,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 tier[depth],hier_idx=node,depth
 
                 local object= op.object or (alias and ('$REV$'..alias:gsub('@.*',''):gsub('"','')..'$NOR$')) or op.node or ''
-                row[cols.id]=id
+                row[cols.id]=id_fmt:format(' ',id)
                 row[cols.operation]=(attr.name or '')..' '..(attr.options or '')
                 row[cols.object]=(object:sub(1,1)==':' and '' or ' ')..object
                 row[cols.est_card]=op.card
@@ -2871,7 +3056,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 row[cols.alias_name]=alias
                 process_qb(qbs,qb,alias,id,depth)
                 if op.predicates then
-                    row[1]='*'
+                    row[cols.id]=id_fmt:format('*',id)
                     for k,v in pair(op.predicates) do
                         process_pred(preds,id,v._attr.type,v[1],op,op.object_alias)
                     end
@@ -2954,7 +3139,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             for i=2,#rows do
                 c=rows[i][ord]
                 n=rows[i+1] and rows[i+1][ord]
-                local id=rows[i][cols.id]
+                local id=tonumber(rows[i][cols.id]:match('%d+'))
                 if p and n and n==c-1 and #cids[id]>0 then
                     if p==c+1 then
                         c='^'

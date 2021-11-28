@@ -6,7 +6,7 @@ Options:
     -sqlset : Use dba_sqlset_plans as the data source instead of dba_hist_sql_plan
     -g      : Only query gv$active_session_history (defaults to query both views)
     -all    : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
-    -hist   : default to query awr_pdb_* views in PDB, when specified this option then use dba_hist_* views instead
+    -pdb    : default to query dba_hist_* views in PDB, when specified this option then use awr_pdb_* views instead
     Format  : defaults not to display the outlines
         *             s : -outline -rows -parallel
         * fmt"<format>" : user-defined formats
@@ -105,8 +105,7 @@ Sample Ouput:
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @cdb2: 12.1={con_dbid} default={1e9}
-    &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
-    @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
+    &check_access_pdb: hist={dba_hist_} pdb={AWR_PDB_} 
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     @check_access_aux: default={(26/8/12)-6}
     &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
@@ -287,7 +286,7 @@ ash_raw as (
                    row_number() OVER(PARTITION BY dbid,stime,inst_id,sid ORDER BY AAS_,lv desc) seq,
                    --sec_seq: multiple PX processes at the same second wille be treated as on second 
                    row_number() OVER(PARTITION BY dbid,phv1,sql_plan_line_id,operation,stime,qc_inst,qc_sid ORDER BY AAS_,lv desc,tm_delta_db_time desc) sec_seq,
-                   nvl(decode(pred_flag,2,0,case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end),0) pid,
+                   nvl(case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end,0) pid,
                    nvl(''||sql_exec_id_,'@'||qc_inst||','||qc_sid||','||qc_session_serial#)||','||to_char(sql_exec_start_,'yyyymmddhh24miss') sql_exec,
                    case when (qc_sid!=sid or qc_inst!=inst_id) then 1 else 0 end is_px_slave,
                    CASE WHEN 'Y' IN(decode(pred_flag,2,'Y','N'),IS_NOT_CURRENT,IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION) THEN 1 END IN_PLSQL       
@@ -459,7 +458,7 @@ hierarchy_data AS
   CONNECT BY PRIOR id = pid AND phv=PRIOR phv 
   ORDER  SIBLINGS BY pos desc,id DESC),
 ordered_hierarchy_data AS
- (SELECT a.*,
+ (SELECT /*+materialize*/ a.*,
          CASE 
              WHEN nvl(ap,ac) IS NOT NULL THEN 'A'
          END||CASE 

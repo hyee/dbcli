@@ -14,8 +14,8 @@
         }
 
         @check_access_ck: {
-            information_schema.check_constraints={information_schema.check_constraints}
-            default={(SELECT '' constraint_schema,'' constraint_name,'' check_clause,'' table_name)}
+            information_schema.check_constraints={(select constraint_schema,constraint_name,check_clause from information_schema.check_constraints)}
+            default={(SELECT '' constraint_schema,'' constraint_name,'' check_clause)}
         }
 
         &src1: default={index_} t={table_}
@@ -57,7 +57,7 @@ ORDER  BY lower(table_name),lower(index_name),seq_in_index
         IFNULL(rf.delete_rule,'') 'On Delete',
         IFNULL(rf.match_option,'') match_option
 FROM   information_schema.table_constraints tc
-LEFT  OUTER JOIN &check_access_ck ck USING (constraint_schema,constraint_name,table_name)
+LEFT  OUTER JOIN &check_access_ck ck USING (constraint_schema,constraint_name)
 LEFT  OUTER JOIN information_schema.referential_constraints rf USING (constraint_schema,constraint_name,table_name)
 LEFT  OUTER JOIN (
     SELECT  constraint_schema,

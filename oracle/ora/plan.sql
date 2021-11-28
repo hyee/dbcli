@@ -31,7 +31,7 @@ Options:
              default={(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets}
              }
     @check_access_ab : dba_hist_sqlbind={1} default={0}
-    @check_access_pdb: pdb={AWR_PDB_} default={DBA_HIST_}
+    &check_access_pdb: default={DBA_HIST_} pdb={AWR_PDB_} 
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @check_access_awr: {
            dba_hist_sql_plan={UNION ALL
@@ -331,7 +331,7 @@ hierarchy_data AS
   CONNECT BY PRIOR id = parent_id
   ORDER  SIBLINGS BY position desc,id DESC),
 ordered_hierarchy_data AS
-(SELECT A.*,
+(SELECT /*+materialize*/ A.*,
         CASE 
             WHEN nvl(ap,sc) IS NOT NULL THEN 'A'
         END||CASE 

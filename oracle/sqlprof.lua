@@ -113,7 +113,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL 
                                 AND    (p_sql_id='_x_' AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from PLAN_TABLE)
                                         OR UPPER(statement_id) = UPPER(p_plan)) 
-                                AND    v_plan!='-1'
+                                AND    v_plan='-1'
                                 UNION ALL
                                 SELECT other_xml, 'awr' src, sql_id, plan_hash_value
                                 FROM   dba_hist_sql_plan a
