@@ -1,7 +1,7 @@
 /*[[
     Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-f"<filter>"] [-dx]
     -dx : Use no parallel direct path read
-    rows: Maximum number of rows to scan, default as 3 millions.
+    rows: Maximum number of rows to scan, default as 3 millions, use '-all' to unlimite the scan rows.
 
     [|             grid:{topic='Compression Type'}              |
      | Type       | Insert Time(1 vs DoP 4) | Compression Ratio | CU Size | Max Data Size | Max Rows |
@@ -24,11 +24,12 @@
     --[[
         @ver   : 12.1={}
         @check_access_comp: sys.dbms_compression={}
-        @check_access_obj: dba_objects={dba_objects} default={all_objects}
+        @check_access_obj: dba_objects/dba_tables={dba_} default={all_}
+        @check_access_seg: dba_segments={1} default={0}
         &filter: default={@ROWS@} f={where &0}
         &dx    : default={--} dx={}
-        &v2    : default={3e6}
-        &px    : default={parallel(a 8)} dx={no_parallel}
+        &v2    : default={3e6} all={A}
+        &px    : default={parallel(4)} dx={no_parallel}
 
     --]]
 ]]*/
@@ -47,6 +48,9 @@ DECLARE
     v_did  INT;
     v_own  VARCHAR2(128) := :object_owner;
     v_nam  VARCHAR2(128) := :object_name;
+    v_typ  VARCHAR2(40)  := :object_type;
+    v_snam VARCHAR2(40)  := :object_subname;
+    v_tops VARCHAR2(40)  := :v2;
     v_sub  VARCHAR2(128);
     v_rows INT := 0;
     v_pid  INT := 0;
@@ -58,6 +62,11 @@ DECLARE
     v_dx   VARCHAR2(128);
     v_sm   INT;
     v_dobj INT;
+    v_part VARCHAR2(512);
+    v_len  INT;
+    v_blocks INT;
+    v_bsize  INT;
+    v_sample VARCHAR2(512);
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
         v_oid := regexp_substr(c, '[^,]+', 1, 1);
@@ -82,8 +91,8 @@ DECLARE
         dbms_lob.writeappend(v_xml, length(v_row), v_row);
     END;
 BEGIN
-    IF regexp_substr(:object_type,'\S+') NOT IN('TABLE','CAL_MONTH_SALES_MV') THEN
-        raise_application_error(-20001,'Invalid object type: '||:object_type);
+    IF regexp_substr(v_typ,'\S+') NOT IN('TABLE','MATERIALIZED') THEN
+        raise_application_error(-20001,'Invalid object type: '||v_typ);
     END IF;
 
     v_stmt := q'[
@@ -106,7 +115,7 @@ BEGIN
             END LOOP;
             RETURN v_id;
         END;
-        OBJS AS(SELECT * FROM &check_access_obj WHERE owner = '&object_owner' AND object_name = '&object_name')
+        OBJS AS(SELECT * FROM &check_access_obj.objects WHERE owner = '&object_owner' AND object_name = '&object_name')
         SELECT /*+leading(b a) use_hash(b a) no_merge(a) no_merge(b)*/ 
                a.rid,
                b.object_id||','||
@@ -126,19 +135,57 @@ BEGIN
         AND    b.data_object_id = a.dobj
         ORDER BY 1]';
     IF :object_subname IS NOT NULL THEN
-        v_stmt := REPLACE(v_stmt, '@PART@', regexp_substr(:object_type, '\S+$') || '(' || :object_subname || ')');
-    ELSE
-        v_stmt := REPLACE(v_stmt, '@PART@');
+        v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
     END IF;
 
-    IF :V2 IS NOT NULL THEN
-        v_stmt := REPLACE(v_stmt, '@ROWS@','WHERE ROWNUM<='||:v2);
-    ELSE
-        v_stmt := REPLACE(v_stmt, '@ROWS@');
+    IF q'~&filter~'='@ROWS@' and trim(v_tops) !='A' THEN
+        SELECT MAX(avg_row_len)*1.1,max(blocks)
+        INTO   v_len,v_blocks
+        FROM   (SELECT avg_row_len,num_rows,blocks
+                FROM   &check_access_obj.tables
+                WHERE  v_typ IN ('TABLE','MATERIALIZED')
+                AND    owner = v_own
+                AND    table_name = v_nam
+                UNION ALL
+                SELECT avg_row_len,num_rows,blocks
+                FROM   &check_access_obj.tab_partitions
+                WHERE  v_typ = 'TABLE PARTITION'
+                AND    table_owner = v_own
+                AND    table_name = v_nam
+                AND    partition_name = v_snam
+                UNION ALL
+                SELECT avg_row_len,num_rows,blocks
+                FROM   &check_access_obj.tab_subpartitions
+                WHERE  v_typ = 'TABLE SUBPARTITION'
+                AND    table_owner = v_own
+                AND    table_name = v_nam
+                AND    subpartition_name = v_snam);
+
+        $IF &check_access_seg=1 $THEN
+            SELECT SUM(blocks),sum(bytes)/sum(blocks)
+            INTO   v_blocks,v_bsize
+            FROM   dba_segments b
+            WHERE  owner = v_own
+            AND    segment_name = v_nam
+            AND    nvl(partition_name, '_') = COALESCE(v_snam, partition_name, '_');
+        $ELSE
+            SELECT value INTO v_bsize FROM v$parameter WHERE name='db_block_size';
+        $END
+
+        v_sample := round(v_tops/(v_bsize/nvl(v_len,256))*100/v_blocks,4);
+        IF v_sample+0 >=80 THEN 
+            v_sample := NULL;
+        ELSE
+            v_sample := 'SAMPLE BLOCK ('||greatest(1e-4,v_sample)||')';
+        END IF;
     END IF;
+    v_stmt := REPLACE(v_stmt, '@ROWS@');
+    v_stmt := REPLACE(v_stmt, '@PART@',v_part||v_sample);
 
     v_cnt := sys.dbms_utility.get_parameter_value('_small_table_threshold',v_sm,v_dx);
     v_cnt := sys.dbms_utility.get_parameter_value('_serial_direct_read',v_cnt2,v_dx);
+    --dbms_output.put_line(v_stmt);
+    --return;
     &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"=1  "_serial_direct_read"=always';
     BEGIN
         v_cnt  := 0;

@@ -141,13 +141,14 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             BEGIN
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
                     l_sql := '/*dbcli_ignore*/SELECT SQL_ID,'
-                          || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END 
-                          || q'!,null FROM sys.V_$OPEN_CURSOR 
+                              || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END 
+                              || q'!,null 
+                             FROM sys.V_$OPEN_CURSOR 
                              WHERE sid=:sid 
                              AND   last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second')
-                             AND   cursor_type like 'OPEN%' 
+                             AND   cursor_type like '%OPEN%' 
                              AND   instr(sql_text,'dbcli_ignore')=0
-                             AND   lower(REGEXP_SUBSTR(SQL_TEXT,'\w+')) NOT IN('call','declare','begin','alter')!' ;
+                             AND   lower(REGEXP_SUBSTR(SQL_TEXT,'\w+')) IN('create','with','select','update','merge','delete')!' ;
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;
                         FOR i in 1..l_recs.count LOOP

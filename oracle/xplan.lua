@@ -111,7 +111,7 @@ function xplan.explain(fmt,sql)
                 if not err then
                     local msg="Explain SQL Id: "..sqldiag..'    Source SQL Id: '..sql_id
                     print(msg..'\n'..string.rep('=',#msg))
-                    db:query([[/*INTERNAL_DBCLI_CMD*/
+                    db:query([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                         SELECT /*+ordered use_hash(a b)*/DISTINCT
                                a.child#,
                                min(a.repo#) over(partition by a.type,a.state,a.feature,a.reason) repo#,
