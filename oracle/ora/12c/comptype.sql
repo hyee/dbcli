@@ -1,7 +1,7 @@
 /*[[
-    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-f"<filter>"] [-dx]
+    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-all] [-f"<filter>"] [-dx]
     -dx : Use no parallel direct path read
-    rows: Maximum number of rows to scan, default as 3 millions, use '-all' to unlimite the scan rows.
+    rows: Maximum number of rows to scan, default as 2 millions, use '-all' to unlimite the scan rows.
 
     [|             grid:{topic='Compression Type'}              |
      | Type       | Insert Time(1 vs DoP 4) | Compression Ratio | CU Size | Max Data Size | Max Rows |
@@ -26,9 +26,9 @@
         @check_access_comp: sys.dbms_compression={}
         @check_access_obj: dba_objects/dba_tables={dba_} default={all_}
         @check_access_seg: dba_segments={1} default={0}
-        &filter: default={@ROWS@} f={where &0}
+        &filter: default={@ROWS@} f={where (&0) @ROWS@}
         &dx    : default={--} dx={}
-        &v2    : default={3e6} all={A}
+        &v2    : default={2e6} all={A}
         &px    : default={parallel(4)} dx={no_parallel}
 
     --]]
@@ -138,8 +138,12 @@ BEGIN
         v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
     END IF;
 
-    IF q'~&filter~'='@ROWS@' and trim(v_tops) !='A' THEN
-        SELECT MAX(avg_row_len)*1.1,max(blocks)
+    IF q'~&filter~'!='@ROWS@' THEN
+        IF trim(v_tops) !='A' THEN
+            v_stmt := REPLACE(v_stmt, '@ROWS@','AND ROWNUM<='||v_tops);
+        END IF;
+    ELSIF trim(v_tops) !='A' THEN
+        SELECT MAX(avg_row_len)*1.2,NULLIF(max(blocks),0)
         INTO   v_len,v_blocks
         FROM   (SELECT avg_row_len,num_rows,blocks
                 FROM   &check_access_obj.tables
@@ -175,8 +179,10 @@ BEGIN
         v_sample := round(v_tops/(v_bsize/nvl(v_len,256))*100/v_blocks,4);
         IF v_sample+0 >=80 THEN 
             v_sample := NULL;
+        ELSIF v_sample IS NULL THEN
+            v_stmt := REPLACE(v_stmt, '@ROWS@','WHERE ROWNUM<='||v_tops);
         ELSE
-            v_sample := 'SAMPLE BLOCK ('||greatest(1e-4,v_sample)||')';
+            v_sample := 'SAMPLE BLOCK ('||greatest(1e-3,v_sample)||')';
         END IF;
     END IF;
     v_stmt := REPLACE(v_stmt, '@ROWS@');

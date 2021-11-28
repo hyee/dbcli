@@ -53,7 +53,8 @@ col HWM_SPACE format KMG
 col FREE_SPACE format KMG
 col TOTAL_FREE,MBPS format KMG
 col latency for usmhd0
-col  fid noprint
+col fid noprint
+col "USED(%)" for pct2
 
 SELECT &pname,
        TABLESPACE_NAME,
@@ -64,7 +65,7 @@ SELECT &pname,
        SPACE - NVL(FREE_SPACE, 0) "USED_SPACE",
        FREE_SPACE "FREE_SPACE",
        siz+FREE_SPACE-space "TOTAL_FREE",
-       ROUND(100*(SPACE - NVL(FREE_SPACE, 0))/nullif(siz, 0),2) "USED(%)",
+       ROUND((SPACE - NVL(FREE_SPACE, 0))/nullif(siz, 0),4) "USED(%)",
        IOPS,MBPS,latency,
        FSFI "FSFI(%)",
        g location,
@@ -104,7 +105,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                        MAX(TRIM(',' FROM REGEXP_REPLACE(
                           DECODE(STATUS,'AVAILABLE','',STATUS||',')||
                           DECODE(ONLINE_STATUS,'ONLINE','',ONLINE_STATUS||',')||
-                          'NEXT '||DECODE(AUTOEXTENSIBLE,'YES',TRIM(DBMS_XPLAN.FORMAT_SIZE2(INCREMENT_BY)),'0')||
+                          'NEXT('||DECODE(AUTOEXTENSIBLE,'YES',TRIM(DBMS_XPLAN.FORMAT_SIZE2(INCREMENT_BY*b.BYTES/b.BLOCKS)),'0')||')'||
                           '',',+',','))) attrs
                 FROM   &CON.FREE_SPACE a 
                 LEFT JOIN (select /*+no_merge*/ 
@@ -133,7 +134,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                        'Temporary',NULL,NULL,NULL,
                        MAX(TRIM(',' FROM REGEXP_REPLACE(
                           DECODE(STATUS,'AVAILABLE','',STATUS||',')||
-                          'NEXT '||DECODE(AUTOEXTENSIBLE,'YES',TRIM(DBMS_XPLAN.FORMAT_SIZE2(INCREMENT_BY)),'0')||
+                          'NEXT('||DECODE(AUTOEXTENSIBLE,'YES',TRIM(DBMS_XPLAN.FORMAT_SIZE2(INCREMENT_BY*f.BYTES/f.BLOCKS)),'0')||')'||
                           '',',+',','))) attrs
                 FROM   (select distinct * from v$TEMP_SPACE_HEADER) h
                 LEFT   JOIN (select distinct * from v$Temp_extent_pool) p 
@@ -146,10 +147,11 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                 SELECT TABLESPACE_NAME,
                      TRIM(',' FROM REGEXP_REPLACE(
                          (SELECT '#'||TS#||',' FROM v$tablespace WHERE name=tablespace_name)||
+                         'BLOCK('||TRIM(DBMS_XPLAN.FORMAT_SIZE2(BLOCK_SIZE))||'),'||
                          DECODE(STATUS,'ONLINE','',STATUS||',')||
-                         DECODE(CONTENTS,'UNDO','UNDO,')||
+                         DECODE(CONTENTS,'UNDO','UNDO'||(decode(RETENTION,'NOT APPLY','','('||RETENTION||')'))||',')||
                          DECODE(LOGGING,'NOLOGGING','NOLOGGING,')||
-                         DECODE(ALLOCATION_TYPE,'UNIFORM','UNIFORM-'||TRIM(DBMS_XPLAN.FORMAT_SIZE2(NEXT_EXTENT))||',')||
+                         DECODE(ALLOCATION_TYPE,'UNIFORM','UNIFORM('||TRIM(DBMS_XPLAN.FORMAT_SIZE2(NEXT_EXTENT))||'),')||
                          DECODE(SEGMENT_SPACE_MANAGEMENT,'MANUAL','LMT,')||
                          &attr11 DECODE(BIGFILE,'YES','BIGFILE,')||
                          &attr11 DECODE(ENCRYPTED,'YES','TDE,')||
@@ -159,7 +161,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
                          &attr12 DECODE(CHUNK_TABLESPACE,'Y','CHUNK,')||
                          &attr12 DECODE(SHARED,'SHARED','',SHARED||',')||
                          &attr12 NVL2(INDEX_COMPRESS_FOR,'INDEX-'||INDEX_COMPRESS_FOR||',','')||
-                         &attr12 NVL2(DEF_INMEMORY_COMPRESSION,'DBIM-'||DEF_INMEMORY_COMPRESSION||'-PRIOR '||DEF_INMEMORY_PRIORITY||'-DISTRIB '||DEF_INMEMORY_DUPLICATE,'')||
+                         &attr12 NVL2(DEF_INMEMORY_COMPRESSION,'DBIM-'||DEF_INMEMORY_COMPRESSION||'-PRIOR('||DEF_INMEMORY_PRIORITY||')-DISTRIB('||DEF_INMEMORY_DUPLICATE||')','')||
                          '',',+',',')) AS ATTRS
               FROM &CON.tablespaces) T USING(TABLESPACE_NAME)
         GROUP BY  &cname,IS_TEMP,ROLLUP(TABLESPACE_NAME,FILE_ID)
