@@ -200,7 +200,7 @@ function cfg.set(name,value,backup,isdefault)
                     match,value=1,k
                 end
             end
-            if match==0 then
+            if match==0 and not range:find('*',1,true) then
                 return print("Invalid value '"..v.."' for '"..name.."', it should be one of the following values: "..range)
             end
         end

@@ -26,7 +26,7 @@
     --[[
         &sql_id : default={} s={and sql_id='&0'}
         &sep    : default={' | '} s={chr(10)||' '}
-    &inst1  : default={:instance} i={0+'&0'}
+        &inst1  : default={:instance} i={0+'&0'}
     --]]
 
 ]]*/
@@ -47,7 +47,7 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                        SUM(val) val,
                        MAX(length(c)) over() l
                 FROM   TABLE(gv$(CURSOR(
-                           SELECT /*+ordered DYNAMIC_SAMPLING(4)*/ 
+                           SELECT /*+ordered*/ 
                                   sql_id,
                                   USERENV('instance')*1e6+COUNT(1) childs,
                                   USERENV('instance')*1e6+SUM(loaded_versions) vers,

@@ -1,3 +1,4 @@
+2021-11-29: + oracle: new script 'pdb metrics' 
 2021-11-28: + oracle: new script 'exa nsmtio' 
 2021-08-05: + oracle: new script 'ora awrextr/awrload' 
 2021-07-21: + mysql : new script 'ti usages' 

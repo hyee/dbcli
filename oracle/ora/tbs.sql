@@ -88,7 +88,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
         FROM(
             SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
             FROM (
-                SELECT /*+no_merge no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) opt_param('_optimizer_sortmerge_join_enabled','false')*/
+                SELECT /*+no_merge DYNAMIC_SAMPLING(7) no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) opt_param('_optimizer_sortmerge_join_enabled','false')*/
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
                        max(b.bytes/b.blocks) blocksiz, 
