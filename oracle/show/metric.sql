@@ -42,9 +42,9 @@
 ]]*/
 set sep4k on
 COL WAITED,AVG_WAIT,CPU|TIME,CPU|QUEUE,DBTIM,ELA/CALL,CPU/CALL,DBTIME/CALL,read,write for usmhd2
-col dbtime,SMALLS,READS,LARGES,WRITES,PCT,%,FG,CPU|UT,CPU|LIMIT for pct2
-COL MBPS FOR KMG
-COL CALLS,IOPS,WAITS,GOODNESS FOR TMB
+col dbtime,SMALLS,READS,LARGES,WRITES,PCT,%,MBPS|PCT,FG,CPU|UTL,CPU|LIMIT for pct2
+COL MBPS,MBPS|PCT,CPU|PCT FOR KMG
+COL CALLS,IOPS,IOPS|PCT,WAITS,GOODNESS FOR TMB
 
 grid {
     [[ grid={topic="GV$RSRCMGRMETRIC&opt (Per Second)"}
@@ -52,18 +52,18 @@ grid {
                 CONSUMER_GROUP_NAME,
                 round(SUM(NUM_CPUS/c)) "CPU|ALLOC",
                 round(SUM(CPU_CONSUMED_TIME /c/ secs * 1e3)) "CPU|TIME",
-                RATIO_TO_REPORT(sum(CPU_CONSUMED_TIME)) OVER() "%",
+                RATIO_TO_REPORT(sum(CPU_CONSUMED_TIME)) OVER() "CPU|PCT",
                 round(SUM(CPU_WAIT_TIME /c/ secs * 1e3)) "CPU|QUEUE",
-                round(SUM(AVG_CPU_UTILIZATION * CPU_CONSUMED_TIME) / NULLIF(SUM(CPU_CONSUMED_TIME), 0) / 100, 4) "CPU|UT",
+                round(SUM(AVG_CPU_UTILIZATION * CPU_CONSUMED_TIME) / NULLIF(SUM(CPU_CONSUMED_TIME), 0) / 100, 4) "CPU|UTL",
                 round(AVG(CPU_UTILIZATION_LIMIT) / 100, 4) "CPU|LIMIT",
                 '|' "|",
-                round(SUM(AVG_RUNNING_SESSIONS/c), 2) "SESSIONS|ACTIVE",
-                round(SUM(AVG_WAITING_SESSIONS/c), 2) "SESSIONS|QUEUED",
-                round(SUM(RUNNING_SESSIONS_LIMIT/c)) "SESSIONS|LIMIT",
+                round(SUM(AVG_RUNNING_SESSIONS/c), 2) "SESSION|ACTIVES",
+                round(SUM(AVG_WAITING_SESSIONS/c), 2) "SESSION|QUEUE",
+                round(SUM(RUNNING_SESSIONS_LIMIT/c)) "SESSION|LIMIT",
                 '|' "|",
-                round(SUM(IO_MEGABYTES/c/ secs * 1024 * 1024), 2) MBPS,
-                round(SUM(IO_REQUESTS /c/ secs), 2) IOPS,
-                RATIO_TO_REPORT(sum(IO_MEGABYTES)) OVER() "%"
+                round(SUM(IO_MEGABYTES/c/ secs * 1024 * 1024), 2) "MBPS|TOTAL",
+                round(SUM(IO_REQUESTS /c/ secs), 2) "IOPS|TOTAL",
+                RATIO_TO_REPORT(sum(IO_MEGABYTES)) OVER() "MBPS|PCT"
         &ver    ,'|' "|",
         &ver    round(SUM(AVG_ACTIVE_PARALLEL_STMTS/c), 2) "PX_STMT|ACTIVE",
         &ver    round(SUM(AVG_QUEUED_PARALLEL_STMTS/c), 2) "PX_STMT|QUEUED",
@@ -73,7 +73,7 @@ grid {
         FROM   (SELECT a.*, INTSIZE_CSEC / 100 secs,count(distinct begin_time) over(partition by inst_id) c FROM gv$rsrcmgrmetric&opt a)
         GROUP  BY CONSUMER_GROUP_NAME
         HAVING GREATEST(SUM(CPU_CONSUMED_TIME),SUM(IO_REQUESTS))>0
-        ORDER  BY "CPU|TIME" desc,IOPS desc
+        ORDER  BY "CPU|TIME" desc,"IOPS|TOTAL" desc
     ]],
     '-', 
     {   
