@@ -70,7 +70,7 @@ SELECT &pname,
        FSFI "FSFI(%)",
        g location,
        attrs
-FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_pushdown','false')*/
+FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_pushdown','false') use_hash(F T)*/
               &cname,
               decode(grouping_id(TABLESPACE_NAME,file_id),0,null,3,'TOTAL('||IS_TEMP||')',nvl2(:V1,'','  ')||TABLESPACE_NAME) TABLESPACE_NAME,
               decode(grouping_id(file_id),0,'#'||file_id,''||count(1)) files,
@@ -88,7 +88,7 @@ FROM  (SELECT /*+NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_p
         FROM(
             SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
             FROM (
-                SELECT /*+no_merge DYNAMIC_SAMPLING(7) no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) opt_param('_optimizer_sortmerge_join_enabled','false')*/
+                SELECT /*+no_merge DYNAMIC_SAMPLING(11) no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) opt_param('_optimizer_sortmerge_join_enabled','false')*/
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
                        max(b.bytes/b.blocks) blocksiz, 

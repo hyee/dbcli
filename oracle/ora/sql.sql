@@ -288,7 +288,7 @@ grid {
         ORDER  BY aas DESC)
   WHERE ROWNUM <= 10]],
 '|',[[/*grid={topic='SQL Workarea'}*/
-SELECT phv,
+SELECT /*+use_hash(a b)*/ phv,
        OPERATION_TYPE,
        POLICY,
        Count(1) CNT,
@@ -305,12 +305,9 @@ SELECT phv,
        '|' "|",
        NULLIF(MAX(MAX_TEMPSEG_SIZE),0) TEMP,
        NULLIF(MAX(LAST_TEMPSEG_SIZE),0) LAST_TEMP
-FROM   TABLE(GV$(CURSOR ( --
-                  SELECT /*+use_nl(a b)*/a.*, b.plan_hash_value phv
-                  FROM   v$sql_workarea a
-                  JOIN   v$sql b
-                  ON     (a.sql_id = b.sql_id AND a.child_number = b.child_number)
-                  WHERE  a.sql_id = :V1)))
+FROM   (select * from gv$sql_workarea where sql_id=:V1) a
+JOIN   (select inst_id,sql_id,child_number,plan_hash_value phv from gv$sql where sql_id=:V1) b
+USING  (inst_id,sql_id,child_number)
 GROUP  BY phv,OPERATION_TYPE, POLICY,LAST_EXECUTION
 ORDER  BY MEM + TEMP DESC NULLS LAST]]}
 

@@ -102,6 +102,7 @@ public final class Console {
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
+        setKeyCode(LineReader.DELETE_CHAR,"^?");
         for (String s : new String[]{"^_", "^[^H"}) setKeyCode(LineReader.BACKWARD_KILL_WORD, s);
         //deal with keys ctrl+arrow and alt+Arrow
         for (String s : new String[]{"^[[", "[1;2", "[1;3", "[1;5"}) {

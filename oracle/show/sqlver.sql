@@ -201,11 +201,6 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
 WHERE  ROWNUM <= 50;
 
 DECLARE
-    reason VARCHAR2(32767);
-    TYPE t IS TABLE OF VARCHAR2(32767) INDEX BY PLS_INTEGER;
-    t1   t;
-    t2   t;
-    prev PLS_INTEGER := -1;
     XML  XMLTYPE;
 BEGIN
     IF :sql_id IS NULL THEN
@@ -214,14 +209,15 @@ BEGIN
     dbms_output.enable(NULL);
     FOR r IN (SELECT *
               FROM   (SELECT /*+use_hash(a b)*/
-                       child_number c,
-                       plan_hash_value phv,
-                       REGEXP_REPLACE(reason, '<(ChildNumber|size)>.*?</\1>') reason,
-                       row_number() over(PARTITION BY ora_hash(reason, 2147483646, 1) ORDER BY child_number) seq
+                              child_number c,
+                              plan_hash_value phv,
+                              REGEXP_REPLACE(reason, '<(ChildNumber|size)>.*?</\1>') reason,
+                              row_number() over(PARTITION BY ora_hash(reason, 2147483646, 1) ORDER BY child_number) seq
                       FROM   (SELECT * FROM gv$sql_shared_cursor &sql_id)
                       JOIN   (SELECT * FROM gv$sql &sql_id)
                       USING  (inst_id, sql_id, child_number)
-                      WHERE  INSTR(reason, 'ChildNode') > 0)
+                      WHERE  INSTR(reason, 'ChildNode') > 0
+                      AND    inst_id=nvl(&inst1,inst_id)
               WHERE  seq = 1) LOOP
         XML := xmltype('<R>' || SUBSTR(r.reason, 1, INSTR(r.reason, '</ChildNode>', -1) + LENGTH('</ChildNode>') - 1) || '</R>');
         dbms_output.put_line('--------------------------------------------------------------------');

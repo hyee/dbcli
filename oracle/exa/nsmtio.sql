@@ -28,6 +28,9 @@ DECLARE
     block_size INT;
     caches     INT;
     chains     INT;
+    partition  VARCHAR2(3);
+    deps       VARCHAR2(10):='DISABLED';
+    keep       VARCHAR2(20);
     tbs        VARCHAR2(128);
     tmp        VARCHAR2(4000);
     ran        INT := round(dbms_random.value * 1e8);
@@ -89,24 +92,27 @@ BEGIN
         );
 
         IF :object_type like 'TABLE%' THEN
-            SELECT NVL(MAX(CHAIN_CNT),0)
-            INTO   chains
+            SELECT NVL(MAX(CHAIN_CNT),0),
+                   NVL(MAX(DEPENDENCIES),'DISABLED'),
+                   NVL(MAX(CASE WHEN cache='Y' or BUFFER_POOL='KEEP' THEN 'KEEP' END),'DEFAULT'),
+                   MAX(PARTITIONED)
+            INTO   chains,deps,keep,partition
             FROM   DBA_TABLES
             WHERE  owner = :object_owner
             AND    table_name = :object_name
             AND    :object_subname IS NULL;
 
-            IF chains=0 THEN
-                SELECT NVL(MAX(CHAIN_CNT),0)
-                INTO   chains
+            IF partition='YES' AND (chains=0 OR keep='DEFAULT') THEN
+                SELECT NVL(MAX(CHAIN_CNT),0),NVL(MAX(KEPT),KEEP)
+                INTO   chains,keep
                 FROM   (
-                    SELECT SUM(CHAIN_CNT) CHAIN_CNT
+                    SELECT SUM(CHAIN_CNT) CHAIN_CNT,MAX(DECODE(BUFFER_POOL,'KEEP','KEEP')) KEPT
                     FROM   DBA_TAB_PARTITIONS
                     WHERE  table_owner = :object_owner
                     AND    table_name = :object_name
                     AND    partition_name = nvl(:object_subname,partition_name)
                     UNION  ALL
-                    SELECT SUM(CHAIN_CNT)
+                    SELECT SUM(CHAIN_CNT),MAX(DECODE(BUFFER_POOL,'KEEP','KEEP')) KEPT
                     FROM   DBA_TAB_SUBPARTITIONS
                     WHERE  table_owner = :object_owner
                     AND    table_name = :object_name
@@ -114,6 +120,8 @@ BEGIN
             END IF;
             --smart Scan will not work with Inter-Block Chaining and Can cause Performance Degradation (Doc ID 2120974.1)
             push('Table Chain Blocks', chains, '0 (Doc ID 2120974.1)');
+            push('Table Dependencies', deps, 'DISABLED');
+            push('Table Buffer Pool', keep, 'DEFAULT');
         END IF;
     END IF;
     FOR R IN(SELECT 'Tablespace '||TABLESPACE_NAME TBS,ALLOCATION_TYPE||','||DECODE(SEGMENT_SPACE_MANAGEMENT,'AUTO','ASSM','LMT') MGMT 
@@ -161,10 +169,13 @@ BEGIN
     push('Longest Transaction', tmp, '&lt; 48 hours (Doc ID 2081483.1)');
     push('Param _small_table_threshold', param('_small_table_threshold'), CASE WHEN block_size IS NOT NULL THEN 'Current '||lower(:object_type)||': '||block_size||' blocks, '||nvl(caches,0)||' cached' END);
     push('Param _serial_direct_read', param('_serial_direct_read'), 'auto,always,true');
+    push('Param _object_statistics', param('_object_statistics'), 'true');
     push('Param _smu_debug_mode', nvl(param('_smu_debug_mode'), '0'), '!= 134217728');
+    
     push('Param _enable_minscn_cr', param('_enable_minscn_cr'), 'true');
     --Exadata: How to diagnose smart scan and wrong results (Doc ID 1260804.1)
     push('Param cell_offload_processing', param('cell_offload_processing'), 'true');
+    push('Param cell_offload_decryption', param('cell_offload_decryption'), 'true');
     push('Param _kcfis_cell_passthru_enabled', param('_kcfis_cell_passthru_enabled'), 'false');
     push('Param _kcfis_rdbms_blockio_enabled', param('_kcfis_rdbms_blockio_enabled'), 'false');
     push('Param _kcfis_storageidx_disabled', param('_kcfis_storageidx_disabled'), 'false');
@@ -201,4 +212,4 @@ END;
 /
 
 PRO Diagnostic: alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk low'
-PRO or        : alter session set events '10358 trace name context forever, level 2:trace[nsmtio|px_control] disk low'
+PRO or        : alter session set events '10358 trace name context forever, level 2:trace[nsmtio] disk low'  "_px_trace"=low,granule,low,execution;

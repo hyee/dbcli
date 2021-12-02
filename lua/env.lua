@@ -811,7 +811,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
 
     local rest,pipe_cmd,param = line:match('^%s*([^|]+)|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
-        if not rest:find('^!') and not rest:upper():find('^HOS') and (param:ltrim():find('^[/%+%.]') or not param:ltrim():find('^%W')) then 
+        if not rest:find('^!') and not rest:upper():find('^HOS') and (param:ltrim():find('^[/%+%.%-]') or not param:ltrim():find('^%W')) then 
             if param~='' then param='"'..env.COMMAND_SEPS.match(param:trim('"')):trim()..'"' end
             if param:gsub('%s+','')=='""' then param='' end
             if multi_cmd then
