@@ -212,4 +212,4 @@ END;
 /
 
 PRO Diagnostic: alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk low'
-PRO or        : alter session set events '10358 trace name context forever, level 2:trace[nsmtio] disk low'  "_px_trace"=low,granule,low,execution;
+PRO or        : alter session set events '10358 trace name context forever, level 2:trace[nsmtio:px_control] disk high';

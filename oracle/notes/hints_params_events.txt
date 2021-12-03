@@ -57,6 +57,7 @@ Parameters
         5) SELECT FOR UPDATE/DELETE/UPDATE/MERGE on target table  will not use dx read
         6) limit the result with rownum will not use dx read
         Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to trace the behaviours
+    _parallel_cluster_cache_policy: when auto dop is enabled(parallel_degree_policy=auto) its value becomes 'CACHE', change to 'ADAPTIVE' to prevent IMPQ on Exadata, or _px_adaptive_offload_percentage/_px_adaptive_offload_threshold
     _cell_region_heuristics_read_count_threshold(cell): Number of scan times to trigger CC2 population after a 1M chunk is modified and invalidated
     _hwm_sync_threshold: defaults to 10, setting to 100(support session level) will keep the HHWM and LHWM in sync during bulk/direct data load(Doc ID 726653.1), to fix low/high water mark not sync issue on  UNIFORM tablespace leading to smart scan not taken plan in parallel query, for existing segment, run DBMS_SPACE_ADMIN.ASSM_SEGMENT_SYNCHWM(...,check_only=1/0) to check/sync HWM.
     _enable_columnar_cache: refer to 'help exa offload'
