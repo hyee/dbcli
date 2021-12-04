@@ -60,14 +60,14 @@ public final class Console {
     volatile private ScheduledFuture task;
     private ActionListener event;
     private char[] keys;
-    private EventCallback callback;
+    private final EventCallback callback;
     private ParserCallback parserCallback;
     MyParser parser;
     private volatile boolean pause = false;
-    private MyHistory history = new MyHistory();
+    private final MyHistory history = new MyHistory();
 
     private String colorPlan;
-    private KeyMap keyMap;
+    private final KeyMap keyMap;
     private Status status;
 
     public Console(String historyLog) throws Exception {
@@ -102,15 +102,19 @@ public final class Console {
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
-        setKeyCode(LineReader.BACKWARD_DELETE_CHAR,Character.toString('\177'));
+        setKeyCode(LineReader.BACKWARD_DELETE_CHAR, Character.toString('\177'));
         for (String s : new String[]{"^_", "^[^H"}) setKeyCode(LineReader.BACKWARD_KILL_WORD, s);
         //deal with keys ctrl+arrow and alt+Arrow
-        for (String s : new String[]{"^[[", "[1;2", "[1;3", "[1;5"}) {
-            setKeyCode(LineReader.UP_HISTORY, "^[" + s + "A");
-            setKeyCode(LineReader.DOWN_HISTORY, "^[" + s + "B");
-            setKeyCode(LineReader.FORWARD_WORD, "^[" + s + "C");
-            setKeyCode(LineReader.BACKWARD_WORD, "^[" + s + "D");
+        for (String s : new String[]{"^[[", "[1;2", "[1;3", "[1;5", "O", "["}) {
+            s = "^[" + s;
+            if (keyMap.getBound(KeyMap.translate(s + "A")) == null) {
+                setKeyCode(LineReader.UP_HISTORY, s + "A");
+                setKeyCode(LineReader.DOWN_HISTORY, s + "B");
+                setKeyCode(LineReader.FORWARD_WORD, s + "C");
+                setKeyCode(LineReader.BACKWARD_WORD, s + "D");
+            }
         }
+
         //alt+y and alt+z
         setKeyCode("redo", "^[y");
         setKeyCode("undo", "^[z");
@@ -154,7 +158,7 @@ public final class Console {
     public void initDisplay() {
         display = new More.Play(terminal, false);
         display.init(false);
-        Size size=terminal.getSize();
+        Size size = terminal.getSize();
         display.resize(size.getRows(), size.getColumns());
     }
 
@@ -213,25 +217,25 @@ public final class Console {
 
     public void setCommands(AbstractTableMap<String, Object> commands) {
         HashMap<String, Object> map = (HashMap) commands.toJavaObject();
-        Object o=new Object();
-        map.forEach((k, v) ->parser.commands.put(k, o));
+        Object o = new Object();
+        map.forEach((k, v) -> parser.commands.put(k, o));
         completer.setCommands(map);
         //addCompleters(commands, true);
     }
 
     public void setSubCommands(AbstractTableMap<String, Object> commands) {
         HashMap<String, Object> map = (HashMap) commands.toJavaObject();
-        Object o=new Object();
-        map.forEach((k, v) ->parser.commands.put(k, o));
+        Object o = new Object();
+        map.forEach((k, v) -> parser.commands.put(k, o));
         completer.loadCommands(map, 300);
         //map.forEach((k, v) ->parser.commands.put(k, v));
     }
 
-    public void renameCommand(String[] oldNames,String[] newNames) {
-        for(String name:oldNames) parser.commands.remove(name);
-        Object o=new Object();
-        for(String name:newNames) parser.commands.put(name,o);
-        completer.renameCommands(oldNames,newNames);
+    public void renameCommand(String[] oldNames, String[] newNames) {
+        for (String name : oldNames) parser.commands.remove(name);
+        Object o = new Object();
+        for (String name : newNames) parser.commands.put(name, o);
+        completer.renameCommands(oldNames, newNames);
     }
 
     public String getPlatform() {
@@ -474,7 +478,7 @@ public final class Console {
             setAnsi(NOR);
             super.setEofOnEscapedNewLine(true);
             reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
-            quoteChars(new char[]{'\'', '"','`'}).escapeChars(new char[]{});
+            quoteChars(new char[]{'\'', '"', '`'}).escapeChars(new char[]{});
             Interrupter.listen(MyParser.this, c -> {
                 lines = 0;
                 sb.setLength(0);
