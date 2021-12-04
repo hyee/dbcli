@@ -31,6 +31,8 @@ DECLARE
     partition  VARCHAR2(3);
     deps       VARCHAR2(10):='DISABLED';
     keep       VARCHAR2(20);
+    iot        VARCHAR2(20);
+    clu        VARCHAR2(3);
     tbs        VARCHAR2(128);
     tmp        VARCHAR2(4000);
     ran        INT := round(dbms_random.value * 1e8);
@@ -91,16 +93,17 @@ BEGIN
             GROUP  BY inst_id
         );
 
-        IF :object_type like 'TABLE%' THEN
+        IF :object_type like 'TABLE%' or :object_type like 'MAT%'THEN
             SELECT NVL(MAX(CHAIN_CNT),0),
                    NVL(MAX(DEPENDENCIES),'DISABLED'),
                    NVL(MAX(CASE WHEN cache='Y' or BUFFER_POOL='KEEP' THEN 'KEEP' END),'DEFAULT'),
-                   MAX(PARTITIONED)
-            INTO   chains,deps,keep,partition
+                   MAX(PARTITIONED),
+                   NVL(MAX(IOT_TYPE),'NULL'),
+                   NVL(MAX(CLUSTERING),'NO')
+            INTO   chains,deps,keep,partition,iot,clu
             FROM   DBA_TABLES
             WHERE  owner = :object_owner
-            AND    table_name = :object_name
-            AND    :object_subname IS NULL;
+            AND    table_name = :object_name;
 
             IF partition='YES' AND (chains=0 OR keep='DEFAULT') THEN
                 SELECT NVL(MAX(CHAIN_CNT),0),NVL(MAX(KEPT),KEEP)
@@ -122,6 +125,17 @@ BEGIN
             push('Table Chain Blocks', chains, '0 (Doc ID 2120974.1)');
             push('Table Dependencies', deps, 'DISABLED');
             push('Table Buffer Pool', keep, 'DEFAULT');
+            push('Table IOT', iot, 'NULL');
+            push('Table Clustering', clu, 'NO');
+        ELSIF :object_type LIKE 'INDEX%' THEN
+            SELECT NVL(MAX(REPLACE(INDEX_TYPE,'NORMAL/REV','REVERSE')),'NORMAL'),
+                   NVL(MAX(CASE WHEN BUFFER_POOL='KEEP' THEN 'KEEP' END),'DEFAULT')
+            INTO   deps,keep
+            FROM   DBA_INDEXES
+            WHERE  owner = :object_owner
+            AND    index_name = :object_name;
+            push('Index Type', deps, '*NORMAL/BITMAP');
+            push('Index Buffer Pool', keep, 'DEFAULT');
         END IF;
     END IF;
     FOR R IN(SELECT 'Tablespace '||TABLESPACE_NAME TBS,ALLOCATION_TYPE||','||DECODE(SEGMENT_SPACE_MANAGEMENT,'AUTO','ASSM','LMT') MGMT 

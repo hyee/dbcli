@@ -91,6 +91,8 @@ function dicts.on_before_db_exec(item)
         {'CON_ID',container and container>=0 and container  or ""},
         {'SCHEMA',usr},
         {'_SQL_ID',db.props.last_sql_id or ''},
+        {'G_MBRC',db.props.mbrc or 0.271},
+        {'D_MBRC',db.props.d_mbrc or db.props.mbrc or 0.271},
         {'cdbmode',cdbmode~='off' and cdbmode or ''}
     } do
         if var.outputs[v[1]]==nil then var.setInputs(v[1],''..v[2]) end
@@ -148,7 +150,16 @@ function dicts.set_instance(name,value)
 end
 
 function dicts.set_container(name,value)
-    if name=='CONTAINER' and value>=0 then env.checkerr(db.props.version and db.props.version >= 12,'Current db version does not support the CDB feature!') end
+    if name=='CONTAINER' and value>=0 then 
+        env.checkerr(db.props.version and db.props.version >= 12,'Current db version does not support the CDB feature!') 
+    elseif name=='DBID' then
+        if not tonumber(value) or tonumber(value)==db.props.dbid or tonumber(value)==0 then
+            db.props.d_mbrc=nil
+        else
+            local val=tonumber(db:get_value([[select max(value) from dba_hist_parameter where dbid=:1 and parameter_name='db_block_size' and rownum<2]],{value}))
+            db.props.d_mbrc=val==8192 and 0.271 or val==16384 and 0.375 or 0.519
+        end
+    end
     value=tonumber(value)
     env.checkerr(value and value>=-1 and value==math.floor(value),'Input value must be an integer!');
     return value

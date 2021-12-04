@@ -224,7 +224,8 @@ function oracle:connect(conn_str)
                  instance='#NUMBER',
                  sid='#NUMBER',
                  dbid="#NUMBER",
-                 version="#NUMBER"}
+                 version="#NUMBER",
+                 mbrc="#NUMBER"}
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
         props[v]="#VARCHAR" 
     end
@@ -244,7 +245,50 @@ function oracle:connect(conn_str)
             isRac   VARCHAR2(3);
             intval  NUMBER;
             strval  VARCHAR2(300);
+            blk_siz PLS_INTEGER:=8192;
+            mbrc    NUMBER:=8;
         BEGIN
+            BEGIN
+                EXECUTE IMMEDIATE q'[
+                    DECLARE
+                        x VARCHAR2(300);
+                        y INT;
+                        t INT;
+                    BEGIN
+                        t:=sys.dbms_utility.get_parameter_value('db_block_size',:1,x);
+                        t:=sys.dbms_utility.get_parameter_value('_db_file_optimizer_read_count',:2,x);
+                    EXCEPTION WHEN OTHERS THEN
+                        :1 := 8192;
+                        :2 := 8;
+                    END;]' USING IN OUT blk_siz,IN OUT mbrc;
+            EXCEPTION WHEN OTHERS THEN NULL;END;
+            BEGIN
+                EXECUTE IMMEDIATE q'[
+                    DECLARE
+                        status   VARCHAR2(300);
+                        st       DATE;
+                        ed       DATE;
+                        sreadtim NUMBER;
+                        mreadtim NUMBER;
+                        ioseek   NUMBER;
+                        iospeed  NUMBER;
+                        mbrc     NUMBER;
+                    BEGIN
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'sreadtim', sreadtim);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'mreadtim', mreadtim);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'ioseektim', ioseek);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'iotfrspeed', iospeed);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'mbrc', mbrc);
+                        mbrc     := NVL(mbrc, :mbrc);
+                        sreadtim := NVL(sreadtim, ioseek + :blk_siz / iospeed);
+                        mreadtim := NVL(mreadtim, ioseek + :blk_siz * mbrc / iospeed);
+                        :mbrc    := round(mreadtim / sreadtim / mbrc, 4);
+                    END;]' USING IN OUT mbrc,IN blk_siz;
+            EXCEPTION WHEN OTHERS THEN
+                mbrc := CASE blk_siz WHEN 8192 THEN 0.271 WHEN 16384 THEN 0.375 ELSE 0.519 END;
+            END;
+            :mbrc := mbrc;
+
             EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
             BEGIN
                 dbms_output.enable(null);
@@ -343,6 +387,7 @@ function oracle:connect(conn_str)
     props.isdba=props.isdba=='TRUE' and true or false
     props.israc=props.israc=='TRUE' and true or false
     props.isadb=props.isadb=='TRUE' and true or false
+    props.mbrc,props.d_mbrc=props.mbrc or 0.271
     
     if not succ then
         env.log_debug('DB',err)
