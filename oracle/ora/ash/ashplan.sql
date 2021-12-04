@@ -325,6 +325,7 @@ ALL_PLANS AS(
             EXTRACTVALUE(COLUMN_VALUE,'//AP') AP,
             EXTRACTVALUE(COLUMN_VALUE,'//FP') FP,
             EXTRACTVALUE(COLUMN_VALUE,'//IO_COST')+0 IO_COST,
+            EXTRACTVALUE(COLUMN_VALUE,'//IO_COST')+0 DF_DOP,
             EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_NAME') OBJECT_NAME,
             REPLACE(EXTRACTVALUE(COLUMN_VALUE,'//OBJECT_ALIAS'),'"') ALIAS,
             EXTRACTVALUE(COLUMN_VALUE,'//TM') TM,
@@ -355,6 +356,7 @@ ALL_PLANS AS(
                            &phf2 plan_hash_full,
                            instr(other_xml,'adaptive_plan') is_adaptive_,
                            io_cost,access_predicates ap,filter_predicates fp,search_columns sc,
+                           max(nvl2(other_xml,round(regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,4),1)) over(partition by inst_id,child_number) df_dop,
                            1e9 cid,
                            &did dbid 
                     FROM   gv$sql_plan a 
@@ -380,6 +382,7 @@ ALL_PLANS AS(
                             &phf2 plan_hash_full,
                             instr(other_xml,'adaptive_plan') is_adaptive_,
                             io_cost,access_predicates ap,filter_predicates fp,search_columns sc,
+                            max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1)) over(partition by plan_hash_value) df_dop,
                             &cdb2 cid,
                             &cid dbid
                     FROM    &dplan a
@@ -447,7 +450,7 @@ ash_phv_agg as(
         left join (select distinct phv,phf,is_adaptive from sql_plan_data) b using(phv)) A
     WHERE phv_rate>=0.1),
 hr AS((select /*+MATERIALIZE qb_name(hr) opt_estimate(query_block rows=100000)*/ 
-              distinct id, parent_id pid, phv,operation,alias,io_cost,pos,ac,ap,fp,
+              distinct id, parent_id pid, phv,operation,alias,io_cost,pos,ac,ap,fp,df_dop,
               MAX(id) over(PARTITION BY phv) AS maxid 
        from sql_plan_data 
        where phv in(select phv from ash_phv_agg where plan_exists=1))),
@@ -675,7 +678,7 @@ plan_line_xplan AS
        nvl(top_grp,' ') top_grp,
        nvl(trim(dbms_xplan.format_number(CASE 
                WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
-                   greatest(1,floor(io_cost/&check_access_aux))
+                   greatest(1,floor(io_cost*nvl(df_dop,1)/&check_access_aux))
                ELSE
                    io_cost
            END)),' ') blks,

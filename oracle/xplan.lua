@@ -154,13 +154,14 @@ function xplan.explain(fmt,sql)
                 qblock_name qb,
                 replace(object_alias,'"') alias,
                 @proj@,
-                access_predicates ap,filter_predicates fp,search_columns sc
+                access_predicates ap,filter_predicates fp,search_columns sc,
+                max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1)) over(partition by plan_id) dop
          FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
          WHERE  seq = 1
          ORDER  BY id),
         hierarchy_data AS
          (SELECT /*+CONNECT_BY_COMBINE_SW NO_CONNECT_BY_FILTERING*/
-                 id, pid,qb,alias,io_cost,rownum r_,ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
+                 id, pid,qb,alias,io_cost,rownum r_,ap,fp,dop,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
           FROM   sql_plan_data
           START  WITH id = 0
           CONNECT BY PRIOR id = pid
@@ -196,7 +197,7 @@ function xplan.explain(fmt,sql)
                  o.maxid,
                  nvl(trim(dbms_xplan.format_number(CASE 
                      WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
-                         greatest(1,floor(io_cost/@mbrc@)) 
+                         greatest(1,floor(io_cost*nvl(dop,1)/@mbrc@)) 
                      ELSE
                          io_cost
                  END)),' ') blks,
