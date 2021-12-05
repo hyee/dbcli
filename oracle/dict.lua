@@ -101,7 +101,7 @@ function dicts.on_before_db_exec(item)
     if not dicts.dict then return item end
     local _,sql,args,params=table.unpack(item)
 
-    if sql and not cache[sql] then
+    if sql and not sql:sub(1,128):find('BYPASS_DBCLI_REWRITE',1,true) and not cache[sql] then
         if (tonumber(db.props.instance)==instance or type(db.props.version)=='number' and (db.props.israc==false or db.props.version<11)) and not sql:find('^'..(env.ROOT_CMD:escape())) then
             sql=sql:gsub(gv1,'%1((('):gsub(gv2,"%1((")
         end
@@ -156,8 +156,12 @@ function dicts.set_container(name,value)
         if not tonumber(value) or tonumber(value)==db.props.dbid or tonumber(value)==0 then
             db.props.d_mbrc=nil
         else
-            local val=tonumber(db:get_value([[select max(value) from dba_hist_parameter where dbid=:1 and parameter_name='db_block_size' and rownum<2]],{value}))
+            local val=tonumber(db:get_value([[select /*BYPASS_DBCLI_REWRITE*/ max(value) from dba_hist_parameter where dbid=:1 and parameter_name='db_block_size' and rownum<2]],{value}))
             db.props.d_mbrc=val==8192 and 0.271 or val==16384 and 0.375 or 0.519
+            val=tonumber(db:get_value([[select /*BYPASS_DBCLI_REWRITE*/ max(decode(ISDEFAULT,'FALSE',value)) from dba_hist_parameter where dbid=:1 and parameter_name='db_file_multiblock_read_count' and rownum<2]],{value}))
+            if val then
+                db.props.d_mbrc=math.round(db.props.d_mbrc*8/val,4)
+            end
         end
     end
     value=tonumber(value)

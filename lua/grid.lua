@@ -689,9 +689,11 @@ function grid:add(row)
     if headind>1 and sep~=nil then
         local row={}
         for k,v in ipairs(self.colinfo) do
-            row[k]=k==1 and sep or nil
-            if rs[k]=='' and self.break_groups[v.column_name:upper()] then
-                rs[k]=self.break_groups[v.column_name:upper()] 
+            if self.break_groups[v.column_name:upper()] then
+                row[k]=sep
+                if rs[k]=='' then
+                    rs[k]=self.break_groups[v.column_name:upper()] 
+                end
             end
         end
         self.break_groups.__SEP__=nil
@@ -877,7 +879,9 @@ function grid:wellform(col_del, row_del)
         while #v < #colsize do v[#v+1]='' end
 
         local is_row_sep
-        if v[0]~=0 and v.rsize==1 and type(v[1])=='string' then 
+        if v.sep then
+            is_row_sep=v.sep
+        elseif v[0]~=0 and v.rsize==1 and type(v[1])=='string' then 
             local v1=v[1]:strip_ansi()
             local v2=tostring(v[2] or ''):strip_ansi()
             local v3=tostring(v[3] or ''):strip_ansi()
@@ -885,15 +889,13 @@ function grid:wellform(col_del, row_del)
                (v2=='' or v2==v1 or v2:find('^%W+$')) and
                (v3=='' or v3==v1 or v3:find('^%W+$') or v[3]==seps[3])
             then
-                
+                is_row_sep=v1
             end
-        elseif v.sep then
-            is_row_sep=true
         end
         --adjust the title style(middle)
         for k1,v1 in pairs(seps) do
             if not (k1==1 and is_row_sep) then
-                v[k1]=v1
+                v[k1]=is_row_sep or v1
             end
         end
         local fmt1
@@ -909,8 +911,8 @@ function grid:wellform(col_del, row_del)
                 end
             end
         elseif is_row_sep then
-            fmt1=calc_col_sep(fmt,v[1])
-            local c=v[1]
+            fmt1=calc_col_sep(fmt,is_row_sep)
+            local c=is_row_sep
             for k1,v1 in ipairs(title_dels) do
                 v[k1]=v1:sub(1,1)==grid.title_del and v1:gsub('.',c) or v1
             end
