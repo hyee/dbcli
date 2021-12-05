@@ -11,3 +11,10 @@ libuv
     * https://github.com/libuv/libuv/compare/c0c672e1a0117b88a2b43a4472cfc50dcb33db45...f43c66343316878da09949daf49b515249f71bdf
     * fs.c: function uv__fs_futime and uv__fs_utime
 2) Windows: unsupport XP/2003 since v1.60
+    * run cmake.exe or "cmake -H. -Bbuild -G"Visual Studio 12 Win64" to config
+    * run "open project" on cmake.exe to change "luajit5.1"->dll name from 'lua51' to 'lua5.1'
+    * open luajit5.1's project file under 'build' and replace 'lua51' as 'lua5.1'
+    * run 'cmake --build build --config Release' -> find results in build/Release
+    
+    
+    

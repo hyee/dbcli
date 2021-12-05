@@ -1083,6 +1083,7 @@ function env.onload(...)
     if #args==1 and type(args[1])=='table' then args=args[1] end
     env.__ARGS__=args
     env.IS_ENV_LOADED=false
+    local err
     for _,v in ipairs({'jit','ffi','bit'}) do   
         if v=="jit" then
             table.new=require("table.new")
@@ -1090,6 +1091,8 @@ function env.onload(...)
             env.jit.on()
             env.jit.profile=require("jit.profile")
             env.jit.util=require("jit.util")
+            err,env.buffer=pcall(require,"string.buffer")
+            if not err then env.buffer=nil end
             env.jit.opt.start(3,"maxsnap=4096","maxmcode=1024")
             clear=table.clear
         elseif v=='ffi' then
@@ -1356,7 +1359,7 @@ function env.set_title(title,value,callee)
 
     if CURRENT_TITLE~=titles or enabled then
         CURRENT_TITLE=titles
-        titles=enabled=="on" and "DBCLI" or titles
+        titles=enabled=="on" and "DBCLI" or titles or ""
         if env.IS_WINDOWS then
             env.uv.set_process_title(titles)
         elseif env.PLATFORM=='mac' then
