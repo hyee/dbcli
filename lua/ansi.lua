@@ -367,7 +367,7 @@ function string.ulen(s,maxlen)
             s1=s1:sub(1,maxlen)
             len1=#s1
         end
-        len2=#s1
+        len2=#s1:strip_ansi()
     end
     return len1,len2,s1
 end

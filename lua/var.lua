@@ -617,13 +617,8 @@ function var.define_column(col,...)
             end
             formats[#formats+1]=function(v,rownum,grid)
                 if not rownum or env.printer.grep_text then return v end
-                if type(v)=='string' and (v==' ' or v==f or v=='') then 
-                    return v 
-                end
-                if v=='\1\2\3\3\2\1' then
-                    obj._prev_value=v
-                    return ''
-                elseif grid.break_groups[col]==nil or rownum<=1 then
+                if type(v)=='string' and (v==' ' or v==f or v=='') then return v end
+                if grid.break_groups[col]==nil or rownum<=1 then
                     obj._prev_value=v
                     grid.break_groups[col]=v
                     return v

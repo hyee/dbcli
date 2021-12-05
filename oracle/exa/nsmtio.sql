@@ -1,7 +1,11 @@
-/*[[Check the reason of Smart Scan not working. Usage: @@NAME [<owner>.][<object_name>[.<partition_name>]]
+/*[[Check the reason of Smart Scan not working. Usage: @@NAME {[<owner>.][<object_name>[.<partition_name>]] | -mon [-f"filter"]}
+    -mon: list non-offload objects from sql monitor reports
     --[[--
+        &MON : default={0} mon={1}
+        &fil : default={sql_text NOT LIKE '%dbms_stats%' AND sql_text not like '%SQL Analyze%'} f={}
         @check_access_dba: sys.dbms_system={1} default={0}
         @check_access_x  : sys.x$ksppi={1} default={0}
+        @check_access_stat: v$sql_monitor_statname={(select group_id from v$sql_monitor_statname where name like '%Eligible bytes%')} default={3,4,5,18}
         @check_access_grid: {
             v$cell_config={
                 SELECT name, COUNT(1) misses,max(grid) disks
@@ -24,7 +28,11 @@
 ora _find_object "&V1" 1
 SET FEED OFF VERIFY ON
 VAR C REFCURSOR
+COL "MAX|Dur" for smhd2
+COL "SUM|IOS" for TMB2
+COL "SUM|BYTES" FOR KMG2
 DECLARE
+    c          SYS_REFCURSOR;
     block_size INT;
     caches     INT;
     chains     INT;
@@ -73,6 +81,78 @@ DECLARE
         xml := xml || utl_lms.format_message(fmt, NAME, v, r);
     END;
 BEGIN
+    IF &mon=1 THEN
+        OPEN :c FOR
+            WITH r AS
+             (SELECT ROWNUM r, a.*
+              FROM   (SELECT MAX(sql_id) keep(dense_rank LAST ORDER BY dur, sql_exec_id) sq_id,
+                             MAX(sql_exec_id) keep(dense_rank LAST ORDER BY dur) sq_exec_id,
+                             MAX(sql_exec_start) keep(dense_rank LAST ORDER BY dur, sql_exec_id, sql_id) sq_exec_start,
+                             PLAN_HASH,
+                             PLAN_LINE,
+                             MAX(owner) owner,
+                             MAX(object_name) object_name,
+                             MAX(dur) dur,
+                             COUNT(1) execs,
+                             SUM(REQS) reqs,
+                             SUM(BYTES) BYTES
+                      FROM   (
+                                SELECT  sql_id,
+                                        sql_exec_id,
+                                        sql_exec_start,
+                                        PLAN_LINE_ID PLAN_LINE,
+                                        SQL_PLAN_HASH_VALUE PLAN_HASH,
+                                        ROUND(MAX(LAST_REFRESH_TIME - FIRST_REFRESH_TIME) * 86400) DUR,
+                                        SUM(PHYSICAL_READ_REQUESTS) REQS,
+                                        SUM(PHYSICAL_READ_BYTES) BYTES,
+                                        MAX(PLAN_OBJECT_OWNER) OWNER,
+                                        MAX(PLAN_OBJECT_NAME) OBJECT_NAME
+                                FROM   gv$sql_plan_monitor
+                                WHERE  PLAN_OPERATION||' '|| PLAN_OPTIONS IN ('TABLE ACCESS STORAGE FULL',
+                                                                              'INDEX STORAGE FAST FULL SCAN',
+                                                                              'INDEX STORAGE FAST FULL SCAN FIRST ROWS',
+                                                                              'TABLE ACCESS STORAGE FULL FIRST ROWS',
+                                                                              'TABLE ACCESS STORAGE SAMPLE',
+                                                                              'INDEX STORAGE SAMPLE FAST FULL SCAN')
+                                AND    (nvl(OTHERSTAT_GROUP_ID,0) NOT IN (&check_access_stat) OR --
+                                        PLAN_OBJECT_NAME IS NOT NULL AND --coord process
+                                        OTHERSTAT_GROUP_ID IS NULL AND --
+                                        FIRST_CHANGE_TIME IS NULL)
+                                GROUP  BY sql_id, sql_exec_id, sql_exec_start, PLAN_LINE_ID, SQL_PLAN_HASH_VALUE
+                                HAVING SUM(NVL(PHYSICAL_READ_REQUESTS, NVL2(FIRST_CHANGE_TIME, 0, 1024))) >= 1024) --
+                      GROUP  BY PLAN_HASH, PLAN_LINE --
+                      HAVING SUM(reqs) >= 1024
+                      ORDER  BY reqs DESC, sq_exec_id DESC) a), --
+            r1 AS(SELECT /*+materialize*/ r.*,
+                         substr(regexp_replace(trim(substr(sql_text,1,512)),'\s+',' '),1,200) sql_text
+                  FROM r JOIN gv$sql_monitor r1
+                  ON (r.sq_id=r1.sql_id and r.sq_exec_id=r1.sql_exec_id and r.sq_exec_start=r1.sql_exec_start and r1.px_server# is null and r1.sql_text is not null)
+                  WHERE (&fil)
+                  ORDER BY r)
+            SELECT  sq_id sql_id,
+                    sq_exec_id sql_exec_id,
+                    plan_hash,
+                    plan_line line#,
+                    to_char(sq_exec_start) "SQL_START|OBJ_OWNER",
+                   --owner,
+                    object_name "OBJECT|NAME",
+                    dur "MAX|DUR",
+                    execs "SUM|EXE",
+                    reqs "SUM|IOS",
+                    bytes "SUM|BYTES",
+                    sql_text
+            FROM r1 WHERE ROWNUM<=40
+            UNION ALL
+               SELECT '-' A,NULL B,NULL C,NULL D,NULL,NULL,NULL E,NULL F,NULL reqs,NULL H,null I FROM DUAL
+            UNION ALL
+            SELECT * FROM (
+                SELECT NULL A,NULL B,NULL C,null D,'| '||owner,object_name,max(dur) E,sum(execs) F,sum(reqs) reqs,sum(bytes) H,null I
+                FROM   r1
+                GROUP  BY owner,object_name
+                ORDER  BY reqs DESC
+            ) WHERE ROWNUM<=10;
+        RETURN;
+    END IF; 
     IF :object_name IS NOT NULL THEN
         SELECT SUM(blocks)
         INTO   block_size
