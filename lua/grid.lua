@@ -537,16 +537,16 @@ function grid:add(row)
             local grp = empty
             v = v:convert_ansi()
             if headind == 0 then
-                v = v:gsub('[\n\r]+',''):gsub("([^|]+)%c*|%c*([^|]+)", function(a, b)
-                    local len11,len12,len21,len22
-                    len11,len12,a=a:ulen(maxsize)
-                    len21,len22,b=b:ulen(maxsize)
-                    local max_len = math.max(len12, len22)
-                    usize=math.max(len11, len21)
-                    csize=max_len
-                    grp[1]=reps(' ', math.floor((max_len - len12) / 2))..a..reps(' ', math.ceil((max_len - len12) / 2))
-                    grp[2]=reps(' ', math.floor((max_len - len22) / 2))..b..reps(' ', math.ceil((max_len - len22) / 2))
-                    return table.concat(grp,'\n')
+                v,l = v:gsub('[\n\r]+',''):gsub("([^|]+)%c*|%c*([^|]+)", function(a, b)
+                        local len11,len12,len21,len22
+                        len11,len12,a=a:ulen(math.min(99,maxsize))
+                        len21,len22,b=b:ulen(math.min(99,maxsize))
+                        local max_len = math.max(len12, len22)
+                        usize=math.max(len11, len21)
+                        csize=max_len
+                        grp[1]=reps(' ', math.floor((max_len - len12) / 2))..a..reps(' ', math.ceil((max_len - len12) / 2))
+                        grp[2]=reps(' ', math.floor((max_len - len22) / 2))..b..reps(' ', math.ceil((max_len - len22) / 2))
+                        return table.concat(grp,'\n')
                 end,1)
                 local v1=v:strip_ansi()
                 if #v1<=3 and v1:find('^%W+$') and v1~='#' and v1~='%' then 
@@ -561,9 +561,9 @@ function grid:add(row)
                 v=v:sub(1,1048576*4):rtrim()
                 for p in v:gsplit(split) do
                     p=p:gsub('%c',printables)
-                    grp[#grp + 1] = p
                     --deal with unicode chars
                     l, len, p = p:ulen(maxsize)
+                    grp[#grp + 1] = p
                     usize=usize<l and l or usize
                     if len==0 and p~='' then len=1 end
                     csize=csize < len and len or csize
@@ -601,7 +601,7 @@ function grid:add(row)
 
             if lines < #grp then lines = #grp end
             if not grp[1] then
-                usize,csize,v=v:ulen(maxsize)
+                usize,csize,v=v:ulen(math.min(maxsize,headind==0 and 99 or maxsize))
             elseif #grp>1 then
                 v,empty=grp,{}
             else
@@ -689,12 +689,11 @@ function grid:add(row)
     if headind>1 and sep~=nil then
         local row={}
         for k,v in ipairs(self.colinfo) do
-            row[k]=sep
+            row[k]=k==1 and sep or nil
             if rs[k]=='' and self.break_groups[v.column_name:upper()] then
                 rs[k]=self.break_groups[v.column_name:upper()] 
             end
         end
-        result[#result-1].sep=sep
         self.break_groups.__SEP__=nil
         result=self:add(row)
         row=table.remove(result)
@@ -884,10 +883,12 @@ function grid:wellform(col_del, row_del)
             local v3=tostring(v[3] or ''):strip_ansi()
             if v1:find('[~#|=@_:<>&/\\%$%-%+%*%.]') and
                (v2=='' or v2==v1 or v2:find('^%W+$')) and
-               (v3=='' or v3==v1 or v3:find('^%W+$') or v[3]==seps[3]) 
+               (v3=='' or v3==v1 or v3:find('^%W+$') or v[3]==seps[3])
             then
-                is_row_sep=true
+                
             end
+        elseif v.sep then
+            is_row_sep=true
         end
         --adjust the title style(middle)
         for k1,v1 in pairs(seps) do
@@ -935,7 +936,7 @@ function grid:wellform(col_del, row_del)
         end
         
         if not result[k + 1] or result[k + 1][0] ~= v[0] then
-            if not v.sep and #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
+            if not is_row_sep and #row_del == 1 and filter_flag == 1 and v[0] ~= 0 then
                 row_dels=row_dels:gsub('%s',row_del)
                 rows[#rows+1]=cut(row_dels)
                 output[#output+1]=row_dels
