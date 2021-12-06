@@ -67,7 +67,7 @@ Parameters
     _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
     _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF  
     _oltp_compress_dbg: controls OLTP compression. 
-        1: disable the ArrayInserts compression
+        1: disable the ArrayInserts compression, but results in more blocks marked full
         2: Disable Compression Above-Cache 
         32:disable OLTP Compression on HCC segments conventional DML
     _kdz_pcode_flags: 
@@ -152,9 +152,15 @@ Parameters
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
     _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20
     _windowfunc_optimization_settings: set to 2 to avoid 'WINDOW CHILD PUSHED RANK' in px query
+    _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
+                                     and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
+    _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs and 
+    _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
+    
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
-    support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 
+    support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
+    merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
  
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis

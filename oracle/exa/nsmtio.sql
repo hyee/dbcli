@@ -103,23 +103,24 @@ BEGIN
                                         PLAN_LINE_ID PLAN_LINE,
                                         SQL_PLAN_HASH_VALUE PLAN_HASH,
                                         ROUND(MAX(LAST_REFRESH_TIME - FIRST_REFRESH_TIME) * 86400) DUR,
-                                        SUM(PHYSICAL_READ_REQUESTS) REQS,
-                                        SUM(PHYSICAL_READ_BYTES) BYTES,
+                                        SUM(nvl(PHYSICAL_READ_REQUESTS,0)+nvl(PHYSICAL_WRITE_REQUESTS,0)) REQS,
+                                        SUM(nvl(PHYSICAL_READ_BYTES,0)+nvl(PHYSICAL_WRITE_BYTES,0)) BYTES,
                                         MAX(PLAN_OBJECT_OWNER) OWNER,
                                         MAX(PLAN_OBJECT_NAME) OBJECT_NAME
                                 FROM   gv$sql_plan_monitor
-                                WHERE  PLAN_OPERATION||' '|| PLAN_OPTIONS IN ('TABLE ACCESS STORAGE FULL',
-                                                                              'INDEX STORAGE FAST FULL SCAN',
-                                                                              'INDEX STORAGE FAST FULL SCAN FIRST ROWS',
-                                                                              'TABLE ACCESS STORAGE FULL FIRST ROWS',
-                                                                              'TABLE ACCESS STORAGE SAMPLE',
-                                                                              'INDEX STORAGE SAMPLE FAST FULL SCAN')
+                                WHERE  PLAN_OPERATION||' '|| PLAN_OPTIONS IN (
+                                          'TABLE ACCESS STORAGE FULL',
+                                          'INDEX STORAGE FAST FULL SCAN',
+                                          'INDEX STORAGE FAST FULL SCAN FIRST ROWS',
+                                          'TABLE ACCESS STORAGE FULL FIRST ROWS',
+                                          'TABLE ACCESS STORAGE SAMPLE',
+                                          'INDEX STORAGE SAMPLE FAST FULL SCAN')
                                 AND    (nvl(OTHERSTAT_GROUP_ID,0) NOT IN (&check_access_stat) OR --
                                         PLAN_OBJECT_NAME IS NOT NULL AND --coord process
                                         OTHERSTAT_GROUP_ID IS NULL AND --
                                         FIRST_CHANGE_TIME IS NULL)
                                 GROUP  BY sql_id, sql_exec_id, sql_exec_start, PLAN_LINE_ID, SQL_PLAN_HASH_VALUE
-                                HAVING SUM(NVL(PHYSICAL_READ_REQUESTS, NVL2(FIRST_CHANGE_TIME, 0, 1024))) >= 1024) --
+                                HAVING SUM(nullif(NVL(nvl(PHYSICAL_READ_REQUESTS,0)+nvl(PHYSICAL_WRITE_REQUESTS,0),0), NVL2(FIRST_CHANGE_TIME, 0, 1024))) >= 512) --
                       GROUP  BY PLAN_HASH, PLAN_LINE --
                       HAVING SUM(reqs) >= 1024
                       ORDER  BY reqs DESC, sq_exec_id DESC) a), --
