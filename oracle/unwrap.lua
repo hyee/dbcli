@@ -487,7 +487,7 @@ function unwrap.print_qb_registry(qb_transforms,qbs)
         return table.concat(items,'; ')
     end
     local function walk(qb,indent,siblings)
-        local comment=qb.o
+        local comment=qb.o or ''
         rows[#rows+1]={indent..qb.qb:gsub('"',""):sub(2)..(comment~='' and (' ('..comment..')') or ''),to_list(qb.objs)}
         local l=#qb.childs
         for i,c in ipairs(qb.childs) do

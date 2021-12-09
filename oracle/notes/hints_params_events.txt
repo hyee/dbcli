@@ -61,7 +61,12 @@ Parameters
     _cell_region_heuristics_read_count_threshold(cell): Number of scan times to trigger CC2 population after a 1M chunk is modified and invalidated
     _hwm_sync_threshold: defaults to 10, setting to 100(support session level) will keep the HHWM and LHWM in sync during bulk/direct data load(Doc ID 726653.1), to fix low/high water mark not sync issue on  UNIFORM tablespace leading to smart scan not taken plan in parallel query, for existing segment, run DBMS_SPACE_ADMIN.ASSM_SEGMENT_SYNCHWM(...,check_only=1/0) to check/sync HWM.
     _enable_columnar_cache: refer to 'help exa offload'
-    _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), set to 0 can avoid spilling to temp I/O
+    _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), set to 0 can avoid spilling to temp I/O(events '10032 trace name context forever')
+    _newsort_type: 1: do not check for ordered data 
+                   2: always use FTS encoding assume no fixed len flds(forces the sort to treat all columns as variable length columns)
+                   4: force use of FTS encoding
+                   8: disable spilling rows before sort finishes
+                   32: disable sync spill for PX servers
     _smm_max_size: The maximum work area size(in KB) for single process, defaults to 1GB when pga is large. Also impacts the number of hash join/group slots(slots*_smm_auto_max_io_size<=_smm_max_size) 
     _smm_px_max_size: maximum total work area size(in KB) per parallel query where dop>5, defaults to pga_aggregate_target/2
     _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
@@ -161,6 +166,13 @@ Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
     merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
+    10055(rowsets): trace: 'trace [SQL_Rowsets_Setup] disk=high'
+                    level 1: disables rowsets for table scan row source
+                    level 16: disables rowsets for sort row source
+                    level 32: disables  table queue IN row source
+                    level 512: disables rowsets for EVA functions
+                    level 20971520: disables “rowset to one row” in hash join probe side
+ 
  
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
@@ -207,6 +219,7 @@ Fix Controls:
     8644935 :  disable to fix the skew/wrong result issue when execution plan has either "UNION ALL" and "BROADCASE/HASH LOCAL"
     30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
     33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
+    9721439:   Forces bloom filter and bypasses all the statistics based heuristics
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

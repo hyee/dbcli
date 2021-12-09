@@ -33,4 +33,4 @@ FROM TABLE(GV$(CURSOR(
     AND    b.to_type(+) NOT IN (0, 5, 55)
     AND    a.sql_id = c.sql_id(+)
     GROUP  BY a.sid, a.sql_id, a.sql_text &type)))
-ORDER  BY 1,2,&dir last_active nulls last;
+ORDER  BY 1,2,&dir last_active nulls first;

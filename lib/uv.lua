@@ -8,18 +8,19 @@ local sep=jit.os=='windows' and '\\' or '/'
 for k,v in pairs(modules) do uv[k]={} end
 for name,method in pairs(u) do
     if name:find('setup') then print(name) end
-    found=false
-    for k,v in pairs(modules) do
-        index,pos=name:find(k,1,true)
-        if index==1 and name:sub(pos+1,pos+1)=='_' then 
-            uv[k][name:sub(pos+2)]=method
-            found=true
-        elseif name=='new_'..k then
-            uv[k].new=method
-            found=true
+    local prefix,n=name:match('^([^_]+)_(.+)')
+    if prefix and type(uv[prefix])=='table' then
+        uv[prefix][n]=method
+    else
+        prefix=name:match('^new_(.+)')
+        if prefix and type(uv[prefix])=='table' then
+            uv[prefix].new=method
+        elseif type(uv[name])=='table' then
+            uv[name].new=method
+        else
+            uv[name]=method
         end
     end
-    if not found then uv[name]=method end
 end
 
 uv.event,uv.fs_event=uv.fs_event,nil

@@ -101,7 +101,6 @@ luv.os_setenv("PATH",table.concat(path,psep))
 
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify',
-                '-XX:MaxPermSize=128m',
                 '-Xms64m',
                 '-Xmx'..(dlldir=='x86' and '512m' or '2048m'),
                 '-XX:+UseStringDeduplication','-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',

@@ -11,8 +11,7 @@ WITH b AS
   WHERE  t.type = l.type
   AND    (t.id1_tag LIKE 'object%' and id1>0))
 SELECT /*+ordered opt_param('cursor_sharing' 'force')*/
-         c.inst_id,
-         c.sid,
+         c.sid||','||c.serial#||',@'||c.inst_id session#,
          d.type,
          d.lmode || ' [' ||
          decode(d.lmode, 0, 'None', 1, 'Null', 2, 'Row-S(SS)', 3, 'Row-X(SX)', 4, 'Share', 5, 'S/Row-X(SSX)',
