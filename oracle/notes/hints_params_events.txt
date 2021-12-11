@@ -75,6 +75,9 @@ Parameters
         1: disable the ArrayInserts compression, but results in more blocks marked full
         2: Disable Compression Above-Cache 
         32:disable OLTP Compression on HCC segments conventional DML
+    _disable_hcc_array_insert: false to disable conventional load compression for HCC table
+    _kdz_hcc_flags: 16 to disable checksum computation for CUs sent from cell to server for performance benefit
+                    64 to enable HCC array inserts with subsegments
     _kdz_pcode_flags: 
         1: disable pcode(Portable code,a framework to evaluate predicates)
         32: disable just PCODE aggregation
@@ -87,6 +90,7 @@ Parameters
     _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
     _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
     _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
+    _controlfile_cell_flash_caching: 
     _controlfile_cell_flash_caching: 
         3: (default) Control File reads will be cached in the Cell Flash Cache with a default caching policy
         2: disable Flash Cache caching of Control File reads.
@@ -199,7 +203,7 @@ Hints:
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
-    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
+    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view

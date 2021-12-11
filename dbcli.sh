@@ -14,7 +14,7 @@ else
     bind 'set enable-bracketed-paste on' &>/dev/null
 fi
 
-DBCLI_ENCODING=UTF-8
+#DBCLI_ENCODING=UTF-8
 
 if [ "$TNS_ADMIN" = "" ] && [[ -n "$ORACLE_HOME" ]] ; then
     export TNS_ADMIN="$ORACLE_HOME/network/admin"

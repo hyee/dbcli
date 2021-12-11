@@ -191,6 +191,7 @@ DECLARE
             v_partition := TRIM(upper(v_partition));
         END IF;
         --define root object
+
         st('@target', parseName(v_owner, v_segname, v_partition), '@all');
         st('@type', 'UNKNOWN', '@all');
         st('@level', 0, '@all');
@@ -373,6 +374,9 @@ DECLARE
             pr('Cannot find target object!');
             return;
         end if;
+        v_target('owner'):=:object_owner;
+        v_target('segment'):=:object_name;
+        v_target('partition'):=:object_subname;
         v_ary := show_space(p_segname    => v_target('segment'),
                             p_owner      => v_target('owner'),
                             p_partition  => v_target('partition'),

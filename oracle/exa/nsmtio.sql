@@ -271,6 +271,7 @@ BEGIN
     --Exadata: How to diagnose smart scan and wrong results (Doc ID 1260804.1)
     push('Param cell_offload_processing', param('cell_offload_processing'), 'true');
     push('Param cell_offload_decryption', param('cell_offload_decryption'), 'true');
+    push('Param _cell_offload_hybridcolumnar', param('_cell_offload_hybridcolumnar'), 'true');
     push('Param _kcfis_cell_passthru_enabled', param('_kcfis_cell_passthru_enabled'), 'false');
     push('Param _kcfis_rdbms_blockio_enabled', param('_kcfis_rdbms_blockio_enabled'), 'false');
     push('Param _kcfis_storageidx_disabled', param('_kcfis_storageidx_disabled'), 'false');

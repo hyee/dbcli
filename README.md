@@ -59,7 +59,7 @@ The solution is to disable the restriction: `sudo spctl --master-disable`
 ### Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.
 
-Create file `init.cfg` under the "data" directory with following content(for non-Windows OS use `export` instead):
+Create file `init.cfg`(or `init.conf` for non-Windows) under the "data" directory with following content(for non-Windows OS use `export` instead):
    
     SET JRE_HOME=<JRE HOME>
     SET TNS_ADM=<location of tnsnames.ora>
@@ -68,6 +68,10 @@ Of which `TNS_ADM` is optional unless you need to connect Oracle via tnsnames.or
    
     SET JRE_HOME=d:\soft\java
     SET TNS_ADM=d:\Soft\InstanceClient\network\admin
+    
+The default charset is `UTF-8`, to use other charset, just change the `DBCLI_ENCODING` environment variable globally or in the mentioned config file. For example:
+* `SET DBCLI_ENCODING=GBK` (for Windows)
+* `DBCLI_ENCODING=GBK ./dbcli.sh`
 
 ### Launch DBCLI Console
 After the above configurations, you are able to start DBCLI by executing `dbcli.bat` or `bin\ConsoleZ\Console.exe`.

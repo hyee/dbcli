@@ -18,6 +18,7 @@ import org.jline.utils.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.nio.charset.Charset;
 import java.security.Provider;
 import java.security.Security;
 import java.util.ArrayList;
@@ -72,10 +73,18 @@ public final class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
+        Charset encoding=null;
+        try {
+            encoding = Charset.forName(System.getProperty("file.encoding"));
+        } catch (Exception e) {
+            encoding = Charset.defaultCharset();
+            System.out.println("Unsupported encoding: "+System.getProperty("file.encoding")+", DBCLI will use the default encoding("+encoding.name()+") instead.");
+
+        }
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, null, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, encoding, 0, true, Terminal.SignalHandler.SIG_IGN, false);
         else
-            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).nativeSignals(true).build();
+            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).encoding(encoding).nativeSignals(true).build();
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
@@ -197,6 +206,8 @@ public final class Console {
     }
 
     public String ulen(String s, final int maxLength) {
+
+        //WCWidth.java: (ucs >= 0x8140 && ucs <= 0xfefe && ucs%0x0100 !=0x7f) ||
         if (s == null) return "0:0";
         AttributedString buff = AttributedString.fromAnsi(s);
         int size = buff.columnLength();
