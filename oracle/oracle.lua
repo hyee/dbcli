@@ -436,8 +436,8 @@ function oracle:connect(conn_str)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
     end
-    self.session_title=('%s@%s   Instance: %s   SID: %s   Version: Oracle(%s)')
-            :format(self.props.db_user,prompt,self.props.instance,self.props.sid,self.props.db_version)
+    self.session_title=('%s@%s   SID: %s@%s   Version: Oracle(%s)')
+            :format(self.props.db_user,prompt,self.props.sid,self.props.instance,self.props.db_version)
     env.set_title(self.session_title)
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)

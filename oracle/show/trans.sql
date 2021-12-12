@@ -1,16 +1,16 @@
 /*[[show active transactions]]*/
 col "duration,roll_left,Est|Complete" format smhd2
 col "Undo|Bytes,Undo|Bytes1" for kmg
+set autohide col
 set feed off
 SELECT sess.sid || ',' || sess.serial# || ',@' || sess.inst_id sid,
        schemaname SCHEMA,
        xid,
        XIDUSN || '.' || XIDSLOT || '.' || XIDSQN trans#,
+       t.START_SCNB scn#,
        r.name rollback_seg_name,
-       DECODE(t.space,
-              'YES',
-              'SPACE TX',
-              DECODE(t.recursive, 'YES', 'RECURSIVE TX', DECODE(t.noundo, 'YES', 'NO UNDO TX', t.status))) status,
+       TRIM(',' FROM DECODE(t.space,'YES','SPACE,')||DECODE(t.recursive, 'YES', 'RECURSIVE,')
+       ||DECODE(t.noundo, 'YES', 'NO UNDO,')||DECODE(t.PTX, 'YES', 'PARALLEL,'))||t.STATUS status,
        t.used_urec "Undo|Records",
        t.used_ublk "Undo|Blks",
        t.used_ublk * nvl(p.blocksize,512) "Undo|Bytes",
@@ -38,7 +38,7 @@ SELECT sess.sid || ',' || sess.serial# || ',@' || sess.inst_id sid,
 FROM   gv$transaction t,
        v$rollname r,
        gv$rollstat r1,
-       (SELECT thread# inst_id,max(blocksize) blocksize FROM v$log WHERE status='CURRENT' group by thread#) p,
+       (SELECT inst_id,value blocksize FROM gv$parameter WHERE name='db_block_size') p,
        gv$session sess,
        gv$sesstat a
 WHERE  t.xidusn = r.usn(+)

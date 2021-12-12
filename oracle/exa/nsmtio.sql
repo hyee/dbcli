@@ -36,6 +36,7 @@ DECLARE
     block_size INT;
     caches     INT;
     chains     INT;
+    scn        INT;
     partition  VARCHAR2(3);
     deps       VARCHAR2(10):='DISABLED';
     keep       VARCHAR2(20);
@@ -108,7 +109,7 @@ BEGIN
                                         MAX(PLAN_OBJECT_OWNER) OWNER,
                                         MAX(PLAN_OBJECT_NAME) OBJECT_NAME
                                 FROM   gv$sql_plan_monitor
-                                WHERE  PLAN_OPERATION||' '|| PLAN_OPTIONS IN (
+                                WHERE  REPLACE(PLAN_OPERATION,'BITMAP ')||' '|| PLAN_OPTIONS IN (
                                           'TABLE ACCESS STORAGE FULL',
                                           'INDEX STORAGE FAST FULL SCAN',
                                           'INDEX STORAGE FAST FULL SCAN FIRST ROWS',
@@ -258,7 +259,14 @@ BEGIN
     END LOOP;
 
     --EXADATA and SuperCluster : Check if long running transactions are preventing min active scn from progressing, resulting in Storage Indexes not being used (Doc ID 2081483.1)
-    SELECT ROUND((SYSDATE-MIN(TO_DATE(START_TIME,'MM/DD/YY HH24:MI:SS')))*24,2)
+    
+    $IF &check_access_x=1 $THEN
+        --or alter system set events '55703 trace name context forever, level 1' and check alert log
+        SELECT MIN(MIN_ACT_SCN) INTO SCN
+        FROM   TABLE(GV$(CURSOR(SELECT * FROM sys.x$ktumascn)));
+        push('SCN: x$ktumascn.min_act_scn', SCN, '&gt; 0');
+    $END
+    SELECT ROUND((SYSDATE-MIN(START_DATE))*24,2)
     INTO   tmp
     FROM   GV$TRANSACTION;
     push('Longest Transaction', tmp, '&lt; 48 hours (Doc ID 2081483.1)');
