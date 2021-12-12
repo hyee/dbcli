@@ -3,27 +3,27 @@ local u=luv
 local table,math,type,tonumber,os,pcall=table,math,type,tonumber,os,pcall
 local uv,env={},env
 local index,pos,found
-local modules={timer=1,prepare=1,check=1,idle=1,async=1,tcp=1,pipe=1,tty=1,udp=1,fs_event=1,fs_poll=1,fs=1,thread=1,os=1,signal=1}
+local modules={poll=1,loop=1,timer=1,prepare=1,check=1,idle=1,async=1,tcp=1,pipe=1,tty=1,udp=1,fs_event=1,fs_poll=1,fs=1,thread=1,os=1,signal=1}
 local sep=jit.os=='windows' and '\\' or '/'
 for k,v in pairs(modules) do uv[k]={} end
 for name,method in pairs(u) do
-    if name:find('setup') then print(name) end
     local prefix,n=name:match('^([^_]+)_(.+)')
-    if prefix and type(uv[prefix])=='table' then
+    if prefix=='fs' and (name:find('^fs_event') or name:find('^fs_poll')) then
+        prefix,n=name:match('^(fs_[^_]+)_(.+)')
+    end
+    if type(uv[prefix or ''])=='table' then
         uv[prefix][n]=method
     else
-        prefix=name:match('^new_(.+)')
-        if prefix and type(uv[prefix])=='table' then
+        prefix=name:match('^new_(.+)$')
+        if type(uv[prefix or ''])=='table' then
             uv[prefix].new=method
-        elseif type(uv[name])=='table' then
+        elseif not prefix and type(uv[name])=='table' then
             uv[name].new=method
         else
             uv[name]=method
         end
     end
 end
-
-uv.event,uv.fs_event=uv.fs_event,nil
 
 function os.exists(file,ext)
     if not file then return end
