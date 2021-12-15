@@ -123,7 +123,7 @@ BEGIN
                a.cnt||','||
                b.subobject_name obj
         FROM   (SELECT get_dobj(sub) dobj, rid,cnt
-                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN index_ffs(a) &px*/
+                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN full(a) &px*/
                                SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
                                count(1) cnt

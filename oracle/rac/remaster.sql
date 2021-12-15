@@ -163,7 +163,7 @@ BEGIN
         OPEN c FOR
             SELECT seq              "#",
                    owner,
-                   object_name,
+                   nvl(object_name,CASE WHEN data_object_id>4294950912 THEN 'USN #'||(data_object_id-4294950912) END) object_name,
                    subobject_name,
                    data_object_id   dobj#,
                    object_type,
@@ -183,7 +183,7 @@ BEGIN
                           GROUP  BY data_object_id
                           ORDER BY NVL(aff_cnt,0)+NVL(rd_cnt,0) DESC) A
                     WHERE ROWNUM<=50)
-            JOIN   &check_access_obj
+            LEFT    JOIN &check_access_obj
             USING  (data_object_id)
             ORDER  BY seq;
         $END

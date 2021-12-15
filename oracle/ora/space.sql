@@ -1,6 +1,8 @@
 /*[[
-Show or advice on object's space. Usage: @@NAME <[owner.]object_name[.partition_name]> [advise]
-Parameter 'advise': run segment space adviser and print the result
+Show or advice on object's space. Usage: @@NAME <[owner.]object_name[.partition_name]> [-dep] [advise]
+Parameters 
+    advise: run segment space adviser and print the result
+    -dep  : also analyze the depending objects which could be time-consuming
 
 Sample Output:
 ================
@@ -33,6 +35,7 @@ ORCL> ora space sys.obj$ advise
         @check_access_dba: dba_objects={dba_} default={_all}
         @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
         @ARGS: 1
+        &dep: default={0} dep={1}
     --]]
 ]]*/
 
@@ -106,7 +109,8 @@ DECLARE
                decode(p_segname, seg.segment_name, 1, 2) lv
         FROM  (SELECT segment_owner,segment_name,segment_type,partition_name,tablespace_name from objs
                UNION  ALL
-               SELECT segment_owner,index_name,'INDEX',INDEX_PART,tablespace_name from objs where index_name is not null) seg;
+               SELECT segment_owner,index_name,'INDEX',INDEX_PART,tablespace_name from objs where index_name is not null) seg
+        WHERE  (&dep=1 OR regexp_substr(:object_type,'\S+')=regexp_substr(segment_type,'\S+'));
 
     TYPE l_CursorSet IS TABLE OF l_CursorSegs%ROWTYPE;
 

@@ -76,13 +76,15 @@ Parameters
         2: Disable Compression Above-Cache 
         32:disable OLTP Compression on HCC segments conventional DML
     _disable_hcc_array_insert: false to disable conventional load compression for HCC table
-    _kdz_hcc_flags: 16 to disable checksum computation for CUs sent from cell to server for performance benefit
+    _kdz_hcc_flags: 15 to disables CU alignment checks
+                    16 to disable checksum computation for CUs sent from cell to server for performance benefit
                     64 to enable HCC array inserts with subsegments
     _kdz_pcode_flags: 
         1: disable pcode(Portable code,a framework to evaluate predicates)
         32: disable just PCODE aggregation
         256: disable complex predicate push down for PCODE evaluation
         4096: disable pcode aggregation above a hash join
+        32768: Force aggregation pushdown with HCC
         262144: disable  PCODE filtering(not impact cc2 codepath)
         2097152: enable PCODE support for case statements
         1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
@@ -165,6 +167,9 @@ Parameters
                                      and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
     _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs and 
     _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
+    _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
+                     64 - Disable HCC array deletes within updates
+                     128 - 
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
