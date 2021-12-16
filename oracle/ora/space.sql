@@ -220,6 +220,7 @@ DECLARE
                 v_total_blocks:=NULL;
                 v_total_bytes :=NULL;
                 IF v_group(i).mgnt = 'AUTO' THEN
+                    v_unformatted_blocks := 0;
                     BEGIN
                         dbms_space.space_usage(segment_owner      => v_group(i).segment_owner,
                                                segment_name       => v_group(i).segment_name,
@@ -240,14 +241,13 @@ DECLARE
                         v_free_blks := v_fs1_blocks + v_fs2_blocks + v_fs3_blocks + v_fs4_blocks;
                         -- This is only a estimated value, not a exactly value
                         v_free_bytes := v_fs1_bytes * 1 / 8 + v_fs2_bytes * 3 / 8 + v_fs3_bytes * 5 / 8 +v_fs4_bytes * 7 / 8;
-                        calc('HWM: FS1 Blocks(00-25)', v_fs1_blocks);
-                        calc('HWM: FS2 Blocks(25-50)', v_fs2_blocks);
-                        calc('HWM: FS3 Blocks(50-75)', v_fs3_blocks);
-                        calc('HWM: FS4 Blocks(75-100)', v_fs4_blocks);
+                        calc('HWM: FS1 Blocks(01%-25% Free)', v_fs1_blocks);
+                        calc('HWM: FS2 Blocks(25%-50% Free)', v_fs2_blocks);
+                        calc('HWM: FS3 Blocks(50%-75% Free)', v_fs3_blocks);
+                        calc('HWM: FS4 Blocks(75%-100% Free)', v_fs4_blocks);
                         calc('HWM: Full Blocks', v_full_blocks);
                         calc('HWM: Full MBytes', round(v_full_bytes / 1024 / 1024,2));
                         calc('HWM: Free Blocks(Est)', v_free_blks);
-                        calc('HWM: Unformatted Blocks', v_unformatted_blocks);
                     EXCEPTION WHEN OTHERS THEN
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         dbms_space.space_usage(segment_owner      => v_group(i).segment_owner,
@@ -297,9 +297,9 @@ DECLARE
                                         LAST_USED_BLOCK           => v_last_used_block);
                 calc('ABOVE HWM: Unused Blocks', v_unused_blocks);
                 calc('ABOVE HWM: Unused MBytes', Round(v_unused_bytes / 1024/1024,2));
-                calc('HWM: Total Blocks', v_total_blocks - v_unused_blocks);
-                calc('HWM: Total MBytes', Round((v_total_blocks - v_unused_blocks)*v_group(i).block_size/1024/1024,2));
-
+                calc('HWM: * Total Blocks *', v_total_blocks - v_unused_blocks);
+                calc('HWM: * Total MBytes *', Round((v_total_blocks - v_unused_blocks)*v_group(i).block_size/1024/1024,2));
+                calc('HWM: Unformatted Blocks', greatest(nvl(v_unformatted_blocks,0),v_total_blocks - v_unused_blocks - v_free_blks - v_full_blocks));
             EXCEPTION WHEN OTHERS THEN
                 IF SQLCODE=-1031 THEN
                     RAISE;

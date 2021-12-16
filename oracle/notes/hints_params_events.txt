@@ -161,8 +161,9 @@ Parameters
     _slave_mapping_enabled: use to disable px "LOCAL" distribution that can lead to skew
     _cell_cache_thrashing_detection_tolerance(cell): set to 1 to reduce high latency of direct path read/write temp in Exadata, relative cell param: _cell_fc_lw_max_percentage(default 20%)
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
-    _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20
-    _windowfunc_optimization_settings: set to 2 to avoid 'WINDOW CHILD PUSHED RANK' in px query
+    _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
+    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query
+                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism 
     _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
                                      and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
     _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs and 

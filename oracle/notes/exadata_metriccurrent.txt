@@ -506,7 +506,7 @@ FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcach
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_oflsrv_fplib_passthru_timeout_msec', 20000)";
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_toresilver_limit_chdrs', 780000)"; -Datasync starts at the condition of numElems>target to flush dirty data into hard disk
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_max_iops', 120)";
-            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 10)";
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 30)";
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance, 1)"; --95 to 1 to reduce temp io/large io latency due to spill to disk
                                                                      _cell_fc_row_allowlist
                                                                      _cell_fc_lw_max_row_age_in_sec

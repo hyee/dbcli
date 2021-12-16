@@ -69,8 +69,9 @@ if other_lib then
 end
 local jars=table.concat(files,psep)
 
-local java_bin,java_home
-java_bin=arg[1]
+
+local java_bin,java_ver,java_home=arg[1],tonumber(arg[2]) or 52
+
 if not java_bin or not luv.fs_stat(resolve(java_bin)) then
     print("Cannot find java executable, exit.")
     os.exit(1)
@@ -109,7 +110,10 @@ local options ={'-noverify',
                 '-Djava.awt.headless=true',
                 '-Djava.library.path='..resolve("./lib/"..dlldir),
                 '-Djava.security.egd=file:/dev/urandom',
-                '-Djava.class.path='..jars}
+                '-Djava.class.path='..jars,
+                java_ver>52 and '--add-opens=java.base/java.lang=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil}
 for _,param in ipairs(other_options) do options[#options+1]=param end
 local javavm = require("javavm",true)
 javavm.create(table.unpack(options))

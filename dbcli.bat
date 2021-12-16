@@ -24,18 +24,23 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
   If exist %%~sp (
       set "JAVA_EXE_=%%~sp"
 	  SET found=0
-      FOR /F "tokens=1,2 delims==" %%i IN ('!JAVA_EXE_! -XshowSettings:properties 2^>^&1^|findstr "java\.home java\.class\.version os\.arch"' ) do (
+      FOR /F "tokens=1,2 delims==" %%i IN ('""!JAVA_EXE_!" -XshowSettings:properties 2^>^&1^|findstr "java\.home java\.class\.version os\.arch""' ) do (
+
         for /f "tokens=* delims= " %%a in ("%%i") do set n=%%a
         for /l %%a in (1,1,255) do if "!n:~-1!"==" " set n=!n:~0,-1!
         for /f "tokens=* delims= " %%a in ("%%j") do set "v=%%a"
         for /l %%a in (1,1,255) do if "!v:~-1!"==" " set "v=!v:~0,-1!"
-        
         if "!n!" equ "java.home" (
             for %%a in ("!v!") do set v1=%%~sa
             set "JAVA_BIN_=!v1!\bin"
         )
         if "!n!" equ "os.arch" if "!v!" equ "x86" (set bit_=x86) else (set bit_=x64)
-        if "!n!" equ "java.class.version" (if "52.0" NEQ "!v!" (set "JAVA_EXE_=") else (SET found=1))
+        if "!n!" equ "java.class.version" (
+            if "52.0" NEQ "!v!" (set "JAVA_EXE_=") else (
+                SET found=1
+                SET "JAVA_VER_=!v!"
+            )
+        )
       )
 	  if "!found!" == "0" (set "JAVA_EXE_=")
       if "!JAVA_EXE_!" neq "" if "!JAVA_BIN_!" neq "" (
@@ -56,6 +61,7 @@ If not exist "!JAVA_EXE!" (
         set "JAVA_BIN=jre\bin"
         set "JAVA_EXE=jre\bin\java.exe"
         set "bit=x86"
+        SET "JAVA_VER_=52"
     )
 )
 
@@ -88,5 +94,5 @@ for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (
    )
 )
 
-(cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" %*)||pause
+(cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*)||pause
 EndLocal

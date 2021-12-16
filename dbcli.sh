@@ -52,7 +52,7 @@ if [[ "$_java" ]]; then
     bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
     ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
 
-    if [[ "$ver" < "52.0" ]] || [[ "$bit" != "64" ]]; then
+    if [[ "$ver" != "52.0" ]] || [[ "$bit" != "64" ]]; then
         found=1
     fi
 fi
@@ -61,6 +61,7 @@ chmod  777 ./jre_$os/bin/* &>/dev/null
 if [[ $found < 2 ]]; then
     if [[ -x ./jre_$os/bin/java ]];  then
         _java=./jre_$os/bin/java
+        ver="52"
     else
         echo "Cannot find java 1.8 64-bit executable, exit."
         exit 1
@@ -109,4 +110,4 @@ wait
 trap '' TSTP &>/dev/null
 
 chmod  777 ./lib/$os/luajit &>/dev/null
-exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$@"
+exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"
