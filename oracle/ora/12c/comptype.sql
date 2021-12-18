@@ -12,6 +12,8 @@
      |Archive Low | 11.71/7.63              | 4.08 (ZLIB)       | 64-128K |   3MB         |    16K   |
      |Archive High| 17.63/12.73             | 4.86 (BZ2)        |  128K   |   10MB        |    64K   |]
     For DBIM, the CU size is 32MB and data rows can > 50,000
+    
+    Use "alter session set events 'trace[ADVCMP_COMP] disk=lowest'" and move table to see the detailed compression rate
 
     Sample Output:
     ==============
@@ -40,6 +42,7 @@ var cur REFCURSOR "&OBJECT_TYPE: &OBJECT_OWNER..&OBJECT_NAME"
 DECLARE
     TYPE t_rid IS TABLE OF ROWID;
     TYPE t_rec IS TABLE OF VARCHAR2(500);
+    type ttypes IS TABLE OF VARCHAR2(1) INDEX BY PLS_INTEGER;
     v_rids t_rid;
     v_recs t_rec;
     v_stmt VARCHAR2(4000);
@@ -67,6 +70,8 @@ DECLARE
     v_blocks INT;
     v_bsize  INT;
     v_sample VARCHAR2(512);
+    v_comps  ttypes;
+
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
         v_oid := regexp_substr(c, '[^,]+', 1, 1);
@@ -211,6 +216,16 @@ BEGIN
                     v_ptyp := v_ctyp;
                     v_cnt  := 0;
                     v_cnt2 := 0;
+
+                    IF v_ctyp>1 AND NOT v_comps.exists(v_ctyp) AND v_snam IS NULL THEN
+                        v_comps(v_ctyp) := 'Y';
+                        BEGIN
+                            dbms_output.put_line('===============================================');
+                            sys.dbms_compression.dump_compression_map(v_own,v_nam,v_ctyp);
+                            dbms_output.put_line('===============================================');
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END;
+                    END IF;
                 END IF;
                 v_cnt  := v_cnt + 1;
                 v_cnt2 := v_cnt2 + v_rows;

@@ -69,7 +69,7 @@ Of which `TNS_ADM` is optional unless you need to connect Oracle via tnsnames.or
     SET JRE_HOME=d:\soft\java
     SET TNS_ADM=d:\Soft\InstanceClient\network\admin
     
-The default charset is `UTF-8`, to use other charset, just change the `DBCLI_ENCODING` environment variable globally or in the mentioned config file. For example:
+The default charset is `UTF-8`, to use another charset, just change the `DBCLI_ENCODING` environment variable globally or in the mentioned config file. For example:
 * `SET DBCLI_ENCODING=GBK` (for Windows)
 * `DBCLI_ENCODING=GBK ./dbcli.sh`
 
