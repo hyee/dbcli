@@ -73,12 +73,12 @@ public final class Console {
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
-        Charset encoding=null;
+        Charset encoding = null;
         try {
             encoding = Charset.forName(System.getProperty("file.encoding"));
         } catch (Exception e) {
             encoding = Charset.defaultCharset();
-            System.out.println("Unsupported encoding: "+System.getProperty("file.encoding")+", DBCLI will use the default encoding("+encoding.name()+") instead.");
+            System.out.println("Unsupported encoding: " + System.getProperty("file.encoding") + ", DBCLI will use the default encoding(" + encoding.name() + ") instead.");
 
         }
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
@@ -451,6 +451,14 @@ public final class Console {
             if (isPause) terminal.pause();
             keySeq = sb.toString();
             keyCode = KeyMap.display(keySeq);
+            if (keyCode.equals("\"\"") && !keySeq.equals("")) {
+                keyCode = "\"";
+                c = Character.codePointCount(keySeq, 0, keySeq.length());
+                for (int i = 0; i < c; i++) {
+                    keyCode += "\\" + Integer.toOctalString(Character.codePointAt(keySeq, i));
+                }
+                keyCode += "\"";
+            }
             write(keyCode + "\n");
         } else keySeq = KeyMap.translate(keyCode);
         if (keyCode.equals("")) return keyCode;

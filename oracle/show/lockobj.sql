@@ -6,11 +6,12 @@
 
 set feed off
 WITH b AS
- (SELECT /*+use_hash(l) no_expand materialize*/l.*
+ (SELECT /*+use_hash(l t) no_expand materialize table_stats(SYS.X$KSQRS set rows=100000 blocks=1000) table_stats(SYS.X$KSUSE set rows=100000 blocks=1000)*/
+         l.*
   FROM   v$lock_type t, gv$lock l
   WHERE  t.type = l.type
   AND    (t.id1_tag LIKE 'object%' and id1>0))
-SELECT /*+ordered opt_param('cursor_sharing' 'force')*/
+SELECT /*+ opt_param('_optimizer_mjc_enabled' 'false')*/
          c.sid||','||c.serial#||',@'||c.inst_id session#,
          d.type,
          d.lmode || ' [' ||

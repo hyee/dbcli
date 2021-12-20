@@ -116,7 +116,7 @@ function oracle:connect(conn_str)
     else
         conn_str=conn_str or ""
         usr,_,pwd,conn_desc = conn_str:match('(.*)/("?)(.*)%2@(.+)')
-        url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
+        url, isdba=(conn_desc or conn_str):match('^(.*) [aA][sS] (%w+)$')
         if conn_desc and conn_desc:find("?",1,true) then
             local found=false
             local props=conn_desc:split("?",true)
