@@ -3,7 +3,7 @@ col "Current|Undo Size,Exp Undo Size|For Retention" format kmg
 col "Max|Undo Size" format kmg
 col "Necessary|Undo Size" format kmg
 col "Max|Used Size" format kmg
-col "Undo Size|/ Sec,ActiveS|/ Sec,Expired|/ Sec,Unexpired|/ Sec,Steal-Tries|/ Sec,Steal-Succ|/ Sec,Reused" format kmg
+col "Undo Size|/ Sec,ActiveS|/ Sec,Expired|/ Sec,Unexpired|/ Sec,Steal-Tries|/ Sec,Steal-Succ|/ Sec,Reused|/Sec" format kmg
 SELECT d.inst_id INST,
        d.tablespace_name undo_tbs,
        d.MAXBYTES "Max|Undo Size",

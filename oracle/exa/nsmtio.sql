@@ -220,6 +220,7 @@ BEGIN
             push('Index Buffer Pool', keep, 'DEFAULT');
         END IF;
     END IF;
+    /*
     FOR R IN(SELECT 'Tablespace '||TABLESPACE_NAME TBS,ALLOCATION_TYPE||','||DECODE(SEGMENT_SPACE_MANAGEMENT,'AUTO','ASSM','LMT') MGMT 
              FROM    dba_tablespaces 
              WHERE (ALLOCATION_TYPE='UNIFORM' or SEGMENT_SPACE_MANAGEMENT='MANUAL') AND CONTENTS='PERMANENT'
@@ -231,7 +232,7 @@ BEGIN
                                        AND    nvl(partition_name, '_') = coalesce(:object_subname, partition_name, '_'))) 
     ) LOOP
         push(r.tbs,r.mgmt,'AUTOALLOCATE,ASSM: Uniform tbs can lead to inconsistent Level 1 BMB High/low HWM for direct load(bug 25773041)');
-    END LOOP;
+    END LOOP;*/
 
     FOR R IN(SELECT Distinct b.dg,upper(b.value) val,b.misses,b.disks
              FROM    dba_data_files a, 
@@ -279,6 +280,7 @@ BEGIN
     --Exadata: How to diagnose smart scan and wrong results (Doc ID 1260804.1)
     push('Param cell_offload_processing', param('cell_offload_processing'), 'true');
     push('Param cell_offload_decryption', param('cell_offload_decryption'), 'true');
+    push('Param _cell_offload_complex_processing', param('_cell_offload_complex_processing'), 'true');
     push('Param _cell_offload_hybridcolumnar', param('_cell_offload_hybridcolumnar'), 'true');
     push('Param _kcfis_cell_passthru_enabled', param('_kcfis_cell_passthru_enabled'), 'false');
     push('Param _kcfis_rdbms_blockio_enabled', param('_kcfis_rdbms_blockio_enabled'), 'false');

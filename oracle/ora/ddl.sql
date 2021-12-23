@@ -1,5 +1,5 @@
 /*[[
-   Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<file_ext>]}
+   Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<object_type>]}
    --[[
         @CHECK_ACCESS_OBJ: dba_views={dba_views}, default={all_views}
         @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
@@ -13,18 +13,21 @@
 SET FEED OFF VERIFY OFF
 VAR TEXT CLOB;
 VAR DEST VARCHAR2
-ora _find_object &V1
+ora _find_object "&V1" 1
 
 DECLARE
     v_default     NUMBER := DBMS_METADATA.SESSION_TRANSFORM;
     schem         VARCHAR2(128):= :object_owner;
     part1         VARCHAR2(128):= :object_name;
     name          VARCHAR2(128); 
-    obj_type      VARCHAR2(128):= :object_type;
+    obj_type      VARCHAR2(128):= nvl(upper(:V2),:object_type);
     txt           CLOB;
     vw            VARCHAR2(256);
     cols          VARCHAR2(32767);
 BEGIN
+    IF :V1 IS NULL THEN
+        raise_application_error(-20001,'Please specify the object name!');
+    END IF;
     IF obj_type in('VIEW','SYNONYM') THEN
         for r in(select column_id,column_name from &CHECK_ACCESS_COLS where owner=schem and table_name=regexp_replace(part1,'^G?V_?','GV_') order by column_id) loop
             cols:=cols||case when r.column_id>1 then ',' end||r.column_name;
@@ -77,7 +80,23 @@ BEGIN
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', TRUE);
         --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
         BEGIN
-        txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
+            IF part1 IS NULL THEN
+                IF :V2 IS NOT NULL THEN
+                    part1:=:V1;
+                    IF NOT part1 LIKE '%"%' THEN
+                        part1 := UPPER(part1);
+                    END IF;
+                    IF part1 LIKE '%.%' THEN
+                        schem := regexp_substr(part1,'^[^\/.]+');
+                        part1 := regexp_substr(part1,'[^\/.]+$');
+                    END IF;
+                    txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1,schem);
+                ELSE 
+                    raise_application_error(-20001,'Cannot find target object.');
+                END IF;
+            ELSE
+                txt := dbms_metadata.get_ddl(REPLACE(obj_type, ' ', '_'), part1, SCHEM);
+            END IF;
         EXCEPTION WHEN OTHERS THEN
             IF sqlcode=-31603 AND obj_type='VIEW' AND DBMS_DB_VERSION.VERSION>11 THEN --object "%s" of type VIEW not found in schema "SYS"
                 NULL;
@@ -114,7 +133,7 @@ BEGIN
         END IF;
     END IF;
     :text := txt;
-    :dest := part1 || '.'||nvl(:V2,'sql');
+    :dest := part1 || '.sql';
 EXCEPTION WHEN OTHERS THEN
     raise_application_error(-20001,sqlerrm);
 END;
