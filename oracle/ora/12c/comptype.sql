@@ -1,5 +1,5 @@
 /*[[
-    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-all] [-f"<filter>"] [-dx]
+    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-all] [-f"<filter>"] [-dx|-sample]
     -dx : Use no parallel direct path read
     rows: Maximum number of rows to scan, default as 2 millions, use '-all' to unlimite the scan rows.
 
@@ -32,6 +32,7 @@
         &dx    : default={--} dx={}
         &v2    : default={2e6} all={A}
         &px    : default={parallel(4)} dx={no_parallel}
+        &sp    : default={0} sample={1}
 
     --]]
 ]]*/
@@ -148,39 +149,41 @@ BEGIN
             v_stmt := REPLACE(v_stmt, '@ROWS@','AND ROWNUM<='||v_tops);
         END IF;
     ELSIF trim(v_tops) !='A' THEN
-        SELECT MAX(avg_row_len)*1.2,NULLIF(max(blocks),0)
-        INTO   v_len,v_blocks
-        FROM   (SELECT avg_row_len,num_rows,blocks
-                FROM   &check_access_obj.tables
-                WHERE  v_typ IN ('TABLE','MATERIALIZED')
-                AND    owner = v_own
-                AND    table_name = v_nam
-                UNION ALL
-                SELECT avg_row_len,num_rows,blocks
-                FROM   &check_access_obj.tab_partitions
-                WHERE  v_typ = 'TABLE PARTITION'
-                AND    table_owner = v_own
-                AND    table_name = v_nam
-                AND    partition_name = v_snam
-                UNION ALL
-                SELECT avg_row_len,num_rows,blocks
-                FROM   &check_access_obj.tab_subpartitions
-                WHERE  v_typ = 'TABLE SUBPARTITION'
-                AND    table_owner = v_own
-                AND    table_name = v_nam
-                AND    subpartition_name = v_snam);
+        IF &sp=1 THEN
+            SELECT MAX(avg_row_len)*1.2,NULLIF(max(blocks),0)
+            INTO   v_len,v_blocks
+            FROM   (SELECT avg_row_len,num_rows,blocks
+                    FROM   &check_access_obj.tables
+                    WHERE  v_typ IN ('TABLE','MATERIALIZED')
+                    AND    owner = v_own
+                    AND    table_name = v_nam
+                    UNION ALL
+                    SELECT avg_row_len,num_rows,blocks
+                    FROM   &check_access_obj.tab_partitions
+                    WHERE  v_typ = 'TABLE PARTITION'
+                    AND    table_owner = v_own
+                    AND    table_name = v_nam
+                    AND    partition_name = v_snam
+                    UNION ALL
+                    SELECT avg_row_len,num_rows,blocks
+                    FROM   &check_access_obj.tab_subpartitions
+                    WHERE  v_typ = 'TABLE SUBPARTITION'
+                    AND    table_owner = v_own
+                    AND    table_name = v_nam
+                    AND    subpartition_name = v_snam);
 
-        $IF &check_access_seg=1 $THEN
-            SELECT SUM(blocks),sum(bytes)/sum(blocks)
-            INTO   v_blocks,v_bsize
-            FROM   dba_segments b
-            WHERE  owner = v_own
-            AND    segment_name = v_nam
-            AND    nvl(partition_name, '_') = COALESCE(v_snam, partition_name, '_');
-        $ELSE
-            SELECT value INTO v_bsize FROM v$parameter WHERE name='db_block_size';
-        $END
-
+            $IF &check_access_seg=1 $THEN
+                SELECT SUM(blocks),sum(bytes)/sum(blocks)
+                INTO   v_blocks,v_bsize
+                FROM   dba_segments b
+                WHERE  owner = v_own
+                AND    segment_name = v_nam
+                AND    nvl(partition_name, '_') = COALESCE(v_snam, partition_name, '_');
+            $ELSE
+                SELECT value INTO v_bsize FROM v$parameter WHERE name='db_block_size';
+            $END
+        END IF;
+        
         v_sample := round(v_tops/(v_bsize/nvl(v_len,256))*100/v_blocks,4);
         IF v_sample+0 >=80 THEN 
             v_sample := NULL;

@@ -171,6 +171,10 @@ BEGIN
                     WHERE  NAME = 'db_file_multiblock_read_count'
                     AND    ismodified != 'FALSE'
                     UNION ALL
+                    SELECT '_db_file_optimizer_read_count', NVL(MAX(to_number(VALUE)),8) VALUE
+                    FROM   v$parameter
+                    WHERE  NAME = '_db_file_optimizer_read_count'
+                    UNION ALL
                     SELECT NAME, decode(TYPE, 3, to_number(VALUE)) VALUE
                     FROM   v$parameter
                     WHERE  NAME = 'sessions'
