@@ -93,7 +93,6 @@ Parameters
     _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
     _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
     _controlfile_cell_flash_caching: 
-    _controlfile_cell_flash_caching: 
         3: (default) Control File reads will be cached in the Cell Flash Cache with a default caching policy
         2: disable Flash Cache caching of Control File reads.
         1: enable KEEP caching policy of CF reads (more aggressive than default)
@@ -154,6 +153,7 @@ Parameters
     _px_reuse_server_groups: reuse existing px server group for CDT
     _dbg_scan: default as 0
         1: Disable LOB predicate pushdown to Smart Scan
+        128: disable HCC read-ahead 
         4096: Disable rowset function evaluation in Smart Scan
         8192: Disable aggregation pushdown to Smart Scan
         131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
@@ -166,7 +166,7 @@ Parameters
                                        256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism 
     _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
                                      and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
-    _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs and 
+    _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs 
     _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
     _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
                      64 - Disable HCC array deletes within updates

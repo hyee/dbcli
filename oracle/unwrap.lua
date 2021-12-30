@@ -3266,7 +3266,7 @@ function unwrap.unwrap(obj,ext,prefix)
                     end
                 end
             else
-                local piece=line:match("^%s*([%w%+%/%=]+)$")
+                local piece=line:match("^%s*([%w%+%/%=]+)%s*$")
                 if not found and piece and #piece>=64 then
                     found=true
                     repidx=#org+1

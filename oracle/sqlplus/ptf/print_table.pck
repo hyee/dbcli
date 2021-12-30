@@ -105,7 +105,7 @@ CREATE OR REPLACE NONEDITIONABLE PACKAGE print_table AS
      RETURN TABLE
         PIPELINED TABLE POLYMORPHIC USING print_table;
 
-    /*Print formatted the result of select-statement.
+    /*Print formatted result of select-statement.
       This functions is mainly used in database command-line such as SQL*Plus
       in order to automatically format the output. It will convert all columns as VARCHAR2 datatypes,
       and automatically re-calc each column width.
