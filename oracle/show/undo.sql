@@ -2,8 +2,28 @@
 col "Current|Undo Size,Exp Undo Size|For Retention" format kmg
 col "Max|Undo Size" format kmg
 col "Necessary|Undo Size" format kmg
-col "Max|Used Size" format kmg
+col "Max|Used Size,BYTES,BLOCK_SIZE" format kmg
 col "Undo Size|/ Sec,ActiveS|/ Sec,Expired|/ Sec,Unexpired|/ Sec,Steal-Tries|/ Sec,Steal-Succ|/ Sec,Reused|/Sec" format kmg
+SET FEED OFF
+COL OWNER,undo_tbs break
+PRO DBA_UNDO_EXTENTS:
+PRO =================
+SELECT OWNER,
+       TABLESPACE_NAME undo_tbs,
+       STATUS,
+       COUNT(DISTINCT SEGMENT_NAME) SEGMENTS,
+       COUNT(1) EXTENTS,
+       SUM(BLOCKS) BLOCKS,
+       SUM(BYTES) BYTES,
+       SUM(BYTES)/SUM(BLOCKS) BLOCK_SIZE
+FROM DBA_UNDO_EXTENTS
+GROUP BY OWNER,
+         TABLESPACE_NAME,
+         STATUS
+ORDER BY 1,2,3;
+
+PRO GV$UNDOSTAT:
+PRO ============
 SELECT d.inst_id INST,
        d.tablespace_name undo_tbs,
        d.MAXBYTES "Max|Undo Size",

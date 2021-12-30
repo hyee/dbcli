@@ -57,11 +57,11 @@ begin
                    where a.inst_id=b.inst_id 
                    and   a.inst_id=nvl(regexp_substr(:V2,'^\d+$'),userenv('instance'))) a
             WHERE ((
-                  :V1 is NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V1||'%')   escape '\' OR 
-                  :V2 IS NOT NULL and regexp_substr(:V2,'^\d+$') IS NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V2||'%')  OR
-                  :V3 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V3||'%')  OR
-                  :V4 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V4||'%')  OR
-                  :V5 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V5||'%')) 
+                  :V1 is NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V1||'%') escape '\' OR 
+                  :V2 IS NOT NULL and regexp_substr(:V2,'^\d+$') IS NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V2||'%') escape '\' OR
+                  :V3 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V3||'%') escape '\' OR
+                  :V4 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V4||'%') escape '\' OR
+                  :V5 IS NOT NULL and lower(NAME||' '||DESCRIPTION) LIKE LOWER('%'||:V5||'%') escape '\' ) 
               OR (:V1 IS NULL and isdefault='FALSE'))
             order by name;
     else

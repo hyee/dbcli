@@ -35,6 +35,7 @@ ORCL> ora space sys.obj$ advise
         @check_access_dba: dba_objects={dba_} default={_all}
         @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
         @ARGS: 1
+        @fs5: 12.2={fs5_blocks=>v_fs5_blocks,fs5_bytes => v_fs5_bytes,} default={}
         &dep: default={0} dep={1}
     --]]
 ]]*/
@@ -146,6 +147,8 @@ DECLARE
         v_fs3_bytes          INT;
         v_fs4_blocks         INT := -1;
         v_fs4_bytes          INT;
+        v_fs5_blocks         INT;
+        v_fs5_bytes          INT := 0;
         v_full_blocks        INT;
         v_full_bytes         INT;
         v_free_bytes         INT;
@@ -236,15 +239,19 @@ DECLARE
                                                fs3_bytes          => v_fs3_bytes,
                                                fs4_blocks         => v_fs4_blocks,
                                                fs4_bytes          => v_fs4_bytes,
+                                               &fs5
                                                full_blocks        => v_full_blocks,
                                                full_bytes         => v_full_bytes);
                         v_free_blks := v_fs1_blocks + v_fs2_blocks + v_fs3_blocks + v_fs4_blocks;
                         -- This is only a estimated value, not a exactly value
-                        v_free_bytes := v_fs1_bytes * 1 / 8 + v_fs2_bytes * 3 / 8 + v_fs3_bytes * 5 / 8 +v_fs4_bytes * 7 / 8;
+                        v_free_bytes := v_fs1_bytes * 1 / 8 + v_fs2_bytes * 3 / 8 + v_fs3_bytes * 5 / 8 +v_fs4_bytes * 7 / 8+ v_fs5_bytes;
                         calc('HWM: FS1 Blocks(01%-25% Free)', v_fs1_blocks);
                         calc('HWM: FS2 Blocks(25%-50% Free)', v_fs2_blocks);
                         calc('HWM: FS3 Blocks(50%-75% Free)', v_fs3_blocks);
                         calc('HWM: FS4 Blocks(75%-100% Free)', v_fs4_blocks);
+                        IF v_fs5_blocks IS NOT NULL THEN
+                            calc('HWM: FS5 Blocks(100% Free)', v_fs5_blocks);
+                        END IF;
                         calc('HWM: Full Blocks', v_full_blocks);
                         calc('HWM: Full MBytes', round(v_full_bytes / 1024 / 1024,2));
                         calc('HWM: Free Blocks(Est)', v_free_blks);
@@ -280,6 +287,7 @@ DECLARE
                                            freelist_group_id => 0,
                                            free_blks         => v_free_blks);
                     v_free_bytes := v_free_blks * v_group(i).block_size;
+                    calc('HWM: Free Blocks',v_free_blks);
                 END IF;
 
                 calc('HWM: Free MBytes(Est)', round(v_free_bytes / 1024 / 1024,2));
@@ -297,6 +305,9 @@ DECLARE
                                         LAST_USED_BLOCK           => v_last_used_block);
                 calc('ABOVE HWM: Unused Blocks', v_unused_blocks);
                 calc('ABOVE HWM: Unused MBytes', Round(v_unused_bytes / 1024/1024,2));
+                calc('HWM: Last Used File#',v_LastUsedExtFileId);
+                calc('HWM: Last Used Block#',v_LastUsedExtBlockId);
+                calc('HWM: Last Used Blocks',v_last_used_block);
                 calc('HWM: * Total Blocks *', v_total_blocks - v_unused_blocks);
                 calc('HWM: * Total MBytes *', Round((v_total_blocks - v_unused_blocks)*v_group(i).block_size/1024/1024,2));
                 calc('HWM: Unformatted Blocks', greatest(nvl(v_unformatted_blocks,0),v_total_blocks - v_unused_blocks - v_free_blks - v_full_blocks));
