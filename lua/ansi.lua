@@ -358,14 +358,20 @@ function string.ulen(s,maxlen)
     if not s then return nil end
     if maxlen==0 then return 0,0,'' end
     local s1,len1,len2=tostring(s)
-    if (maxlen and maxlen>0 and #s1>maxlen and s1:find('\27[',1,true)) or s1:sub(1,1024):find('[\127-\255]') then
+    len1=#s1
+    local is_ansi,is_unicode=s1:find('\27[',1,true),s1:sub(1,1024):find('[\127-\255]')
+    if (maxlen and maxlen>0 and len1>maxlen and is_ansi) or is_unicode then
         len1,len2,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
         len1,len2,s1=tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
-    else
-        if maxlen and maxlen>0 then 
-            s1=s1:sub(1,maxlen)
+        if is_unicode then
+            len1=#(is_ansi and s1:strip_ansi() or s1)
         end
-        len1,len2=#s1,#(s1:strip_ansi())
+    else
+        if (maxlen or 0)>0 and len1>maxlen then 
+            s1=s1:sub(1,maxlen)
+            len1=#s1
+        end
+        len2=is_ansi and #s1:strip_ansi() or len1
     end
     return len1,len2,s1
 end

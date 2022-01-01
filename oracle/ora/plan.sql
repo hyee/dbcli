@@ -31,7 +31,8 @@ Options:
              default={(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets}
              }
     @check_access_ab : dba_hist_sqlbind={1} default={0}
-    &check_access_pdb: default={DBA_HIST_} pdb={AWR_PDB_} 
+    &check_access_pdb: default={DBA_HIST_} pdb={AWR_PDB_}
+    &dop : default={max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1))}
     @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @check_access_awr: {
            dba_hist_sql_plan={UNION ALL
@@ -49,7 +50,9 @@ Options:
                          replace(object_alias,'"') alias,
                          io_cost,position,
                          &proj,
-                         access_predicates ap,filter_predicates fp,search_columns sc
+                         access_predicates ap,filter_predicates fp,search_columns sc,
+                         &dop over(partition by plan_hash_value) dop,
+                         &d_mbrc mbrc
                   FROM   &check_access_pdb.sql_plan a
                   WHERE  a.sql_id = '&v1'
                   AND    &SRC != 1
@@ -80,7 +83,9 @@ Options:
                          replace(object_alias,'"') alias,
                          io_cost,position,
                          &proj,
-                         access_predicates ap,filter_predicates fp,search_columns sc
+                         access_predicates ap,filter_predicates fp,search_columns sc,
+                         &dop over(partition by PLAN_ID) dop,
+                         &g_mbrc mbrc
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = '&v1'
                   AND    &SRC = 0
@@ -106,7 +111,9 @@ Options:
                          replace(object_alias,'"') alias,
                          io_cost,position,
                          &proj,
-                         access_predicates ap,filter_predicates fp,search_columns sc
+                         access_predicates ap,filter_predicates fp,search_columns sc,
+                         &dop over(partition by PLAN_ID) dop,
+                         &g_mbrc mbrc
                   FROM   sys.sql$text st,sys.sqlobj$plan a
                   WHERE  st.sql_handle = '&v1'
                   AND    &SRC = 0
@@ -264,7 +271,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          replace(object_alias,'"') alias,
                          io_cost,position,
                          &proj,
-                         access_predicates ap,filter_predicates fp,search_columns sc
+                         access_predicates ap,filter_predicates fp,search_columns sc,
+                         &dop over(partition by inst_id,child_number) dop,
+                         &g_mbrc mbrc
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = '&v1'
                   AND   ('&v1' != '&_sql_id' or inst_id=userenv('instance'))
@@ -286,7 +295,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          replace(object_alias,'"') alias,
                          io_cost,position,
                          &proj,
-                         access_predicates ap,filter_predicates fp,search_columns sc
+                         access_predicates ap,filter_predicates fp,search_columns sc,
+                         &dop over(partition by SQLSET_ID,plan_hash_value) dop,
+                         &g_mbrc mbrc
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = '&v1'
                   AND    &SRC = 0
@@ -313,7 +324,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          replace(object_alias,'"') alias,
                          io_cost,position,
                          &proj,
-                         access_predicates ap,filter_predicates fp,search_columns sc
+                         access_predicates ap,filter_predicates fp,search_columns sc,
+                         &dop over(partition by plan_id) dop,
+                         &g_mbrc mbrc
                   FROM   plan_table a
                   WHERE  '&v1' not in('&_sql_id')
                   AND    &SRC = 0
@@ -325,7 +338,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
 hierarchy_data AS
  (SELECT /*+CONNECT_BY_COMBINE_SW NO_CONNECT_BY_FILTERING*/
          id, parent_id pid,qb,alias,plan_hash_value phv,minid,io_cost,rownum r_,
-         ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
+         ap,fp,dop,mbrc,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
   FROM   sql_plan_data
   START  WITH id = minid
   CONNECT BY PRIOR id = parent_id
@@ -396,7 +409,7 @@ xplan_data AS
            COUNT(*) over() AS rc,
            nvl(trim(dbms_xplan.format_number(CASE 
                WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
-                   greatest(1,floor(io_cost/&check_access_aux))
+                   greatest(1,floor(io_cost*nvl(dop,1)/mbrc))
                ELSE
                    io_cost
            END)),' ') blks

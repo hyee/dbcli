@@ -4,7 +4,8 @@
     
     Option:
     ======
-        -d: used to detail in segment level, otherwise in object name level
+        -d    : used to detail in segment level, otherwise in object name level
+        -flash: also check flashcache usage when view EXA$CACHED_OBJECTS is available
 
     Sample Output:
     ==============
@@ -24,8 +25,22 @@
         &OPT2: default={}, d={1}
         @check_access_dba: dba_objects={dba_} default={_all}
         @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
-        @check_access_exa1: {
-          EXA$CACHED_OBJECTS={(
+        &check_access_exa1: {
+          default={(select ' ' owner,' ' object_name,' ' subobject_name,' ' object_type,
+                            0 object_id,
+                            0 data_object_id,
+                            0 cells,
+                            0 pieces,
+                            0 hits,
+                            0 misses,
+                            0 CACHEDSIZE,
+                            0 cachedwrite,
+                            0 columnarcache,
+                            0 cachedkeep,
+                            0 columnarkeep
+                    from dual
+                    where 1=2)},
+          flash={(
                     SELECT owner, object_name, subobject_name, object_type, object_id, b.*
                     FROM   (SELECT objectnumber data_object_id,
                                    count(distinct cellnode) cells,
@@ -42,22 +57,8 @@
                             GROUP  BY objectnumber) b,
                            &check_access_dba.objects a
                     WHERE  b.data_object_id = a.data_object_id)} 
-          default={(select ' ' owner,' ' object_name,' ' subobject_name,' ' object_type,
-                            0 object_id,
-                            0 data_object_id,
-                            0 cells,
-                            0 pieces,
-                            0 hits,
-                            0 misses,
-                            0 CACHEDSIZE,
-                            0 cachedwrite,
-                            0 columnarcache,
-                            0 cachedkeep,
-                            0 columnarkeep
-                    from dual
-                    where 1=2)}
         }
-        @check_access_exa2: EXA$CACHED_OBJECTS={,'|' "|",} default={--}
+        &check_access_exa2: default={--} flash={,'|' "|",} 
     --]] 
 ]]*/
 

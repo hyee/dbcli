@@ -39,13 +39,13 @@
 set feed off 
 COL AVG_ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT USMHD2
 COL CELLIO,READ,WRITE,CELLIO,OFLIN,OFLOUT FORMAT KMG
-COL buff for tmb
+COL buffs,reads,dxws for tmb2
 VAR c REFCURSOR;
 VAR b REFCURSOR "Bind List"
 VAR src  VARCHAR2;
 VAR inst VARCHAR2;
 VAR txt  CLOB;
-SET autohide ON VERIFY OFF
+SET VERIFY OFF AUTOHIDE all
 
 DECLARE
     sql_text  CLOB;
@@ -265,11 +265,14 @@ PRINT b;
 PRINT c;
 save txt last_sql_&V1..txt
 
-pro
-pro Result of &src
-pro =======================================
-SELECT *
-FROM   (SELECT &VER top_level_sql_id top_sql,
+col MEM,OPTIMAL,ONEPASS,TEMP,LAST_TEMP FOR KMG2
+col ACTIVES FOR msmhd2
+col OPTIMALS,ONEPASS,MULTIS FOR TMB2
+
+grid {
+[[/*grid={topic='Result of &src'}*/
+  SELECT *
+  FROM  (SELECT &VER top_level_sql_id top_sql,
                COUNT(1) aas,
                NVL(event, 'ON CPU') event,
                sql_plan_hash_value phv,
@@ -283,10 +286,34 @@ FROM   (SELECT &VER top_level_sql_id top_sql,
         GROUP  BY sql_plan_hash_value, PLSQL_ENTRY_OBJECT_ID,PLSQL_OBJECT_ID, event
                   &VER ,sql_plan_line_id,top_level_sql_id,NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME)
         ORDER  BY aas DESC)
-WHERE  ROWNUM <= 10;
+  WHERE ROWNUM <= 10]],
+'|',[[/*grid={topic='SQL Workarea'}*/
+SELECT /*+use_hash(a b)*/ phv,
+       OPERATION_TYPE,
+       POLICY,
+       Count(1) CNT,
+       NULLIF(SUM(ACTIVE_TIME*10),0) ACTIVES,
+       MAX(LAST_MEMORY_USED) MEM,
+       NULLIF(MAX(LAST_DEGREE),1) LAST_DOP,
+       '|' "|",
+       LAST_EXECUTION LAST_EXEC,
+       NULLIF(SUM(OPTIMAL_EXECUTIONS),0) OPTIMALS,
+       NULLIF(MAX(ESTIMATED_OPTIMAL_SIZE),0) OPTIMAL,
+       NULLIF(SUM(ONEPASS_EXECUTIONS),0) ONEPASSES,
+       NULLIF(MAX(ESTIMATED_ONEPASS_SIZE),0) ONEPASS,
+       NULLIF(SUM(MULTIPASSES_EXECUTIONS),0) MULTIS,
+       '|' "|",
+       NULLIF(MAX(MAX_TEMPSEG_SIZE),0) TEMP,
+       NULLIF(MAX(LAST_TEMPSEG_SIZE),0) LAST_TEMP
+FROM   (select * from gv$sql_workarea where sql_id=:V1) a
+JOIN   (select inst_id,sql_id,child_number,plan_hash_value phv from gv$sql where sql_id=:V1) b
+USING  (inst_id,sql_id,child_number)
+GROUP  BY phv,OPERATION_TYPE, POLICY,LAST_EXECUTION
+ORDER  BY MEM + TEMP DESC NULLS LAST]]}
 
+PRO 
 SELECT PLAN_HASH_VALUE PHV,
-       program_id || NULLIF('#' || program_line#, '#0') program#,
+       NULLIF(program_id || NULLIF('#' || program_line#, '#0'),'0') program#,
        &ver trim(chr(10) from ''||&ver12 decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))||
        &ver decode(IS_BIND_SENSITIVE, 'Y', 'IS_BIND_SENSITIVE'||chr(10)) || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10)))
        &ver ACS,
@@ -300,19 +327,21 @@ SELECT PLAN_HASH_VALUE PHV,
        '|' "|",
        round(SUM(elapsed_time)/SUM(EXEC),3) avg_ela,
        round(SUM(cpu_time)/SUM(EXEC),3) CPU,
-       round(SUM(USER_IO_WAIT_TIME)/SUM(EXEC),3) io,
-       round(SUM(CONCURRENCY_WAIT_TIME)/SUM(EXEC),3) cc,
-       round(SUM(CLUSTER_WAIT_TIME)/SUM(EXEC),3) cl,
-       round(SUM(APPLICATION_WAIT_TIME)/SUM(EXEC),3) ap,
-       round(SUM(PLSQL_EXEC_TIME + JAVA_EXEC_TIME)/SUM(EXEC),3) pl_java,
-       round(SUM(BUFFER_GETS)/SUM(EXEC),3) AS BUFF,
-       &ver round(SUM(IO_INTERCONNECT_BYTES)/SUM(EXEC),3)  cellio,
-       &ver round(SUM(PHYSICAL_WRITE_BYTES)/SUM(EXEC),3)  AS WRITE,
-       &ver round(SUM(PHYSICAL_READ_BYTES)/SUM(EXEC),3)  AS READ,
-       &ver round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/SUM(EXEC),3)  oflin,
-       &ver round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES)/SUM(EXEC),3)  oflout,
-       round(sum(ROWS_PROCESSED)/SUM(EXEC),3)  rows#,
-       round(sum(fetches)/SUM(EXEC),3)  fetches
+       NULLIF(round(SUM(USER_IO_WAIT_TIME)/SUM(EXEC),3),0) io,
+       NULLIF(round(SUM(CONCURRENCY_WAIT_TIME)/SUM(EXEC),3),0) cc,
+       NULLIF(round(SUM(CLUSTER_WAIT_TIME)/SUM(EXEC),3),0) cl,
+       NULLIF(round(SUM(APPLICATION_WAIT_TIME)/SUM(EXEC),3),0) ap,
+       NULLIF(round(SUM(PLSQL_EXEC_TIME + JAVA_EXEC_TIME)/SUM(EXEC),3),0) pl_java,
+       NULLIF(round(SUM(BUFFER_GETS)/SUM(EXEC),3),0) AS BUFFS,
+       NULLIF(round(sum(DISK_READS)/SUM(EXEC),3),0)  reads,
+       NULLIF(round(sum(DIRECT_WRITES)/SUM(EXEC),3),0)  dxws,
+       &ver NULLIF(round(SUM(IO_INTERCONNECT_BYTES)/SUM(EXEC),3),0)  cellio,
+       &ver NULLIF(round(SUM(PHYSICAL_WRITE_BYTES)/SUM(EXEC),3),0)  AS WRITE,
+       &ver NULLIF(round(SUM(PHYSICAL_READ_BYTES)/SUM(EXEC),3),0)  AS READ,
+       &ver NULLIF(round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/SUM(EXEC),3),0)  oflin,
+       &ver NULLIF(round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES)/SUM(EXEC),3),0)  oflout,
+       NULLIF(round(sum(ROWS_PROCESSED)/SUM(EXEC),3),0)  rows#,
+       NULLIF(round(sum(fetches)/SUM(EXEC),3),0)  fetches
 FROM   (SELECT greatest(EXECUTIONS + users_executing, 1) exec,a.* 
         FROM   gv$SQL a 
         WHERE  SQL_ID=:V1 

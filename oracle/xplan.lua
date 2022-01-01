@@ -1,38 +1,6 @@
 local db,cfg=env.getdb(),env.set
 local xplan={}
 local default_fmt,e10053,prof,sqldiag="ALLSTATS ALL -ALIAS -PROJECTION OUTLINE REMOTE"
-local calc_mbrc=[[DECLARE
-   mreadtim PLS_INTEGER;
-   sreadtim PLS_INTEGER;
-   mbrc     PLS_INTEGER;
-   iotfrspeed PLS_INTEGER;
-   ioseektim PLS_INTEGER;
-   blks     PLS_INTEGER; 
-   st       DATE;
-   et       DATE;
-   rtn      PLS_INTEGER;
-   str      VARCHAR2(30);
-BEGIN
-    sys.dbms_stats.get_system_stats(str,st,et,'iotfrspeed',iotfrspeed);
-    sys.dbms_stats.get_system_stats(str,st,et,'ioseektim',ioseektim);
-    sys.dbms_stats.get_system_stats(str,st,et,'sreadtim',sreadtim);
-    sys.dbms_stats.get_system_stats(str,st,et,'mreadtim',mreadtim);
-    sys.dbms_stats.get_system_stats(str,st,et,'mbrc',mbrc);
-    rtn := sys.dbms_utility.get_parameter_value('db_block_size',blks,str);
-    IF mbrc IS NULL THEN
-        rtn := sys.dbms_utility.get_parameter_value('_db_file_optimizer_read_count',mbrc,str);
-        mbrc := NVL(mbrc,8);
-    END IF;
-    
-    IF sreadtim IS NULL THEN
-        sreadtim := ROUND(ioseektim+blks/iotfrspeed);
-    END IF;
-    
-    IF mreadtim IS NULL THEN
-        mreadtim := ROUND(ioseektim+blks/iotfrspeed*mbrc);
-    END IF;
-    :cost := utl_lms.format_message('(%d/%d/%d)-%d',mreadtim,sreadtim,mbrc,mbrc-2);
-END;]]
 function xplan.explain(fmt,sql)
     local ora,sqltext=db.C.ora
     local _fmt=default_fmt
@@ -61,8 +29,6 @@ function xplan.explain(fmt,sql)
         fmt = 'adaptive '..fmt
     end
 
-    local rtn={cost='#VARCHAR'}
-    db:exec_cache(calc_mbrc,rtn,'Internal_XPLAN')
     sql=env.COMMAND_SEPS.match(sql)
     local sql1= sql:gsub("\r?\n","")
     if not sql1:match('(%s)') then
@@ -154,13 +120,14 @@ function xplan.explain(fmt,sql)
                 qblock_name qb,
                 replace(object_alias,'"') alias,
                 @proj@,
-                access_predicates ap,filter_predicates fp,search_columns sc
+                access_predicates ap,filter_predicates fp,search_columns sc,
+                max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1)) over(partition by plan_id) dop
          FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
          WHERE  seq = 1
          ORDER  BY id),
         hierarchy_data AS
          (SELECT /*+CONNECT_BY_COMBINE_SW NO_CONNECT_BY_FILTERING*/
-                 id, pid,qb,alias,io_cost,rownum r_,ap,fp,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
+                 id, pid,qb,alias,io_cost,rownum r_,ap,fp,dop,nvl(nullif(sc,0),keys) sc,nvl2(rowsets,'R'||rowsets||nvl2(proj,'/P'||proj,''),proj) proj
           FROM   sql_plan_data
           START  WITH id = 0
           CONNECT BY PRIOR id = pid
@@ -196,7 +163,7 @@ function xplan.explain(fmt,sql)
                  o.maxid,
                  nvl(trim(dbms_xplan.format_number(CASE 
                      WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
-                         greatest(1,floor(io_cost/@mbrc@)) 
+                         greatest(1,floor(io_cost*nvl(dop,1)/@mbrc@)) 
                      ELSE
                          io_cost
                  END)),' ') blks,
@@ -243,7 +210,7 @@ function xplan.explain(fmt,sql)
                      else plan_table_output[cv()]
                  end)
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id):gsub('@mbrc@',rtn.cost)
+    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id):gsub('@mbrc@',db.props.mbrc)
     sql=sql:gsub('@proj@',db.props.version>11.1 and 
           [[nullif(regexp_count(projection,'\[[A-Z0-9,]+\](,|$)'),0) proj,nvl2(access_predicates,0+regexp_substr(projection,'#keys=(\d+)',1,1,'i',1),null) keys,0+regexp_substr(projection,'rowset=(\d+)',1,1,'i',1) rowsets]] 
       or  [[(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets]])

@@ -1,5 +1,5 @@
 /*[[
-        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|plan_hash_value]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
+        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|plan_hash_value]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"|-text"<keyword>"] [-avg]
         Related parameters for SQL monitor: 
                 _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
         A SQL can be forced to record the sql monitor report by the alter system statement:
@@ -18,6 +18,7 @@
         Options:
             -u     : Only show the SQL list within current schema
             -f     : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
+            -text  : Find sql with keyword
             -s     : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
             -a     : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
             -avg   : Show avg time in case of listing the SQL monitor reports
@@ -28,7 +29,7 @@
             &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
             &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
             &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq,2) avg_ela,}, l={}
-            &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
+            &filter: default={1=1},f={},text={upper(sql_text) like upper('%&0%')},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
             &out: default={active} html={html} em={em}

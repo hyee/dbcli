@@ -481,7 +481,7 @@ end
 
 function scripter:check_ext_file(cmd)
     local exist,c,dir,flag=os.exists(cmd,self.ext_name)
-    if exists~='file' and self.last_external_path and not cmd:find(':',1,true) then
+    if exist~='file' and self.last_external_path and not cmd:find(':',1,true) then
         flag=true
         exist,c=os.exists(env.join_path(self.last_external_path,cmd),self.ext_name)
     end

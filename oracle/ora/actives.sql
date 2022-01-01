@@ -1,11 +1,12 @@
 /*[[
-    Show active sessions. Usage: @@NAME [sid|wt|ev|sql|<col>] [-s|-p|-b|-o|-m] {[-f"<filter>"|-u|-i] [-f2"<filter>"|-u2|-i2]}
+    Show active sessions. Usage: @@NAME [sid|wt|ev|sql|<col>] [-s|-p|-b|-o|-m] {[-f"<filter>"|-text"<keyword>"|-u|-i] [-f2"<filter>"|-u2|-i2]}
     
     Options(options within same group cannot combine, i.e. "@@NAME -u -i" is illegal, use "@@NAME -u -i2" instead):
         Filter options#1:
-            -u  : Only show the sessions of current_schema
-            -i  : Exclude the idle events
-            -f  : Customize the filter, i.e.: -f"inst_id=1"
+            -u   : Only show the sessions of current_schema
+            -i   : Exclude the idle events
+            -f   : Customize the filter, i.e.: -f"inst_id=1"
+            -text: Find sql with keyword
         Filter options#2:
             -u2 : Only show the sessions of current_schema
             -i2 : Exclude the idle events
@@ -51,9 +52,10 @@
                         WHERE  status = 'EXECUTING'
                         GROUP BY sid, sql_id) m
                     USING (sid, sql_id)}
-                } 
+                }
         &Filter: {default={ROOT_SID =1 OR status='ACTIVE' and (wait_class!='Idle' and event not like 'SQL*Net message from client')}, 
                   f={},
+                  text={upper(sql_text) like upper('%&0%')}
                   i={wait_class!='Idle'}
                   u={(ROOT_SID =1 OR STATUS='ACTIVE') and schemaname=nvl('&0',sys_context('userenv','current_schema'))}
                  }
@@ -118,7 +120,7 @@ BEGIN
                              FROM   v$session s,
                                     (select /*+no_merge*/ 
                                              program_line#,program_id,plan_hash_value,sql_id,child_number,
-                                             substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 512) sql_text,
+                                             substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 1024) sql_text,
                                              round(decode(b.child_number,0,b.elapsed_time * 1e-6 / (1 + b.executions), 86400 * (SYSDATE - to_date(b.last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
                                      from v$sql b where users_executing > 0) sq
                              WHERE   s.sql_id=sq.sql_id(+)

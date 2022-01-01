@@ -1,7 +1,7 @@
 /*[[
-    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-f"<filter>"] [-dx]
+    Get table's current compression type. Usage: @@NAME [<owner>.]<table_name>[.<partition_name>] [<rows>|-all] [-f"<filter>"] [-dx|-sample]
     -dx : Use no parallel direct path read
-    rows: Maximum number of rows to scan, default as 3 millions, use '-all' to unlimite the scan rows.
+    rows: Maximum number of rows to scan, default as 2 millions, use '-all' to unlimite the scan rows.
 
     [|             grid:{topic='Compression Type'}              |
      | Type       | Insert Time(1 vs DoP 4) | Compression Ratio | CU Size | Max Data Size | Max Rows |
@@ -12,6 +12,8 @@
      |Archive Low | 11.71/7.63              | 4.08 (ZLIB)       | 64-128K |   3MB         |    16K   |
      |Archive High| 17.63/12.73             | 4.86 (BZ2)        |  128K   |   10MB        |    64K   |]
     For DBIM, the CU size is 32MB and data rows can > 50,000
+    
+    Use "alter session set events 'trace[ADVCMP_COMP] disk=lowest'" and move table to see the detailed compression rate
 
     Sample Output:
     ==============
@@ -26,10 +28,11 @@
         @check_access_comp: sys.dbms_compression={}
         @check_access_obj: dba_objects/dba_tables={dba_} default={all_}
         @check_access_seg: dba_segments={1} default={0}
-        &filter: default={@ROWS@} f={where &0}
+        &filter: default={@ROWS@} f={where (&0) @ROWS@}
         &dx    : default={--} dx={}
-        &v2    : default={3e6} all={A}
+        &v2    : default={2e6} all={A}
         &px    : default={parallel(4)} dx={no_parallel}
+        &sp    : default={0} sample={1}
 
     --]]
 ]]*/
@@ -40,6 +43,7 @@ var cur REFCURSOR "&OBJECT_TYPE: &OBJECT_OWNER..&OBJECT_NAME"
 DECLARE
     TYPE t_rid IS TABLE OF ROWID;
     TYPE t_rec IS TABLE OF VARCHAR2(500);
+    type ttypes IS TABLE OF VARCHAR2(1) INDEX BY PLS_INTEGER;
     v_rids t_rid;
     v_recs t_rec;
     v_stmt VARCHAR2(4000);
@@ -67,6 +71,8 @@ DECLARE
     v_blocks INT;
     v_bsize  INT;
     v_sample VARCHAR2(512);
+    v_comps  ttypes;
+
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
         v_oid := regexp_substr(c, '[^,]+', 1, 1);
@@ -123,7 +129,7 @@ BEGIN
                a.cnt||','||
                b.subobject_name obj
         FROM   (SELECT get_dobj(sub) dobj, rid,cnt
-                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN index_ffs(a) &px*/
+                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN full(a) &px*/
                                SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
                                count(1) cnt
@@ -138,45 +144,53 @@ BEGIN
         v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
     END IF;
 
-    IF q'~&filter~'='@ROWS@' and trim(v_tops) !='A' THEN
-        SELECT MAX(avg_row_len)*1.1,max(blocks)
-        INTO   v_len,v_blocks
-        FROM   (SELECT avg_row_len,num_rows,blocks
-                FROM   &check_access_obj.tables
-                WHERE  v_typ IN ('TABLE','MATERIALIZED')
-                AND    owner = v_own
-                AND    table_name = v_nam
-                UNION ALL
-                SELECT avg_row_len,num_rows,blocks
-                FROM   &check_access_obj.tab_partitions
-                WHERE  v_typ = 'TABLE PARTITION'
-                AND    table_owner = v_own
-                AND    table_name = v_nam
-                AND    partition_name = v_snam
-                UNION ALL
-                SELECT avg_row_len,num_rows,blocks
-                FROM   &check_access_obj.tab_subpartitions
-                WHERE  v_typ = 'TABLE SUBPARTITION'
-                AND    table_owner = v_own
-                AND    table_name = v_nam
-                AND    subpartition_name = v_snam);
+    IF q'~&filter~'!='@ROWS@' THEN
+        IF trim(v_tops) !='A' THEN
+            v_stmt := REPLACE(v_stmt, '@ROWS@','AND ROWNUM<='||v_tops);
+        END IF;
+    ELSIF trim(v_tops) !='A' THEN
+        IF &sp=1 THEN
+            SELECT MAX(avg_row_len)*1.2,NULLIF(max(blocks),0)
+            INTO   v_len,v_blocks
+            FROM   (SELECT avg_row_len,num_rows,blocks
+                    FROM   &check_access_obj.tables
+                    WHERE  v_typ IN ('TABLE','MATERIALIZED')
+                    AND    owner = v_own
+                    AND    table_name = v_nam
+                    UNION ALL
+                    SELECT avg_row_len,num_rows,blocks
+                    FROM   &check_access_obj.tab_partitions
+                    WHERE  v_typ = 'TABLE PARTITION'
+                    AND    table_owner = v_own
+                    AND    table_name = v_nam
+                    AND    partition_name = v_snam
+                    UNION ALL
+                    SELECT avg_row_len,num_rows,blocks
+                    FROM   &check_access_obj.tab_subpartitions
+                    WHERE  v_typ = 'TABLE SUBPARTITION'
+                    AND    table_owner = v_own
+                    AND    table_name = v_nam
+                    AND    subpartition_name = v_snam);
 
-        $IF &check_access_seg=1 $THEN
-            SELECT SUM(blocks),sum(bytes)/sum(blocks)
-            INTO   v_blocks,v_bsize
-            FROM   dba_segments b
-            WHERE  owner = v_own
-            AND    segment_name = v_nam
-            AND    nvl(partition_name, '_') = COALESCE(v_snam, partition_name, '_');
-        $ELSE
-            SELECT value INTO v_bsize FROM v$parameter WHERE name='db_block_size';
-        $END
-
+            $IF &check_access_seg=1 $THEN
+                SELECT SUM(blocks),sum(bytes)/sum(blocks)
+                INTO   v_blocks,v_bsize
+                FROM   dba_segments b
+                WHERE  owner = v_own
+                AND    segment_name = v_nam
+                AND    nvl(partition_name, '_') = COALESCE(v_snam, partition_name, '_');
+            $ELSE
+                SELECT value INTO v_bsize FROM v$parameter WHERE name='db_block_size';
+            $END
+        END IF;
+        
         v_sample := round(v_tops/(v_bsize/nvl(v_len,256))*100/v_blocks,4);
         IF v_sample+0 >=80 THEN 
             v_sample := NULL;
+        ELSIF v_sample IS NULL THEN
+            v_stmt := REPLACE(v_stmt, '@ROWS@','WHERE ROWNUM<='||v_tops);
         ELSE
-            v_sample := 'SAMPLE BLOCK ('||greatest(1e-4,v_sample)||')';
+            v_sample := 'SAMPLE BLOCK ('||greatest(1e-3,v_sample)||')';
         END IF;
     END IF;
     v_stmt := REPLACE(v_stmt, '@ROWS@');
@@ -205,6 +219,16 @@ BEGIN
                     v_ptyp := v_ctyp;
                     v_cnt  := 0;
                     v_cnt2 := 0;
+
+                    IF v_ctyp>1 AND NOT v_comps.exists(v_ctyp) AND v_snam IS NULL THEN
+                        v_comps(v_ctyp) := 'Y';
+                        BEGIN
+                            dbms_output.put_line('===============================================');
+                            sys.dbms_compression.dump_compression_map(v_own,v_nam,v_ctyp);
+                            dbms_output.put_line('===============================================');
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END;
+                    END IF;
                 END IF;
                 v_cnt  := v_cnt + 1;
                 v_cnt2 := v_cnt2 + v_rows;

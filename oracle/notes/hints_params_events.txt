@@ -57,23 +57,35 @@ Parameters
         5) SELECT FOR UPDATE/DELETE/UPDATE/MERGE on target table  will not use dx read
         6) limit the result with rownum will not use dx read
         Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to trace the behaviours
+    _parallel_cluster_cache_policy: when auto dop is enabled(parallel_degree_policy=auto) its value becomes 'CACHE', change to 'ADAPTIVE' to prevent IMPQ on Exadata, or _px_adaptive_offload_percentage/_px_adaptive_offload_threshold
     _cell_region_heuristics_read_count_threshold(cell): Number of scan times to trigger CC2 population after a 1M chunk is modified and invalidated
     _hwm_sync_threshold: defaults to 10, setting to 100(support session level) will keep the HHWM and LHWM in sync during bulk/direct data load(Doc ID 726653.1), to fix low/high water mark not sync issue on  UNIFORM tablespace leading to smart scan not taken plan in parallel query, for existing segment, run DBMS_SPACE_ADMIN.ASSM_SEGMENT_SYNCHWM(...,check_only=1/0) to check/sync HWM.
     _enable_columnar_cache: refer to 'help exa offload'
-    _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), set to 0 can avoid spilling to temp I/O
+    _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), 
+                    set to 0 can avoid spilling to temp I/O if _pga_max_size is explicitly set (events '10032 trace name context forever')
+    _newsort_type: 1: do not check for ordered data 
+                   2: always use FTS encoding assume no fixed len flds(forces the sort to treat all columns as variable length columns)
+                   4: force use of FTS encoding
+                   8: disable spilling rows before sort finishes
+                   32: disable sync spill for PX servers
     _smm_max_size: The maximum work area size(in KB) for single process, defaults to 1GB when pga is large. Also impacts the number of hash join/group slots(slots*_smm_auto_max_io_size<=_smm_max_size) 
     _smm_px_max_size: maximum total work area size(in KB) per parallel query where dop>5, defaults to pga_aggregate_target/2
     _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
     _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF  
     _oltp_compress_dbg: controls OLTP compression. 
-        1: disable the ArrayInserts compression
+        1: disable the ArrayInserts compression, but results in more blocks marked full
         2: Disable Compression Above-Cache 
         32:disable OLTP Compression on HCC segments conventional DML
+    _disable_hcc_array_insert: false to disable conventional load compression for HCC table
+    _kdz_hcc_flags: 15 to disables CU alignment checks
+                    16 to disable checksum computation for CUs sent from cell to server for performance benefit
+                    64 to enable HCC array inserts with subsegments
     _kdz_pcode_flags: 
         1: disable pcode(Portable code,a framework to evaluate predicates)
         32: disable just PCODE aggregation
         256: disable complex predicate push down for PCODE evaluation
         4096: disable pcode aggregation above a hash join
+        32768: Force aggregation pushdown with HCC
         262144: disable  PCODE filtering(not impact cc2 codepath)
         2097152: enable PCODE support for case statements
         1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
@@ -142,6 +154,7 @@ Parameters
     _px_reuse_server_groups: reuse existing px server group for CDT
     _dbg_scan: default as 0
         1: Disable LOB predicate pushdown to Smart Scan
+        128: disable HCC read-ahead 
         4096: Disable rowset function evaluation in Smart Scan
         8192: Disable aggregation pushdown to Smart Scan
         131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
@@ -149,11 +162,28 @@ Parameters
     _slave_mapping_enabled: use to disable px "LOCAL" distribution that can lead to skew
     _cell_cache_thrashing_detection_tolerance(cell): set to 1 to reduce high latency of direct path read/write temp in Exadata, relative cell param: _cell_fc_lw_max_percentage(default 20%)
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
-    _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20
-    _windowfunc_optimization_settings: set to 2 to avoid 'WINDOW CHILD PUSHED RANK' in px query
+    _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
+    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query
+                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism 
+    _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
+                                     and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
+    _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs 
+    _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
+    _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
+                     64 - Disable HCC array deletes within updates
+                     128 - 
+    
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
-    support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>' 
+    support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
+    merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
+    10055(rowsets): trace: 'trace [SQL_Rowsets_Setup] disk=high'
+                    level 1: disables rowsets for table scan row source
+                    level 16: disables rowsets for sort row source
+                    level 32: disables  table queue IN row source
+                    level 512: disables rowsets for EVA functions
+                    level 20971520: disables “rowset to one row” in hash join probe side
+ 
  
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
@@ -180,7 +210,7 @@ Hints:
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
-    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort
+    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
@@ -200,6 +230,7 @@ Fix Controls:
     8644935 :  disable to fix the skew/wrong result issue when execution plan has either "UNION ALL" and "BROADCASE/HASH LOCAL"
     30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
     33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
+    9721439:   Forces bloom filter and bypasses all the statistics based heuristics
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

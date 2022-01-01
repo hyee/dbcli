@@ -32,6 +32,6 @@ from &obj b,(select a.*,case when :V2='A' then 'A' ELSE to_char(inst_id) end ins
 where a.objd=b.data_object_id
 and   b.owner=:object_owner
 and   b.object_name=:object_name
-and   nvl(b.subobject_name,' ') = NVL(:object_subname,' ')
+and   nvl(b.subobject_name,' ') = coalesce(:object_subname,b.subobject_name,' ')
 GROUP BY GROUPING SETS((inst,a.status),inst)
 ORDER BY 1,2;

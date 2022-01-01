@@ -112,7 +112,7 @@ function awr.extract_period()
                         FROM   Dba_Hist_Snapshot
                         WHERE  begin_interval_time-3e-4 <= e and end_interval_time+3e-4>=s
                         AND    dbid=NVL(did,dbid)
-                        AND    (p_inst IS NULL OR instr(',' || p_inst || ',', ',' || instance_number || ',') > 0)
+                        AND    (p_inst IS NULL OR UPPER(p_inst) IN('0','A') OR instr(',' || p_inst || ',', ',' || instance_number || ',') > 0)
                         GROUP  BY DBID
                         ORDER  BY 2 DESC) a
                 WHERE  ROWNUM < 2);
@@ -152,7 +152,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             ed2           INT;
             rc            SYS_REFCURSOR;
             txt           VARCHAR2(32000);
-            inst          VARCHAR2(30) := NULLIF(upper(p_inst), 'A');
+            inst          VARCHAR2(30) := NULLIF(NULLIF(upper(p_inst), 'A'),'0');
             inst1         INT;
             inst2         INT;
             PROCEDURE gen_ranges(p_start VARCHAR2, p_end VARCHAR2,dbid OUT INT,st OUT INT,ed OUT INT) IS
@@ -183,7 +183,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                 stim1 := stim;
                 etim1 := etim;
                 gen_ranges(p_start2,p_end2,dbid2,st2,ed2);
-                filename := lower(typ)||'_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || nvl(inst, 'all') || '.html';
+                filename := lower(typ)||'_diff_' || least(st,st2) || '_' || greatest(ed,ed2) || '_' || CASE WHEN p_inst='0' THEN 'exa' ELSE nvl(inst, 'all') END|| '.html';
                 OPEN cur for
                 select  typ report_type,
                         nvl(inst,'ALL') INSTANCES,
@@ -198,7 +198,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                         ed2 end_snap2
                 from    dual;
             ELSE
-                filename := lower(typ)||'_' || st || '_' || ed || '_' || nvl(inst, 'all') || '.html';
+                filename := lower(typ)||'_' || st || '_' || ed || '_' || CASE WHEN p_inst='0' THEN 'exa' ELSE nvl(inst, 'all') END|| '.html';
                 OPEN cur for
                 select  typ report_type,
                         nvl(inst,'ALL') INSTANCES,
@@ -225,24 +225,58 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
                 $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
                     dbms_workload_repository.awr_set_report_thresholds(top_n_sql => 50,top_n_segments=>30);
                 $END
-
+                IF p_inst='0' THEN
+                    IF ed2 IS NULL THEN
+                        EXECUTE IMMEDIATE '
+                            BEGIN :b1:=SYS.PRVTEMX_CELL.REPORT_CELL(
+                                           P_DBID        => :b2,
+                                           P_BEGIN_SNAP  => :b3,
+                                           P_END_SNAP    => :b4,
+                                           P_REPORT_LEVEL=> ''all'',
+                                           P_REPORT_TYPE => ''html'',
+                                           P_CELL_THRESHOLD=>0,
+                                           P_DISK_THRESHOLD=>0,
+                                           P_PCT_ACTIVE  => 0,
+                                           P_PCT_CPU     => 10,
+                                           P_TOP_N       => 256); END;' USING OUT rs,dbid,st,ed;
+                    ELSE
+                        EXECUTE IMMEDIATE '
+                            BEGIN :b1:=SYS.PRVTEMX_CELL.REPORT_CELL_DIFF(
+                                           P_DBID1       => :b2,
+                                           P_BEGIN_SNAP1 => :b3,
+                                           P_END_SNAP1   => :b4,
+                                           P_DBID2       => :b5,
+                                           P_BEGIN_SNAP2 => :b6,
+                                           P_END_SNAP2   => :b7,
+                                           P_REPORT_LEVEL=> ''all'',
+                                           P_REPORT_TYPE => ''html'',
+                                           P_CELL_THRESHOLD=>0,
+                                           P_DISK_THRESHOLD=>0,
+                                           P_PCT_ACTIVE  => 0,
+                                           P_PCT_CPU     => 10,
+                                           P_TOP_N       => 256); END;' USING OUT rs,dbid,st,ed,dbid2,st2,ed2;
+                    END IF;
+                    RETURN;
+                END IF;
                 IF NOT (inst IS NULL OR INSTR(inst, ',') > 0) THEN
                     IF ed2 IS NULL THEN
-                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_report_html(dbid, inst, st, ed));
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_report_html(dbid, inst, st, ed,l_options=>12));
                     ELSE
-                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst, st, ed,dbid2, inst, st2, ed2));
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst, st, ed,dbid2, inst, st2, ed2
+                            $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.release>1 $THEN,p_options=>12 $END ));
                     END IF;
                 ELSIF INSTR(inst, ',') > 0 AND st=st2 THEN
                     inst1 := regexp_substr(inst,'\d+',1,1);
                     inst2 := nvl(regexp_substr(inst,'\d+',1,2)+0,inst1);
-                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst1, st, ed,dbid2, inst2, st2, ed2));
+                    OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_diff_report_html(dbid, inst1, st, ed,dbid2, inst2, st2, ed2
+                        $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.release>1 $THEN,p_options=>12 $END ));
                 $IF DBMS_DB_VERSION.VERSION>11 OR DBMS_DB_VERSION.VERSION>10 AND DBMS_DB_VERSION.release>1 $THEN
                 ELSE
                     IF ed2 IS NULL THEN
-                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed));
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_report_html(dbid,inst,st,ed,l_options=>12));
                     ELSE
-                        --OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(986420298,'',1004,1020,1877023642,'',24306,24314));
-                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(dbid,inst,st,ed,dbid2,inst,st2,ed2));
+                        OPEN rc for SELECT * FROM TABLE(dbms_workload_repository.awr_global_diff_report_html(dbid,inst,st,ed,dbid2,inst,st2,ed2
+                        $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.release>1 $THEN,p_options=>12 $END ));
                     END IF;
                 $END
                 END IF;
@@ -502,8 +536,8 @@ end
 
 
 function awr.onload()
-    env.set_command(nil,{"awrrpt"},"Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_awr,false,5)
-    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_awr_diff,false,7)
+    env.set_command(nil,{"awrrpt"},"Extract AWR report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }, when inst_id=0 then only extract the Exadata report",awr.extract_awr,false,5)
+    env.set_command(nil,"awrdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }, when inst_id=0 then only extract the Exadata report",awr.extract_awr_diff,false,7)
     env.set_command(nil,"addmdiff","Extract AWR Diff report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> <YYMMDDHH24MI> [YYMMDDHH24MI] [inst_id|<inst1,inst2,...>] }",awr.extract_addm_diff,false,7)
     env.set_command(nil,{"ashrpt"},"Extract ASH report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [<inst1[,inst2...>]|<client_id>|<wait_class>|<service_name>|<module>|<action>] [container]}",awr.extract_ash,false,5)
     env.set_command(nil,{"addmrpt"},"Extract ADDM report. Usage: @@NAME {<YYMMDDHH24MI> <YYMMDDHH24MI> [inst_id|<inst1,inst2,...>] }",awr.extract_addm,false,5)

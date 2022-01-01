@@ -487,7 +487,7 @@ function unwrap.print_qb_registry(qb_transforms,qbs)
         return table.concat(items,'; ')
     end
     local function walk(qb,indent,siblings)
-        local comment=qb.o
+        local comment=qb.o or ''
         rows[#rows+1]={indent..qb.qb:gsub('"',""):sub(2)..(comment~='' and (' ('..comment..')') or ''),to_list(qb.objs)}
         local l=#qb.childs
         for i,c in ipairs(qb.childs) do
@@ -822,6 +822,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         xml=text:match('<sql_monitor_report .-</sql_monitor_report>')
         if not xml then return end
     end
+
     --handle line-split of SQL fulltext
     load_xml(parser,xml)
     if content.root.report then
@@ -3201,15 +3202,15 @@ end
 function unwrap.unwrap(obj,ext,prefix)
     env.checkhelp(obj)
     local filename,org_ext=obj
-    local typ,f=os.exists(obj)
+    local typ1,f=os.exists(obj)
     if ext=='.' then 
         ext=nil
     elseif ext and ext:lower()=='18c' then
         ext,prefix=nil,'18c'
     end
     prefix=prefix or ''
-    if typ then
-        if typ~="file" then return end
+    if typ1 then
+        if typ1~="file" then return end
         obj=f
         filename,org_ext=f:match("(.*)%.(.-)$")
         if filename then
@@ -3234,7 +3235,7 @@ function unwrap.unwrap(obj,ext,prefix)
                     if not typ then
                         is_wrap,typ,name=0,line:match(plsql_pattern)
                     end
-                    if typ then
+                    if typ and not (org_ext or ''):lower():find('htm',1,true) then
                         if name:upper()=='IS' or name:upper()=='AS' then name=typ end
                         top_obj=name:gsub('"','')
                         is_plsql=true
@@ -3265,7 +3266,7 @@ function unwrap.unwrap(obj,ext,prefix)
                     end
                 end
             else
-                local piece=line:match("^%s*([%w%+%/%=]+)$")
+                local piece=line:match("^%s*([%w%+%/%=]+)%s*$")
                 if not found and piece and #piece>=64 then
                     found=true
                     repidx=#org+1

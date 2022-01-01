@@ -1,9 +1,13 @@
 /*[[
-    Search SQLs by text. Usage: @@NAME <keyword> [-r]
-    -r: the keyword is a Regular Expression, otherwise a LIKE expresssion
+    Search SQLs by text. Usage: @@NAME <keyword> [-r] [-d|-g|-awr]
+    -r  : the keyword is a Regular Expression, otherwise a LIKE expresssion
+    -g  : only search gv$* tables
+    -d  : only search dba_* tables
+    -awr: only search dba_hist* tables
 
     --[[
         @ARGS: 1
+        &vw     : default={'A'} g={'G'} d={'D'} AWR={'AWR'}
         &filter : default={upper(sql_text_) like upper('%&V1%') or (sql_id='&v1')} r={regexp_like(sql_text_||SQL_ID,'&V1','in') or (sql_id='&v1')}
         @CHECK_ACCESS_GV: {
             GV$SQLSTATS_PLAN_HASH={V$SQLSTATS_PLAN_HASH}
@@ -17,7 +21,7 @@
                 UNION
                 SELECT 'DBA_HIST_SQLTEXT',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM DBA_HIST_SQLTEXT A)
-                WHERE  (&filter)
+                WHERE  &vw in('A','D','AWR') AND (&filter)
             }
         }
 
@@ -26,7 +30,7 @@
                 UNION
                 SELECT 'DBA_SQL_PLAN_BASELINES',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_,PLAN_NAME SQL_ID FROM DBA_SQL_PLAN_BASELINES A)
-                WHERE  (&filter)
+                WHERE  &vw in('A','D') AND (&filter)
             }
         }
 
@@ -35,7 +39,7 @@
                 UNION
                 SELECT 'DBA_SQL_PROFILES',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_,NAME SQL_ID FROM DBA_SQL_PROFILES A)
-                WHERE  (&filter)
+                WHERE  &vw in('A','D') AND (&filter)
             }
         }
 
@@ -44,7 +48,7 @@
                 UNION
                 SELECT 'DBA_SQL_PATCHES',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_,NAME SQL_ID FROM DBA_SQL_PATCHES A)
-                WHERE  (&filter)
+                WHERE  &vw in('A','D') AND (&filter)
             }
         }
 
@@ -53,7 +57,7 @@
                 UNION
                 SELECT 'DBA_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM DBA_SQLSET_STATEMENTS A)
-                WHERE  (&filter)
+                WHERE  &vw in('A','D') AND (&filter)
             }
         }
 
@@ -63,7 +67,7 @@
                 SELECT * FROM TABLE(gv$(CURSOR(
                     SELECT 'GV$SQL_MONITOR',SQL_ID,SQL_TEXT
                     FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM V$SQL_MONITOR A)
-                    WHERE  (&filter)
+                    WHERE  &vw in('A','G') AND (&filter)
                 )))
             }
         }
@@ -78,7 +82,7 @@ FROM (
         SELECT sql_id,
                sql_text
         FROM   (SELECT a.*, a.SQL_FULLTEXT sql_text_ FROM &CHECK_ACCESS_GV a)
-        WHERE  (&filter)))) a
+        WHERE  &vw in('A','G') AND (&filter)))) a
     &CHECK_ACCESS_AWR
     &CHECK_ACCESS_SPM
     &CHECK_ACCESS_SQL_PROFILES

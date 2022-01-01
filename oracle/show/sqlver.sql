@@ -24,18 +24,24 @@
                                                 TOP_LEVEL_RPI_CURSOR=   5
 
     --[[
-        &sql_id : default={} s={and sql_id='&0'}
+        @ALIAS  : nonshare
+        &sql_id : default={} s={WHERE sql_id='&0'}
+        &cnt    : default={AND CNT_>1} s={AND 1=1}
         &sep    : default={' | '} s={chr(10)||' '}
-    &inst1  : default={:instance} i={0+'&0'}
+        &inst1  : default={:instance} i={0+'&0'}
     --]]
 
 ]]*/
 
 col ela,avg_ela for usmhd2
-
+col mem for kmg2
+set feed off
 SELECT *
 FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT vers),1e6) vers,
-               SUM(distinct ela) ela,SUM(distinct avg_ela) avg_ela,'$HEADCOLOR$|$NOR$' "|",
+               SUM(distinct ela) ela,
+               SUM(distinct avg_ela) avg_ela,
+               SUM(distinct mem) mem,
+               '$HEADCOLOR$|$NOR$' "|",
                ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
                MAX(sql_text) sql_text
         FROM   (SELECT sql_id,
@@ -44,15 +50,17 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                        SUM(distinct vers) vers,
                        SUM(distinct ela) ela,
                        SUM(distinct avg_ela) avg_ela,
+                       SUM(distinct mem) mem,
                        SUM(val) val,
                        MAX(length(c)) over() l
                 FROM   TABLE(gv$(CURSOR(
-                           SELECT /*+ordered DYNAMIC_SAMPLING(4)*/ 
+                           SELECT /*+ordered DYNAMIC_SAMPLING(5)*/ 
                                   sql_id,
                                   USERENV('instance')*1e6+COUNT(1) childs,
                                   USERENV('instance')*1e6+SUM(loaded_versions) vers,
                                   substr(TRIM(regexp_replace(replace(MAX(b.sql_text),chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text,
                                   SUM(elapsed_time) ela,
+                                  SUM(SHARABLE_MEM+TYPECHECK_MEM) mem,
                                   round(SUM(elapsed_time)/greatest(SUM(executions),1),3) avg_ela,
                                   SUM(decode(UNBOUND_CURSOR, 'Y', 1, 0)) UNBOUND_CURSOR,
                                   SUM(decode(SQL_TYPE_MISMATCH, 'Y', 1, 0)) SQL_TYPE_MISMATCH,
@@ -118,10 +126,10 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                                   SUM(decode(PURGED_CURSOR, 'Y', 1, 0)) PURGED_CURSOR,
                                   SUM(decode(BIND_LENGTH_UPGRADEABLE, 'Y', 1, 0)) BIND_LENGTH_UPGRADEABLE,
                                   SUM(decode(USE_FEEDBACK_STATS, 'Y', 1, 0)) USE_FEEDBACK_STATS
-                           FROM   v$sql_shared_cursor a LEFT JOIN v$sql b USING(sql_id,child_number)
-                           WHERE  userenv('instance')=nvl(&inst1,userenv('instance')) &sql_id
-                           GROUP  BY sql_id
-                           HAVING COUNT(1)>1))) --
+                           FROM   (SELECT A.*,COUNT(1) OVER(PARTITION BY SQL_ID) CNT_ FROM v$sql_shared_cursor a &sql_id) a
+                           LEFT   JOIN (SELECT /*+merge*/ * FROM v$sql &sql_id) b USING(sql_id,child_number)
+                           WHERE  userenv('instance')=nvl(&inst1,userenv('instance')) &cnt
+                           GROUP  BY sql_id))) --
                         UNPIVOT(val FOR c IN(UNBOUND_CURSOR,
                                              SQL_TYPE_MISMATCH,
                                              OPTIMIZER_MISMATCH,
@@ -191,3 +199,37 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
         GROUP  BY sql_id
         ORDER  BY 2 DESC)
 WHERE  ROWNUM <= 50;
+
+DECLARE
+    XML  XMLTYPE;
+BEGIN
+    IF :sql_id IS NULL THEN
+        RETURN;
+    END IF;
+    dbms_output.enable(NULL);
+    FOR r IN (SELECT *
+              FROM   (SELECT /*+use_hash(a b)*/
+                              child_number c,
+                              plan_hash_value phv,
+                              REGEXP_REPLACE(reason, '<(ChildNumber|size)>.*?</\1>') reason,
+                              row_number() over(PARTITION BY ora_hash(REGEXP_REPLACE(reason, '<(ChildNumber|size|id)>.*?</\1>'), 2147483646, 1) ORDER BY child_number) seq
+                      FROM   (SELECT * FROM gv$sql_shared_cursor &sql_id)
+                      JOIN   (SELECT * FROM gv$sql &sql_id)
+                      USING  (inst_id, sql_id, child_number)
+                      WHERE  INSTR(reason, 'ChildNode') > 0
+                      AND    inst_id=nvl(&inst1,inst_id))
+              WHERE  seq = 1) LOOP
+        XML := xmltype('<R>' || SUBSTR(r.reason, 1, INSTR(r.reason, '</ChildNode>', -1) + LENGTH('</ChildNode>') - 1) || '</R>');
+        dbms_output.put_line('--------------------------------------------------------------------');
+        dbms_output.put_line('Plan_Hash_Value: '||r.phv||'    Child# :'||r.c);
+        FOR r1 IN (SELECT *
+                   FROM   XMLTABLE('/R/ChildNode' PASSING XML COLUMNS n XMLTYPE PATH 'node()') a,
+                          XMLTABLE('/*' PASSING a.n COLUMNS t VARCHAR2(128) PATH 'name()', v VARCHAR2(128) PATH 'text()') b) LOOP
+            IF upper(r1.t)='ID' THEN
+                dbms_output.put_line('********');
+            END IF;
+            dbms_output.put_line(r1.t || ': ' || regexp_replace(trim(r1.v),'\s{3,}',' => '));
+        END LOOP;
+    END LOOP;
+END;
+/

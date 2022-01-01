@@ -3,55 +3,24 @@ Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.
 
 -advise: execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
 
-Sameple Output:
-===============
-ORCL> ORA STATS                                                                                     
-    Preferences                                                                                     
-    ***********                                                                                     
-    System Prefs - APPROXIMATE_NDV               : TRUE                               (TRUE/FALSE)  
-    System Prefs - AUTOSTATS_TARGET              : AUTO                               (ALL/AUTO/ORAC
-    System Prefs - CASCADE                       : DBMS_STATS.AUTO_CASCADE            (TRUE/FALSE/nu
-    System Prefs - CONCURRENT                    : FALSE                              (MANUAL/AUTOMA
-    System Prefs - DEBUG                         : 0                                  (1[AUTO_TLIST_
-    System Prefs - DEGREE                        : NULL                               (n/32766(DEFAU
-    System Prefs - ESTIMATE_PERCENT              : DBMS_STATS.AUTO_SAMPLE_SIZE        (0(AUTO_SAMPLE
-    System Prefs - GRANULARITY                   : AUTO                               (Partitioned: 
-    System Prefs - INCREMENTAL                   : FALSE                              (Partitioned: 
-    System Prefs - INCREMENTAL_INTERNAL_CONTROL  : TRUE                               (Partitioned: 
-    System Prefs - METHOD_OPT                    : FOR ALL COLUMNS SIZE AUTO          (FOR ALL [INDE
-    System Prefs - NO_INVALIDATE                 : DBMS_STATS.AUTO_INVALIDATE         (TRUE/FALSE/nu
-    System Prefs - PUBLISH                       : TRUE                               (TRUE/FALSE)  
-    System Prefs - SKIP_TIME                     :                                                  
-    System Prefs - STALE_PERCENT                 : 10                                               
-    System Prefs - STATS_RETENTION               :                                                  
-    System Prefs - SYS_FLAGS                     : 1                                  (0/1(DSC_SYS_F
-    System Prefs - TABLE_CACHED_BLOCKS           : 1                                  (0(AUTO_TABLE_
-    System Prefs - TRACE                         : 0                                  (0(disable),1(
-    ------------------------------------------------------------------------------------------------
-    System Stats - IOTFRSPEED                    : 4          (transfer speed in KB/ms)             
-    System Stats - IOSEEKTIM                     : 10         (latency  in ms)                      
-    System Stats - SREADTIM                      : 12         (time to read 1 block  in ms = IOSEEKT
-    System Stats - MREADTIM                      : 26         (time to read n blocks in ms = IOSEEKT
-    System Stats - CPUSPEED                      :            (workload CPU speed in GHZ)           
-    System Stats - CPUSPEEDNW                    : .9371      (noworkload CPU speed in GHZ)         
-    System Stats - MBRC                          : 8          (_db_file_optimizer_read_count)       
-    System Stats - MAXTHR                        :            (maximum throughput that the I/O subsy
-    System Stats - SLAVETHR                      :            (average parallel slave I/O throughput
-    System Stats -    maximum mbrc               : 24.7742    (buffer cache size in blocks / session
-    System Stats -    single cost / block        : 1          (by definition)                       
-    System Stats -    multi  cost / block        : .2708      (1/MBRC * MREADTIM/SREADTIM)          
-    ------------------------------------------------------------------------------------------------
-    Statistics History Retention                 : 31 days    (Avail: 2019-03-12 22:02:19.933 -04:00
-                                                                                                    
-                                                                                                    
-    Table Level                                                                                     
-    ***********                                                                                     
-    Index Level                                                                                     
-    ***********                                                                                     
-    Partition Level                                                                                 
-    ***************                                                                                 
-    SubPartition Level                                                                              
-    ***************                                                                                 
+Trace Flags:
+    0    : disable
+    1    : use dbms_output.put_line instead of writing into trace file
+    2    : enable dbms_stat trace only at session level
+    4    : trace table stats
+    8    : trace index stats
+    16   : trace column stats
+    32   : trace auto stats - logs to sys.stats_target$_log
+    64   : trace scaling
+    128  : dump backtrace on error
+    256  : dubious stats detection
+    512  : auto stats job
+    1024 : parallel execution tracing
+    2048 : print query before execution
+    4096 : partition prune tracing
+    8192 : trace stat differences
+    16384: trace extended column stats gathering
+    32768: trace approximate NDV (number distinct values) gathering                                                                            
 
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
@@ -131,8 +100,9 @@ DECLARE
                 'STAT_CATEGORY','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
                 'SYS_FLAGS','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
                 'TABLE_CACHED_BLOCKS','0(AUTO_TABLE_CACHED_BLOCKS)/n',
-                'TRACE','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC),...524288',
+                'TRACE','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC[sys.stats_target$_log]),...524288',
                 'WAIT_TIME_TO_UPDATE_STATS','15');
+
 BEGIN
     dbms_output.enable(null);
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
@@ -200,6 +170,10 @@ BEGIN
                     FROM   v$parameter
                     WHERE  NAME = 'db_file_multiblock_read_count'
                     AND    ismodified != 'FALSE'
+                    UNION ALL
+                    SELECT '_db_file_optimizer_read_count', NVL(MAX(to_number(VALUE)),8) VALUE
+                    FROM   v$parameter
+                    WHERE  NAME = '_db_file_optimizer_read_count'
                     UNION ALL
                     SELECT NAME, decode(TYPE, 3, to_number(VALUE)) VALUE
                     FROM   v$parameter

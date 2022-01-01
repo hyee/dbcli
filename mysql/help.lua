@@ -10,7 +10,7 @@ function help.help_topic(...)
     local offline,f
     while args[1]=='\1' do offline=table.remove(args,1) and os.exists(helpdict) end
     if type(args[1])=='table' then table.remove(args,1) end
-    if args[1]:match('^[sfSF]$') then f=table.remove(args,1):upper() end
+    if args[1] and args[1]:match('^[sfSF]$') then f=table.remove(args,1):upper() end
     local keyword=table.concat(args," "):upper():trim()
     if keyword=='' then keyword='HELP_VERSION' end
     local like={keyword:find("%",1,true) and keyword or ('%'..keyword.."%")}

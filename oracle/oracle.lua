@@ -70,13 +70,13 @@ function oracle:helper(cmd)
          |                      |                                                                           | @@NAME scott/tiger <In case of environment value TWO_TASK=orcl> |
          |                      |                                                                           | @@NAME scott/tiger@orcl?TNS_ADMIN=d:\oracle\tns |
          |-|-|-|
-         | EZConnect            | [//]host[:port]{/[service_name][:server][/sid]}[?<properties>]            | @@NAME sys/oracle@localhost/orcl as sysdba |
+         | EZConnect            | [//]<hosts>[:port]{/[service_name][:server][/sid]}[?<properties>]         | @@NAME sys/oracle@localhost/orcl as sysdba |
          |                      |                                                                           | @@NAME scott/tiger@localhost:1521/orcl |
-         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orcl?v$session.program=dbcli&clientEncoding=GBK |
+         |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orcl?v$session.program=dbcli |
          |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orclrac/orcl1 |
          |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521/orclrac:dedicated/orcl1 |
          |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521//orcl1 |
-         |                      |                                                                           | @@NAME scott/tiger@(DESCRIPTION = (ADDRESS = (PROTOCOL=TCP)(HOST=localhost)(PORT=1521)) (CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl))) |
+         |                      |                                                                           | @@NAME scott/tiger@(DESCRIPTION =(ADDRESS =(PROTOCOL=TCP)(HOST=localhost)(PORT=1521))(CONNECT_DATA=(SERVER=DEDICATED)(SERVICE_NAME=orcl))) |
          |-|-|-|
          | JDBC Classic         |[//]host[:port][:sid[:server] ]?<properties>]                              | @@NAME scott/tiger@sales-scan:1521:orcl |
          |                      |                                                                           | @@NAME scott/tiger@sales-scan:1521:orcl:dedicated |
@@ -95,6 +95,7 @@ function oracle:helper(cmd)
 end
 
 local tns_admin_param=('TNS_ADMIN=([^&]+)'):case_insensitive_pattern()
+--local resolver=java.require("org.dbcli.OracleEZConnectResolver")
 function oracle:connect(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
@@ -115,29 +116,36 @@ function oracle:connect(conn_str)
         end
     else
         conn_str=conn_str or ""
-        usr,_,pwd,conn_desc = conn_str:match('(.*)/("?)(.*)%2@(.+)')
-        url, isdba=(conn_desc or conn_str):match('^(.*) as (%w+)$')
+        url,isdba=conn_str:match('^(.*) +[aA][sS] +(%w+)$')
+
+        usr,_,pwd,conn_desc = (url or conn_str):match('(.*)/("?)(.*)%2@(.+)')
+
+        local extras={}
         if conn_desc and conn_desc:find("?",1,true) then
             local found=false
             local props=conn_desc:split("?",true)
             for k,v in props[#props]:gmatch("([^&]+)=([^&]+)") do
                 k,v=k:trim(),v:trim()
-                if k:upper()~='TNS_ADMIN' then 
+                if k:find('.',1,true) then 
                     attrs[k]=v
                 else
-                    tns_admin=v:replace('\\','/')
-                    prompt=conn_desc:match('([^@%? ]+) *%?')
+                    if k:upper()=='TNS_ADMIN' then
+                        tns_admin=v:replace('\\','/')
+                        prompt=conn_desc:match('([^@%? ]+) *%?')
+                    end
+                    extras[#extras+1]=k:lower()..'='..v
                 end
                 found=true
             end
 
             if found then
-                props[#props]=tns_admin and ('TNS_ADMIN='..tns_admin) or nil
+                props[#props]=#extras>0 and table.concat(extras,'&') or nil
                 conn_desc=table.concat(props,'?')
-                url=conn_desc
             end
         end
-        
+
+        url=conn_desc or url
+
         if conn_desc == nil or pwd=='' and isdba then
             local idx,two_task=conn_str:find("/",1,true),os.getenv("TWO_TASK")
             if idx and not conn_str:find("@",1,true) or pwd=='' then
@@ -154,6 +162,11 @@ function oracle:connect(conn_str)
         if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
         
         sqlplustr,url=conn_str,url or conn_desc
+        if url:find('?',1,true) then
+            url,extras=url:match('^(.+)%s*(%?.*)')
+        else
+            extras=''
+        end
         local host,port,server_sep,database=url:gsub('%s*%?.*',""):match('^[/]*([^:/]+)(:?%d*)([:/])(.+)$')
         local flag=true
         if database then
@@ -173,7 +186,7 @@ function oracle:connect(conn_str)
             if server then server=server:upper() end
             if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' and not tns_admin then flag,port=false,':1521' end
             if not flag then 
-                url=host..port..server_sep..database..(server and (':'..server) or '')
+                url=host..port..server_sep..database..(server and (':'..server) or '')..extras
                 sqlplustr=string.format('%s/%s@%s%s/%s%s',
                     usr..(proxy_user and ('['..proxy_user..']') or ''),
                     pwd,host,port,
@@ -184,6 +197,7 @@ function oracle:connect(conn_str)
             end
         end
     end
+
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     
     args=args or self:merge_props({
@@ -224,7 +238,8 @@ function oracle:connect(conn_str)
                  instance='#NUMBER',
                  sid='#NUMBER',
                  dbid="#NUMBER",
-                 version="#NUMBER"}
+                 version="#NUMBER",
+                 mbrc="#NUMBER"}
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
         props[v]="#VARCHAR" 
     end
@@ -244,7 +259,50 @@ function oracle:connect(conn_str)
             isRac   VARCHAR2(3);
             intval  NUMBER;
             strval  VARCHAR2(300);
+            blk_siz PLS_INTEGER:=8192;
+            mbrc    NUMBER:=8;
         BEGIN
+            BEGIN
+                EXECUTE IMMEDIATE q'[
+                    DECLARE
+                        x VARCHAR2(300);
+                        y INT;
+                        t INT;
+                    BEGIN
+                        t:=sys.dbms_utility.get_parameter_value('db_block_size',:1,x);
+                        t:=sys.dbms_utility.get_parameter_value('_db_file_optimizer_read_count',:2,x);
+                    EXCEPTION WHEN OTHERS THEN
+                        :1 := 8192;
+                        :2 := 8;
+                    END;]' USING IN OUT blk_siz,IN OUT mbrc;
+            EXCEPTION WHEN OTHERS THEN NULL;END;
+            BEGIN
+                EXECUTE IMMEDIATE q'[
+                    DECLARE
+                        status   VARCHAR2(300);
+                        st       DATE;
+                        ed       DATE;
+                        sreadtim NUMBER;
+                        mreadtim NUMBER;
+                        ioseek   NUMBER;
+                        iospeed  NUMBER;
+                        mbrc     NUMBER;
+                    BEGIN
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'sreadtim', sreadtim);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'mreadtim', mreadtim);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'ioseektim', ioseek);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'iotfrspeed', iospeed);
+                        SYS.DBMS_STATS.GET_SYSTEM_STATS(status, st, ed, 'mbrc', mbrc);
+                        mbrc     := NVL(mbrc, :mbrc);
+                        sreadtim := NVL(sreadtim, ioseek + :blk_siz / iospeed);
+                        mreadtim := NVL(mreadtim, ioseek + :blk_siz * mbrc / iospeed);
+                        :mbrc    := round(mreadtim / sreadtim / mbrc, 4);
+                    END;]' USING IN OUT mbrc,IN blk_siz;
+            EXCEPTION WHEN OTHERS THEN
+                mbrc := CASE blk_siz WHEN 8192 THEN 0.271 WHEN 16384 THEN 0.375 ELSE 0.519 END;
+            END;
+            :mbrc := mbrc;
+
             EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
             BEGIN
                 dbms_output.enable(null);
@@ -343,7 +401,7 @@ function oracle:connect(conn_str)
     props.isdba=props.isdba=='TRUE' and true or false
     props.israc=props.israc=='TRUE' and true or false
     props.isadb=props.isadb=='TRUE' and true or false
-    
+    props.mbrc,props.d_mbrc=props.mbrc or 0.271
     if not succ then
         env.log_debug('DB',err)
         env.checkerr(self.conn,"Database is disconnected")
@@ -383,6 +441,12 @@ function oracle:connect(conn_str)
         
         env.uv.os.setenv("NLS_LANG",self.props.nls_lang)
     end
+
+    if self.conn.getNegotiatedSDU then
+        succ,props.sdu=pcall(self.conn.getNegotiatedSDU,self.conn)
+        if not succ then props.sdu=nil end
+    end
+
     if self.props.service_name then
         if prompt=="" or not prompt or prompt:find('[:/%(%)]') then prompt=self.props.service_name end
         prompt=prompt:match('([^%.]+)')
@@ -391,8 +455,8 @@ function oracle:connect(conn_str)
         prompt=('%s%s'):format(prompt:upper(),self.props.db_role or '')
         env.set_prompt(nil,prompt,nil,2)
     end
-    self.session_title=('%s@%s   Instance: %s   SID: %s   Version: Oracle(%s)')
-            :format(self.props.db_user,prompt,self.props.instance,self.props.sid,self.props.db_version)
+    self.session_title=('%s@%s   SID: %s@%s   Version: Oracle(%s)')
+            :format(self.props.db_user,prompt,self.props.sid,self.props.instance,self.props.db_version)
     env.set_title(self.session_title)
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
@@ -672,7 +736,6 @@ function oracle:onload()
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
          PROXY_USER_NAME=proxy_user,
          bigStringTryClob="true",
-         clientEncoding=java.system:getProperty("input.encoding"),
          processEscapes='false',
          ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="true",
          ['oracle.jdbc.useThreadLocalBufferCache']="false",
