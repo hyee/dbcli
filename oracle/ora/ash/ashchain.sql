@@ -42,7 +42,7 @@
         &AWR_VIEW        : default={dba_hist_} pdb={AWR_PDB_}
         @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
         @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
-        &V8: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=nvl(0+'&dbid',&did) AND snap_id in (select snap_id from &check_access_pdb.snapshot where dbid=nvl(0+'&dbid',&did)))}
+        &V8: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=nvl(0+'&dbid',&did) )}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,&top_sql SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE+1)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
@@ -74,7 +74,7 @@ var chose varchar2
 var filter2 number;
 
 declare
-    target varchar2(2000) := q'[
+    target varchar2(4000) := q'[
         select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
                 SUBSTR(a.program,-6) PRO_,
                 nvl(a.blocking_session,
@@ -89,7 +89,7 @@ BEGIN
     :filter2 := 1;
     IF (:V1 IS NOT NULL AND :snap IS NOT NULL) OR :filter1=1 THEN
         :filter2 := 0;
-        target := replace(replace(q'[select * from (select distinct stime from (@target and (@filter))) a natural join (@target) b]','@filter',:filter),'@target',target);
+        target := replace(replace(q'[select /*+no_merge(a) use_hash(b) OPT_ESTIMATE(table,a,rows=30000) OPT_ESTIMATE(table,b,rows=3000000)*/ * from (select distinct stime from (@target and (@filter))) a join (@target) b using(stime)]','@filter',:filter),'@target',target);
         chose := 'CASE WHEN ' ||:filter|| ' THEN 1 ELSE 0 END';
     END IF;
     :target := '('||target||')';
@@ -215,7 +215,7 @@ BEGIN
             WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as (select /*+materialize */ a.*,nullif(b_sid_,'@') b_sid from &target a),
             ash_data AS (
-                SELECT /*+&hint ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
+                SELECT /*+&hint DYNAMIC_SAMPLING(0) ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,

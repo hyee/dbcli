@@ -158,7 +158,7 @@ FROM  (SELECT /*+DYNAMIC_SAMPLING(11) NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param
                          &attr11 DECODE(BIGFILE,'YES','BIGFILE,')||
                          &attr11 DECODE(ENCRYPTED,'YES','TDE,')||
                          &attr11 DECODE(PLUGGED_IN,'YES','PLUGIN,')||
-                         &attr11 DECODE(PREDICATE_EVALUATION,NULL,'','STORAGE','','PRED: '||PREDICATE_EVALUATION)||
+                         &attr11 DECODE(PREDICATE_EVALUATION,NULL,'','PRED('||REPLACE(PREDICATE_EVALUATION,'STORAGE','CELL')||')')||
                          &attr11 COMPRESS_FOR||','||
                          &attr12 DECODE(CHUNK_TABLESPACE,'Y','CHUNK,')||
                          &attr12 DECODE(SHARED,'SHARED','',SHARED||',')||
