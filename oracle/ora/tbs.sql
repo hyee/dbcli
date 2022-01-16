@@ -54,7 +54,7 @@ col FREE_SPACE format KMG
 col TOTAL_FREE,MBPS format KMG
 col latency for usmhd0
 col fid noprint
-col "USED(%)" for pct2
+col "USED(%),FSFI" for pct2
 
 SELECT &pname,
        TABLESPACE_NAME,
@@ -67,7 +67,7 @@ SELECT &pname,
        siz+FREE_SPACE-space "TOTAL_FREE",
        ROUND((SPACE - NVL(FREE_SPACE, 0))/nullif(siz, 0),4) "USED(%)",
        IOPS,MBPS,latency,
-       FSFI "FSFI(%)",
+       FSFI,
        g location,
        attrs
 FROM  (SELECT /*+DYNAMIC_SAMPLING(11) NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_pushdown','false') use_hash(F T)*/
@@ -75,7 +75,7 @@ FROM  (SELECT /*+DYNAMIC_SAMPLING(11) NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param
               decode(grouping_id(TABLESPACE_NAME,file_id),0,null,3,'TOTAL('||IS_TEMP||')',nvl2(:V1,'','  ')||TABLESPACE_NAME) TABLESPACE_NAME,
               decode(grouping_id(file_id),0,'#'||file_id,''||count(1)) files,
               nvl(SUM(FREE_BYTES-6*blocksiz),0)  FREE_SPACE, --minus 6 end blocks
-              round(sqrt(sum(m_blocks)/sum(s_blocks))* (100/sqrt(sqrt(sum(c_blocks)))),2) fsfi,
+              round(sqrt(sum(m_blocks)/sum(s_blocks))/sqrt(sqrt(sum(c_blocks))),4) fsfi,
               sum(nvl(hwm_block*blocksiz,space)) HWM_SPACE,
               SUM(siz) siz,
               SUM(space) SPACE,

@@ -162,7 +162,7 @@ end
 
 function string.format_number(base,s,cast)
     if not tonumber(s) then return s end
-    return String:format(base,java.cast(tonumber(s),cast or 'double'))
+    return String:format(base,java.cast(s,cast or 'double'))
 end
 
 function string.lpad(str, len, char)

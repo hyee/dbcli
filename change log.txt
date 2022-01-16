@@ -1,3 +1,4 @@
+2022-01-05: * oracle: update lib ojdbc8
 2021-12-23: + oracle: new script 'show iotwrite' 
 2021-12-05: * public: update libs luajit(2.1 Beta3)/luv(1.42)
 2021-11-29: + oracle: new script 'pdb metric' 

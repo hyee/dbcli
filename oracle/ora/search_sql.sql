@@ -75,12 +75,12 @@
 ]]*/
 SELECT /*+no_expand*/
        SOURCE,SQL_ID,
-       substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 300) sql_text
+       substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 300) sql_text
 FROM (
     SELECT 'G&CHECK_ACCESS_GV' SOURCE, a.*
     FROM   TABLE(gv$(CURSOR(
         SELECT sql_id,
-               sql_text
+               substr(sql_text,1,1000) sql_text
         FROM   (SELECT a.*, a.SQL_FULLTEXT sql_text_ FROM &CHECK_ACCESS_GV a)
         WHERE  &vw in('A','G') AND (&filter)))) a
     &CHECK_ACCESS_AWR

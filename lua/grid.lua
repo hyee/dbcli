@@ -407,18 +407,25 @@ function grid.format_column(include_head, colinfo, value, rownum,instance,rowind
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
         if value == nil then return true, '' end
         local v1, v2 = tonumber(value)
+        local is_same=type(value)=='number' or tostring(v1)==value
         if not v1 then return true,value end
         local pre, scal = math.modf(v1)
         if grid.sep4k == "on" then
             if v1 ~= pre then
                 local scale=grid.digits<38 and grid.digits or 2
                 v1 = math.round(v1, scale)
-                v2 = string.format_number("%,."..scale.."f", v1, 'double')
+                v2 = string.format_number("%,."..scale.."f", value, 'double')
             else
-                v2 = string.format_number("%,d", v1, 'long')
+                v2 = string.format_number("%,.0f", value, 'double')
             end
         elseif grid.digits < 38 and scal > 0 then
-            v2 = math.round(v1, grid.digits)
+            if not is_same then
+                v2= value:gsub('(%.'..reps('%d',grid.digits)..').*','%1')
+            else
+                v2 = math.round(v1, grid.digits)
+            end
+        elseif not is_same then
+            v1=value
         end
         value = v2 or v1
         if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end

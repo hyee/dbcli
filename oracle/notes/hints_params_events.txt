@@ -164,7 +164,8 @@ Parameters
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
     _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
     _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query
-                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism 
+                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism
+                                       1024 to disable including sys_op_cycle_seq as part of extended TQ keys
     _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
                                      and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
     _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs 
@@ -210,7 +211,7 @@ Hints:
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
-    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
+    PQ_DISTRIBUTE_WINDOW([<@QB>] <method>): used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
