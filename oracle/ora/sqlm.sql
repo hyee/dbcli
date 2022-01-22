@@ -19,6 +19,7 @@
             -u     : Only show the SQL list within current schema
             -f     : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
             -text  : Find sql with keyword
+            -l     : List the available SQL Monitor reports for the specific SQL Id
             -s     : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
             -a     : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
             -avg   : Show avg time in case of listing the SQL monitor reports
@@ -39,6 +40,7 @@
             &rpt   : default={0} d={1}
             @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
             @check_access_sqlm: SYS.DBMS_SQL_MONITOR/SYS.DBMS_LOCK={1} default={0}
+            @check_access_report: SYS.DBA_HIST_REPORTS={1} default={0}
      --]]
 ]]*/
 
@@ -50,7 +52,7 @@ var c2 refcursor;
 var rs CLOB;
 var filename varchar2;
 var plan_hash number;
-col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format usmhd2
+col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,ot,time format usmhd2
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
 accept sqlmon_file noprompt "@&V1"
@@ -62,8 +64,10 @@ DECLARE /*+no_monitor*/
     start_time DATE;
     end_time   DATE;
     sq_id      VARCHAR2(500):=:V1;
+    sq_id1     VARCHAR2(500):=:V1;
     inst       INT := :INSTANCE;
     did        INT := :dbid;
+    rpt_id     INT;
     execs      INT;
     counter    INT := &tot;
     filename   VARCHAR2(100);
@@ -84,6 +88,7 @@ DECLARE /*+no_monitor*/
     descs      SYS.ODCIARGDESCLIST;
     type t_fmt IS TABLE OF VARCHAR2(50);
     fmt        t_fmt;
+    c0         SYS_REFCURSOR;
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
         dbms_lob.writeappend(txt,nvl(length(msg),1)+1,chr(10)||nvl(msg,'.'));
@@ -254,8 +259,9 @@ BEGIN
                 raise_application_error(-20001,'Error '||sqlerrm||' on fetching report with SQL: '||sq_id);
         END;
     ELSIF sqlmon IS NULL AND regexp_like(sq_id,'^\d+$') THEN
-        $IF dbms_db_version.version>11 $THEN
-            sqlmon := DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => 0+sq_id, TYPE => 'XML');
+        $IF &check_access_report=1 $THEN
+            rpt_id := 0+sq_id;
+            sqlmon := DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => rpt_id, TYPE => 'XML');
         $END
         IF sqlmon IS NULL THEN
              raise_application_error(-20001,'SQL_ID '||sq_id||' should not be a number!');
@@ -287,6 +293,11 @@ BEGIN
 
         sq_id:= mon.extract('//report_parameters/sql_id[1]/text()').getStringval();
         elem := mon.extract('//report_parameters/sql_exec_id[1]/text()');
+        if rpt_id IS NOT NULL THEN
+            filename := 'sqlm_' || sq_id ||'_'||rpt_id|| '.html';
+            rpt_id := null;
+        end if;
+        
         IF elem IS NOT NULL THEN
             sql_exec:= elem.getNumberVal();
         ELSE
@@ -309,35 +320,69 @@ BEGIN
 
             IF &rpt=0 THEN
                 IF sql_exec IS NULL THEN
-                    select max(sql_id) keep(dense_rank last order by sql_exec_start,sql_exec_id),
+                    select max(sql_id) keep(dense_rank last order by sql_exec_start,sql_exec_id desc),
                            max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
                            max(sql_exec_start)
                     into  sq_id,sql_exec,sql_start
                     from  gv$sql_monitor
                     where (sql_id=sq_id or lower(sq_id) in('l','last'))
-                    --AND   sql_plan_hash_value > 0
                     AND   sql_exec_id >0 
                     AND   PX_SERVER# IS NULL
                     AND   sql_text IS NOT NULL
-                    and   inst_id=nvl(inst,inst_id);
-                    
+                    AND   inst_id=nvl(inst,inst_id);
+
+                    $IF &check_access_report=1 $THEN
+                    if sq_id is null and lower(sq_id1) not in('l','last') then
+                        select max(key1) keep(dense_rank last order by key3,key2 desc),
+                               max(key2) keep(dense_rank last order by key3),
+                               max(key3),
+                               max(report_id) keep(dense_rank last order by key3,key2 desc)
+                        into  sq_id,sql_exec,sql_start,rpt_id
+                        FROM(
+                            select /*+NO_MERGE*/ key1,key2,to_date(key3,'MM:DD:YYYY HH24:MI:SS') key3,report_id
+                            from  dba_hist_reports
+                            where key1=sq_id1
+                            AND   key2 >0 
+                            AND   component_name='sqlmonitor'
+                            AND   instance_number=nvl(inst,instance_number));
+                    end if;
+                    $END
+
                     if sq_id is null then
                         raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
                     end if;
                 END IF;
-                fmt := t_fmt('ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
-                FOR i in 1..fmt.count LOOP
-                    BEGIN
-                        xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
-                        dbms_output.put_line('Extracted report level is: '||fmt(i));
-                        exit;
-                    EXCEPTION WHEN OTHERS THEN
-                        IF i=fmt.count THEN
-                            RAISE;
-                        END IF;
-                    END;
-                END LOOP;
-                filename := 'sqlm_' || sq_id ||nullif('_'||:v2,'_')|| '.html';
+                $IF &check_access_report=1 $THEN
+                IF rpt_id IS NULL AND sql_exec IS NOT NULL THEN
+                    SELECT MAX(report_id)
+                    INTO   rpt_id
+                    from  dba_hist_reports
+                    where key1=sq_id1
+                    AND   key2=sql_exec
+                    AND   component_name='sqlmonitor'
+                    AND   instance_number=nvl(inst,instance_number);
+                END IF;
+                $END
+
+                IF rpt_id IS NULL THEN
+                    fmt := t_fmt('ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
+                    FOR i in 1..fmt.count LOOP
+                        BEGIN
+                            xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
+                            dbms_output.put_line('Extracted report level is: '||fmt(i));
+                            exit;
+                        EXCEPTION WHEN OTHERS THEN
+                            IF i=fmt.count THEN
+                                RAISE;
+                            END IF;
+                        END;
+                    END LOOP;
+                ELSE
+                    $IF &check_access_report=1 $THEN
+                        xml := SYS.DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL_XML(rpt_id);
+                    $END
+                END IF;
+                filename := 'sqlm_' || sq_id ||nullif('_'||keyw,'_')|| '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
                 xml := xmltype(DBMS_SQLTUNE.REPORT_SQL_DETAIL(report_level => 'ALL',
@@ -349,7 +394,7 @@ BEGIN
                                                       dbid=>did,
                                                       top_n=>50,
                                                       type=>'XML'));
-                filename := 'sqld_' || sq_id ||nullif('_'||:v2,'_') || '.html';
+                filename := 'sqld_' || sq_id ||nullif('_'||keyw,'_') || '.html';
             END IF;
         END IF;
 
@@ -835,7 +880,7 @@ BEGIN
                                 FROM  gv$sql_monitor a
                                 WHERE (&filter)
                                 GROUP BY sql_id,sql_exec_start,sql_exec_id) a
-                    WHERE  (&SNAP=1 OR (plan_hash IS NULL AND :V2 IS NOT NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
+                    WHERE  (&SNAP=1 OR (keyw IS NOT NULL AND plan_hash IS NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
                     AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || lower(keyw) || '%'))
                     GROUP  BY sql_id &OPTION
                     ORDER  BY last_seen DESC)
@@ -870,8 +915,52 @@ BEGIN
                 IF counter = 0 THEN
                     counter := execs;
                 END IF;
+                $IF &check_access_report=1 $THEN
+                    OPEN c0 FOR 
+                        SELECT /*+no_expand*/ 
+                               KEY1 SQL_ID,
+                               KEY2 SQL_EXEC_ID,
+                               REPORT_ID,
+                               SNAP_ID,
+                               PERIOD_START_TIME,
+                               PERIOD_END_TIME,
+                               b.*,
+                               substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) SQL_TEXT
+                        FROM   (SELECT a.*, xmltype(a.report_summary) summary 
+                                FROM   dba_hist_reports a
+                                WHERE  KEY1=sq_id
+                                AND    COMPONENT_NAME='sqlmonitor') a,
+                                xmltable('/report_repository_summary/*' PASSING a.summary columns --
+                                        plan_hash NUMBER PATH 'plan_hash',
+                                        username  VARCHAR2(100) PATH 'user',
+                                        dur NUMBER path 'stats/stat[@name="duration"]', 
+                                        ela NUMBER path 'stats/stat[@name="elapsed_time"]*1e-6', 
+                                        CPU NUMBER path 'stats/stat[@name="cpu_time"]*1e-6',
+                                        io NUMBER path 'stats/stat[@name="user_io_wait_time"]*1e-6', 
+                                        app NUMBER path 'stats/stat[@name="application_wait_time"]*1e-6',
+                                        cl NUMBER path 'stats/stat[@name="cluster_wait_time"]*1e-6', 
+                                        cc NUMBER path 'stats/stat[@name="concurrency_wait_time"]*1e-6',
+                                        ot NUMBER path 'stats/stat[@name="other_wait_time"]*1e-6', 
+                                        plsql NUMBER path 'stats/stat[@name="plsql_exec_time"]*1e-6',
+                                        ioreq NUMBER path 'sum(stats/stat[@name=("read_reqs","write_reqs")])',
+                                        iosize NUMBER path 'sum(stats/stat[@name=("read_bytes","write_bytes")])', 
+                                        buffget NUMBER path 'stats/stat[@name="buffer_gets"]*8192',
+                                        offload NUMBER path 'stats/stat[@name="elig_bytes"]', 
+                                        ofleff NUMBER path 'stats/stat[@name="cell_offload_efficiency"]',
+                                        ofleff2 NUMBER path 'stats/stat[@name="cell_offload_efficiency2"]', 
+                                        offlrtn NUMBER path 'stats/stat[@name="ret_bytes"]',
+                                        --,service VARCHAR2(100) PATH 'service', program VARCHAR2(300) PATH 'program'
+                                        sql_text VARCHAR2(4000) PATH 'sql_text'
+                                        --unc_bytes NUMBER path 'stats/stat[@name="unc_bytes"]',
+                                        --fetches NUMBER path 'stats/stat[@name="user_fetch_count"]'
+                                        --
+                                        ) b
+                        ORDER  BY 2;
+                $END
+
+                :c0 := c0;
             
-                OPEN :c0 FOR
+                OPEN :c1 FOR
                     SELECT DECODE(phv, plan_hash, '*', ' ') || phv plan_hash,
                              &uniq execs,
                              SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
@@ -904,60 +993,6 @@ BEGIN
                             FROM gv$sql_monitor a WHERE sql_id = sq_id) b
                     GROUP  BY phv
                     ORDER  BY decode(phv, plan_hash, SYSDATE + 1, MAX(last_refresh_time));
-            
-                OPEN :c1 FOR
-                    WITH ASH AS
-                     (SELECT /*+materialize*/id, SUM(cnt) aas, MAX(SUBSTR(event, 1, 30) || '(' || cnt || ')') keep(dense_rank LAST ORDER BY cnt) top_event
-                        FROM   (SELECT id, nvl(event, 'ON CPU') event, round(SUM(flag) / counter, 3) cnt
-                                FROM   (SELECT a.*, rank() over(PARTITION BY sql_exec_id,sql_exec_start ORDER BY flag) r
-                                        FROM   (SELECT SQL_PLAN_LINE_ID id, event, current_obj#, sql_exec_id,sql_exec_start, 1 flag
-                                                FROM   gv$active_session_history
-                                                WHERE  sql_id = sq_id
-                                                AND    sql_plan_hash_value = plan_hash
-                                                AND    sample_time BETWEEN start_time AND end_time
-                                                UNION ALL
-                                                SELECT SQL_PLAN_LINE_ID id, event, current_obj#, sql_exec_id,sql_exec_start, 10 flag
-                                                FROM   dba_hist_active_sess_history
-                                                WHERE  sql_id = sq_id
-                                                AND    sql_plan_hash_value = plan_hash
-                                                AND    sample_time BETWEEN start_time AND end_time) a)
-                                WHERE  r = 1
-                                GROUP  BY id, event)
-                        GROUP  BY id),
-                    SQLM as (SELECT /*+materialize*/ plan_line_id ID,
-                                     MAX(plan_parent_id) pid,
-                                     MIN(lpad(' ', plan_depth, ' ') || plan_operation || NULLIF(' ' || plan_options, ' ')) operation,
-                                     MAX(plan_object_name) name,
-                                     round(SUM(TIME*flag), 3) TIME,
-                                     round(SUM(TIME*flag) / NULLIF(SUM(tick*flag),0), 2) "%",
-                                     --MAX(plan_cost) est_cost,
-                                     MAX(plan_cardinality) est_rows,
-                                     round(SUM(output_rows) / execs, 2) act_rows,
-                                     round(SUM(starts) / execs, 2) avg_exec,
-                                     round(SUM(output_rows) / counter, 3) outputs,
-                                     round(SUM(io_interconnect_bytes) / counter, 3) cellio,
-                                     round(SUM(physical_read_bytes + physical_write_bytes) / counter, 3) iosize,
-                                     round(SUM(physical_read_requests + physical_write_requests) / counter, 3) ioreq,
-                                     MAX(workarea_max_mem) mem,
-                                     MAX(workarea_max_tempseg) temp
-                            FROM   (SELECT a.*,
-                                             decode(a.sql_exec_start,max(a.sql_exec_start) over(),1,0) flag,                
-                                             ((b.last_refresh_time - b.sql_exec_start)*86400+1)*NVL2(b.px_qcsid,0,1) tick,
-                                             max((a.last_change_time-a.first_change_time)*86400+1) over(partition by a.sql_exec_id,a.sql_exec_start,a.plan_line_id) TIME
-                                    FROM   gv$sql_plan_monitor a, gv$sql_monitor b
-                                    WHERE  b.sql_id = sq_id
-                                    AND    b.sql_plan_hash_value = plan_hash
-                                    AND    b.sql_id = a.sql_id
-                                    AND    b.sql_exec_id = a.sql_exec_id
-                                    AND    b.sql_exec_start=a.sql_exec_start
-                                    AND    b.key=a.key
-                                    AND    b.inst_id = a.inst_id
-                                    AND    b.sid = a.sid
-                                    AND    b.sql_plan_hash_value = a.sql_plan_hash_value)
-                            GROUP  BY plan_line_id)
-                    SELECT row_number() over(ORDER BY rownum DESC) OID, m.*
-                    FROM   (select * FROM (SELECT * FROM SQLM LEFT JOIN ash USING (id)) START WITH ID = (SELECT MIN(id) FROM SQLM) CONNECT BY PRIOR id = pid ORDER SIBLINGS BY id DESC) m
-                    ORDER  BY id;
                 
             END IF;
         END IF;

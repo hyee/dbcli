@@ -504,13 +504,13 @@ function db_core:call_sql_method(event_name,sql,method,...)
         if event_name=='ON_SQL_ERROR' and obj.getCause then
             info.cause=tostring(obj:getCause():toString()):gsub("(Exception: )",'%1'..code,1)
         end
-
+        env.log_debug('error',info.error)
         event(event_name,info)
         local showline,found=cfg.get("SQLERRLINE"),false
         local sql_name=self.get_command_type(sql)
 
         if info and info.error and info.error~="" then
-             __stmts[select(1,...)]=nil
+            __stmts[select(1,...)]=nil
             if  info.sql and (not self:is_internal_call(info.sql)) and 
                 (env.ROOT_CMD~=sql_name or showline~='off' and info.position) then
                 if showline~='off' and ((info.position or 0) > 1 or info.col) then

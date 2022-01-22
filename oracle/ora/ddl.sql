@@ -1,11 +1,17 @@
 /*[[
-   Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<object_type>]}
+   Get DDL statement. Usage: @@NAME {[owner.]<object_name> [<object_type>] [-seg|-storge|-part]}
+   -seg    : remove segment attributes
+   -storage: remove storage clause
+   -part   : remove partition clause
    --[[
         @CHECK_ACCESS_OBJ: dba_views={dba_views}, default={all_views}
         @CHECK_ACCESS_COLS: dba_tab_cols={dba_tab_cols} default={all_tab_cols}
         @CHECK_ACCESS_EXP : sys.dbms_sql2={1} default={0}
         @ver: 12.1={dbms_utility} default={sys.dbms_sql2}
         @ARGS: 1
+        &seg: default={true} seg={false}
+        &st: default={true} storage={false}
+        &pt: default={true} part={false}
    --]]
 ]]*/
 
@@ -69,16 +75,20 @@ BEGIN
 
     IF txt IS NULL THEN
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'DEFAULT', TRUE);
-
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SQLTERMINATOR', TRUE);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SEGMENT_ATTRIBUTES', true);
-        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'STORAGE', true);
+        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SEGMENT_ATTRIBUTES', &seg);
+        DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'STORAGE', &st);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'TABLESPACE', TRUE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'SPECIFICATION', TRUE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'BODY', TRUE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS', TRUE);
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'CONSTRAINTS_AS_ALTER', TRUE);
-        --DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', FALSE);
+        $IF DBMS_DB_VERSION.VERSION>10 $THEN
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PARTITIONING', &pt);
+        $END
+        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+            DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'PHYSICAL_PROPERTIES', &pt);
+        $END
         BEGIN
             IF part1 IS NULL THEN
                 IF :V2 IS NOT NULL THEN

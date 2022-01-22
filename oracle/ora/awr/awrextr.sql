@@ -1,9 +1,12 @@
-/*[[Export AWR repository. Usage: @@NAME <directory_name> <begin_snap> <end_snap> [<dbid>]
-
+/*[[Export AWR repository. Usage: @@NAME <directory_name> <begin_snap> <end_snap> [<dbid>] [-sqlmon|-awr]
+    -sqlmon: extract sql monitor reports only
+    -awr   : extract awr dump only
     --[[
         @ARGS: 3
         &V4: default={&dbid}
         @extr: 18.1={dbms_workload_repository.extract} default={dbms_swrf_internal.awr_extract}
+        @check_access_sqlmon: DBA_HIST_REPORTS_DETAILS={1} default={0}
+        &awr: default={0} awr={1} sqlmon={2}
     --]]
 ]]*/
 SET SQLTIMEOUT 7200
@@ -17,7 +20,12 @@ DECLARE
     st   INT := :V2;
     ed   INT := :V3;
     did  INT := :V4;
+    hdl  NUMBER;
+    res  CLOB;
+    job  VARCHAR2(128) := 'AWREXTR_'||to_char(SYSDATE,'YYMMDDHH24MISS');
+    own  VARCHAR2(128);
 BEGIN
+    dbms_output.enable(null);
     SELECT MAX(directory_name), MAX(directory_path)
     INTO   dir, root
     FROM   ALL_DIRECTORIES
@@ -31,36 +39,107 @@ BEGIN
     END IF;
 
     IF did IS NULL THEN
-        SELECT MAX(dbid) INTO did FROM SYS.DBA_HIST_WR_CONTROL;
+        SELECT MAX(dbid) INTO did FROM V$DATABASE;
+        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+            did := sys_context('userenv', 'con_dbid');
+        $END
     END IF;
-
-    SELECT MIN(snap_id), MAX(snap_id)
-    INTO   st, ed
-    FROM   DBA_HIST_SNAPSHOT
-    JOIN   SYS.DBA_HIST_WR_CONTROL
-    USING  (dbid)
-    WHERE  dbid = did
-    AND    snap_id IN (st, ed);
-
-    IF st IS NULL OR ed IS NULL OR st = ed THEN
-        raise_application_error(-20001, 'Invalid snapshot range(' || :v2 || '-' || :v3 || ') for dbid ' || did);
-    END IF;
-
-    file := 'awrdat_' || did || '_' || st || '_' || ed;
     
-    dump := bfilename(dir, file||'.dmp');
-    BEGIN 
-        dbms_lob.fileopen(dump);
-        len := dbms_lob.getlength(dump);
-        dbms_lob.fileclose(dump);
-    EXCEPTION WHEN OTHERS THEN NULL; END;
-    
-    IF len > 0 THEN
-        raise_application_error(-20001, 'File already exists: ' || root || file || '.dmp');
+    IF &awr IN(0,1) THEN
+        SELECT MIN(snap_id), MAX(snap_id)
+        INTO   st, ed
+        FROM   DBA_HIST_SNAPSHOT
+        JOIN   SYS.DBA_HIST_WR_CONTROL
+        USING  (dbid)
+        WHERE  dbid = did
+        AND    snap_id IN (st, ed);
+
+        IF st IS NULL OR ed IS NULL OR st = ed THEN
+            raise_application_error(-20001, 'Invalid snapshot range(' || :v2 || '-' || :v3 || ') for dbid ' || did);
+        END IF;
+
+        file := 'awrdat_' || did || '_' || st || '_' || ed;
+        
+        dump := bfilename(dir, file||'.dmp');
+        BEGIN 
+            dbms_lob.fileopen(dump);
+            len := dbms_lob.getlength(dump);
+            dbms_lob.fileclose(dump);
+        EXCEPTION WHEN OTHERS THEN NULL; END;
+        
+        IF len > 0 THEN
+            raise_application_error(-20001, 'File already exists: ' || root || file || '.dmp');
+        END IF;
+        sys. &extr(dmpfile => file, dmpdir => dir, dbid => did, bid => st, eid => ed);
+        dbms_output.put_line('AWR repository is extracted into ' || root || file || '.dmp');
     END IF;
+    $IF &check_access_sqlmon=1 AND (&awr=0 OR &awr=2) $THEN
+    BEGIN
+        SELECT COUNT(1),min(dbid) keep(dense_rank first order by decode(dbid,did,0,1))
+        INTO   len,did
+        FROM   SYS.DBA_HIST_REPORTS
+        WHERE  DBID in(did, sys_context('userenv', 'dbid'))
+        AND    SNAP_ID BETWEEN st AND ed;
+        
+        own := regexp_replace(sys_context('userenv','current_schema'),'^SYS$','SYSTEM');
 
+        BEGIN
+            EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS AS SELECT * FROM SYS.DBA_HIST_REPORTS WHERE DBID='||did||' AND SNAP_ID BETWEEN '||st||' AND '||ed;
+            EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS AS SELECT * FROM SYS.DBA_HIST_REPORTS_DETAILS WHERE DBID='||did||' AND SNAP_ID BETWEEN '||st||' AND '||ed;
+        EXCEPTION WHEN OTHERS THEN NULL; END;
 
-    sys. &extr(dmpfile => file, dmpdir => dir, dbid => did, bid => st, eid => ed);
-    dbms_output.put_line('AWR repository is extracted into ' || root || file || '.dmp');
+        IF len=0 THEN
+            RETURN;
+        END IF;
+
+        BEGIN
+            hdl := sys.dbms_datapump.attach(job, sys_context('userenv', 'current_schema'));
+            sys.dbms_datapump.stop_job(hdl, 1, 0, 10);
+            sys.dbms_datapump.detach(job);
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+        hdl := null;
+        BEGIN
+            hdl := sys.dbms_datapump.open(operation   => 'EXPORT',
+                                          job_mode    => 'TABLE',
+                                          job_name    => job,
+                                          version     => '12');
+            file := 'sqlmon_'||did||'_'||st||'_'||ed||'_'||lower(own)||'.dmp';
+            sys.dbms_datapump.add_file(handle    => hdl,
+                                       filetype  => sys.dbms_datapump.KU$_FILE_TYPE_DUMP_FILE,
+                                       filename  => file,
+                                       directory => dir,
+                                       reusefile => 1);
+            sys.dbms_datapump.add_file(handle    => hdl,
+                                       filetype  => sys.dbms_datapump.KU$_FILE_TYPE_LOG_FILE,
+                                       filename  => replace(file,'.dmp','.log'),
+                                       directory => dir,
+                                       reusefile => 1);
+            sys.dbms_datapump.metadata_filter(handle => hdl,
+                                              name   => 'NAME_LIST',
+                                              value  => '''AWR_DUMP_REPORTS'',''AWR_DUMP_REPORTS_DETAILS''');
+            sys.dbms_datapump.metadata_filter(handle => hdl,
+                                              name   => 'SCHEMA_EXPR',
+                                              value  => '='''||own||'''');
+            sys.dbms_datapump.set_parameter(handle => hdl, name => 'COMPRESSION', value => 'ALL');
+            sys.dbms_datapump.start_job(hdl);
+            sys.dbms_datapump.wait_for_job(hdl, res);
+            dbms_output.put_line(len||' SQL Monitor reports are extracted into ' || root || file);
+        EXCEPTION WHEN OTHERS THEN
+            IF hdl IS NOT NULL THEN
+                BEGIN
+                    sys.dbms_datapump.stop_job(hdl, 1, 0, 10);
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+            END IF;
+            raise;
+        END;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS PURGE';
+            EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS PURGE';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
+    END;
+    $END
 END;
 /

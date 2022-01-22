@@ -45,7 +45,6 @@ function xplan.explain(fmt,sql)
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
     cfg.set("printsize",9999,true)
-    --db:internal_call("alter session set statistics_level=all")
     db:rollback()
     if e10053 then
         pcall(db.internal_call,db,[[alter session set "_fix_control"='16923858:5']])
@@ -163,7 +162,7 @@ function xplan.explain(fmt,sql)
                  o.maxid,
                  nvl(trim(dbms_xplan.format_number(CASE 
                      WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
-                         greatest(1,floor(io_cost*nvl(dop,1)/@mbrc@)) 
+                         greatest(1,floor(io_cost*nvl(dop*1.009,1)/@mbrc@)) 
                      ELSE
                          io_cost
                  END)),' ') blks,

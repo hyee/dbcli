@@ -47,8 +47,8 @@ Columnar Cache Debugging Tracing
             * 65: CC2 compressed for query
             * 97: CC2 compressed for capacity
             * 524288: disable hwm brokering alignment
-            * 2097152: disable CC2 population
-            * 2621440: disable hwm brokering and CC2 population(properly reduce HV - Contention)
+            * 2097152: disable CC2 pre-population for load
+            * 2621440: disable hwm brokering and CC2 pre-population(properly reduce HV - Contention)
     For tracing sage_cache/sage_txn/sage_data code: 
         cellcli -e 'alter cell offloadgroupEvents = "trace[FPLIB.SAGE_DATA] memory highest, disk highest"'; 
     For tracing compression code: 

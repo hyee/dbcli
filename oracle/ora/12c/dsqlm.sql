@@ -73,7 +73,7 @@ BEGIN
                            b.*,
                            substr(TRIM(regexp_replace(REPLACE(EXTRACTVALUE(summary, '//sql_text'), chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 150) SQL_TEXT
                     FROM   (SELECT a.*, xmltype(a.report_summary) summary FROM dba_hist_reports a) a,
-                           xmltable('/report_repository_summary/*' PASSING a.summary columns --
+                            xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                     plan_hash NUMBER PATH 'plan_hash',
                                     username  VARCHAR2(100) PATH 'user',
                                     dur NUMBER path 'stats/stat[@name="duration"]', 
