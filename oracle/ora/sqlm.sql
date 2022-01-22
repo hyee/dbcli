@@ -25,6 +25,12 @@
             -avg   : Show avg time in case of listing the SQL monitor reports
             -detail: Extract more detailed information when generating the SQL Monitor report
 
+        Format:
+             -active : output file is in active HTML format
+             -em     : output file is in EM HTML format
+             -html   : output file is in HTML format
+             -text   : output file is in Text format
+             
      --[[
             @ver: 12.2={} 11.2={--}
             &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
@@ -33,7 +39,7 @@
             &filter: default={1=1},f={},text={upper(sql_text) like upper('%&0%')},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
-            &out: default={active} html={html} em={em}
+            &out: default={active} html={html} em={em} text={text}
             &snap: default={0} snap={1}
             &showhub: default={0} a={1}
             &detail: default={0} detail={1}
@@ -56,7 +62,7 @@ col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,ot,time format usmhd
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
 accept sqlmon_file noprompt "@&V1"
-ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub,sqlm:&check_access_sqlm';
+
 
 DECLARE /*+no_monitor*/
     detail     INT := &detail; 
@@ -201,7 +207,7 @@ DECLARE /*+no_monitor*/
     END;
 BEGIN
     IF &SNAP=1 THEN
-        $IF $$sqlm=0 OR DBMS_DB_VERSION.release=1 $THEN
+        $IF &check_access_sqlm=0 OR DBMS_DB_VERSION.release=1 $THEN
             raise_application_error(-20001,'You dont'' have access on dbms_sql_monitor/dbms_lock, or db version < 12.2!');
         $ELSE
             dopename := 'DBCLI_SNAPPER_'||USERENV('SESSIONID');
@@ -320,52 +326,52 @@ BEGIN
 
             IF &rpt=0 THEN
                 IF sql_exec IS NULL THEN
-                    select max(sql_id) keep(dense_rank last order by sql_exec_start,sql_exec_id desc),
-                           max(sql_exec_id) keep(dense_rank last order by sql_exec_start),
-                           max(sql_exec_start)
+                    select max(sql_id) keep(dense_rank last order by last_refresh_time,sql_exec_id),
+                           max(sql_exec_id) keep(dense_rank last order by last_refresh_time),
+                           max(sql_exec_start) keep(dense_rank last order by last_refresh_time)
                     into  sq_id,sql_exec,sql_start
                     from  gv$sql_monitor
                     where (sql_id=sq_id or lower(sq_id) in('l','last'))
-                    AND   sql_exec_id >0 
+                    AND   sql_exec_id>0 
                     AND   PX_SERVER# IS NULL
                     AND   sql_text IS NOT NULL
                     AND   inst_id=nvl(inst,inst_id);
-
-                    $IF &check_access_report=1 $THEN
-                    if sq_id is null and lower(sq_id1) not in('l','last') then
-                        select max(key1) keep(dense_rank last order by key3,key2 desc),
-                               max(key2) keep(dense_rank last order by key3),
-                               max(key3),
-                               max(report_id) keep(dense_rank last order by key3,key2 desc)
-                        into  sq_id,sql_exec,sql_start,rpt_id
-                        FROM(
-                            select /*+NO_MERGE*/ key1,key2,to_date(key3,'MM:DD:YYYY HH24:MI:SS') key3,report_id
-                            from  dba_hist_reports
-                            where key1=sq_id1
-                            AND   key2 >0 
-                            AND   component_name='sqlmonitor'
-                            AND   instance_number=nvl(inst,instance_number));
-                    end if;
-                    $END
-
-                    if sq_id is null then
-                        raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
-                    end if;
+                ELSE
+                    select max(sql_id) keep(dense_rank last order by last_refresh_time,sql_exec_id),
+                           max(sql_exec_id) keep(dense_rank last order by last_refresh_time),
+                           max(sql_exec_start) keep(dense_rank last order by last_refresh_time)
+                    into  sq_id,sql_exec,sql_start
+                    from  gv$sql_monitor
+                    where sql_id=sq_id
+                    AND   sql_exec_id=sql_exec
+                    AND   PX_SERVER# IS NULL
+                    AND   sql_text IS NOT NULL
+                    AND   inst_id=nvl(inst,inst_id);
                 END IF;
                 $IF &check_access_report=1 $THEN
-                IF rpt_id IS NULL AND sql_exec IS NOT NULL THEN
-                    SELECT MAX(report_id)
-                    INTO   rpt_id
-                    from  dba_hist_reports
-                    where key1=sq_id1
-                    AND   key2=sql_exec
-                    AND   component_name='sqlmonitor'
-                    AND   instance_number=nvl(inst,instance_number);
-                END IF;
+                    if lower(sq_id1) not in('l','last') and (sq_id is null or sql_start<sysdate-1/24) then
+                        select max(key1) keep(dense_rank last order by ptime,key2),
+                               max(report_id) keep(dense_rank last order by ptime,key2)
+                        into  sq_id1,rpt_id
+                        FROM(
+                            select /*+NO_MERGE*/ key1,key2,report_id,period_end_time ptime
+                            from  dba_hist_reports
+                            where dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
+                            AND   key1=nvl(sq_id,sq_id1)
+                            AND   key2>0 
+                            AND   key2=coalesce(sql_exec,plan_hash,key2+0)
+                            AND   component_name='sqlmonitor'
+                            AND   instance_number=nvl(inst,instance_number));
+                        sq_id := nvl(sq_id1,sq_id);
+                    end if;
                 $END
 
+                if sq_id is null then
+                    raise_application_error(-20001,'cannot find relative records for the specific SQL ID!');
+                end if;
+
                 IF rpt_id IS NULL THEN
-                    fmt := t_fmt('ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
+                    fmt := t_fmt('ALL+PLAN_SKEW+SUMMARY+SQL_FULLTEXT','ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
                     FOR i in 1..fmt.count LOOP
                         BEGIN
                             xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
@@ -380,6 +386,7 @@ BEGIN
                 ELSE
                     $IF &check_access_report=1 $THEN
                         xml := SYS.DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL_XML(rpt_id);
+                        dbms_output.put_line('Extracted report from dba_hist_reports.');
                     $END
                 END IF;
                 filename := 'sqlm_' || sq_id ||nullif('_'||keyw,'_')|| '.html';
@@ -899,7 +906,7 @@ BEGIN
                 AND    PX_SERVER# IS NULL
                 AND    sql_plan_hash_value = plan_hash;
                 
-                $IF DBMS_DB_VERSION.VERSION>11 AND $$hub =1 $THEN
+                $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN
                     filename := 'sqlhub_' || sq_id || '.html';
                     content  := sys.dbms_perf.report_sql(sql_id => sq_id,
                                                          is_realtime => 1,
@@ -928,7 +935,8 @@ BEGIN
                                substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) SQL_TEXT
                         FROM   (SELECT a.*, xmltype(a.report_summary) summary 
                                 FROM   dba_hist_reports a
-                                WHERE  KEY1=sq_id
+                                WHERE  dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
+                                AND    KEY1=sq_id
                                 AND    COMPONENT_NAME='sqlmonitor') a,
                                 xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                         plan_hash NUMBER PATH 'plan_hash',

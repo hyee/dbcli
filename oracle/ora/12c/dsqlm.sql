@@ -1,22 +1,35 @@
 /*[[Get SQL Monitor report from dba_hist_reports, supports 12c only. Usage: @@NAME {[sql_id|report_id] [YYYYMMDDHH24MI] [YYYYMMDDHH24MI]} [-f"<filter>"] [-avg]
-  <sql_id> : List the records related to the specific SQL_ID and export SQL Performance Hub
-  -u       : Only show the SQL list within current schema
-  -avg     : Show average cost instead of total cost
+  
+  <sql_id>    : List the records related to the specific SQL_ID
+  -hub        : Genrate the SQL Perhub Report with specific date range
+  -u          : Only show the SQL list within current schema
+  -avg        : Show average cost instead of total cost
+  -t"<table>" : The data source, default as sys.dba_hist_reports
+
+  Format:
+    -active : output file is in active HTML format
+    -em     : output file is in EM HTML format
+    -html   : output file is in HTML format
+    -text   : output file is in Text format
+
   --[[
     @ver   : 12.1={}
     &filt  : default={KEY1=nvl(v_sql_id,KEY1)},f={},u={username=nvl('&0',sys_context('userenv','current_schema'))}
     &grp   : default={none}, g={g}, d={d}
     &filter: default={1=1}, f={} 
     &avg   : default={sum), avg={avg}
+    &dict  : default={sys.dba_hist_reports} t={&0}
+    &hub   : default={0} hub={1}
     @check_access_hub : SYS.DBMS_PERF={1} default={0}
+    &out: default={active} html={html} em={em} text={text}
   --]]
 ]]*/
 
-SET FEED OFF verify off
+SET FEED OFF verify off AUTOHIDE COL
 
 
 def agg = ""
-col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,time format smhd2
+col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,ot,time format smhd2
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite format TMB
 BEGIN
@@ -25,7 +38,6 @@ BEGIN
      END IF;
 END;
 /
-ALTER SESSION SET PLSQL_CCFLAGS = 'hub:&check_access_hub';
 
 VAR report CLOB;
 var filename VARCHAR2
@@ -38,6 +50,7 @@ DECLARE
     v_file      VARCHAR2(50);
     v_start     date:=NVL(to_date(NVL(:V2,:STARTTIME),'yymmddhh24mi'),sysdate-7);
     v_end       date:=NVL(to_date(NVL(:V3,:ENDTIME),'yymmddhh24mi'),sysdate);
+    xml         XMLTYPE;
 BEGIN
     IF v_report_id IS NULL THEN
         OPEN :cur FOR
@@ -71,9 +84,14 @@ BEGIN
                            PERIOD_START_TIME,
                            PERIOD_END_TIME,
                            b.*,
-                           substr(TRIM(regexp_replace(REPLACE(EXTRACTVALUE(summary, '//sql_text'), chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 150) SQL_TEXT
-                    FROM   (SELECT a.*, xmltype(a.report_summary) summary FROM dba_hist_reports a) a,
-                            xmltable('/report_repository_summary/*' PASSING a.summary columns --
+                           substr(TRIM(regexp_replace(REPLACE(EXTRACTVALUE(summary, '//sql_text'), chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 250) SQL_TEXT
+                    FROM   (SELECT a.*, xmltype(a.report_summary) summary 
+                            FROM   &dict a
+                            WHERE  a.COMPONENT_NAME='sqlmonitor'
+                            AND    (&filt)
+                            AND    PERIOD_START_TIME<=v_end
+                            AND    PERIOD_END_TIME>=v_start) a,
+                          xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                     plan_hash NUMBER PATH 'plan_hash',
                                     username  VARCHAR2(100) PATH 'user',
                                     dur NUMBER path 'stats/stat[@name="duration"]', 
@@ -89,8 +107,8 @@ BEGIN
                                     iosize NUMBER path 'sum(stats/stat[@name=("read_bytes","write_bytes")])', 
                                     buffget NUMBER path 'stats/stat[@name="buffer_gets"]*8192',
                                     offload NUMBER path 'stats/stat[@name="elig_bytes"]', 
-                                    --ofleff NUMBER path 'stats/stat[@name="cell_offload_efficiency"]',
-                                    ofleff NUMBER path 'stats/stat[@name="cell_offload_efficiency2"]', 
+                                    ofleff NUMBER path 'stats/stat[@name="cell_offload_efficiency"]',
+                                    ofleff2 NUMBER path 'stats/stat[@name="cell_offload_efficiency2"]', 
                                     offlrtn NUMBER path 'stats/stat[@name="ret_bytes"]'
                                     --,service VARCHAR2(100) PATH 'service', program VARCHAR2(300) PATH 'program'
                                     --,sql_text VARCHAR2(4000) PATH 'sql_text'
@@ -98,17 +116,13 @@ BEGIN
                                     --fetches NUMBER path 'stats/stat[@name="user_fetch_count"]'
                                     --
                                     ) b
-                          WHERE  a.COMPONENT_NAME='sqlmonitor'
-                          AND    (&filt)
-                          AND    (v_sql_id IS NOT NULL OR plan_hash>0)
-                          AND    PERIOD_START_TIME<=v_end
-                          AND    PERIOD_END_TIME>=v_start
+                    WHERE v_sql_id IS NOT NULL OR plan_hash>0
                 ) WHERE &filter
                 ORDER BY REPORT_ID DESC
             &agg ) GROUP BY SQL_ID ORDER BY ELA DESC
             FETCH FIRST 50 ROWS ONLY;
-        IF v_sql_id IS NOT NULL THEN
-            $IF DBMS_DB_VERSION.VERSION>11 AND $$hub =1 $THEN
+        IF v_sql_id IS NOT NULL AND :dict='sys.dba_hist_reports' AND (&hub=1 OR :V2 IS NOT NULL OR :V3 IS NOT NULL) THEN
+            $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN
                 v_file   := 'sqlhub_' || v_sql_id || '.html';
                 v_report := sys.dbms_perf.report_sql(sql_id => v_sql_id,
                                                      is_realtime => 0,
@@ -122,11 +136,28 @@ BEGIN
             $END
         END IF;
     ELSE
+        BEGIN
+            SELECT XMLTYPE(report)
+            INTO   xml
+            FROM  (
+                SELECT report
+                FROM   &dict._details
+                WHERE  dbid=nvl(:dbid,dbid)
+                AND    report_id=v_report_id
+                ORDER  BY generation_time desc
+            ) WHERE rownum<2;
+        EXCEPTION 
+            WHEN NO_DATA_FOUND THEN
+                raise_application_error(-20001,'No such report id: '||v_report_id);
+            WHEN OTHERS THEN
+                raise;
+        END;
+        v_sql_id:= xml.extract('//report_parameters/sql_id[1]/text()').getStringval();
         OPEN :cur for 
-            SELECT DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => v_report_id, TYPE => 'text')
+            SELECT DBMS_REPORT.FORMAT_REPORT(xml.deleteXML('//sql_fulltext'), 'text')
             FROM dual;
-        v_report := DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => v_report_id, TYPE => 'active');
-        v_file   := 'dsqlm_report_'||v_report_id||'.html';
+        v_report := DBMS_REPORT.FORMAT_REPORT(xml, '&out') ;
+        v_file   := 'sqlm_'||v_sql_id||'_'||v_report_id||'.html';
     END IF;
     :report  := v_report;
     :filename:= v_file;
