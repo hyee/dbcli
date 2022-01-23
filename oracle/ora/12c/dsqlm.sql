@@ -29,7 +29,7 @@ SET FEED OFF verify off AUTOHIDE COL
 
 
 def agg = ""
-col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,ot,time format smhd2
+col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,ot,time format usmhd2
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn format kmg
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite format TMB
 BEGIN
@@ -87,22 +87,23 @@ BEGIN
                            substr(TRIM(regexp_replace(REPLACE(EXTRACTVALUE(summary, '//sql_text'), chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 250) SQL_TEXT
                     FROM   (SELECT a.*, xmltype(a.report_summary) summary 
                             FROM   &dict a
-                            WHERE  a.COMPONENT_NAME='sqlmonitor'
+                            WHERE  COMPONENT_NAME='sqlmonitor'
                             AND    (&filt)
+                            AND    dbid=nvl(:dbid,dbid)
                             AND    PERIOD_START_TIME<=v_end
                             AND    PERIOD_END_TIME>=v_start) a,
                           xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                     plan_hash NUMBER PATH 'plan_hash',
                                     username  VARCHAR2(100) PATH 'user',
-                                    dur NUMBER path 'stats/stat[@name="duration"]', 
-                                    ela NUMBER path 'stats/stat[@name="elapsed_time"]*1e-6', 
-                                    CPU NUMBER path 'stats/stat[@name="cpu_time"]*1e-6',
-                                    io NUMBER path 'stats/stat[@name="user_io_wait_time"]*1e-6', 
-                                    app NUMBER path 'stats/stat[@name="application_wait_time"]*1e-6',
-                                    cl NUMBER path 'stats/stat[@name="cluster_wait_time"]*1e-6', 
-                                    cc NUMBER path 'stats/stat[@name="concurrency_wait_time"]*1e-6',
-                                    ot NUMBER path 'stats/stat[@name="other_wait_time"]*1e-6', 
-                                    plsql NUMBER path 'stats/stat[@name="plsql_exec_time"]*1e-6',
+                                    dur NUMBER path 'stats/stat[@name="duration"]*1e6', 
+                                    ela NUMBER path 'stats/stat[@name="elapsed_time"]', 
+                                    CPU NUMBER path 'stats/stat[@name="cpu_time"]',
+                                    io NUMBER path 'stats/stat[@name="user_io_wait_time"]', 
+                                    app NUMBER path 'stats/stat[@name="application_wait_time"]',
+                                    cl NUMBER path 'stats/stat[@name="cluster_wait_time"]', 
+                                    cc NUMBER path 'stats/stat[@name="concurrency_wait_time"]',
+                                    ot NUMBER path 'stats/stat[@name="other_wait_time"]', 
+                                    plsql NUMBER path 'stats/stat[@name="plsql_exec_time"]',
                                     ioreq NUMBER path 'sum(stats/stat[@name=("read_reqs","write_reqs")])',
                                     iosize NUMBER path 'sum(stats/stat[@name=("read_bytes","write_bytes")])', 
                                     buffget NUMBER path 'stats/stat[@name="buffer_gets"]*8192',

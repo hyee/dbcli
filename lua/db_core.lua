@@ -512,7 +512,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
         if info and info.error and info.error~="" then
             __stmts[select(1,...)]=nil
             if  info.sql and (not self:is_internal_call(info.sql)) and 
-                (env.ROOT_CMD~=sql_name or showline~='off' and info.position) then
+                (env.ROOT_CMD~=sql_name or showline~='off') then
                 if showline~='off' and ((info.position or 0) > 1 or info.col) then
                     info.row,info.col=tonumber(info.row),tonumber(info.col)
                     local pos,sql=math.min(#info.sql,(tonumber(info.position) or 0)+1),info.sql..'\n'

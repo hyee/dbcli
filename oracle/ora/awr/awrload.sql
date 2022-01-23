@@ -1,7 +1,9 @@
-/*[[Import AWR repository dump or sql monitor dump. Usage: @@NAME <directory_name> <file_name> [<new_dbid>]
+/*[[Import AWR repository dump or sql monitor dump. Usage: @@NAME <directory_name> <file_name> [<new_dbid>|<sqlmon_table>]
     For SQL Monitor dump:
         * the file name must match the syntax: sqlmon_[<num>_]<num>_<num>_<source_schema>.dmp
         * the table names are: AWR_DUMP_REPORTS,AWR_DUMP_REPORTS_DETAILS
+    <new_dbid>    : The new dbid to import the AWR dump
+    <sqlmon_table>: The table name to store the SQL Monitor reports
     --[[
         @ARGS: 2
     --]]
@@ -11,7 +13,8 @@ SET SQLTIMEOUT 7200
 DECLARE
     dir   VARCHAR2(128) := :V1;
     file  VARCHAR2(512) := :V2;
-    did   INT := :V3;
+    did   INT := regexp_substr(:V3,'^\d+$');
+    tab   VARCHAR2(512) := upper(regexp_substr(:V3,'^\D.*$'));
     root  VARCHAR2(2000);
     dump  BFILE;
     len   NUMBER;
@@ -62,7 +65,12 @@ BEGIN
                 sys.dbms_datapump.detach(job);
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
-            own1:= regexp_replace(sys_context('userenv','current_schema'),'^SYS$','SYSTEM');
+            own1 := sys_context('userenv','current_schema');
+            IF tab IS NOT NULL AND instr(tab,'.')>0 THEN
+                own1 := regexp_substr('[^.+]',1,1);
+                tab  := regexp_substr('[^.+]',1,2);
+            END IF;
+            own1:= regexp_replace(own1,'^SYS$','SYSTEM');
             hdl := sys.dbms_datapump.open(operation   => 'IMPORT',
                                           job_mode    => 'TABLE',
                                           job_name    => job,
@@ -82,16 +90,31 @@ BEGIN
                     own := own1;
                 END IF;
                 BEGIN
-                    DBMS_OUTPUT.PUT_LINE('CREATE TABLE '||own||'.AWR_DUMP_REPORTS AS SELECT * FROM SYS.DBA_HIST_REPORTS WHERE 1=2');
                     EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS AS SELECT * FROM SYS.DBA_HIST_REPORTS WHERE 1=2';
                     EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS AS SELECT * FROM SYS.DBA_HIST_REPORTS_DETAILS WHERE 1=2';
-                    EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own||'.UK_AWR_DUMP_REPORTS ON '||own||'.AWR_DUMP_REPORTS(DBID,SNAP_ID,REPORT_ID)';
-                    EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own||'.UK_AWR_DUMP_REPORTS_DETAILS ON '||own||'.AWR_DUMP_REPORTS_DETAILS(DBID,SNAP_ID,REPORT_ID)';
+                    EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own||'.UK_AWR_DUMP_REPORTS ON '||own||'.AWR_DUMP_REPORTS(DBID,REPORT_ID)';
+                    EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own||'.UK_AWR_DUMP_REPORTS_DETAILS ON '||own||'.AWR_DUMP_REPORTS_DETAILS(DBID,REPORT_ID)';
                 EXCEPTION WHEN OTHERS THEN NULL; END;
                 sys.dbms_datapump.set_parameter(hdl, name => 'TABLE_EXISTS_ACTION', value => 'APPEND');
                 sys.dbms_datapump.start_job(hdl);
                 sys.dbms_datapump.wait_for_job(hdl, res);
-                dbms_output.put_line('SQL Monitor reports are imported into '||own||'.AWR_DUMP_REPORTS and '||own||'.AWR_DUMP_REPORTS_DETAILS');
+                IF tab IS NOT NULL AND (tab!='AWR_DUMP_REPORTS' OR own!=own1) THEN
+                    BEGIN
+                        EXECUTE IMMEDIATE 'CREATE TABLE '||own1||'.'||tab||' AS SELECT * FROM SYS.DBA_HIST_REPORTS WHERE 1=2';
+                        EXECUTE IMMEDIATE 'CREATE TABLE '||own1||'.'||tab||'_DETAILS AS SELECT * FROM SYS.DBA_HIST_REPORTS_DETAILS WHERE 1=2';
+                        EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own1||'.UK_'||tab||' ON '||own1||'.'||tab||'(DBID,REPORT_ID)';
+                        EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own1||'.UK_'||tab||'_DETAILS ON '||own1||'.'||tab||'_DETAILS(DBID,REPORT_ID)';
+                    EXCEPTION WHEN OTHERS THEN NULL; END;
+                    EXECUTE IMMEDIATE 'INSERT /*+IGNORE_ROW_ON_DUPKEY_INDEX(A UK_'||tab||') DISABLE_PARALLEL_DML*/ INTO '||own1||'.'||tab||' A SELECT * FROM '||own||'.AWR_DUMP_REPORTS';
+                    EXECUTE IMMEDIATE 'INSERT /*+IGNORE_ROW_ON_DUPKEY_INDEX(A UK_'||tab||'_DETAILS) DISABLE_PARALLEL_DML*/ INTO '||own1||'.'||tab||'_DETAILS A SELECT * FROM '||own||'.AWR_DUMP_REPORTS_DETAILS';
+                    COMMIT;
+                    EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS PURGE';
+                    EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS PURGE';
+                    own := own1;
+                ELSE
+                    tab := 'AWR_DUMP_REPORTS';
+                END IF;
+                dbms_output.put_line('SQL Monitor reports are imported into '||own||'.'||tab||' and '||own||'.'||tab||'_DETAILS.');
             EXCEPTION WHEN OTHERS THEN
                 root := dbms_utility.format_error_stack||dbms_utility.format_error_backtrace;
                 BEGIN

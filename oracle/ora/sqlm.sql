@@ -1,5 +1,5 @@
 /*[[
-        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|plan_hash_value]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"|-text"<keyword>"] [-avg]
+        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|<plan_hash>|<report_id>]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
         Related parameters for SQL monitor: 
                 _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
         A SQL can be forced to record the sql monitor report by the alter system statement:
@@ -18,7 +18,6 @@
         Options:
             -u     : Only show the SQL list within current schema
             -f     : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
-            -text  : Find sql with keyword
             -l     : List the available SQL Monitor reports for the specific SQL Id
             -s     : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
             -a     : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
@@ -29,13 +28,13 @@
              -active : output file is in active HTML format
              -em     : output file is in EM HTML format
              -html   : output file is in HTML format
-             -text   : output file is in Text format
+             -text    : output file is in Text format
              
      --[[
             @ver: 12.2={} 11.2={--}
             &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
             &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
-            &option1: default={&uniq execs,round(sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))/&uniq,2) avg_ela,}, l={}
+            &option1: default={&uniq execs,round(sum(ela)/&uniq,2) avg_ela,}, l={}
             &filter: default={1=1},f={},text={upper(sql_text) like upper('%&0%')},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
@@ -58,11 +57,10 @@ var c2 refcursor;
 var rs CLOB;
 var filename varchar2;
 var plan_hash number;
-col dur,avg_ela,ela,parse,queue,cpu,app,cc,cl,plsql,java,io,ot,time format usmhd2
-col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl format kmg
-col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB
+col dur,avg_ela,ela,parse,qu,cpu,app,cc,cl,plsql,java,pljava,io,ot,time format usmhd1
+col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl,bytes,OFLOUT format kmg1
+col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB1
 accept sqlmon_file noprompt "@&V1"
-
 
 DECLARE /*+no_monitor*/
     detail     INT := &detail; 
@@ -83,10 +81,11 @@ DECLARE /*+no_monitor*/
     lst        SYS.ODCIVARCHAR2LIST;
     dopename   VARCHAR(30);
     dopeid     INT;
-    keyw       VARCHAR2(300):=:V2;
+    keyw       VARCHAR2(300):=lower(:V2);
     c2         SYS_REFCURSOR;
     sql_exec   INT;
     sql_start  DATE;
+    last_date  DATE;
     serial     INT;
     xml        xmltype;
     mon        xmltype;
@@ -326,10 +325,12 @@ BEGIN
 
             IF &rpt=0 THEN
                 IF sql_exec IS NULL THEN
-                    select max(sql_id) keep(dense_rank last order by last_refresh_time,sql_exec_id),
+                    select /*+no_expand no_or_expand*/
+                           max(sql_id) keep(dense_rank last order by last_refresh_time,sql_exec_id),
                            max(sql_exec_id) keep(dense_rank last order by last_refresh_time),
-                           max(sql_exec_start) keep(dense_rank last order by last_refresh_time)
-                    into  sq_id,sql_exec,sql_start
+                           max(sql_exec_start) keep(dense_rank last order by last_refresh_time),
+                           max(last_refresh_time)
+                    into  sq_id,sql_exec,sql_start,last_date
                     from  gv$sql_monitor
                     where (sql_id=sq_id or lower(sq_id) in('l','last'))
                     AND   sql_exec_id>0 
@@ -349,17 +350,19 @@ BEGIN
                     AND   inst_id=nvl(inst,inst_id);
                 END IF;
                 $IF &check_access_report=1 $THEN
-                    if lower(sq_id1) not in('l','last') and (sq_id is null or sql_start<sysdate-1/24) then
+                    if lower(sq_id1) not in('l','last') and (sq_id is null or last_date<sysdate-2/24) then
                         select max(key1) keep(dense_rank last order by ptime,key2),
                                max(report_id) keep(dense_rank last order by ptime,key2)
                         into  sq_id1,rpt_id
                         FROM(
-                            select /*+NO_MERGE*/ key1,key2,report_id,period_end_time ptime
+                            select /*+no_expand no_or_expand*/ 
+                                   key1,key2,report_id,period_end_time ptime
                             from  dba_hist_reports
                             where dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
                             AND   key1=nvl(sq_id,sq_id1)
-                            AND   key2>0 
-                            AND   key2=coalesce(sql_exec,plan_hash,key2+0)
+                            AND   key2>0
+                            AND   (sql_exec  IS NULL OR KEY2=sql_exec)
+                            AND   (plan_hash IS NULL OR (key2=plan_hash OR report_id=plan_hash))
                             AND   component_name='sqlmonitor'
                             AND   instance_number=nvl(inst,instance_number));
                         sq_id := nvl(sq_id1,sq_id);
@@ -844,69 +847,132 @@ BEGIN
     ELSE
         OPEN :c FOR
             SELECT *
-            FROM   (SELECT   a.sql_id &OPTION,
+            FROM   (SELECT   /*+no_expand no_or_expand*/
+                             a.sql_id &OPTION,
                              &option1 to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
                              to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
                              round(sum(last_refresh_time - sql_exec_start)/&avg * 86400*1e6, 2) dur,
                              round(sum(ela)/&avg , 2) ela,
-                             round(sum(QUEUING_TIME)/&avg , 2) QUEUE,
+                             round(sum(QUEUING_TIME)/&avg , 2) QU,
                              round(sum(CPU_TIME)/&avg , 2) CPU,
                              round(sum(APPLICATION_WAIT_TIME)/&avg , 2) app,
                              round(sum(CONCURRENCY_WAIT_TIME)/&avg , 2) cc,
                              round(sum(CLUSTER_WAIT_TIME)/&avg , 2) cl,
-                             round(sum(PLSQL_EXEC_TIME)/&avg , 2) plsql,
-                             round(sum(JAVA_EXEC_TIME)/&avg , 2) JAVA,
+                             round(sum(nvl(PLSQL_EXEC_TIME,0)+nvl(JAVA_EXEC_TIME,0))/&avg , 2) pljava,
                              round(sum(USER_IO_WAIT_TIME)/&avg , 2) io,
-                             round(sum(PHYSICAL_READ_BYTES)/&avg, 2) READ,
-                             round(sum(PHYSICAL_WRITE_BYTES)/&avg, 2) WRITE,
-                             &ver round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2) OFL,
+                             round(sum(nvl(PHYSICAL_READ_BYTES,0)+nvl(PHYSICAL_WRITE_BYTES,0) )/&avg, 2) bytes,
+                             &ver round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2) OFL, round(sum(IO_CELL_OFFLOAD_RETURNED_BYTES)/&avg,2) OFLOUT,
                              substr(regexp_replace(regexp_replace(MAX(sql_text), '^\s+'), '\s+', ' '), 1, 200) sql_text
-                    FROM   (select sql_id,sql_exec_start,sql_exec_id,
-                                     max(NVL2(PX_QCSID,null,SQL_PLAN_HASH_VALUE)) plan_hash,
-                                     max(NVL2(PX_QCSID,null,SQL_PLAN_HASH_VALUE)) SQL_PLAN_HASH_VALUE,
-                                     max(NVL2(PX_QCSID,null,sid)) sid,
-                                     max(NVL2(PX_QCSID,null,inst_id)) inst_id,
-                                     max(NVL2(PX_QCSID,null,sql_text)) sql_text,
-                                     max(NVL2(PX_QCSID,null,status)) status,
-                                     max(last_refresh_time) last_refresh_time,
-                                     sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) ela,
-                                     sum(ELAPSED_TIME) ELAPSED_TIME,
-                                     sum(CPU_TIME) cpu_time,
-                                     sum(QUEUING_TIME) QUEUING_TIME,
-                                     sum(APPLICATION_WAIT_TIME) APPLICATION_WAIT_TIME,
-                                     SUM(CONCURRENCY_WAIT_TIME) CONCURRENCY_WAIT_TIME,
-                                     SUM(CLUSTER_WAIT_TIME) CLUSTER_WAIT_TIME,
-                                     SUM(PLSQL_EXEC_TIME) PLSQL_EXEC_TIME,
-                                     SUM(JAVA_EXEC_TIME) JAVA_EXEC_TIME,
-                                     SUM(USER_IO_WAIT_TIME) USER_IO_WAIT_TIME,
-                                     SUM(PHYSICAL_WRITE_BYTES) PHYSICAL_WRITE_BYTES,
-                                     SUM(PHYSICAL_READ_BYTES) PHYSICAL_READ_BYTES
-                                     &ver ,SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) IO_CELL_OFFLOAD_ELIGIBLE_BYTES
-                                FROM  gv$sql_monitor a
-                                WHERE (&filter)
-                                GROUP BY sql_id,sql_exec_start,sql_exec_id) a
+                    FROM   (select /*+no_expand no_or_expand*/
+                                   sql_id,sql_exec_start,''||sql_exec_id sql_exec_id,
+                                   max(NVL2(PX_QCSID,null,SQL_PLAN_HASH_VALUE)) plan_hash,
+                                   max(NVL2(PX_QCSID,null,SQL_PLAN_HASH_VALUE)) SQL_PLAN_HASH_VALUE,
+                                   max(NVL2(PX_QCSID,null,sid)) sid,
+                                   max(NVL2(PX_QCSID,null,inst_id)) inst_id,
+                                   max(NVL2(PX_QCSID,null,sql_text)) sql_text,
+                                   max(NVL2(PX_QCSID,null,status)) status,
+                                   max(last_refresh_time) last_refresh_time,
+                                   sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) ela,
+                                   sum(ELAPSED_TIME) ELAPSED_TIME,
+                                   sum(CPU_TIME) cpu_time,
+                                   sum(QUEUING_TIME) QUEUING_TIME,
+                                   sum(APPLICATION_WAIT_TIME) APPLICATION_WAIT_TIME,
+                                   SUM(CONCURRENCY_WAIT_TIME) CONCURRENCY_WAIT_TIME,
+                                   SUM(CLUSTER_WAIT_TIME) CLUSTER_WAIT_TIME,
+                                   SUM(PLSQL_EXEC_TIME) PLSQL_EXEC_TIME,
+                                   SUM(JAVA_EXEC_TIME) JAVA_EXEC_TIME,
+                                   SUM(USER_IO_WAIT_TIME) USER_IO_WAIT_TIME,
+                                   SUM(PHYSICAL_WRITE_BYTES) PHYSICAL_WRITE_BYTES,
+                                   SUM(PHYSICAL_READ_BYTES) PHYSICAL_READ_BYTES
+                                   &ver ,SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) IO_CELL_OFFLOAD_ELIGIBLE_BYTES,sum(IO_CELL_OFFLOAD_RETURNED_BYTES) IO_CELL_OFFLOAD_RETURNED_BYTES
+                            FROM  gv$sql_monitor a
+                            WHERE (&filter)
+                            GROUP BY sql_id,sql_exec_start,sql_exec_id
+                            $IF &check_access_report=1 $THEN
+                            UNION ALL
+                            select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(DSQLM)',
+                                   plan_hash,
+                                   plan_hash SQL_PLAN_HASH_VALUE,
+                                   sid,
+                                   inst_id,
+                                   sql_text,
+                                   status,
+                                   last_refresh_time,
+                                   dur ela,
+                                   ELAPSED_TIME,
+                                   cpu_time,
+                                   QUEUING_TIME,
+                                   APPLICATION_WAIT_TIME,
+                                   CONCURRENCY_WAIT_TIME,
+                                   CLUSTER_WAIT_TIME,
+                                   PLSQL_EXEC_TIME,
+                                   JAVA_EXEC_TIME,
+                                   USER_IO_WAIT_TIME,
+                                   PHYSICAL_WRITE_BYTES,
+                                   PHYSICAL_READ_BYTES
+                                   &ver ,IO_CELL_OFFLOAD_ELIGIBLE_BYTES,IO_CELL_OFFLOAD_RETURNED_BYTES
+                            FROM (
+                                SELECT /*+no_expand no_or_expand*/
+                                       a.*,
+                                       period_end_time last_refresh_time,
+                                       session_id sid,
+                                       instance_number inst_id,
+                                       key1 sql_id,
+                                       report_id sql_exec_id,
+                                       xmltype(a.report_summary) summary 
+                                FROM   dba_hist_reports a
+                                WHERE  dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
+                                AND    (sq_id IS NULL OR key1=sq_id)
+                                AND    (sq_id IS NOT NULL OR keyw IS NOT NULL)
+                                AND    (keyw IS NULL OR lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%')
+                                AND    COMPONENT_NAME='sqlmonitor') a,
+                            xmltable('/report_repository_summary/*' PASSING a.summary columns --
+                                    plan_hash NUMBER PATH 'plan_hash',
+                                    username  VARCHAR2(128) PATH 'user',
+                                    CURRENT_USERNAME  VARCHAR2(128) PATH 'current_username',
+                                    DBOP_EXEC_ID NUMBER PATH 'dbop_exec_id',
+                                    DBOP_NAME VARCHAR2(30) PATH 'dbop_name',
+                                    MODULE VARCHAR2(64) PATH 'module',
+                                    ACTION VARCHAR2(64) PATH 'action',
+                                    PROGRAM VARCHAR2(48) PATH 'program',
+                                    dur NUMBER path 'stats/stat[@name="duration"]*1e6', 
+                                    ELAPSED_TIME NUMBER path 'stats/stat[@name="elapsed_time"]', 
+                                    CPU_TIME NUMBER path 'stats/stat[@name="cpu_time"]',
+                                    USER_IO_WAIT_TIME NUMBER path 'stats/stat[@name="user_io_wait_time"]', 
+                                    APPLICATION_WAIT_TIME NUMBER path 'stats/stat[@name="application_wait_time"]',
+                                    CLUSTER_WAIT_TIME NUMBER path 'stats/stat[@name="cluster_wait_time"]', 
+                                    CONCURRENCY_WAIT_TIME NUMBER path 'stats/stat[@name="concurrency_wait_time"]',
+                                    QUEUING_TIME NUMBER path 'stats/stat[@name="queuing_time"]', 
+                                    OTHER_WAIT_TIME NUMBER path 'stats/stat[@name="other_wait_time"]', 
+                                    PLSQL_EXEC_TIME NUMBER path 'stats/stat[@name="plsql_exec_time"]',
+                                    JAVA_EXEC_TIME NUMBER path 'stats/stat[@name="java_exec_time"]',
+                                    PHYSICAL_READ_BYTES NUMBER path 'stats/stat[@name="read_bytes"]',
+                                    PHYSICAL_WRITE_BYTES NUMBER path 'stats/stat[@name="write_bytes"]',
+                                    IO_CELL_OFFLOAD_ELIGIBLE_BYTES NUMBER path 'stats/stat[@name="elig_bytes"]', 
+                                    IO_CELL_OFFLOAD_RETURNED_BYTES NUMBER path 'stats/stat[@name="ret_bytes"]', 
+                                    offlrtn NUMBER path 'stats/stat[@name="ret_bytes"]',
+                                    status VARCHAR2(30) PATH 'status',
+                                    sql_text VARCHAR2(4000) PATH 'sql_text')
+                            WHERE (&filter)
+                            $END
+                            ) a
                     WHERE  (&SNAP=1 OR (keyw IS NOT NULL AND plan_hash IS NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
-                    AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || lower(keyw) || '%'))
+                    AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || keyw || '%'))
                     GROUP  BY sql_id &OPTION
                     ORDER  BY last_seen DESC)
             WHERE  ROWNUM <= 100
             ORDER  BY last_seen, ela;
         IF sq_id IS NOT NULL AND '&option' IS NOT NULL THEN
-            SELECT /*+no_expand*/ MAX(sql_plan_hash_value) KEEP(DENSE_RANK LAST ORDER BY SQL_EXEC_START) INTO plan_hash 
-            FROM  gv$sql_monitor 
-            WHERE sql_id = sq_id AND (plan_hash IS NULL OR plan_hash in(sql_exec_id,sql_plan_hash_value));
-        
             IF plan_hash IS NOT NULL THEN
-                SELECT MIN(sql_exec_start), MAX(last_refresh_time), &uniq
-                INTO   start_time, end_time, execs
-                FROM   gv$sql_monitor
-                WHERE  sql_id = sq_id
-                AND    PX_SERVER# IS NULL
-                AND    sql_plan_hash_value = plan_hash;
-                
                 $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN
+                    SELECT MIN(sql_exec_start), MAX(last_refresh_time), &uniq
+                    INTO   start_time, end_time, execs
+                    FROM   gv$sql_monitor
+                    WHERE  sql_id = sq_id
+                    AND    PX_SERVER# IS NULL
+                    AND    sql_plan_hash_value = plan_hash;
                     filename := 'sqlhub_' || sq_id || '.html';
                     content  := sys.dbms_perf.report_sql(sql_id => sq_id,
                                                          is_realtime => 1,
