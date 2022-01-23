@@ -1,25 +1,35 @@
-/*[[Import AWR repository dump or sql monitor dump. Usage: @@NAME <directory_name> <file_name> [<new_dbid>|<sqlmon_table>]
-    For SQL Monitor dump:
-        * the file name must match the syntax: sqlmon_[<num>_]<num>_<num>_<source_schema>.dmp
-        * the table names are: AWR_DUMP_REPORTS,AWR_DUMP_REPORTS_DETAILS
-    <new_dbid>    : The new dbid to import the AWR dump
-    <sqlmon_table>: The table name to store the SQL Monitor reports
-    --[[
-        @ARGS: 2
-        @CHECK_ACCESS_CDB: SYS.CDB_HIST_REPORTS_DETAILS/SYS.dbms_workload_repository={1}
-    --]]
-]]*/
-SET SQLTIMEOUT 7200
+/*  Import AWR repository or SQL Monitor reports from DATA PUMP.
+    For db version lower than 12c, the script requires SYSDBA privilege; for 12.1 onwards, requires DBA priviledge.
+    
+    Usage: @awrload <directory_name> <dump_file> [<new_dbid>|<sqlmon_table>]
+    * directory_name: the directory name that can be found in all_directories, current schema must has the read/write access, and the path must not be symbolic link
+    * dump_file     : the data pump file name under the directory
+    * new_dbid      : optional, used for specifying new dbid of the target AWR dump file
+    * sqlmon_table  : optional, the target table name to import the SQL Monitor dump file, default as "AWR_DUMP_REPORTS"
+                      Be noted that to import SQL Monitor report, the dump file name must matches:  sqlmon.*_<number>_<number>_<export_schema>.dmp
+    Examples:
+        1) @awrload awrdump_dir awrdat_834293_11_12.dmp                             (import awr dump file)   
+        2) @awrload awrdump_dir awrdat_834293_11_12.dmp 200                         (remap the dbid to 200)
+        3) @awrload awrdump_dir sqlmon_834293_11_12_system.dmp                      (import sql monitor dump file)    
+        4) @awrload awrdump_dir sqlmon_834293_11_12_system.dmp admin.sqlmon_reports (import sql monitor into admin.sqlmon_reports from dump file)    
+*/
+
+COLUMN 3 NEW_VALUE 3
+COLUMN did new_value did
+SET TERMOUT OFF VERIFY OFF FEED OFF ARRAYSIZE 1000 PAGES 0 lines 200
+SELECT  '' "3" FROM dual WHERE ROWNUM = 0;
+SELECT nvl('&3','AWR_DUMP_REPORTS') did from dual;
+SET SERVEROUTPUT ON TERMOUT ON
 
 DECLARE
-    dir   VARCHAR2(128) := :V1;
-    file  VARCHAR2(512) := :V2;
-    did   INT := regexp_substr(:V3,'^\d+$');
-    tab   VARCHAR2(512) := upper(regexp_substr(:V3,'^\D.*$'));
+    dir   VARCHAR2(128) := '&1';
+    file  VARCHAR2(512) := '&2';
+    did   INT := regexp_substr('&did','^\d+$');
+    tab   VARCHAR2(512) := upper(regexp_substr('&did','^\D.*$'));
     root  VARCHAR2(2000);
     dump  BFILE;
     len   NUMBER;
-    stage VARCHAR2(30) := 'DBCLI_AWR';
+    stage VARCHAR2(30) := 'STG_AWR';
     hdl   NUMBER;
     res   CLOB;
     job   VARCHAR2(128) := 'AWRLOAD_'||to_char(SYSDATE,'YYMMDDHH24MISS');
@@ -32,16 +42,18 @@ BEGIN
     FROM   ALL_DIRECTORIES
     WHERE  upper(directory_name) = upper(dir);
     IF dir IS NULL THEN
-        raise_application_error(-20001, 'Cannot access directory: ' || :V1);
+        dbms_output.put_line('Cannot access directory: &1');
+        RETURN;
     END IF;
 
     $IF dbms_db_version.version>17 $THEN
         IF dbms_utility.directory_has_symlink(dir)=1 THEN
-            raise_application_error(-20001, 'Directory('||root||') has symbolic link, please change to the real path.');
+            dbms_output.put_line('Directory('||root||') has symbolic link, please change to the real path.');
+            RETURN;
         END IF;
     $END
 
-    dbms_output.put_line('Import path: '||root);
+    dbms_output.put_line('Importing path: '||root);
 
     IF NOT regexp_like(root, '[\\/]$') THEN
         root := root || CASE WHEN root LIKE '%/%' THEN '/' ELSE '\' END;
@@ -58,7 +70,8 @@ BEGIN
             file := regexp_replace(file,'\.dmp$');
             GOTO CHECK_FILE;
         ELSE
-            raise_application_error(-20001, 'Cannot access file: ' || root || file || '.dmp');
+            dbms_output.put_line('Cannot access file: ' || root || file || '.dmp');
+            RETURN;
         END IF;
     END;
     
@@ -67,7 +80,8 @@ BEGIN
         $IF DBMS_DB_VERSION.VERSION>11 $THEN
             own := upper(regexp_substr(file,'_\d+_\d+_(\D.*)$',1,1,'i',1));
             IF own IS NULL THEN
-                raise_application_error(-20001,'Cannot find schema name in file name:'||file);
+                dbms_output.put_line('Cannot find schema name in file name:'||file);
+                RETURN;
             END IF;
             BEGIN
                 hdl := sys.dbms_datapump.attach(job, sys_context('userenv', 'current_schema'));
@@ -117,7 +131,8 @@ BEGIN
                             tab1 := tab||'_DTL';
                         END IF;
                         IF LENGTH(TAB1)>30 THEN
-                            raise_application_error(-20001,'Identifier is too long: '||tab1);
+                            dbms_output.put_line('Identifier is too long: '||tab1);
+                            RETURN;
                         END IF;
                     $END
                     BEGIN

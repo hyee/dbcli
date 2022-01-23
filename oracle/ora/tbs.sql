@@ -148,7 +148,7 @@ FROM  (SELECT /*+DYNAMIC_SAMPLING(11) NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param
             ) A) F JOIN (
                 SELECT TABLESPACE_NAME,
                      TRIM(',' FROM REGEXP_REPLACE(
-                         (SELECT '#'||TS#||',' FROM v$tablespace WHERE name=tablespace_name)||
+                         (SELECT '#'||TS#||',' FROM v$tablespace WHERE name=tablespace_name and rownum<2)||
                          'BLOCK('||TRIM(DBMS_XPLAN.FORMAT_SIZE2(BLOCK_SIZE))||'),'||
                          DECODE(STATUS,'ONLINE','',STATUS||',')||
                          DECODE(CONTENTS,'UNDO','UNDO'||(decode(RETENTION,'NOT APPLY','','('||RETENTION||')'))||',')||

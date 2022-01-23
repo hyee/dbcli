@@ -74,9 +74,17 @@ BEGIN
         FROM   all_directories
         WHERE  upper(directory_name) = upper(nam)
         AND    rownum < 2;
+
         IF dir IS NULL THEN
             raise_application_error(-20001, 'No access to the directory or target directory does not exist: ' || nam);
         END IF;
+
+        $IF dbms_db_version.version>17 $THEN
+            IF dbms_utility.directory_has_symlink(nam)=1 THEN
+                raise_application_error(-20001, 'Directory('||dir||') has symbolic link, please change to the real path.');
+            END IF;
+        $END
+        
         IF regexp_like(sq_id,'^\d+$') THEN
             sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
                                              incident_id     => sq_id,
