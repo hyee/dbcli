@@ -19,8 +19,7 @@
             -u     : Only show the SQL list within current schema
             -f     : List the records that match the predicates, i.e.: -f"MODULE='DBMS_SCHEDULER'"
             -l     : List the available SQL Monitor reports for the specific SQL Id
-            -s     : Plan format is "ALL-SESSIONS-SQL_FULLTEXT-SQL_TEXT", this is the default
-            -a     : Plan format is "ALL-SQL_FULLTEXT-SQL_TEXT", when together with "-l" option, generate SQL Hub report
+            -a     : When together with "-l" option, generate SQL Hub report
             -avg   : Show avg time in case of listing the SQL monitor reports
             -detail: Extract more detailed information when generating the SQL Monitor report
 
@@ -28,14 +27,17 @@
              -active : output file is in active HTML format
              -em     : output file is in EM HTML format
              -html   : output file is in HTML format
-             -text    : output file is in Text format
+             -text   : output file is in Text format
              
      --[[
             @ver: 12.2={} 11.2={--}
             &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
             &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
-            &option1: default={&uniq execs,round(sum(ela)/&uniq,2) avg_ela,}, l={}
-            &filter: default={1=1},f={},text={upper(sql_text) like upper('%&0%')},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
+            &option1: {default={&uniq execs,round(sum(ela)/&uniq,2) avg_ela,
+                                to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
+                                to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,} 
+                      l={}}
+            &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
             &out: default={active} html={html} em={em} text={text}
@@ -67,8 +69,8 @@ DECLARE /*+no_monitor*/
     plan_hash  INT := regexp_substr(:V2, '^\d+$');
     start_time DATE;
     end_time   DATE;
-    sq_id      VARCHAR2(500):=:V1;
-    sq_id1     VARCHAR2(500):=:V1;
+    sq_id      VARCHAR2(4000):=:V1;
+    sq_id1     VARCHAR2(4000):=:V1;
     inst       INT := :INSTANCE;
     did        INT := :dbid;
     rpt_id     INT;
@@ -358,12 +360,12 @@ BEGIN
                             select /*+no_expand no_or_expand*/ 
                                    key1,key2,report_id,period_end_time ptime
                             from  dba_hist_reports
-                            where dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
-                            AND   key1=nvl(sq_id,sq_id1)
+                            where key1=nvl(sq_id,sq_id1)
                             AND   key2>0
                             AND   (sql_exec  IS NULL OR KEY2=sql_exec)
-                            AND   (plan_hash IS NULL OR (key2=plan_hash OR report_id=plan_hash))
+                            AND   (plan_hash IS NULL OR key2=plan_hash OR report_id=plan_hash)
                             AND   component_name='sqlmonitor'
+                            AND   dbid=nvl(did,dbid)
                             AND   instance_number=nvl(inst,instance_number));
                         sq_id := nvl(sq_id1,sq_id);
                     end if;
@@ -849,11 +851,10 @@ BEGIN
             SELECT *
             FROM   (SELECT   /*+no_expand no_or_expand*/
                              a.sql_id &OPTION,
-                             &option1 to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
-                             to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
+                             &option1 
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
                              MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
-                             round(sum(last_refresh_time - sql_exec_start)/&avg * 86400*1e6, 2) dur,
+                             round(sum(last_refresh_time - sql_exec_start +1/86400)/&avg * 86400*1e6, 2) dur,
                              round(sum(ela)/&avg , 2) ela,
                              round(sum(QUEUING_TIME)/&avg , 2) QU,
                              round(sum(CPU_TIME)/&avg , 2) CPU,
@@ -892,7 +893,7 @@ BEGIN
                             GROUP BY sql_id,sql_exec_start,sql_exec_id
                             $IF &check_access_report=1 $THEN
                             UNION ALL
-                            select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(DSQLM)',
+                            select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(HIST)',
                                    plan_hash,
                                    plan_hash SQL_PLAN_HASH_VALUE,
                                    sid,
@@ -923,11 +924,11 @@ BEGIN
                                        report_id sql_exec_id,
                                        xmltype(a.report_summary) summary 
                                 FROM   dba_hist_reports a
-                                WHERE  dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
-                                AND    (sq_id IS NULL OR key1=sq_id)
-                                AND    (sq_id IS NOT NULL OR keyw IS NOT NULL)
-                                AND    (keyw IS NULL OR lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%')
-                                AND    COMPONENT_NAME='sqlmonitor') a,
+                                WHERE  (sq_id IS NOT NULL AND key1=sq_id OR 
+                                         keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
+                                AND    COMPONENT_NAME='sqlmonitor'
+                                AND    dbid=nvl(did,dbid)
+                                AND    instance_number=nvl(inst,instance_number)) a,
                             xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                     plan_hash NUMBER PATH 'plan_hash',
                                     username  VARCHAR2(128) PATH 'user',
@@ -961,9 +962,9 @@ BEGIN
                     WHERE  (&SNAP=1 OR (keyw IS NOT NULL AND plan_hash IS NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
                     AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || keyw || '%'))
                     GROUP  BY sql_id &OPTION
-                    ORDER  BY last_seen DESC)
-            WHERE  ROWNUM <= 100
-            ORDER  BY last_seen, ela;
+                    ORDER  BY 4 DESC)
+            WHERE  ROWNUM <= 100*nvl2(:option1,1,10)
+            ORDER  BY 4, ela;
         IF sq_id IS NOT NULL AND '&option' IS NOT NULL THEN
             IF plan_hash IS NOT NULL THEN
                 $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN
@@ -1001,9 +1002,10 @@ BEGIN
                                substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) SQL_TEXT
                         FROM   (SELECT a.*, xmltype(a.report_summary) summary 
                                 FROM   dba_hist_reports a
-                                WHERE  dbid in(did,sys_context('userenv','dbid'),sys_context('userenv','con_dbid'))
-                                AND    KEY1=sq_id
-                                AND    COMPONENT_NAME='sqlmonitor') a,
+                                WHERE  KEY1=sq_id
+                                AND    COMPONENT_NAME='sqlmonitor'
+                                AND    dbid=nvl(did,dbid)
+                                AND    instance_number=nvl(inst,instance_number)) a,
                                 xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                         plan_hash NUMBER PATH 'plan_hash',
                                         username  VARCHAR2(100) PATH 'user',

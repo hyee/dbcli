@@ -42,13 +42,13 @@ BEGIN
     FROM   ALL_DIRECTORIES
     WHERE  upper(directory_name) = upper(dir);
     IF dir IS NULL THEN
-        dbms_output.put_line('Cannot access directory: &1');
+        dbms_output.put_line('ERROR: Cannot access directory: &1');
         RETURN;
     END IF;
 
     $IF dbms_db_version.version>17 $THEN
         IF dbms_utility.directory_has_symlink(dir)=1 THEN
-            dbms_output.put_line('Directory('||root||') has symbolic link, please change to the real path.');
+            dbms_output.put_line('ERROR: Directory('||root||') has symbolic link, please change to the real path.');
             RETURN;
         END IF;
     $END
@@ -70,7 +70,7 @@ BEGIN
             file := regexp_replace(file,'\.dmp$');
             GOTO CHECK_FILE;
         ELSE
-            dbms_output.put_line('Cannot access file: ' || root || file || '.dmp');
+            dbms_output.put_line('ERROR: Cannot access file: ' || root || file || '.dmp');
             RETURN;
         END IF;
     END;
@@ -80,7 +80,7 @@ BEGIN
         $IF DBMS_DB_VERSION.VERSION>11 $THEN
             own := upper(regexp_substr(file,'_\d+_\d+_(\D.*)$',1,1,'i',1));
             IF own IS NULL THEN
-                dbms_output.put_line('Cannot find schema name in file name:'||file);
+                dbms_output.put_line('ERROR: Cannot find schema name in file name:'||file);
                 RETURN;
             END IF;
             BEGIN
@@ -131,7 +131,7 @@ BEGIN
                             tab1 := tab||'_DTL';
                         END IF;
                         IF LENGTH(TAB1)>30 THEN
-                            dbms_output.put_line('Identifier is too long: '||tab1);
+                            dbms_output.put_line('ERROR: Identifier is too long: '||tab1);
                             RETURN;
                         END IF;
                     $END

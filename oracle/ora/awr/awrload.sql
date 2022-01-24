@@ -108,6 +108,11 @@ BEGIN
                 sys.dbms_datapump.set_parameter(hdl, name => 'TABLE_EXISTS_ACTION', value => 'APPEND');
                 sys.dbms_datapump.start_job(hdl);
                 sys.dbms_datapump.wait_for_job(hdl, res);
+                IF did IS NOT NULL THEN
+                    EXECUTE IMMEDIATE 'UPDATE /*+DISABLE_PARALLEL_DML*/ '||own||'.AWR_DUMP_REPORTS SET DBID='||did;
+                    EXECUTE IMMEDIATE 'UPDATE /*+DISABLE_PARALLEL_DML*/ '||own||'.AWR_DUMP_REPORTS_DETAILS SET DBID='||did;
+                    COMMIT;
+                END IF;
                 IF tab IS NOT NULL AND (tab!='AWR_DUMP_REPORTS' OR own!=own1) THEN
                     len  := 128;
                     tab1 := tab||'_DETAILS';

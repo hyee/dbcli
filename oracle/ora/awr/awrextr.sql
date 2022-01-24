@@ -124,18 +124,17 @@ BEGIN
         BEGIN
             EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS AS SELECT * FROM SYS.CDB_HIST_REPORTS '||expr;
             EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS AS SELECT * FROM SYS.CDB_HIST_REPORTS_DETAILS '||expr;
-        EXCEPTION WHEN OTHERS THEN NULL; END;
-
-        IF len=0 THEN
-            RETURN;
-        END IF;
+        EXCEPTION WHEN OTHERS THEN
+            IF SQLCODE!=-955 THEN
+                RAISE;
+            END IF;
+        END;
 
         BEGIN
             hdl := sys.dbms_datapump.attach(job, sys_context('userenv', 'current_schema'));
             sys.dbms_datapump.stop_job(hdl, 1, 0, 10);
             sys.dbms_datapump.detach(job);
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
+        EXCEPTION WHEN OTHERS THEN END;
         hdl := null;
         BEGIN
             hdl := sys.dbms_datapump.open(operation   => 'EXPORT',

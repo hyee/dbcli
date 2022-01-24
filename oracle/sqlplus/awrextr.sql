@@ -8,8 +8,8 @@
     * dbid          : optional, the target dbid to be exported
     * export data   : optional, the data to be exported
         1) awr   : only export the AWR dump, this is the default option
-        2) sqlmon: only export the SQL Monitor reports in dba_hist_reports, be noted that this option with temporarily create 2 tables for exporting
-        3) both  : export either AWR dump and SQL Monitor reports
+        2) sqlmon: only export the SQL Monitor reports in dba_hist_reports, be noted that this option will temporarily create 2 tables for exporting
+        3) both  : export either AWR dump or SQL Monitor reports
 
     Examples:
         1) @awrextr awrdump_dir 210101     210203      (export via date range)
@@ -52,16 +52,16 @@ BEGIN
     FROM   ALL_DIRECTORIES
     WHERE  upper(directory_name) = upper(dir);
     IF dir IS NULL THEN
-        dbms_output.put_line('Cannot access directory: &1');
+        dbms_output.put_line('ERROR: Cannot access directory: &1');
         return;
     ELSIF st IS NULL or ed IS NULL THEN
-        dbms_output.put_line('Please specify the valid snapshot ids or time range.');
+        dbms_output.put_line('ERROR: Please specify the valid snapshot ids or time range.');
         return;
     END IF;
 
     $IF dbms_db_version.version>17 $THEN
         IF dbms_utility.directory_has_symlink(dir)=1 THEN
-            dbms_output.put_line('Directory('||root||') has symbolic link, please change to the real path.');
+            dbms_output.put_line('ERROR: Directory('||root||') has symbolic link, please change to the real path.');
             return;
         END IF;
     $END
@@ -102,12 +102,12 @@ BEGIN
                     WHERE  name='awr_pdb_autoflush_enabled';
                     
                     IF VAL!='TRUE' THEN
-                        dbms_output.put_line('No such snapshots(&2.-&3.),please make sure parameter awr_pdb_autoflush_enabled=true to enable AWR PDB level flushing, or connect to container CDB$ROOT.');
+                        dbms_output.put_line('ERROR: No such snapshots(&2.-&3.),please make sure parameter awr_pdb_autoflush_enabled=true to enable AWR PDB level flushing, or connect to container CDB$ROOT.');
                         return;
                     END IF;
                 END IF;
             $END
-            dbms_output.put_line('Invalid snapshot range(&2.-&3.) for dbid ' || did);
+            dbms_output.put_line('ERROR: Invalid snapshot range(&2.-&3.) for dbid ' || did);
             return;
         END IF;
 
@@ -121,7 +121,7 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN NULL; END;
         
         IF len > 0 THEN
-            dbms_output.put_line('File already exists: ' || root || file || '.dmp');
+            dbms_output.put_line('ERROR: File already exists: ' || root || file || '.dmp');
             return;
         END IF;
         BEGIN
@@ -150,18 +150,18 @@ BEGIN
         BEGIN
             EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS AS SELECT * FROM SYS.CDB_HIST_REPORTS '||expr;
             EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS AS SELECT * FROM SYS.CDB_HIST_REPORTS_DETAILS '||expr;
-        EXCEPTION WHEN OTHERS THEN NULL; END;
-
-        IF len=0 THEN
-            RETURN;
-        END IF;
-
+        EXCEPTION WHEN OTHERS THEN
+            IF SQLCODE!=-955 THEN
+                dbms_output.put_line(sqlerrm);
+                RETURN;
+            END IF;
+        END;
+        
         BEGIN
             hdl := sys.dbms_datapump.attach(job, sys_context('userenv', 'current_schema'));
             sys.dbms_datapump.stop_job(hdl, 1, 0, 10);
             sys.dbms_datapump.detach(job);
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         hdl := null;
         BEGIN
             hdl := sys.dbms_datapump.open(operation   => 'EXPORT',
@@ -197,11 +197,7 @@ BEGIN
                 EXCEPTION WHEN OTHERS THEN NULL;
                 END;
             END IF;
-            BEGIN
-                EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS PURGE';
-                EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS PURGE';
-            EXCEPTION WHEN OTHERS THEN NULL; END;
-            raise;
+            dbms_output.put_line(sqlerrm);
         END;
         BEGIN
             EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS PURGE';

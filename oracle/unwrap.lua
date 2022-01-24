@@ -53,13 +53,29 @@ local function decode_base64_package(base64str)
     --return zlib.uncompress(table.concat(decoded,''))
 end
 
+
 function unwrap.unwrap_schema(obj,ext)
-    local list=db:dba_query(db.get_rows,[[
-        select owner||'.'||object_name o 
-        from all_objects 
-        where owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
-        and   not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
-        ORDER BY 1]],{obj:upper()})
+    local list
+    if obj:upper()=='ORACLE' then
+        list=db:dba_query(db.get_rows,[[
+            select distinct owner||'.'||object_name o 
+            from   all_objects a,
+                   all_users b 
+            where  a.oracle_maintained='Y'
+            and    b.oracle_maintained='Y'
+            and    a.owner=b.username
+            and    a.owner not like 'APEX_%'
+            and    a.object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
+            and    not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
+            ORDER BY 1]],{obj:upper()})
+    else
+        db:dba_query(db.get_rows,[[
+            select distinct owner||'.'||object_name o 
+            from   all_objects 
+            where  owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
+            and    not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
+            ORDER BY 1]],{obj:upper()})
+    end
     if type(list) ~='table' or #list<2 then return false end
     for i=2,#list do
         local n=list[i][1]
