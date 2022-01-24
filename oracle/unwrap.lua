@@ -67,12 +67,13 @@ function unwrap.unwrap_schema(obj,ext)
             and    a.owner not like 'APEX_%'
             and    a.object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
             and    not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
-            ORDER BY 1]],{obj:upper()})
+            ORDER BY 1]])
     else
-        db:dba_query(db.get_rows,[[
+        list=db:dba_query(db.get_rows,[[
             select distinct owner||'.'||object_name o 
             from   all_objects 
-            where  owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
+            where  owner=:1 
+            and    object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
             and    not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
             ORDER BY 1]],{obj:upper()})
     end

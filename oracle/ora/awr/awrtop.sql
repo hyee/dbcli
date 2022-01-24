@@ -1,6 +1,7 @@
 /*[[
-    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]} [-m] [-u] [-f"<filter>"] 
+    Show AWR Top SQLs for a specific period. Usage: @@NAME {[0|<inst>] [ela|exec|cpu|io|cc|fetch|sort|px|row|load|parse|read|write|mem] [yymmddhhmi] [yymmddhhmi]} [-m|-p] [-u] [-f"<filter>"] 
     -m: group by force_maching_signature instead of sql_id
+    -p: group by plan_hash_value instead of sql_id
     -u: only show the records whose parsing_schema_name=sys_context('userenv','current_schema')
 
     Sample Output:
@@ -25,7 +26,8 @@
 
     --[[
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
-        &BASE : s={sql_id}, m={signature}
+        &BASE : s={sql_id}, m={signature} p={plan_hash_value}
+        &grp  : s={sql_id,phvs,top_phv top_plan,} m={signature,top_sql,phvs,top_phv top_plan,} p={top_phv plan_hash,phvs sqls,top_sql,}
         &v2   : df={ela} default={}
     --]]
 ]]*/
@@ -39,26 +41,25 @@ WITH qry as (SELECT coalesce(upper(:V1),''||:instance,'A') inst,
                     to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                     to_timestamp(coalesce(:V4,:endtime,to_char(sysdate+1,'YYMMDDHH24MI')),'YYMMDDHH24MI')  ed from dual)
 SELECT /*+ordered use_nl(a b)*/
-     a.sql_id,
-     phvs,
-     plan_hash top_phv,
+     &grp
      execs,
      parse,
      val &v2,
      pct,
      round(val/nullif(decode(execs,0,floor(parse/greatest(px_count,1)),execs),0),2) "AVG",
-     (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=regexp_substr(a.sql_id,'\w+') and dbid=a.dbid and rownum<2) SQL_TEXT
+     (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=regexp_substr(a.top_sql,'\w+') and dbid=a.dbid and rownum<2) SQL_TEXT
 FROM (SELECT rownum r,
              ratio_to_report(val) over() pct,
              a.* 
       from(
           SELECT /*+ordered use_nl(s hs)*/
-                   max(sql_id)  KEEP(dense_rank LAST ORDER BY elapsed_time_total)||case when '&base'!='sql_id' and regexp_like(&base,'^\d+$') then '|'||&base end sql_id,
-                   max(sql_id) sqlid,
+                   &base,
+                   max(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time_total),
+                   max(plan_hash_value) KEEP(dense_rank LAST ORDER BY elapsed_time_total)  top_phv,
+                   max(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time_total) top_sql,
                    max(dbid) dbid,
                    qry.typ,
-                   count(distinct s.plan_hash_value) phvs,
-                   ''||MAX(s.plan_hash_value) KEEP(dense_rank LAST ORDER BY elapsed_time_total) plan_hash,
+                   count(distinct decode('&base','plan_hash_value',sql_id,s.plan_hash_value)) phvs,
                    decode(typ,'mem',MAX(s.sharable_mem)/1024/1024,
                       SUM(decode(nvl(qry.typ,'ela'),
                                     'exec',s.elapsed_time,

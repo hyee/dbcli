@@ -22,7 +22,7 @@
     
     --[[
         &grp: s={sql_id}, m={signature}, p={null}
-        &sqls: s={}, m={sqls,}, p={sqls,}
+        &sqls: s={}, m={sqls,top_sql,}, p={sqls,top_sql,}
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &orderby: {
             default={ela}
@@ -84,11 +84,11 @@ SELECT pct,
        reads,writes,buff,
        RWS "ROWS",
        PX,
-       (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,100)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=a.sq_id and dbid=a.dbid and rownum<2) SQL_TEXT
+       (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,100)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=a.top_sql and dbid=a.dbid and rownum<2) SQL_TEXT
 FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                ratio_to_report(val) over() pct
         FROM (
-            SELECT &grp,sq_id,dbid,
+            SELECT &grp,top_sql,dbid,
                    plan_hash,
                    to_char(lastest,'MM-DD"|"HH24:MI') last_call,
                    execs,
@@ -119,7 +119,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
             FROM   (SELECT --+no_expand
                            &grp,
                            max(dbid) dbid,
-                           max(sql_id) sq_id,
+                           max(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time_total) top_sql,
                            count(distinct sql_id) sqls,
                            plan_hash_value plan_hash,
                            count(1) SEENS,
