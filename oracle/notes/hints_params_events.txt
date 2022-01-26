@@ -224,6 +224,7 @@ Hints:
     _optimizer_group_by_placement/_optimizer_distinct_placement/_optimizer_extend_jppd_view_types: used to fix some execute plan issues
     VECTOR_TRANSFORM([<qb>] FACT(<fact>) DIMENSION(<dim#1>) ...DIMENSION(<dim#n>)): Use key vector transformation
     pq_filter(serial/hash/random/none): Random:lef-skew handling; Hash:left-skew handling+caching; none:left,right both clumped,no skew handling; serial:_px_filter_parallelized=false
+    system_stats(mbrc=<num> ioseektim=<num> iotfrspeed=<num>): change system stats for a specific sql, or simply change mbrc via _db_file_optimizer_read_count
 
     
 Fix Controls:
