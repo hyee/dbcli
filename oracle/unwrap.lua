@@ -1165,9 +1165,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if type(v)=='string' then add_header(k,v) end
             end
         end
+        local sample=hd.activity_sampled
+        if type(sample)=='table' and sample[1] then sample=sample[1] end
+        
         for _,attr in ipairs{hd._attr or {},
                              hd.report_parameters or {},
-                             (hd.activity_detail or hd.activity_sampled or {})._attr or {},
+                             (hd.activity_detail or sample or {})._attr or {},
                              hd.target._attr or {},
                              hd.target or {},
                              hd.parallel_info and hd.parallel_info._attr or {}} do
@@ -1221,7 +1224,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {nil,'AAS %|Event'}
     }
     local skew_aas_index,skew_event_index
-    local max_skews,detail_skews={},{}
+    local max_skews,detail_skews,total_skews={},{},{}
     local function add_skew_line(id,sid,inst_id,idx,value,multiplex,is_append)
         id,sid=tonumber(id),insid(sid,inst_id)
         if not skews.ids[id] then skews.ids[id]={} end
@@ -1230,11 +1233,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
             row={id,sid,[skew_event_index+2]={}}
             skews.sids[sid],skews.ids[id][sid],skews[#skews+1]=row,row,row
         end
+        if not total_skews[idx] then total_skews[idx]=0 end
         value=tonumber(value)*(multiplex or 1)
         if value<=0 then return end
         if is_append then
             row[idx]=(row[idx] or 0)+value
+            total_skews[idx]=total_skews[idx]+value
         else
+            if row[idx] and row[idx]<value then
+                total_skews[idx]=total_skews[idx]-row[idx]
+            end
             row[idx]=math.max(row[idx] or 0,value)
         end
     end
@@ -1246,12 +1254,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if v[4] then max_skews[v[4]]=k end
             if v[5] then detail_skews[v[5]]={k,v[6]} end
         end
+
         if hd.plan_skew_detail then
             for i,s in pair(hd.plan_skew_detail.session) do
                 local sid,inst_id=s._attr.sid,s._attr.iid
                 for _,l in pair(s.line) do
                     local id=l._attr.id
-                    add_skew_line(id,sid,inst_id,3,l[1])
+                    add_skew_line(id,sid,inst_id,4,l[1])
                     for n,v in pairs(l._attr) do
                         if detail_skews[n] then
                             add_skew_line(id,sid,inst_id,detail_skews[n][1],v,detail_skews[n][2])
@@ -1355,8 +1364,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
             return value
         end
 
-        scan_events(hd.activity_sampled and hd.activity_sampled,sqlstat[2])
-        for k,v in pair(hd.activity_sampled and hd.activity_sampled.activity or nil) do
+        local sample=hd.activity_sampled
+        if type(sample)=='table' and sample[1] then sample=sample[1] end
+        scan_events(sample,sqlstat[2])
+        for k,v in pair(sample and sample.activity or nil) do
             local idx=0
             add_aas(idx,v[1])
             local clz=v._attr.class
@@ -2499,7 +2510,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         if dop>0 and c[j] then
                             val=tonumber(info[s])
                             if val then
-                                val=math.round((val-c[j])/math.max(1,dop-1),4)
+                                val=math.round((val-(total_skews[j] or c[j]))/math.max(1,dop-1),4)
                                 if is_compare then
                                     if math.abs(c[j]-val)<thresholds.skew_min_diff then
                                         row[idx],val=nil
