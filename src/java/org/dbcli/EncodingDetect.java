@@ -26,7 +26,7 @@ import java.util.concurrent.CompletableFuture;
  * @since Create on 2010-01-27 11:19:00
  */
 public class EncodingDetect extends Encoding {
-    public static void main(String argc[]) throws Exception {
+    public static void main(String[] argc) throws Exception {
         if (argc.length == 0) {
             System.out.println("Usage: EncodingDetect <URL|File> ... [-d]");
             System.exit(1);
@@ -40,7 +40,7 @@ public class EncodingDetect extends Encoding {
                 try {
                     result = sinodetector.detectEncoding(new URL(argc[i]));
                 } catch (Exception e) {
-                    System.err.println("Bad URL " + e.toString());
+                    System.err.println("Bad URL " + e);
                 }
             } else if (argc[i].equals("-d")) {
                 sinodetector.debug = true;
@@ -55,19 +55,19 @@ public class EncodingDetect extends Encoding {
 
     // Frequency tables to hold the GB, Big5, and EUC-TW character
     // frequencies
-    int GBFreq[][];
+    int[][] GBFreq;
 
-    int GBKFreq[][];
+    int[][] GBKFreq;
 
-    int Big5Freq[][];
+    int[][] Big5Freq;
 
-    int Big5PFreq[][];
+    int[][] Big5PFreq;
 
-    int EUC_TWFreq[][];
+    int[][] EUC_TWFreq;
 
-    int KRFreq[][];
+    int[][] KRFreq;
 
-    int JPFreq[][];
+    int[][] JPFreq;
 
     // int UnicodeFreq[94][128];
     // public static String[] nicename;
@@ -106,11 +106,10 @@ public class EncodingDetect extends Encoding {
             while ((bytesread = chinesestream.read(rawtext, byteoffset, rawtext.length - byteoffset)) > 0) {
                 byteoffset += bytesread;
             }
-            ;
             chinesestream.close();
             guess = detectEncoding(rawtext);
         } catch (Exception e) {
-            System.err.println("Error loading or using URL " + e.toString());
+            System.err.println("Error loading or using URL " + e);
             guess = -1;
         }
         return guess;

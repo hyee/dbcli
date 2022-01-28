@@ -99,11 +99,11 @@ if libpath then path[#path+1]=libpath end
 
 path[#path+1]=os.getenv("PATH")
 luv.os_setenv("PATH",table.concat(path,psep))
-
+local freem=luv.get_free_memory()
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify',
                 '-Xms64m',
-                '-Xmx'..(dlldir=='x86' and '512m' or '2048m'),
+                '-Xmx'..math.min(math.floor((dlldir=='x86' and luv.get_free_memory() or luv.get_total_memory())/1024/1024*0.75),dlldir=='x86' and 512 or 2048)..'m',
                 '-XX:+UseStringDeduplication','-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',

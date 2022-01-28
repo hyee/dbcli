@@ -6,10 +6,10 @@ import org.jline.reader.impl.history.DefaultHistory;
 import java.util.LinkedList;
 
 public class MyHistory extends DefaultHistory {
-    private ClassAccess<DefaultHistory> accessor = ClassAccess.access(DefaultHistory.class);
+    private final ClassAccess<DefaultHistory> accessor = ClassAccess.access(DefaultHistory.class);
     private LinkedList<EntryImpl> list = null;
     private int lasIndex;
-    private int unescapeIndex;
+    private final int unescapeIndex;
     private EntryImpl lastEntry = null;
 
     public MyHistory() {

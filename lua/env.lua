@@ -1296,18 +1296,16 @@ function env.set_space(name,value)
     return value
 end
 
-local org_title
+local org_title=loader.originProcessTitle
 env.unknown_modules={}
 function env.set_title(title,value,callee)
     local titles,status,sep,enabled="",{},"    "
 
     if not org_title then
-        org_title=loader.originProcessTitle
-        if not org_title then
-            org_title=uv.get_process_title()
-            loader.originProcessTitle=org_title
-        end
+        org_title=uv.get_process_title() or ""
+        loader.originProcessTitle=org_title
     end
+
     if value~='__EXIT__' then
         if title and title:upper()=="STATUS" and value then
             enabled=value:lower()
@@ -1360,14 +1358,15 @@ function env.set_title(title,value,callee)
     if CURRENT_TITLE~=titles or enabled then
         CURRENT_TITLE=titles
         titles=enabled=="on" and "DBCLI" or titles or ""
-        if env.IS_WINDOWS then
-            env.uv.set_process_title(titles)
-        elseif env.PLATFORM=='mac' then
-            printer.write( "\27]0;"..titles.."\7")
-        else
-            local term=os.getenv("TERM")
-            if term and printer then
-                printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+        local err,rtn=pcall(env.uv.set_process_title,titles)
+        if (not err or rtn~=0) and not env.IS_WINDOWS then
+            if env.PLATFORM=='mac' then
+                printer.write( "\27]0;"..titles.."\7")
+            else
+                local term=os.getenv("TERM")
+                if term and printer then
+                    printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+                end
             end
         end
     end

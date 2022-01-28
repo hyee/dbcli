@@ -1319,7 +1319,7 @@ final public class More {
     boolean waitReader(long timeout) {
         try {
             if (System.getenv("IS_WSL") == null && !OSUtils.IS_MSYSTEM && !OSUtils.IS_CYGWIN) {
-                if (terminal.reader().peek(timeout) != NonBlockingReader.READ_EXPIRED) return false;
+                return terminal.reader().peek(timeout) == NonBlockingReader.READ_EXPIRED;
             } else {
                 if (terminal.reader().available() <= 0) {
                     try {
@@ -1328,9 +1328,8 @@ final public class More {
 
                     }
                 }
-                if (terminal.reader().available() > 0) return false;
+                return terminal.reader().available() <= 0;
             }
-            return true;
         } catch (Exception e) {
 
         }
@@ -1755,11 +1754,11 @@ final public class More {
             } else {
                 isStarted = true;
             }
-            if (cursorPos > 0 && prevBuff != null &&  prevOffset > 0) {
-                updateBuff("",0);
+            if (cursorPos > 0 && prevBuff != null && prevOffset > 0) {
+                updateBuff("", 0);
             }
             prevBuff = null;
-            prevOffset=0;
+            prevOffset = 0;
             super.update(newLines, targetCursorPos, false);
             terminal.writer().flush();
         }
@@ -1787,7 +1786,7 @@ final public class More {
                 terminal.flush();
             }
 
-            if(prevOffset!=currBuff.length()&&prevOffset>0) terminal.puts(Capability.column_address, prevOffset);
+            if (prevOffset != currBuff.length() && prevOffset > 0) terminal.puts(Capability.column_address, prevOffset);
             cursorPos += currBuff.length() - (prevBuff == null ? 0 : prevBuff.length());
             prevBuff = currBuff;
             return false;

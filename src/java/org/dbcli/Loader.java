@@ -48,10 +48,10 @@ public class Loader {
     KeyListner q = new KeyListner('q');
     Future sleeper;
     private volatile CallableStatement stmt = null;
-    private Sleeper runner = new Sleeper();
+    private final Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
-    private IOException CancelError = new IOException("Statement is aborted.");
-    private static ErrorHandler caughtHanlder=new ErrorHandler();
+    private final IOException CancelError = new IOException("Statement is aborted.");
+    private static final ErrorHandler caughtHanlder = new ErrorHandler();
 
     private Loader() throws Exception {
         try {

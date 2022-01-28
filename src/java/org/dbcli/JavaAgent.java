@@ -29,7 +29,7 @@ public class JavaAgent implements ClassFileTransformer {
     static String separator = File.separator;
     static Field classFinder = null;
     static String libPath = null;
-    private static Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
+    private static final Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
 
     static {
         try {

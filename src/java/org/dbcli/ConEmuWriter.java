@@ -10,7 +10,7 @@ import java.util.HashMap;
 
 public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
     private NativeLibrary INSTANCE;
-    private IntByReference charsWritten = new IntByReference();
+    private final IntByReference charsWritten = new IntByReference();
     HashMap<String, Object> errs = new HashMap<>();
 
     public ConEmuWriter() {

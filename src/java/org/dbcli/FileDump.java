@@ -20,7 +20,7 @@ public class FileDump extends ClassDump {
     ClassFilter classFilter = null;
     private String outputDirectory;
     private SystemDictionary ioe;
-    private JarOutputStream jarStream = null;
+    private final JarOutputStream jarStream = null;
 
     public static void main(String[] args) {
         ClassFilter classFilter = null;

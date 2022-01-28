@@ -136,8 +136,8 @@ BEGIN
                         END IF;
                     $END
                     BEGIN
-                        EXECUTE IMMEDIATE 'CREATE TABLE '||own1||'.'||tab ||' AS SELECT * FROM SYS.AWR_DUMP_REPORTS WHERE 1=2';
-                        EXECUTE IMMEDIATE 'CREATE TABLE '||own1||'.'||tab1||' AS SELECT * FROM SYS.AWR_DUMP_REPORTS_DETAILS WHERE 1=2';
+                        EXECUTE IMMEDIATE 'CREATE TABLE '||own1||'.'||tab ||' AS SELECT * FROM '||own||'.AWR_DUMP_REPORTS WHERE 1=2';
+                        EXECUTE IMMEDIATE 'CREATE TABLE '||own1||'.'||tab1||' AS SELECT * FROM '||own||'.AWR_DUMP_REPORTS_DETAILS WHERE 1=2';
                         EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own1||'.UK_'||substr(tab ,1,len-3)||' ON '||own1||'.'||tab ||'(DBID,REPORT_ID)';
                         EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX '||own1||'.UK_'||substr(tab1,1,len-3)||' ON '||own1||'.'||tab1||'(DBID,REPORT_ID)';
                     EXCEPTION WHEN OTHERS THEN NULL; END;

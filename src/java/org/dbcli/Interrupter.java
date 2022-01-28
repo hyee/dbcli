@@ -13,7 +13,7 @@ public class Interrupter implements Terminal.SignalHandler {
     public static void listen(Object name, EventCallback c) {
         //System.out.println(name.toString()+(c==null?"null":c.toString()));
         map.remove(name);
-        if (c != null && !map.values().contains(c)) map.put(name, c);
+        if (c != null && !map.containsValue(c)) map.put(name, c);
     }
 
     public static void reset() {

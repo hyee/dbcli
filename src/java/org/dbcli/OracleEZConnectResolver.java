@@ -1,6 +1,7 @@
 package org.dbcli;
 
 //copy from ojdbc8:oracle.net.resolver.EZConnectResolver
+
 import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;

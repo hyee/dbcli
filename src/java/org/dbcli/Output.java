@@ -41,7 +41,7 @@ public final class Output extends PrintWriter {
         flush();
     }
 
-    private LuaTable table = new LuaTable(new String[0]);
+    private final LuaTable table = new LuaTable(new String[0]);
 
     public LuaTable lines() {
         isMore = false;

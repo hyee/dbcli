@@ -172,6 +172,7 @@ public final class Console {
     }
 
     public void exitDisplay() {
+        if (display == null) return;
         display.exit();
     }
 

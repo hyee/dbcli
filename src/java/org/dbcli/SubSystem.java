@@ -302,9 +302,9 @@ public class SubSystem {
     ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(1);
 
     class ProcessHandler extends NuAbstractProcessHandler {
-        private ReentrantLock writeLock = new ReentrantLock();
+        private final ReentrantLock writeLock = new ReentrantLock();
         private volatile char lastChar;
-        private StringBuffer sb = new StringBuffer();
+        private final StringBuffer sb = new StringBuffer();
         private volatile int counter = 0;
         private volatile String currLine = null;
         Runnable checker = new Runnable() {

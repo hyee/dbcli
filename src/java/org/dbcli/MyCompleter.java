@@ -50,11 +50,11 @@ public class MyCompleter implements org.jline.reader.Completer {
     }
 
     public void loadKeyWords(final Map<String, ?> keywords, long delay) {
-        console.threadPool.schedule(() -> setKeysWords(keywords), delay, TimeUnit.MILLISECONDS);
+        Console.threadPool.schedule(() -> setKeysWords(keywords), delay, TimeUnit.MILLISECONDS);
     }
 
     public void loadCommands(final Map<String, ?> keywords, long delay) {
-        console.threadPool.schedule(() -> setCommands(keywords), delay, TimeUnit.MILLISECONDS);
+        Console.threadPool.schedule(() -> setCommands(keywords), delay, TimeUnit.MILLISECONDS);
     }
 
     public void renameCommands(String[] oldNames, String[] newNames) {

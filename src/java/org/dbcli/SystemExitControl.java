@@ -13,7 +13,7 @@ public class SystemExitControl {
     }
 
     static class MySecurityManager extends SecurityManager {
-        private SecurityManager baseSecurityManager;
+        private final SecurityManager baseSecurityManager;
 
         public MySecurityManager(SecurityManager baseSecurityManager) {
             this.baseSecurityManager = baseSecurityManager;

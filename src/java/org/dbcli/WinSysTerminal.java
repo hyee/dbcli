@@ -2,7 +2,6 @@ package org.dbcli;
 
 
 import org.fusesource.jansi.internal.Kernel32;
-import org.fusesource.jansi.internal.Kernel32.*;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Cursor;
@@ -277,7 +276,7 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         return flush;
     }
 
-    private char[] focus = new char[]{'\033', '[', ' '};
+    private final char[] focus = new char[]{'\033', '[', ' '};
 
     private void processFocusEvent(boolean hasFocus) throws IOException {
         if (focusTracking) {
@@ -286,7 +285,7 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         }
     }
 
-    private char[] mouse = new char[]{'\033', '[', 'M', ' ', ' ', ' '};
+    private final char[] mouse = new char[]{'\033', '[', 'M', ' ', ' ', ' '};
 
     private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
