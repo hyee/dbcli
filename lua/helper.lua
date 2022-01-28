@@ -14,8 +14,8 @@ function helper.jvm()
     for k,v in java.pairs(java.system:getProperties()) do
         if tostring(k)~="" then
             local n=1
-            if type(v)=="string" then
-                v,n=v:trim():gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n')
+            if type(v)=="string" and (k:find('path',1,true) or k:find('dir',1,true)) then
+                v,n=v:trim():trim(':;'):gsub('(['..(env.IS_WINDOWS and ';' or ':')..'])','%1\n')
             else
                 v=tostring(v)
             end
@@ -241,7 +241,7 @@ function helper.help(cmd,...)
             os.execute("rm -f "..dels)
         end
         local java_home,src=java.system:getProperty("java.home"):gsub('\\','/')
-        local target=env.WORK_DIR..(env.IS_WINDOWS and 'jre' or (env.PLATFORM=='mac' and 'jre_mac') or 'jre_linux')
+        local target=env.WORK_DIR..(env.IS_WINDOWS and 'jre' or ('jre_'..env.PLATFORM:gsub('%-','_')))
         for f,p in pairs{ rt='',
                           jce='',
                           jsse='',

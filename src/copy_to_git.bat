@@ -27,6 +27,7 @@ forfiles /c "cmd /c if @isdir==TRUE (if @file NEQ \".git\" if @file NEQ \"aliase
 cd /d "%~dp0"
 cd ..
 copy data\*_sample.cfg  "%target%\data"
+ECHO Copy files...
 xcopy  . "%target%" /E /Y  /exclude:.\src\excludes.txt
 
 if %copyflag%==1 (

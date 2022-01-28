@@ -11,7 +11,7 @@ if ver then
 end
 if not luv then luv=require("luv") end
 
-_os=_os=='osx' and 'mac' or _os
+_os=_os=='osx' and (jit.arch:lower()=='arm64' and 'mac-arm' or 'mac') or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
     psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
@@ -51,7 +51,18 @@ local function scan(dir,ext)
         if ftype=="directory" then
             subdirs[#subdirs+1]=name
         elseif name:find(pattern) then
-            files[#files+1]='.'..fsep..name
+            local prefix,version=name:lower():match('[\\/]([^\\/]-)%-?([%-0-9.]*)%.jar$')
+            version=version:gsub('%d+',function(d) return string.rep('0',4-#d)..d end)
+            local p='.'..fsep..name
+            local idx=files[prefix]
+            if idx then
+                if version>idx[2] then
+                    idx[2],files[idx[1]]=version,p
+                end
+            else
+                idx=#files+1
+                files[prefix],files[idx]={idx,version},p
+            end
         end
     end
     for _,sub in ipairs(subdirs) do scan(sub,ext) end

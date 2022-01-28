@@ -6,8 +6,10 @@ if [ ! "$BASH" ] ; then
 fi
 
 cd "$(dirname "$0")"
-os=$(uname)
-if [ "$os" = "Darwin" ]; then
+os=$(uname -a)
+if [[ "$os" =~ Darwin.*ARM ]]; then
+    os="mac-arm"
+elif [[ "$os" = *Darwin* ]]; then
     os="mac"
 else
     os="linux"
@@ -34,9 +36,9 @@ fi
 if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"
 elif type -p java &>/dev/null; then
-    if [ "$os" = "mac" ]; then
+    if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
-        _java=`/usr/libexec/java_home -V 2>&1|grep -oh "/Lib.*1\.8.*"|head -1`
+        _java=`/usr/libexec/java_home -V 2>&1|grep "1\.8"|grep -oh "/Library.*"|head -1`
         if [[ "$_java" ]]; then
             _java="$_java/bin/java"
         fi
@@ -95,7 +97,7 @@ if [[ "$ORACLE_HOME" ]]; then
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$ORACLE_HOME/lib:$ORACLE_HOME"
 fi
 
-if [[ "$os" = "mac" ]]; then
+if [[ "$os" = mac* ]]; then
     export DYLD_FALLBACK_LIBRARY_PATH="$LD_LIBRARY_PATH"
 fi
 # unpack jar files for the first use

@@ -67,11 +67,13 @@ function init.init_path(env)
         path_del=env.WORK_DIR:sub(-1)
     end
     local lib=jit.os:lower()
-    lib=lib=='osx' and 'mac' or lib
+    local arch=jit.arch:lower()
+    local platform=console:getPlatform()
+    lib=lib=='osx' and (arch=='arm64' and 'mac-arm' or 'mac') or lib
     lib=lib=="windows" and jit.arch or lib
     env("PATH_DEL",path_del)
     env("CPATH_DEL",path_del=='/' and ':' or ';')
-    env("PLATFORM",console:getPlatform())
+    env("PLATFORM",platform =='mac' and arch=='arm64' and 'mac-arm' or platform)
     env("IS_WINDOWS",env.PLATFORM=="windows" or env.PLATFORM=="cygwin" or env.PLATFORM=="mingw" or env.PLATFORM=="conemu")
     env("_CACHE_BASE",env.WORK_DIR.."cache"..path_del)
     env("_CACHE_PATH",env._CACHE_BASE..path_del)
