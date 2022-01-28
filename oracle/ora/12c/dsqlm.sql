@@ -47,6 +47,7 @@ DECLARE
     v_sql_id    VARCHAR2(30):=:V1;
     v_inst      INT := :INSTANCE;
     v_report    clob;
+    v_did       INT := :dbid;
     v_file      VARCHAR2(50);
     v_start     date:=NVL(to_date(NVL(:V2,:STARTTIME),'yymmddhh24mi'),sysdate-7);
     v_end       date:=NVL(to_date(NVL(:V3,:ENDTIME),'yymmddhh24mi'),sysdate);
@@ -89,7 +90,7 @@ BEGIN
                             FROM   &dict a
                             WHERE  COMPONENT_NAME='sqlmonitor'
                             AND    (&filt)
-                            AND    dbid=nvl(:dbid,dbid)
+                            AND    (v_did IS NULL OR v_did in(dbid,con_dbid))
                             AND    PERIOD_START_TIME<=v_end
                             AND    PERIOD_END_TIME>=v_start) a,
                           xmltable('/report_repository_summary/*' PASSING a.summary columns --
@@ -132,7 +133,7 @@ BEGIN
                                                      selected_start_time => v_start,
                                                      selected_end_time => v_end,
                                                      inst_id => v_inst,
-                                                     dbid => null,
+                                                     dbid => v_did,
                                                      monitor_list_detail => 50);
             $END
         END IF;
@@ -143,7 +144,7 @@ BEGIN
             FROM  (
                 SELECT report
                 FROM   &dict._details
-                WHERE  dbid=nvl(:dbid,dbid)
+                WHERE  (v_did IS NULL OR v_did in(dbid,con_dbid))
                 AND    report_id=v_report_id
                 ORDER  BY generation_time desc
             ) WHERE rownum<2;

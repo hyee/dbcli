@@ -52,6 +52,11 @@
 ]]*/
 
 set feed off VERIFY off printsize 3000
+var pred number;
+BEGIN
+    :pred := case when coalesce(:v1,:v2) is not null then 1 else 0 end;
+END;
+/
 var c refcursor;
 var c0 refcursor;
 var c1 refcursor;
@@ -360,7 +365,8 @@ BEGIN
                             select /*+no_expand no_or_expand*/ 
                                    key1,key2,report_id,period_end_time ptime
                             from  dba_hist_reports
-                            where key1=nvl(sq_id,sq_id1)
+                            where (did IS NULL OR did in(dbid,con_dbid))
+                            AND   key1=nvl(sq_id,sq_id1)
                             AND   key2>0
                             AND   (sql_exec  IS NULL OR KEY2=sql_exec)
                             AND   (plan_hash IS NULL OR key2=plan_hash OR report_id=plan_hash)
@@ -891,7 +897,7 @@ BEGIN
                             FROM  gv$sql_monitor a
                             WHERE (&filter)
                             GROUP BY sql_id,sql_exec_start,sql_exec_id
-                            $IF &check_access_report=1 $THEN
+                            $IF &check_access_report=1 AND &pred=1 $THEN
                             UNION ALL
                             select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(HIST)',
                                    plan_hash,
@@ -924,10 +930,10 @@ BEGIN
                                        report_id sql_exec_id,
                                        xmltype(a.report_summary) summary 
                                 FROM   dba_hist_reports a
-                                WHERE  (sq_id IS NOT NULL AND key1=sq_id OR 
-                                         keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
+                                WHERE (did IS NULL OR did in(dbid,con_dbid))
+                                AND   (sq_id IS NOT NULL AND key1=sq_id OR 
+                                       keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
                                 AND    COMPONENT_NAME='sqlmonitor'
-                                AND    dbid=nvl(did,dbid)
                                 AND    instance_number=nvl(inst,instance_number)) a,
                             xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                     plan_hash NUMBER PATH 'plan_hash',
@@ -1002,9 +1008,9 @@ BEGIN
                                substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) SQL_TEXT
                         FROM   (SELECT a.*, xmltype(a.report_summary) summary 
                                 FROM   dba_hist_reports a
-                                WHERE  KEY1=sq_id
+                                WHERE  (did IS NULL OR did in(dbid,con_dbid))
+                                AND    KEY1=sq_id
                                 AND    COMPONENT_NAME='sqlmonitor'
-                                AND    dbid=nvl(did,dbid)
                                 AND    instance_number=nvl(inst,instance_number)) a,
                                 xmltable('/report_repository_summary/*' PASSING a.summary columns --
                                         plan_hash NUMBER PATH 'plan_hash',

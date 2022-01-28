@@ -51,6 +51,7 @@ public class Loader {
     private Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
     private IOException CancelError = new IOException("Statement is aborted.");
+    private static ErrorHandler caughtHanlder=new ErrorHandler();
 
     private Loader() throws Exception {
         try {
@@ -98,13 +99,14 @@ public class Loader {
         return loader;
     }
 
-    public static Exception getRootCause(Exception e) {
+    public static Throwable getRootCause(Throwable e) {
         Throwable t = e.getCause();
         while (t != null && t.getCause() != null) t = t.getCause();
-        return t == null ? e : new Exception(t);
+        return t == null ? e : new Throwable(t);
     }
 
     public static void loadLua(Loader loader, String[] args) throws Exception {
+        Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
         lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.isSubSystem = false;
@@ -341,7 +343,7 @@ public class Loader {
         return sbSQLId.toString();
     }
 
-    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
+    public int ResultSet2CSV(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Throwable {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
             try (CSVWriter writer = new CSVWriter(fileName)) {
@@ -353,7 +355,7 @@ public class Loader {
         });
     }
 
-    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Exception {
+    public int ResultSet2SQL(final ResultSet rs, final String fileName, final String header, final boolean aync, final String excludes, final String[] remaps) throws Throwable {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
             try (SQLWriter writer = new SQLWriter(fileName)) {
@@ -383,7 +385,7 @@ public class Loader {
         return inflate(buff);
     }
 
-    public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Exception {
+    public int CSV2SQL(final ResultSet rs, final String SQLFileName, final String CSVfileName, final String header, final String excludes, final String[] remaps) throws Throwable {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
             try (SQLWriter writer = new SQLWriter(SQLFileName)) {
@@ -430,7 +432,7 @@ public class Loader {
         if (e[0] != null) throw e[0];
     }
 
-    public LuaTable fetchResult(final ResultSet rs, final int rows) throws Exception {
+    public LuaTable fetchResult(final ResultSet rs, final int rows) throws Throwable {
         if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
         return new LuaTable((Object[]) asyncCall(() -> {
@@ -452,7 +454,7 @@ public class Loader {
         t.start();
     }
 
-    public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Exception {
+    public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Throwable {
         ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(() -> {
             ArrayList<String[]> ary = new ArrayList();
             String[] line;
@@ -543,14 +545,14 @@ public class Loader {
         }
     }
 
-    public Object asyncCall(Callable<Object> c) throws Exception {
+    public Object asyncCall(Callable<Object> c) throws Throwable {
         try {
             this.sleeper = Console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
-        } catch (Exception e) {
+        } catch (Throwable e) {
             e = getRootCause(e);
             //e.printStackTrace();
             throw e;
@@ -562,7 +564,7 @@ public class Loader {
         }
     }
 
-    public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Exception {
+    public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Throwable {
         return asyncCall(() -> {
             ClassAccess access = ClassAccess.access(LuaState.toClass(o));
             return access.invoke(o, func, args);
@@ -634,4 +636,12 @@ public class Loader {
             }
         }
     }
+
+    static class ErrorHandler implements Thread.UncaughtExceptionHandler {
+        @Override
+        public void uncaughtException(Thread t, Throwable e) {
+            e.printStackTrace();
+        }
+    }
+
 }

@@ -1167,7 +1167,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
         local sample=hd.activity_sampled
         if type(sample)=='table' and sample[1] then sample=sample[1] end
-        
+
         for _,attr in ipairs{hd._attr or {},
                              hd.report_parameters or {},
                              (hd.activity_detail or sample or {})._attr or {},
@@ -1233,18 +1233,22 @@ function unwrap.analyze_sqlmon(text,file,seq)
             row={id,sid,[skew_event_index+2]={}}
             skews.sids[sid],skews.ids[id][sid],skews[#skews+1]=row,row,row
         end
-        if not total_skews[idx] then total_skews[idx]=0 end
         value=tonumber(value)*(multiplex or 1)
         if value<=0 then return end
+        if not total_skews[id] then total_skews[id]={n={}} end
+        local total=total_skews[id]
         if is_append then
             row[idx]=(row[idx] or 0)+value
-            total_skews[idx]=total_skews[idx]+value
         else
-            if row[idx] and row[idx]<value then
-                total_skews[idx]=total_skews[idx]-row[idx]
+            if row[idx] then
+                total[idx]=total[idx]-row[idx]
+                total.n[idx]=total.n[idx]-1
             end
-            row[idx]=math.max(row[idx] or 0,value)
+            value=math.max(row[idx] or 0,value)
+            row[idx]=value
         end
+        total[idx]=(total[idx] or 0)+value
+        total.n[idx]=(total.n[idx] or 0)+1
     end
 
     local function load_skew()
@@ -2501,6 +2505,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         counter=counter+1
                     end
                 end
+                
                 for j=1,len do
                     local is_compare=j>dop_pos and j<skew_aas_index
                     add_column(c[j],is_compare)
@@ -2510,7 +2515,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         if dop>0 and c[j] then
                             val=tonumber(info[s])
                             if val then
-                                val=math.round((val-(total_skews[j] or c[j]))/math.max(1,dop-1),4)
+                                if total_skews[id] and (total_skews[id].n[j] or dop)<dop then
+                                    val=math.round((val-total_skews[id][j])/math.max(1,dop-total_skews[id].n[j]),4)
+                                else
+                                    val=math.round((val-c[j])/math.max(1,dop-1),4)
+                                end
                                 if is_compare then
                                     if math.abs(c[j]-val)<thresholds.skew_min_diff then
                                         row[idx],val=nil
