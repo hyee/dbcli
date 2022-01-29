@@ -8,7 +8,6 @@ import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
-import org.jline.utils.OSUtils;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -57,7 +56,7 @@ public class Loader {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root = f.getParentFile().getParent();
-            libPath=System.getProperty("java.library.path");
+            libPath = System.getProperty("java.library.path");
             //String libs = System.getenv("LD_LIBRARY_PATH");
             //addLibrary(libPath + (libs == null ? "" : File.pathSeparator + libs), true);
             System.setProperty("library.jansi.path", libPath);
@@ -96,6 +95,7 @@ public class Loader {
     }
 
     public static void loadLua(Loader loader, String[] args) throws Exception {
+        Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
         lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.isSubSystem = false;
@@ -535,16 +535,17 @@ public class Loader {
     }
 
     public Object asyncCall(Callable<Object> c) throws Throwable {
-        Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
         try {
             this.sleeper = Console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
+        } catch (NoSuchMethodError e1) {
+            e1.printStackTrace();
+            throw new Exception(e1.getCause() != null ? e1.getCause() : e1);
         } catch (Throwable e) {
             e = getRootCause(e);
-            e.printStackTrace();
             throw e;
         } finally {
             if (rs != null && !rs.isClosed()) rs.close();

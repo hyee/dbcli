@@ -82,11 +82,14 @@ public final class Console {
 
         }
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, encoding, 0, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, encoding, 0, true, Terminal.SignalHandler.SIG_DFL, false);
         else
-            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_IGN).encoding(encoding).nativeSignals(true).build();
+            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_DFL).encoding(encoding).nativeSignals(true).build();
         Interrupter.reset();
+
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
+        terminal.handle(Terminal.Signal.TSTP, new Interrupter());
+
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);

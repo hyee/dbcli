@@ -29,7 +29,7 @@ public class Interrupter implements Terminal.SignalHandler {
                     entry.getValue().call(e, "CTRL+C");
                 } catch (StackOverflowError e1) {
                     continue;
-                } catch (Exception ex) {
+                } catch (Throwable ex) {
                     ex.printStackTrace();
                 }
             }

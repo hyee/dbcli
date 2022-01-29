@@ -1,7 +1,8 @@
 @echo off
 Setlocal EnableDelayedExpansion EnableExtensions
 for /f "delims=" %%i in ('ver') do set "OSVERSION=%%i"
-cd /d "%~dp0"
+
+pushd "%~dp0"
 SET CLASSPATH=
 SET JAVA=
 SET JAVA_TOOL_OPTIONS=
@@ -56,6 +57,7 @@ If not exist "!JAVA_EXE!" (
     if not exist "jre\bin\java.exe" (
         echo Cannot find Java 1.8 executable, exit.
         pause
+        popd
         exit /b 1
     ) else (
         set "JAVA_BIN=jre\bin"
@@ -95,4 +97,5 @@ for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (
 )
 
 (cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*)||pause
+popd
 EndLocal

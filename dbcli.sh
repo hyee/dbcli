@@ -5,7 +5,7 @@ if [ ! "$BASH" ] ; then
     exit 1
 fi
 
-cd "$(dirname "$0")"
+pushd "$(dirname "$0")" > /dev/null
 os=$(uname -a)
 if [[ "$os" =~ Darwin.*ARM ]]; then
     os="mac-arm"
@@ -106,6 +106,7 @@ if [[ -x ./jre_$os/bin/unpack200 ]]; then
     unpack=./jre_$os/bin/unpack200
 elif [ ! -x "$unpack" ]; then
     echo "Cannot find unpack200 executable, exit."
+    popd
     exit 1
 fi
 
@@ -119,3 +120,4 @@ trap '' TSTP &>/dev/null
 
 chmod  777 ./lib/$os/luajit &>/dev/null
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"
+popd
