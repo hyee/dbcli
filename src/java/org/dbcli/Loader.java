@@ -57,18 +57,8 @@ public class Loader {
         try {
             File f = new File(Loader.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             root = f.getParentFile().getParent();
-            libPath = root + File.separator + "lib" + File.separator;
-            if (OSUtils.IS_WINDOWS) {
-                String bit = System.getProperty("sun.arch.data.model");
-                if (bit == null) bit = System.getProperty("com.ibm.vm.bitmode");
-                libPath += (bit.equals("64") ? "x64" : "x86");
-            } else if (OSUtils.IS_OSX) {
-                libPath += "mac";
-            } else {
-                libPath += "linux";
-            }
-
-            String libs = System.getenv("LD_LIBRARY_PATH");
+            libPath=System.getProperty("java.library.path");
+            //String libs = System.getenv("LD_LIBRARY_PATH");
             //addLibrary(libPath + (libs == null ? "" : File.pathSeparator + libs), true);
             System.setProperty("library.jansi.path", libPath);
             System.setProperty("jna.library.path", libPath);
@@ -106,7 +96,6 @@ public class Loader {
     }
 
     public static void loadLua(Loader loader, String[] args) throws Exception {
-        Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
         lua = new LuaState();
         lua.pushGlobal("loader", loader);
         console.isSubSystem = false;
@@ -546,6 +535,7 @@ public class Loader {
     }
 
     public Object asyncCall(Callable<Object> c) throws Throwable {
+        Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
         try {
             this.sleeper = Console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', 'Q'});
@@ -554,7 +544,7 @@ public class Loader {
             throw CancelError;
         } catch (Throwable e) {
             e = getRootCause(e);
-            //e.printStackTrace();
+            e.printStackTrace();
             throw e;
         } finally {
             if (rs != null && !rs.isClosed()) rs.close();
