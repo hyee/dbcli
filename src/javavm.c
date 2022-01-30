@@ -46,6 +46,7 @@ static int error (lua_State *L, JNIEnv *env, const char *msg) {
 	
 	throwable = (*env)->ExceptionOccurred(env);
 	if (throwable) {
+		(*env)->ExceptionClear(env);
 		throwable_class = (*env)->GetObjectClass(env, throwable);
 		if ((tostring_id = (*env)->GetMethodID(env, throwable_class, "toString", "()Ljava/lang/String;"))) {
 			string = (*env)->CallObjectMethod(env, throwable, tostring_id);
@@ -184,13 +185,15 @@ static int create_vm (lua_State *L) {
 	vm_args.version = JAVAVM_JNIVERSION;
 	vm_args.options = vm->options;
 	vm_args.nOptions = vm->num_options;
+	vm_args.ignoreUnrecognized = JNI_TRUE;
 
 	res = JNI_CreateJavaVM(&vm->vm, (void**) &env, &vm_args);
 	if (res < 0) {
 		return luaL_error(L, "error creating Java VM: %d", res);
 	}
 
-
+	(*env)->EnsureLocalCapacity(env,512);
+	(*env)-> PushLocalFrame(env,128);
 	/* Create a LuaState in the Java VM */
 	if (!(luastate_class = (*env)->FindClass(env, "com/naef/jnlua/LuaState"))
 			|| !(init_id = (*env)->GetMethodID(env, luastate_class, "<init>", "(J)V"))) {
@@ -220,7 +223,7 @@ static int create_vm (lua_State *L) {
 	/* Store VM */
 	lua_pushvalue(L, -1);
 	lua_setfield(L, LUA_REGISTRYINDEX, JAVAVM_VM);
-	
+	(*env)-> PopLocalFrame(env,NULL);
 	return 1;
 }
 

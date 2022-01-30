@@ -541,7 +541,7 @@ public class Loader {
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
-        } catch (NoSuchMethodError e1) {
+        } catch (NoSuchMethodError|NoClassDefFoundError e1) {
             e1.printStackTrace();
             throw new Exception(e1.getCause() != null ? e1.getCause() : e1);
         } catch (Throwable e) {
