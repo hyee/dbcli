@@ -409,7 +409,7 @@ xplan_data AS
            COUNT(*) over() AS rc,
            nvl(trim(dbms_xplan.format_number(CASE 
                WHEN REGEXP_LIKE(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
-                   greatest(1,floor(io_cost*nvl(dop,1)/mbrc))
+                   greatest(1,floor(io_cost*nvl(dop*1.009,1)/mbrc))
                ELSE
                    io_cost
            END)),' ') blks

@@ -18,37 +18,7 @@ BEGIN
     OPEN :C FOR
     SELECT * FROM TABLE(GV$(CURSOR(
         SELECT  inst_id,kglnahsh idn,ob.KGLOBT03 sql_id
-               ,decode( ob.kglhdnsp
-                           ,0,'CURSOR'
-                           ,1   ,'TABLE / PROCEDURE'
-                           ,2   ,'BODY'
-                           ,3   ,'TRIGGER'
-                           ,4   ,'INDEX'
-                           ,5   ,'CLUSTER'
-                           ,6   ,'OBJECT'
-                           ,13  ,'JAVA SOURCE'
-                           ,14  ,'JAVA RESOURCE'
-                           ,15  ,'REPLICATED TABLE OBJECT'
-                           ,16  ,'REPLICATION INTERNAL PACKAGE'
-                           ,17  ,'CONTEXT POLICY'
-                           ,18  ,'PUB_SUB'
-                           ,19  ,'SUMMARY'
-                           ,20  ,'DIMENSION'
-                           ,21  ,'APP CONTEXT'
-                           ,22  ,'STORED OUTLINE'
-                           ,23  ,'RULESET'
-                           ,24  ,'RSRC PLAN'
-                           ,25  ,'RSRC CONSUMER GROUP'
-                           ,26  ,'PENDING RSRC PLAN'
-                           ,27  ,'PENDING RSRC CONSUMER GROUP'
-                           ,28  ,'SUBSCRIPTION'
-                           ,29  ,'LOCATION'
-                           ,30  ,'REMOTE OBJECT'
-                           ,31  ,'SNAPSHOT METADATA'
-                           ,32  ,'JAVA SHARED DATA'
-                           ,33  ,'SECURITY PROFILE'
-                           ,'INVALID NAMESPACE'
-               )||'('||ob.kglhdnsp||')' as namespace
+               , ob.kglhdnsd as namespace
                , decode(kglobtyp,
                               -1,'NONE',
                               0,'CURSOR',

@@ -768,6 +768,31 @@ function var.trigger_column(field)
     if obj.print==false then field[2]='' end
 end
 
+function var.getBaseLog(x, y)
+    if not y then return math.log(x) end
+    return math.log(y,x)
+end
+
+function var.expr(expr)
+    expr=expr:gsub('%a+%d*',function(s)
+        local c=s:lower()
+        if c=='mod' then 
+            c='fmod' 
+        elseif c=='power' then
+            c='pow'
+        elseif c=='log' then
+            return 'var.getBaseLog'
+        end
+        if math[c] then return 'math.'..c end
+        return s 
+    end)
+    local err,f=pcall(loadstring,'return '..expr)
+    env.checkerr(err,f)
+    err,f=pcall(f)
+    env.checkerr(err,f)
+    print(f..' = "'..expr..'"')
+end
+
 function var.onload()
     snoop('BEFORE_DB_EXEC',var.before_db_exec)
     snoop('AFTER_DB_EXEC',var.after_db_exec)
@@ -824,6 +849,7 @@ function var.onload()
     env.set_command(nil,{"COLUMN","COL"},fmt_help,var.define_column,false,30)
     env.set_command(nil,{"Print","pri"},'Display the values of bind variables or file.Usage: @@NAME <variable>|<file>|-a',var.print,false,3)
     env.set_command(nil,"Save","Save variable value into a specific file under folder 'cache'. Usage: @@NAME <variable> <file name>",var.save,false,3);
+    env.set_command(nil,"expr","Do math calculation. Usage: @@NAME <expression>",var.expr,false,2)
 end
 
 return var

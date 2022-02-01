@@ -162,7 +162,7 @@ end
 
 function string.format_number(base,s,cast)
     if not tonumber(s) then return s end
-    return String:format(base,java.cast(tonumber(s),cast or 'double'))
+    return String:format(base,java.cast(s,cast or 'double'))
 end
 
 function string.lpad(str, len, char)
@@ -190,7 +190,13 @@ if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 local system=java.system
 local clocker=system.currentTimeMillis
 function os.timer()
-    return clocker()/1000
+    local uv=env.luv
+    if uv and uv.now then
+        uv.update_time()
+        return uv.now()
+    else
+        return clocker()/1000
+    end
 end
 
 function string.from(v)

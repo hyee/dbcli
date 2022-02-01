@@ -35,8 +35,11 @@ output.trace_sql_after=([[
             if l_sql_id is null then
                 l_sql_id := l_tmp_id;
             elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
-                l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
-                if lower(l_strval)!='exact' then
+                begin
+                    execute immediate q'[begin sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
+                    using out l_intval,l_strval;
+                exception when others then null; end;
+                if nvl(lower(l_strval),'exact')!='exact' then
                     l_sql_id := l_tmp_id;
                     l_child  := null;
                 end if;
@@ -97,8 +100,11 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
-                    l_intval := sys.dbms_utility.get_parameter_value('cursor_sharing',l_intval,l_strval);
-                    if lower(l_strval)!='exact' then
+                    begin
+                        execute immediate q'[begin sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
+                        using out l_intval,l_strval;
+                    exception when others then null; end;
+                    if nvl(lower(l_strval),'exact')!='exact' then
                         l_sql_id := l_tmp_id;
                         l_child  := null;
                     end if;

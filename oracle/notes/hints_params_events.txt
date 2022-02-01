@@ -22,6 +22,10 @@ Parameters
     _parallel_load_balancing: defaults to true, 'false' to allocate PX slaves across all instances in round-robin mode without measuring the workload balance
     _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt/_ksi_clientlocks_enabled: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038/29244263)
     _enqueue_hash_chain_latches: defaults to cpu_count, improving the values can reduce "latch: enqueue hash chains" events if not pending on some object(Bug.23589928)
+    _px_adaptive_dist_method: Controls how parallel adaptive distribution, values in SQL Monitor: 5=round-robin 6=broadcast 16= hash
+        choose: only handle the over-estimated case
+        force: choose + more hash joins(e.g.: hash join 3 tables)
+        all  : force + under-estimated case
     _px_adaptive_dist_method_threshold: controls the actual distribution method of adaptive distribution, default as DOP*2
 	cell_offload_parameters="<OPT_ENABLED|OPT_DISABLED>={<func_id_list in v$sqlfn_metadata>} | OPT_ENABLED_ONLY=(<func_id_list in v$sqlfn_metadata>)" 
     _optimizer_transitivity_retain: defaults to true to pass the input variable to other table's equal-join column(ignored if executed by SYSDBA with opt_param hint)
@@ -71,7 +75,8 @@ Parameters
     _smm_max_size: The maximum work area size(in KB) for single process, defaults to 1GB when pga is large. Also impacts the number of hash join/group slots(slots*_smm_auto_max_io_size<=_smm_max_size) 
     _smm_px_max_size: maximum total work area size(in KB) per parallel query where dop>5, defaults to pga_aggregate_target/2
     _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
-    _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF  
+    _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF
+    _bloom_filter_size: defaults to NDV(Est)/128 in KB,change this to ActRows/128 in case of under-estimation
     _oltp_compress_dbg: controls OLTP compression. 
         1: disable the ArrayInserts compression, but results in more blocks marked full
         2: Disable Compression Above-Cache 
@@ -164,7 +169,8 @@ Parameters
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
     _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
     _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query
-                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism 
+                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism
+                                       1024 to disable including sys_op_cycle_seq as part of extended TQ keys
     _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
                                      and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
     _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs 
@@ -172,6 +178,7 @@ Parameters
     _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
                      64 - Disable HCC array deletes within updates
                      128 - 
+    
     
 Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
@@ -210,12 +217,15 @@ Hints:
     INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
     COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
-    PQ_DISTRIBUTE_WINDOW: used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
+    PQ_DISTRIBUTE_WINDOW([<@QB>] <method>): used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
     BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
     no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
     _optimizer_group_by_placement/_optimizer_distinct_placement/_optimizer_extend_jppd_view_types: used to fix some execute plan issues
     VECTOR_TRANSFORM([<qb>] FACT(<fact>) DIMENSION(<dim#1>) ...DIMENSION(<dim#n>)): Use key vector transformation
+    pq_filter(serial/hash/random/none): Random:lef-skew handling; Hash:left-skew handling+caching; none:left,right both clumped,no skew handling; serial:_px_filter_parallelized=false
+    system_stats(mbrc=<num> ioseektim=<num> iotfrspeed=<num>): change system stats for a specific sql, or simply change mbrc via _db_file_optimizer_read_count
+
     
 Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
@@ -231,6 +241,7 @@ Fix Controls:
     30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
     33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
     9721439:   Forces bloom filter and bypasses all the statistics based heuristics
+    16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE 
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

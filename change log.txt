@@ -1,3 +1,7 @@
+2022-01-29: * public: update libs jansi->2.4, jna->5.10, and initially support OSX-ARM64
+2022-01-28: * public: update lib jnlua and lpeg(1.0.2)
+2022-01-21: + public: new command 'expr' for math calculation 
+2022-01-05: * oracle: update lib ojdbc8
 2021-12-23: + oracle: new script 'show iotwrite' 
 2021-12-05: * public: update libs luajit(2.1 Beta3)/luv(1.42)
 2021-11-29: + oracle: new script 'pdb metric' 

@@ -11,7 +11,7 @@ if ver then
 end
 if not luv then luv=require("luv") end
 
-_os=_os=='osx' and 'mac' or _os
+_os=_os=='osx' and (jit.arch:lower()=='arm64' and 'mac-arm' or 'mac') or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
     psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
@@ -51,7 +51,18 @@ local function scan(dir,ext)
         if ftype=="directory" then
             subdirs[#subdirs+1]=name
         elseif name:find(pattern) then
-            files[#files+1]='.'..fsep..name
+            local prefix,version=name:lower():match('[\\/]([^\\/]-)%-?([%-0-9.]*)%.jar$')
+            version=version:gsub('%d+',function(d) return string.rep('0',4-#d)..d end)
+            local p='.'..fsep..name
+            local idx=files[prefix]
+            if idx then
+                if version>idx[2] then
+                    idx[2],files[idx[1]]=version,p
+                end
+            else
+                idx=#files+1
+                files[prefix],files[idx]={idx,version},p
+            end
         end
     end
     for _,sub in ipairs(subdirs) do scan(sub,ext) end
@@ -99,11 +110,11 @@ if libpath then path[#path+1]=libpath end
 
 path[#path+1]=os.getenv("PATH")
 luv.os_setenv("PATH",table.concat(path,psep))
-
+local freem=luv.get_free_memory()
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify',
                 '-Xms64m',
-                '-Xmx'..(dlldir=='x86' and '512m' or '2048m'),
+                '-Xmx'..math.min(math.floor((dlldir=='x86' and luv.get_free_memory() or luv.get_total_memory())/1024/1024*0.75),dlldir=='x86' and 512 or 2048)..'m',
                 '-XX:+UseStringDeduplication','-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
@@ -111,9 +122,13 @@ local options ={'-noverify',
                 '-Djava.library.path='..resolve("./lib/"..dlldir),
                 '-Djava.security.egd=file:/dev/urandom',
                 '-Djava.class.path='..jars,
+                java_ver>52 and '--release=8' or nil,
                 java_ver>52 and '--add-opens=java.base/java.lang=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-opens=java.base/java.io=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-exports=java.base/sun.invoke=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil}
+                java_ver>52 and '--add-modules=jdk.unsupported' or nil}
 for _,param in ipairs(other_options) do options[#options+1]=param end
 local javavm = require("javavm",true)
 javavm.create(table.unpack(options))

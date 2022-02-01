@@ -504,15 +504,15 @@ function db_core:call_sql_method(event_name,sql,method,...)
         if event_name=='ON_SQL_ERROR' and obj.getCause then
             info.cause=tostring(obj:getCause():toString()):gsub("(Exception: )",'%1'..code,1)
         end
-
+        env.log_debug('error',info.error)
         event(event_name,info)
         local showline,found=cfg.get("SQLERRLINE"),false
         local sql_name=self.get_command_type(sql)
 
         if info and info.error and info.error~="" then
-             __stmts[select(1,...)]=nil
+            __stmts[select(1,...)]=nil
             if  info.sql and (not self:is_internal_call(info.sql)) and 
-                (env.ROOT_CMD~=sql_name or showline~='off' and info.position) then
+                (env.ROOT_CMD~=sql_name or showline~='off') then
                 if showline~='off' and ((info.position or 0) > 1 or info.col) then
                     info.row,info.col=tonumber(info.row),tonumber(info.col)
                     local pos,sql=math.min(#info.sql,(tonumber(info.position) or 0)+1),info.sql..'\n'
@@ -1052,7 +1052,12 @@ function db_core:connect(attrs,data_source)
     env.checkerr(err,tostring(res))
 
     self.conn=res
-    env.checkerr(self.conn,"Unable to connect to db!")
+    
+    if type(res)~="userdata" or not self:is_connect() then
+        self.conn=nil
+        env.raise("Unable to connect to database, connection !")
+    end
+
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
     if event then

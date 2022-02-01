@@ -53,13 +53,30 @@ local function decode_base64_package(base64str)
     --return zlib.uncompress(table.concat(decoded,''))
 end
 
+
 function unwrap.unwrap_schema(obj,ext)
-    local list=db:dba_query(db.get_rows,[[
-        select owner||'.'||object_name o 
-        from all_objects 
-        where owner=:1 and object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
-        and   not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
-        ORDER BY 1]],{obj:upper()})
+    local list
+    if obj:upper()=='ORACLE' then
+        list=db:dba_query(db.get_rows,[[
+            select distinct owner||'.'||object_name o 
+            from   all_objects a,
+                   all_users b 
+            where  a.oracle_maintained='Y'
+            and    b.oracle_maintained='Y'
+            and    a.owner=b.username
+            and    a.owner not like 'APEX_%'
+            and    a.object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
+            and    not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
+            ORDER BY 1]])
+    else
+        list=db:dba_query(db.get_rows,[[
+            select distinct owner||'.'||object_name o 
+            from   all_objects 
+            where  owner=:1 
+            and    object_type in('TRIGGER','TYPE','PACKAGE','FUNCTION','PROCEDUR') 
+            and    not regexp_like(object_name,'^(SYS_YOID|SYS_PLSQL_|KU$_WORKER)')
+            ORDER BY 1]],{obj:upper()})
+    end
     if type(list) ~='table' or #list<2 then return false end
     for i=2,#list do
         local n=list[i][1]
@@ -1148,9 +1165,12 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 if type(v)=='string' then add_header(k,v) end
             end
         end
+        local sample=hd.activity_sampled
+        if type(sample)=='table' and sample[1] then sample=sample[1] end
+
         for _,attr in ipairs{hd._attr or {},
                              hd.report_parameters or {},
-                             (hd.activity_detail or hd.activity_sampled or {})._attr or {},
+                             (hd.activity_detail or sample or {})._attr or {},
                              hd.target._attr or {},
                              hd.target or {},
                              hd.parallel_info and hd.parallel_info._attr or {}} do
@@ -1204,7 +1224,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         {nil,'AAS %|Event'}
     }
     local skew_aas_index,skew_event_index
-    local max_skews,detail_skews={},{}
+    local max_skews,detail_skews,total_skews={},{},{}
     local function add_skew_line(id,sid,inst_id,idx,value,multiplex,is_append)
         id,sid=tonumber(id),insid(sid,inst_id)
         if not skews.ids[id] then skews.ids[id]={} end
@@ -1215,11 +1235,20 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
         value=tonumber(value)*(multiplex or 1)
         if value<=0 then return end
+        if not total_skews[id] then total_skews[id]={n={}} end
+        local total=total_skews[id]
         if is_append then
             row[idx]=(row[idx] or 0)+value
         else
-            row[idx]=math.max(row[idx] or 0,value)
+            if row[idx] then
+                total[idx]=total[idx]-row[idx]
+                total.n[idx]=total.n[idx]-1
+            end
+            value=math.max(row[idx] or 0,value)
+            row[idx]=value
         end
+        total[idx]=(total[idx] or 0)+value
+        total.n[idx]=(total.n[idx] or 0)+1
     end
 
     local function load_skew()
@@ -1229,12 +1258,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if v[4] then max_skews[v[4]]=k end
             if v[5] then detail_skews[v[5]]={k,v[6]} end
         end
+
         if hd.plan_skew_detail then
             for i,s in pair(hd.plan_skew_detail.session) do
                 local sid,inst_id=s._attr.sid,s._attr.iid
                 for _,l in pair(s.line) do
                     local id=l._attr.id
-                    add_skew_line(id,sid,inst_id,3,l[1])
+                    add_skew_line(id,sid,inst_id,4,l[1])
                     for n,v in pairs(l._attr) do
                         if detail_skews[n] then
                             add_skew_line(id,sid,inst_id,detail_skews[n][1],v,detail_skews[n][2])
@@ -1338,8 +1368,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
             return value
         end
 
-        scan_events(hd.activity_sampled and hd.activity_sampled,sqlstat[2])
-        for k,v in pair(hd.activity_sampled and hd.activity_sampled.activity or nil) do
+        local sample=hd.activity_sampled
+        if type(sample)=='table' and sample[1] then sample=sample[1] end
+        scan_events(sample,sqlstat[2])
+        for k,v in pair(sample and sample.activity or nil) do
             local idx=0
             add_aas(idx,v[1])
             local clz=v._attr.class
@@ -2473,6 +2505,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         counter=counter+1
                     end
                 end
+                
                 for j=1,len do
                     local is_compare=j>dop_pos and j<skew_aas_index
                     add_column(c[j],is_compare)
@@ -2482,7 +2515,11 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         if dop>0 and c[j] then
                             val=tonumber(info[s])
                             if val then
-                                val=math.round((val-c[j])/math.max(1,dop-1),4)
+                                if total_skews[id] and (total_skews[id].n[j] or dop)<dop then
+                                    val=math.round((val-total_skews[id][j])/math.max(1,dop-total_skews[id].n[j]),4)
+                                else
+                                    val=math.round((val-c[j])/math.max(1,dop-1),4)
+                                end
                                 if is_compare then
                                     if math.abs(c[j]-val)<thresholds.skew_min_diff then
                                         row[idx],val=nil

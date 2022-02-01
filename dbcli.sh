@@ -5,9 +5,11 @@ if [ ! "$BASH" ] ; then
     exit 1
 fi
 
-cd "$(dirname "$0")"
-os=$(uname)
-if [ "$os" = "Darwin" ]; then
+pushd "$(dirname "$0")" > /dev/null
+os=$(uname -a)
+if [[ "$os" =~ Darwin.*ARM ]]; then
+    os="mac-arm"
+elif [[ "$os" = *Darwin* ]]; then
     os="mac"
 else
     os="linux"
@@ -34,9 +36,12 @@ fi
 if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"
 elif type -p java &>/dev/null; then
-    _java="`type -p java`"
-    if [ "$os" = "mac" ]; then
-        _java=$(/usr/libexec/java_home)/bin/java
+    if [[ "$os" = mac* ]]; then
+        unset JAVA_VERSION
+        _java=`/usr/libexec/java_home -V 2>&1|grep "1\.8"|grep -oh "/Library.*"|head -1`
+        if [[ "$_java" ]]; then
+            _java="$_java/bin/java"
+        fi
     else
         _java=$(readlink -f "$_java")
     fi
@@ -57,9 +62,9 @@ if [[ "$_java" ]]; then
     fi
 fi
 
-chmod  777 ./jre_$os/bin/* &>/dev/null
+
 if [[ $found < 2 ]]; then
-    if [[ -x ./jre_$os/bin/java ]];  then
+    if [[ -f ./jre_$os/bin/unpack200 ]];  then
         _java=./jre_$os/bin/java
         ver="52"
     else
@@ -68,7 +73,7 @@ if [[ $found < 2 ]]; then
     fi
 fi
 
-unset _JAVA_OPTIONS JAVA_HOME
+unset _JAVA_OPTIONS JAVA_HOME DYLD_FALLBACK_LIBRARY_PATH DYLD_LIBRARY_PATH
 
 JAVA_BIN="$(echo "$_java"|sed 's|/[^/]*$||')"
 JAVA_ROOT="$(echo "$JAVA_BIN"|sed 's|/[^/]*$||')"
@@ -83,7 +88,7 @@ export LD_LIBRARY_PATH="./lib/$os:$JAVA_ROOT/bin:$JAVA_ROOT/lib:$JAVA_ROOT/lib/j
 
 #used for JNA
 if [ -f "$JAVA_ROOT/lib/amd64/libjsig.so" ] && [ $found = 2 ]; then
-    export LD_PRELOAD="$JAVA_ROOT/lib/amd64/libjsig.so:$JAVA_ROOT/lib/amd64/jli/libjli.so"
+    export LD_PRELOAD="$JAVA_ROOT/lib/amd64/libjsig.so:$JAVA_ROOT/lib/amd64/jli/libjli.so" 
 elif [[ -f "$JAVA_ROOT/lib/libjsig.dylib" ]]; then
     export LD_PRELOAD="$JAVA_ROOT/lib/libjsig.dylib:$JAVA_ROOT/lib/jli/libjli.dylib"
 fi
@@ -92,12 +97,19 @@ if [[ "$ORACLE_HOME" ]]; then
     export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$ORACLE_HOME/lib:$ORACLE_HOME"
 fi
 
+if [[ "$os" = mac* ]]; then
+    export DYLD_FALLBACK_LIBRARY_PATH="$LD_LIBRARY_PATH"
+fi
 # unpack jar files for the first use
 unpack="$JAVA_ROOT/bin/unpack200"
-if [[ -x ./jre_$os/bin/unpack200 ]]; then
+if [[ -f ./jre_$os/bin/unpack200 ]]; then
     unpack=./jre_$os/bin/unpack200
+    if [ ! -x "$unpack" ]; then
+        chmod  +x ./jre_$os/bin/* &>/dev/null
+    fi
 elif [ ! -x "$unpack" ]; then
     echo "Cannot find unpack200 executable, exit."
+    popd
     exit 1
 fi
 
@@ -109,5 +121,6 @@ wait
 
 trap '' TSTP &>/dev/null
 
-chmod  777 ./lib/$os/luajit &>/dev/null
+chmod  +x ./lib/$os/luajit &>/dev/null
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"
+popd
