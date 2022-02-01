@@ -190,7 +190,13 @@ if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 local system=java.system
 local clocker=system.currentTimeMillis
 function os.timer()
-    return clocker()/1000
+    local uv=env.luv
+    if uv and uv.now then
+        uv.update_time()
+        return uv.now()
+    else
+        return clocker()/1000
+    end
 end
 
 function string.from(v)

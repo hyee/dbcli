@@ -62,9 +62,9 @@ if [[ "$_java" ]]; then
     fi
 fi
 
-chmod  777 ./jre_$os/bin/* &>/dev/null
+
 if [[ $found < 2 ]]; then
-    if [[ -x ./jre_$os/bin/java ]];  then
+    if [[ -f ./jre_$os/bin/unpack200 ]];  then
         _java=./jre_$os/bin/java
         ver="52"
     else
@@ -102,8 +102,11 @@ if [[ "$os" = mac* ]]; then
 fi
 # unpack jar files for the first use
 unpack="$JAVA_ROOT/bin/unpack200"
-if [[ -x ./jre_$os/bin/unpack200 ]]; then
+if [[ -f ./jre_$os/bin/unpack200 ]]; then
     unpack=./jre_$os/bin/unpack200
+    if [ ! -x "$unpack" ]; then
+        chmod  +x ./jre_$os/bin/* &>/dev/null
+    fi
 elif [ ! -x "$unpack" ]; then
     echo "Cannot find unpack200 executable, exit."
     popd
@@ -118,6 +121,6 @@ wait
 
 trap '' TSTP &>/dev/null
 
-chmod  777 ./lib/$os/luajit &>/dev/null
+chmod  +x ./lib/$os/luajit &>/dev/null
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"
 popd

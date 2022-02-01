@@ -1052,7 +1052,12 @@ function db_core:connect(attrs,data_source)
     env.checkerr(err,tostring(res))
 
     self.conn=res
-    env.checkerr(self.conn,"Unable to connect to db!")
+    
+    if type(res)~="userdata" or not self:is_connect() then
+        self.conn=nil
+        env.raise("Unable to connect to database, connection !")
+    end
+
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
     if event then
