@@ -64,7 +64,7 @@ DECLARE
             WHERE  name=nam;
             IF X IS NULL THEN
                 t := sys.dbms_utility.get_parameter_value(nam, y, x);
-                x := CASE t WHEN 1 THEN x ELSE y END;
+                x := nvl(x, '' || y);
             END IF;
         $END
         RETURN x;

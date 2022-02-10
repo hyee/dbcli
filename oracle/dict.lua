@@ -326,15 +326,15 @@ function dicts.set_dict(type,scope)
                 local res=pcall(db.exec_cache,db,[[
                     DECLARE
                         x VARCHAR2(300);
-                        y INT;
+                        y BINARY_INTEGER;
                         t PLS_INTEGER;
                         n VARCHAR2(128):=:name;
                         p PLS_INTEGER := instr(n,':');
                     BEGIN
                         t:=sys.dbms_utility.get_parameter_value(substr(n,1,p-1),y,x);
-                        :value := CASE WHEN substr(n,p+1) IN ('1','3','6') THEN y ELSE x END;
+                        :value := CASE WHEN substr(n,p+1) IN ('1','3','6') THEN ''||y ELSE x END;
                     EXCEPTION WHEN OTHERS THEN
-                        :value := 'N/A';
+                        :value := 'N/A'||CASE WHEN substr(n,p+1) = '6' THEN '(Type 6)' END;
                     END;]],args,'Internal_GetDBParameter')
                 value=res and (args.value or '') or 'N/A'
             end
