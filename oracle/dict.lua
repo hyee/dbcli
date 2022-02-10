@@ -312,7 +312,6 @@ function dicts.set_dict(type,scope)
         for k,v in pairs(params) do
             if (k..' '..v[1]..' '..v[7]):lower():find(pattern) and (not is_connect or v[1]<=db.props.version) then
                 keys[#keys+1]=k
-                
             end
         end
         env.checkerr(#keys<=2000,"Too many matched parameters.")
@@ -323,15 +322,17 @@ function dicts.set_dict(type,scope)
         for i,k in ipairs(keys) do
             local v,value=params[k],''
             if is_connect and #keys <=50 then
-                local args={name=k,value='#VARCHAR'}
+                local args={name=k..':'..v[2],value='#VARCHAR'}
                 local res=pcall(db.exec_cache,db,[[
                     DECLARE
                         x VARCHAR2(300);
                         y INT;
-                        t INT;
+                        t PLS_INTEGER;
+                        n VARCHAR2(128):=:name;
+                        p PLS_INTEGER := instr(n,':');
                     BEGIN
-                        t:=sys.dbms_utility.get_parameter_value(:name,y,x);
-                        :value := nvl(x,''||y);
+                        t:=sys.dbms_utility.get_parameter_value(substr(n,1,p-1),y,x);
+                        :value := CASE WHEN substr(n,p+1) IN ('1','3','6') THEN y ELSE x END;
                     EXCEPTION WHEN OTHERS THEN
                         :value := 'N/A';
                     END;]],args,'Internal_GetDBParameter')

@@ -41,12 +41,13 @@ DECLARE
     fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
     qry       VARCHAR2(4000) := q'{
-        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION
+        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,nvl2(optimizer_feature_enable,1,0) flag
         FROM   v$session_fix_control
         WHERE  SESSION_ID=userenv('sid')
-        AND    '&typ' IN('all','ofe')    
+        AND    '&typ' IN('all','ofe')
+        AND    bugno NOT IN(16923858,25167306)
         union all
-        SELECT 'env',pi.ksppinm, kc.PVALUE_QKSCESEROW, ksppity,ksppdesc
+        SELECT 'env',pi.ksppinm, kc.PVALUE_QKSCESEROW, ksppity,ksppdesc,1
         FROM   x$ksppi pi ,x$ksppcv cv,X$QKSCESES kc
         WHERE  pi.indx=cv.indx
         AND    pi.ksppinm=kc.PNAME_QKSCESEROW
@@ -59,11 +60,18 @@ DECLARE
         AND    '&typ' IN('all','env')
         ORDER  BY 1,2}';
     CURSOR c IS
-        SELECT /*+ordered use_hash(b)*/ *
+        SELECT /*+ordered use_hash(b)*/ 
+               typ,name,vtype,value_high,
+               CASE 
+                    WHEN flag=0 AND nvl(value_high, '_') = nvl(value_low, '_') THEN 
+                          to_char(1-sign(0+value_high)) 
+                    ELSE value_low 
+               END value_low ,a.description
         FROM   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
                        extractvalue(column_value, '/ROW/NAME') NAME,
                        extractvalue(column_value, '/ROW/VTYPE') + 0 VTYPE,
                        extractvalue(column_value, '/ROW/VALUE') value_high,
+                       extractvalue(column_value, '/ROW/FLAG')+0 flag,
                        regexp_replace(extractvalue(column_value, '/ROW/DESCRIPTION'), '\s+', ' ') description
                 FROM   TABLE(XMLSEQUENCE(extract(high_env, '/ROWSET/ROW')))) a
         JOIN   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
@@ -72,7 +80,7 @@ DECLARE
                        extractvalue(column_value, '/ROW/VALUE') value_low
                 FROM   TABLE(XMLSEQUENCE(extract(low_env, '/ROWSET/ROW')))) b
         USING  (typ, NAME, vtype)
-        WHERE  nvl(value_high, '_') != nvl(value_low, '_')
+        WHERE  nvl(value_high, '_') != nvl(value_low, '_') OR a.flag=0
         ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0);
     TYPE t_changes IS TABLE OF c%ROWTYPE;
     changes t_changes;

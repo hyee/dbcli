@@ -281,6 +281,7 @@ function helper.help(cmd,...)
         if not dest then
             dest=env.WORK_DIR.."cache"..env.PATH_DEL.."verbose.log"
             local f=io.open(dest)
+            env.checkerr(f,"Cannot find verbose file at %s",dest)
             local txt=f:read("*a")
             f:close()
             for v in txt:gmatch("%[Loaded%s+(%S+).-%]") do

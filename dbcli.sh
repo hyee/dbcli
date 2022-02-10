@@ -91,6 +91,7 @@ if [ -f "$JAVA_ROOT/lib/amd64/libjsig.so" ] && [ $found = 2 ]; then
     export LD_PRELOAD="$JAVA_ROOT/lib/amd64/libjsig.so:$JAVA_ROOT/lib/amd64/jli/libjli.so" 
 elif [[ -f "$JAVA_ROOT/lib/libjsig.dylib" ]]; then
     export LD_PRELOAD="$JAVA_ROOT/lib/libjsig.dylib:$JAVA_ROOT/lib/jli/libjli.dylib"
+    export DYLD_PRELOAD="$LD_PRELOAD"
 fi
 
 if [[ "$ORACLE_HOME" ]]; then

@@ -193,7 +193,7 @@ function os.timer()
     local uv=env.luv
     if uv and uv.now then
         uv.update_time()
-        return uv.now()
+        return uv.now()/1000
     else
         return clocker()/1000
     end

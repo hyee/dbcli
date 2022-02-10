@@ -255,7 +255,11 @@ BEGIN
                             avails := SYS.ODCIVARCHAR2LIST();
                     END CASE;
                 ELSE
-                    IF fix IS NOT NULL THEN
+                    IF fix = '16792882' THEN
+                        avails := SYS.ODCIVARCHAR2LIST(1,2,3);
+                    ELSIF fix = '20355502' THEN
+                        avails := SYS.ODCIVARCHAR2LIST(1,2,3,4,5,6,7,8,9,10);
+                    ELSIF fix IS NOT NULL THEN
                         avails := SYS.ODCIVARCHAR2LIST(0,1);
                     ELSIF upper(VALUE) IN ('ON', 'OFF') THEN
                         avails := SYS.ODCIVARCHAR2LIST('ON', 'OFF');
@@ -335,7 +339,6 @@ BEGIN
                    GROUP  BY STATEMENT_ID)
                   SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash2
                   FROM   PLANS
-
                   GROUP  BY plan_hash, plan_hash2
                   ORDER  BY seq) LOOP
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash2;

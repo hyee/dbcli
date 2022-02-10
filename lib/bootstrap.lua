@@ -114,7 +114,7 @@ local freem=luv.get_free_memory()
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
 local options ={'-noverify',
                 '-Xms64m',
-                '-Xmx'..math.min(math.floor((dlldir=='x86' and luv.get_free_memory() or luv.get_total_memory())/1024/1024*0.75),dlldir=='x86' and 512 or 2048)..'m',
+                '-Xmx'..math.max(128,math.min(math.floor((dlldir=='x86' and luv.get_free_memory() or luv.get_total_memory())/1024/1024*0.75),dlldir=='x86' and 512 or 2048))..'m',
                 '-XX:+UseStringDeduplication','-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
