@@ -138,6 +138,15 @@ static int tostring_vm (lua_State *L) {
 /*
  * Creates a VM.
  */
+
+static char *strdup1(const char *src) {
+    size_t len = strlen(src) + 1;
+    char *s = malloc(len);
+    if (s == NULL)
+        return NULL;
+    return (char *)memcpy(s, src, len);
+}
+
 static int create_vm (lua_State *L) {
 	vm_rec *vm;
 	int i;
@@ -175,7 +184,7 @@ static int create_vm (lua_State *L) {
 				|| strcmp(option, "abort") == 0) {
 			return luaL_error(L, "unsupported option '%s'", option);
 		}
-		vm->options[i - 1].optionString = strdup(option);
+		vm->options[i - 1].optionString = strdup1(option);
 		if (!vm->options[i - 1].optionString) {
 			return luaL_error(L, "out of memory");
 		}

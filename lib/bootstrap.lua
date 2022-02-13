@@ -119,9 +119,10 @@ local options ={'-noverify',
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
                 '-Djava.awt.headless=true',
-                '-Djava.library.path='..resolve("./lib/"..dlldir),
+                '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
                 '-Djava.security.egd=file:/dev/urandom',
                 '-Djava.class.path='..jars,
+                --'-Xcheck:jni',
                 java_ver>52 and '--release=8' or nil,
                 java_ver>52 and '--add-opens=java.base/java.lang=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-opens=java.base/java.io=ALL-UNNAMED' or nil,
@@ -136,6 +137,7 @@ _G.__jvmclock=os.clock()-clock
 clock=os.clock()
 local destroy=javavm.destroy
 loader = java.require("org.dbcli.Loader",true).get()
+
 console=loader.console
 terminal,reader,writer=console.terminal,console.reader,console.writer
 local m,_env,_loaded=_ENV or _G,{},{}

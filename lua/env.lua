@@ -1185,6 +1185,7 @@ function env.reload()
     java.loader.ReloadNextTime=env.CURRENT_DB
     env.RELOAD_SIGNAL=true
     env.unload()
+    --loader:shutdown()
 end
 
 function env.exit()

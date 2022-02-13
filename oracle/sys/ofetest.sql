@@ -204,7 +204,7 @@ BEGIN
     END LOOP;
     CLOSE c;
 
-    dbms_output.put_line(counter);
+    dbms_output.put_line(counter||' OFE differences are tested.');
 
     IF :accu = 1 THEN
         DELETE plan_table WHERE STATEMENT_ID IN(
@@ -275,7 +275,7 @@ BEGIN
         wr(qry);
         wr(lpad('=', length(qry), '='));
         FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', r.id, fmt))) LOOP
-            IF nvl(i.PLAN_TABLE_OUTPUT,'X') not like '%Plan hash value%' THEN
+            IF trim(i.PLAN_TABLE_OUTPUT) IS NOT NULL AND i.PLAN_TABLE_OUTPUT NOT LIKE '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
         END LOOP;

@@ -230,7 +230,7 @@ function oracle:connect(conn_str)
     args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
     self.data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.conn,args=self.super.connect(self,args,self.data_source)
-    self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
+    --self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],

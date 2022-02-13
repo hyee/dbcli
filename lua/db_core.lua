@@ -1044,9 +1044,11 @@ function db_core:connect(attrs,data_source)
                          setConnectionProperties=props} do
             if data_source[k] then data_source[k](data_source,v) end
         end
-        err,res=pcall(loader.asyncCall,loader,data_source,'getConnection')
+        --err,res=pcall(loader.asyncCall,loader,data_source,'getConnection')
+        err,res=pcall(loader.getConnection,loader,data_source)
     else
-        err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
+        --err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
+        err,res=pcall(loader.getConnection,loader,url,props)
     end
 
     env.checkerr(err,tostring(res))

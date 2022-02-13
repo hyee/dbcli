@@ -168,7 +168,8 @@ Parameters
     _cell_cache_thrashing_detection_tolerance(cell): set to 1 to reduce high latency of direct path read/write temp in Exadata, relative cell param: _cell_fc_lw_max_percentage(default 20%)
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
     _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
-    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query
+    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query(NOSORTSTOPKEY)
+                                       8    to turn off new sort(_newsort_type)
                                        256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism
                                        1024 to disable including sys_op_cycle_seq as part of extended TQ keys
     _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
@@ -231,7 +232,7 @@ Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
-    20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
+    20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time), for example the large inlist
     25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
     6708183 :  allow dynamic sampling on table functions
     8619631 :  Allow hash aggregation for insert select except for plsql calls

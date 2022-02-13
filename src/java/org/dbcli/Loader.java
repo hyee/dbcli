@@ -9,6 +9,7 @@ import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
 
+import javax.sql.DataSource;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -21,14 +22,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.CallableStatement;
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.TreeMap;
+import java.sql.*;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
@@ -541,9 +536,6 @@ public class Loader {
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
-        } catch (NoSuchMethodError|NoClassDefFoundError e1) {
-            e1.printStackTrace();
-            throw new Exception(e1.getCause() != null ? e1.getCause() : e1);
         } catch (Throwable e) {
             e = getRootCause(e);
             throw e;
@@ -562,6 +554,14 @@ public class Loader {
         });
     }
 
+    public Connection getConnection(DataSource dataSource) throws Throwable {
+        return (Connection) asyncCall((Callable) () -> dataSource.getConnection());
+    }
+
+    public Connection getConnection(String url, Properties props) throws Throwable {
+        return (Connection) asyncCall((Callable) () ->(DriverManager.getConnection(url,props)));
+    }
+
     public synchronized void sleep(int millSeconds) throws Exception {
         try (Closeable clo = console::setEvents) {
             runner.setSleep(millSeconds);
@@ -573,6 +573,11 @@ public class Loader {
         } finally {
             sleeper = null;
         }
+    }
+
+    public void shutdown() throws IOException {
+        console.threadPool.shutdown();
+        console.terminal.close();
     }
 
     /*

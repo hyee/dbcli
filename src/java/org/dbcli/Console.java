@@ -535,7 +535,6 @@ public final class Console {
                 parserCallback = lua.getProxy(-1, ParserCallback.class);
                 lua.pop(1);
             }
-
             Object[] result = parserCallback.call(line);
             lines += (int) result[3];
             if ((Boolean) result[0]) {

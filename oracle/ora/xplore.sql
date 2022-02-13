@@ -70,8 +70,8 @@
                        '_kcfis_rdbms_blockio_enabled',
                        '_kcfis_storageidx_disabled',
                        '_projection_pushdown',
-                       '_projection_pushdown',
                        '_slave_mapping_enabled',
+                       '_windowfunc_optimization_settings',
                        'cell_offload_processing',
                        'parallel_force_local'))
             }
@@ -233,7 +233,7 @@ BEGIN
                     CASE
                         WHEN lst(i).name = 'optimizer_index_cost_adj' THEN
                             avails := SYS.ODCIVARCHAR2LIST(1, 10, 25, 50, 100, 200, 400, 1000, 10000);
-                        WHEN lst(i).name = 'optimizer_index_cost_adj' THEN
+                        WHEN lst(i).name = 'optimizer_index_caching' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 12, 25, 50, 100);
                         WHEN lst(i).name = 'optimizer_dynamic_sampling' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 2, 3, 4, 6, 8, 10, 11);
@@ -243,6 +243,8 @@ BEGIN
                             avails := SYS.ODCIVARCHAR2LIST(4, 8, 16, 32, 64, 128);
                         WHEN lst(i).name = '_optimizer_max_permutations' THEN
                             avails := SYS.ODCIVARCHAR2LIST(100, 2000, 40000, 79999, 80000);
+                        WHEN lst(i).name = '_optimizer_degree' THEN
+                            avails := SYS.ODCIVARCHAR2LIST(1,4,16,32,64,128,256,512,1024);    
                         WHEN lst(i).name = '_sort_elimination_cost_ratio' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 3, 6, 12, 25, 50, 100, 1000);
                         WHEN lst(i).name = '_optimizer_extended_stats_usage_control' THEN
@@ -251,6 +253,8 @@ BEGIN
                             avails := SYS.ODCIVARCHAR2LIST(2, 5, 10, 20);
                         WHEN lst(i).name = '_recursive_with_branch_iterations' THEN
                             avails := SYS.ODCIVARCHAR2LIST(1,7);
+                        WHEN lst(i).name = '_windowfunc_optimization_settings' THEN
+                            avails := SYS.ODCIVARCHAR2LIST(2,8,16,32,128,256,1024,8192);
                         ELSE
                             avails := SYS.ODCIVARCHAR2LIST();
                     END CASE;
@@ -345,7 +349,7 @@ BEGIN
         wr(qry);
         wr(lpad('=', length(qry), '='));
         FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('&ptable', r.id, fmt))) LOOP
-            IF nvl(i.PLAN_TABLE_OUTPUT, 'X') NOT LIKE '%Plan hash value%' THEN
+            IF trim(i.PLAN_TABLE_OUTPUT) IS NOT NULL AND i.PLAN_TABLE_OUTPUT NOT LIKE '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
         END LOOP;
