@@ -806,7 +806,8 @@ function var.onload()
         1) @@NAME <columns> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
         2) @@NAME <columns> HEAD[ING]   <title>
         3) @@NAME <columns> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
-        4) @@NAME <columns> CLE[AR]
+        4) @@NAME <columns> JUS[TIFY]   LEFT|L|RIGHT|R
+        5) @@NAME <columns> CLE[AR]
 
     Other addtional features:
         1) @@NAME <columns> ADDRATIO <name>[scale]: Create an additional field to show the report_to_ratio value

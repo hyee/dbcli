@@ -132,12 +132,12 @@ local options ={'-noverify',
                 java_ver>52 and '--add-modules=jdk.unsupported' or nil}
 for _,param in ipairs(other_options) do options[#options+1]=param end
 local javavm = require("javavm",true)
+--javavm.trace(1)
 javavm.create(table.unpack(options))
 _G.__jvmclock=os.clock()-clock
 clock=os.clock()
 local destroy=javavm.destroy
 loader = java.require("org.dbcli.Loader",true).get()
-
 console=loader.console
 terminal,reader,writer=console.terminal,console.reader,console.writer
 local m,_env,_loaded=_ENV or _G,{},{}

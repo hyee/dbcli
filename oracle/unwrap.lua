@@ -2356,11 +2356,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     options=(options and (options..' ') or '')..'[Spills='..math.round(s.spills*100/probe.cardinality,2)..'%]'
                 end
             end
-
+            local percent=tonumber(s.percent_complete)
+            if percent and percent<100 then
+                percent='['..percent..'%]'
+            end
             lines[#lines+1]={
                 id=id,
                 format_id(id,s.skp, px_group[id] and px_group[id].c>1 and ('$HEADCOLOR$'..(px_color or '')) or px_color,preds.ids[id],most_recent),
-                ord,
+                percent or ord,
                 '|',
                 px_type,
                 tonumber(s.dop),
