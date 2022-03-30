@@ -81,6 +81,7 @@ DECLARE /*+no_monitor*/
     rpt_id     INT;
     execs      INT;
     counter    INT := &tot;
+    dyn_lvl    INT;
     filename   VARCHAR2(100);
     sqlmon     CLOB := :sqlmon_file;
     content    CLOB;
@@ -383,6 +384,10 @@ BEGIN
 
                 IF rpt_id IS NULL THEN
                     fmt := t_fmt('ALL+PLAN_SKEW+SUMMARY+SQL_FULLTEXT','ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
+                    SELECT value into dyn_lvl from v$parameter where name='optimizer_dynamic_sampling';
+                    IF dyn_lvl>2 THEN
+                        EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=2';
+                    END IF;
                     FOR i in 1..fmt.count LOOP
                         BEGIN
                             xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
@@ -390,6 +395,9 @@ BEGIN
                             exit;
                         EXCEPTION WHEN OTHERS THEN
                             IF i=fmt.count THEN
+                                IF dyn_lvl>2 THEN
+                                    EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
+                                END IF;
                                 RAISE;
                             END IF;
                         END;
@@ -1070,7 +1078,7 @@ BEGIN
                              MAX(DOPS) SIDS,
                              regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
                     FROM   (SELECT a.*,sql_plan_hash_value phv,
-                                     max(greatest((last_refresh_time-sql_exec_start)*86400,ELAPSED_TIME,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)))  over(partition by sql_exec_id,sql_exec_start) dur,
+                                     max(nvl((last_refresh_time-sql_exec_start)*86400+1,greatest(ELAPSED_TIME,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))))  over(partition by sql_exec_id,sql_exec_start) dur,
                                      count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 
                             FROM gv$sql_monitor a WHERE sql_id = sq_id) b
                     GROUP  BY phv

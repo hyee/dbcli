@@ -63,7 +63,7 @@ grid {[[/*grid:{topic="Fast Start Transactions"}*/
            decode(cputime,
                   0,
                   'unknown',
-                  SYSDATE + (((undoblockstotal - undoblocksdone) / (undoblocksdone / cputime)) / 86400)) "Est|Complete"
+                  (undoblockstotal - undoblocksdone) / (undoblocksdone / cputime)) "Est|Complete"
     FROM   gv$fast_start_transactions
 ]],'|',[[/*grid:{topic="Fast Start Servers"}*/
     SELECT * FROM GV$FAST_START_SERVERS

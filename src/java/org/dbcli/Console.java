@@ -235,13 +235,14 @@ public final class Console {
         Object o = new Object();
         map.forEach((k, v) -> parser.commands.put(k, o));
         completer.setCommands(map);
-        //addCompleters(commands, true);
+        commands.unRef();
     }
 
     public void setSubCommands(AbstractTableMap<String, Object> commands) {
         HashMap<String, Object> map = (HashMap) commands.toJavaObject();
         Object o = new Object();
         map.forEach((k, v) -> parser.commands.put(k, o));
+        commands.unRef();
         completer.loadCommands(map, 300);
         //map.forEach((k, v) ->parser.commands.put(k, v));
     }

@@ -115,7 +115,7 @@ BEGIN
     BEGIN
         own := regexp_replace(sys_context('userenv','current_schema'),'^SYS$','SYSTEM');
         expr:='WHERE '||did||' IN (CON_DBID,DBID) AND ';
-        IF edd IS NULL THEN
+        IF edd IS NULL OR &awr=0 THEN
             expr := expr || 'SNAP_ID BETWEEN '||st||' AND '||ed;
         ELSE
             expr := expr || 'GENERATION_TIME BETWEEN TO_DATE('''||st||''',''YYMMDDHH24MI'') AND TO_DATE('''||ed||''',''YYMMDDHH24MI'')';

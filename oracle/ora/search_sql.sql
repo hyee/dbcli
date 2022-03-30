@@ -90,6 +90,6 @@ FROM (
     &CHECK_ACCESS_SQLSET_STATEMENTS
     &CHECK_ACCESS_SQL_MONITOR
 )
-WHERE instr(lower(sql_text),'sql_text')=0
+WHERE instr(lower(sql_text),'sql_text_')=0
 AND   ROWNUM<=100
 ORDER BY 1,2

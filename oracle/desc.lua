@@ -1203,8 +1203,9 @@ function desc.desc(name,option)
     end
 
     local dels='\n'..string.rep("=",100)
-    local feed=cfg.get("feed")
+    local feed,autohide=cfg.get("feed"),cfg.get("autohide")
     cfg.set("feed","off",true)
+    cfg.set("autohide","col",true)
     print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
     
 
@@ -1232,7 +1233,7 @@ function desc.desc(name,option)
         cfg.set("PIVOT",1)
         db:dba_query([[SELECT * FROM ALL_OBJECTS WHERE OWNER=:1 AND OBJECT_NAME=:2 AND nvl(SUBOBJECT_NAME,' ')=nvl(:3,' ')]],rs)
     end
-
+    cfg.temp("autohide",autohide,true)
     cfg.temp("feed",feed,true)
 end
 

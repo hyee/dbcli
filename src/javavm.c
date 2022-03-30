@@ -23,7 +23,7 @@
 #define JAVAVM_VM "javavm.vm"
 #define JAVAVM_MAXOPTIONS 128
 #define JAVAVM_JNIVERSION JNI_VERSION_1_8
-
+JavaVM *java_vm;
 /*
  * VM record.
  */
@@ -34,6 +34,13 @@ typedef struct vm_rec
 	int num_options;
 	JavaVMOption options[JAVAVM_MAXOPTIONS];
 } vm_rec;
+
+vm_rec *vm;
+JNIEnv *env;
+jobject luastate, java;
+jclass luastate_class, library_class;
+jmethodID init_id, openlib_id, close_id;
+jfieldID java_id = 0, trace_id = 0;
 
 /*
  * Raises an error from JNI.
@@ -80,8 +87,6 @@ static int error(lua_State *L, JNIEnv *env, const char *msg)
 static int release_vm(lua_State *L)
 {
 	vm_rec *vm;
-	jclass luastate_class;
-	jmethodID close_id;
 	JNIEnv *env;
 	int res;
 	int i;
@@ -104,11 +109,6 @@ static int release_vm(lua_State *L)
 	/* Close the Lua state in the Java VM */
 	if (vm->luastate)
 	{
-		luastate_class = (*env)->GetObjectClass(env, vm->luastate);
-		if (!(close_id = (*env)->GetMethodID(env, luastate_class, "close", "()V")))
-		{
-			return error(L, env, "close method not found");
-		}
 		(*env)->CallVoidMethod(env, vm->luastate, close_id);
 		(*env)->DeleteGlobalRef(env, vm->luastate);
 		vm->luastate = NULL;
@@ -121,6 +121,7 @@ static int release_vm(lua_State *L)
 		return luaL_error(L, "error destroying Java VM: %d", res);
 	}
 	vm->vm = NULL;
+	java_vm = NULL;
 
 	/* Free options */
 	for (i = 0; i < vm->num_options; i++)
@@ -165,19 +166,28 @@ static char *strdup1(const char *src)
 	return (char *)memcpy(s, src, len);
 }
 
-vm_rec *vm;
-JNIEnv *env;
-jobject luastate, java;
-jclass luastate_class, library_class;
-jmethodID init_id, openlib_id;
-jfieldID java_id = 0, trace_id = 0;
 int trace_on = 0;
+
+/* Finds a class and returns a new JNI global reference to it. */
+static jclass referenceclass(JNIEnv *env, const char *className)
+{
+	jclass clazz;
+
+	clazz = (*env)->FindClass(env, className);
+	if (!clazz)
+	{
+		return NULL;
+	}
+	return (*env)->NewGlobalRef(env, clazz);
+}
+
 static void set_trace(lua_State *L)
 {
 	if (!trace_id)
 		return;
 	(*env)->SetStaticIntField(env, luastate, trace_id, trace_on);
 }
+
 static int create_vm(lua_State *L)
 {
 	int i;
@@ -230,35 +240,41 @@ static int create_vm(lua_State *L)
 	{
 		return luaL_error(L, "error creating Java VM: %d", res);
 	}
-	
+
+	java_vm = vm->vm;
+
 	(*env)->EnsureLocalCapacity(env, 512);
 	(*env)->PushLocalFrame(env, 128);
 	/* Create a LuaState in the Java VM */
-	if (!(luastate_class = (*env)->FindClass(env, "com/naef/jnlua/LuaState")) || !(trace_id = (*env)->GetStaticFieldID(env, luastate_class, "trace", "I")) || !(init_id = (*env)->GetMethodID(env, luastate_class, "<init>", "(J)V")))
+	if (!(luastate_class = referenceclass(env, "com/naef/jnlua/LuaState"))			 //
+		|| !(trace_id = (*env)->GetStaticFieldID(env, luastate_class, "trace", "I")) //
+		|| !(init_id = (*env)->GetMethodID(env, luastate_class, "<init>", "(J)V")) || !(close_id = (*env)->GetMethodID(env, luastate_class, "close", "()V")))
 	{
 		return error(L, env, "LuaState not found");
 	}
+	/* Load the Java module */
+	if (!(library_class = referenceclass(env, "com/naef/jnlua/LuaState$Library")) || !(openlib_id = (*env)->GetMethodID(env, luastate_class, "openLib", "(Lcom/naef/jnlua/LuaState$Library;)V")) || !(java_id = (*env)->GetStaticFieldID(env, library_class, "JAVA", "Lcom/naef/jnlua/LuaState$Library;")) || !(java = (*env)->GetStaticObjectField(env, library_class, java_id)))
+	{
+		return error(L, env, "Java module not found");
+	}
+
 	set_trace(L);
 	luastate = (*env)->NewObject(env, luastate_class, init_id, (jlong)(uintptr_t)L);
 	if (!luastate)
 	{
 		return error(L, env, "error creating LuaState");
 	}
-	vm->luastate = (*env)->NewGlobalRef(env, luastate);
-	if (!vm->luastate)
-	{
-		return luaL_error(L, "error referencing LuaState");
-	}
 
-	/* Load the Java module */
-	if (!(library_class = (*env)->FindClass(env, "com/naef/jnlua/LuaState$Library")) || !(openlib_id = (*env)->GetMethodID(env, luastate_class, "openLib", "(Lcom/naef/jnlua/LuaState$Library;)V")) || !(java_id = (*env)->GetStaticFieldID(env, library_class, "JAVA", "Lcom/naef/jnlua/LuaState$Library;")) || !(java = (*env)->GetStaticObjectField(env, library_class, java_id)))
-	{
-		return error(L, env, "Java module not found");
-	}
 	(*env)->CallVoidMethod(env, luastate, openlib_id, java);
 	if ((*env)->ExceptionCheck(env))
 	{
 		return error(L, env, "error loading Java module");
+	}
+
+	vm->luastate = (*env)->NewGlobalRef(env, luastate);
+	if (!vm->luastate)
+	{
+		return luaL_error(L, "error referencing LuaState");
 	}
 
 	/* Store VM */
@@ -268,6 +284,77 @@ static int create_vm(lua_State *L)
 	return 1;
 }
 
+static int attach_vm(lua_State *L)
+{
+	JNIEnv *env;
+
+	if (!java_vm)
+	{
+		return luaL_error(L, "Java VM has not been created");
+	}
+
+	lua_getfield(L, LUA_REGISTRYINDEX, JAVAVM_VM);
+	if (!lua_isnil(L, -1))
+	{
+		lua_pop(L, 1);
+		return luaL_error(L, "VM already attached");
+	}
+
+	const int envStat = (*java_vm)->GetEnv(java_vm, (void **)&env, JAVAVM_JNIVERSION);
+	if (envStat == JNI_EDETACHED && (*java_vm)->AttachCurrentThread(java_vm, (void **)&env, NULL) != 0)
+	{
+		return luaL_error(L, "Failed to AttachCurrentThread");
+	}
+
+	jobject luastate = (*env)->NewObject(env, luastate_class, init_id, (jlong)(uintptr_t)L);
+	if (!luastate)
+	{
+		return error(L, env, "error creating LuaState");
+	}
+	(*env)->CallVoidMethod(env, luastate, openlib_id, java);
+	if ((*env)->ExceptionCheck(env))
+	{
+		return error(L, env, "error loading Java module");
+	}
+	jobject *user_data = (jobject *)lua_newuserdata(L, sizeof(jobject));
+	*user_data = (*env)->NewGlobalRef(env, luastate);
+	lua_setfield(L, LUA_REGISTRYINDEX, JAVAVM_VM);
+
+	if (envStat == JNI_EDETACHED)
+		(*java_vm)->DetachCurrentThread(java_vm);
+	return 1;
+}
+
+static int detach_vm(lua_State *L)
+{
+	JNIEnv *env;
+	if (!java_vm)
+	{
+		return luaL_error(L, "Java VM has not been created");
+	}
+
+	int envStat = (*java_vm)->GetEnv(java_vm, (void **)&env, JAVAVM_JNIVERSION);
+
+	if (envStat == JNI_EDETACHED && (*java_vm)->AttachCurrentThread(java_vm, (void **)&env, NULL) != 0)
+	{
+		return luaL_error(L, "Failed to AttachCurrentThread");
+	}
+	lua_getfield(L, LUA_REGISTRYINDEX, JAVAVM_VM);
+	if (lua_isnil(L, -1))
+	{
+		lua_pop(L, 1);
+		return luaL_error(L, "VM already detached");
+	}
+	jobject luastate = *(jobject *)lua_touserdata(L, -1);
+	lua_pop(L, 1);
+	(*env)->CallVoidMethod(env, luastate, close_id);
+	(*env)->DeleteGlobalRef(env, luastate);
+	lua_pushnil(L);
+	lua_setfield(L, LUA_REGISTRYINDEX, JAVAVM_VM);
+	if (envStat == JNI_EDETACHED)
+		(*java_vm)->DetachCurrentThread(java_vm);
+	return 1;
+}
 /*
  * Destroys the VM.
  */
@@ -310,7 +397,7 @@ static int trace(lua_State *L)
 {
 	if (!lua_isnumber(L, -1))
 		return 0;
-	trace_on = lua_tointeger(L, -1);	
+	trace_on = lua_tointeger(L, -1);
 	set_trace(L);
 	return 0;
 }
@@ -322,6 +409,8 @@ static const luaL_Reg functions[] = {
 	{"trace", trace},
 	{"create", create_vm},
 	{"destroy", destroy_vm},
+	{"attach", attach_vm},
+	{"detach", detach_vm},
 	{"get", get_vm},
 	{NULL, NULL}};
 

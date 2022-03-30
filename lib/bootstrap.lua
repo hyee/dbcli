@@ -131,7 +131,7 @@ local options ={'-noverify',
                 java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-modules=jdk.unsupported' or nil}
 for _,param in ipairs(other_options) do options[#options+1]=param end
-local javavm = require("javavm",true)
+javavm = require("javavm",true)
 --javavm.trace(1)
 javavm.create(table.unpack(options))
 _G.__jvmclock=os.clock()-clock

@@ -195,6 +195,8 @@ function oracle:connect(conn_str)
                     database..(server and (':'..server) or ''),
                     isdba and (' as '..isdba) or '')
             end
+        else
+            url=url..extras
         end
     end
 
@@ -403,7 +405,7 @@ function oracle:connect(conn_str)
     props.isadb=props.isadb=='TRUE' and true or false
     props.mbrc,props.d_mbrc=props.mbrc or 0.271
     if not succ then
-        env.log_debug('DB',err)
+        env.log_debug('ERROR',err)
         env.checkerr(self.conn,"Database is disconnected")
         self.props={db_version=self.conn:getDatabaseProductVersion():match('%d+%.%d+%.[%d%.]+'),
                     version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName(),

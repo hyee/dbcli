@@ -140,7 +140,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            SUM(cellio) cellio,
                            SUM(oflin) oflin,
                            SUM(oflout) oflout,
-                           SUM(greatest(disk_reads,s.phyread)) READ,
+                           SUM(greatest(disk_reads,phyread)) READ,
                            SUM(nvl(phywrite,direct_writes)) WRITE,
                            sum(buffer_gets) buff,
                            SUM(FETCHES) FETCH,
@@ -150,10 +150,12 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                                   'avg',
                                   nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),
                                   1) exe1
-                    FROM   qry,&&awr$sqlstat s
-                    WHERE  (qry.sqid = &grp or qry.sqid is null)
-                    AND    (&filter)
-                    AND    s.begin_interval_time between qry.st and ed
-                    AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)
+                   FROM  (SELECT s.*, SUM(executions) over(partition by &grp, plan_hash_value) execs_
+                          FROM   qry,&&awr$sqlstat s
+                          WHERE  (qry.sqid = &grp or qry.sqid is null)
+                          AND    (&filter)
+                          AND    s.begin_interval_time between qry.st and ed
+                          AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number))
+                   WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
                     GROUP  BY &grp, plan_hash_value)) a)a
 WHERE  r <= 50

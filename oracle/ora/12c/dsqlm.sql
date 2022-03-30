@@ -1,10 +1,12 @@
 /*[[Get SQL Monitor report from dba_hist_reports, supports 12c only. Usage: @@NAME {[sql_id|report_id] [YYYYMMDDHH24MI] [YYYYMMDDHH24MI]} [-f"<filter>"] [-avg]
   
-  <sql_id>    : List the records related to the specific SQL_ID
-  -hub        : Genrate the SQL Perhub Report with specific date range
-  -u          : Only show the SQL list within current schema
-  -avg        : Show average cost instead of total cost
-  -t"<table>" : The data source, default as sys.dba_hist_reports
+  <sql_id>       : List the records related to the specific SQL_ID
+  -sql"<keyword>": List the records whose SQL text contains <keyword>
+  -hub           : Genrate the SQL Perhub Report with specific date range
+  -u             : Only show the SQL list within current schema
+  -avg           : Show average cost instead of total cost
+  -t"<table>"    : The data source, default as sys.dba_hist_reports
+  
 
   Format:
     -active : output file is in active HTML format
@@ -14,7 +16,7 @@
 
   --[[
     @ver   : 12.1={}
-    &filt  : default={KEY1=nvl(v_sql_id,KEY1)},f={},u={username=nvl('&0',sys_context('userenv','current_schema'))}
+    &filt  : default={KEY1=nvl(v_sql_id,KEY1)},sql={lower(EXTRACTVALUE(xmltype(a.report_summary), '//sql_text')) like lower('%&0%')},u={username=nvl('&0',sys_context('userenv','current_schema'))}
     &grp   : default={none}, g={g}, d={d}
     &filter: default={1=1}, f={} 
     &avg   : default={sum), avg={avg}

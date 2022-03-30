@@ -1,5 +1,6 @@
 package org.dbcli;
 
+import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.reader.Candidate;
 import org.jline.reader.LineReader;
 import org.jline.reader.ParsedLine;
@@ -100,6 +101,9 @@ public class MyCompleter implements org.jline.reader.Completer {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+
+            if(keywords instanceof AbstractTableMap)
+                ((AbstractTableMap)keywords).unRef();
         }
     }
 

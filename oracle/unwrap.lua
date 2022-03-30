@@ -554,21 +554,24 @@ local function parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skp)
     if xml.hint_usage then
         for k,v in pairs(xml.hint_usage) do
             if k=='q' then
-                for idx,v1 in pair(v) do
+                for _,v1 in pair(v) do
                     local qb_='@"'..v1.n..'"'
-                    local t=v1.h or v1.t and v1.t.h or nil
-                    if t and t.x and not t.x:upper():find('^OPT_PARAM') then
-                        local hint,alias_,hint1=t.x
-                        local pos=hint:find('(',1,true)
-                        if hint:find('@"',1,true) then pos=nil end
-                        if t.r then hint=hint..' / '..t.r end
-                        local alias_= v1.t and v1.t.f or nil
-                        if pos then 
-                            hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
-                        else
-                            hint1=hint..'('..(alias_ or qb_)..')'
+                    for idx,t in pair(v1.t) do
+                        for idx2,h in pair(t.h) do
+                            if h.x and not h.x:upper():find('^OPT_PARAM') then
+                                local hint,alias_,hint1=h.x
+                                local pos=hint:find('(',1,true)
+                                if hint:find('@"',1,true) then pos=nil end
+                                if h.r then hint=hint..' / '..h.r end
+                                local alias_= t.f
+                                if pos then 
+                                    hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
+                                else
+                                    hint1=hint..'('..(alias_ or qb_)..')'
+                                end
+                                add_hint(envs,outlines,hint1,hint..' (SQL Hint)')
+                            end
                         end
-                        add_hint(envs,outlines,hint1,hint..' (SQL Hint)')
                     end
                 end
             elseif k=='s' and v.h then

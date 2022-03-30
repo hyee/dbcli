@@ -52,7 +52,7 @@
 
    --[[
       &fields: {
-            sql={sql_id &V11,sql_opname &0},
+            sql={"SQL Id" &V11,sql_opname &0},
             e={wait_class &0}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
@@ -61,7 +61,7 @@
             none={1},
             c={},
             op={operation,obj &0}
-            proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
+            proc={"SQL Id",PLSQL_ENTRY_OBJECT_ID &0},
         }
       &ela : ash={1} dash={7}
       &View: ash={gv$active_session_history}, dash={&check_access_pdb.Active_Sess_History}
@@ -87,8 +87,7 @@
       &wall1  : default={} wall={--}
     ]]--
 ]]*/
-col reads,writes format KMG
-col AVG_IO for tmb
+col reads,writes,AVG_IO format KMG
 COL WALL,SECS,AAS FOR smhd2
 WITH ASH_V AS(
     SELECT a.*,
@@ -117,6 +116,7 @@ WITH ASH_V AS(
                   OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
                 */ 
                 a.*,
+                coalesce(sql_id, &top_sql null) "SQL Id",
                 sql_plan_hash_value plan_hash,
                 nvl(trim(case 
                         when current_obj# < -1 then
