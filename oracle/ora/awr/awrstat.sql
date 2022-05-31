@@ -115,7 +115,7 @@ FROM(
                delta_flag
          from &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
         WHERE :V1 in(sql_id,''||plan_hash_value,''||signature))
-    WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
+    --WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
     group by snap_id,&BASE,plan_hash
     having sum(ela)>0)
  group by time,&BASE,plan_hash

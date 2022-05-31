@@ -261,14 +261,14 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END IF;
             
             dbms_lob.createtemporary(v_text, TRUE);
-            pr('Set define off sqlbl on'||chr(10));
+            pr('Set define off sqlbl on serveroutput on'||chr(10));
             pr('DECLARE --Better for this script to have the access on gv$sqlarea');
             pr('    sql_txt   CLOB;');
             pr('    sql_txt1  CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
-            pr('    prof_name VARCHAR2(30):=''SQLPROF'';');
             pr('    sq_id     VARCHAR2(30):='''||p_sqlid||''';');
+            pr('    prof_name VARCHAR2(30);');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
            
@@ -358,18 +358,20 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);');
-            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
+            pr('    prof_name := ''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''';');
+            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(prof_name);EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
             pr('        profile     => sql_prof,');
-            pr('        name        => ''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''',');
-            pr('        description => ''' || replace(v_source,p_sqlid,'''||sq_id||''') || '_''||signature,');
+            pr('        name        => prof_name,');
+            pr('        description => prof_name || ''_''||signature,');
             pr('        category    => ''DEFAULT'',');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
+            pr(q'[    dbms_output.put_line('SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||prof_name||''')');]');
             pr('END;');
             pr('/');
-            pr('PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
+            
             p_buffer := v_text;
         END;
     BEGIN

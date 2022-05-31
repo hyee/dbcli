@@ -9,7 +9,7 @@
      |OLTP        | 8.13/2.54               | OZIP              |         |               |          |
      |Query Low   | 2.88/1.83               | 2.52 (LZO)        |  32K    |   1MB         |     4K   |
      |Query High  | 8.13/4.91               | 3.87 (ZLIB)       | 32K-64K |   1MB         |     8K   |
-     |Archive Low | 11.71/7.63              | 4.08 (ZLIB)       | 64-128K |   3MB         |    16K   |
+     |Archive Low | 11.71/7.63              | 4.08 (ZLIB)       | 64K-128K|   3MB         |    16K   |
      |Archive High| 17.63/12.73             | 4.86 (BZ2)        |  128K   |   10MB        |    64K   |]
     For DBIM, the CU size is 32MB and data rows can > 50,000
     

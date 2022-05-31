@@ -157,9 +157,10 @@ Parameters
     _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
     _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
     _px_reuse_server_groups: reuse existing px server group for CDT
+    _ktb_debug_flags: 2 - disable oustanding read events on SecureFile insertion, but increase the undo header lookups during cleanouts
     _dbg_scan: default as 0
         1: Disable LOB predicate pushdown to Smart Scan
-        128: disable HCC read-ahead 
+        128: disable HCC read-ahead and disable preventing tiny HCC tiny CU(buffer_size<block_size) creation(bug 32290386)
         4096: Disable rowset function evaluation in Smart Scan
         8192: Disable aggregation pushdown to Smart Scan
         131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
@@ -178,7 +179,11 @@ Parameters
     _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
     _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
                      64 - Disable HCC array deletes within updates
-                     128 - 
+                     128 - disable fix on 32290386(During HCC block creation if the inserted data is smaller than the block size,insert the data uncompressed to avoid having tiny CUs) 
+    _smu_debug_mode: 33554432 - TUNED_UNDORETENTION is not calculated based on a percentage of the fixed size undo tablespace.
+                                Instead it is set to the max(MAXQUERYLEN + 300, UNDO_RETENTION).
+                                Use _undo_autotune=false instead when undo datafile's AUTOEXTENSIBLE=YES
+                     134217728 - turn off storage index
     
     
 Events:

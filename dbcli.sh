@@ -43,7 +43,7 @@ elif type -p java &>/dev/null; then
             _java="$_java/bin/java"
         fi
     else
-        _java=$(readlink -f "$_java")
+        _java=$(readlink -f "`type -p java`")
     fi
 elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then    
     _java="$JAVA_HOME/bin/java"

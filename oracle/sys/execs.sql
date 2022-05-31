@@ -101,7 +101,7 @@ SELECT * FROM (
             AND    o.kglhdadr = d.kglrfhdl(+)
             AND    d.kglhdpar = c.kglhdpar(+)
             AND    d.kglnahsh = c.kglnahsh(+)
-            AND    o.kglnaown IS NOT NULL
+            AND    (o.kglnaown IS NOT NULL OR :V1 IS NOT NULL)
             --AND    o.kglhdexc>0
             AND    c.kglhdnsp(+) = 0
             AND    (c.KGLOBT03 IS NOT NULL OR d.kglrfhsh IS NULL)

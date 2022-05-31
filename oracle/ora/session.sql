@@ -6,8 +6,8 @@
 
 set pivot 10 pivotsort head feed off
 set headstyle none
-select * from GV$SESSION_CONNECT_INFO where sid=:V1 and (:V2 is null or inst_id=:V2);
-
+select distinct * from GV$SESSION_CONNECT_INFO where sid=:V1 and (:V2 is null or inst_id=:V2);
+set pivot 10 pivotsort head
 select * from gv$session where sid=:V1 and (:V2 is null or inst_id=:V2);
 
 SELECT a.*, b.value system_value

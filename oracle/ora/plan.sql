@@ -290,7 +290,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          NULL child_number,
                          sql_id,
                          plan_hash_value,
-                         plan_id,
+                         sqlset_id plan_id,
                          qblock_name qb,
                          replace(object_alias,'"') alias,
                          io_cost,position,
@@ -378,7 +378,7 @@ xplan AS
   WHERE  flag = 2
   UNION ALL
   SELECT a.*
-  FROM   qry, TABLE(dbms_xplan.display( 'all_sqlset_plans',NULL,format,'plan_id=nvl('''||inst_id||''',plan_id) and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
+  FROM   qry, TABLE(dbms_xplan.display( 'all_sqlset_plans',NULL,format,'sqlset_id='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 3
   UNION ALL
   SELECT a.*
@@ -397,7 +397,7 @@ xplan AS
   FROM   qry,TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
- (SELECT /*+ordered use_nl(o x) no_merge(o)*/
+ (SELECT /*+use_hash(o x) no_merge(o)*/
            x.plan_table_output AS plan_table_output,
            nvl(o.id,x.oid) id,
            o.pid,

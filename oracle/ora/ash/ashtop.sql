@@ -52,6 +52,7 @@
 
    --[[
       &fields: {
+            default={"SQL Id" &V11,sql_opname &0},
             sql={"SQL Id" &V11,sql_opname &0},
             e={wait_class &0}, 
             p={p1,p2,p3,p3text &0},
@@ -59,10 +60,10 @@
             o={obj &0},
             plan={plan_hash,obj,SQL_PLAN_LINE_ID &0} 
             none={1},
-            c={},
             op={operation,obj &0}
-            proc={"SQL Id",PLSQL_ENTRY_OBJECT_ID &0},
+            proc={"SQL Id",PLSQL_ENTRY_OBJECT_ID &0}
         }
+      &ev  : default={event_name}  noevent={1}
       &ela : ash={1} dash={7}
       &View: ash={gv$active_session_history}, dash={&check_access_pdb.Active_Sess_History}
       &BASE: ash={1}, dash={10}
@@ -179,7 +180,7 @@ SELECT * FROM (
       &counter
       &wall1 , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
       &wall1 , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
-      &wall1 , event_name event
+      &wall1 , &ev
       , &fields &IOS
       , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
@@ -198,7 +199,7 @@ SELECT * FROM (
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM ASH_V A
-    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,event_name,
+    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,
              a.u_id,&fields
     ORDER BY 1 desc nulls last,secs DESC nulls last,&fields
 )

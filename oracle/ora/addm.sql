@@ -19,22 +19,6 @@ ORCL> @@NAME 2084
     |98.88%   |             |Finding #02: Wait class "Network" was consuming significant database time.                                
     |         |             |                                                                                                          
     |________ |_____________|__________________________________________________________________________________________________________
-    |98.88%   |             |Finding #03: Wait event "SQL*Net more data from client" in wait class "Network" was consuming significant 
-    |         |             |                                                                                                          
-    | 98.88%  |             |                                                                                                          
-    |         |             |Advise #1: Application Analysis                                                                           
-    |  98.88% |             |    Action: Investigate the cause for high "SQL*Net more data from client" waits. Refer to Oracle's "Datab
-    |________ |_____________|__________________________________________________________________________________________________________
-    |0.00%    |             |Finding #04: Wait class "Application" was not consuming significant database time.                        
-    |         |             |             Wait class "Commit" was not consuming significant database time.                             
-    |         |             |             Wait class "Concurrency" was not consuming significant database time.                        
-    |         |             |             Wait class "Configuration" was not consuming significant database time.                      
-    |         |             |             CPU was not a bottleneck for the instance.                                                   
-    |         |             |             Wait class "User I/O" was not consuming significant database time.                           
-    |         |             |             Session connect and disconnect calls were not consuming significant database time.           
-    |         |             |             Hard parsing of SQL statements was not consuming significant database time.                  
-    |         |             |                                                                                                          
-    |________ |_____________|__________________________________________________________________________________________________________
     |******** |*************|**********************************************************************************************************
     |100.00%  |2vchm7jzztzng|SELECT * FROM (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/ nullif(inst,0) inst,nvl(eve
     +---------+-------------+----------------------------------------------------------------------------------------------------------
@@ -58,12 +42,13 @@ DECLARE
     advtype  varchar2(100);
     rs CLOB;
     sq VARCHAR2(2000);
+    typ VARCHAR2(5):='.txt';
 BEGIN
     IF :V1 IS NULL THEN
         OPEN :cur FOR
             WITH r AS(
                 SELECT /*+materialize*/ 
-                       task_id,owner, task_name, execution_start,execution_end,status,
+                       task_id,advisor_name,owner, task_name, execution_start,execution_end,status,
                        (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings
                 FROM   dba_advisor_tasks a),
             r1 as(
@@ -77,7 +62,7 @@ BEGIN
                 WHERE  task_id IN (SELECT TASK_ID FROM R)
                 GROUP  BY task_id)
             SELECT * FROM (
-                SELECT TASK_ID,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
+                SELECT TASK_ID,R.advisor_name,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
                 FROM   R LEFT JOIN R1 USING(TASK_ID)
                 WHERE  &FILTER
                 ORDER  BY execution_start DESC NULLS LAST
@@ -94,10 +79,14 @@ BEGIN
             :res  := rs;
             :dest := replace(taskname,':','_')||'.txt';
         ELSIF advtype like 'SQL%' THEN
-            EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2);END;' using out rs,taskname,sq;
+            EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2,level=>''ALL'');END;' using out rs,taskname,sq;
             OPEN :cur for select rs result from dual;
-            :res  := rs;
-            :dest := replace(taskname,':','_')||'.txt';
+            IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN
+                typ:='.html';
+                EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2,level=>''ALL'',type=>''HTML'');END;' using out rs,taskname,sq;
+            END IF;
+            :res := rs;
+            :dest := replace(taskname,':','_')||typ;
         ELSE
             SELECT COUNT(1) INTO c FROM ALL_OBJECTS WHERE OBJECT_NAME IN('DBMS_ADDM','DBMS_ADVISOR') AND OWNER='SYS';
             OPEN :cur for

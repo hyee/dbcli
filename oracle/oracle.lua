@@ -356,8 +356,7 @@ function oracle:connect(conn_str)
 
             SELECT user,
                    nvl(vf,(SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION')) version,
-                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
-                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
+                   userenv('language') nls,
             $IF dbms_db_version.version > 9 $THEN      
                    userenv('sid') ssid,
                    userenv('instance') inst,
