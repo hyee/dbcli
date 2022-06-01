@@ -3,6 +3,7 @@
         &filter: default={1=1}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
         @check_access_dba: dba_tab_partitions={dba_} default={all_}
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
+        @VER1: 12.2={,INMEMORY_SERVICE} default={}
         @check_access_x: {
             x$imcsegments={SELECT INST_ID,
                        NVL(UNAME, 'SYS') OWNER,
@@ -169,7 +170,21 @@ FROM   (SELECT owner, segment_name, COUNT(1) segs
                 FROM   &check_access_dba.tab_subpartitions
                 WHERE  inmemory = 'ENABLED')
         GROUP  BY owner, segment_name) a
-LEFT   JOIN (&check_access_x) b
+LEFT   JOIN (
+    SELECT inst_id,owner,partition_name,segment_name,
+           INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1,
+           SUM(MEMEXTENTS) MEMEXTENTS,
+           SUM(extents) extents,
+           SUM(BLOCKSINMEM) BLOCKSINMEM,
+           max(blocks) blocks,
+           SUM(IMCUSINMEM) IMCUSINMEM,
+           SUM(inmemory_size) inmemory_size,
+           SUM(bytes) bytes,
+           SUM(BYTES_NOT_POPULATED) BYTES_NOT_POPULATED
+    from  (&check_access_x) b
+    group  by inst_id,owner,partition_name,segment_name,
+              INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1
+) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)
 GROUP  BY inst_id, a.owner, a.segment_name
 ORDER  BY a.owner, a.segment_name,inst_id

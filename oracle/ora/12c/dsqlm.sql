@@ -57,7 +57,7 @@ DECLARE
 BEGIN
     IF v_report_id IS NULL THEN
         OPEN :cur FOR
-        &agg SELECT sql_id, 
+        &agg SELECT sql_id, plan_hash,
         &agg        max(report_id) last_rpt, 
         &agg        count(1) seens,
         &agg        to_char(MIN(PERIOD_START_TIME), 'MMDD HH24:MI:SS') first_seen,
@@ -123,7 +123,7 @@ BEGIN
                     WHERE v_sql_id IS NOT NULL OR plan_hash>0
                 ) WHERE &filter
                 ORDER BY REPORT_ID DESC
-            &agg ) GROUP BY SQL_ID ORDER BY ELA DESC
+            &agg ) GROUP BY SQL_ID,plan_hash ORDER BY ELA DESC
             FETCH FIRST 50 ROWS ONLY;
         IF v_sql_id IS NOT NULL AND :dict='sys.dba_hist_reports' AND (&hub=1 OR :V2 IS NOT NULL OR :V3 IS NOT NULL) THEN
             $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN

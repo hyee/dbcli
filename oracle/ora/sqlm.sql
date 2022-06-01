@@ -370,7 +370,7 @@ BEGIN
                             AND   key1=nvl(sq_id,sq_id1)
                             AND   key2>0
                             AND   (sql_exec  IS NULL OR KEY2=sql_exec)
-                            AND   (plan_hash IS NULL OR key2=plan_hash OR report_id=plan_hash)
+                            AND   (plan_hash IS NULL OR key2=plan_hash OR report_id=plan_hash or instr(report_summary,'plan_hash>'||plan_hash||'<')>0)
                             AND   component_name='sqlmonitor'
                             AND   dbid=nvl(did,dbid)
                             AND   instance_number=nvl(inst,instance_number));
