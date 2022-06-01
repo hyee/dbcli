@@ -132,9 +132,9 @@ order by 1;
 SELECT /*+monitor no_merge(a)*/ inst_id,
        a.owner,
        a.segment_name,
-       lpad(COUNT(DISTINCT nvl(b.partition_name, b.segment_name)),4)  || '|' || MAX(segs) segments,
+       lpad(nvl(sum(b.segs),0),4)  || '|' || MAX(a.segs) segments,
        nullif(lpad(trim(dbms_xplan.format_number(SUM(MEMEXTENTS))),6) || '|','|') || dbms_xplan.format_number(SUM(extents)) extents,
-       lpad(trim(dbms_xplan.format_number(nvl(SUM(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(max(blocks)) blocks,
+       lpad(trim(dbms_xplan.format_number(nvl(SUM(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(SUM(blocks)) blocks,
        SUM(IMCUSINMEM) "IMCUs",
        round(SUM(BLOCKSINMEM)/nullif(SUM(IMCUSINMEM),0)) "Blk/CU",
        (SELECT COUNT(1)
@@ -171,18 +171,19 @@ FROM   (SELECT owner, segment_name, COUNT(1) segs
                 WHERE  inmemory = 'ENABLED')
         GROUP  BY owner, segment_name) a
 LEFT   JOIN (
-    SELECT inst_id,owner,partition_name,segment_name,
+    SELECT inst_id,owner,segment_name,
            INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1,
+           COUNT(DISTINCT nvl(b.partition_name, b.segment_name)) segs,
            SUM(MEMEXTENTS) MEMEXTENTS,
            SUM(extents) extents,
            SUM(BLOCKSINMEM) BLOCKSINMEM,
-           max(blocks) blocks,
+           SUM(blocks) blocks,
            SUM(IMCUSINMEM) IMCUSINMEM,
            SUM(inmemory_size) inmemory_size,
            SUM(bytes) bytes,
            SUM(BYTES_NOT_POPULATED) BYTES_NOT_POPULATED
     from  (&check_access_x) b
-    group  by inst_id,owner,partition_name,segment_name,
+    group  by inst_id,owner,segment_name,
               INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1
 ) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)

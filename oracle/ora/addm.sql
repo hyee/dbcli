@@ -47,10 +47,15 @@ BEGIN
     IF :V1 IS NULL THEN
         OPEN :cur FOR
             WITH r AS(
-                SELECT /*+materialize*/ 
-                       task_id,advisor_name,owner, task_name, execution_start,execution_end,status,
+                SELECT A.*,
                        (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings
-                FROM   dba_advisor_tasks a),
+                FROM (
+                        SELECT /*+materialize*/ 
+                               task_id,advisor_name,owner, task_name, execution_start,execution_end,status
+                        FROM   dba_advisor_tasks a
+                        WHERE  (&FILTER)
+                        ORDER  BY execution_start DESC NULLS LAST
+                    ) A WHERE ROWNUM<=50),
             r1 as(
                 SELECT task_id,
                        MAX(DECODE(parameter_name, 'START_TIME', parameter_value)) ||MAX(DECODE(parameter_name, 'START_SNAPSHOT', '(' || parameter_value || ')')) awr_start,
@@ -58,15 +63,12 @@ BEGIN
                        MAX(DECODE(parameter_name, 'DB_ID', parameter_value)) DBID,
                        MAX(DECODE(parameter_name, 'INSTANCE', parameter_value)) INST,
                        MAX(DECODE(parameter_name, 'MODE', parameter_value)) AWR_MODE
-                FROM   DBA_ADVISOR_PARAMETERS
-                WHERE  task_id IN (SELECT TASK_ID FROM R)
+                FROM   (SELECT TASK_ID FROM R) R 
+                JOIN   DBA_ADVISOR_PARAMETERS USING(TASK_ID)
                 GROUP  BY task_id)
-            SELECT * FROM (
-                SELECT TASK_ID,R.advisor_name,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
-                FROM   R LEFT JOIN R1 USING(TASK_ID)
-                WHERE  &FILTER
-                ORDER  BY execution_start DESC NULLS LAST
-            ) WHERE rownum<=50;
+            SELECT TASK_ID,R.advisor_name,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
+            FROM   R LEFT JOIN R1 USING(TASK_ID)
+            ORDER  BY execution_start DESC NULLS LAST;
     ELSE
         select max(ADVISOR_NAME),max(task_name),max(owner) into advtype,taskname,sq FROM DBA_ADVISOR_TASKS where task_id=regexp_substr(:V1,'\d+');
         IF taskname IS NULL THEN
@@ -83,7 +85,7 @@ BEGIN
             OPEN :cur for select rs result from dual;
             IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN
                 typ:='.html';
-                EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2,level=>''ALL'',type=>''HTML'');END;' using out rs,taskname,sq;
+                EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2,section=>''ALL'',level=>''ALL'',type=>''HTML'');END;' using out rs,taskname,sq;
             END IF;
             :res := rs;
             :dest := replace(taskname,':','_')||typ;
