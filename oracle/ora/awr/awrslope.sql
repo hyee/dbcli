@@ -41,7 +41,7 @@ select /*+materialize*/ * from(
            SUM(executions) execs,
            count(distinct trunc(end_time)) over() total_days,
            count(distinct snap_id) over() total_slots,
-           SUM(elapsed_time)/ greatest(SUM(decode(executions,0,parse_calls,executions)),1) time_per_exec
+           SUM(elapsed_time)/ greatest(SUM(executions),1) time_per_exec
     FROM (SELECT s.*,
                  nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
                  MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap

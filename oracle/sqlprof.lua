@@ -215,7 +215,13 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 v_end   VARCHAR2(10):=']''';
                 v_size  PLS_INTEGER := length(p_SQL);
             BEGIN
-                IF instr(p_SQL,v_end)>0 THEN
+                IF instr(p_SQL,'~')=0 THEN
+                    v_begin := 'q''~';
+                    v_end   := '~''';
+                ELSIF instr(p_SQL,'!')=0 THEN
+                    v_begin := 'q''!';
+                    v_end   := '!''';
+                ELSIF instr(p_SQL,']')>0 THEN
                     v_begin := 'q''{';
                     v_end   := '}''';
                 END IF;

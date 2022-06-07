@@ -148,7 +148,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            SUM(PX_SERVERS_EXECS) PX,
                            decode('&avg',
                                   'avg',
-                                  nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),
+                                  greatest(SUM(executions),0,1),
                                   1) exe1
                    FROM  (SELECT s.*, SUM(executions) over(partition by &grp, plan_hash_value) execs_
                           FROM   qry,&&awr$sqlstat s

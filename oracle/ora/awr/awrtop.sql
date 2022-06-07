@@ -46,7 +46,7 @@ SELECT /*+ordered use_nl(a b)*/
      parse,
      val &v2,
      pct,
-     round(val/nullif(decode(execs,0,floor(parse/greatest(px_count,1)),execs),0),2) "AVG",
+     round(val/greatest(execs,1),2) "AVG",
      (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=regexp_substr(a.top_sql,'\w+') and dbid=a.dbid and rownum<2) SQL_TEXT
 FROM (SELECT rownum r,
              ratio_to_report(val) over() pct,

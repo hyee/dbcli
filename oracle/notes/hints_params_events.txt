@@ -247,7 +247,8 @@ Fix Controls:
     30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
     33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
     9721439:   Forces bloom filter and bypasses all the statistics based heuristics
-    16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE 
+    16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE
+    31626438:  use smart scan on partition table when partition size > 100MB
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
@@ -255,5 +256,5 @@ Others:
        * compatible=12.2+ 
        * ASSM tablespace(SEGMENT SPACE MANAGEMENT AUTO)
        * HCC table on exadata storage 
-       * _force_oltp_compress=false
+       * _force_oltp_compress=false(_disable_hcc_array_insert=true to disable)
        * enable_goldengate_replication=true if supplemental logging is enabled

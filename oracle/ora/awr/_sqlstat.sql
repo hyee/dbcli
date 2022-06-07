@@ -32,7 +32,7 @@ BEGIN
                decode(delta_flag, 0, javexec_time_total, javexec_time_delta) javexec_time
                @11g@
         FROM   (select h.*,sign(elapsed_time_delta) delta_flag from @source_sqlstat H /*where BITAND(NVL(flag, 0), 1) = 0*/) h, @source_snapshot s
-        WHERE  greatest(h.elapsed_time_delta, elapsed_time_total) > 0
+        WHERE  delta_flag > 0
         AND    s.snap_id = h.snap_id
         AND    s.dbid = h.dbid
         AND    s.instance_number = h.instance_number )]';
