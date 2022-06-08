@@ -73,7 +73,7 @@
         }
     --]]
 ]]*/
-SELECT /*+no_expand*/
+SELECT /*+no_expand PQ_CONCURRENT_UNION*/
        SOURCE,SQL_ID,
        substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 300) sql_text
 FROM (

@@ -47,11 +47,11 @@ BEGIN
     IF :V1 IS NULL THEN
         OPEN :cur FOR
             WITH r AS(
-                SELECT A.*,
+                SELECT /*+materialize*/ 
+                       A.*,
                        (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings
                 FROM (
-                        SELECT /*+materialize*/ 
-                               task_id,advisor_name,owner, task_name, execution_start,execution_end,status
+                        SELECT task_id,advisor_name,owner, task_name, execution_start,execution_end,status
                         FROM   dba_advisor_tasks a
                         WHERE  (&FILTER)
                         ORDER  BY execution_start DESC NULLS LAST

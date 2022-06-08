@@ -102,9 +102,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 FROM   gv$sql_plan a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 AND    nvl(p_sql_id,'-')!='_x_'
                                 UNION ALL
@@ -120,9 +118,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 UNION ALL
                                 SELECT other_xml, 'sqlset', sql_id, plan_hash_value
@@ -130,9 +126,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 $IF DBMS_DB_VERSION.VERSION>11 $THEN
                                 UNION ALL
@@ -141,9 +135,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND SQL_PLAN_HASH_VALUE LIKE v_plan OR 
-                                        SQL_PLAN_HASH_VALUE like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or sql_plan_hash_value=p_plan)
                                 AND     rownum<2
                                 $END
                                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
@@ -153,9 +145,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 $END
                         )

@@ -663,7 +663,7 @@ function env.parse_args(cmd,rest,is_cross_line)
         args[#args+1]=(curr_cmd and cmd==curr_cmd:upper() and curr_cmd or cmd)..(rest and #rest> 0 and (" "..rest) or "")
         curr_cmd=nil
     elseif arg_count == 2 then
-        if type(rest)=="string" and not rest:match('".+".".+"') then
+        if type(rest)=="string" and not rest:match('".+" *%. *".+"') then
             rest=rest:gsub('^"(.*)"$','%1')
         end
         args[#args+1]=rest
@@ -683,7 +683,7 @@ function env.parse_args(cmd,rest,is_cross_line)
             
             if is_quote_string then--if the parameter starts with quote
                 piece = piece .. char
-                if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+".".+"') then
+                if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+" *%. *".+"') then
                     --end of a quote string if next char is a space
                     args[#args+1]=piece:gsub('^"(.*)"$','%1')
                     piece,is_quote_string='',false
