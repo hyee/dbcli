@@ -1,3 +1,4 @@
+2022-06-09: + public: new scripts "ora spa"/"sys xplan"
 2022-02-16: + public: new setting "set tracevm"
 2022-01-29: * public: update libs jansi->2.4, jna->5.10, and initially support OSX-ARM64
 2022-01-28: * public: update lib jnlua and lpeg(1.0.2)

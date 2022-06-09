@@ -4,6 +4,7 @@ local default_fmt,e10053,prof,sqldiag="ALLSTATS ALL -ALIAS -PROJECTION OUTLINE R
 function xplan.explain(fmt,sql)
     local ora,sqltext=db.C.ora
     local _fmt=default_fmt
+    local sql_id
     env.checkhelp(fmt)
     e10053,sqldiag=false
 
@@ -19,6 +20,8 @@ function xplan.explain(fmt,sql)
         elseif fmt:lower()=="diag" then
             env.checkerr(db:check_access('sys.v$sql_diag_repository',1),"You don't have access to sys.v$sql_diag_repository, operation is cancelled.")
             sqldiag,fmt=true,_fmt
+        else
+            fmt,sql_id=_fmt,fmt
         end
     else
         sql=fmt..(not sql and "" or " "..sql)
@@ -31,37 +34,46 @@ function xplan.explain(fmt,sql)
 
     sql=env.COMMAND_SEPS.match(sql)
     local sql1= sql:gsub("\r?\n","")
-    if not sql1:match('(%s)') then
+    
+    if tonumber(sql1) then
+        sql=sql1
+        if sql=='-1' then return end
+        sql_id=sql_id or sql
+    elseif not sql1:match('(%s)') then
         sql=sql1
         sqltext=db:get_value([[SELECT /*INTERNAL_DBCLI_CMD*/ * FROM(SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
                                UNION ALL
                                SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})
         env.checkerr(sqltext,"Cannot find target SQL ID %s",sql)
         sql=sqltext
+        db:rollback()
     else 
         sqltext=sql
+        db:rollback()
     end
     
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
     cfg.set("printsize",9999,true)
-    db:rollback()
+    
     if e10053 then
         pcall(db.internal_call,db,[[alter session set "_fix_control"='16923858:5']])
         db:internal_call("ALTER SESSION SET tracefile_identifier='"..math.random(1e6).."' EVENTS='10053 trace name context forever, level 1'") 
     end
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
-    local sql_id=loader:computeSQLIdFromText(sql)
+    sql_id=sql_id or loader:computeSQLIdFromText(sql)
     local is_tee=printer.tee_hdl
     try{function()
-            sql1="Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql
-            if sqldiag then
-                sqldiag=loader:computeSQLIdFromText(sql1)
-                pcall(db.internal_call,db,[[alter session set "_sql_diag_repo_retain" = true]])
-                if not is_tee then env.printer.tee('sql_diag_'..sql_id..'.txt','') end
+            if not tonumber(sql) then
+                sql1="Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' FOR "..sql
+                if sqldiag then
+                    sqldiag=loader:computeSQLIdFromText(sql1)
+                    pcall(db.internal_call,db,[[alter session set "_sql_diag_repo_retain" = true]])
+                    if not is_tee then env.printer.tee('sql_diag_'..sql_id..'.txt','') end
+                end
+                db:internal_call(sql1,args) 
             end
-            db:internal_call(sql1,args) 
         end,
         function(err)
             if type(err)=="string" and err:find("ORA-00942",1,true) then
