@@ -55,7 +55,7 @@ DECLARE
         $IF &check_access_x=1 $THEN
             SELECT nvl(MAX(KSPPSTVL),'N/A')
             INTO   X
-            FROM   x$ksppcv y JOIN x$ksppi x USING(indx)
+            FROM   sys.x$ksppcv y JOIN sys.x$ksppi x USING(indx)
             WHERE  KSPPINM=nam;
         $ELSE
             SELECT MAX(VALUE)

@@ -63,9 +63,9 @@ FROM   (SELECT *
                          WHERE  p1text = 'channel context'
                          AND    nvl(:v1,'x') in('x',''||a.session_id,a.sql_id,a.event,''||p1)
                          GROUP  BY sql_id, event,program, p1) c,
-                        X$KSRCCTX b,
-                        X$KSRCDES a,
-                        x$ksrchdl h
+                        sys.X$KSRCCTX b,
+                        sys.X$KSRCDES a,
+                        sys.x$ksrchdl h
                 WHERE  b.name_ksrcctx = a.indx
                 AND    h.ctxp_ksrchdl = b.addr
                 AND    userenv('instance') = nvl(:V2, userenv('instance'))
@@ -86,10 +86,10 @@ FROM   TABLE(gv$(CURSOR( --
            cd.name_ksrcdes channel_name,  
            cd.id_ksrcdes,  
            to_number(c.ctxp_ksrchdl,'XXXXXXXXXXXXXXXX') p1
-    from   x$ksrchdl c ,  
+    from   sys.x$ksrchdl c ,  
            v$session s,  
-           x$ksrcctx ctx,  
-           x$ksrcdes cd 
+           sys.x$ksrcctx ctx,  
+           sys.x$ksrcdes cd 
     WHERE nvl(:v1,'x') in('x',''||s.sid,s.sql_id,s.event,''||to_number(c.ctxp_ksrchdl,'XXXXXXXXXXXXXXXX'))
     and s.paddr=c.owner_ksrchdl
     and c.ctxp_ksrchdl=ctx.addr 

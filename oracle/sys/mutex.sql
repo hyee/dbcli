@@ -51,7 +51,7 @@ FROM   TABLE(gv$(CURSOR ( --
                            regexp_like(regexp_substr(b.KGLNAOBJ, '[^\_]+', 1, 4), '^[0-9A-Fa-f]+$') THEN
                        ' (obj# ' || to_number(regexp_substr(b.KGLNAOBJ, '[^\_]+', 1, 4), 'xxxxxxxxxx') || ')'
                   END SQL_TEXT
-          FROM   v$session a, x$kglob b, x$mutex_sleep c
+          FROM   v$session a, sys.x$kglob b, sys.x$mutex_sleep c
           WHERE  a.p1 = b.kglnahsh
           AND    trunc(a.p3 / 65536) = c.location_id(+)
           AND    nvl(:v1,'x') in('x',''||a.sid,a.sql_id,a.event)
@@ -80,11 +80,11 @@ SELECT * FROM (
                                  location,
                                  mutex_type,
                                  p1raw
-                          FROM   x$mutex_sleep_history
+                          FROM   sys.x$mutex_sleep_history
                           WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
                           AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session)
                           GROUP  BY mutex_identifier,location_id, location, mutex_type,p1raw
-                      ) A,x$kglob b
+                      ) A,sys.x$kglob b
                       WHERE a.HASH_VALUE=b.kglnahsh
                      )))
     ORDER  BY LAST_TIME DESC)

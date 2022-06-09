@@ -1,7 +1,15 @@
-/*[[explain/gather/execute SQL. Usage: @@NAME [-exec|-gather] {<sql_id> [<parsing_schema>|<child_number>]} | <sql_text>
+/*[[explain/gather/execute SQL. Usage: @@NAME [-o|-c|-exec] {<sql_id> [<schema>|<child_num>|<snap_id>]} | <sql_text>
+
+    -o [-low|-high]: generate optimizer trace
+    -c [-low|-high]: generate compiler trace(10053)
+    -exec          : execute SQL instead of explain only
+
     --[[
         @ARGS: 1
-        &opt: default={2} exec={1} gather={8} obj={4} diag={66}
+        &opt: default={2} exec={1} gather={8} obj={4} diag={66} o={2} c={2}
+        &trace: default={0} o={1} c={2}
+        &load: default={--} o={} c={}
+        &lv  : default={medium} low={low} high={high}
     --]]
 ]]*/
 set verify off feed off
@@ -15,12 +23,15 @@ col buff,reads,dxwrites,rows# for tmb2
 DECLARE
     cur     SYS_REFCURSOR;
     own     VARCHAR2(128):=regexp_substr(:v2,'^\S+$');
+    id      INT:=regexp_substr(own,'^\d+$');
     sq_text CLOB:=trim(:V1);
     sq_id   VARCHAR2(20):= regexp_substr(sq_text,'^\S{10,20}$');
     sig     INT;
     stmt    SYS.SQLSET_ROW;
     bw      RAW(2000);
     err     VARCHAR2(32767);
+    trace   VARCHAR2(200);
+    fixctl  INT;
     $IF DBMS_DB_VERSION.VERSION>12 $THEN
         PROCEDURE I_PROCESS_SQL_CALLOUT(
             STMT         IN OUT SQLSET_ROW,
@@ -71,20 +82,22 @@ DECLARE
           LIBRARY SYS.DBMS_SQLTUNE_LIB;   
     $END
 BEGIN
+    own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT nvl(regexp_replace(own,'^\d+$'),nam),txt,sig,br
+        SELECT nvl(own,nam),txt,sig,br
         INTO own,sq_text,sig,bw
         FROM (
             SELECT parsing_schema_name nam, sql_fulltext txt,force_matching_signature sig,bind_data br
             FROM   gv$sql a
             WHERE  sql_id = sq_id
-            AND    child_number=nvl(0+regexp_substr(own,'^\d+$'),child_number)
+            AND    child_number=nvl(id,child_number)
             AND    rownum < 2
             UNION ALL
             SELECT parsing_schema_name, sql_text,force_matching_signature sig,bind_data
             FROM   dba_sqlset_statements a
             WHERE  sql_id = sq_id
+            AND    sqlset_id=nvl(id,sqlset_id)
             AND    rownum < 2
             UNION ALL
             SELECT parsing_schema_name, sql_text,force_matching_signature sig,bind_data
@@ -93,6 +106,7 @@ BEGIN
                     FROM   (SELECT dbid, sql_id, parsing_schema_name,force_matching_signature,bind_data
                             FROM   dba_hist_sqlstat
                             WHERE  sql_id = sq_id
+                            AND    snap_id=nvl(id,snap_id)
                             ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
                     WHERE  rownum < 2)
             USING  (dbid, sql_id)
@@ -109,12 +123,27 @@ BEGIN
         END IF;
         sq_id  := SYS.dbms_sqltune_util0.sqltext_to_sqlid(sq_text);
         sig    := SYS.dbms_sqltune_util0.sqltext_to_signature(sq_text,1);
-        own    := nvl(regexp_replace(own,'^\d+$'),sys_context('userenv','current_schema'));
+        own    := nvl(own,sys_context('userenv','current_schema'));
     END IF;
 
     stmt := SYS.SQLSET_ROW(sq_id,sig,sq_text,null,bw,own);
 
+    IF &trace>0 THEN
+        trace  :='alter session set events ''trace [SQL_'|| CASE trace WHEN 1 THEN 'Optimizer' ELSE 'Compiler' END || '.*] @''';
+        fixctl := sys.dbms_sqldiag.get_fix_control(16923858);
+        IF fixctl=6 THEN
+            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:5'}';
+        END IF;
+        EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
+        EXECUTE IMMEDIATE replace(trace,'@','disk &lv');
+    END IF;
     I_PROCESS_SQL_CALLOUT(stmt=>stmt,action=>&opt,time_limit=>86400,extra_result=>sq_text,err_code=>sig,err_mesg=>err);
+    IF &trace>0 THEN
+        EXECUTE IMMEDIATE replace(trace,'@','off');
+        IF fixctl=6 THEN
+            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:6'}';
+        END IF;
+    END IF;
 
     IF err IS NOT NULL THEN
         raise_application_error(-20001,err);
@@ -228,3 +257,4 @@ END;
 xplan &sql_id &plan_id
 
 print cur
+&load loadtrace default 256

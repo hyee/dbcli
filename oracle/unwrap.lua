@@ -861,7 +861,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local error_msg=hd.error and hd.error[1]:trim():match('[^\n]+') or nil
     local default_dop,px_alloc,sql_id,status,plsql,interval,phv=0,0
     
-    --from x$qksxa_reason
+    --from sys.x$qksxa_reason
     local reasons={
         ['352']="DOP downgrade due to adaptive DOP",
         ['353']="DOP downgrade due to resource manager max DOP",

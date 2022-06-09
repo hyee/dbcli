@@ -48,7 +48,7 @@ DECLARE
         AND    bugno NOT IN(16923858,25167306)
         UNION  ALL
         SELECT 'env',pi.ksppinm, NVL(kc.PVALUE_QKSCESEROW,cv.KSPPSTVL), ksppity,ksppdesc,1
-        FROM   x$ksppi pi ,x$ksppcv cv,X$QKSCESES kc
+        FROM   sys.x$ksppi pi ,sys.x$ksppcv cv,sys.X$QKSCESES kc
         WHERE  pi.indx=cv.indx
         AND    pi.ksppinm=kc.PNAME_QKSCESEROW(+)
         AND    kc.SID_QKSCESEROW(+) = userenv('sid')

@@ -124,7 +124,7 @@ WITH
                     TO_CHAR(ksulawhy,'XXXXXXXXXXXXXXXX') object
                     &_IF_ORA_10_OR_HIGHER , ksulagts GETS
                     &_IF_ORA_10_OR_HIGHER , lower(ksuprlmd) HMODE
-             FROM x$ksuprlat) l,
+             FROM sys.x$ksuprlat) l,
             (SELECT
                     indx
                   , ksusesqh     sqlhash
@@ -132,11 +132,11 @@ WITH
                   &_IF_ORA_10_OR_HIGHER , ksusesph planhash
                   &_IF_ORA_10_OR_HIGHER , ksusesch sqlchild
                   &_IF_ORA_10_OR_HIGHER , ksusesqi sqlid
-             FROM x$ksuse) s,
+             FROM sys.x$ksuse) s,
             (SELECT indx,
                     ksllwnam func, ksllwnam,
                     ksllwlbl objtype, ksllwlbl
-             FROM x$ksllw) w
+             FROM sys.x$ksllw) w
         WHERE
             l.sid LIKE '&_lhp_sid'
         AND l.ksulawhr = w.indx (+)

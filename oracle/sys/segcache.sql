@@ -18,9 +18,9 @@ FROM   dba_objects a,&gv
                    bh.blocks blocks,
                    bh.obj objd,
                    bh.cur
-            FROM   x$kcbwds ds,
-                   x$kcbwbpd pd,
-                   (SELECT set_ds,inst_id,obj,count(1) blocks,sum(sign(bitand(flag,power(2,13)))) cur from x$bh group by set_ds,inst_id,obj) bh
+            FROM   sys.x$kcbwds ds,
+                   sys.x$kcbwbpd pd,
+                   (SELECT set_ds,inst_id,obj,count(1) blocks,sum(sign(bitand(flag,power(2,13)))) cur from sys.x$bh group by set_ds,inst_id,obj) bh
             WHERE  ds.set_id >= pd.bp_lo_sid
             AND    ds.set_id <= pd.bp_hi_sid
             AND    pd.bp_size != 0

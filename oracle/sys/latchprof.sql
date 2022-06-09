@@ -86,14 +86,14 @@ DEF _lhp_name="&V3"
 
 PROMPT Sampling Latch Stats For &V4 Secs...
 WITH t1 AS
- (SELECT KSUTMTIM hsecs FROM x$ksutm),
+ (SELECT KSUTMTIM hsecs FROM sys.x$ksutm),
 samples AS
  (SELECT * FROM &GV
       SELECT  /*+ opt_param('_optimizer_mjc_enabled','false') ORDERED ORDERED_PREDICATES USE_NL(l) NO_TRANSFORM_DISTINCT_AGG */
               &_lhp_what, COUNT(DISTINCT gets) dist_samples, COUNT(*) total_samples, 
               COUNT(*) / max(max(r)) over() total_samples_pct,max(max(r)) over() r
       FROM   (SELECT /*+no_merge*/KSUTMTIM hsec, rownum r 
-              FROM   x$ksutm
+              FROM   sys.x$ksutm
               WHERE  userenv('instance')=nvl(:instance,userenv('instance')) 
               CONNECT BY sys.standard.current_timestamp - current_timestamp <= numtodsinterval(&v4,'second')) s1,
              (SELECT /*+order use_nl(l s w) no_expand no_merge*/
@@ -114,7 +114,7 @@ samples AS
                      decode(s.ksuseobj,-1,''||l.KSUPRLAT,'obj#: '||s.ksuseobj) wait_obj#,
                      nvl2(nullif(s.ksusefil,0),s.ksusefil||','||s.ksuseblk,'') block#,
                      w.ksllwlbl objtype
-             FROM    x$ksuprlat l, x$ksuse s, x$ksllw w
+             FROM    sys.x$ksuprlat l, sys.x$ksuse s, sys.x$ksllw w
              WHERE   l.ksuprsid = s.indx
              AND     l.ksulawhr = w.indx(+)
              AND     l.ksuprsid LIKE '&_lhp_sid'
@@ -123,7 +123,7 @@ samples AS
       )))
     ORDER  BY total_samples DESC),
 t2 AS
- (SELECT KSUTMTIM hsecs FROM x$ksutm)
+ (SELECT KSUTMTIM hsecs FROM sys.x$ksutm)
  
 SELECT /*+ ORDERED*/
      &_lhp_what,

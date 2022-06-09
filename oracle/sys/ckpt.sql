@@ -30,7 +30,7 @@ SELECT inst_id,
        CKPT_RBA_SEQ   RBA_SEQ,
        CKPT_RBA_BNO   RBA_BNO,
        CKPT_RBA_BOF   RBA_BOF
-FROM   TABLE(gv$(CURSOR (SELECT * FROM x$activeckpt WHERE ckpt_type > 0)))
+FROM   TABLE(gv$(CURSOR (SELECT * FROM sys.x$activeckpt WHERE ckpt_type > 0)))
 order  by 1,2;
 
 pro x$ckptbuf
@@ -44,7 +44,7 @@ SELECT inst_id,
        SUM(BUF_COUNT) BUFFS,
        COUNT(distinct nullif(BUF_RBA_BNO,0)) NUM_RBA_BNO,
        COUNT(distinct nullif(BUF_RBA_BOF,0)) NUM_RBA_BOF
-FROM   TABLE(gv$(CURSOR(SELECT * FROM x$ckptbuf WHERE BUF_RBA_SEQ > 0 AND rawtohex(buf_ptr) != '00')))
+FROM   TABLE(gv$(CURSOR(SELECT * FROM sys.x$ckptbuf WHERE BUF_RBA_SEQ > 0 AND rawtohex(buf_ptr) != '00')))
 GROUP BY inst_id,QUEUE_NUM,BUF_STATE,BUF_RBA_SEQ
 ORDER BY 1,2,3;
 

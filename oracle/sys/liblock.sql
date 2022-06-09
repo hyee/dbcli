@@ -20,11 +20,11 @@ WITH ho AS
                 ho.&TYP kglobtyp
         FROM   v$session h,
                (SELECT INST_ID inst,kgllkuse saddr, kgllkhdl object_handle, kgllkmod mode_held, kgllkreq mode_req, 'Lock' TYPE,KGLNAHSH,decode(KGLHDNSP,0,KGLLKSQLID) sq_id
-                FROM   x$kgllk
+                FROM   sys.x$kgllk
                 UNION ALL
                 SELECT INST_ID,KGLPNHDL, kglpnhdl, kglpnmod, kglpnreq, 'Pin',KGLNAHSH,null
-                FROM   x$kglpn) hl, 
-               x$kglob ho--,X$KGLCURSOR_CHILD_SQLIDPH hv
+                FROM   sys.x$kglpn) hl, 
+               sys.x$kglob ho--,X$KGLCURSOR_CHILD_SQLIDPH hv
         WHERE  (hl.mode_held > 1 or hl.mode_req>1)
         AND    hl.inst=nvl(:instance,hl.inst)
         AND    nvl(upper(:V1),'_') in('ALL','_',upper(ho.kglnaobj),upper(trim('.' from ho.kglnaown ||'.' || ho.kglnaobj)),''||h.sid)

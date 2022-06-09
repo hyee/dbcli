@@ -92,7 +92,7 @@ SELECT * FROM (
                    row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
             FROM   sys.x$kglob o, 
                    (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 
-                    FROM   sys.x$kgldp k, x$kglxs a
+                    FROM   sys.x$kgldp k, sys.x$kglxs a
                     WHERE  k.kglhdadr = a.kglhdadr
                     AND    k.kgldepno = a.kglxsdep) d, 
                     sys.x$kglob c

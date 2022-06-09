@@ -953,10 +953,10 @@ local desc_sql={
                            'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE, 
                    c.kqfcooff offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
                    decode(c.kqfcoidx, 0,'','Yes('||c.kqfcoidx||')') "Indexed?"
-            FROM   x$kqfta t, x$kqfco c
+            FROM   sys.x$kqfta t, sys.x$kqfco c
             WHERE  c.kqfcotab = t.indx
             AND    c.inst_id = t.inst_id
-            AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM x$kqfdt WHERE KQFDTNAM=:object_name))) a,
+            AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM sys.x$kqfdt WHERE KQFDTNAM=:object_name))) a,
             sys.tab_stats$ b,
             sys.hist_head$ c
         WHERE a.obj#=b.obj#(+)

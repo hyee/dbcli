@@ -160,7 +160,7 @@ FROM &GV
         decode(bitand(flag, 1536), 0, 'N', 'Y') PING,
         decode(bitand(flag, 16384), 0, 'N', 'Y') STALE,
         decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT
-    FROM   v$session s, x$bh b
+    FROM   v$session s, sys.x$bh b
     WHERE  HLADDR = p1raw
     AND    p1raw!='00'
     AND    nvl(:V1,' ') in (' ',s.sql_id,''||s.sid)

@@ -41,7 +41,7 @@ FROM   (SELECT *
                        ELSE
                         replace(data,chr(10))
                    END AS xtrace_data
-                  FROM   x$trace a
+                  FROM   sys.x$trace a
                   WHERE  sid = nvl(0 + :V1, userenv('sid'))
                   AND    inst_id = nvl(:V2, inst_id)
         ))) a

@@ -476,9 +476,9 @@ function dicts.set_dict(type,scope)
     sql = sql:gsub('@XTABLE@',db.props.isdba~=true and '' or [[
             UNION ALL
             SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
-            FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
+            FROM   (SELECT kqftanam,t.indx,t.inst_id FROM sys.x$kqfta t
                     UNION ALL
-                    SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
+                    SELECT KQFDTEQU,t.indx,t.inst_id FROM sys.x$kqfta t,sys.x$kqfdt where kqftanam=KQFDTNAM) t, sys.x$kqfco c
             WHERE  c.kqfcotab = t.indx
             AND    c.inst_id = t.inst_id
         ]])
@@ -533,7 +533,7 @@ function dicts.set_dict(type,scope)
                      bitand(ksppiflg / 65536, 3) ISSYS_MDF,
                      decode(bitand(ksppiflg, 4), 4,0, decode(bitand(ksppiflg / 65536, 3), 0, 0, 1)) ISINST_MD,
                      ksppdesc DESCRIPTION
-            FROM     x$ksppi x, X$QKSCESYS z
+            FROM     sys.x$ksppi x, sys.X$QKSCESYS z
             WHERE    x.ksppinm = z.PNAME_QKSCESYROW(+)]]
         rs=db:dba_query(db.internal_call,sql)
         rows=db.resultset:rows(rs,-1)

@@ -87,7 +87,7 @@ BEGIN
                                  FROM TABLE(gv$(cursor(
                                      SELECT /*+ordered use_hash(a b)*/ 
                                             a.*,b.addr latch#,b.sleeps,b.spin_gets spins,b.wait_time
-                                     FROM   X$KJRTBCFP a,v$latch_children b
+                                     FROM   sys.X$KJRTBCFP a,v$latch_children b
                                      WHERE  b.name(+) = 'ges resource hash list'
                                      AND    b.child#(+)=a.indx+1))) 
                                  WHERE timer.stime IS NOT NULL) stat
@@ -114,7 +114,7 @@ BEGIN
                                      b.sleeps,
                                      b.spin_gets spins,
                                      b.wait_time
-                              FROM   X$KJRTBCFP a,v$latch_children b
+                              FROM   sys.X$KJRTBCFP a,v$latch_children b
                               WHERE  b.name(+) = 'ges resource hash list'
                               AND    b.child#(+)=a.indx+1
                               AND   (V1 IS NULL OR RHT like '%'||upper(V1))

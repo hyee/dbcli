@@ -38,11 +38,11 @@
                        y.ksppstvl VALUE,
                        avails,
                        x.ksppdesc description
-                FROM   x$ksppi x, x$ksppcv y, (
+                FROM   sys.x$ksppi x, sys.x$ksppcv y, (
                           SELECT /*+ no_merge */
                                  PNAME_QKSCESYROW NAME,
                                  CAST(COLLECT(VALUE_KSPVLD_VALUES ORDER BY 0+regexp_substr(VALUE_KSPVLD_VALUES,'^\d+') desc,VALUE_KSPVLD_VALUES DESC) AS  SYS.ODCIVARCHAR2LIST) AS  avails
-                          FROM   X$QKSCESYS a, x$kspvld_values b
+                          FROM   sys.X$QKSCESYS a, sys.x$kspvld_values b
                           WHERE  PNAME_QKSCESYROW = NAME_KSPVLD_VALUES(+)
                           GROUP  BY PNAME_QKSCESYROW) cbo_param
                 WHERE  x.indx = y.indx

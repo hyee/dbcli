@@ -5,7 +5,7 @@
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
         @VER1: 12.2={,INMEMORY_SERVICE} default={}
         @check_access_x: {
-            x$imcsegments={SELECT INST_ID,
+            sys.x$imcsegments={SELECT INST_ID,
                        NVL(UNAME, 'SYS') OWNER,
                        ONAME SEGMENT_NAME,
                        SNAME PARTITION_NAME,
@@ -97,7 +97,7 @@
                        MEMEXTENTS,
                        IMCUSINMEM,
                        BLOCKS
-                FROM   gv$(cursor(select * from x$imcsegments)) imcs
+                FROM   gv$(cursor(select * from sys.x$imcsegments)) imcs
                 WHERE  imcs.segtype = 0}
                 
             default={SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM,BLOCKS

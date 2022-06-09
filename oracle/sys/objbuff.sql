@@ -27,7 +27,7 @@ from dba_objects b,
                decode(bitand(flag, 16384), 0, 'N', 'Y') STALE, 
                decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT,
                tch,obj objd
-               from x$bh a where nullif(:V2,'0') is null or inst_id=:V2))) a 
+               from sys.x$bh a where nullif(:V2,'0') is null or inst_id=:V2))) a 
 where a.objd=b.data_object_id
 and   b.owner=:object_owner
 and   b.object_name=:object_name
