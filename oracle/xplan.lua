@@ -46,16 +46,13 @@ function xplan.explain(fmt,sql)
                                SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2) WHERE ROWNUM<2]],{sql})
         env.checkerr(sqltext,"Cannot find target SQL ID %s",sql)
         sql=sqltext
-        db:rollback()
     else 
         sqltext=sql
-        db:rollback()
     end
     
     local feed=cfg.get("feed")
     cfg.set("feed","off",true)
     cfg.set("printsize",9999,true)
-    
     if e10053 then
         pcall(db.internal_call,db,[[alter session set "_fix_control"='16923858:5']])
         db:internal_call("ALTER SESSION SET tracefile_identifier='"..math.random(1e6).."' EVENTS='10053 trace name context forever, level 1'") 
@@ -72,6 +69,7 @@ function xplan.explain(fmt,sql)
                     pcall(db.internal_call,db,[[alter session set "_sql_diag_repo_retain" = true]])
                     if not is_tee then env.printer.tee('sql_diag_'..sql_id..'.txt','') end
                 end
+                db:internal_call("DELETE PLAN_TABLE WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD' AND TIMESTAMP<SYSDATE-1/144") 
                 db:internal_call(sql1,args) 
             end
         end,
@@ -133,7 +131,7 @@ function xplan.explain(fmt,sql)
                 @proj@,
                 access_predicates ap,filter_predicates fp,search_columns sc,
                 max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1)) over(partition by plan_id) dop
-         FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
+         FROM   (SELECT a.*, decode(parent_id,-1,id-1,parent_id) pid, dense_rank() OVER(ORDER BY TIMESTAMP DESC,plan_id DESC) seq FROM plan_table a WHERE STATEMENT_ID='INTERNAL_DBCLI_CMD') a
          WHERE  seq = 1
          ORDER  BY id),
         hierarchy_data AS

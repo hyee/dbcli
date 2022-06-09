@@ -1,14 +1,16 @@
-/*[[explain/gather/execute SQL. Usage: @@NAME [-o|-c|-exec] {<sql_id> [<schema>|<child_num>|<snap_id>]} | <sql_text>
+/*[[explain/gather/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
 
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
     -exec          : execute SQL instead of explain only
+    -obj           : generate relative object list
+    -10046         : execute SQL and get 10046 trace file
 
     --[[
         @ARGS: 1
-        &opt: default={2} exec={1} gather={8} obj={4} diag={66} o={2} c={2}
+        &opt: default={2} exec={1} gather={8} obj={4} diag={64} o={2} c={2} 10046={3}
         &trace: default={0} o={1} c={2}
-        &load: default={--} o={} c={}
+        &load: default={--} o={} c={} 10046={}
         &lv  : default={medium} low={low} high={high}
     --]]
 ]]*/
@@ -16,8 +18,10 @@ set verify off feed off
 var plan_id NUMBER;
 var sql_id VARCHAR2(30);
 var cur REFCURSOR;
+var xplan VARCHAR2(300);
 col ela for usmhd2
 col cpu for pct2
+col val for k0
 col buff,reads,dxwrites,rows# for tmb2
 
 DECLARE
@@ -26,12 +30,29 @@ DECLARE
     id      INT:=regexp_substr(own,'^\d+$');
     sq_text CLOB:=trim(:V1);
     sq_id   VARCHAR2(20):= regexp_substr(sq_text,'^\S{10,20}$');
+    sq_nid  VARCHAR2(20);
     sig     INT;
     stmt    SYS.SQLSET_ROW;
     bw      RAW(2000);
+    xplan   VARCHAR2(300);
     err     VARCHAR2(32767);
     trace   VARCHAR2(200);
     fixctl  INT;
+    PX      INT;
+    st      DATE;
+    ctrl    VARCHAR2(2000);
+    PROCESS_CTRL_DTD CONSTANT VARCHAR2(4000) :=  
+        '<?xml version="1.0"?>
+         <!DOCTYPE process_ctrl [
+         <!ELEMENT process_ctrl (parameter*, outline_data?, hint_data?)>
+         <!ELEMENT parameter (#PCDATA)>
+         <!ELEMENT outline_data (hint+)>
+         <!ELEMENT hint_data (hint+)>
+         <!ELEMENT hint (#PCDATA)>
+         <!ATTLIST parameter name CDATA #IMPLIED>
+         ]>'; 
+    PROCESS_CTRL_BEGIN CONSTANT VARCHAR2(14) := '<process_ctrl>';
+    PROCESS_CTRL_END   CONSTANT VARCHAR2(15) := '</process_ctrl>';
     $IF DBMS_DB_VERSION.VERSION>12 $THEN
         PROCEDURE I_PROCESS_SQL_CALLOUT(
             STMT         IN OUT SQLSET_ROW,
@@ -82,22 +103,23 @@ DECLARE
           LIBRARY SYS.DBMS_SQLTUNE_LIB;   
     $END
 BEGIN
+    dbms_output.enable(null);
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT nvl(own,nam),txt,sig,br
+        SELECT nvl(upper(own),nam),txt,sig,br
         INTO own,sq_text,sig,bw
         FROM (
             SELECT parsing_schema_name nam, sql_fulltext txt,force_matching_signature sig,bind_data br
             FROM   gv$sql a
             WHERE  sql_id = sq_id
-            AND    child_number=nvl(id,child_number)
+            AND    nvl(id,child_number) in(child_number,plan_hash_value)
             AND    rownum < 2
             UNION ALL
             SELECT parsing_schema_name, sql_text,force_matching_signature sig,bind_data
             FROM   dba_sqlset_statements a
             WHERE  sql_id = sq_id
-            AND    sqlset_id=nvl(id,sqlset_id)
+            AND    nvl(id,sqlset_id) in(sqlset_id,plan_hash_value)
             AND    rownum < 2
             UNION ALL
             SELECT parsing_schema_name, sql_text,force_matching_signature sig,bind_data
@@ -106,7 +128,7 @@ BEGIN
                     FROM   (SELECT dbid, sql_id, parsing_schema_name,force_matching_signature,bind_data
                             FROM   dba_hist_sqlstat
                             WHERE  sql_id = sq_id
-                            AND    snap_id=nvl(id,snap_id)
+                            AND    nvl(id,snap_id) in(snap_id,plan_hash_value)
                             ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
                     WHERE  rownum < 2)
             USING  (dbid, sql_id)
@@ -123,7 +145,7 @@ BEGIN
         END IF;
         sq_id  := SYS.dbms_sqltune_util0.sqltext_to_sqlid(sq_text);
         sig    := SYS.dbms_sqltune_util0.sqltext_to_signature(sq_text,1);
-        own    := nvl(own,sys_context('userenv','current_schema'));
+        own    := nvl(upper(own),sys_context('userenv','current_schema'));
     END IF;
 
     stmt := SYS.SQLSET_ROW(sq_id,sig,sq_text,null,bw,own);
@@ -136,9 +158,23 @@ BEGIN
         END IF;
         EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
         EXECUTE IMMEDIATE replace(trace,'@','disk &lv');
+    ELSIF &opt=3 THEN
+        trace  :='alter session set events ''10046 trace name context @''';
+        EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
+        EXECUTE IMMEDIATE replace(trace,'@','forever,level 12');
+    ELSIF &opt=8 THEN
+        ctrl:='<parameter name="sharing">"4"</parameter>';
     END IF;
-    I_PROCESS_SQL_CALLOUT(stmt=>stmt,action=>&opt,time_limit=>86400,extra_result=>sq_text,err_code=>sig,err_mesg=>err);
-    IF &trace>0 THEN
+    sq_text := NULL;
+    st := SYSDATE;
+    I_PROCESS_SQL_CALLOUT(stmt=>stmt,
+                          action=>&opt,
+                          time_limit=>86400,
+                          ctrl_options=>CASE WHEN ctrl IS NOT NULL THEN xmltype(process_ctrl_dtd||process_ctrl_begin||ctrl ||process_ctrl_end) END,
+                          extra_result=>sq_text,
+                          err_code=>sig,
+                          err_mesg=>err);
+    IF trace IS NOT NULL THEN
         EXECUTE IMMEDIATE replace(trace,'@','off');
         IF fixctl=6 THEN
             EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:6'}';
@@ -150,8 +186,12 @@ BEGIN
     END IF;
 
     IF stmt.sql_plan is not null and stmt.sql_plan.count>0 THEN
-        SELECT nvl(max(PLAN_ID),COUNT(1))
-        INTO   sig
+        SELECT nvl(max(PLAN_ID),COUNT(1)),
+               MAX(CASE WHEN OTHER_XML IS NOT NULL THEN 
+                        regexp_substr(to_char(regexp_substr(other_xml,'"plan_hash">\d+<')),'\d+')
+               END),
+               COUNT(CASE WHEN operation LIKE 'PX%' THEN 1 END)
+        INTO   sig,fixctl,px
         FROM   TABLE(stmt.sql_plan);
 
         DELETE PLAN_TABLE
@@ -230,31 +270,57 @@ BEGIN
                QBLOCK_NAME,
                OTHER_XML
         FROM   TABLE(stmt.sql_plan);
+
+        SELECT MAX(sql_id)
+        INTO   sq_nid
+        FROM (SELECT sql_id,child_number
+              FROM   v$sql
+              WHERE  plan_hash_value=fixctl
+              AND    sql_text LIKE '/* SQL Analyze('||userenv('sid')||'%'
+              AND    instr(sql_text,stmt.sql_text)>0
+              AND    parsing_schema_name=stmt.parsing_schema_name
+              AND    force_matching_signature=stmt.force_matching_signature
+              ORDER  BY last_active_time desc)
+        WHERE rownum<2;
+
+        IF sq_nid IS NOT NULL THEN
+            xplan :='ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid;
+            dbms_output.put_line(xplan);
+            dbms_output.put_line(lpad('=',length(xplan),'='));
+            xplan := 'ora plan '||sq_nid||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+        ELSE
+            xplan := 'xplan -'||sq_id||' '||sig;
+        END IF;
     ELSE 
         sig := -1;
     END IF;
 
-    IF stmt.elapsed_time>0 THEN
-        OPEN cur FOR
-            SELECT stmt.sql_id,
-                   stmt.force_matching_signature force_signature,
-                   stmt.executions execs,
-                   stmt.fetches,
-                   stmt.elapsed_time ela,
-                   round(stmt.cpu_time/stmt.elapsed_time,4) cpu,
-                   stmt.buffer_gets buff,
-                   stmt.disk_reads reads,
-                   stmt.direct_writes dxwrites,
-                   stmt.rows_processed "rows#"
-            from dual;
+    IF sq_text IS NOT NULL THEN
+        IF bitand(&opt,1)=1 THEN
+            OPEN cur FOR
+                select *
+                FROM   XMLTABLE('//stats[@type="execution"]/stat' 
+                       passing xmltype(sq_text)
+                       columns name varchar2(128) path '@name',
+                               val  number path '.')
+                ORDER  BY 1;
+        ELSIF bitand(&opt,4)=4 THEN
+            OPEN cur FOR
+                SELECT EXTRACTVALUE(VALUE(P), '/object/num') OBJN,
+                       NVL(EXTRACTVALUE(VALUE(P), '/object/owner'), 'N/A')  OWNER,
+                       EXTRACTVALUE(VALUE(P), '/object/name') NAME,
+                       EXTRACTVALUE(VALUE(P), '/object/type') TYPE
+                FROM   TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(sq_text), '//object'))) P
+                ORDER  BY owner,name;
+        ELSIF bitand(&opt,2)=0 THEN
+            dbms_output.put_line(sq_text);
+        END IF;
     END IF;
-    :plan_id := sig;
-    :sql_id  := '-'||sq_id;
+    :xplan   := xplan;
     :cur     := cur;
 END;
 /
 
-xplan &sql_id &plan_id
-
+&xplan 
 print cur
 &load loadtrace default 256

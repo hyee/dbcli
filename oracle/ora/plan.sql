@@ -16,7 +16,7 @@ Options:
     &STAT: default={&DF &adaptive &binds &V3 &V4 &V5 &V6 &V7 &V8 &V9}
     &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
-    &LAST: last={LAST} all={OUTLINE ALL} 
+    &LAST: last={LAST} all={OUTLINE ALL} allstats={}
     &DF: default={ALLSTATS PARALLEL PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
     &SRC: {
             default={0}, # Both
