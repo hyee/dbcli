@@ -1206,7 +1206,7 @@ function desc.desc(name,option)
         if #result>1 then
             result=result[2]
             rs[1],rs[2]=result[1],result[2]
-            desc=' ['..(result[3]=='TABLE' and table or ('VARRAY('..result[4]..')'))..' OF '..rs[2]..']'
+            desc=' ['..(result[3]=='TABLE' and 'TABLE' or ('VARRAY('..result[4]..')'))..' OF '..rs[2]..']'
         end
     end
 
