@@ -458,43 +458,48 @@ local desc_sql={
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
         SELECT /*INTERNAL_DBCLI_CMD*/
+               /*+use_concat*/
                attr_no NO#,
-               attr_name,
-               attr_type_owner||NVL2(attr_type_owner,'.','')||
-               attr_TYPE_OWNER || NVL2(attr_TYPE_OWNER, '.', '') ||
-               CASE WHEN attr_type_name IN('CHAR',
-                                      'VARCHAR',
-                                      'VARCHAR2',
-                                      'NCHAR',
-                                      'NVARCHAR',
-                                      'NVARCHAR2',
-                                      'RAW') --
-               THEN attr_type_name||'(' || LENGTH || ')' --
-               WHEN attr_type_name = 'NUMBER' --
-               THEN (CASE WHEN nvl(scale, PRECISION) IS NULL THEN attr_type_name
-                          WHEN scale > 0 THEN attr_type_name||'(' || NVL(''||PRECISION, '38') || ',' || SCALE || ')'
-                          WHEN PRECISION IS NULL AND scale=0 THEN 'INTEGER'
-                          ELSE attr_type_name||'(' || PRECISION  || ')' END) ELSE attr_type_name END
-               data_type,
-               attr_type_name || CASE
-                   WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') --
-                   THEN '(' || LENGTH || ')'
+               decode(c, 1,
+                      CASE
+                          WHEN attr_no = 1 THEN
+                           (SELECT DECODE(COLL_TYPE, 'TABLE', 'TABLE', 'VARRAY(' || UPPER_BOUND || ')') || ' OF ' || type_name || CHR(10) || '  '
+                            FROM   ALL_COLL_TYPES
+                            WHERE  owner = :owner
+                            AND    type_name = :object_name)
+                          ELSE
+                           '  '
+                      END) || attr_name attr_name,
+               decode(attr_no*c, 1, chr(10)) || nullif(attr_type_owner||'.', '.') || --
+               CASE
+                   WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') THEN
+                    attr_type_name || '(' || LENGTH || ')' --
                    WHEN attr_type_name = 'NUMBER' THEN
                     (CASE
-                        WHEN scale IS NULL AND PRECISION IS NULL THEN
-                         ''
-                        WHEN scale <> 0 THEN
-                         '(' || NVL(PRECISION, 38) || ',' || SCALE || ')'
+                        WHEN nvl(scale, PRECISION) IS NULL THEN
+                         attr_type_name
+                        WHEN scale > 0 THEN
+                         attr_type_name || '(' || NVL('' || PRECISION, '38') || ',' || SCALE || ')'
+                        WHEN PRECISION IS NULL AND scale = 0 THEN
+                         'INTEGER'
                         ELSE
-                         '(' || NVL(PRECISION, 38) || ')'
+                         attr_type_name || '(' || PRECISION || ')'
                     END)
                    ELSE
-                    ''
-               END data_type,
-               Inherited
-        FROM   all_type_attrs
-        WHERE  owner=:owner and type_name=:object_name
-        ORDER BY NO#]],
+                    attr_type_name
+               END data_type, 
+               decode(attr_no*c, 1, chr(10)) || ATTR_TYPE_MOD ATTR_MOD, 
+               decode(attr_no*c, 1, chr(10)) || Inherited inherit, 
+               decode(attr_no*c, 1, chr(10)) || CHARACTER_SET_NAME "CHARSET"
+        FROM   (SELECT A.*, decode(type_name, :object_name, 0, 1) c
+                FROM   all_type_attrs a
+                WHERE  (owner = :owner AND type_name = :object_name)
+                OR     (owner, type_name) IN (SELECT /*+PRECOMPUTE_SUBQUERY*/
+                                               ELEM_TYPE_OWNER, ELEM_TYPE_NAME
+                                              FROM   ALL_COLL_TYPES
+                                              WHERE  owner = :owner
+                                              AND    type_name = :object_name))
+        ORDER  BY NO#]],
     TABLE={[[
         SELECT /*INTERNAL_DBCLI_CMD*/ 
                --+no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c)

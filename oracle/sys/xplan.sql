@@ -1,4 +1,6 @@
-/*[[explain/gather/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
+/*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
+    The script will call DBMS_SQLTUNE_INTERNAL.I_PROCESS_SQL_CALLOUT instead of "EXPLAIN PLAN" or "EXECUTE IMMEDIATE" so that the bind variables can be applied.
+    And the actual SQL text will start with the "/* SQL Analyzer(<sid>,0) */ " prefix
 
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
@@ -15,14 +17,13 @@
     --]]
 ]]*/
 set verify off feed off
-var plan_id NUMBER;
-var sql_id VARCHAR2(30);
 var cur REFCURSOR;
 var xplan VARCHAR2(300);
 col ela for usmhd2
 col cpu for pct2
-col val for k0
-col buff,reads,dxwrites,rows# for tmb2
+col val,xplan_cost,exec_cost for k0
+col buff,reads,dxwrites,rows#,blocks,extents for tmb2
+col bytes,NEXT_KB for kmg2
 
 DECLARE
     cur     SYS_REFCURSOR;
@@ -194,6 +195,17 @@ BEGIN
         INTO   sig,fixctl,px
         FROM   TABLE(stmt.sql_plan);
 
+        SELECT MAX(sql_id)
+        INTO   sq_nid
+        FROM (SELECT sql_id,child_number
+              FROM   v$sql
+              WHERE  plan_hash_value=fixctl
+              AND    sql_text LIKE '/* SQL Analyze('||userenv('sid')||',%'
+              AND    instr(sql_text,stmt.sql_text)>0
+              AND    parsing_schema_name=stmt.parsing_schema_name
+              ORDER  BY last_active_time desc)
+        WHERE rownum<2;
+
         DELETE PLAN_TABLE
         WHERE  PLAN_ID=sig
         OR     STATEMENT_ID='INTERNAL_DBCLI_CMD';
@@ -271,18 +283,6 @@ BEGIN
                OTHER_XML
         FROM   TABLE(stmt.sql_plan);
 
-        SELECT MAX(sql_id)
-        INTO   sq_nid
-        FROM (SELECT sql_id,child_number
-              FROM   v$sql
-              WHERE  plan_hash_value=fixctl
-              AND    sql_text LIKE '/* SQL Analyze('||userenv('sid')||'%'
-              AND    instr(sql_text,stmt.sql_text)>0
-              AND    parsing_schema_name=stmt.parsing_schema_name
-              AND    force_matching_signature=stmt.force_matching_signature
-              ORDER  BY last_active_time desc)
-        WHERE rownum<2;
-
         IF sq_nid IS NOT NULL THEN
             xplan :='ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid;
             dbms_output.put_line(xplan);
@@ -296,23 +296,51 @@ BEGIN
     END IF;
 
     IF sq_text IS NOT NULL THEN
-        IF bitand(&opt,1)=1 THEN
+        IF bitand(&opt,3)>0 THEN
             OPEN cur FOR
-                select *
-                FROM   XMLTABLE('//stats[@type="execution"]/stat' 
-                       passing xmltype(sq_text)
-                       columns name varchar2(128) path '@name',
-                               val  number path '.')
-                ORDER  BY 1;
+                SELECT xplan_cost, a.name,
+                       '$BRED$$HIW$/$NOR$' "/",
+                       exec_cost,b.name
+                FROM (
+                    SELECT a.*,row_number() over(order by name) r
+                    FROM   XMLTABLE('//stats[@type="compilation" and number()>-1]/stat' 
+                           passing xmltype(sq_text)
+                           columns name       varchar2(128) path '@name',
+                                   xplan_cost INT path 'number()') a) a
+                FULL JOIN (
+                    SELECT a.*,row_number() over(order by name) r
+                    FROM   XMLTABLE('//stats[@type="execution" and number()>-1]/stat' 
+                           passing xmltype(sq_text)
+                           columns name       varchar2(128) path '@name',
+                                   exec_cost  INT path 'number()') a) b
+                USING (r)
+                ORDER  BY R;
         ELSIF bitand(&opt,4)=4 THEN
             OPEN cur FOR
-                SELECT EXTRACTVALUE(VALUE(P), '/object/num') OBJN,
-                       NVL(EXTRACTVALUE(VALUE(P), '/object/owner'), 'N/A')  OWNER,
-                       EXTRACTVALUE(VALUE(P), '/object/name') NAME,
-                       EXTRACTVALUE(VALUE(P), '/object/type') TYPE
-                FROM   TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(sq_text), '//object'))) P
-                ORDER  BY owner,name;
-        ELSIF bitand(&opt,2)=0 THEN
+                SELECT /*+NO_EXPAND*/ 
+                       object_id,owner,object_name,subobject_name part_name,type,
+                       COUNT(1) SEGS,
+                       SUM(BYTES) BYTES,
+                       SUM(BLOCKS) BLOCKS,
+                       SUM(EXTENTS) EXTENTS,
+                       MAX(NEXT_EXTENT) NEXT_KB,
+                       MAX(TABLESPACE_NAME) TBS,
+                       MAX(SEGMENT_SUBTYPE) KEEP(DENSE_RANK LAST ORDER BY TABLESPACE_NAME) TBS_TYPE
+                FROM (
+                    SELECT /*+opt_estimate(query,rows=5)*/ 
+                           0+EXTRACTVALUE(VALUE(P), '/object/num') object_id,
+                           NVL(EXTRACTVALUE(VALUE(P), '/object/owner'), 'N/A') owner,
+                           EXTRACTVALUE(VALUE(P), '/object/name') object_name,
+                           EXTRACTVALUE(VALUE(P), '/object/type') TYPE
+                    FROM   TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(sq_text), '//object'))) P) A
+                JOIN DBA_OBJECTS B
+                USING (OBJECT_ID,OWNER,OBJECT_NAME)
+                JOIN  (SELECT A.*,SEGMENT_NAME OBJECT_NAME FROM DBA_SEGMENTS A) C
+                USING (OWNER,OBJECT_NAME)
+                WHERE (B.SUBOBJECT_NAME IS NULL OR c.PARTITION_NAME=B.SUBOBJECT_NAME)
+                GROUP  BY object_id,owner,object_name,subobject_name,type
+                ORDER  BY owner,object_name;
+        ELSE
             dbms_output.put_line(sq_text);
         END IF;
     END IF;
