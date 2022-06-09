@@ -458,12 +458,11 @@ local desc_sql={
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
         SELECT /*INTERNAL_DBCLI_CMD*/
-               /*+use_concat*/
                attr_no NO#,
                decode(c, 1,
                       CASE
                           WHEN attr_no = 1 THEN
-                           (SELECT DECODE(COLL_TYPE, 'TABLE', 'TABLE', 'VARRAY(' || UPPER_BOUND || ')') || ' OF ' || type_name || CHR(10) || '  '
+                           (SELECT a.type_name||'['||DECODE(COLL_TYPE, 'TABLE', 'TABLE', 'VARRAY(' || UPPER_BOUND || ')') ||']'||CHR(10) || '  '
                             FROM   ALL_COLL_TYPES
                             WHERE  owner = :owner
                             AND    type_name = :object_name)
@@ -493,12 +492,7 @@ local desc_sql={
                decode(attr_no*c, 1, chr(10)) || CHARACTER_SET_NAME "CHARSET"
         FROM   (SELECT A.*, decode(type_name, :object_name, 0, 1) c
                 FROM   all_type_attrs a
-                WHERE  (owner = :owner AND type_name = :object_name)
-                OR     (owner, type_name) IN (SELECT /*+PRECOMPUTE_SUBQUERY*/
-                                               ELEM_TYPE_OWNER, ELEM_TYPE_NAME
-                                              FROM   ALL_COLL_TYPES
-                                              WHERE  owner = :owner
-                                              AND    type_name = :object_name))
+                WHERE  (owner = :owner AND type_name = :object_name)) a
         ORDER  BY NO#]],
     TABLE={[[
         SELECT /*INTERNAL_DBCLI_CMD*/ 
@@ -1192,6 +1186,7 @@ function desc.desc(name,option)
        or obj.object_type,2}
 
     local sqls=desc_sql[rs[4]]
+    local desc=''
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
     if type(sqls)~="table" then sqls={sqls} end
     if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
@@ -1201,17 +1196,29 @@ function desc.desc(name,option)
     elseif rs[4]=='ANALYTIC VIEW' then
         env.var.define_column('CATEGORY','BREAK','SKIP','-')
         cfg.set("colsep",'|')
+    elseif rs[4]=='TYPE' then
+        local result=db:dba_query(db.internal_call,
+                                  [[select ELEM_TYPE_OWNER,ELEM_TYPE_NAME,COLL_TYPE,UPPER_BOUND
+                                   from ALL_COLL_TYPES 
+                                   WHERE owner = :owner AND type_name = :object_name]],
+                                  {owner=rs[1],object_name=rs[2]})
+        result=db.resultset:rows(result,-1)
+        if #result>1 then
+            result=result[2]
+            rs[1],rs[2]=result[1],result[2]
+            desc=' ['..(result[3]=='TABLE' and table or ('VARRAY('..result[4]..')'))..' OF '..rs[2]..']'
+        end
     end
 
     for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
         rs[k]=v
     end
 
-    local dels='\n'..string.rep("=",100)
+    local dels='\n'..string.rep("=",80)
     local feed,autohide=cfg.get("feed"),cfg.get("autohide")
     cfg.set("feed","off",true)
     cfg.set("autohide","col",true)
-    print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
+    print(("%s : %s%s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],desc))
     
 
     for i,sql in ipairs(sqls) do
