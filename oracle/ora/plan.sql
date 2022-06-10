@@ -61,10 +61,18 @@ Options:
                   AND    a.plan_hash_value = coalesce('&v2'+0,(
                      select --+precompute_subquery index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
-                     from &check_access_pdb.sqlstat c where sql_id='&v1' AND dbid=nvl('&dbid',&did)),(
+                     from &check_access_pdb.sqlstat c 
+                     where sql_id='&v1' 
+                     AND   &SRC != 1
+                     AND   dbid=nvl('&dbid',&did)
+                     AND   '&v1' not in('X','&_sql_id')),(
                      select /*+precompute_subquery*/ 
                             max(plan_hash_value) keep(dense_rank last order by timestamp) 
-                     from &check_access_pdb.sql_plan where sql_id='&v1' AND  dbid=nvl('&dbid',&did)))} 
+                     from &check_access_pdb.sql_plan 
+                     where sql_id='&v1'
+                     AND   &SRC != 1
+                     AND    '&v1' not in('X','&_sql_id')
+                     AND  dbid=nvl('&dbid',&did)))} 
            default={0}
           }
     @check_access_advisor: {
@@ -95,6 +103,8 @@ Options:
                         select /*+precompute_subquery*/ max(task_id),max(plan_hash_value) keep(dense_rank last order by task_id,timestamp) 
                         from   dba_advisor_sqlplans 
                         where  sql_id='&v1'
+                        AND    &SRC = 0
+                        AND    '&v1' not in('X','&_sql_id')
                         and    plan_hash_value=nvl('&v2'+0,plan_hash_value))}
            default={}
     }
@@ -124,7 +134,12 @@ Options:
                   AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.signature = st.signature
-                  AND    a.plan_id = coalesce('&V2'+0,(select max(plan_id) keep(dense_rank last order by timestamp) from sys.sqlobj$plan b where b.signature=a.signature))
+                  AND    a.plan_id = coalesce('&V2'+0,(
+                        select max(plan_id) keep(dense_rank last order by timestamp) 
+                        from   sys.sqlobj$plan b 
+                        where  b.signature=a.signature
+                        AND    &SRC = 0
+                        AND   '&v1' not in('X','&_sql_id')))
            }
            default={}
     }
@@ -308,9 +323,13 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    (sqlset_id,a.plan_hash_value) = (
-                        select /*+precompute_subquery*/ max(sqlset_id),max(plan_hash_value) keep(dense_rank last order by sqlset_id,timestamp) 
+                        select /*+precompute_subquery*/ 
+                               max(sqlset_id),
+                               max(plan_hash_value) keep(dense_rank last order by sqlset_id,timestamp) 
                         from   all_sqlset_plans 
                         where  sql_id='&V1'
+                        AND    &SRC = 0
+                        AND    '&v1' not in('X','&_sql_id')
                         and    plan_hash_value=nvl('&V2'+0,plan_hash_value))
                   &check_access_awr
                   &check_access_advisor
@@ -342,7 +361,9 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                              max(plan_id) keep(dense_rank last order by timestamp),
                              max(timestamp)
                       from   plan_table
-                      where  nvl(upper('&V1'),'X') in(statement_id,''||plan_id,'X'))) a
+                      where  nvl(upper('&V1'),'X') in(statement_id,''||plan_id,'X')
+                      AND    &SRC = 0
+                      AND    '&v1' not in('&_sql_id'))) a
          )
   WHERE  seq = 1),
 hierarchy_data AS

@@ -28,7 +28,7 @@
 ]]*/
 set rownum on sqltimeout 1800 sep4k on
 SELECT * FROM (
-    SELECT /*+NO_EXPAND MONITOR opt_param('_optimizer_sortmerge_join_enabled','false') */ 
+    SELECT /*+NO_EXPAND MONITOR opt_param('optimizer_dynamic_sampling' 6) opt_param('_optimizer_sortmerge_join_enabled','false') */ 
             min(obj#) obj#,owner,  &cols object_type,
             SUM(DECODE(statistic_name, 'logical reads', VALUE)) logi_reads,
             SUM(DECODE(statistic_name, 'physical reads', VALUE)) phy_reads,

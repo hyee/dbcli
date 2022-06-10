@@ -6,7 +6,7 @@
 ]]*/
 WITH ho AS
  (
-    SELECT /*+materialize*/ * 
+    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 11)*/ * 
     FROM &GV
         SELECT /*+ordered use_hash(hl h) use_nl(ho hv) no_merge(h)*/ DISTINCT 
                 hl.*,

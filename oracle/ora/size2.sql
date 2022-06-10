@@ -66,7 +66,7 @@ findobj "&V1" "" 1
 COL BYTES,INI_EXT,NEXT_EXT,FC_CACHED,FC_CCCACHED,FC_WRITE,FC_KEEP,FC_CCKEEP FOR KMG
 COL BLOCKS,EXTENTS,fc_reqs FOR TMB
 COL "fc_hit%,fc_cc%" for pct
-WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs)*/
+WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs) opt_param('optimizer_dynamic_sampling' 11)*/
                     objs.segment_owner,
                     coalesce(subs.lob_name,parts.lob_name,lobs.segment_name,objs.segment_name) segment_name,
                     coalesce(subs.lob_subpartition_name,parts.lob_partition_name,objs.partition_name) partition_name,

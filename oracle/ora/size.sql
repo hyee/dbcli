@@ -42,7 +42,7 @@ BEGIN
     IF :V1 IS NOT NULL THEN
         OPEN cur FOR
         WITH clu AS(
-            SELECT /*+ordered use_nl(u o)*/ 0 lv,
+            SELECT /*+ordered use_nl(u o) opt_param('optimizer_dynamic_sampling' 11)*/ 0 lv,
                    MIN(o.obj#) obj#,
                    :object_subname||'%' subname
             FROM   sys.user$ u, sys.obj$ o
@@ -122,7 +122,8 @@ BEGIN
                         dbms_space.create_index_cost(v_ddl,v_alloc,v_used);
                     EXCEPTION WHEN OTHERS THEN NULL;
                     END;
-                    SELECT SUM(a.avg_col_len+1),max(c.pct_free),max(nvl(regexp_substr(c.degree,'\d+'),'1')+0),max(c.ini_trans)
+                    SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/
+                           SUM(a.avg_col_len+1),max(c.pct_free),max(nvl(regexp_substr(c.degree,'\d+'),'1')+0),max(c.ini_trans)
                     INTO   v_used,v_free,v_degree,v_initrans
                     FROM   dba_tab_cols a,dba_ind_columns b,dba_indexes c
                     WHERE  b.index_owner=r.owner

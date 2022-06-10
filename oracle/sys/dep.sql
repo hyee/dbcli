@@ -9,7 +9,7 @@
 &getobj findobj "&V1" 0 1
 
 SELECT * FROM TABLE(GV$(CURSOR(
-    SELECT /*+ordered*/ userenv('instance') inst_id,
+    SELECT /*+ordered opt_param('optimizer_dynamic_sampling' 5)*/ userenv('instance') inst_id,
            g.kglnaown,
            g.kglnaobj,
            decode(c.kglhdnsp,

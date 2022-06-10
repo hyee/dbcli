@@ -40,6 +40,7 @@ DECLARE
     trace   VARCHAR2(200);
     fixctl  INT;
     PX      INT;
+    phv     INT;
     st      DATE;
     ctrl    VARCHAR2(2000);
     PROCESS_CTRL_DTD CONSTANT VARCHAR2(4000) :=  
@@ -108,26 +109,26 @@ BEGIN
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT nvl(upper(own),nam),txt,sig,br
-        INTO own,sq_text,sig,bw
+        SELECT nvl(upper(own),nam),txt,sig,br,phv
+        INTO own,sq_text,sig,bw,phv
         FROM (
             SELECT * FROM (
-                SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br
+                SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br,plan_hash_value phv
                 FROM   gv$sql a
                 WHERE  sql_id = sq_id
                 AND    nvl(id, child_number) IN (child_number, plan_hash_value)
                 ORDER  BY nvl2(bind_data,1,2),last_active_time desc
             ) WHERE rownum<2
             UNION ALL
-            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
+            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value
             FROM   all_sqlset_statements a
             WHERE  sql_id = sq_id
             AND    nvl(id, sqlset_id) IN (sqlset_id, plan_hash_value)
             UNION ALL
-            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
+            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value
             FROM   dba_hist_sqltext
             JOIN  (SELECT *
-                   FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data
+                   FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data,plan_hash_value
                            FROM   dba_hist_sqlstat
                            WHERE  sql_id = sq_id
                            AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
@@ -136,7 +137,7 @@ BEGIN
             USING  (dbid, sql_id)
             WHERE  sql_id = sq_id
             UNION ALL
-            SELECT username,to_clob(sql_text),force_matching_signature,null
+            SELECT username,to_clob(sql_text),force_matching_signature,null,sql_plan_hash_value
             FROM   gv$sql_monitor
             WHERE  sql_id = sq_id
             AND    sql_text IS NOT NULL
@@ -203,6 +204,8 @@ BEGIN
                COUNT(CASE WHEN operation LIKE 'PX%' THEN 1 END)
         INTO   sig,fixctl,px
         FROM   TABLE(stmt.sql_plan);
+
+        xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||fixctl;
 
         SELECT MAX(sql_id)
         INTO   sq_nid
@@ -292,11 +295,13 @@ BEGIN
         FROM   TABLE(stmt.sql_plan);
 
         IF sq_nid IS NOT NULL THEN
-            xplan :='ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid;
+            xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan '||sq_nid||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||sq_nid||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
+            dbms_output.put_line(xplan);
+            dbms_output.put_line(lpad('=',length(xplan),'='));
             xplan := 'xplan -'||sq_id||' '||sig;
         END IF;
     ELSE 

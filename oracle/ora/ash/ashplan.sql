@@ -108,8 +108,8 @@ Sample Ouput:
     &check_access_pdb: hist={dba_hist_} pdb={AWR_PDB_} 
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     @check_access_aux: default={(26/8/12)-6}
-    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,con_dbid dbid from dba_sqlset_plans a)}
-    &cid  : default={dbid} sqlset={con_dbid}
+    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,&did dbid from dba_sqlset_plans a)}
+    &cid  : default={dbid} sqlset={sqlset_id}
     &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
@@ -336,10 +336,10 @@ ALL_PLANS AS(
             EXTRACTVALUE(COLUMN_VALUE,'//IS_ADAPTIVE_')+0 IS_ADAPTIVE_,
             EXTRACTVALUE(COLUMN_VALUE,'//CID')+0 CID
     FROM    (select a.*,row_number() over(partition by plan_hash_value,dbid order by cnt desc) plan_seq
-             from sql_list a) h,
+             from   sql_list a) h,
             TABLE(XMLSEQUENCE(EXTRACT(DBMS_XMLGEN.GETXMLTYPE(q'!
-                SELECT /*+opt_param('cursor_sharing' 'force')*/ 
-                       * FROM(SELECT A.*,DENSE_RANK() OVER(ORDER BY FLAG,inst_id) SEQ
+                SELECT * 
+                FROM (SELECT A.*,DENSE_RANK() OVER(ORDER BY FLAG,inst_id) SEQ
                 FROM (
                     SELECT id,
                            decode(parent_id,-1,id-1,parent_id) parent_id,
@@ -376,7 +376,7 @@ ALL_PLANS AS(
                             NULL child_number,
                             sql_id,
                             nvl(plan_hash_value,0),
-                            null,
+                            &cid,
                             object#,
                             object_name,
                             object_alias,
@@ -388,7 +388,7 @@ ALL_PLANS AS(
                             max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1)) over(partition by plan_hash_value) df_dop,
                             &d_mbrc mbrc,
                             &cdb2 cid,
-                            &cid dbid
+                            dbid
                     FROM    &dplan a
                     WHERE  '&vw' IN('A','D')
                     AND    a.sql_id='!'|| h.sql_id ||'''
@@ -497,7 +497,7 @@ qry AS
   WHERE  phv in(select phv from ash_phv_agg where plan_exists=1)),
 xplan AS
  (  SELECT phv,rownum r,a.*
-    FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||dbid||' and &cdb2='||cid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
+    FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||inst_id||' and &cdb2='||cid||' and plan_hash_value=' || phv || ' and sql_id=''' || sq ||'''')) a
     WHERE  flag = 2
     UNION ALL
     SELECT phv,rownum,a.*

@@ -31,7 +31,7 @@
 ]]*/
 ora _find_object "&V1" 1
 SELECT * FROM (
-    SELECT /*+ordered use_nl(o)*/ *
+    SELECT /*+ordered use_nl(o) opt_param('optimizer_dynamic_sampling' 11)*/ *
     FROM TABLE(GV$(CURSOR(
         SELECT inst_id,object_name,object_type,
                sum(distinct decode(SQL_SEQ,1,execs)) execs,
