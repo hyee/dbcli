@@ -42,7 +42,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             
             PROCEDURE get_sql(p_sqlid VARCHAR2) IS
             BEGIN
-                SELECT sql_text, src
+                SELECT  /*+PQ_CONCURRENT_UNION*/ sql_text, src
                 INTO   v_sql, v_source
                 FROM   (
                         --awr and sqlset
@@ -52,6 +52,10 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         UNION ALL
                         SELECT SQL_FULLTEXT, p_sqlid
                         FROM   gv$sql a
+                        WHERE  sql_id = p_sqlid
+                        UNION ALL
+                        SELECT SQL_TEXT, p_sqlid
+                        FROM   all_sqlset_statements a
                         WHERE  sql_id = p_sqlid
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
@@ -95,9 +99,9 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                               WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then '-1'
                               ELSE nvl(regexp_substr(p_plan, '^\d+$'), 'z') || '%'
                           END;
-                SELECT xmltype(other_xml), src
+                SELECT /*+PQ_CONCURRENT_UNION*/ xmltype(other_xml), src
                 INTO   v_hints, v_plan_source
-                FROM   (SELECT /*+no_expand*/ other_xml, src
+                FROM   (SELECT  /*+PQ_CONCURRENT_UNION no_expand*/other_xml, src
                         FROM   (SELECT other_xml, 'memory' src, sql_id, plan_hash_value
                                 FROM   gv$sql_plan a
                                 WHERE  other_xml IS NOT NULL
@@ -268,7 +272,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
            
-            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING sq_id,sq_id;');
+            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_sqlset_statements WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING sq_id,sq_id,sq_id;');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
             writeSQL(v_sql,'sql_txt');
@@ -400,19 +404,22 @@ DECLARE --Better for this script to have the access on gv$sqlarea
     signature NUMBER;
     sq_id     VARCHAR2(30):='@sql_id@';
 BEGIN
-    BEGIN 
-        EXECUTE IMMEDIATE q'[SELECT * FROM (
+    BEGIN
+        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION*/ * FROM (
                                  SELECT SQL_FULLTEXT FROM gv$sqlarea
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
                                  SELECT SQL_TEXT FROM dba_hist_sqltext
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
+                                 SELECT SQL_TEXT FROM all_sqlset_statements
+                                 WHERE SQL_ID=:1 AND ROWNUM<2
+                                 UNION ALL
                                  SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor 
                                  WHERE SQL_ID=:1 AND IS_FULL_SQLTEXT='Y'
                                  AND   SQL_TEXT IS NOT NULL AND ROWNUM<2
                              ) WHERE ROWNUM<2]' 
-        INTO sql_txt USING sq_id,sq_id,sq_id;
+        INTO sql_txt USING sq_id,sq_id,sq_id,sq_id;
     EXCEPTION WHEN OTHERS THEN NULL;END;
     IF sql_txt IS NULL THEN
         raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);

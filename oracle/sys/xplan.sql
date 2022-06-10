@@ -134,6 +134,14 @@ BEGIN
                     WHERE  rownum < 2)
             USING  (dbid, sql_id)
             WHERE  sql_id = sq_id
+            UNION ALL
+            SELECT username,to_clob(sql_text),force_matching_signature,null
+            FROM   gv$sql_monitor
+            WHERE  sql_id = sq_id
+            AND    sql_text IS NOT NULL
+            AND    IS_FULL_SQLTEXT='Y'
+            AND    nvl(id,sql_exec_id) in(sql_exec_id,sql_plan_hash_value)
+            AND    rownum < 2
         ) WHERE ROWNUM<2;
     EXCEPTION WHEN OTHERS THEN
         raise_application_error(-20001,'Cannot find SQL Text for SQL Id: '||sq_id);

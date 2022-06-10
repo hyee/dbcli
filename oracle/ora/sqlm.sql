@@ -385,8 +385,8 @@ BEGIN
                 IF rpt_id IS NULL THEN
                     fmt := t_fmt('ALL+PLAN_SKEW+SUMMARY+SQL_FULLTEXT','ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
                     SELECT value into dyn_lvl from v$parameter where name='optimizer_dynamic_sampling';
-                    IF dyn_lvl>2 THEN
-                        EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=2';
+                    IF dyn_lvl!=4 THEN
+                        EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=4';
                     END IF;
                     FOR i in 1..fmt.count LOOP
                         BEGIN
@@ -395,13 +395,16 @@ BEGIN
                             exit;
                         EXCEPTION WHEN OTHERS THEN
                             IF i=fmt.count THEN
-                                IF dyn_lvl>2 THEN
+                                IF dyn_lvl!=4 THEN
                                     EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
                                 END IF;
                                 RAISE;
                             END IF;
                         END;
                     END LOOP;
+                    IF dyn_lvl!=4 THEN
+                        EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
+                    END IF;
                 ELSE
                     $IF &check_access_report=1 $THEN
                         xml := SYS.DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL_XML(rpt_id);

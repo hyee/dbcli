@@ -20,15 +20,30 @@ ora _find_object &V1
 select /*+leading(b) use_hash(a)*/ 
       inst,
       nvl(a.status,'-total-') status,
-      count(1) blocks,
+      sum(blocks) blocks,
       sum(FORCED_READS) FORCED_READS,
       sum(FORCED_WRITES) FORCED_WRITES,
-      COUNT(decode(DIRTY,'Y',1)) DIRTIES,
-      COUNT(decode(TEMP,'Y',1)) TEMPS,
-      COUNT(decode(PING,'Y',1)) PINGS,
-      COUNT(decode(STALE,'Y',1)) STALES,
-      COUNT(decode(DIRECT,'Y',1)) DIRECTS
-from &obj b,(select a.*,case when :V2='A' then 'A' ELSE to_char(inst_id) end inst from gv$bh a where nullif(:V2,'0') is null or inst_id=:V2) a 
+      sum(DIRTIES) DIRTIES,
+      sum(TEMPS) TEMPS,
+      sum(PINGS) PINGS,
+      sum(STALES) STALES,
+      sum(DIRECTS) DIRECTS
+from &obj b,table(gv$(cursor(
+     select inst,status,objd,
+            count(1) blocks,
+            sum(FORCED_READS) FORCED_READS,
+            sum(FORCED_WRITES) FORCED_WRITES,
+            COUNT(decode(DIRTY,'Y',1)) DIRTIES,
+            COUNT(decode(TEMP,'Y',1)) TEMPS,
+            COUNT(decode(PING,'Y',1)) PINGS,
+            COUNT(decode(STALE,'Y',1)) STALES,
+            COUNT(decode(DIRECT,'Y',1)) DIRECTS
+     from (
+         select a.*,case when :V2='A' then 'A' ELSE to_char(userenv('instance')) end inst 
+         from  v$bh a 
+         where nullif(:V2,'0') is null 
+         or userenv('instance')=:V2) 
+     group by inst,status,objd))) a 
 where a.objd=b.data_object_id
 and   b.owner=:object_owner
 and   b.object_name=:object_name

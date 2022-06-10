@@ -1,7 +1,8 @@
 /*[[Run SQL Tuning Advisor on target SQL. Usage: @@NAME <task_id>|<sql_text>|{<sql_id> [<phv>|<child_num>|<snap_id>|<sqlset_id>|<schema>]} [time limit]
-    -sync        : run in sync mode, otherwise run with dbms_scheduler
-    <schema>     : target run-as-user, can be a number which points to specific child_number/snap_id/sqlset_id/plan_hash_value
-    <time limit> : maximum run time in seconds, default as 7200
+    <sql_id>|<sql_text>: if specify then run STA on target SQL
+    -sync              : run in sync mode, otherwise run with dbms_scheduler
+    <schema>           : target run-as-user, can be a number which points to specific child_number/snap_id/sqlset_id/plan_hash_value
+    <time limit>       : maximum run time in seconds, default as 7200
     --[[
         &exe_mode: async={0}, sync={1}
         @check_access_sqlid: SYS.DBMS_SQLTUNE_UTIL0={1} default={0}
@@ -41,7 +42,7 @@ BEGIN
                     AND    rownum < 2
                     UNION ALL
                     SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
-                    FROM   dba_sqlset_statements a
+                    FROM   all_sqlset_statements a
                     WHERE  sql_id = sq_id
                     AND    nvl(id, sqlset_id) IN (sqlset_id, plan_hash_value)
                     AND    rownum < 2
@@ -56,7 +57,15 @@ BEGIN
                                    ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
                            WHERE  rownum < 2)
                     USING  (dbid, sql_id)
-                    WHERE  sql_id = sq_id)
+                    WHERE  sql_id = sq_id
+                    UNION ALL
+                    SELECT username,to_clob(sql_text),force_matching_signature,null
+                    FROM   gv$sql_monitor
+                    WHERE  sql_id = sq_id
+                    AND    sql_text IS NOT NULL
+                    AND    IS_FULL_SQLTEXT='Y'
+                    AND    nvl(id,sql_exec_id) in(sql_exec_id,sql_plan_hash_value)
+                    AND    rownum < 2)
             WHERE  ROWNUM < 2;
         ELSE
             IF sq_txt LIKE '%/' THEN
@@ -74,13 +83,10 @@ BEGIN
         BEGIN
             tsk :='STA_'||sq_id;
             dbms_sqltune.drop_tuning_task(tsk);
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
+        EXCEPTION WHEN OTHERS THEN NULL;END;
         BEGIN
-            tsk :='STA_'||sq_id;
-            dbms_scheduler.drop_job(tsk,true);
-        EXCEPTION WHEN OTHERS THEN NULL;
-        END;
+            dbms_scheduler.drop_job(upper(tsk),true);
+        EXCEPTION WHEN OTHERS THEN NULL;END;
         END IF;
 
         IF bw IS NOT NULL THEN 
@@ -96,12 +102,27 @@ BEGIN
                    time_limit => nvl(0 + :V3,7200),
                    task_name  => tsk);
         IF &exe_mode = 0 THEN
+            sq_txt:=q'~
+            declare
+                c int;
+            begin
+                execute immediate q'[alter session set "_fix_control"='25167306:1']';
+            exception when others then
+                select count(1) into c
+                from   v$sysstat
+                where  name='cell physical IO bytes eligible for predicate offload'
+                and    value>0;
+                if c>0 then
+                    execute immediate 'alter session set "_serial_direct_read"=always';
+                end if;
+            end;
+            dbms_sqltune.execute_tuning_task('~' || tsk || ''');';
             dbms_scheduler.create_job(job_name => tsk,
                                       job_type => 'PLSQL_BLOCK',
-                                      job_action => 'dbms_sqltune.execute_tuning_task(''' || tsk || ''');',
+                                      job_action => sq_txt,
                                       enabled => TRUE);
-            sq_txt := 'STA is running in async mode with job id as ' || tsk || ', run dbms_sqltune.report_tuning_task(''' || tsk ||
-                      ''') after its completion.';
+            sq_txt := 'STA is running in async mode with job id as ' || tsk 
+                      || ', run dbms_sqltune.report_tuning_task(''' || tsk ||''') after its completion.';
         ELSE
             dbms_sqltune.execute_tuning_task(tsk);
             sq_txt := dbms_sqltune.report_tuning_task(tsk);
@@ -114,13 +135,12 @@ BEGIN
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
-                     (SELECT decode(t,'SQL',attr3||' => '||attr1,nullif(attr3||'.'||attr1,'.')) FROM 
-                         (SELECT TYPE t, attr3,attr1 
-                          FROM   dba_advisor_objects b
-                          WHERE  task_id = a.task_id
-                          AND    EXECUTION_NAME IS NULL
-                          AND    TYPE IN('SQLSET','SQL'))
-                     WHERE ROWNUM<2) SQLSET
+                     (SELECT decode(type,'SQL',attr3||' => '||attr1,nullif(attr3||'.'||attr1,'.')) 
+                      FROM   dba_advisor_objects b
+                      WHERE  task_id = a.task_id
+                      AND    EXECUTION_NAME IS NULL
+                      AND    TYPE IN('SQLSET','SQL')
+                      AND    ROWNUM<2) SQLSET
               FROM   (SELECT task_id, advisor_name, owner, task_name, execution_start, execution_end, status,DESCRIPTION
                       FROM   dba_advisor_tasks a
                       WHERE  advisor_name LIKE 'SQL Tuning%'

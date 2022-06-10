@@ -31,7 +31,7 @@
 set feed off printsize 3000 pipequery off
 
 WITH sql_plan_data AS
- (SELECT /*+materialize*/ *
+ (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 11)*/ *
   FROM   (SELECT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id desc) seq
           FROM   (SELECT *

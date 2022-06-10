@@ -88,8 +88,9 @@ BEGIN
     BEGIN
       SELECT * 
       INTO   sql_text,:src,:inst
-      FROM(select sql_fulltext sql_text,'gv$active_session_history' src,'inst_id' inst from gv$sqlarea where sql_id='&v1'
-           &check_access_hist  union all select sql_text,'dba_hist_active_sess_history','instance_number' inst from dba_hist_sqltext src where sql_id='&v1'
+      FROM(select sql_fulltext sql_text,'gv$active_session_history' src,'inst_id' inst from gv$sqlarea where sql_id='&v1' and ROWNUM<2
+           union all select sql_text,'dba_hist_active_sess_history','instance_number' inst from all_sqlset_statements src where sql_id='&v1' and ROWNUM<2
+           &check_access_hist  union all select sql_text,'dba_hist_active_sess_history','instance_number' inst from dba_hist_sqltext src where sql_id='&v1' and ROWNUM<2
       ) WHERE ROWNUM<2;
     EXCEPTION WHEN OTHERS THEN
         :src := 'gv$active_session_history';

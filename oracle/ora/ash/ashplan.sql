@@ -108,7 +108,7 @@ Sample Ouput:
     &check_access_pdb: hist={dba_hist_} pdb={AWR_PDB_} 
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     @check_access_aux: default={(26/8/12)-6}
-    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
+    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,con_dbid dbid from dba_sqlset_plans a)}
     &cid  : default={dbid} sqlset={con_dbid}
     &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
     &top1: default={ev}, O={CURR_OBJ#}
@@ -281,6 +281,7 @@ ash_raw as (
                       opt_param('cursor_sharing' 'force')
                       opt_param('_optim_peek_user_binds' 'false') 
                       opt_param('_optimizer_connect_by_combine_sw', 'false')
+                      opt_param('optimizer_dynamic_sampling' 11)
                     */ 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    row_number() OVER(PARTITION BY dbid,stime,inst_id,sid ORDER BY AAS_,lv desc) seq,

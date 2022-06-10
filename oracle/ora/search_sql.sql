@@ -52,15 +52,6 @@
             }
         }
 
-        @CHECK_ACCESS_SQLSET_STATEMENTS: {
-            DBA_SQLSET_STATEMENTS={
-                UNION
-                SELECT 'DBA_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
-                FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM DBA_SQLSET_STATEMENTS A)
-                WHERE  &vw in('A','D') AND (&filter)
-            }
-        }
-
         @CHECK_ACCESS_SQL_MONITOR: {
             GV$SQL_MONITOR={
                 UNION
@@ -83,6 +74,10 @@ FROM (
                substr(sql_text,1,1000) sql_text
         FROM   (SELECT a.*, a.SQL_FULLTEXT sql_text_ FROM &CHECK_ACCESS_GV a)
         WHERE  &vw in('A','G') AND (&filter)))) a
+    UNION
+    SELECT 'ALL_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
+    FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM ALL_SQLSET_STATEMENTS A)
+    WHERE  &vw in('A','D') AND (&filter)
     &CHECK_ACCESS_AWR
     &CHECK_ACCESS_SPM
     &CHECK_ACCESS_SQL_PROFILES

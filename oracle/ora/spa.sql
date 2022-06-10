@@ -103,7 +103,7 @@ BEGIN
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
-                     (SELECT decode(t,'SQL',attr1||' -> '|| attr3,nullif(attr3||'.'||attr1,'.')) FROM 
+                     (SELECT decode(T,'SQL',attr1||' -> '|| attr3,nullif(attr3||'.'||attr1,'.')) FROM 
                          (SELECT TYPE t,decode(type,'SQL',attr17,attr3) attr3,attr1 
                           FROM   dba_advisor_objects b
                           WHERE  task_id = a.task_id
