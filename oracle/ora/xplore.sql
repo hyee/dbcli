@@ -164,6 +164,11 @@ BEGIN
                     AND    rownum < 2
                     UNION ALL
                     SELECT parsing_schema_name, sql_text
+                    FROM   all_sqlset_statements
+                    WHERE  sql_id = sq_id
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT parsing_schema_name, sql_text
                     FROM   dba_hist_sqlstat
                     JOIN   dba_hist_sqltext
                     USING  (sql_id)

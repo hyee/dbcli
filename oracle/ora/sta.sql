@@ -1,10 +1,11 @@
-/*[[Run SQL Tuning Advisor on target SQL. Usage: @@NAME <task_id>|<sql_text>|{<sql_id> [<phv>|<child_num>|<snap_id>|<sqlset_id>|<schema>]} [time limit]
+/*[[Run SQL Tuning Advisor on target SQL. Usage: @@NAME [-f"<filter>"]|<task_id>|<sql_text>|{<sql_id> [<phv>|<child_num>|<snap_id>|<sqlset_id>|<schema>]} [time limit]
     <sql_id>|<sql_text>: if specify then run STA on target SQL
     -sync              : run in sync mode, otherwise run with dbms_scheduler
     <schema>           : target run-as-user, can be a number which points to specific child_number/snap_id/sqlset_id/plan_hash_value
     <time limit>       : maximum run time in seconds, default as 7200
     --[[
         &exe_mode: async={0}, sync={1}
+        &filter: default={1=1}, f={}
         @check_access_sqlid: SYS.DBMS_SQLTUNE_UTIL0={1} default={0}
     --]]
 ]]*/
@@ -21,6 +22,7 @@ DECLARE
     sq_id   VARCHAR2(128) := regexp_substr(sq_txt, '^\S+$');
     tid     INT := regexp_substr(sq_id, '^\d+$');
     own     VARCHAR2(128) := regexp_substr(:v2,'^\S+$');
+    enam    VARCHAR2(128);
     id      INT := regexp_substr(own, '^\d+$');
     bw      RAW(2000);
     bs      SYS.SQL_BIND_SET;
@@ -33,7 +35,8 @@ BEGIN
     sq_id := REPLACE(sq_id, tid);
     IF tid IS NULL AND sq_txt IS NOT NULL THEN 
         IF sq_id IS NOT NULL THEN
-            SELECT nvl(upper(own), nam), txt, br
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                   nvl(upper(own), nam), txt, br
             INTO   own, sq_txt, bw
             FROM   (SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br
                     FROM   gv$sql a
@@ -49,7 +52,7 @@ BEGIN
                     UNION ALL
                     SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
                     FROM   dba_hist_sqltext
-                    JOIN   (SELECT *
+                    JOIN  (SELECT *
                            FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data
                                    FROM   dba_hist_sqlstat
                                    WHERE  sql_id = sq_id
@@ -110,7 +113,7 @@ BEGIN
             exception when others then
                 select count(1) into c
                 from   v$sysstat
-                where  name='cell physical IO bytes eligible for predicate offload'
+                where  name like 'cell%elig%pred%offload%'
                 and    value>0;
                 if c>0 then
                     execute immediate 'alter session set "_serial_direct_read"=always';
@@ -131,7 +134,7 @@ BEGIN
         sq_txt := null;
         OPEN c1 FOR
             WITH r AS
-             (SELECT /*+materialize*/
+             (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ 
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
@@ -144,6 +147,7 @@ BEGIN
               FROM   (SELECT task_id, advisor_name, owner, task_name, execution_start, execution_end, status,DESCRIPTION
                       FROM   dba_advisor_tasks a
                       WHERE  advisor_name LIKE 'SQL Tuning%'
+                      AND   (&FILTER)
                       ORDER  BY execution_start DESC NULLS LAST) A
               WHERE  ROWNUM <= 50),
             r1 AS
@@ -176,7 +180,8 @@ BEGIN
     ELSE
         sq_txt := null;
         OPEN c1 FOR
-            SELECT PARAMETER_NAME,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                   PARAMETER_NAME,
                    nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
                    PARAMETER_TYPE,
                    IS_DEFAULT,
@@ -216,9 +221,50 @@ BEGIN
         WHERE  task_id=tid;
 
         IF STATUS='COMPLETED' THEN
+            SELECT MAX(EXECUTION_NAME) KEEP(DENSE_RANK LAST ORDER BY EXECUTION_END)
+            INTO   enam
+            FROM   DBA_ADVISOR_EXECUTIONS
+            WHERE  task_id=tid
+            AND    status='COMPLETED';
+
             :fn := tsk||'.txt';
-            :txt :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>tsk,owner_name=>own,level=>'ALL',section=>'ALL');
-            sq_txt := sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>tsk,owner_name=>own,level=>'BASIC',section=>'SUMMARY');
+            :txt :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>tsk,execution_name=>enam,owner_name=>own,level=>'ALL',section=>'ALL');
+            OPEN c2 FOR
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                       DISTINCT
+                       EXECUTION_NAME EXEC_NAME,
+                       OBJECT_ID obj#,
+                       REC_ID rec#,
+                       '|' "|",
+                       decode(r,1,COMMAND) command,
+                       decode(nvl(r,1),1,plan_attribute) plan_attribute,
+                       decode(nvl(r,1),1,plan_hash_value) plan_hash_value,
+                       a.r "#",
+                       a.ATTR1,
+                       a.ATTR2,
+                       a.ATTR3,
+                       a.ATTR4,
+                       to_char(substr(a.attr5,1,500)) attr5,
+                       to_char(substr(a.attr6,1,500)) attr6,
+                       RESULT_STATUS
+                FROM   (select a.*,row_number() over(partition by rec_id order by 1) r
+                        from   dba_advisor_actions a
+                        WHERE  task_id=tid
+                        AND    execution_name=enam) a
+                JOIN   dba_advisor_rationale
+                USING  (task_id,object_id,execution_name,rec_id)
+                JOIN    dba_sqltune_rationale_plan
+                USING  (task_id,object_id,execution_name,rationale_id)
+                FULL JOIN (
+                       SELECT /*+no_merge*/
+                              DISTINCT task_id,execution_name,attribute plan_attribute,object_id,plan_hash_value
+                       FROM   dba_sqltune_plans
+                       WHERE  task_id=tid
+                       AND    execution_name=enam)
+                USING (task_id,object_id,execution_name,plan_attribute)
+                WHERE  task_id=tid
+                AND    execution_name=enam
+                ORDER  BY 1,2,3 NULLS FIRST,a.r;
         END IF;
     END IF;
     :c1  := c1;

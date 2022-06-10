@@ -1,5 +1,5 @@
 /*[[
-        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|<plan_hash>|<report_id>]}}|<sqlmon file>|"<query>"]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
+        Get resource usage from SQL monitor. Usage: @@NAME {[<sql_id> {[-l|-d|-a] [<sql_exec_id>|<plan_hash>|<report_id>]}}|"<query>"]} | {. <keyword>} [-u|-f"<filter>"] [-avg]
         Related parameters for SQL monitor: 
                 _sqlmon_recycle_time,_sqlmon_max_planlines,_sqlmon_max_plan,_sqlmon_threshold,control_management_pack_access,statistics_level
         A SQL can be forced to record the sql monitor report by the alter system statement:
@@ -9,11 +9,10 @@
              1. @@NAME <sql_id> [<sql_exec_id>]                   : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
              2. @@NAME [. <keyword>]                              : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
              3. @@NAME -snap <sec> <sid>                          : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
-             4. @@NAME <sqlmon_file>                              : Read SQL Monitor report from target location and print
-             5. @@NAME "<Query>"                                  : Read SQL Monitor report from target query(return CLOB) and print
-             6. @@NAME <report_id>                                : Read SQL Monitor report from dba_hist_reports with specific report_id
-             7. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]   : List the reports and generate perf hub report for specific sql_id, options: -avg,-u,-a,-f"<filter>"
-             8. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Report SQL detail
+             4. @@NAME "<Query>"                                  : Read SQL Monitor report from target query(return CLOB) and print
+             5. @@NAME <report_id>                                : Read SQL Monitor report from dba_hist_reports with specific report_id
+             6. @@NAME <sql_id> -l [-a] [plan_hash|sql_exec_id]   : List the reports and generate perf hub report for specific sql_id, options: -avg,-u,-a,-f"<filter>"
+             7. @@NAME <sql_id> -d [<plan_hash> [YYYYMMDDHH24MI]] : Extract SQL detail report
 
         Options:
             -u     : Only show the SQL list within current schema
@@ -21,7 +20,6 @@
             -l     : List the available SQL Monitor reports for the specific SQL Id
             -a     : When together with "-l" option, generate SQL Hub report
             -avg   : Show avg time in case of listing the SQL monitor reports
-            -detail: Extract more detailed information when generating the SQL Monitor report
 
         Format:
              -active : output file is in active HTML format
@@ -43,7 +41,6 @@
             &out: default={active} html={html} em={em} text={text}
             &snap: default={0} snap={1}
             &showhub: default={0} a={1}
-            &detail: default={0} detail={1}
             &rpt   : default={0} d={1}
             @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
             @check_access_sqlm: SYS.DBMS_SQL_MONITOR/SYS.DBMS_LOCK={1} default={0}
@@ -67,10 +64,8 @@ var plan_hash number;
 col dur,avg_ela,ela,parse,qu,cpu,app,cc,cl,plsql,java,pljava,io,ot,time format usmhd1
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl,bytes,OFLOUT format kmg1
 col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB1
-accept sqlmon_file noprompt "@&V1"
 
 DECLARE /*+no_monitor*/
-    detail     INT := &detail; 
     plan_hash  INT := regexp_substr(:V2, '^\d+$');
     start_time DATE;
     end_time   DATE;
@@ -83,7 +78,7 @@ DECLARE /*+no_monitor*/
     counter    INT := &tot;
     dyn_lvl    INT;
     filename   VARCHAR2(100);
-    sqlmon     CLOB := :sqlmon_file;
+    sqlmon     CLOB;
     content    CLOB;
     txt        CLOB;
     lst        SYS.ODCIVARCHAR2LIST;
@@ -234,7 +229,7 @@ BEGIN
             sys.dbms_sql_monitor.end_operation(dopename,dopeid);
             dbms_output.put_line('Filter: dbop_name='''||dopename||''' and dbop_exec_id='||dopeid);
             open c2 for 
-                SELECT *
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
                 FROM   (SELECT MAX(DECODE(MOD(rnk, 3), 1, NAME)) stat_name#1,
                                  MAX(DECODE(MOD(rnk, 3), 1, VALUE)) stat_value#1,
                                  MAX(DECODE(MOD(rnk, 3), 2, NAME)) stat_name#2,
@@ -288,7 +283,6 @@ BEGIN
         END IF;
         xml    := xmltype(sqlmon);
         mon    := xml.extract('//report_parameters[1]');
-        detail := 1;
 
         IF mon IS NULL THEN
             sqlmon := trim(xml.extract('/report/text()').getClobVal());
@@ -435,351 +429,6 @@ BEGIN
             dbms_lob.createtemporary(txt,true);
         END IF;
 
-        IF &rpt=2 OR detail =1 THEN
-            SELECT SYS.ODCIARGDESC(id,typ,null,val,null,null,null)
-            BULK   COLLECT INTO descs
-            FROM   XMLTABLE('//operation[qblock]' PASSING xml COLUMNS --
-                            id VARCHAR2(6) PATH '@id',
-                            typ VARCHAR2(30) PATH 'qblock',
-                            val VARCHAR2(50) PATH 'object_alias') b;
-
-            WITH line_info AS
-             (SELECT ArgType as id,TableName as typ,ColName as val
-              FROM   table(descs)),
-            line_len AS
-             (SELECT MAX(LENGTH(ID)) l1, MAX(LENGTH(typ)) l2, MAX(nvl(LENGTH(val),0) + 2) l3 FROM line_info)
-            SELECT LPAD(ID, l1) || ' - ' || RPAD(typ, l2) || NVL2(val,' / ' || RPAD(val, l3),'') 
-            BULK COLLECT INTO lst
-            FROM line_info, line_len ORDER BY 0 + ID;
-
-            flush('Query Block Name / Object Alias');
-
-            WITH q AS(
-                SELECT ArgType as id,replace('"'||TableName||'"','$','\$') as q,'"'||replace(ColName,'@','"@"')||'"' as c,
-                       row_number() over(partition by TableName order by ArgType) seq
-                FROM   table(descs)),
-            hints AS(
-                SELECT TRIM(',' FROM (
-                            SELECT listagg('Q'||ID,',') WITHIN GROUP(ORDER BY  regexp_instr(val,'[ @"\(]+'||q))
-                            FROM q
-                            WHERE regexp_substr(val,'[ @"\(]+'||q) NOT LIKE '%"@%'
-                            AND seq=1
-                        )||(
-                            SELECT nvl(listagg(',O'||ID,'') WITHIN GROUP(ORDER BY INSTR(val,c)),' ')
-                            FROM q
-                            WHERE INSTR(val,c)>0
-                            AND ROWNUM<=5
-                        )) Q,val,rownum r
-                FROM   XMLTABLE('//outline_data/hint' PASSING xml COLUMNS val VARCHAR2(500) PATH '.') b),
-            widths as(SELECT MAX(LENGTH(Q)) l from hints)
-            SELECT rpad(q,l)||'  '||val 
-            BULK COLLECT INTO LST
-            FROM hints,widths
-            ORDER BY r;
-            flush('Outline Data (Hints)');
-            
-            WITH line_info AS
-             (SELECT b.*
-              FROM   XMLTABLE('//optimizer_env/param' PASSING xml COLUMNS --
-                             typ VARCHAR2(50) PATH '@name',
-                             val VARCHAR2(500) PATH '.') b),
-            line_len AS
-             (SELECT MAX(LENGTH(typ)) l1,MAX(LENGTH(val)) l2 FROM line_info)
-            SELECT RPAD(typ, l1) || NVL2(val,' : ' || RPAD(val, l2),',') 
-            BULK COLLECT INTO lst
-            FROM line_info, line_len 
-            ORDER BY typ;
-            flush('Optimizer Environments');
-
-            WITH line_info AS (
-               SELECT a.*,row_number() OVER(PARTITION BY ID ORDER BY flag,typ) seq
-               FROM (
-                SELECT 1 flag,id,'[PRED] '||typ typ,val
-                FROM   XMLTABLE('//operation/predicates' PASSING xml COLUMNS--
-                                id VARCHAR2(5) PATH './../@id',
-                                typ VARCHAR2(20) PATH '@type',
-                                val VARCHAR2(2000) PATH '.') b
-                UNION ALL
-                SELECT 2 flag,id,'[PROJ] Projection' typ,val
-                FROM   XMLTABLE('//operation/project' PASSING xml COLUMNS--
-                                id VARCHAR2(5) PATH './../@id',
-                                val VARCHAR2(2000) PATH '.') b
-                UNION ALL
-                SELECT DISTINCT 3,id, '[STATS] '||NAME, 
-                       trim(CASE WHEN lower(descr) LIKE '%bytes%' THEN dbms_xplan.format_size(VALUE) ELSE dbms_xplan.format_number(VALUE) END)||' '||descr VALUE
-                FROM   XMLTABLE('//rwsstats/metadata/stat' PASSING xml COLUMNS--
-                                stat_grp INT PATH './../../@group_id',
-                                stat_id INT PATH '@id',
-                                NAME VARCHAR2(50) PATH '@name',
-                                descr VARCHAR2(300) PATH '@desc') b,
-                       XMLTABLE('//operation/rwsstats/stat' PASSING xml COLUMNS--
-                                stat_grp INT PATH './../@group_id',
-                                id  VARCHAR2(5) PATH './../../@id',
-                                stat_id INT PATH '@id',
-                                VALUE NUMBER PATH '.') c --
-                WHERE  b.stat_grp = c.stat_grp
-                AND    b.stat_id = c.stat_id
-                UNION ALL
-                SELECT 4,id,'[WAIT] '||nvl(event,'ON CPU'),trim(dbms_xplan.format_number(cnt))||' AAS'
-                FROM XMLTABLE('//operation/activity_sampled/activity' PASSING xml COLUMNS--
-                    id VARCHAR2(5) PATH './../../@id',
-                    w_class VARCHAR2(10) PATH '@class',
-                    event VARCHAR2(2000) PATH '@event',
-                    cnt INT PATH '.') b) a)
-            SELECT SYS.ODCIARGDESC(ID,TYP,NULL,VAL,NULL,NULL,seq)
-            BULK COLLECT INTO descs
-            FROM   line_info;
-            --Bypass XML Bug in 11g
-            WITH line_info AS(
-                SELECT ArgType AS ID,TableName as Typ, ColName as val,Cardinality as seq
-                FROM TABLE(descs)
-            ),
-            line_len AS(
-               SELECT MAX(LENGTH(ID)) l1,MAX(LENGTH(typ)) l2,MAX(LENGTH(val)+2) l3
-               FROM line_info
-            )
-            SELECT decode(seq,1,LPAD(ID,l1)||' - ',LPAD(' ',l1+3))||RPAD(typ,l2)||' : '||regexp_replace(replace(val,chr(10),' '),'(.{150}[^ ]+ +)','\1'||chr(10)||lpad(' ',l2+l1+6))
-            BULK COLLECT INTO lst
-            FROM line_info,line_len
-            ORDER BY 0+ID,seq;
-            flush('Additional Plan Line Information');
-            
-
-            WITH binds AS
-             (SELECT NAME,
-                     MAX(dty) dty,
-                     MAX(maxlen) maxlen,
-                     MAX(pre) pre,
-                     MAX(scl) scl,
-                     MAX(frm) frm,
-                     MAX(dtystr) dtystr,
-                     MAX(DECODE(typ, 'binds', val)) bind,
-                     MAX(DECODE(typ, 'peeked_binds', HEXTORAW(val))) peek
-              FROM   (SELECT b.*
-                      FROM   XMLTABLE('//bind' PASSING xml COLUMNS --
-                                      typ VARCHAR2(15) PATH 'name(..)',
-                                      NAME VARCHAR2(30) PATH '@name | @nam',
-                                      val VARCHAR2(300) PATH '.',
-                                      dty INT PATH '@dty',
-                                      pre INT PATH '@pre',
-                                      scl INT PATH '@scl',
-                                      frm INT PATH '@frm',
-                                      dtystr VARCHAR2(30) PATH '@dtystr',
-                                      maxlen INT PATH '@maxlen | @mxl') b)
-              GROUP  BY NAME),
-            line_info AS
-             (SELECT NAME,
-                     NVL(dtystr,
-                         decode(dty, /* DATA_TYPE */
-                                0,NULL,
-                                1,decode(frm, 2, 'NVARCHAR2', 'VARCHAR2'),
-                                2,decode(scl,
-                                       -127,'FLOAT',
-                                       CASE
-                                           WHEN pre = 38 AND nvl(scl, 0) = 0 THEN
-                                            'INTEGER'
-                                           ELSE
-                                            'NUMBER'
-                                       END),
-                                3,'NATIVE INTEGER',
-                                8,'LONG',
-                                9,decode(frm, 2, 'NCHAR VARYING', 'VARCHAR'),
-                                11,'ROWID',
-                                12,'DATE',
-                                23,'RAW',
-                                24,'LONG RAW',
-                                29,'BINARY_INTEGER',
-                                69,'ROWID',
-                                96,decode(frm, 2, 'NCHAR', 'CHAR'),
-                                100,'BINARY_FLOAT',
-                                101,'BINARY_DOUBLE',
-                                102,'REF CURSOR',
-                                104,'UROWID',
-                                105,'MLSLABEL',
-                                106,'MLSLABEL',
-                                110,'REF',
-                                111,'REF',
-                                112,decode(frm, 2, 'NCLOB', 'CLOB'),
-                                113,'BLOB',
-                                114,'BFILE',
-                                115,'CFILE',
-                                121,'OBJECT',
-                                122,'TABLE',
-                                123,'VARRAY',
-                                178,'TIME',
-                                179,'TIME WITH TIME ZONE',
-                                180,'TIMESTAMP',
-                                181,'TIMESTAMP WITH TIME ZONE',
-                                231,'TIMESTAMP WITH LOCAL TIME ZONE',
-                                182,'INTERVAL YEAR TO MONTH',
-                                183,'INTERVAL DAY TO SECOND',
-                                250,'PL/SQL RECORD',
-                                251,'PL/SQL TABLE',
-                                252,'PL/SQL BOOLEAN',
-                                'UNDEFINED') || CASE
-                             WHEN dty = 2 AND scl > 0 AND nvl(nullif(scl, 0), pre) NOT IN (38, -127) THEN
-                              '(' || pre || NULLIF(',' || scl, ',') || ')'
-                             WHEN dty != 2 AND maxlen > 0 THEN
-                              '(' || maxlen || ')'
-                         END) datatype,
-                     bind,
-                     rtrim(decode(dty,
-                                  2,to_char(utl_raw.cast_to_number(peek)),
-                                  1,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
-                                  9,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
-                                  96,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
-                                  112,to_char(decode(frm, 2, utl_raw.cast_to_nvarchar2(peek),utl_raw.cast_to_varchar2(peek))),
-                                  100,to_char(utl_raw.cast_to_binary_double(peek)),
-                                  101,to_char(utl_raw.cast_to_binary_float(peek)),
-                                  180,lpad(TO_NUMBER(SUBSTR(peek, 1, 2), 'XX') - 100, 2, 0) || lpad(TO_NUMBER(SUBSTR(peek, 3, 2), 'XX') - 100, 2, 0) || '-' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 5, 2), 'XX'), 2, 0) || '-' || lpad(TO_NUMBER(SUBSTR(peek, 7, 2), 'XX'), 2, 0) || ' ' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 9, 2), 'XX') - 1, 2, 0) || ':' || lpad(TO_NUMBER(SUBSTR(peek, 11, 2), 'XX') - 1, 2, 0) || ':' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 13, 2), 'XX') - 1, 2, 0) || '.' || nvl(substr(TO_NUMBER(SUBSTR(peek, 15, 8), 'XXXXXXXX'), 1, 6), '0'),
-                                  181,lpad(TO_NUMBER(SUBSTR(peek, 1, 2), 'XX') - 100, 2, 0) || lpad(TO_NUMBER(SUBSTR(peek, 3, 2), 'XX') - 100, 2, 0) || '-' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 5, 2), 'XX'), 2, 0) || '-' || lpad(TO_NUMBER(SUBSTR(peek, 7, 2), 'XX'), 2, 0) || ' ' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 9, 2), 'XX') - 1, 2, 0) || ':' || lpad(TO_NUMBER(SUBSTR(peek, 11, 2), 'XX') - 1, 2, 0) || ':' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 13, 2), 'XX') - 1, 2, 0) || '.' || nvl(substr(TO_NUMBER(SUBSTR(peek, 15, 8), 'XXXXXXXX'), 1, 6), '0') || ' ' ||
-                                      nvl(TO_NUMBER(SUBSTR(peek, 23, 2), 'XX') - 20, 0) || ':' || nvl(TO_NUMBER(SUBSTR(peek, 25, 2), 'XX') - 60, 0),
-                                  231,lpad(TO_NUMBER(SUBSTR(peek, 1, 2), 'XX') - 100, 2, 0) || lpad(TO_NUMBER(SUBSTR(peek, 3, 2), 'XX') - 100, 2, 0) || '-' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 5, 2), 'XX'), 2, 0) || '-' || lpad(TO_NUMBER(SUBSTR(peek, 7, 2), 'XX'), 2, 0) || ' ' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 9, 2), 'XX') - 1, 2, 0) || ':' || lpad(TO_NUMBER(SUBSTR(peek, 11, 2), 'XX') - 1, 2, 0) || ':' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 13, 2), 'XX') - 1, 2, 0) || '.' || nvl(substr(TO_NUMBER(SUBSTR(peek, 15, 8), 'XXXXXXXX'), 1, 6), '0') || ' ' ||
-                                      nvl(TO_NUMBER(SUBSTR(peek, 23, 2), 'XX') - 20, 0) || ':' || nvl(TO_NUMBER(SUBSTR(peek, 25, 2), 'XX') - 60, 0),
-                                  12,lpad(TO_NUMBER(SUBSTR(peek, 1, 2), 'XX') - 100, 2, 0) || lpad(TO_NUMBER(SUBSTR(peek, 3, 2), 'XX') - 100, 2, 0) || '-' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 5, 2), 'XX'), 2, 0) || '-' || lpad(TO_NUMBER(SUBSTR(peek, 7, 2), 'XX'), 2, 0) || ' ' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 9, 2), 'XX') - 1, 2, 0) || ':' || lpad(TO_NUMBER(SUBSTR(peek, 11, 2), 'XX') - 1, 2, 0) || ':' ||
-                                      lpad(TO_NUMBER(SUBSTR(peek, 13, 2), 'XX') - 1, 2, 0),
-                                  '' || peek)) peek
-              FROM   binds),
-            w_len AS
-             (SELECT /**/ greatest(MAX(length(NAME)), 3) l1, greatest(MAX(LENGTH(datatype)), 9) l2, MAX(nvl(LENGTH(bind),6)) l3, MAX(nvl(LENGTH(peek),6)) l4, COUNT(1) c FROM line_info)
-            SELECT RPAD(NAME, l1) || ' : DataType=' || RPAD(datatype, l2) || ' / Bind=' || RPAD(nvl(bind,'<NULL>'), l3) || ' / PeekedBind='||nvl(peek,'<NULL>') 
-            BULK COLLECT INTO lst
-            FROM line_info, w_len WHERE c > 0 ORDER BY NAME;
-
-            flush('Binds and Peeked Binds');
-
-            WITH line_info AS
-             (SELECT ID,
-                     MAX(NAME || NVL2(unit, ' (' || unit || ')', '')) NAME,
-                     trim(dbms_xplan.format_size(MAX(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') maxv,
-                     trim(dbms_xplan.format_size(MIN(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') minv,
-                     trim(dbms_xplan.format_size(AVG(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') avgv,
-                     trim(dbms_xplan.format_size(MEDIAN(VALUE)*nvl(MAX(factor),1))) || DECODE(ID, 1, ' / ' || MAX(cpu_count), '') mdv,
-                     CASE WHEN max(unit) like '%per_sec%' THEN trim(dbms_xplan.format_size(SUM(VALUE*duration)*nvl(MAX(factor),1))) ELSE ' ' END sums,
-                     trim(dbms_xplan.format_time_s(SUM(duration))) dur
-              FROM   XMLTABLE('//stattype//stat' PASSING xml COLUMNS ID INT PATH '@id',
-                              cpu_count INT PATH './../../@cpu_cores',
-                              unit VARCHAR2(30) PATH '@unit',
-                              NAME VARCHAR2(30) PATH '@name',
-                              duration INT PATH './../../@duration',
-                              factor INT PATH '@factor',
-                              VALUE INT PATH '@value') b
-              
-              GROUP  BY ID
-              HAVING MAX(VALUE) IS NOT NULL
-              ORDER  BY ID),
-            w_len AS
-             (SELECT 3 l1, greatest(MAX(LENGTH(NAME)), 3) l2,greatest(MAX(NVL(LENGTH(sums),0)), 8) l3, COUNT(1) c FROM line_info)
-            SELECT * BULK COLLECT INTO lst
-            FROM   (SELECT '+' || LPAD('-', l1 + l2 + l3*6 + 6*3, '-') || '+'
-                    FROM   w_len
-                    WHERE  c > 0
-                    UNION ALL
-                    SELECT '| ' || RPAD('ID', l1) || ' | ' || LPAD('Name', l2) || ' | ' || LPAD('Avg', l3) || ' |'|| LPAD('Min', l3) || ' |'|| LPAD('Max', l3) || ' |'|| LPAD('Median', l3) || ' |'|| LPAD('Sum', l3) || ' |'|| LPAD('Duration', l3) || ' |'
-                    FROM   w_len
-                    WHERE  c > 0
-                    UNION ALL
-                    SELECT  '+' || LPAD('-', l1 + l2 + l3*6 + 6*3, '-') || '+'
-                    FROM   w_len
-                    WHERE  c > 0
-                    UNION ALL
-                    SELECT *
-                    FROM   (SELECT '| ' || RPAD(ID, l1) || ' | ' || RPAD(NAME, l2) || ' | ' || LPAD(avgv, l3) || ' |'|| LPAD(minv, l3) || ' |'|| LPAD(maxv, l3) || ' |'
-                                    || LPAD(mdv, l3) || ' |'|| LPAD(sums, l3) || ' |'|| LPAD(dur, l3) || ' |'
-                            FROM   line_info, w_len
-                            WHERE  c > 0
-                            ORDER  BY ID)
-                    UNION ALL
-                    SELECT  '+' || LPAD('-', l1 + l2 + l3*6 + 6*3, '-') || '+'
-                    FROM   w_len
-                    WHERE  c > 0);
-            flush('Metrics');
-
-            SELECT SYS.ODCIARGDESC(c.cnt,NVL(substr(c.event,1,40), ' '),
-                                   b.id ||nvl2(b.id,'(' || round(b.cnt / c.cnt * 100, 1) || '%)',' '),
-                                   REPLACE(c.w_class, 'Cpu', 'ON CPU'),NULL,NULL,
-                                   row_number() OVER(PARTITION BY NVL(c.event, c.w_class) ORDER BY b.cnt DESC, b.id)) 
-            BULK COLLECT INTO descs
-            FROM   XMLTABLE('//sql_monitor_report/activity_sampled[1]/activity' PASSING xml COLUMNS --
-                            w_class VARCHAR2(10) PATH '@class',
-                            event VARCHAR2(2000) PATH '@event',
-                            cnt INT PATH '.') C
-            LEFT   JOIN XMLTABLE('//operation/activity_sampled/activity' PASSING xml COLUMNS --
-                            id INT PATH './../../@id', 
-                            w_class VARCHAR2(10) PATH '@class', 
-                            event VARCHAR2(2000) PATH '@event', 
-                            cnt INT PATH '.') b
-            ON     NVL(c.event, c.w_class) = NVL(b.event, b.w_class)
-            WHERE c.cnt>0;
-
-            WITH waits AS
-             (SELECT clz,event,
-                     to_char(cnt) cnt,
-                     round(100*ratio_to_report(cnt) over(),2)||'%' pct, 
-                     listagg(pct, ',') WITHIN GROUP(ORDER BY seq) ids
-              FROM   (
-                    SELECT ArgType as cnt,
-                           TableName as event,
-                           ColName as clz,
-                           TableSchema as pct,
-                           Cardinality as seq
-                    FROM   TABLE(descs))
-              WHERE  seq <= 5
-              GROUP  BY clz, event,cnt),
-            w_len AS
-             (SELECT greatest(MAX(length(clz)), 10) l1, 
-                     greatest(MAX(LENGTH(''||cnt)), 3) l2, 
-                     greatest(MAX(LENGTH(ids)), 16) l3, 
-                     greatest(MAX(LENGTH(event)), 5) l4, 
-                     COUNT(1) c FROM waits)
-            SELECT * BULK COLLECT INTO lst
-            FROM (
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + l4 + 8 + 9 + 3, '-') || '+'
-                FROM   w_len
-                WHERE  c > 0
-                UNION ALL
-                SELECT '| ' || RPAD('Wait Class', l1) || ' | ' || RPAD('Event', l4) || ' | ' || LPAD('AAS', l2) || ' | ' || LPAD('Pct', 6) ||  ' | ' || RPAD('Top Lines of AAS', l3) || ' |'
-                FROM   w_len
-                WHERE  c > 0
-                UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + l4 + 8 + 9+ 3, '-') || '+'
-                FROM   w_len
-                WHERE  c > 0
-                UNION ALL
-                SELECT *
-                FROM   (
-                    SELECT '| ' || RPAD(clz, l1) || ' | ' || RPAD(event, l4) || ' | ' || LPAD(cnt, l2)  || ' | ' || LPAD(pct, 6) || ' | ' || RPAD(ids, l3) || ' |' 
-                    FROM waits, w_len 
-                    WHERE c > 0 
-                    ORDER BY 0 + cnt DESC,clz)
-                UNION ALL
-                SELECT '+' || LPAD('-', l1 + l2 + l3 + l4 + 8 + 9+ 3 , '-') || '+' FROM w_len WHERE c > 0);
-            flush('Wait Event Summary');
-
-            WITH line_info AS
-             (SELECT b.*
-              FROM   XMLTABLE('//other_xml/info[@note="y" or @type=("sql_patch","sql_profile","outline","baseline")]' PASSING xml COLUMNS --
-                             typ VARCHAR2(50) PATH '@type',
-                             val VARCHAR2(500) PATH '.') b),
-            line_len AS
-             (SELECT MAX(LENGTH(typ)) l1,MAX(LENGTH(val)) l2 FROM line_info)
-            SELECT RPAD(typ, l1) || NVL2(val,' : ' || RPAD(val, l2),',')
-            BULK COLLECT INTO lst
-            FROM line_info, line_len ORDER BY typ;
-            flush('Notes');
-        END IF;
-
         OPEN :c FOR SELECT  txt from dual;
         
         --refer to https://ctandrewsayer.wordpress.com/2017/10/19/how-many-rows-were-insertedupdateddeleted-in-my-merge/
@@ -866,7 +515,7 @@ BEGIN
     ELSE
         OPEN :c FOR
             SELECT *
-            FROM   (SELECT   /*+no_expand no_or_expand*/
+            FROM   (SELECT   /*+no_expand no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
                              a.sql_id &OPTION,
                              &option1 
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
@@ -1008,7 +657,7 @@ BEGIN
                 END IF;
                 $IF &check_access_report=1 $THEN
                     OPEN c0 FOR 
-                        SELECT /*+no_expand*/ 
+                        SELECT /*+no_expand opt_param('optimizer_dynamic_sampling' 5)*/  
                                KEY1 SQL_ID,
                                KEY2 SQL_EXEC_ID,
                                REPORT_ID,
@@ -1054,32 +703,33 @@ BEGIN
                 :c0 := c0;
             
                 OPEN :c1 FOR
-                    SELECT DECODE(phv, plan_hash, '*', ' ') || phv plan_hash,
-                             &uniq execs,
-                             SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
-                             round(SUM(FETCHES), 2) FETCHES,
-                             to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
-                             to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
-                             round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
-                             round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))  /&avg, 2) ela,
-                             round(SUM(QUEUING_TIME)  /&avg, 2) QUEUE,
-                             round(SUM(CPU_TIME)  /&avg, 2) CPU,
-                             round(SUM(APPLICATION_WAIT_TIME)  /&avg, 2) app,
-                             round(SUM(CONCURRENCY_WAIT_TIME)  /&avg, 2) cc,
-                             round(SUM(CLUSTER_WAIT_TIME)  /&avg, 2) cl,
-                             round(SUM(PLSQL_EXEC_TIME)  /&avg, 2) plsql,
-                             round(SUM(JAVA_EXEC_TIME)  /&avg, 2) JAVA,
-                             round(SUM(USER_IO_WAIT_TIME)  /&avg, 2) io,
-                             round(SUM(io_interconnect_bytes) /&avg, 2) cellio,
-                             round(SUM(PHYSICAL_READ_BYTES) /&avg, 2) READ,
-                             round(SUM(PHYSICAL_WRITE_BYTES) /&avg, 2) WRITE,
-                             round(SUM(DIRECT_WRITES) /&avg, 2) dxwrite,
-                             round(SUM(BUFFER_GETS)*8192 /&avg, 2) buffget,
-                             &ver round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) /&avg, 2) offload,
-                             &ver round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES) /&avg, 2) offlrtn,
-                             MAX(PX_MAXDOP) DOP,
-                             MAX(DOPS) SIDS,
-                             regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
+                    SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                            DECODE(phv, plan_hash, '*', ' ') || phv plan_hash,
+                            &uniq execs,
+                            SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
+                            round(SUM(FETCHES), 2) FETCHES,
+                            to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
+                            to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
+                            round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
+                            round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))  /&avg, 2) ela,
+                            round(SUM(QUEUING_TIME)  /&avg, 2) QUEUE,
+                            round(SUM(CPU_TIME)  /&avg, 2) CPU,
+                            round(SUM(APPLICATION_WAIT_TIME)  /&avg, 2) app,
+                            round(SUM(CONCURRENCY_WAIT_TIME)  /&avg, 2) cc,
+                            round(SUM(CLUSTER_WAIT_TIME)  /&avg, 2) cl,
+                            round(SUM(PLSQL_EXEC_TIME)  /&avg, 2) plsql,
+                            round(SUM(JAVA_EXEC_TIME)  /&avg, 2) JAVA,
+                            round(SUM(USER_IO_WAIT_TIME)  /&avg, 2) io,
+                            round(SUM(io_interconnect_bytes) /&avg, 2) cellio,
+                            round(SUM(PHYSICAL_READ_BYTES) /&avg, 2) READ,
+                            round(SUM(PHYSICAL_WRITE_BYTES) /&avg, 2) WRITE,
+                            round(SUM(DIRECT_WRITES) /&avg, 2) dxwrite,
+                            round(SUM(BUFFER_GETS)*8192 /&avg, 2) buffget,
+                            &ver round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) /&avg, 2) offload,
+                            &ver round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES) /&avg, 2) offlrtn,
+                            MAX(PX_MAXDOP) DOP,
+                            MAX(DOPS) SIDS,
+                            regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
                     FROM   (SELECT a.*,sql_plan_hash_value phv,
                                      max(nvl((last_refresh_time-sql_exec_start)*86400+1,greatest(ELAPSED_TIME,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))))  over(partition by sql_exec_id,sql_exec_start) dur,
                                      count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 

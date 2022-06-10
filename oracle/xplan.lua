@@ -43,14 +43,15 @@ function xplan.explain(fmt,sql)
         sql=sql1
         sqltext=[[SELECT sql_text from dba_hist_sqltext WHERE sql_id=:1 AND ROWNUM<2
                   UNION ALL
-                  SELECT sql_text from all_sqlset_statements WHERE sql_id=:1 AND ROWNUM<2
-                  UNION ALL
                   SELECT sql_fulltext from gv$sqlarea WHERE sql_id=:1 AND ROWNUM<2]]
         if db.props.version>11.1 then
-            sqltext=sqltext..[[UNION ALL
-                               SELECT to_clob(sql_text) from gv$sql_monitor 
-                               WHERE  sql_id=:1 AND IS_FULL_SQLTEXT='Y' 
-                               AND    sql_text is not null AND ROWNUM<2]]
+            sqltext=sqltext..[[
+                  UNION ALL
+                  SELECT sql_text from all_sqlset_statements WHERE sql_id=:1 AND ROWNUM<2
+                  UNION ALL
+                  SELECT to_clob(sql_text) from gv$sql_monitor 
+                  WHERE  sql_id=:1 AND IS_FULL_SQLTEXT='Y' 
+                  AND    sql_text is not null AND ROWNUM<2]]
         end
         sqltext=db:get_value("SELECT /*+INTERNAL_DBCLI_CMD PQ_CONCURRENT_UNION*/ * FROM("..sqltext..")  WHERE ROWNUM<2",{sql})
         env.checkerr(sqltext,"Cannot find target SQL ID %s",sql)

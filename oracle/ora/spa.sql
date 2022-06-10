@@ -61,7 +61,8 @@ BEGIN
     IF tid IS NOT NULL AND tsk IS NULL THEN
         raise_application_error(-20001,'Target task id is not a valid SPA task!');
     ELSIF tsk IS NOT NULL THEN
-        SELECT MAX(attr3),MAX(attr1),nvl(MAX(fil),'1=1'),max(sq_id)，max(sq_nid),max(sq_txt)
+        SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+               MAX(attr3),MAX(attr1),nvl(MAX(fil),'1=1'),max(sq_id)，max(sq_nid),max(sq_txt)
         INTO   sown,snam,fil,sq_id,sq_nid,sq_txt
         FROM (
             SELECT decode(type,'SQLSET',attr3) attr3,
@@ -99,7 +100,7 @@ BEGIN
         m1 := 'DBA_ADVISOR_TASKS WHERE ADVISOR_NAME=''SQL Performance Analyzer''';
         OPEN c1 FOR
             WITH r AS
-             (SELECT /*+materialize*/
+             (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ 
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
@@ -158,7 +159,8 @@ BEGIN
     ELSIF eid IS NULL THEN
         m1 := 'TASK PARAMETERS FOR '||own||'.'||tsk;
         OPEN c1 FOR
-            SELECT PARAMETER_NAME,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                   PARAMETER_NAME,
                    nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
                    PARAMETER_TYPE,
                    IS_DEFAULT,
@@ -184,7 +186,8 @@ BEGIN
 
         m2 := 'EXECUTIONS FOR '||own||'.'||tsk;
         OPEN c2 FOR
-            SELECT EXECUTION_ID    EXEC_ID,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                   EXECUTION_ID EXEC_ID,
                    EXECUTION_NAME,
                    EXECUTION_TYPE,
                    EXECUTION_START,
@@ -225,7 +228,8 @@ BEGIN
     ELSE
         key := CASE WHEN key IS NULL THEN '%' WHEN KEY='R' THEN NULL ELSE '%'||key||'%' END;
 
-        SELECT MAX(b.EXECUTION_TYPE),
+        SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+               MAX(b.EXECUTION_TYPE),
                REPLACE(MAX(decode(parameter_name,'COMPARISON_METRIC',parameter_value)),'UNUSED','ELAPSED_TIME'),
                MAX(b.EXECUTION_NAME),
                MAX(decode(parameter_name,'EXECUTION_NAME1',parameter_value)),
@@ -239,7 +243,8 @@ BEGIN
 
         m1 := 'PARAMETERS FOR TASK PARAMETER '||own||'.'||tsk|| ' -> '||nam;
         OPEN c1 FOR
-            SELECT PARAMETER_NAME,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                   PARAMETER_NAME,
                    nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
                    PARAMETER_TYPE,
                    IS_DEFAULT,
@@ -301,11 +306,11 @@ BEGIN
                                 f.attr5||'~'||p1.phv||'~'||p2.phv||'~'||sql_text)
                     LIKE  key
                     ORDER BY &ord1 DESC NULLS LAST)
-                SELECT * FROM F WHERE ROWNUM<=50;
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ * FROM F WHERE ROWNUM<=50;
         ELSIF typ like 'CONVERT%' THEN
             OPEN c2 FOR replace(q'~
                 SELECT * FROM (
-                    SELECT /*+no_expand*/
+                    SELECT /*+no_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
                          round(ratio_to_report(@ord@) over(),4) "Weight",
                          sql_id,
                          plan_hash_value plan_hash,
@@ -327,7 +332,7 @@ BEGIN
             ord := CASE WHEN typ like 'EXPLAIN%' THEN 'ela' ELSE ord end;
             OPEN c2 FOR replace(q'~
                 SELECT * FROM (
-                    SELECT /*+no_expand*/
+                    SELECT /*+no_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
                          round(ratio_to_report(@ord@) over(),4) "Weight",
                          sql_id org_sql_id,
                          phv org_plan,
