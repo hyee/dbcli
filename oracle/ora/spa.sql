@@ -18,7 +18,7 @@
 ]]*/
 
 set verify off feed off
-col pre_cost,post_cost,sort_value for K0
+col prev_cost,post_cost,sort_value for K0
 col weight,cpu for pct2
 col ela,avg_ela for usmhd2
 var m1 VARCHAR2(300)
@@ -104,8 +104,8 @@ BEGIN
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
-                     (SELECT decode(T,'SQL',attr1||' -> '|| attr3,nullif(attr3||'.'||attr1,'.')) FROM 
-                         (SELECT TYPE t,decode(type,'SQL',attr17,attr3) attr3,attr1 
+                     (SELECT decode(T,'SQL',attr1||' -> '|| nvl(attr17,attr3),nullif(attr3||'.'||attr1,'.')) FROM 
+                         (SELECT TYPE t,attr3,attr1,attr17
                           FROM   dba_advisor_objects b
                           WHERE  task_id = a.task_id
                           AND    EXECUTION_NAME IS NULL
@@ -113,7 +113,8 @@ BEGIN
                           UNION ALL 
                           SELECT 'SQLSET',
                                  MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value)),
-                                 MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value))
+                                 MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)),
+                                 ''
                           FROM   dba_advisor_parameters
                           WHERE  TASK_ID = a.task_id
                           AND    parameter_value!='UNUSED')
@@ -272,19 +273,21 @@ BEGIN
                     AND    ATTR1 IS NOT NULL),
                 S AS(
                     SELECT /*+materialize*/ EXECUTION_NAME,sql_id attr1,
-                           case when nvl(plan_hash_value,0)=0 and elapsed_time is null then 'ERROR' else ''||PLAN_HASH_VALUE end phv
+                           case when nvl(plan_hash_value,0)=0 and elapsed_time is null then 
+                              'ERROR' 
+                            else ''||PLAN_HASH_VALUE end phv
                     FROM   dba_advisor_sqlstats A
                     WHERE  TASK_ID = tid
                     AND    EXECUTION_NAME in(pre,post)),
                 F AS(
                     SELECT attr1 org_sql,
-                           coalesce(pre.attr17,sq_nid,attr1) pre_sql,
-                           nvl(p1.phv,''||f.attr5) pre_phv,
+                           coalesce(pre.attr17,sq_nid,attr1) prev_sql,
+                           nvl(p1.phv,''||f.attr5) prev_phv,
                            coalesce(post.attr17,sq_nid,attr1) post_sql,
                            nvl(p2.phv,''||f.attr5) post_phv,
                            '|' "|",
                            f.attr10 execs,
-                           f.attr8 pre_cost,
+                           f.attr8 prev_cost,
                            f.attr9 post_cost,
                            round(f.attr9/nullif(f.attr8,0),2) diff,
                            round(ratio_to_report(NVL(F.ATTR9,0)-NVL(f.attr8,0)) over(),8) "Weight",

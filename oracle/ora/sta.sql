@@ -38,17 +38,18 @@ BEGIN
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                    nvl(upper(own), nam), txt, br
             INTO   own, sq_txt, bw
-            FROM   (SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br
-                    FROM   gv$sql a
-                    WHERE  sql_id = sq_id
-                    AND    nvl(id, child_number) IN (child_number, plan_hash_value)
-                    AND    rownum < 2
+            FROM   (SELECT * FROM (
+                        SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br
+                        FROM   gv$sql a
+                        WHERE  sql_id = sq_id
+                        AND    nvl(id, child_number) IN (child_number, plan_hash_value)
+                        ORDER  BY nvl2(bind_data,1,2),last_active_time desc
+                    ) WHERE rownum<2
                     UNION ALL
                     SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
                     FROM   all_sqlset_statements a
                     WHERE  sql_id = sq_id
                     AND    nvl(id, sqlset_id) IN (sqlset_id, plan_hash_value)
-                    AND    rownum < 2
                     UNION ALL
                     SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
                     FROM   dba_hist_sqltext
@@ -57,7 +58,7 @@ BEGIN
                                    FROM   dba_hist_sqlstat
                                    WHERE  sql_id = sq_id
                                    AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
-                                   ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
+                                   ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC)
                            WHERE  rownum < 2)
                     USING  (dbid, sql_id)
                     WHERE  sql_id = sq_id
@@ -245,8 +246,7 @@ BEGIN
                        a.ATTR3,
                        a.ATTR4,
                        to_char(substr(a.attr5,1,500)) attr5,
-                       to_char(substr(a.attr6,1,500)) attr6,
-                       RESULT_STATUS
+                       to_char(substr(a.attr6,1,500)) attr6
                 FROM   (select a.*,row_number() over(partition by rec_id order by 1) r
                         from   dba_advisor_actions a
                         WHERE  task_id=tid

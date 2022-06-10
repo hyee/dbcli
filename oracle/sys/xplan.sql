@@ -111,27 +111,28 @@ BEGIN
         SELECT nvl(upper(own),nam),txt,sig,br
         INTO own,sq_text,sig,bw
         FROM (
-            SELECT parsing_schema_name nam, sql_fulltext txt,force_matching_signature sig,bind_data br
-            FROM   gv$sql a
-            WHERE  sql_id = sq_id
-            AND    nvl(id,child_number) in(child_number,plan_hash_value)
-            AND    rownum < 2
+            SELECT * FROM (
+                SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br
+                FROM   gv$sql a
+                WHERE  sql_id = sq_id
+                AND    nvl(id, child_number) IN (child_number, plan_hash_value)
+                ORDER  BY nvl2(bind_data,1,2),last_active_time desc
+            ) WHERE rownum<2
             UNION ALL
-            SELECT parsing_schema_name, sql_text,force_matching_signature sig,bind_data
-            FROM   dba_sqlset_statements a
+            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
+            FROM   all_sqlset_statements a
             WHERE  sql_id = sq_id
-            AND    nvl(id,sqlset_id) in(sqlset_id,plan_hash_value)
-            AND    rownum < 2
+            AND    nvl(id, sqlset_id) IN (sqlset_id, plan_hash_value)
             UNION ALL
-            SELECT parsing_schema_name, sql_text,force_matching_signature sig,bind_data
+            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
             FROM   dba_hist_sqltext
-            JOIN   (SELECT *
-                    FROM   (SELECT dbid, sql_id, parsing_schema_name,force_matching_signature,bind_data
-                            FROM   dba_hist_sqlstat
-                            WHERE  sql_id = sq_id
-                            AND    nvl(id,snap_id) in(snap_id,plan_hash_value)
-                            ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
-                    WHERE  rownum < 2)
+            JOIN  (SELECT *
+                   FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data
+                           FROM   dba_hist_sqlstat
+                           WHERE  sql_id = sq_id
+                           AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
+                           ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC)
+                   WHERE  rownum < 2)
             USING  (dbid, sql_id)
             WHERE  sql_id = sq_id
             UNION ALL

@@ -89,7 +89,7 @@ BEGIN
       SELECT * 
       INTO   sql_text,:src,:inst
       FROM(select sql_fulltext sql_text,'gv$active_session_history' src,'inst_id' inst from gv$sqlarea where sql_id='&v1' and ROWNUM<2
-           $if dbms_db_version.version + dbms_db_version.release>12 $then
+           $if dbms_db_version.version >11 $then
            union all
            select to_clob(sql_text) sql_text,'gv$active_session_history' src,'inst_id' inst 
            from  gv$sql_monitor 
