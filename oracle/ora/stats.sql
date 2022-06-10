@@ -281,7 +281,10 @@ BEGIN
                    t1.DATA_DEFAULT "DEFAULT",
                    t.LAST_ANALYZED &notes
             FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
-                   (select table_name,num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name) t2
+                   (select /*+cardinality(1)*/ table_name,num_rows 
+                    from  &check_access_dba.tables 
+                    where owner = :object_owner 
+                    and   table_name = :object_name) t2
             WHERE  t2.table_name=t1.table_name
             AND    t1.table_name = :object_name
             AND    t1.owner = :object_owner
@@ -307,7 +310,7 @@ BEGIN
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME
                         AND    I.TABLE_OWNER = :object_owner
                         AND    I.TABLE_NAME = :object_name)
-            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 11)
                  DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,

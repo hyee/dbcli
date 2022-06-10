@@ -76,7 +76,8 @@ BEGIN
     OPEN cb FOR
         SELECT OWNER,OBJECT_NAME,OBJECT_TYPE,COUNT(DISTINCT DATAOBJ#) SEGMENTS,STATISTIC_NAME,SUM(VALUE) STATS_VALUE 
         FROM (
-            SELECT DISTINCT SEGMENT_OWNER OWNER,SEGMENT_NAME OBJECT_NAME,
+            SELECT /*+cardinality(1)*/
+                   DISTINCT SEGMENT_OWNER OWNER,SEGMENT_NAME OBJECT_NAME,
                    REGEXP_SUBSTR(SEGMENT_TYPE,'^[^ ]+') OBJECT_TYPE
             FROM  TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(:OBJECT_OWNER,:OBJECT_NAME,NULL,1))
         ) A JOIN GV$SEGMENT_STATISTICS B USING(OWNER,OBJECT_NAME,OBJECT_TYPE)
@@ -88,7 +89,7 @@ BEGIN
         SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner', '&object_name') report FROM dual;
     $ELSE
     OPEN c1 FOR
-        SELECT /*+ ordered use_nl(o c cu) no_expand*/
+        SELECT /*+ ordered use_nl(o c cu) no_expand opt_param('optimizer_dynamic_sampling' 11)*/
                  c.INTERNAL_COLUMN_ID intcol#,
                  C.column_name COL_NAME,
                  CU.EQUALITY_PREDS EQ_PREDS,
@@ -105,20 +106,20 @@ BEGIN
                  ROUND(((SELECT rowcnt FROM sys.tab$ WHERE obj# = o.object_id) - c.num_nulls) / GREATEST(c.NUM_DISTINCT, 1), 2) card,
                  C.DATA_DEFAULT "DEFAULT",
                  c.last_analyzed
-                FROM   dba_objects o, dba_tab_cols c, SYS.COL_USAGE$ CU
-                WHERE  o.owner = c.owner
-                AND    o.object_name = c.table_name
-                AND    cu.obj#(+) = &object_id
-                AND    c.INTERNAL_COLUMN_ID =cu.intcol# (+)
-                AND    o.object_id = &object_id
-                AND    o.object_name = '&object_name'
-                AND    o.owner       = '&object_owner'
-                AND    (cu.obj# is not null or c.column_name like 'SYS\_%' escape '\')
-                ORDER  BY 1;
+        FROM   dba_objects o, dba_tab_cols c, SYS.COL_USAGE$ CU
+        WHERE  o.owner = c.owner
+        AND    o.object_name = c.table_name
+        AND    cu.obj#(+) = &object_id
+        AND    c.INTERNAL_COLUMN_ID =cu.intcol# (+)
+        AND    o.object_id = &object_id
+        AND    o.object_name = '&object_name'
+        AND    o.owner       = '&object_owner'
+        AND    (cu.obj# is not null or c.column_name like 'SYS\_%' escape '\')
+        ORDER  BY 1;
     $END
     $IF &check_access_usage=2 $THEN
     OPEN c2 FOR
-        SELECT COLS,
+        SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/ COLS,
                REGEXP_SUBSTR(cols_and_cards,'[^//]+',1,1) col_names,
                REGEXP_SUBSTR(cols_and_cards,'[^//]+',1,2) cards,
                USAGES，
@@ -172,7 +173,8 @@ BEGIN
 
     $IF &check_access_index=1 $THEN
         OPEN c3 for 
-            SELECT a.owner,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 11) */
+                   a.owner,
                    a.index_name,
                    (SELECT listagg(column_name || NULLIF(' ' || DESCEND, ' ASC'), ',') WITHIN GROUP(ORDER BY COLUMN_POSITION)
                     FROM   dba_ind_columns c

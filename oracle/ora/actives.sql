@@ -105,7 +105,8 @@ BEGIN
     IF dbms_db_version.version > 10 THEN
         OPEN :actives FOR q'{
             WITH sess AS
-             (SELECT (select /*+index(o)*/ object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
+             (SELECT (select /*+index(o) opt_param('optimizer_dynamic_sampling' 5)*/ 
+                     object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
                      s.*
               FROM   TABLE(gv$(CURSOR(
                    SELECT (SELECT spid FROM &CHECK_ACCESS_PRO11 d WHERE d.addr = s.paddr)|| regexp_substr(s.program, '\(.*\)') spid,
@@ -157,7 +158,7 @@ BEGIN
     ELSE
         OPEN :actives FOR
             WITH s1 AS(
-              SELECT /*+no_merge*/*
+              SELECT /*+no_merge */*
               FROM   &CHECK_ACCESS_SES &SQLM
               WHERE  not (sid = USERENV('SID') and inst_id = userenv('instance'))
               AND   (event not like 'Streams%')),
