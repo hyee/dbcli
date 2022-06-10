@@ -1,7 +1,7 @@
 /*[[show LMS stats]]*/
 set sep4k on pivotsort head
-col program,traceid,tracefile,sosid,terminal,USERNAME,SERIAL#,BACKGROUND noprint
-col "CR Time,CUR Time,Avg CR Time,Avg CUR Time" for usmhd2
+col ADDR,program,traceid,tracefile,sosid,terminal,USERNAME,SERIAL#,BACKGROUND,CON_ID,NUMA_DEFAULT,PGA_ALLOC_MEM noprint
+col "CR Time,CUR Time,Avg CR Time,Avg CUR Time,waited" for usmhd2
 
 grid {
     [[select /*grid={topic='gv$cr_block_server',pivot=20}*/ * from gv$cr_block_server order by inst_id]],
@@ -31,5 +31,14 @@ grid {
         AND B1.INST_ID = B5.INST_ID
         ORDER BY 1]],
     '-',
-    [[select /*grid={topic='gv$process'}*/  * from gv$process where background>0 and pname like 'LMS%' order by inst_id,pname]]
+    [[select /*grid={topic='gv$process'}*/  
+            A.*,
+            nvl(b.status,'Idle') status,
+            b.WAIT_TIME_MICRO waited,
+            b.event
+     from gv$process a left join gv$session b
+     ON   (a.addr=b.paddr and a.inst_id=b.inst_id)
+     where background>0 
+     and pname like 'LMS%' 
+     order by a.inst_id,pname]]
 }

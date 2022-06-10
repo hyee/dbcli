@@ -28,6 +28,8 @@ COL PTOQ_TIME for msmhd2 Head  "Defer-Ping|Queue"
 COL FSCH_TIME for msmhd2 Head  "Flush Side|Channel"
 COL IPBAT_TIME for msmhd2 Head  "Embed Batch|Msg"
 COL RETRYQ_TIME for msmhd2 Head  "Retry|Queue"
+pro X$KJMSDP:
+pro =========
 SELECT  INST_ID INST,INDX IDX,PRIORITY "PRIOR",WAIT_TICKET,
         ACTUAL_RCV,
         ROUND(RCVMSG_TIME*1000/ACTUAL_RCV,2) RCV_AVG,

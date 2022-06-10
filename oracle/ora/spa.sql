@@ -1,14 +1,19 @@
 /*[[
-    Show SQL Performance Analyzer(SPA) info. Usage: @@NAME [-f"<filter>" | {<task_id> [<execution_id> [<keyword>|R]]}]
-    @@NAME                                      : show all SPA tasks
-    @@NAME -f"<filter>"                         : filter on dba_advisor_tasks
-    @@NAME <task_id>                            : show details of target task
-    @@NAME <task_id> <execution_id> [<keyword>] : show details of target executions, plus filtering with possible keyword
-    @@NAME <task_id> <execution_id> R           : generate report text for target comparison analysis report
+    Show SQL Performance Analyzer(SPA) info. Usage: @@NAME [-f"<filter>" | {<task_id> [<execution_id> [<keyword>|-improve|R]]}]
+    @@NAME                            : show all SPA tasks
+    @@NAME -f"<filter>"               : filter on dba_advisor_tasks
+    @@NAME <task_id>                  : show details of target task
+    @@NAME <task_id> <execution_id>   : show details of target executions 
+                         <keyword>           plus filtering with possible keyword
+                         -diff               order by abs(diff)
+                         -regress            order by regression
+                         -improve            order by improvement
+    @@NAME <task_id> <execution_id> R : generate report text for target comparison analysis report
 
     --[[--
         &filter: default={1=1}, f={}
-        @ver: 18.1={} default={--}
+        @ver   : 18.1={} default={--}
+        &ord1  : default={"Weight"} diff={greatest(diff,1/nullif(diff,0))} regress={diff} improve={1/nullif(diff,0)}
     --]]--
 ]]*/
 
@@ -96,6 +101,7 @@ BEGIN
             WITH r AS
              (SELECT /*+materialize*/
                      A.*, 
+                     (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
                      (SELECT decode(t,'SQL',attr1||' -> '|| attr3,nullif(attr3||'.'||attr1,'.')) FROM 
                          (SELECT TYPE t,decode(type,'SQL',attr17,attr3) attr3,attr1 
@@ -139,6 +145,7 @@ BEGIN
                    R1.COMP           "COMPARE|RESULT",
                    R1.SIM_EXADATA    "SIMULATE|EXDATA",
                    R1.TIME_LIMIT     "TIME|LIMIT",
+                   r.execs,
                    R.findings,
                    r.status,
                    r.execution_start,
@@ -169,7 +176,7 @@ BEGIN
             SELECT TYPE,
                    ATTR1,
                    NULL,NULL,NULL,NULL,
-                   to_char(ATTR4)
+                   trim(regexp_replace(to_char(substr(attr4,1,200)),'\s+',' '))
             FROM   dba_advisor_objects
             WHERE  TASK_ID = tid
             AND    EXECUTION_NAME IS NULL
@@ -275,7 +282,7 @@ BEGIN
                            f.attr8 pre_cost,
                            f.attr9 post_cost,
                            round(f.attr9/nullif(f.attr8,0),2) diff,
-                           round(ratio_to_report(greatest(NVL(f.attr8,0),NVL(F.ATTR9,0))) over(),4) "Weight",
+                           round(ratio_to_report(NVL(F.ATTR9,0)-NVL(f.attr8,0)) over(),8) "Weight",
                            '|' "*",
                            nvl(sq_txt,substr(sql_text,1,200)) sql_text
                     FROM (SELECT * FROM R WHERE EXECUTION_NAME=nam) F
@@ -293,7 +300,7 @@ BEGIN
                     OR    upper(attr1||'~'||pre.attr17||'~'||post.attr17||
                                 f.attr5||'~'||p1.phv||'~'||p2.phv||'~'||sql_text)
                     LIKE  key
-                    ORDER BY greatest(NVL(f.attr8,0),NVL(F.ATTR9,0)) DESC)
+                    ORDER BY &ord1 DESC NULLS LAST)
                 SELECT * FROM F WHERE ROWNUM<=50;
         ELSIF typ like 'CONVERT%' THEN
             OPEN c2 FOR replace(q'~

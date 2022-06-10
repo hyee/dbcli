@@ -136,14 +136,14 @@ BEGIN
         FROM (
             SELECT CU.COLS,
                    LENGTH(cu.cols)-LENGTH(REPLACE(cu.cols,','))+1 col_count,
-                    (SELECT '('||listagg(C.COLUMN_NAME,',') 
-                                WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ','))||')/('||--
-                            listagg(ROUND((SELECT rowcnt- c.num_nulls FROM sys.tab$ WHERE obj# = cu.obj#) / GREATEST(c.NUM_DISTINCT, 1), 2) ,', ') 
-                                WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',')) ||')'
-                    FROM   dba_tab_cols c
-                    WHERE  c.owner = '&object_owner'
-                    AND    c.table_name = '&object_name'
-                    AND    INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',') > 0) cols_and_cards,
+                  (SELECT '('||listagg(C.COLUMN_NAME,',') 
+                               WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ','))||')/('||--
+                           listagg(ROUND((SELECT rowcnt- c.num_nulls FROM sys.tab$ WHERE obj# = cu.obj#) / GREATEST(c.NUM_DISTINCT, 1), 2) ,', ') 
+                               WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',')) ||')'
+                   FROM   dba_tab_cols c
+                   WHERE  c.owner = '&object_owner'
+                   AND    c.table_name = '&object_name'
+                   AND    INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',') > 0) cols_and_cards,
                    CASE
                        WHEN BITAND(CU.FLAGS, 1) = 1 THEN 'FILTER '
                    END || --

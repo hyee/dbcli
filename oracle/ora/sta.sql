@@ -1,55 +1,213 @@
-/*[[Run SQL Tuning Advisor on target SQL. Usage: @@NAME {<sql_id> [run-as user] [time limit]}
+/*[[Run SQL Tuning Advisor on target SQL. Usage: @@NAME <task_id>|<sql_text>|{<sql_id> [<phv>|<child_num>|<snap_id>|<sqlset_id>|<schema>]} [time limit]
+    -sync        : run in sync mode, otherwise run with dbms_scheduler
+    <schema>     : target run-as-user, can be a number which points to specific child_number/snap_id/sqlset_id/plan_hash_value
+    <time limit> : maximum run time in seconds, default as 7200
     --[[
         &exe_mode: async={0}, sync={1}
-        @ARGS: 1     
+        @check_access_sqlid: SYS.DBMS_SQLTUNE_UTIL0={1} default={0}
     --]]
 ]]*/
 set feed off
 SET VERIFY OFF
 VAR RES CLOB;
-
+VAR c1 REFCURSOR;
+VAR c2 REFCURSOR;
+VAR fn VARCHAR2(128);
+VAR txt CLOB;
 DECLARE
-    l_task    VARCHAR2(32) := 'DBCLI_STA';
-    l_task_id VARCHAR2(20);
-    l_sql     CLOB;
+    tsk     VARCHAR2(128) := 'DBCLI_STA';
+    sq_txt  CLOB := :V1;
+    sq_id   VARCHAR2(128) := regexp_substr(sq_txt, '^\S+$');
+    tid     INT := regexp_substr(sq_id, '^\d+$');
+    own     VARCHAR2(128) := regexp_substr(:v2,'^\S+$');
+    id      INT := regexp_substr(own, '^\d+$');
+    bw      RAW(2000);
+    bs      SYS.SQL_BIND_SET;
+    bl      SYS.SQL_BINDS;
+    c1      SYS_REFCURSOR;
+    c2      SYS_REFCURSOR;
+    status  VARCHAR2(300);
 BEGIN
-    l_sql := :V1;
-    IF nvl(INSTR(:V1, ' '), 0) = 0 THEN
-        SELECT text
-        INTO   l_sql
-        FROM   (SELECT sql_fulltext text
-                FROM   gv$sqlarea
-                WHERE  sql_id = :V1
-                AND    ROWNUM < 2
-                UNION ALL
-                SELECT sql_text
-                FROM   Dba_Hist_Sqltext
-                WHERE  sql_id = :V1
-                AND    ROWNUM < 2)
-        WHERE  ROWNUM < 2;
+    own   := REPLACE(own, id);
+    sq_id := REPLACE(sq_id, tid);
+    IF tid IS NULL AND sq_txt IS NOT NULL THEN 
+        IF sq_id IS NOT NULL THEN
+            SELECT nvl(upper(own), nam), txt, br
+            INTO   own, sq_txt, bw
+            FROM   (SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br
+                    FROM   gv$sql a
+                    WHERE  sql_id = sq_id
+                    AND    nvl(id, child_number) IN (child_number, plan_hash_value)
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
+                    FROM   dba_sqlset_statements a
+                    WHERE  sql_id = sq_id
+                    AND    nvl(id, sqlset_id) IN (sqlset_id, plan_hash_value)
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data
+                    FROM   dba_hist_sqltext
+                    JOIN   (SELECT *
+                           FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data
+                                   FROM   dba_hist_sqlstat
+                                   WHERE  sql_id = sq_id
+                                   AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
+                                   ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
+                           WHERE  rownum < 2)
+                    USING  (dbid, sql_id)
+                    WHERE  sql_id = sq_id)
+            WHERE  ROWNUM < 2;
+        ELSE
+            IF sq_txt LIKE '%/' THEN
+                sq_txt := trim(trim('/' from sq_txt));
+            ELSIF sq_txt LIKE '%;' AND UPPER(sq_txt) NOT LIKE '%END;' THEN
+                sq_txt := trim(trim(';' from sq_txt));
+            END IF;
+
+            $IF &check_access_sqlid=1 $THEN
+                sq_id := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(sq_txt);
+            $END
+        END IF;
+
+        IF sq_id IS NOT NULL THEN
+        BEGIN
+            tsk :='STA_'||sq_id;
+            dbms_sqltune.drop_tuning_task(tsk);
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+        BEGIN
+            tsk :='STA_'||sq_id;
+            dbms_scheduler.drop_job(tsk,true);
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
+        END IF;
+
+        IF bw IS NOT NULL THEN 
+            SELECT VALUE_ANYDATA
+            BULK COLLECT INTO bl
+            FROM  TABLE(DBMS_SQLTUNE.EXTRACT_BINDS(BW));
+        END IF; 
+        tsk := dbms_sqltune.create_tuning_task(
+                   sql_text   => sq_txt, 
+                   bind_list  => bl,
+                   user_name  => NVL(upper(own), SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')), 
+                   scope      => 'COMPREHENSIVE', 
+                   time_limit => nvl(0 + :V3,7200),
+                   task_name  => tsk);
+        IF &exe_mode = 0 THEN
+            dbms_scheduler.create_job(job_name => tsk,
+                                      job_type => 'PLSQL_BLOCK',
+                                      job_action => 'dbms_sqltune.execute_tuning_task(''' || tsk || ''');',
+                                      enabled => TRUE);
+            sq_txt := 'STA is running in async mode with job id as ' || tsk || ', run dbms_sqltune.report_tuning_task(''' || tsk ||
+                      ''') after its completion.';
+        ELSE
+            dbms_sqltune.execute_tuning_task(tsk);
+            sq_txt := dbms_sqltune.report_tuning_task(tsk);
+        END IF;
+    ELSIF tid IS NULL THEN
+        sq_txt := null;
+        OPEN c1 FOR
+            WITH r AS
+             (SELECT /*+materialize*/
+                     A.*, 
+                     (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
+                     (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
+                     (SELECT decode(t,'SQL',attr3||' => '||attr1,nullif(attr3||'.'||attr1,'.')) FROM 
+                         (SELECT TYPE t, attr3,attr1 
+                          FROM   dba_advisor_objects b
+                          WHERE  task_id = a.task_id
+                          AND    EXECUTION_NAME IS NULL
+                          AND    TYPE IN('SQLSET','SQL'))
+                     WHERE ROWNUM<2) SQLSET
+              FROM   (SELECT task_id, advisor_name, owner, task_name, execution_start, execution_end, status,DESCRIPTION
+                      FROM   dba_advisor_tasks a
+                      WHERE  advisor_name LIKE 'SQL Tuning%'
+                      ORDER  BY execution_start DESC NULLS LAST) A
+              WHERE  ROWNUM <= 50),
+            r1 AS
+             (SELECT task_id,
+                     MAX(DECODE(parameter_name, 'LOCAL_TIME_LIMIT', parameter_value+0,'TIME_LIMIT', parameter_value+0)) TIME_LIMIT,
+                     MAX(DECODE(parameter_name, 'DEFAULT_EXECUTION_TYPE', parameter_value)) EXEC_TYPE,
+                     MAX(DECODE(parameter_name, 'MODE', parameter_value)) EXEC_MODE
+              FROM   (SELECT TASK_ID FROM R) R
+              JOIN   DBA_ADVISOR_PARAMETERS
+              USING  (TASK_ID)
+              WHERE  PARAMETER_VALUE != 'UNUSED'
+              GROUP  BY task_id)
+            SELECT TASK_ID,
+                   R.OWNER,
+                   R.TASK_NAME,
+                   R.SQLSET "SQL[SET]",
+                   r1.exec_type ,
+                   r1.EXEC_MODE,
+                   r.execs,
+                   R.findings,
+                   r.status,
+                   R1.TIME_LIMIT MAX_SECS,
+                   r.execution_start,
+                   r.execution_end,
+                   r.DESCRIPTION
+            FROM   R
+            LEFT   JOIN R1
+            USING  (TASK_ID)
+            ORDER  BY execution_start DESC NULLS LAST;
+    ELSE
+        sq_txt := null;
+        OPEN c1 FOR
+            SELECT PARAMETER_NAME,
+                   nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
+                   PARAMETER_TYPE,
+                   IS_DEFAULT,
+                   IS_OUTPUT,
+                   IS_MODIFIABLE_ANYTIME IS_MDF,
+                   DESCRIPTION
+            FROM   dba_advisor_def_parameters a
+            LEFT   JOIN (
+                SELECT * FROM (
+                    SELECT A.*,ROW_NUMBER() OVER(PARTITION BY PARAMETER_NAME ORDER BY SEQ DESC) R
+                    FROM (
+                         SELECT PARAMETER_NAME, PARAMETER_VALUE,tid+regexp_substr(execution_name,'\d+$') seq
+                         FROM   DBA_ADVISOR_EXEC_PARAMETERS
+                         WHERE  TASK_ID = tid
+                         AND    PARAMETER_VALUE != 'UNUSED'
+                         UNION ALL
+                         SELECT PARAMETER_NAME, PARAMETER_VALUE,tid
+                         FROM   DBA_ADVISOR_PARAMETERS
+                         WHERE  TASK_ID = tid
+                         AND    PARAMETER_VALUE != 'UNUSED') A)
+                WHERE R=1) b
+            USING  (PARAMETER_NAME)
+            WHERE  A.ADVISOR_NAME = 'SQL Tuning Advisor'
+            UNION ALL
+            SELECT TYPE,
+                   ATTR1,
+                   NULL,NULL,NULL,NULL,
+                   trim(regexp_replace(to_char(substr(attr4,1,200)),'\s+',' '))
+            FROM   dba_advisor_objects
+            WHERE  TASK_ID = tid
+            AND    EXECUTION_NAME IS NULL
+            ORDER  BY PARAMETER_NAME;
+
+        SELECT max(STATUS),max(TASK_NAME),max(OWNER)
+        INTO   STATUS,TSK,OWN
+        FROM   DBA_ADVISOR_TASKS 
+        WHERE  task_id=tid;
+
+        IF STATUS='COMPLETED' THEN
+            :fn := tsk||'.txt';
+            :txt :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>tsk,owner_name=>own,level=>'ALL',section=>'ALL');
+            sq_txt := sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>tsk,owner_name=>own,level=>'BASIC',section=>'SUMMARY');
+        END IF;
     END IF;
-    BEGIN
-        dbms_sqltune.drop_tuning_task(l_task);
-    EXCEPTION
-        WHEN OTHERS THEN
-            NULL;
-    END;
-    l_task_id := dbms_sqltune.create_tuning_task(sql_text   => l_sql,
-                                                 user_name  => NVL(:V2, SYS_CONTEXT('USERENV','CURRENT_SCHEMA')),
-                                                 scope      => 'COMPREHENSIVE',
-                                                 time_limit => nvl(0+:V3,120),
-                                                 task_name  => l_task);
-    IF &exe_mode=0 then
-        dbms_job.submit(l_task_id,'dbms_sqltune.execute_tuning_task('''||l_task||''');',sysdate);
-        commit;
-        l_sql := 'STA is running in async mode with job id as '||l_task_id||', run dbms_sqltune.report_tuning_task('''||l_task||''') after its completion.';
-    else
-        dbms_sqltune.execute_tuning_task(l_task);
-        l_sql := dbms_sqltune.report_tuning_task (l_task);
-    END IF;
-    :RES := l_sql;
-EXCEPTION WHEN NO_DATA_FOUND THEN
-    :RES := 'Target sql text does not exist!';
+    :c1  := c1;
+    :c2  := c2;
+    :RES := sq_txt;
 END;
 /
+print c1
+print c2
 print RES
+
+save txt fn

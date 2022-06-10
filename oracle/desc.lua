@@ -181,7 +181,9 @@ local desc_sql={
         type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
         v_idx    t_idx;
     BEGIN
-        select nvl(max(object_id),oid) into oid from all_procedures where owner=own and object_name=:object_name and rownum<2;
+        select nvl(max(object_id),oid) into oid 
+        from   all_procedures where owner=own 
+        and    object_name=:object_name and rownum<2;
 
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for
@@ -1198,28 +1200,33 @@ function desc.desc(name,option)
         cfg.set("colsep",'|')
     elseif rs[4]=='TYPE' then
         local result=db:dba_query(db.internal_call,
-                                  [[select ELEM_TYPE_OWNER,ELEM_TYPE_NAME,COLL_TYPE,UPPER_BOUND
+                                  [[select ELEM_TYPE_OWNER,ELEM_TYPE_NAME,COLL_TYPE,UPPER_BOUND,ELEM_TYPE_MOD
                                    from ALL_COLL_TYPES 
                                    WHERE owner = :owner AND type_name = :object_name]],
                                   {owner=rs[1],object_name=rs[2]})
         result=db.resultset:rows(result,-1)
         if #result>1 then
             result=result[2]
-            rs[1],rs[2]=result[1],result[2]
-            desc=' ['..(result[3]=='TABLE' and 'TABLE' or ('VARRAY('..result[4]..')'))..' OF '..rs[2]..']'
+            if result[1]~='' then
+                rs[10],rs[11]=result[1],result[2]
+            end
+            desc=' ['..(result[3]=='TABLE' and 'TABLE' or ('VARRAY('..result[4]..')'))..' OF '..
+                       (result[5]~='' and (result[5]..' ') or '')..
+                       (result[1]~='' and (result[1]..'.') or '')..result[2]..']'
         end
     end
-
-    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
-        rs[k]=v
-    end
-
     local dels='\n'..string.rep("=",80)
     local feed,autohide=cfg.get("feed"),cfg.get("autohide")
     cfg.set("feed","off",true)
     cfg.set("autohide","col",true)
     print(("%s : %s%s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],desc))
-    
+    if rs[10] then
+        rs[1],rs[2]=rs[10],rs[11]
+    end
+
+    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
+        rs[k]=v
+    end
 
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end

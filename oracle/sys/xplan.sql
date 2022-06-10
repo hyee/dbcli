@@ -133,7 +133,7 @@ BEGIN
                             ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2), snap_id DESC)
                     WHERE  rownum < 2)
             USING  (dbid, sql_id)
-            WHERE  sql_id = sql_id
+            WHERE  sql_id = sq_id
         ) WHERE ROWNUM<2;
     EXCEPTION WHEN OTHERS THEN
         raise_application_error(-20001,'Cannot find SQL Text for SQL Id: '||sq_id);
@@ -201,14 +201,13 @@ BEGIN
               FROM   v$sql
               WHERE  plan_hash_value=fixctl
               AND    sql_text LIKE '/* SQL Analyze('||userenv('sid')||',%'
-              AND    instr(sql_text,stmt.sql_text)>0
+              AND    instr(sql_text,substr(stmt.sql_text,1,2000))>0
               AND    parsing_schema_name=stmt.parsing_schema_name
               ORDER  BY last_active_time desc)
         WHERE rownum<2;
 
         DELETE PLAN_TABLE
-        WHERE  PLAN_ID=sig
-        OR     STATEMENT_ID='INTERNAL_DBCLI_CMD';
+        WHERE  PLAN_ID=sig;
 
         INSERT INTO PLAN_TABLE
             (STATEMENT_ID,
@@ -248,7 +247,7 @@ BEGIN
              OTHER_XML)
         SELECT 'INTERNAL_DBCLI_CMD',
                SIG,
-               TIMESTAMP,
+               SYSDATE,
                REMARKS,
                OPERATION,
                OPTIONS,
