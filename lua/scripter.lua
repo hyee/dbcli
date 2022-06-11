@@ -354,7 +354,7 @@ function scripter:run_sql(sql,args,cmds)
     
     local echo=cfg.get("echo"):lower()=="on"
     if #env.RUNNING_THREADS == 2 then
-        cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT")
+        cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT","ONERREXIT","ON")
     end
     local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do

@@ -24,7 +24,8 @@ ORDER BY 1,2,3;
 
 PRO GV$UNDOSTAT:
 PRO ============
-SELECT d.inst_id INST,
+SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
+       d.inst_id INST,
        d.tablespace_name undo_tbs,
        d.MAXBYTES "Max|Undo Size",
        d.undo_size "Current|Undo Size",

@@ -263,7 +263,7 @@ function output.getOutput(item)
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
-    if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' then
+    if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
         if not db:is_internal_call(sql) then
             db.props.last_sql_id=loader:computeSQLIdFromText(sql)
             sql_id=db.props.last_sql_id

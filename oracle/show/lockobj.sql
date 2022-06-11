@@ -7,7 +7,11 @@
 
 set feed off
 WITH b AS
- (SELECT /*+use_hash(l t) DYNAMIC_SAMPLING(4) no_expand materialize table_stats(SYS.X$KSQRS set rows=1000000) table_stats(SYS.X$KSUSE set rows=100000)*/
+ (SELECT /*+use_hash(l t) opt_param('optimizer_dynamic_sampling' 5) 
+           no_expand materialize 
+           table_stats(SYS.X$KSQRS set rows=1000000) 
+           table_stats(SYS.X$KSUSE set rows=100000)
+        */
          l.*
   FROM   v$lock_type t, gv$lock l
   WHERE  t.type = l.type

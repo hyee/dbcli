@@ -19,7 +19,8 @@ select * from gv$sga_dynamic_components WHERE inst_id=nvl(:instance,userenv('ins
 
 grid {
 [[--grid:{topic='SGA Info'}
-    SELECT a.*,b.used used_size, nvl(b.free,a.total_size-b.used) free_size
+    SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
+            a.*,b.used used_size, nvl(b.free,a.total_size-b.used) free_size
     FROM   (SELECT inst_id inst,name,resizeable resize,sum(bytes) total_size 
             FROM GV$SGAINFO 
             WHERE inst_id=nvl(:instance,userenv('instance')) 

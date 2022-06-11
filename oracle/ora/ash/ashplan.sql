@@ -108,9 +108,9 @@ Sample Ouput:
     &check_access_pdb: hist={dba_hist_} pdb={AWR_PDB_} 
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     @check_access_aux: default={(26/8/12)-6}
-    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,&did dbid from dba_sqlset_plans a)}
+    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,&did dbid from all_sqlset_plans a)}
     &cid  : default={dbid} sqlset={sqlset_id}
-    &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
+    &src1 : default={&check_access_pdb.sql_plan} sqlset={all_sqlset_plans}
     &top1: default={ev}, O={CURR_OBJ#}
     &top2: default={CURR_OBJ#}, O={ev}
     &vw  : default={A} G={G} D={D} sqlset={D}
