@@ -4,23 +4,27 @@ Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.
 -advise: execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
 
 Trace Flags:
-    0    : disable
-    1    : use dbms_output.put_line instead of writing into trace file
-    2    : enable dbms_stat trace only at session level
-    4    : trace table stats
-    8    : trace index stats
-    16   : trace column stats
-    32   : trace auto stats - logs to sys.stats_target$_log
-    64   : trace scaling
-    128  : dump backtrace on error
-    256  : dubious stats detection
-    512  : auto stats job
-    1024 : parallel execution tracing
-    2048 : print query before execution
-    4096 : partition prune tracing
-    8192 : trace stat differences
-    16384: trace extended column stats gathering
-    32768: trace approximate NDV (number distinct values) gathering                                                                            
+    0     : disable
+    1     : use dbms_output.put_line instead of writing into trace file
+    2     : enable dbms_stat trace only at session level
+    4     : trace table stats
+    8     : trace index stats
+    16    : trace column stats
+    32    : trace auto stats - logs to sys.stats_target$_log
+    64    : trace scaling
+    128   : dump backtrace on error
+    256   : dubious stats detection
+    512   : auto stats job
+    1024  : parallel execution tracing
+    2048  : print query before execution
+    4096  : partition prune tracing
+    8192  : trace stat differences
+    16384 : trace extended column stats gathering(11.1+)
+    32768 : trace approximate NDV (number distinct values) gathering(11.2+)
+    65536 : trace "online gather optimizer statistics"(12.1+)
+    131072: Automatic DOP trace
+    262144: System statistics trace(12.2+)
+    524288: Advisor trace
 
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
