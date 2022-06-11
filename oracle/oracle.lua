@@ -390,7 +390,7 @@ function oracle:connect(conn_str)
                 END IF;
             EXCEPTION WHEN OTHERS THEN NULL;END;
             BEGIN
-                EXECUTE IMMEDIATE q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance]'
+                EXECUTE IMMEDIATE q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance where status='OPEN']'
                 into :isRac;
             EXCEPTION WHEN OTHERS THEN
                 rtn   := sys.dbms_utility.get_parameter_value('cluster_database_instances',intval,strval);

@@ -221,13 +221,9 @@ local url,usr
 function dicts.on_after_db_conn(instance,sql,props)
     if db.props.isadb==true then
         local mode=''
-        if db.props.israc==true then 
-            cfg.force_set('instance', db.props.instance)
-            mode=' and non-RAC'
-        end
         cfg.force_set('cdbmode', 'pdb')
         print('Switched into PDB'..mode..' mode for Oracle ADW/ATP environment, some SQLs will be auto-rewritten.');
-        print('You can run "set cdbmode default instance default" to switch back.')
+        print('You can run "set cdbmode default" to switch back.')
     else
         cfg.force_set('instance','default')
         cfg.force_set('cdbmode','default')
