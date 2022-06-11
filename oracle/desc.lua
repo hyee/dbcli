@@ -957,8 +957,9 @@ local desc_sql={
                            182,'INTERVAL YEAR TO MONTH',
                            183,'INTERVAL DAY TO SECOND',
                            208,'UROWID',
-                           'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE, 
-                   c.kqfcooff offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
+                           'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE,
+                   c.kqfcosiz col_size, 
+                   c.kqfcooff col_offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
                    decode(c.kqfcoidx, 0,'','Yes('||c.kqfcoidx||')') "Indexed?"
             FROM   sys.x$kqfta t, sys.x$kqfco c
             WHERE  c.kqfcotab = t.indx
@@ -1165,6 +1166,7 @@ function desc.desc(name,option)
     env.checkhelp(name)
     set.set("autohide","on")
     local rs,success,err
+    local desc=''
     local obj=db:check_obj(name)
     if obj.object_type=='SYNONYM' then
         local new_obj=db:dba_query(db.get_value,[[WITH r AS
@@ -1193,6 +1195,7 @@ function desc.desc(name,option)
     elseif obj.object_type=='TABLE' and obj.object_name:find('^X%$') and obj.owner=='SYS' and obj.object_id>=4200000000 then
         env.checkerr(db.props.isdba,"Cannot describe the fixed table without SYSDBA account.")
         obj.object_type="FIXED_TABLE"
+        --desc=' (Rows = '..db:get_value('select /*INTERNAL_DBCLI_CMD*/ kqftarsz from sys.x$kqfta where kqftanam=:1',{obj.object_name})..')'
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
@@ -1200,7 +1203,7 @@ function desc.desc(name,option)
        or obj.object_type,2}
 
     local sqls=desc_sql[rs[4]]
-    local desc=''
+    
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
     if type(sqls)~="table" then sqls={sqls} end
     if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
