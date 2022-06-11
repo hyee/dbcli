@@ -127,6 +127,6 @@ BEGIN
    sys.dbms_java.terminate_btl();
    dbms_output.put_line('Please run below command to generate the profile result:');
    dbms_output.put_line('  ./btl-report &file..btl &file..bts > &file..log');
-   dbms_output.put_line('And then run "odb profile <path>/&file..log" to analyze the report.');
+   dbms_output.put_line('And then run "odb profile <path>/&file..log" in DBCLI to analyze the report.');
 END;
 /

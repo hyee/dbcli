@@ -201,13 +201,13 @@ local desc_sql={
                            POSITION p,
                            lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
                            CASE
-                               WHEN pls_type IS NOT NULL AND pls_type != data_type THEN
+                               WHEN pls_type != data_type THEN
                                 pls_type
                                WHEN type_subname IS NOT NULL THEN
                                 type_name || '.' || type_subname || '(' || DATA_TYPE || ')'
                                WHEN type_name IS NOT NULL THEN
                                 type_name || '(' || data_type || ')'
-                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1 AND nvl(data_scale, 0) = 0 THEN
+                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) >0 AND nvl(data_scale, 0) = 0 THEN
                                 'INTEGER'
                                WHEN data_type IN ('FLOAT',
                                                   'INTEGER',
@@ -354,13 +354,13 @@ local desc_sql={
                      decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
                      lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
                      nvl(CASE
-                         WHEN a.pls_type IS NOT NULL AND a.pls_type!=a.data_type THEN
+                         WHEN a.pls_type!=a.data_type THEN
                               a.pls_type
                          WHEN a.type_subname IS NOT NULL THEN
                               a.type_name || '.' || a.type_subname || '(' || DATA_TYPE || ')'
                          WHEN a.type_name IS NOT NULL THEN
                               a.type_name || '(' || a.data_type || ')'
-                         WHEN a.data_type='NUMBER' AND a.data_length=22 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
+                         WHEN a.data_type='NUMBER' AND a.data_length=22 AND a.data_precision>0 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
                          WHEN a.data_type IN('FLOAT','INTEGER','INT','BINARY_FLOAT','BINARY_DOUBLE') THEN a.data_type
                          ELSE a.data_type || 
                             CASE WHEN DATA_PRECISION>0 THEN '('||DATA_PRECISION||NULLIF(','||DATA_SCALE,',')||')'
@@ -701,7 +701,7 @@ local desc_sql={
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
     [[/*grid={topic='ALL_TABLES', pivot=1}*/ 
-    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ * 
+    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5)*/ * 
                 FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
@@ -722,12 +722,12 @@ local desc_sql={
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
-    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ *
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
       FROM   ALL_TABLES T
       WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
       
     ['TABLE PARTITION']={[[
-         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                 COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
@@ -838,11 +838,11 @@ local desc_sql={
          AND    upper(a.owner)=:owner and a.table_name=:object_name AND a.partition_name=:object_subname
          ORDER BY NO#]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ *
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
         FROM   all_tab_partitions T
         WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]},
     FIXED_TABLE=[[
-        SELECT /*+ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5) */ 
+        SELECT /*+ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5)*/ 
                a.*,
                C.avgcln AVG_LEN,
                C.DISTCNT "NDV",
@@ -972,7 +972,7 @@ local desc_sql={
         ORDER  BY 1,2]],
   
   ['ATTRIBUTE DIMENSION']={
-    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
              dimension_type,
              compile_state,
              table_owner,
@@ -994,7 +994,7 @@ local desc_sql={
       WHERE  owner = :owner
       AND    dimension_name = :object_name]],
     (([[
-      SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+      SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
              dtl.*
       FROM   all_attribute_dimensions ad
       CROSS  APPLY @ad@ dtl
@@ -1003,7 +1003,7 @@ local desc_sql={
       ORDER  BY 1]]):gsub('@ad@',ad))},
 
   HIERARCHY={
-    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
              dimension_owner, dimension_name,dim_source_table,parent_attr,caption,description
       FROM   all_hierarchies hr
       OUTER APPLY(SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
@@ -1017,7 +1017,7 @@ local desc_sql={
      WHERE owner = :owner 
      AND   hier_name = :object_name]],
 
-    (([[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+    (([[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
               dtl.*
       FROM   all_hierarchies ah
       CROSS  APPLY @ah@ dtl
@@ -1026,7 +1026,7 @@ local desc_sql={
       ORDER  BY 1]]):gsub('@ah@',ah))},
 
   ['ANALYTIC VIEW']={
-   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ * 
+   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ * 
      FROM  all_analytic_views av
      OUTER APPLY( SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
                          MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description

@@ -91,9 +91,9 @@ local stmt=[[
                     ELSE
                         part2_temp := schem;
                         BEGIN
-                            EXECUTE IMMEDIATE 'SELECT MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
+                            EXECUTE IMMEDIATE 'SELECT /*+opt_param(''optimizer_dynamic_sampling'' 0)*/ MAX(username) FROM DBA_USERS WHERE upper(username)=:1' INTO schem using upper(schem);
                         EXCEPTION WHEN OTHERS THEN 
-                            SELECT MAX(username) INTO schem FROM ALL_USERS WHERE upper(username)=upper(schem);
+                            SELECT /*+opt_param(''optimizer_dynamic_sampling'' 0)*/ MAX(username) INTO schem FROM ALL_USERS WHERE upper(username)=upper(schem);
                         END;
 
                         IF schem IS NOT NULL THEN
@@ -108,12 +108,12 @@ local stmt=[[
                     stmt  := objs|| ' a WHERE OWNER IN(''SYS'',''PUBLIC'',:1) AND OBJECT_NAME=:3)';
                 END IF;
             ELSE
-                EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where object_id=:1' 
+                EXECUTE IMMEDIATE 'select /*+opt_param(''optimizer_dynamic_sampling'' 0)*/ max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where object_id=:1' 
                 INTO schem,part1,part2,object_number
                 USING 0+target;
 
                 IF schem IS NULL THEN
-                    EXECUTE IMMEDIATE 'select max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where data_object_id=:1' 
+                    EXECUTE IMMEDIATE 'select /*+opt_param(''optimizer_dynamic_sampling'' 0)*/ max(to_char(owner)),max(to_char(object_name)),max(to_char(subobject_name)),max(object_id) from '||objs||' where data_object_id=:1' 
                     INTO schem,part1,part2,object_number
                     USING 0+target;
                 END IF;
@@ -123,7 +123,7 @@ local stmt=[[
             END IF;
            
             IF part1 IS NOT NULL THEN
-                stmt:=q'[SELECT /*+no_expand*/
+                stmt:=q'[SELECT /*+no_expand opt_param('optimizer_dynamic_sampling' 0)*/
                        MIN(OBJECT_TYPE)    keep(dense_rank first order by s_flag,object_id),
                        MIN(OWNER)          keep(dense_rank first order by s_flag,object_id),
                        MIN(OBJECT_NAME)    keep(dense_rank first order by s_flag,object_id),
@@ -191,7 +191,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 c1 VARCHAR2(32767);
                 @lz_compress@
             BEGIN
-                SELECT /*+ordered_predicates use_hash(o d) swap_join_inputs(d)*/
+                SELECT /*+ordered_predicates use_hash(o d) swap_join_inputs(d) opt_param('optimizer_dynamic_sampling' 0)*/
                        MAX(owner || '/' || object_name || '/' || object_type || '/' || object_id || '/' || nullif(n1,object_name)|| ',' ) 
                        keep(dense_rank FIRST ORDER BY decode(object_type, 'SYNONYM', 'ZZZZ', object_type)) n
                 BULK   COLLECT INTO t1
@@ -311,7 +311,8 @@ function db:check_access(obj_name,is_cache,is_set_env)
             IF user=:owner THEN
                 x:=1;
             ELSE
-                select count(1) into x
+                select /*+opt_param('optimizer_dynamic_sampling' 0)*/
+                       count(1) into x
                 from   table_privileges
                 where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
                 AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')

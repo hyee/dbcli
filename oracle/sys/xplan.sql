@@ -174,7 +174,7 @@ BEGIN
         EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
         EXECUTE IMMEDIATE replace(trace,'@','forever,level 12');
     ELSIF &opt=8 THEN
-        ctrl:='<parameter name="sharing">"4"</parameter>';
+        ctrl:='<parameter name="sharing">"1"</parameter><parameter name="approximate">"OTNFSLVRH_"</parameter>';
     END IF;
     sq_text := NULL;
     st := SYSDATE;
