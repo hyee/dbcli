@@ -235,15 +235,28 @@ pro
 var c1 REFCURSOR "&OBJECT_TYPE INFO"
 var c2 REFCURSOR "&OBJECT_TYPE COLUMN INFO"
 var c3 REFCURSOR "&OBJECT_TYPE INDEX INFO"
-var c4 REFCURSOR "&OBJECT_TYPE CHILD PARTS"
+var c4 REFCURSOR "&OBJECT_TYPE TOP 100 CHILD PARTS"
+var c5 REFCURSOR "&OBJECT_TYPE STATS HISTORY"
 col "Samples(%)" for pct
 DECLARE
-    typ VARCHAR2(30):=:OBJECT_TYPE;
+    own VARCHAR2(128):=:OBJECT_OWNER;
+    nam VARCHAR2(128):=:OBJECT_NAME;
+    sub VARCHAR2(128):=:OBJECT_SUBNAME;
+    typ VARCHAR2(128):=:OBJECT_TYPE;
     c1 SYS_REFCURSOR;
     c2 SYS_REFCURSOR;
     c3 SYS_REFCURSOR;
     c4 SYS_REFCURSOR;
+    msg VARCHAR2(300);
 BEGIN
+    IF NVL(typ,'X') NOT LIKE 'TABLE%' THEN 
+        RETURN;
+    END IF;
+    msg := '| '||typ||' '||own||'.'||nam||trim('.' FROM '.'||sub)||' |';
+    DBMS_OUTPUT.PUT_LINE(RPAD('*',LENGTH(MSG),'*'));
+    DBMS_OUTPUT.PUT_LINE(msg);
+    DBMS_OUTPUT.PUT_LINE('| '||RPAD('=',LENGTH(MSG)-4,'=')||' |');
+    DBMS_OUTPUT.PUT_LINE(RPAD('*',LENGTH(MSG),'*'));
     IF typ='TABLE' THEN
         OPEN c1 FOR 
             select 
@@ -260,8 +273,8 @@ BEGIN
                 USER_STATS,
                 t.last_analyzed
             from &check_access_dba.tables t
-            where owner = :object_owner
-            and table_name = :object_name;
+            where owner = own
+            and table_name = nam;
         OPEN c2 FOR
             SELECT t1.COLUMN_NAME,
                    decode(t1.DATA_TYPE,
@@ -287,17 +300,17 @@ BEGIN
             FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
                    (select /*+cardinality(1)*/ table_name,num_rows 
                     from  &check_access_dba.tables 
-                    where owner = :object_owner 
-                    and   table_name = :object_name) t2
+                    where owner = own 
+                    and   table_name = nam) t2
             WHERE  t2.table_name=t1.table_name
-            AND    t1.table_name = :object_name
-            AND    t1.owner = :object_owner
-            AND    t.table_name = :object_name
-            AND    t.owner = :object_owner
+            AND    t1.table_name = nam
+            AND    t1.owner = own
+            AND    t.table_name = nam
+            AND    t.owner = own
             AND    t1.column_name=t.column_name;
 
         OPEN C3 FOR
-            WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force')*/ 
+            WITH I AS (SELECT /*+no_merge*/ 
                                I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                                PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -312,9 +325,9 @@ BEGIN
                         FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C
                         WHERE  C.OWNER(+) = I.OWNER
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME
-                        AND    I.TABLE_OWNER = :object_owner
-                        AND    I.TABLE_NAME = :object_name)
-            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 11)
+                        AND    I.TABLE_OWNER = own
+                        AND    I.TABLE_NAME = nam)
+            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('optimizer_dynamic_sampling' 11)
                  DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -344,23 +357,29 @@ BEGIN
             ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION;
 
         OPEN C4 FOR
-            SELECT PARTITION_NAME,
-                   t.NUM_ROWS,
-                   t.SAMPLE_SIZE,
-                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
-                   BLOCKS,
-                   EMPTY_BLOCKS,
-                   AVG_SPACE,
-                   CHAIN_CNT,
-                   AVG_ROW_LEN,
-                   GLOBAL_STATS,
-                   USER_STATS,
-                   t.last_analyzed
-            FROM   &check_access_dba.tab_partitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    partition_name =nvl(:object_subname,partition_name)
-            ORDER  BY partition_position;
+            SELECT * FROM (
+                SELECT PARTITION_NAME,
+                       PARTITION_POSITION POSITION,
+                       t.NUM_ROWS,
+                       t.SAMPLE_SIZE,
+                       round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
+                       BLOCKS,
+                       EMPTY_BLOCKS,
+                       AVG_SPACE,
+                       CHAIN_CNT,
+                       AVG_ROW_LEN,
+                       GLOBAL_STATS,
+                       USER_STATS,
+                       last_analyzed,
+                       o.created
+                FROM   &check_access_dba.tab_partitions t,&check_access_dba.objects o
+                WHERE  table_owner = own
+                AND    table_name = nam
+                AND    o.owner=own
+                AND    o.object_name=nam
+                AND    o.subobject_name=t.partition_name
+                ORDER  BY created DESC)
+            WHERE ROWNUM<=100;
     ELSIF typ='TABLE PARTITION' THEN
         OPEN C1 FOR
             SELECT PARTITION_NAME,
@@ -376,12 +395,12 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.tab_partitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    partition_name =nvl(:object_subname,partition_name)
+            WHERE  table_owner = own
+            AND    table_name = nam
+            AND    partition_name =nvl(sub,partition_name)
             ORDER  BY partition_position;
         OPEN C2 FOR
-            SELECT PARTITION_NAME,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(t1)*/ PARTITION_NAME,
                    COLUMN_NAME,
                    HISTOGRAM,
                    ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
@@ -394,12 +413,11 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed  &notes
             FROM   &check_access_dba.PART_COL_STATISTICS t,
-                   (select table_name,num_rows from &check_access_dba.tab_partitions p where p.table_owner = :object_owner and p.table_name = :object_name and p.partition_name=:object_subname) t1
-            WHERE  t.table_name = :object_name
-            AND    owner = :object_owner
+                   (select table_name,num_rows from &check_access_dba.tab_partitions p where p.table_owner = own and p.table_name = nam and p.partition_name=sub) t1
+            WHERE  t.table_name = nam
+            AND    owner = own
             AND    t1.table_name=t.table_name
-            AND    PARTITION_NAME =:object_subname
-            AND    partition_name =nvl(:object_subname,partition_name);
+            AND    partition_name =sub;
         OPEN C3 FOR
             SELECT t.INDEX_NAME,
                    t.PARTITION_NAME,
@@ -415,15 +433,15 @@ BEGIN
                    t.USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.ind_partitions t, &check_access_dba.indexes i
-            WHERE  i.table_name = :object_name
-            AND    i.table_owner = :object_owner
+            WHERE  i.table_name = nam
+            AND    i.table_owner = own
             AND    i.owner = t.index_owner
             AND    i.index_name = t.index_name
-            AND    t.partition_name =nvl(:object_subname,t.partition_name);
+            AND    t.partition_name =sub;
 
         OPEN C4 FOR
-            SELECT PARTITION_NAME,
-                   SUBPARTITION_NAME,
+            SELECT SUBPARTITION_NAME,
+                   SUBPARTITION_POSITION POSITION,
                    NUM_ROWS,
                    SAMPLE_SIZE,
                    round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
@@ -436,11 +454,11 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.tab_subpartitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    subpartition_name =nvl(:object_subname,subpartition_name)
+            WHERE  table_owner = own
+            AND    table_name = nam
+            AND    partition_name =sub
             ORDER  BY SUBPARTITION_POSITION;
-    ELSIF typ='TABLE PARTITION' THEN
+    ELSIF typ='TABLE SUBPARTITION' THEN
         OPEN C1 FOR
             SELECT PARTITION_NAME,
                    SUBPARTITION_NAME,
@@ -456,13 +474,11 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.tab_subpartitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    subpartition_name =nvl(:object_subname,subpartition_name)
-            ORDER  BY SUBPARTITION_POSITION;
+            WHERE  table_owner = own
+            AND    table_name = nam
+            AND    subpartition_name =sub;
         OPEN C2 FOR
-            SELECT p.PARTITION_NAME,
-                   t.SUBPARTITION_NAME,
+            SELECT t.SUBPARTITION_NAME,
                    t.COLUMN_NAME,
                    NUM_BUCKETS BUCKETS,
                    t.SAMPLE_SIZE,
@@ -473,12 +489,12 @@ BEGIN
                    t.USER_STATS,
                    t.last_analyzed &notes
             FROM   &check_access_dba.SUBPART_COL_STATISTICS t, &check_access_dba.tab_subpartitions p
-            WHERE  t.table_name = :object_name
-            AND    t.owner = :object_owner
+            WHERE  t.table_name = nam
+            AND    t.owner = own
             AND    t.subpartition_name = p.subpartition_name
             AND    t.owner = p.table_owner
             AND    t.table_name = p.table_name
-            AND    t.subpartition_name =:object_subname;
+            AND    t.subpartition_name =sub;
         OPEN C3 FOR
             SELECT t.INDEX_NAME,
                    t.PARTITION_NAME,
@@ -496,25 +512,39 @@ BEGIN
                    t.USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.ind_subpartitions t, &check_access_dba.indexes i
-            WHERE  i.table_name = :object_name
-            AND    i.table_owner = :object_owner
+            WHERE  i.table_name = nam
+            AND    i.table_owner = own
             AND    i.owner = t.index_owner
             AND    i.index_name = t.index_name
-            AND    t.subpartition_name =nvl(:object_subname,t.subpartition_name);
+            AND    t.subpartition_name =sub;
     END IF;
-
+    OPEN :C5 FOR
+        SELECT 'Pending' type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,LAST_ANALYZED
+        FROM   &check_access_dba.tab_pending_stats
+        WHERE  owner=own
+        AND    table_name=nam
+        AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
+        UNION ALL
+        SELECT Decode(SEQ,1,'Current','History') type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,LAST_ANALYZED
+        FROM (
+            SELECT A.*,ROW_NUMBER() OVER(ORDER BY LAST_ANALYZED DESC) SEQ
+            FROM   &check_access_dba.tab_pending_stats A
+            WHERE  owner=own
+            AND    table_name=nam
+            AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
+            ORDER BY SEQ)
+        WHERE ROWNUM<=10;
     :C1 := C1;
     :C2 := C2;
     :C3 := C3;
     :C4 := C4;
 END;
 /
-
 PRINT C1;
+PRINT C5;
 PRINT C2;
 PRINT C3;
 PRINT C4;
-
 
 DECLARE
     input  VARCHAR2(128) := :V1;

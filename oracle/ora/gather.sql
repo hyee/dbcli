@@ -21,6 +21,8 @@
          -skew           : Same to "FOR ALL COLUMNS SIZE SKEWONLY"
          -repeat         : Same to "FOR ALL COLUMNS SIZE REPEAT"
          <other>         : Refer to documentation of parameter "method_opt"
+    -pending             : gather pending stats. Not avaible to schema/database level
+    -publish             : publish pending stats on target object/SQL
     -print               : Print gather stats command only, don't actually execute
 
     Examples:
@@ -47,6 +49,7 @@
         &exec   : default={true} print={false}
         &nopart : default={0} nopart={1}
         &block  : default={true} row={false}
+        &pending: default={0} pending={1} publish={2}
     --]]
 ]]*/
 
@@ -68,6 +71,7 @@ DECLARE
     opt   VARCHAR2(300) := :V4;
     msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> 0|<percent> -async';
     fmt   VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s,statown=>'%s',stattab=>'%s',degree=>%s&invalid.&force.%s);]';
+    pub   VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
     stmt  VARCHAR2(32767);
     town  VARCHAR2(128);
     tnam  VARCHAR2(256) := replace(trim(upper(:t)),' '); 
@@ -80,18 +84,23 @@ DECLARE
     fil   DBMS_STATS.ObjectTab:=DBMS_STATS.ObjectTab();
     tabs  SYS.ODCIARGDESCLIST:=SYS.ODCIARGDESCLIST();
     FUNCTION parse(own varchar2,nam varchar2,typ varchar2,part varchar2,pct varchar2,dop varchar2,cascade varchar2:='false') RETURN VARCHAR2 IS
+        rtn VARCHAR2(2000);
     BEGIN
-        return utl_lms.format_message(fmt,
+        rtn:=utl_lms.format_message(fmt,
                 CASE WHEN typ LIKE 'INDEX%' THEN 'index' else 'table' END,
                 own,nam,part,pct,
                 CASE WHEN DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN 
-                    ',options=>''GATHER' ||CASE &stale WHEN 1 THEN ' STALE''' WHEN 2 THEN ' AUTO''' END 
+                    ',options=>''GATHER' ||CASE &stale WHEN 1 THEN ' STALE' WHEN 2 THEN ' AUTO' END||'''' 
                 END,
                 town,tnam,dop,
                 CASE when typ NOT LIKE 'INDEX%' THEN 
                     ',block_sample=>&block,cascade=>'||cascade||case when opt is not null then ',method_opt=>'''||opt||'''' end
-                END
-            );
+                END);
+        IF &pending=1 AND typ NOT LIKE 'INDEX%' THEN
+            rtn:=replace(utl_lms.format_message(q'[dbms_stats.set_table_prefs('%s','%s','publish','false');\1%s\1dbms_stats.set_table_prefs('%s','%s','publish','true');]',
+                     own,nam,rtn,own,nam),'\1',chr(10));
+        END IF;
+        RETURN rtn;
     END;
 
     PROCEDURE submit(cmd VARCHAR2) IS
@@ -167,7 +176,10 @@ DECLARE
         END IF;
         IF tim IS NOT NULL THEN
             dbms_output.put_line('==========================');
-            DBMS_OUTPUT.PUT_LINE('Operation done in '||round((dbms_utility.get_time-tim)/100,2)||' secs.');
+            dbms_output.put_line('Operation done in '||round((dbms_utility.get_time-tim)/100,2)||' secs.');
+            IF &pending=1 THEN
+                dbms_output.put_line('Consider set optimizer_use_pending_statistics=true to test pending stats');
+            END IF;
         END IF;
     EXCEPTION WHEN OTHERS THEN
         IF c>0 THEN
@@ -277,8 +289,12 @@ BEGIN
         END IF;
     END IF;
 
-    IF pct IS NULL OR dop IS NULL THEN
+    IF (pct IS NULL OR dop IS NULL) and &pending!=2 THEN
         raise_application_error(-20001,msg);
+    ELSIF key IS NOT NULL THEN
+        raise_application_error(-20001,'Option -f"<filter>" is only available to list database/schema stale stats');
+    ELSIF &list=1 THEN
+        raise_application_error(-20001,'Option -l is only available to list database/schema stale stats');
     END IF;
 
     IF tnam IS NOT NULL THEN
@@ -305,9 +321,16 @@ BEGIN
     END IF;
 
     IF nam IS NOT NULL THEN
-        submit(parse(own,nam,typ,part,pct,dop,'true'));
+        IF &pending!=2 THEN
+            submit(parse(own,nam,typ,part,pct,dop,'true'));
+        ELSIF typ NOT LIKE 'INDEX%' THEN
+            submit(utl_lms.format_message(pub,own,nam));
+        END IF;
         RETURN;
     ELSIF &stale>0 AND (own IS NOT NULL OR sq_id IS NULL) THEN
+        IF &pending>0 THEN
+            raise_application_error(-20001,'Option -pending/-publish is not available to gathering database/schema stale stats');
+        END IF;
         fmt:=q'[dbms_stats.gather_%s_stats(%s%s,options=>'GATHER %s',gather_fixed=>true,block_sample=>&block,method_opt=>'%s',statown=>'%s',stattab=>'%s',degree=>%s&invalid.&force.);]';
         fmt:=utl_lms.format_message(fmt,
                 CASE WHEN own IS NOT NULL THEN 'schema' ELSE 'database' END,
@@ -361,7 +384,11 @@ BEGIN
                      CASE WHEN OP LIKE '%INDEX%' THEN 'INDEX' ELSE 'TABLE' END
         ) A USING(OWN,NAM)) LOOP
         part:=NULL;
-        stmt:=stmt||'BEGIN '||parse(r.own,r.nam,r.typ,part,pct,dop)||'EXCEPTION WHEN OTHERS THEN NULL;END;'||chr(10);
+        IF &pending!=2 THEN
+            stmt:=stmt||parse(r.own,r.nam,r.typ,part,pct,dop)||chr(10);
+        ELSIF r.typ NOT LIKE 'INDEX%' THEN
+            stmt:=stmt||utl_lms.format_message(pub,own,nam);
+        END IF;
     END LOOP;
 
     IF stmt IS NULL THEN

@@ -26,9 +26,10 @@ output.trace_sql_after=([[
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
         l_rtn    PLS_INTEGER;
-        l_sid    PLS_INTEGER:=sys_context('userenv','sid');
+        l_sid    PLS_INTEGER;
     BEGIN
         open :stats for q'[@GET_STATS@]';
+        l_sid :=sys_context('userenv','sid');
         begin
             execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
             into l_sql_id,l_child using l_sid;
@@ -38,7 +39,7 @@ output.trace_sql_after=([[
             elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
                 begin
                     execute immediate q'[begin :rtn := sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
-                    using out l_rtn, in out l_intval,in out l_strval;
+                        using out l_rtn, in out l_intval,in out l_strval;
                 exception when others then null; end;
                 if nvl(lower(l_strval),'exact')!='exact' then
                     l_sql_id := l_tmp_id;
@@ -102,8 +103,9 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
                     begin
-                        execute immediate q'[begin sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
-                        using out l_intval,l_strval;
+                        execute immediate q'[begin :rtn:=sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
+                            using out l_cid,in out l_intval,in out l_strval;
+                        l_cid := null;
                     exception when others then null; end;
                     if nvl(lower(l_strval),'exact')!='exact' then
                         l_sql_id := l_tmp_id;
@@ -375,6 +377,7 @@ function output.getOutput(item)
             for k,row in ipairs(n) do rows:add(row) end
             print("")
             rows:print()
+            print("")
             if fmt then env.var.columns['VALUE']=fmt end
             env.set.set('sep4k','back')
             env.set.set('rownum','back')
