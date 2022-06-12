@@ -17,7 +17,7 @@ function output.setOutput(db)
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
-output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat join sys.v_$statname using(STATISTIC#) where name not like 'session%memory%' and value>0]]
+output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat join sys.v_$statname using(STATISTIC#) where value>0]]
 output.trace_sql_after=([[
     DECLARE/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_sql_id VARCHAR2(15);
@@ -25,6 +25,7 @@ output.trace_sql_after=([[
         l_child  PLS_INTEGER;
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
+        l_rtn    PLS_INTEGER;
         l_sid    PLS_INTEGER:=sys_context('userenv','sid');
     BEGIN
         open :stats for q'[@GET_STATS@]';
@@ -36,8 +37,8 @@ output.trace_sql_after=([[
                 l_sql_id := l_tmp_id;
             elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
                 begin
-                    execute immediate q'[begin sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
-                    using out l_intval,l_strval;
+                    execute immediate q'[begin :rtn := sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
+                    using out l_rtn, in out l_intval,in out l_strval;
                 exception when others then null; end;
                 if nvl(lower(l_strval),'exact')!='exact' then
                     l_sql_id := l_tmp_id;
@@ -74,7 +75,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_plans  sys.ODCIVARCHAR2LIST;
         l_fmt    VARCHAR2(300):='TYPICAL ALLSTATS LAST';
         l_sid    PLS_INTEGER:=sys_context('userenv','sid');
-        l_sql    VARCHAR2(500);
+        l_sql    VARCHAR2(2000);
         l_found  BOOLEAN := false;
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
@@ -146,15 +147,16 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             END IF;
             BEGIN
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                    l_sql := '/*dbcli_ignore*/SELECT SQL_ID,'
+                    l_sql := 'SELECT /*+dbcli_ignore order_predicates no_expand*/ SQL_ID,'
                               || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END 
                               || q'!,null 
                              FROM sys.V_$OPEN_CURSOR 
-                             WHERE sid=:sid 
-                             AND   last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second')
-                             AND   cursor_type like '%OPEN%' 
+                             WHERE sid=:sid
+                             AND   cursor_type like '%OPEN%'
                              AND   instr(sql_text,'dbcli_ignore')=0
-                             AND   lower(REGEXP_SUBSTR(SQL_TEXT,'\w+')) IN('create','with','select','update','merge','delete')!' ;
+                             AND   (last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second') or
+                                    last_sql_active_time is null and cursor_type='OPEN')
+                             AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')!';
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;
                         FOR i in 1..l_recs.count LOOP
@@ -233,20 +235,20 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
 
 local fixed_stats={
     ['DB time']=1,
-    ['CPU used by this session']=2,
+    ['CPU used by this session']={2,1},
     ['non-idle wait time']=3,
-    ['recursive calls']=4,
+    ['recursive calls']={4,6},
     ['db block gets']=5,
-    ['consistent gets']=6,
+    ['consistent gets']={6,1},
     ['physical reads']=7,
     ['physical writes']=8,
     ['session logical reads']=9,
     ['logical read bytes from cache']=10,
     ['cell physical IO interconnect bytes']=11,
     ['redo size']=12,
-    ['bytes sent via SQL*Net to client']=13,
-    ['bytes received via SQL*Net from client']=14,
-    ['SQL*Net roundtrips to/from client']=15,
+    ['bytes sent via SQL*Net to client']={13,3200},
+    ['bytes received via SQL*Net from client']={14,1314},
+    ['SQL*Net roundtrips to/from client']={15,1},
     ['sorts (memory)']=16,
     ['sorts (disk)']=17,
     ['sorts (rows)']=18,
@@ -302,7 +304,7 @@ function output.getOutput(item)
         sql_id=sql_id or loader:computeSQLIdFromText(sql)
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id}
-            
+            --db:query([[select /*dbcli_ignore INTERNAL_DBCLI_CMD*/ * from v$open_cursor where sid=userenv('sid') and cursor_type like '%OPEN%' and upper(SQL_TEXT） like '%SELECT%']])
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
             if not done then
                 output.is_exec=nil
@@ -342,15 +344,16 @@ function output.getOutput(item)
 
         if not sqlerror and stats and #stats>0 then 
             local n={}
-            local idx,c=-1,0
+            local idx,c,v=-1,0
             grid.sort(stats,1)
             for k,v in pairs(fixed_stats) do
-                n[v]={0,k,env.ansi.mask('HEADCOLOR','/')}
+                n[type(v)=='table' and v[1] or v]={0,k,env.ansi.mask('HEADCOLOR','/')}
             end
             for k,row in ipairs(stats) do
                 if tonumber(row[2]) and tonumber(row[2])>0 then
-                    if fixed_stats[row[1]] then
-                        n[fixed_stats[row[1]]][1]=row[2]
+                    v=fixed_stats[row[1]]
+                    if v then
+                        n[type(v)=='table' and v[1] or v][1]=math.max(0,row[2]-(type(v)=='table' and v[2] or 0))
                     else
                         idx=math.fmod(idx+1,2)*3
                         if idx==0 then

@@ -76,7 +76,6 @@ DECLARE /*+no_monitor*/
     rpt_id     INT;
     execs      INT;
     counter    INT := &tot;
-    dyn_lvl    INT;
     filename   VARCHAR2(100);
     sqlmon     CLOB;
     content    CLOB;
@@ -97,6 +96,24 @@ DECLARE /*+no_monitor*/
     type t_fmt IS TABLE OF VARCHAR2(50);
     fmt        t_fmt;
     c0         SYS_REFCURSOR;
+    dyn_lvl    PLS_INTEGER;
+    PROCEDURE report_start IS
+    BEGIN
+        IF dyn_lvl IS NULL THEN
+            SELECT value into dyn_lvl from v$parameter where name='optimizer_dynamic_sampling';
+        END IF;
+        IF dyn_lvl != 5 THEN
+            EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=5';
+        END IF;
+    END;
+
+    PROCEDURE report_end IS
+    BEGIN
+        IF dyn_lvl != 5 THEN
+            EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
+        END IF;
+    END;
+
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
         dbms_lob.writeappend(txt,nvl(length(msg),1)+1,chr(10)||nvl(msg,'.'));
@@ -269,7 +286,9 @@ BEGIN
     ELSIF sqlmon IS NULL AND regexp_like(sq_id,'^\d+$') THEN
         $IF &check_access_report=1 $THEN
             rpt_id := 0+sq_id;
+            report_start;
             sqlmon := DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => rpt_id, TYPE => 'XML');
+            report_end;
         $END
         IF sqlmon IS NULL THEN
              raise_application_error(-20001,'SQL_ID '||sq_id||' should not be a number!');
@@ -378,10 +397,7 @@ BEGIN
 
                 IF rpt_id IS NULL THEN
                     fmt := t_fmt('ALL+PLAN_SKEW+SUMMARY+SQL_FULLTEXT','ALL','ALL-BINDS','ALL-SQL_TEXT','ALL-SQL_TEXT-BINDS','TYPICAL');
-                    SELECT value into dyn_lvl from v$parameter where name='optimizer_dynamic_sampling';
-                    IF dyn_lvl!=4 THEN
-                        EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=4';
-                    END IF;
+                    report_start;
                     FOR i in 1..fmt.count LOOP
                         BEGIN
                             xml := DBMS_SQLTUNE.REPORT_SQL_MONITOR_XML(report_level => fmt(i),  sql_id => sq_id,  SQL_EXEC_START=>sql_start,SQL_EXEC_ID => sql_exec, inst_id => inst);
@@ -389,25 +405,24 @@ BEGIN
                             exit;
                         EXCEPTION WHEN OTHERS THEN
                             IF i=fmt.count THEN
-                                IF dyn_lvl!=4 THEN
-                                    EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
-                                END IF;
+                                report_end;
                                 RAISE;
                             END IF;
                         END;
                     END LOOP;
-                    IF dyn_lvl!=4 THEN
-                        EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
-                    END IF;
+                    report_end;
                 ELSE
                     $IF &check_access_report=1 $THEN
+                        report_start;
                         xml := SYS.DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL_XML(rpt_id);
+                        report_end;
                         dbms_output.put_line('Extracted report from dba_hist_reports.');
                     $END
                 END IF;
                 filename := 'sqlm_' || sq_id ||nullif('_'||keyw,'_')|| '.html';
             ELSE
                 sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
+                report_start;
                 xml := xmltype(DBMS_SQLTUNE.REPORT_SQL_DETAIL(report_level => 'ALL',
                                                       sql_id => sq_id,
                                                       sql_plan_hash_value=>sql_exec,
@@ -418,6 +433,7 @@ BEGIN
                                                       top_n=>50,
                                                       type=>'XML'));
                 filename := 'sqld_' || sq_id ||nullif('_'||keyw,'_') || '.html';
+                report_end;
             END IF;
         END IF;
 

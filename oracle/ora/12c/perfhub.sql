@@ -25,6 +25,23 @@ DECLARE
     v_serial#  INT ;
     v_param    VARCHAR2(500);
     v_level    VARCHAR2(1000);
+    dyn_lvl    PLS_INTEGER;
+    PROCEDURE report_start IS
+    BEGIN
+        IF dyn_lvl IS NULL THEN
+            SELECT value into dyn_lvl from v$parameter where name='optimizer_dynamic_sampling';
+        END IF;
+        IF dyn_lvl != 5 THEN
+            EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=5';
+        END IF;
+    END;
+
+    PROCEDURE report_end IS
+    BEGIN
+        IF dyn_lvl != 5 THEN
+            EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
+        END IF;
+    END;
 BEGIN
     BEGIN
         v_start  := coalesce(to_date(nullif(:V1,'1'), 'YYMMDDHH24MI'),SYSDATE - CASE WHEN :V1 = '1' THEN nvl(&snap,3/24) ELSE 7 END);
@@ -34,6 +51,7 @@ BEGIN
         execute immediate 'alter session set events ''emx_control compress_xml=none''';
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
+        report_start;
         IF trim('+' from lower(:V3)) IN ('cell') THEN
             --SELECT COMPONENT_ID,COMPONENT_NAME,SYS.ANYDATA.CONVERTOBJECT(COMPONENT_OBJECT).GETTYPENAME() TYPE_NAME FROM SYS."_REPORT_COMPONENT_OBJECTS";
             v_param:=utl_lms.format_message('/orarep/cell/main?report_level=all&top=30&start_time=%s&end_time=%s&is_realtime=%s',
@@ -71,9 +89,11 @@ BEGIN
                                              inst_id => v_inst,
                                              monitor_list_detail => 50);
         END IF;
+        report_end;
     EXCEPTION
         WHEN OTHERS THEN
             IF v_file IS NOT NULL THEN
+                report_end;
                 raise;
             END IF;
             v_inst := nvl(:V2, v_inst);
@@ -100,6 +120,7 @@ BEGIN
                                                  selected_start_time => v_start,
                                                  selected_end_time => v_end,
                                                  monitor_list_detail => 100);
+            report_end;
     END;
     :filename := v_file;
     :report   := v_report;

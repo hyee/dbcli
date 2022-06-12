@@ -1,3 +1,4 @@
+2022-06-12: + oracle: new scripts "show slowsegs"
 2022-06-11: + oracle: new scripts "ora gather"
 2022-06-09: + oracle: new scripts "ora spa"/"sys xplan"
 2022-02-16: + public: new setting "set tracevm"

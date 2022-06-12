@@ -51,6 +51,23 @@ DECLARE
     sq_id  VARCHAR2(30);
     sq_txt VARCHAR2(400);
     sq_nid VARCHAR2(30);
+    dyn_lvl    PLS_INTEGER;
+    PROCEDURE report_start IS
+    BEGIN
+        IF dyn_lvl IS NULL THEN
+            SELECT value into dyn_lvl from v$parameter where name='optimizer_dynamic_sampling';
+        END IF;
+        IF dyn_lvl != 5 THEN
+            EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=5';
+        END IF;
+    END;
+
+    PROCEDURE report_end IS
+    BEGIN
+        IF dyn_lvl != 5 THEN
+            EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
+        END IF;
+    END;
 BEGIN
     SELECT MAX(task_name),max(owner),nvl(max(task_id),tid)
     INTO   tsk,own,tid
@@ -374,6 +391,7 @@ BEGIN
 
         IF KEY IS NULL THEN
             fname := 'spa_'||tid||'_'||eid||'.';
+            report_start;
             IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN
                 fname := fname ||'html';
                 EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>:1,task_owner=>:2,section=>''ALL'',level=>''ALL'',type=>''HTML'');END;' 
@@ -383,6 +401,7 @@ BEGIN
                 EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>:1,task_owner=>:2,section=>''ALL'',level=>''ALL'');END;' 
                     USING OUT frs,tsk,own;
             END IF;
+            report_end;
         END IF;
     END IF;
     :c1 := c1;

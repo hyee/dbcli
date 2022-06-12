@@ -1,7 +1,8 @@
 /*[[show LMS stats]]*/
 set sep4k on pivotsort head
 col ADDR,program,traceid,tracefile,sosid,terminal,USERNAME,SERIAL#,BACKGROUND,CON_ID,NUMA_DEFAULT,PGA_ALLOC_MEM noprint
-col "CR Time,CUR Time,Avg CR Time,Avg CUR Time,waited" for usmhd2
+col "CR Time,CUR Time,Avg CR Time,Avg CUR Time,waited,CPU_USED" for usmhd2
+col PGA_USED_MEM,PGA_FREEABLE_MEM,PGA_MAX_MEM for kmg2
 
 grid {
     [[select /*grid={topic='gv$cr_block_server',pivot=20}*/ * from gv$cr_block_server order by inst_id]],
@@ -35,6 +36,7 @@ grid {
             A.*,
             nvl(b.status,'Idle') status,
             b.WAIT_TIME_MICRO waited,
+            b.sid||','||b.serial# session#,
             b.event
      from gv$process a left join gv$session b
      ON   (a.addr=b.paddr and a.inst_id=b.inst_id)

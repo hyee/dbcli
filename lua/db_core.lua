@@ -279,7 +279,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
     return rows
 end
 
-function ResultSet:print(res,conn,prefix,verticals)
+function ResultSet:print(res,conn,prefix,verticals,is_close)
     local result,hdl={},nil
     if is_closed(res) then return end
     local cols=self:getHeads(res)
@@ -294,7 +294,7 @@ function ResultSet:print(res,conn,prefix,verticals)
     verticals=verticals or __stmts[res]
     local maxrows,pivot=verticals or cfg.get("printsize"),cfg.get("pivot")
     if pivot~=0 and not verticals then maxrows=math.abs(pivot) end
-    local result=self:rows(res,maxrows,cfg.get('null'),true)
+    local result=self:rows(res,maxrows,cfg.get('null'),is_close~=false)
     if not result then return end
     result.verticals=verticals
     if pivot==0 and not verticals then
@@ -872,10 +872,11 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
-
+    local cleans={}
     local function process_result(rs,is_print)
         if print_result and is_print~=false then
-            self.resultset:print(rs,self.conn,nil,verticals)
+            cleans[#cleans+1]=rs
+            self.resultset:print(rs,self.conn,nil,verticals,false)
         elseif caches then
             __stmts[rs]=verticals
             caches[#caches+1]=rs
@@ -926,6 +927,9 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
     if is_not_prep then self:clearStatements() end
+    for _,rs in ipairs(cleans) do
+        self.resultset:close(rs)
+    end
     
     for k,v in pairs(outputs) do
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
