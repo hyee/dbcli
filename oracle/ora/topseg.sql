@@ -27,6 +27,7 @@
     --]]
 ]]*/
 set rownum on sqltimeout 1800 sep4k on
+col space for kmg
 SELECT * FROM (
     SELECT /*+NO_EXPAND MONITOR opt_param('optimizer_dynamic_sampling' 6) opt_param('_optimizer_sortmerge_join_enabled','false') */ 
             min(obj#) obj#,owner,  &cols object_type,

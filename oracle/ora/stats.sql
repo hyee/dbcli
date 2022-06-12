@@ -145,7 +145,8 @@ BEGIN
             $END
             len := length(pval);
             IF pval!=substr(prefs(i*3+2),1,35) THEN
-                pval := '$HIR$'||pval||'$NOR$';
+                pval := '$HIR$*'||substr(pval,1,34)||'$NOR$';
+                len:=len+1;
             END IF;
             status :=rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i*3+1),45)||': '||pval||rpad(' ',35-len);
             if prefs(i*3+3) is not null then
