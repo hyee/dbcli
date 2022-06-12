@@ -45,6 +45,8 @@ DECLARE
     st          date;
     et          date;
     status      varchar2(300);
+    pval        varchar2(300);
+    len         int;
     val         number;
     numrows     int;
     numblks     int;
@@ -56,56 +58,60 @@ DECLARE
     type t is table of varchar2(300);
     LST    SYS.ODCIOBJECTLIST := SYS.ODCIOBJECTLIST();
     --SOURCE:  SYS.OPTSTAT_HIST_CONTROL$/SYS.OPTSTAT_USER_PREFS$
-    prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE', 'TRUE/FALSE',
-                'APPROXIMATE_NDV','TRUE/FALSE',
-                'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
-                'AUTOSTATS_TARGET','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)',
-                'AUTO_STATS_ADVISOR_TASK','TRUE/FALSE',
-                'AUTO_STAT_EXTENSIONS','ON/OFF',
-                'AUTO_TASK_STATUS','HIGH FREQUENCY STATISTICS: ON/OFF, see SYS.STATS_TARGET$/dba_auto_stat_executions',
-                'AUTO_TASK_MAX_RUN_TIME','HIGH FREQUENCY STATISTICS: Max run secs',
-                'AUTO_TASK_INTERVAL','HIGH FREQUENCY STATISTICS: Interval in secs',
-                'CASCADE','TRUE/FALSE/null(AUTO_CASCADE)',
-                'CONCURRENT','MANUAL/AUTOMATIC/ALL/OFF/FALSE/TRUE',
-                'COORDINATOR_TRIGGER_SHARD','TRUE/FALSE',
-                'DEBUG','1[AUTO_TLIST_ONLY],2[MANUAL_TLIST],4[PARALLEL_SYNOP],8[CLOB_SQL],16[FORCE_TF],32[BATCHINGSQL]',
-                'DEGREE','n/32766(DEFAULT_DEGREE_VALUE)/32767(DEFAULT_DEGREE)/32768(AUTO_DEGREE)',
-                'ENABLE_HYBRID_HISTOGRAMS','0:disable 1/2/3',
-                'ENABLE_TOP_FREQ_HISTOGRAMS','0:disable 1/2/3',
-                'ESTIMATE_PERCENT','0(AUTO_SAMPLE_SIZE)/[0.000001-100]/101(DEFAULT_ESTIMATE_PERCENT)',
-                'GATHER_AUTO','AFTER_LOAD/ALWAYS',
-                'GATHER_SCAN_RATE','HADOOP_ONLY/ON/OFF',
-                'GLOBAL_TEMP_TABLE_STATS','SHARED/SESSION',
-                'GRANULARITY','Partition: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
-                'INCREMENTAL','Partition: TRUE/FALSE, fix controls: 13583722/16726844',
-                'INCREMENTAL_INTERNAL_CONTROL','Partition: TRUE/FALSE',
-                'INCREMENTAL_LEVEL','Partition: TABLE/PARTITION synopses',
-                'INCREMENTAL_STALENESS','Partition: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
-                'JOB_OVERHEAD','-1',
-                'JOB_OVERHEAD_PERC','1',
-                'MAINTAIN_STATISTICS_STATUS','TRUE/FALSE',
-                'METHOD_OPT','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
-                'MON_MODS_ALL_UPD_TIME','',
-                'NO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE(_optimizer_invalidation_period))',
-                'OPTIONS','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
-                'PREFERENCE_OVERRIDES_PARAMETER','TRUE/FALSE',
-                'PUBLISH','TRUE/FALSE',
-                'REAL_TIME_STATISTICS','ON/OFF',
-                'ROOT_TRIGGER_PDB','FALSE/TRUE',
-                'SCAN_RATE','0',
-                'SKIP_TIME','',
-                'SNAPSHOT_UPD_TIME','',
-                'SPD_RETENTION_WEEKS','53',
-                'STATS_MODEL','ON/OFF',
-                'STATS_MODEL_INTERNAL_CONTROL','0',
-                'STATS_MODEL_INTERNAL_MINRSQ','0.9',
-                'STALE_PERCENT','10',
-                'STATS_RETENTION','',
-                'STAT_CATEGORY','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
-                'SYS_FLAGS','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
-                'TABLE_CACHED_BLOCKS','0(AUTO_TABLE_CACHED_BLOCKS)/n',
-                'TRACE','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC[sys.stats_target$_log]),...524288',
-                'WAIT_TIME_TO_UPDATE_STATS','15');
+    --         SYS.DBMS_STATS_INTERNAL.FILL_IN_PARAMS/FILL_IN_PARAMS_WITH_NO_PREFS
+    prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE','FALSE', 'TRUE/FALSE',
+                'APPROXIMATE_NDV','TRUE','TRUE/FALSE',
+                'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
+                'AUTO_STAT_EXTENSIONS','OFF','ON/OFF',
+                'AUTO_STATS_ADVISOR_TASK','TRUE','TRUE/FALSE',
+                'AUTO_TASK_INTERVAL', '900','HIGH FREQUENCY STATISTICS: Interval in secs',
+                'AUTO_TASK_MAX_RUN_TIME', '3600','HIGH FREQUENCY STATISTICS: Max run secs',
+                'AUTO_TASK_STATUS','OFF','HIGH FREQUENCY STATISTICS: ON/OFF, see SYS.STATS_TARGET$/dba_auto_stat_executions',
+                'AUTOSTATS_TARGET','AUTO','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)', 
+                'BLOCK_SAMPLE', 'FALSE','TABLE: TRUE/FALSE,whether sample in block level',
+                'CASCADE', 'DBMS_STATS.AUTO_CASCADE','TRUE/FALSE/null(AUTO_CASCADE),cascade collect index stats',
+                'CONCURRENT','OFF', 'MANUAL/AUTOMATIC/ALL/OFF/FALSE/TRUE',
+                'COORDINATOR_TRIGGER_SHARD','FALSE', 'TRUE/FALSE',
+                'DEBUG','0','1[AUTO_TLIST_ONLY],2[MANUAL_TLIST],4[PARALLEL_SYNOP],8[CLOB_SQL],16[FORCE_TF],32[BATCHINGSQL]',
+                'DEGREE','NULL','n/32766(DEFAULT_DEGREE_VALUE)/32767(DEFAULT_DEGREE)/32768(AUTO_DEGREE)',
+                'ENABLE_HYBRID_HISTOGRAMS','3','0:disable 1/2/3',
+                'ENABLE_TOP_FREQ_HISTOGRAMS','3','0:disable 1/2/3',
+                'ESTIMATE_PERCENT','DBMS_STATS.AUTO_SAMPLE_SIZE','0(AUTO_SAMPLE_SIZE)/[0.000001-100]/101(DEFAULT_ESTIMATE_PERCENT)',
+                'FORCE', 'FALSE','TRUE/FALSE',
+                'GATHER_AUTO','AFTER_LOAD', 'AFTER_LOAD/ALWAYS',
+                'GATHER_SCAN_RATE','HADOOP_ONLY','HADOOP_ONLY/ON/OFF',
+                'GLOBAL_TEMP_TABLE_STATS','SESSION', 'SHARED/SESSION',
+                'GRANULARITY','AUTO','Partition: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
+                'INCREMENTAL','FALSE','Partition: TRUE/FALSE, fix controls: 13583722/16726844',
+                'INCREMENTAL_INTERNAL_CONTROL','TRUE', 'Partition: TRUE/FALSE',
+                'INCREMENTAL_LEVEL','PARTITION','Partition: TABLE/PARTITION synopses',
+                'INCREMENTAL_STALENESS','ALLOW_MIXED_FORMAT','Partition: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
+                'JOB_OVERHEAD','-1','-1',
+                'JOB_OVERHEAD_PERC','1','1',
+                'MAINTAIN_STATISTICS_STATUS','FALSE', 'TRUE/FALSE',
+                'METHOD_OPT','FOR ALL COLUMNS SIZE AUTO','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
+                'MON_MODS_ALL_UPD_TIME','','',
+                'NO_INVALIDATE','DBMS_STATS.AUTO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE(_optimizer_invalidation_period))',
+                'OBJ_FILTER_LIST','','',
+                'OPTIONS','GATHER','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
+                'PREFERENCE_OVERRIDES_PARAMETER','FALSE', 'TRUE/FALSE',
+                'PUBLISH','TRUE','TRUE/FALSE',
+                'REAL_TIME_STATISTICS','OFF','ON/OFF',
+                'ROOT_TRIGGER_PDB','FALSE','FALSE/TRUE',
+                'SCAN_RATE','0','0',
+                'SKIP_TIME','','',
+                'SNAPSHOT_UPD_TIME','','',
+                'SPD_RETENTION_WEEKS','53','53',
+                'STATS_MODEL','OFF','ON/OFF',
+                'STATS_MODEL_INTERNAL_CONTROL','0','0',
+                'STATS_MODEL_INTERNAL_MINRSQ','0.9','0.9',
+                'STALE_PERCENT','10','10',
+                'STATS_RETENTION','','',
+                'STAT_CATEGORY','OBJECT_STATS, REALTIME_STATS','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
+                'SYS_FLAGS','1','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
+                'TABLE_CACHED_BLOCKS','1','0(AUTO_TABLE_CACHED_BLOCKS)/n',
+                'TRACE','0','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC[sys.stats_target$_log]),...524288',
+                'WAIT_TIME_TO_UPDATE_STATS','15','15');
 
 BEGIN
     dbms_output.enable(null);
@@ -113,18 +119,7 @@ BEGIN
         RAISE_APPLICATION_ERROR(-20001,'Only table is supported!');
     END IF;
 
-    $IF DBMS_DB_VERSION.VERSION<11 $THEN
-        for i in 0..prefs.count/2 loop
-            begin
-                status :=rpad('Param - '||prefs(i*2+1),45)||': '||rpad(dbms_stats.get_param(prefs(i*2+1)),35);
-                if prefs(i*2+2) is not null then
-                    status := status || '('||prefs(i*2+2)||')';
-                end if;
-                dbms_output.put_line(status);
-            exception when others then null;
-            end;
-        end loop;    
-    $ELSE
+    $IF DBMS_DB_VERSION.VERSION>10 $THEN
         IF owner IS NULL THEN
             typ:='system';
             IF input IS NOT NULL THEN
@@ -137,17 +132,29 @@ BEGIN
                 END IF;
             END IF;
         END IF;
-        for i in 0..prefs.count/2 loop
-            begin
-                status :=rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i*2+1),45)||': '||rpad(dbms_stats.get_prefs(prefs(i*2+1),owner,object_name),35);
-                if prefs(i*2+2) is not null then
-                    status := status || '('||prefs(i*2+2)||')';
-                end if;
-                dbms_output.put_line(status);
-            exception when others then null;
-            end;
-        end loop;
+    $ELSE
+        typ:='';
     $END
+
+    for i in 0..(prefs.count/3-1) loop
+        begin
+            $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                pval:=substr(dbms_stats.get_prefs(prefs(i*3+1),owner,object_name),1,35);
+            $ELSE
+                pval:=substr(dbms_stats.get_param(prefs(i*3+1)),1,35);
+            $END
+            len := length(pval);
+            IF pval!=substr(prefs(i*3+2),1,35) THEN
+                pval := '$HIR$'||pval||'$NOR$';
+            END IF;
+            status :=rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i*3+1),45)||': '||pval||rpad(' ',35-len);
+            if prefs(i*3+3) is not null then
+                status := status || '('||prefs(i*3+3)||')';
+            end if;
+            dbms_output.put_line(status);
+        exception when others then null;
+        end;
+    end loop;
     
     prefs := t('iotfrspeed', 'ioseektim', 'mbrc','sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw',  'maxthr', 'slavethr');
     for i in 1..prefs.count loop

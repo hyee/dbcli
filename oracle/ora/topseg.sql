@@ -30,16 +30,19 @@ set rownum on sqltimeout 1800 sep4k on
 SELECT * FROM (
     SELECT /*+NO_EXPAND MONITOR opt_param('optimizer_dynamic_sampling' 6) opt_param('_optimizer_sortmerge_join_enabled','false') */ 
             min(obj#) obj#,owner,  &cols object_type,
+            SUM(DECODE(statistic_name, 'space used', VALUE)) space,
             SUM(DECODE(statistic_name, 'logical reads', VALUE)) logi_reads,
             SUM(DECODE(statistic_name, 'physical reads', VALUE)) phy_reads,
             SUM(DECODE(statistic_name, 'physical writes', VALUE)) phy_writes,
             SUM(DECODE(statistic_name, 'segment scans', VALUE)) scans,
-            SUM(DECODE(statistic_name, 'physical reads direct', VALUE)) direct_reads,
-            SUM(DECODE(statistic_name, 'physical writes direct', VALUE)) direct_writes,
+            SUM(DECODE(statistic_name, 'physical reads direct', VALUE)) dx_reads,
+            SUM(DECODE(statistic_name, 'physical writes direct', VALUE)) dx_writes,
             SUM(DECODE(statistic_name, 'db block changes', VALUE)) block_chgs,
             SUM(DECODE(statistic_name, 'buffer busy waits', VALUE)) busy_waits,
             SUM(DECODE(statistic_name, 'ITL waits', VALUE)) itl_waits,
             SUM(DECODE(statistic_name, 'row lock waits', VALUE)) row_lock_waits,
+            SUM(DECODE(statistic_name, 'gc buffer busy', VALUE)) gc_buff_busy,
+            SUM(DECODE(statistic_name, 'gc remote grants', VALUE)) gc_grants,
             SUM(DECODE(statistic_name, 'gc cr blocks received', VALUE)) gc_cr_blocks,
             SUM(DECODE(statistic_name, 'gc current blocks received', VALUE)) gc_cu_blocks
     FROM   GV$SEGMENT_STATISTICS
