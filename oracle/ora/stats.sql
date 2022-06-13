@@ -386,7 +386,7 @@ BEGIN
                 AND    o.owner=own
                 AND    o.object_name=nam
                 AND    o.subobject_name=t.partition_name
-                ORDER  BY created DESC)
+                ORDER  BY created DESC,POSITION)
             WHERE ROWNUM<=100;
     ELSIF typ='TABLE PARTITION' THEN
         OPEN C1 FOR
