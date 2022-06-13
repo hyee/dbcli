@@ -6,6 +6,11 @@
     _optimizer_extended_stats_usage_control
     _optimizer_dsdir_usage_control
     _sql_plan_directive_mgmt_control
+  
+  idn: => v$sqlarea.hash_value 
+       => v$db_object_cache.hash_value
+       => v$object_dependency.from_hash/to_hash
+       => x$kglob.knlnahsh
 
   Mainly used to diagnostic below events:
   =======================================
@@ -143,7 +148,8 @@ FROM   TABLE(gv$(CURSOR( --
                   sid,
                   a.event,
                   P1 HASH_VALUE,
-                  decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) "Object#/Mutex_LOC#",
+                  nullif(trunc(p3 / 4294967296),0) obj#,
+                  nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
                   nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
@@ -168,7 +174,7 @@ FROM   (SELECT *
                           SELECT /*+ordered use_hash(b)*/
                                   DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
                           FROM   (SELECT userenv('instance') inst_id,
-                                         mutex_loc_id "Object#/Mutex_LOC#",
+                                         obj#,loc#,
                                          sql_id,
                                          event,
                                          MAX(sample_time) last_time,
@@ -179,7 +185,8 @@ FROM   (SELECT *
                                                  event,
                                                  sql_id,
                                                  p1,
-                                                 decode(trunc(p3 / 4294967296), 0, trunc(p3 / 65536), trunc(p3 / 4294967296)) mutex_loc_id,
+                                                 nullif(trunc(p3 / 4294967296),0) obj#,
+                                                 nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
                                                  nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid
                                           FROM   v$active_session_history
                                           WHERE  p1text = 'idn'
@@ -187,7 +194,7 @@ FROM   (SELECT *
                                           AND    p3text = 'where'
                                           AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event,top_level_sql_id)
                                           AND    userenv('instance') = nvl(:V2, userenv('instance')))
-                                  GROUP  BY mutex_loc_id, p1, sql_id, event) a,
+                                  GROUP  BY obj#,LOC#, p1, sql_id, event) a,
                                   &OBJ_CACHE b
                           WHERE  a.idn = b.from_hash)))
         ORDER  BY last_Time DESC)

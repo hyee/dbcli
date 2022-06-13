@@ -1,4 +1,4 @@
-/*[[Library cache lock/pin holders/waiters. Usage: @@NAME [all|sid|object_name] [inst_id] [-u] [-w]
+/*[[Show librarycache lock/pin or rowcache lock. Usage: @@NAME [all|sid|object_name] [inst_id] [-u] [-w]
         -u: only show locked/pin objects within current_schema
         -w: only show the records that have waiters
     --[[

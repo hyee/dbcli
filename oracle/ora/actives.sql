@@ -69,26 +69,16 @@
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects},all_objects={all_objects}
         @CHECK_ACCESS_PX11: {
             v$px_session={v$px_session},
-            default={(select null inst_id,null sid,null qcinst_id,null qcsid from dual where 1=2)}
+            default={(select null sid,null qcinst_id,null qcsid from dual where 1=2)}
         }
         @CHECK_ACCESS_PRO11: {
-            v$process={v$process},
-            default={(select null inst_id,null addr,null spid from dual where 1=2)}
+            v$process={(select addr,spid from v$process)},
+            default={(select null addr,null spid from dual where 1=2)}
         }
 
         @CHECK_ACCESS_SES: gv$session={gv$session}, v$session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$session a)}
         @CHECK_ACCESS_SQL: gv$sql={gv$sql}, v$sql={(select /*+merge*/ userenv('instance') inst_id,a.* from v$sql a)}
-        @CHECK_ACCESS_PX: {
-            gv$px_session={gv$px_session},
-            v$px_session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$px_session a)},
-            default={(select null inst_id,null sid,null qcinst_id,null qcsid from dual where 1=2)}
-        }
-        @CHECK_ACCESS_PRO: {
-            gv$process={gv$process},
-            v$process={(select /*+merge*/ userenv('instance') inst_id,a.* from v$process a)},
-            default={(select null inst_id,null addr,null spid from dual where 1=2)}
-        }
-
+        
         @CHECK_ACCESS_M: gv$sql_workarea_active/gv$sessmetric={1},default={0}
     --]]
 ]]*/
@@ -102,124 +92,72 @@ DECLARE
     time_model sys_refcursor;
     cur SYS_REFCURSOR;
 BEGIN
-    IF dbms_db_version.version > 10 THEN
-        OPEN :actives FOR q'{
-            WITH sess AS
-             (SELECT (select /*+index(o) opt_param('optimizer_dynamic_sampling' 5)*/ 
-                     object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
-                     s.*
-              FROM   TABLE(gv$(CURSOR(
-                   SELECT (SELECT spid FROM &CHECK_ACCESS_PRO11 d WHERE d.addr = s.paddr)|| regexp_substr(s.program, '\(.*\)') spid,
-                          CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-wait_time/100) END wait_secs,
-                          CASE WHEN s.SID||'@'||userenv('instance') = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
-                          s.*
-                    FROM  (SELECT /*+ordered use_hash(m) opt_param('_optimizer_unnest_scalar_sq' 'false')*/ * FROM 
-                            (SELECT  /*+ordered use_hash(s sq) no_merge(s)*/
-                                     (SELECT qcsid||'@'||nvl(qcinst_id,userenv('instance')) FROM &CHECK_ACCESS_PX11 p WHERE  s.sid = p.sid) qcsid,
-                                     userenv('instance') inst_id, 
-                                     s.*,sq.program_id,sq.program_line#,sq.plan_hash_value,sq.sql_text,sq.sql_secs
-                             FROM   v$session s,
-                                    (select /*+no_merge*/ 
-                                             program_line#,program_id,plan_hash_value,sql_id,child_number,
-                                             substr(TRIM(regexp_replace(replace(b.sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 1024) sql_text,
-                                             round(decode(b.child_number,0,b.elapsed_time * 1e-6 / (1 + b.executions), 86400 * (SYSDATE - to_date(b.last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
-                                     from v$sql b where users_executing > 0) sq
-                             WHERE   s.sql_id=sq.sql_id(+)
-                             AND     nvl(s.sql_child_number,0)=sq.child_number(+)
-                             AND     s.event NOT LIKE 'Streams%'
-                             AND     userenv('instance')=nvl('&instance',userenv('instance'))) s &SQLM) s
-                    ))) s
-              WHERE sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')),
-            s4 AS(
-              SELECT /*+no_merge(s3)*/
-                     DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
-                     decode(LEVEL, 1, sql_id) new_sql_id,
-                     rownum r,
-                     s3.*
-              FROM   sess s3
-              START  WITH (qcsid IS NULL OR ROOT_SID=1)
-              CONNECT BY qcsid =  PRIOR SID ||'@'||PRIOR inst_id
-                  AND    ROOT_SID=0
-                  AND    LEVEL < 3
-              ORDER SIBLINGS BY &V1)
-            SELECT /*+cardinality(a 1)*/
-                   rownum "#",
-                   a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
-                   a.spid,
-                   a.sql_id,
-                   plan_hash_value plan_hash,
-                   sql_child_number child,
-                   a.event,
-                   ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)/60),1) waited,
-                   &fields,substr(sql_text,1,200) sql_text
-            FROM   s4 a
-            WHERE  (&filter) AND (&Filter2)
-            ORDER  BY r}';
-    ELSE
-        OPEN :actives FOR
-            WITH s1 AS(
-              SELECT /*+no_merge */*
-              FROM   &CHECK_ACCESS_SES &SQLM
-              WHERE  not (sid = USERENV('SID') and inst_id = userenv('instance'))
-              AND   (event not like 'Streams%')),
-            s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
-            sq1 AS(
-              SELECT /*+materialize ordered use_nl(a b) opt_param('cursor_sharing' 'force')*/ a.*,
-                    extractvalue(b.column_value,'/ROW/A1')              program_name,
-                    extractvalue(b.column_value,'/ROW/A2')              program_line#,
-                    extractvalue(b.column_value,'/ROW/A3')              sql_text,
-                    extractvalue(b.column_value,'/ROW/A4')              plan_hash_value,
-                    nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
-              FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
-                    TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                        SELECT /*+opt_param('_optim_peek_user_binds','false') opt_param('cursor_sharing','force')*/
-                              (select c.owner  ||'.' || c.object_name from &CHECK_ACCESS_OBJ c where c.object_id=program_id and rownum<2) A1,
-                               program_line# A2,
-                               substr(trim(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' ')),1,200) A3,
-                               plan_hash_value A4,
-                               round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
-                        FROM  &CHECK_ACCESS_SQL
-                        WHERE ROWNUM<2 AND sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
-                    ,'/ROWSET/ROW'))) B),
-            s4 AS(
-              SELECT /*+materialize no_merge(s3)*/
-                     DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
-                     decode(LEVEL, 1, sql_id) new_sql_id,
-                     rownum r,
-                     s3.*
-              FROM   (SELECT s3.*,
-                             CASE WHEN seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-WAIT_TIME/100) END wait_secs,
-                             CASE WHEN S3.SID = S3.qcsid AND S3.inst_id = NVL(s3.qcinst_id,s3.inst_id) THEN 1 ELSE 0 END ROOT_SID,
-                             plan_hash_value,
-                             program_name,
-                             program_line#,
-                             sql_text,
-                             sql_secs
-                      FROM   s3, sq1
-                      WHERE  s3.inst_id=sq1.inst_id(+) and s3.sql_id=sq1.sql_id(+) and nvl(s3.sql_child_number,0)=sq1.child(+)) s3
-              START  WITH (qcsid IS NULL OR ROOT_SID=1)
-              CONNECT BY qcsid = PRIOR SID
-                  AND    qcinst_id = PRIOR inst_id
-                  AND    ROOT_SID=0
-                  AND    LEVEL < 3
-              ORDER SIBLINGS BY &V1)
-            SELECT /*+cardinality(a 1)*/
-                   rownum "#",
-                   a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
-                   (SELECT spid
-                    FROM   &CHECK_ACCESS_PRO d
-                    WHERE  d.inst_id = a.inst_id
-                    AND    d.addr = a.paddr) || regexp_substr(program, '\(.*\)') spid,
-                   a.sql_id,
-                   plan_hash_value plan_hash,
-                   sql_child_number child,
-                   a.event,
-                   ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)/60),1) waited,
-                   &fields,sql_text
-            FROM   s4 a
-            WHERE  (&filter) AND (&Filter2)
-            ORDER  BY r;
-    END IF;    
+    OPEN :actives FOR q'{WITH sess AS
+         (SELECT /*+inline*/ (select /*+index(o) opt_param('optimizer_dynamic_sampling' 0)*/ 
+                 object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
+                 s.*
+          FROM   TABLE(gv$(CURSOR(
+                SELECT CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-wait_time/100) END wait_secs,
+                       CASE WHEN s.SID||'@'||inst_id = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
+                       s.*
+                FROM  (SELECT  /*+ordered use_nl(s sq) no_merge(s) use_hash(s p px)*/
+                                 nvl2(px.qcsid,px.qcsid||'@'||nvl(px.qcinst_id,inst_id),'') qcsid,
+                                 p.spid|| regexp_substr(s.program, '\(\S+\)') spid,
+                                 s.*, nvl(sq.sq_id,s.sql_id) sq_id,
+                                 sq.program_id,sq.program_line#,sq.plan_hash_value,sq.sql_text,sq.sql_secs
+                        FROM   (select  userenv('instance') inst_id,
+                                        case when a.p1text='idn' and a.p1>131072 then a.p1 end idn,
+                                        a.*
+                                 from   v$session a
+                                 WHERE  (event NOT LIKE 'Streams%' or wait_class!='Idle' or event not like 'SQL*%')
+                                 AND    userenv('instance')=nvl('&instance',userenv('instance'))) s,
+                                lateral(
+                                 select  program_line#,program_id,plan_hash_value,sql_id sq_id,
+                                         substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 1024) sql_text,
+                                         round(decode(child_number,0,elapsed_time * 1e-6 / (1 + executions), 86400 * (SYSDATE - to_date(last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
+                                 from    v$sql sq
+                                 WHERE   s.idn is null
+                                 AND     s.sql_id=sq.sql_id
+                                 AND     nvl(s.sql_child_number,0)=sq.child_number
+                                 UNION ALL 
+                                 select  program_line#,program_id,plan_hash_value,sql_id,
+                                         substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 1024) sql_text,
+                                         round(decode(child_number,0,elapsed_time * 1e-6 / (1 + executions), 86400 * (SYSDATE - to_date(last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
+                                 from    v$sql sq
+                                 WHERE   s.idn is not null
+                                 AND     s.idn=sq.hash_value
+                                 AND     rownum<2)(+) sq,
+                                &CHECK_ACCESS_PX11 px,
+                                &CHECK_ACCESS_PRO11 p
+                        WHERE   s.sid = px.sid(+)
+                        AND     s.paddr=p.addr) s
+                ))) s
+          WHERE sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')),
+        s4 AS(
+          SELECT /*+no_merge(s3) NO_CONNECT_BY_FILTERING CONNECT_BY_COMBINE_SW*/
+                 DECODE(LEVEL, 1, '', '  ') || SID NEW_SID,
+                 rownum r,
+                 s3.*
+          FROM   sess s3
+          START  WITH (qcsid IS NULL OR ROOT_SID=1)
+          CONNECT BY qcsid =  PRIOR SID ||'@'||PRIOR inst_id
+              AND    ROOT_SID=0
+              AND    LEVEL < 3
+          ORDER SIBLINGS BY &V1)
+        SELECT /*+cardinality(a 1)*/
+               rownum "#",
+               a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
+               a.spid,
+               a.sq_id,
+               plan_hash_value plan_hash,
+               sql_child_number child,
+               a.event,
+               ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sq_id,last_call_et,0)/60),1) waited,
+               &fields,substr(sql_text,1,200) sql_text
+        FROM   s4 a
+        WHERE  (&filter) AND (&Filter2)
+        ORDER  BY r}';
+    
     $IF &smen=1 $THEN
         OPEN time_model FOR
             SELECT *

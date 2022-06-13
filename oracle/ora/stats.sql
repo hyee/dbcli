@@ -47,14 +47,18 @@ Trace Flags:
                        ELSE 'History' END TYPE,a.*,
                        CASE WHEN rowcnt > 0 THEN ROUND(samplesize/ rowcnt, 4) END "Samples(%)"
                 FROM (
-                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,h.savtime+0 savetime, h.analyzetime
+                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,
+                           cast(h.savtime at time zone to_char(systimestamp,'TZH:TZM') as date) savetime, 
+                           analyzetime
                     FROM   dba_objects o, sys.wri$_optstat_tab_history h
                     WHERE  o.object_id = h.obj#
                     AND    o.owner=own
                     AND    o.object_name=nam
                     AND    nvl(o.subobject_name,' ') = NVL(sub,' ')
                     UNION ALL
-                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,h.savtime+0, h.analyzetime
+                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,
+                           cast(h.savtime at time zone to_char(systimestamp,'TZH:TZM') as date) savetime, 
+                           analyzetime
                     FROM   v$fixed_table t, sys.wri$_optstat_tab_history h
                     WHERE  t.object_id = h.obj#
                     AND    'SYS'=own
@@ -64,17 +68,19 @@ Trace Flags:
         default={
             SELECT CASE WHEN type='Pending' THEN 'PENDING' 
                    ELSE to_char("TIMESTAMP"+numtodsinterval(1,'minute'),'YYMMDDHH24MI') 
-                   END "#",A.*,A.* 
+                   END "#",A.*
             FROM (
-                SELECT 'Pending' type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,LAST_ANALYZED+0 "TIMESTAMP"
+                SELECT 'Pending' type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,
+                       LAST_ANALYZED "TIMESTAMP" 
                 FROM   &check_access_dba.tab_pending_stats
                 WHERE  owner=own
                 AND    table_name=nam
                 AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
                 UNION ALL
-                SELECT Decode(SEQ,1,'Current','History') type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,STATS_UPDATE_TIME+0
+                SELECT Decode(SEQ,1,'Current','History') type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,savetime
                 FROM (
-                    SELECT A.*,ROW_NUMBER() OVER(ORDER BY STATS_UPDATE_TIME DESC) SEQ
+                    SELECT A.*,ROW_NUMBER() OVER(ORDER BY STATS_UPDATE_TIME DESC) SEQ,
+                           cast(STATS_UPDATE_TIME at time zone to_char(systimestamp,'TZH:TZM') as date) savetime
                     FROM   &check_access_dba.tab_stats_history A
                     WHERE  owner=own
                     AND    table_name=nam
@@ -86,8 +92,7 @@ Trace Flags:
 ]]*/
 ora _find_object "&V1" 1
 set feed off serveroutput on printsize 10000 verify off
-pro Preferences
-pro ***********
+
 DECLARE
     input       varchar2(128) := :V1;
     owner       varchar2(128) := :object_owner;
@@ -170,6 +175,8 @@ BEGIN
         RETURN;
     END IF;
     dbms_output.enable(null);
+    dbms_output.put_line('Preferences');
+    dbms_output.put_line('***********');
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
         RAISE_APPLICATION_ERROR(-20001,'Only table is supported!');
     END IF;
@@ -299,11 +306,12 @@ var c1 REFCURSOR "&OBJECT_TYPE INFO"
 var c2 REFCURSOR "&OBJECT_TYPE COLUMN INFO"
 var c3 REFCURSOR "&OBJECT_TYPE INDEX INFO"
 var c4 REFCURSOR "&OBJECT_TYPE TOP 100 CHILD PARTS"
-var c5 REFCURSOR "&OBJECT_TYPE STATS HISTORY"
+var c5 REFCURSOR "&OBJECT_TYPE STATS HISTORY IN SYSTEM TIMEZONE"
 var c6 REFCURSOR "&OBJECT_TYPE STATS DIFF REPORT"
 col "Samples(%)" for pct
 col rowcnt,blkcnt,samplesize for tmb
 col scan_rate for kmg
+set printsize 3000
 
 DECLARE
     own  VARCHAR2(128):=:OBJECT_OWNER;
@@ -314,8 +322,9 @@ DECLARE
     ed   VARCHAR2(128):=regexp_substr(:V3,'^\d+$');
     town VARCHAR2(128);
     tnam VARCHAR2(512) := replace(trim(upper(:t)),' '); 
-    ss   TIMESTAMP:=to_timestamp(regexp_substr(st,'^\d+$'),'YYMMDDHH24MISS');
-    es   TIMESTAMP:=to_timestamp(ed,'YYMMDDHH24MISS');
+    tz1  VARCHAR2(10) := to_char(systimestamp,'TZH:TZM');
+    ss   TIMESTAMP WITH TIME ZONE:=from_tz(to_timestamp(regexp_substr(st,'^\d+$'),'YYMMDDHH24MISS'),tz1);
+    es   TIMESTAMP WITH TIME ZONE:=from_tz(to_timestamp(ed,'YYMMDDHH24MISS'),tz1);
     c1   SYS_REFCURSOR;
     c2   SYS_REFCURSOR;
     c3   SYS_REFCURSOR;
