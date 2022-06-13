@@ -1,4 +1,4 @@
-/*[[Gather object/SQL statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent|0> ["<method_opt>"] [-async|-trace]
+/*[[Gather object/SQL/db/schema statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent|0> ["<method_opt>"] [-async|-trace]
     @@NAME <owner>.]<name>[.<partition>]: Gather Statistics for target object
     @@NAME <SQL Id>                     : Gather statistics of all objects relative to target SQL
     @@NAME [<schema>] <options>         : Database/schema operations, if the schema is null(.) then for the whole database.
@@ -53,8 +53,10 @@
         &nopart : default={0} nopart={1}
         &block  : default={true} row={false}
         &pending: default={0} pending={1} publish={2} unpend={3}
+        @check_access_seg: dba_segments={dba_segments} default={(select user owner,a.* from user_segments a)}
         @check_access_fix: {
-            sys.x$kqfdt={sys.x$kqfdt} 
+            sys.x$kqfdt={sys.x$kqfdt}
+            --SELECT REGEXP_REPLACE(REPLACE(DBMS_XMLGEN.GETXMLTYPE('SELECT KQFDTNAM A,KQFDTEQU B FROM sys.x$kqfdt ORDER BY 1'),'ROW>','R>'),'(<R>|</A>|</B>)\s+','\1') FROM DUAL;
             default={(select * FROM XMLTABLE('//R' PASSING XMLTYPE('<ROWSET>
      <R><A>X$KSLLTR_CHILDREN</A><B>X$KSLLTR</B></R>
      <R><A>X$KSLLTR_PARENT</A><B>X$KSLLTR</B></R>
@@ -200,7 +202,7 @@ DECLARE
         END IF;
         RETURN rtn;
     END;
-
+    
     PROCEDURE submit(cmd VARCHAR2) IS
         ln    VARCHAR2(1):=chr(10);
         job   VARCHAR2(128);
@@ -228,7 +230,7 @@ DECLARE
         END IF;
         IF &async=1 THEN
             stmt :=REPLACE(REPLACE(q'~
-                declare err VARCHAR2(500);
+                declare err VARCHAR2(500); begin
                 begin 
                     dbms_stats.set_global_prefs('TRACE',@trace);
                 exception when others then null;
@@ -239,7 +241,7 @@ DECLARE
                 exception when others then null;
                 end; ~'
                 ||CASE WHEN c>0 then ln||q'[    execute immediate 'alter session set "_serial_direct_read"=always';]' END
-                ||stmt,'            '),'@trace',CASE &trace WHEN 0 THEN 0 ELSE 2+4+8+16+64+1024 END);
+                ||stmt||ln||'    end;','            '),'@trace',CASE &trace WHEN 0 THEN 0 ELSE 2+4+8+16+64+1024 END);
             IF &exec THEN
                 job:=dbms_scheduler.generate_job_name('GATHER_STATS_');
                 dbms_scheduler.create_job(job_name   => job,
@@ -406,7 +408,7 @@ BEGIN
                         SUM(BLOCKS) BLOCKS,
                         SUM(EXTENTS) EXTENTS
                  FROM   TABLE(tabs) A
-                 LEFT   JOIN  DBA_SEGMENTS B
+                 LEFT   JOIN  &check_access_seg B
                  ON     A.TABLESCHEMA=B.OWNER
                  AND    A.TABLENAME=B.SEGMENT_NAME
                  AND    B.SEGMENT_TYPE LIKE A.COLNAME||'%'

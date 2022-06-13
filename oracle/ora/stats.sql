@@ -1,8 +1,13 @@
 /*[[
-Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
+Get preferences/stats of the target object or compare stats. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-pending|<yymmddhh24mi>] [<yymmddhh24mi>] [-advise]
 
--advise: execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
+    -advise               : execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
 
+    Compare Stats:
+    ==============
+        -t"<stattab>"                  ：compare the stattab stats with current/historical stats
+        -pending       [<yymmddhh24mi>]：compare the pending stats with current/historical stats
+        <yymmddhh24mi> [<yymmddhh24mi>]: compare the stats of 2 historical stats
 Trace Flags:
     0     : disable
     1     : use dbms_output.put_line instead of writing into trace file
@@ -30,6 +35,53 @@ Trace Flags:
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}
        @notes           : 12.1={,t.notes} default={}
+       @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
+       &t               : default={} t={}
+       @check_access_sys: {
+        sys.wri$_optstat_tab_history={
+            SELECT CASE WHEN type='Pending' THEN 'PENDING' 
+                   ELSE to_char(savetime+numtodsinterval(1,'minute'),'YYMMDDHH24MI') 
+                   END "#",A.* FROM (
+                SELECT CASE WHEN savetime>sysdate THEN 'Pending' 
+                       WHEN row_number() OVER(ORDER BY CASE WHEN savetime<=sysdate THEN savetime END DESC NULLS LAST)=1 THEN 'Current'
+                       ELSE 'History' END TYPE,a.*,
+                       CASE WHEN rowcnt > 0 THEN ROUND(samplesize/ rowcnt, 4) END "Samples(%)"
+                FROM (
+                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,h.savtime+0 savetime, h.analyzetime
+                    FROM   dba_objects o, sys.wri$_optstat_tab_history h
+                    WHERE  o.object_id = h.obj#
+                    AND    o.owner=own
+                    AND    o.object_name=nam
+                    AND    nvl(o.subobject_name,' ') = NVL(sub,' ')
+                    UNION ALL
+                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,h.savtime+0, h.analyzetime
+                    FROM   v$fixed_table t, sys.wri$_optstat_tab_history h
+                    WHERE  t.object_id = h.obj#
+                    AND    'SYS'=own
+                    AND    t.name=nam) a
+            ORDER BY savetime DESC) a WHERE ROWNUM<=16}
+
+        default={
+            SELECT CASE WHEN type='Pending' THEN 'PENDING' 
+                   ELSE to_char("TIMESTAMP"+numtodsinterval(1,'minute'),'YYMMDDHH24MI') 
+                   END "#",A.*,A.* 
+            FROM (
+                SELECT 'Pending' type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,LAST_ANALYZED+0 "TIMESTAMP"
+                FROM   &check_access_dba.tab_pending_stats
+                WHERE  owner=own
+                AND    table_name=nam
+                AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
+                UNION ALL
+                SELECT Decode(SEQ,1,'Current','History') type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,STATS_UPDATE_TIME+0
+                FROM (
+                    SELECT A.*,ROW_NUMBER() OVER(ORDER BY STATS_UPDATE_TIME DESC) SEQ
+                    FROM   &check_access_dba.tab_stats_history A
+                    WHERE  owner=own
+                    AND    table_name=nam
+                    AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
+                    ORDER BY SEQ)
+                WHERE ROWNUM<=15) a}
+        }
     --]]
 ]]*/
 ora _find_object "&V1" 1
@@ -114,6 +166,9 @@ DECLARE
                 'WAIT_TIME_TO_UPDATE_STATS','15','15');
 
 BEGIN
+    IF :V2 IS NOT NULL OR :T IS NOT NULL THEN
+        RETURN;
+    END IF;
     dbms_output.enable(null);
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
         RAISE_APPLICATION_ERROR(-20001,'Only table is supported!');
@@ -245,27 +300,74 @@ var c2 REFCURSOR "&OBJECT_TYPE COLUMN INFO"
 var c3 REFCURSOR "&OBJECT_TYPE INDEX INFO"
 var c4 REFCURSOR "&OBJECT_TYPE TOP 100 CHILD PARTS"
 var c5 REFCURSOR "&OBJECT_TYPE STATS HISTORY"
+var c6 REFCURSOR "&OBJECT_TYPE STATS DIFF REPORT"
 col "Samples(%)" for pct
+col rowcnt,blkcnt,samplesize for tmb
+col scan_rate for kmg
+
 DECLARE
-    own VARCHAR2(128):=:OBJECT_OWNER;
-    nam VARCHAR2(128):=:OBJECT_NAME;
-    sub VARCHAR2(128):=:OBJECT_SUBNAME;
-    typ VARCHAR2(128):=:OBJECT_TYPE;
-    c1 SYS_REFCURSOR;
-    c2 SYS_REFCURSOR;
-    c3 SYS_REFCURSOR;
-    c4 SYS_REFCURSOR;
-    msg VARCHAR2(300);
+    own  VARCHAR2(128):=:OBJECT_OWNER;
+    nam  VARCHAR2(128):=:OBJECT_NAME;
+    sub  VARCHAR2(128):=:OBJECT_SUBNAME;
+    typ  VARCHAR2(128):=:OBJECT_TYPE;
+    st   VARCHAR2(128):=UPPER(:V2);
+    ed   VARCHAR2(128):=regexp_substr(:V3,'^\d+$');
+    town VARCHAR2(128);
+    tnam VARCHAR2(512) := replace(trim(upper(:t)),' '); 
+    ss   TIMESTAMP:=to_timestamp(regexp_substr(st,'^\d+$'),'YYMMDDHH24MISS');
+    es   TIMESTAMP:=to_timestamp(ed,'YYMMDDHH24MISS');
+    c1   SYS_REFCURSOR;
+    c2   SYS_REFCURSOR;
+    c3   SYS_REFCURSOR;
+    c4   SYS_REFCURSOR;
+    msg  VARCHAR2(300);
+
 BEGIN
     IF NVL(typ,'X') NOT LIKE 'TABLE%' THEN 
         RETURN;
     END IF;
+
+    IF tnam IS NOT NULL THEN
+        IF tnam='.' THEN
+            raise_application_error(-20001,'Invalid stat table: .');
+        END IF;
+
+        IF instr(tnam,'.')=0 THEN
+            town:=sys_context('userenv','current_schema');
+        ELSE
+            town:=regexp_substr(tnam,'[^\.]+',1,1);
+            tnam:=regexp_substr(tnam,'[^\.]+',1,2);
+        END IF;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'SELECT 1 FROM '||town||'.'||tnam||' WHERE STATID IS NULL AND C4 IS NOT NULL';
+        EXCEPTION WHEN OTHERS THEN
+            IF SQLCODE=-904 THEN
+                raise_application_error(-20001,'Invalid stats table: '||town||'.'||tnam);
+            ELSE
+                raise_application_error(-20001,'No access to target stats table: &t, consider create it with: exec dbms_stats.create_stat_table('''||town||''','''||tnam||''');');
+            END IF;
+        END;
+    END IF;
+
     msg := '| '||typ||' '||own||'.'||nam||trim('.' FROM '.'||sub)||' |';
     DBMS_OUTPUT.PUT_LINE(RPAD('*',LENGTH(MSG),'*'));
     DBMS_OUTPUT.PUT_LINE(msg);
     DBMS_OUTPUT.PUT_LINE('| '||RPAD('=',LENGTH(MSG)-4,'=')||' |');
     DBMS_OUTPUT.PUT_LINE(RPAD('*',LENGTH(MSG),'*'));
-    IF typ='TABLE' THEN
+    OPEN :C5 FOR &check_access_sys;
+    IF st IN ('-PENDING','PENDING') THEN
+        OPEN :c6 FOR 
+            SELECT * FROM TABLE(dbms_stats.diff_table_stats_in_pending(own,nam,es,pctthreshold=>0.01));
+    ELSIF tnam IS NOT NULL THEN
+        OPEN :c6 FOR
+            SELECT * FROM TABLE(dbms_stats.diff_table_stats_in_stattab(own,nam,stattab1own=>town,stattab1=>tnam,pctthreshold=>0.01));
+    ELSIF ss IS NOT NULL THEN
+        OPEN :c6 FOR 
+            SELECT * FROM TABLE(dbms_stats.diff_table_stats_in_history(own,nam,ss,es,pctthreshold=>0.01));
+    ELSIF st IS NOT NULL THEN
+        raise_application_error(-20001,'Invalid parameter: '||:V2);
+    ELSIF typ='TABLE' THEN
         OPEN c1 FOR 
             select 
                 TABLE_NAME,
@@ -526,22 +628,7 @@ BEGIN
             AND    i.index_name = t.index_name
             AND    t.subpartition_name =sub;
     END IF;
-    OPEN :C5 FOR
-        SELECT 'Pending' type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,LAST_ANALYZED
-        FROM   &check_access_dba.tab_pending_stats
-        WHERE  owner=own
-        AND    table_name=nam
-        AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
-        UNION ALL
-        SELECT Decode(SEQ,1,'Current','History') type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,LAST_ANALYZED
-        FROM (
-            SELECT A.*,ROW_NUMBER() OVER(ORDER BY LAST_ANALYZED DESC) SEQ
-            FROM   &check_access_dba.tab_pending_stats A
-            WHERE  owner=own
-            AND    table_name=nam
-            AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
-            ORDER BY SEQ)
-        WHERE ROWNUM<=10;
+    
     :C1 := C1;
     :C2 := C2;
     :C3 := C3;
@@ -550,6 +637,7 @@ END;
 /
 PRINT C1;
 PRINT C5;
+PRINT C6;
 PRINT C2;
 PRINT C3;
 PRINT C4;

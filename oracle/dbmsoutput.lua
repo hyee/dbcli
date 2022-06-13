@@ -157,7 +157,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                              AND   cursor_type like '%OPEN%'
                              AND   instr(sql_text,'dbcli_ignore')=0
                              AND   (last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second') or
-                                    last_sql_active_time is null and cursor_type='OPEN')
+                                    last_sql_active_time is null and cursor_type='OPEN' and sql_exec_id IS NOT NULL)
                              AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')!';
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;

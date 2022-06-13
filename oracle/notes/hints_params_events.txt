@@ -187,6 +187,9 @@ Parameters
     
     
 Events:
+    turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
+    enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'
+    reduce high single blocks read for insert in non-ASSM tablespace(bug #18938517): alter session set events '45051 trace name context forever'
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
     merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
