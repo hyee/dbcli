@@ -6,11 +6,58 @@
         @dbid: 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     --]]
 ]]*/
-set feed off
-var c refcursor
+set feed off verify off
+var c0 refcursor
+var c1 refcursor
+var m0 varchar2(80);
+var m1 varchar2(80);
 DECLARE
     sq_id VARCHAR2(30) := lower(:v1);
     idn   INT := regexp_substr(sq_id, '^\d+$');
+    c SYS_REFCURSOR;
+    PROCEDURE load_idn IS
+    BEGIN 
+        :m1 :='Target SQL Id: '''||sq_id||'''';
+        --Can also use filter:  WHERE dbms_utility.sqlid_to_sqlhash(sql_id) = idn
+        OPEN c FOR
+            SELECT DISTINCT DECODE(C,1,''||inst,'*') inst,NAMESPACE,OWN,TRIM(NAME) NAME
+            FROM (
+                SELECT /*+PQ_CONCURRENT_UNION monitor*/ A.*,COUNT(1) OVER(PARTITION BY NAMESPACE,OWN,TRIM(NAME)) C
+                FROM (
+                    SELECT inst_id inst,NAMESPACE, nvl(owner,'GV$DB_OBJECT_CACHE') own, substr(regexp_replace(NAME, '\s+', ' '),1,300) NAME
+                    FROM   gv$db_object_cache
+                    WHERE  hash_value = idn
+                    UNION ALL
+                    SELECT inst_id inst,'GV$SQLAREA', sql_id, regexp_replace(substr(sql_text,1,300), '\s+', ' ') NAME
+                    FROM   gv$sqlarea_plan_hash
+                    WHERE  hash_value = idn
+                    UNION ALL
+                    SELECT inst_id inst,'GV$SQL_MONITOR', sql_id, regexp_replace(substr(sql_text,1,300), '\s+', ' ') NAME
+                    FROM   gv$sql_monitor
+                    WHERE  sql_id like sq_id
+                    AND    SQL_TEXT IS NOT NULL
+                    AND    PX_SERVER# IS NULL
+                    UNION ALL
+                    SELECT dbid,'DBA_HIST_SQLTEXT', sql_id, regexp_replace(to_char(substr(sql_text, 1, 300)), '\s+', ' ') NAME
+                    FROM   dba_hist_sqltext
+                    WHERE  sql_id like sq_id
+                    AND    dbid = nvl(:dbid, '&dbid')
+                    UNION ALL
+                    SELECT sqlset_id,'DBA_HIST_SQLTEXT', sql_id, regexp_replace(to_char(substr(sql_text, 1, 300)), '\s+', ' ') NAME
+                    FROM   dba_sqlset_statements
+                    WHERE  sql_id like sq_id
+                    UNION ALL
+                    SELECT /*+use_concat*/
+                           inst_id,'GV$OBJECT_DEPENCY',
+                           decode(idn,from_hash,'.FROM_HASH','.TO_HASH'),
+                           rpad(trim('.' from to_owner||'.'||to_name),40,' ')||' | '
+                               || decode(idn,from_hash,'TO_HASH   = '||to_hash,
+                                'FROM_HASH = '||from_hash)
+                    FROM   gv$object_dependency
+                    WHERE  idn in(from_hash,to_hash)) A
+            )
+            ORDER BY 2,3,4,1;
+    END;
 BEGIN
     IF idn>0 THEN
         SELECT '%' || listagg(x, '') within GROUP(ORDER BY lv DESC)
@@ -21,33 +68,12 @@ BEGIN
                               1) x
                 FROM   dual
                 CONNECT BY rownum < 7);
-
-        dbms_output.put_line('Target SQL Id: '''||sq_id||'''');
-        dbms_output.put_line('========================');
-        --Can also use filter:  WHERE dbms_utility.sqlid_to_sqlhash(sql_id) = idn
-        OPEN :c FOR
-            SELECT /*+PQ_CONCURRENT_UNION(@SET$1)*/
-                   NAMESPACE, nvl(owner,'GV$DB_OBJECT_CACHE') own, regexp_replace(NAME, '\s+', ' ') NAME
-            FROM   gv$db_object_cache
-            WHERE  hash_value = idn
-            UNION ALL
-            SELECT 'GV$SQLAREA', sql_id, regexp_replace(substr(sql_text,1,1500), '\s+', ' ') NAME
-            FROM   gv$sqlarea_plan_hash
-            WHERE  hash_value = idn
-            UNION ALL
-            SELECT 'DBA_HIST_SQLTEXT', sql_id, regexp_replace(to_char(substr(sql_text, 1, 1500)), '\s+', ' ') NAME
-            FROM   dba_hist_sqltext
-            WHERE  sql_id like sq_id
-            AND    dbid = nvl(:dbid, '&dbid')
-            UNION ALL
-            SELECT 'DBA_HIST_SQLTEXT', sql_id, regexp_replace(to_char(substr(sql_text, 1, 1500)), '\s+', ' ') NAME
-            FROM   dba_sqlset_statements
-            WHERE  sql_id like sq_id;
+        load_idn;
     ELSE
         --ref: https://tanelpoder.com/2009/02/22/sql_id-is-just-a-fancy-representation-of-hash-value
-        dbms_output.put_line('Manually idn calculation(Actual is '||dbms_utility.sqlid_to_sqlhash(sq_id)||')');
-        dbms_output.put_line('================================================');
-        OPEN :c FOR
+        idn := dbms_utility.sqlid_to_sqlhash(sq_id);
+        :m0 := 'Manual idn calculation(Actual as '||idn||')';
+        OPEN :c0 FOR
             SELECT A.*,
                    listagg(c2,'') within group(order by lv) over() piece
             FROM (
@@ -75,8 +101,14 @@ BEGIN
                             FROM dual 
                             connect by level<=length(sq_id))) A)A
             ORDER BY lv;
+
+        load_idn;
     END IF;
+
+    :c1 := c;
 END;
 /
 
+print c0 "&m0"
+print c1 "&m1"
       
