@@ -3,8 +3,9 @@
         &filter: default={1=1}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
         @check_access_dba: dba_tab_partitions={dba_} default={all_}
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
+        @VER1: 12.2={,INMEMORY_SERVICE} default={}
         @check_access_x: {
-            x$imcsegments={SELECT INST_ID,
+            sys.x$imcsegments={SELECT INST_ID,
                        NVL(UNAME, 'SYS') OWNER,
                        ONAME SEGMENT_NAME,
                        SNAME PARTITION_NAME,
@@ -96,7 +97,7 @@
                        MEMEXTENTS,
                        IMCUSINMEM,
                        BLOCKS
-                FROM   gv$(cursor(select * from x$imcsegments)) imcs
+                FROM   gv$(cursor(select * from sys.x$imcsegments)) imcs
                 WHERE  imcs.segtype = 0}
                 
             default={SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM,BLOCKS
@@ -131,9 +132,9 @@ order by 1;
 SELECT /*+monitor no_merge(a)*/ inst_id,
        a.owner,
        a.segment_name,
-       lpad(COUNT(DISTINCT nvl(b.partition_name, b.segment_name)),4)  || '|' || MAX(segs) segments,
+       lpad(nvl(sum(b.segs),0),4)  || '|' || MAX(a.segs) segments,
        nullif(lpad(trim(dbms_xplan.format_number(SUM(MEMEXTENTS))),6) || '|','|') || dbms_xplan.format_number(SUM(extents)) extents,
-       lpad(trim(dbms_xplan.format_number(nvl(SUM(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(max(blocks)) blocks,
+       lpad(trim(dbms_xplan.format_number(nvl(SUM(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(SUM(blocks)) blocks,
        SUM(IMCUSINMEM) "IMCUs",
        round(SUM(BLOCKSINMEM)/nullif(SUM(IMCUSINMEM),0)) "Blk/CU",
        (SELECT COUNT(1)
@@ -169,7 +170,22 @@ FROM   (SELECT owner, segment_name, COUNT(1) segs
                 FROM   &check_access_dba.tab_subpartitions
                 WHERE  inmemory = 'ENABLED')
         GROUP  BY owner, segment_name) a
-LEFT   JOIN (&check_access_x) b
+LEFT   JOIN (
+    SELECT inst_id,owner,segment_name,
+           INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1,
+           COUNT(DISTINCT nvl(b.partition_name, b.segment_name)) segs,
+           SUM(MEMEXTENTS) MEMEXTENTS,
+           SUM(extents) extents,
+           SUM(BLOCKSINMEM) BLOCKSINMEM,
+           SUM(blocks) blocks,
+           SUM(IMCUSINMEM) IMCUSINMEM,
+           SUM(inmemory_size) inmemory_size,
+           SUM(bytes) bytes,
+           SUM(BYTES_NOT_POPULATED) BYTES_NOT_POPULATED
+    from  (&check_access_x) b
+    group  by inst_id,owner,segment_name,
+              INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1
+) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)
 GROUP  BY inst_id, a.owner, a.segment_name
 ORDER  BY a.owner, a.segment_name,inst_id

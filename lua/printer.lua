@@ -8,6 +8,7 @@ local io=io
 local NOR,BOLD="",""
 local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
+
 local buff={ }
 local grep_fmt="%1"
 local more_text={lines=0}
@@ -381,6 +382,7 @@ end
 
 _G.print=printer.print
 _G.rawprint=printer.rawprint
+
 function printer.onload()
     if env.ansi then
         NOR = env.ansi.string_color('NOR') 

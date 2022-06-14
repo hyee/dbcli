@@ -3,13 +3,14 @@ local dirs={"cache","data","lib/ext"}
 local init={
     module_list={
        --Libraries ->
+        "lib/uv",
         "lib/json",
         "lib/MessagePack",
         "lib/ProFi",
         "lib/misc",
         "lib/class",
         "lib/re",
-        "lib/uv",
+        
         "lib/flamegraph",
 
         --"locale",

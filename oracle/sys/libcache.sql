@@ -1,5 +1,5 @@
 /*[[This script needs SYS access to find out who are pinning the target object. Usage: @@NAME <ALL|LOCK|PIN|KEPT|object_name>]]*/
-SELECT *
+SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/ *
 FROM   TABLE(GV$(CURSOR(
         SELECT kglnaown owner,
                kglnaobj object_name,

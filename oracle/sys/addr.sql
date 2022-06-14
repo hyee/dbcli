@@ -41,7 +41,7 @@ BEGIN
                      listagg(c.kqfconam,',') within group(order by c.kqfconam) cols,
                      'CASE :addr '||listagg('WHEN '||c.kqfconam||' THEN '''||c.kqfconam||'''',' ') within group(order by c.kqfconam)||' END' info,
                      (select listagg(view_name,',') within group(order by view_name) from v$fixed_view_definition where instr(lower(view_definition),lower(kqftanam))>0) refs
-              FROM   x$kqfta t, x$kqfco c
+              FROM   sys.x$kqfta t, sys.x$kqfco c
               WHERE  c.kqfcotab = t.indx
               AND    lower(kqftanam) NOT IN ('x$ksmsp','x$ktuqqry')
               AND    substr(lower(kqftanam),1,5) NOT in ('x$dbg','x$dia')

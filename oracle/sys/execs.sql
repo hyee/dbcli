@@ -31,7 +31,7 @@
 ]]*/
 ora _find_object "&V1" 1
 SELECT * FROM (
-    SELECT /*+ordered use_nl(o)*/ *
+    SELECT /*+ordered use_nl(o) opt_param('optimizer_dynamic_sampling' 11)*/ *
     FROM TABLE(GV$(CURSOR(
         SELECT inst_id,object_name,object_type,
                sum(distinct decode(SQL_SEQ,1,execs)) execs,
@@ -92,7 +92,7 @@ SELECT * FROM (
                    row_number() over(partition by o.kglnaown,o.kglnaobj,c.KGLOBT03 order by 1) SEQ
             FROM   sys.x$kglob o, 
                    (SELECT DISTINCT kglrfhsh,kglrfhdl,kglhdpar,kglnahsh 
-                    FROM   sys.x$kgldp k, x$kglxs a
+                    FROM   sys.x$kgldp k, sys.x$kglxs a
                     WHERE  k.kglhdadr = a.kglhdadr
                     AND    k.kgldepno = a.kglxsdep) d, 
                     sys.x$kglob c
@@ -101,7 +101,7 @@ SELECT * FROM (
             AND    o.kglhdadr = d.kglrfhdl(+)
             AND    d.kglhdpar = c.kglhdpar(+)
             AND    d.kglnahsh = c.kglnahsh(+)
-            AND    o.kglnaown IS NOT NULL
+            AND    (o.kglnaown IS NOT NULL OR :V1 IS NOT NULL)
             --AND    o.kglhdexc>0
             AND    c.kglhdnsp(+) = 0
             AND    (c.KGLOBT03 IS NOT NULL OR d.kglrfhsh IS NULL)

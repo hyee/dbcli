@@ -221,13 +221,9 @@ local url,usr
 function dicts.on_after_db_conn(instance,sql,props)
     if db.props.isadb==true then
         local mode=''
-        if db.props.israc==true then 
-            cfg.force_set('instance', db.props.instance)
-            mode=' and non-RAC'
-        end
         cfg.force_set('cdbmode', 'pdb')
         print('Switched into PDB'..mode..' mode for Oracle ADW/ATP environment, some SQLs will be auto-rewritten.');
-        print('You can run "set cdbmode default instance default" to switch back.')
+        print('You can run "set cdbmode default" to switch back.')
     else
         cfg.force_set('instance','default')
         cfg.force_set('cdbmode','default')
@@ -312,7 +308,6 @@ function dicts.set_dict(type,scope)
         for k,v in pairs(params) do
             if (k..' '..v[1]..' '..v[7]):lower():find(pattern) and (not is_connect or v[1]<=db.props.version) then
                 keys[#keys+1]=k
-                
             end
         end
         env.checkerr(#keys<=2000,"Too many matched parameters.")
@@ -323,17 +318,19 @@ function dicts.set_dict(type,scope)
         for i,k in ipairs(keys) do
             local v,value=params[k],''
             if is_connect and #keys <=50 then
-                local args={name=k,value='#VARCHAR'}
+                local args={name=k..':'..v[2],value='#VARCHAR'}
                 local res=pcall(db.exec_cache,db,[[
                     DECLARE
                         x VARCHAR2(300);
-                        y INT;
-                        t INT;
+                        y BINARY_INTEGER;
+                        t PLS_INTEGER;
+                        n VARCHAR2(128):=:name;
+                        p PLS_INTEGER := instr(n,':');
                     BEGIN
-                        t:=sys.dbms_utility.get_parameter_value(:name,y,x);
-                        :value := nvl(x,''||y);
+                        t:=sys.dbms_utility.get_parameter_value(substr(n,1,p-1),y,x);
+                        :value := CASE WHEN substr(n,p+1) IN ('1','3','6') THEN ''||y ELSE x END;
                     EXCEPTION WHEN OTHERS THEN
-                        :value := 'N/A';
+                        :value := 'N/A'||CASE WHEN substr(n,p+1) = '6' THEN '(Type 6)' END;
                     END;]],args,'Internal_GetDBParameter')
                 value=res and (args.value or '') or 'N/A'
             end
@@ -475,9 +472,9 @@ function dicts.set_dict(type,scope)
     sql = sql:gsub('@XTABLE@',db.props.isdba~=true and '' or [[
             UNION ALL
             SELECT 'SYS',t.kqftanam, c.kqfconam, decode(kqfcodty,1,'VARCHAR2',2,'NUMBER',null)
-            FROM   (SELECT kqftanam,t.indx,t.inst_id FROM x$kqfta t
+            FROM   (SELECT kqftanam,t.indx,t.inst_id FROM sys.x$kqfta t
                     UNION ALL
-                    SELECT KQFDTEQU,t.indx,t.inst_id FROM x$kqfta t,x$kqfdt where kqftanam=KQFDTNAM) t, x$kqfco c
+                    SELECT KQFDTEQU,t.indx,t.inst_id FROM sys.x$kqfta t,sys.x$kqfdt where kqftanam=KQFDTNAM) t, sys.x$kqfco c
             WHERE  c.kqfcotab = t.indx
             AND    c.inst_id = t.inst_id
         ]])
@@ -532,7 +529,7 @@ function dicts.set_dict(type,scope)
                      bitand(ksppiflg / 65536, 3) ISSYS_MDF,
                      decode(bitand(ksppiflg, 4), 4,0, decode(bitand(ksppiflg / 65536, 3), 0, 0, 1)) ISINST_MD,
                      ksppdesc DESCRIPTION
-            FROM     x$ksppi x, X$QKSCESYS z
+            FROM     sys.x$ksppi x, sys.X$QKSCESYS z
             WHERE    x.ksppinm = z.PNAME_QKSCESYROW(+)]]
         rs=db:dba_query(db.internal_call,sql)
         rows=db.resultset:rows(rs,-1)

@@ -877,7 +877,7 @@ BEGIN
 
       FOR i IN (WITH cbo_param AS (
                 SELECT /*+ materialize */ pname_qksceserow name
-                  FROM x$qksceses
+                  FROM sys.x$qksceses
                  WHERE sid_qksceserow = SYS_CONTEXT('USERENV', 'SID')
                 )
                 SELECT x.indx+1 num,
@@ -889,8 +889,8 @@ BEGIN
                        x.ksppdesc description,
                        y.ksppstcmnt update_comment,
                        x.ksppihash hash
-                  FROM x$ksppi x,
-                       x$ksppcv y,
+                  FROM sys.x$ksppi x,
+                       sys.x$ksppcv y,
                        cbo_param
                  WHERE x.indx = y.indx
                    AND BITAND(x.ksppiflg, 268435456) = 0
@@ -926,7 +926,7 @@ BEGIN
             l_alter_session_bck := l_alter_session;
 
             FOR j IN (SELECT value_kspvld_values value
-                        FROM x$kspvld_values
+                        FROM sys.x$kspvld_values
                        WHERE LOWER(name_kspvld_values) = i.name
                          AND LOWER(value_kspvld_values) <> i.value
                        ORDER BY value_kspvld_values)

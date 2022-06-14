@@ -9,7 +9,7 @@
 &getobj findobj "&V1" 0 1
 
 SELECT * FROM TABLE(GV$(CURSOR(
-    SELECT /*+ordered*/ userenv('instance') inst_id,
+    SELECT /*+ordered opt_param('optimizer_dynamic_sampling' 5)*/ userenv('instance') inst_id,
            g.kglnaown,
            g.kglnaobj,
            decode(c.kglhdnsp,
@@ -92,7 +92,7 @@ SELECT * FROM TABLE(GV$(CURSOR(
            DECODE(c.KGLOBSTA, 1, 'VALID', 2, 'VALID_AUTH_ERROR', 3, 'VALID_COMPILE_ERROR', 4, 'VALID_UNAUTH', 5, 'INVALID_UNAUTH', 6, 'INVALID', 'UNKOWN') AS STATUS,
            c.kglobt03 sql_id,
            substr(TRIM(regexp_replace(REPLACE(c.kglnaobj, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text
-    FROM   x$kglob g, x$kgldp k, x$kglxs a, x$kglob c
+    FROM   sys.x$kglob g, sys.x$kgldp k, sys.x$kglxs a, sys.x$kglob c
     WHERE  &filter
     AND    g.kglhdadr = k.kglrfhdl
     AND    k.kglhdadr = a.kglhdadr /* make sure it is not a transitive */

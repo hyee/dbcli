@@ -1,4 +1,4 @@
-/*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <lower_OFT> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>]
+/*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>]
     -batch: number of options to be tested for each batch
     -env  : only test the parameters
     -ofe  : only test the fix controls
@@ -41,38 +41,45 @@ DECLARE
     fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
     qry       VARCHAR2(4000) := q'{
-        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION
+        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,nvl2(optimizer_feature_enable,1,0) flag
         FROM   v$session_fix_control
         WHERE  SESSION_ID=userenv('sid')
-        AND    '&typ' IN('all','ofe')    
-        union all
-        SELECT 'env',pi.ksppinm, kc.PVALUE_QKSCESEROW, ksppity,ksppdesc
-        FROM   x$ksppi pi ,x$ksppcv cv,X$QKSCESES kc
+        AND    '&typ' IN('all','ofe')
+        AND    bugno NOT IN(16923858,25167306)
+        UNION  ALL
+        SELECT 'env',pi.ksppinm, NVL(kc.PVALUE_QKSCESEROW,cv.KSPPSTVL), ksppity,ksppdesc,1
+        FROM   sys.x$ksppi pi ,sys.x$ksppcv cv,sys.X$QKSCESES kc
         WHERE  pi.indx=cv.indx
-        AND    pi.ksppinm=kc.PNAME_QKSCESEROW
-        AND    kc.SID_QKSCESEROW = userenv('sid')
+        AND    pi.ksppinm=kc.PNAME_QKSCESEROW(+)
+        AND    kc.SID_QKSCESEROW(+) = userenv('sid')
         AND    ksppity IN (1, 2, 3)
-        AND    LENGTH(kc.PVALUE_QKSCESEROW)<=20
+        AND    LENGTH(NVL(kc.PVALUE_QKSCESEROW,cv.KSPPSTVL))<=20
         AND    bitand(ksppiflg / 256, 1)=1
         AND    substr(pi.ksppinm,1,2)!='__'
         AND    pi.ksppinm!='optimizer_features_enable'
         AND    '&typ' IN('all','env')
         ORDER  BY 1,2}';
     CURSOR c IS
-        SELECT /*+ordered use_hash(b)*/ *
+        SELECT /*+ordered use_hash(b)*/ 
+               typ,name,vtype,value_high,
+               CASE 
+                    WHEN flag=0 AND nvl(value_high, '_') = nvl(value_low, '_') THEN 
+                          to_char(1-sign(0+value_high)) 
+                    ELSE value_low 
+               END value_low ,a.description
         FROM   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
                        extractvalue(column_value, '/ROW/NAME') NAME,
                        extractvalue(column_value, '/ROW/VTYPE') + 0 VTYPE,
                        extractvalue(column_value, '/ROW/VALUE') value_high,
+                       extractvalue(column_value, '/ROW/FLAG')+0 flag,
                        regexp_replace(extractvalue(column_value, '/ROW/DESCRIPTION'), '\s+', ' ') description
                 FROM   TABLE(XMLSEQUENCE(extract(high_env, '/ROWSET/ROW')))) a
         JOIN   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
                        extractvalue(column_value, '/ROW/NAME') NAME,
-                       extractvalue(column_value, '/ROW/VTYPE') + 0 VTYPE,
                        extractvalue(column_value, '/ROW/VALUE') value_low
                 FROM   TABLE(XMLSEQUENCE(extract(low_env, '/ROWSET/ROW')))) b
-        USING  (typ, NAME, vtype)
-        WHERE  nvl(value_high, '_') != nvl(value_low, '_')
+        USING  (typ, NAME)
+        WHERE  nvl(value_high, '_') != nvl(value_low, '_') OR a.flag=0
         ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0);
     TYPE t_changes IS TABLE OF c%ROWTYPE;
     changes t_changes;
@@ -87,6 +94,11 @@ BEGIN
         FROM   (SELECT parsing_schema_name, sql_fulltext
                 FROM   gv$sqlarea
                 WHERE  sql_id = :V1
+                AND    rownum < 2
+                UNION ALL
+                SELECT parsing_schema_name, sql_text
+                FROM   all_sqlset_statements
+                WHERE  sql_id = :v1
                 AND    rownum < 2
                 UNION ALL
                 SELECT parsing_schema_name, sql_text
@@ -173,28 +185,19 @@ BEGIN
                 ofedesc(counter) := ofedesc(counter) || changes(i).description || chr(10);
             END IF;
         END LOOP;
-        ofedesc(counter) := REPLACE(TRIM(ofedesc(counter)),CHR(9));
+        ofedesc(counter) := NVL(REPLACE(TRIM(ofedesc(counter)),CHR(9)),' ');
 
-        IF new_ofe IS NULL THEN
-            ofelist.trim;
-            ofeold.trim;
-            ofedesc.trim;
-            counter := counter-1;
-        ELSE
+        IF new_ofe IS NOT NULL THEN
             old_ofe := ofeold(counter);
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set '|| ofelist(counter);
-                EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||ofelist.count);
+                EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||counter);
                 COMMIT;
             EXCEPTION WHEN OTHERS THEN
                 errcount := errcount + 1;
                 IF errcount <= 100 THEN
                     dbms_output.put_line('Unable to set '||replace(ofelist(ofelist.count),chr(10),' ')||' due to '||sqlerrm);
                 END IF;
-                ofelist.trim;
-                ofeold.trim;
-                ofedesc.trim;
-                counter := counter-1;
             END;
             IF :accu = 0 THEN
                 BEGIN
@@ -205,6 +208,8 @@ BEGIN
         END IF;
     END LOOP;
     CLOSE c;
+
+    dbms_output.put_line(counter||' OFE differences are tested.');
 
     IF :accu = 1 THEN
         DELETE plan_table WHERE STATEMENT_ID IN(
@@ -231,11 +236,13 @@ BEGIN
         END LOOP;
     END IF;
 
-    UPDATE PLAN_TABLE
-    SET    REMARKS=(select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(ofelist)) where r=regexp_substr(STATEMENT_ID, '\d+$'))||chr(9)||
-                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(ofedesc)) where r=regexp_substr(STATEMENT_ID, '\d+$'))
-    WHERE  regexp_like(STATEMENT_ID, '\d+$')
-    AND    nvl(id,0)=0;
+    MERGE INTO PLAN_TABLE A
+    USING ( SELECT r,v1||chr(9)||v2 MEMO
+            FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofelist)) A
+            JOIN  (SELECT rownum r,trim(chr(10) from column_value) v2 from table(ofedesc)) B
+            USING (r)) B
+    ON   (B.r=regexp_substr(STATEMENT_ID, '\d+$') AND nvl(A.ID,0) <2)
+    WHEN MATCHED THEN UPDATE SET A.REMARKS=B.MEMO;
     COMMIT;
 
     EXECUTE IMMEDIATE 'alter session set current_schema=' || curr;
@@ -273,7 +280,7 @@ BEGIN
         wr(qry);
         wr(lpad('=', length(qry), '='));
         FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', r.id, fmt))) LOOP
-            IF nvl(i.PLAN_TABLE_OUTPUT,'X') not like '%Plan hash value%' THEN
+            IF trim(i.PLAN_TABLE_OUTPUT) IS NOT NULL AND i.PLAN_TABLE_OUTPUT NOT LIKE '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
         END LOOP;
@@ -293,8 +300,8 @@ BEGIN
                          NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
                          MAX(ID) plan_lines,
                          MAX(remarks) remarks,
-                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash,
-                         MAX(decode(id, 1, regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1))) + 0 plan_hash2,
+                         MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
+                         MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2,
                          MAX(q.cost) cost,
                          MAX(bytes) bytes,
                          MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,

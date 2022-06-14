@@ -24,6 +24,7 @@
         &FILTER2: default={1=1}, w={w.sid is not null}
         &V2    :  default={&instance}
         @CHECK_ACCESS: gv$libcache_locks={gv$libcache_locks},Dba_Kgllock={(SELECT NULL inst_id,KGLLKTYPE TYPE,KGLLKUSE HOLDING_USER_SESSION,KGLLKHDL OBJECT_HANDLE,KGLLKMOD MODE_HELD,KGLLKREQ MODE_REQUESTED FROM Dba_Kgllock)}
+        @CHECK_ACCESS_X: sys.x$kglst={coalesce((select KGLSTDSC from sys.x$kglst where indx=nvl(w.namespace,h.namespace)),''||w.namespace,''||h.namespace) namespace} default={nvl(w.namespace,h.namespace) "x$kglst"} 
         @OBJ_CACHE: {
                   12.1={(select owner to_owner,name to_name,addr to_address,TYPE from v$db_object_cache where instr(name,' ')=0)} 
                   default={(select a.*,
@@ -125,7 +126,7 @@
 set feed off verify on
 
 WITH LP AS (
-    SELECT /*+materialize*/  * 
+    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ * 
     FROM &GV
         SELECT /*+ordered no_merge(h) use_hash(h l d)*/DISTINCT 
                  l.type lock_type,
@@ -133,8 +134,8 @@ WITH LP AS (
                  MODE_REQUESTED,MODE_HELD,
                  DECODE(MODE_HELD, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') held_mode,
                  DECODE(MODE_REQUESTED, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE') req_mode,
-                 case when h.p3text='100*mode+namespace' then trunc(p3/4294967296) end object_id,
-                 case when h.p3text='100*mode+namespace' then trunc(p3 / 65536) end namespace,
+                 case when h.p3text='100*mode+namespace' then trunc(p3/power(16,8)) end object_id,
+                 case when h.p3text='100*mode+namespace' then nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) end namespace,
                  nullif(d.to_owner || '.', '.') || d.to_name object_name,
                  h.sid || ',' || h.serial# || ',@' || USERENV('instance') session#,
                  d.type object_type,
@@ -159,17 +160,19 @@ WITH LP AS (
 SELECT /*+no_expand*/distinct
        nvl(h.lock_type,w.lock_type) lock_type,
        nvl(h.handler,w.handler) object_handle,
-       nvl(h.object_id,w.object_id) object_id,
+       nvl(h.object_id,w.object_id) obj#,
        nvl(h.object_name,w.object_name) object_name,
        nvl(h.object_type,w.object_type) object_type,
-       h.session# holding_session, nvl(h.held_mode,w.held_mode) hold_mode,  
-       h.event holder_event, h.sql_id holder_sql_id,
-       w.session# waiting_session, nvl(w.req_mode,h.req_mode) wait_mode,
-       w.event waiter_event, w.sql_id waiter_sql_id
-FROM   lp h full JOIN lp w
+       h.session# holder_session, nvl(h.held_mode,w.held_mode) hold_mode,  
+       h.sql_id holder_sqlid,
+       w.session# waiter_session, nvl(w.req_mode,h.req_mode) wait_mode,
+       w.sql_id waiter_sqlid,
+       &CHECK_ACCESS_X,
+       h.event holder_event, w.event waiter_event
+FROM   (select * from lp where mode_held>1) h 
+FULL JOIN (select * from lp where mode_requested>1)  w
 ON     h.lock_type = w.lock_type and h.object_type=w.object_type and  h.mode_held>1 and w.mode_requested>1 and
       ((h.inst_id  = w.inst_id and h.handler     = w.handler) or
        (h.inst_id != w.inst_id and h.object_name = w.object_name))
-WHERE  (h.mode_held>1 or w.mode_requested>1)
-AND    (&filter) AND (&FILTER2)
-ORDER BY nvl2(waiting_session,0,1),object_name,lock_type,holding_session,waiting_session;
+WHERE  (&filter) AND (&FILTER2)
+ORDER BY nvl2(waiter_session,0,1),holder_session,object_name,lock_type,waiter_session;

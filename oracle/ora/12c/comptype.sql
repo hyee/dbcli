@@ -9,7 +9,7 @@
      |OLTP        | 8.13/2.54               | OZIP              |         |               |          |
      |Query Low   | 2.88/1.83               | 2.52 (LZO)        |  32K    |   1MB         |     4K   |
      |Query High  | 8.13/4.91               | 3.87 (ZLIB)       | 32K-64K |   1MB         |     8K   |
-     |Archive Low | 11.71/7.63              | 4.08 (ZLIB)       | 64-128K |   3MB         |    16K   |
+     |Archive Low | 11.71/7.63              | 4.08 (ZLIB)       | 64K-128K|   3MB         |    16K   |
      |Archive High| 17.63/12.73             | 4.86 (BZ2)        |  128K   |   10MB        |    64K   |]
     For DBIM, the CU size is 32MB and data rows can > 50,000
     
@@ -121,24 +121,22 @@ BEGIN
             END LOOP;
             RETURN v_id;
         END;
-        OBJS AS(SELECT * FROM &check_access_obj.objects WHERE owner = '&object_owner' AND object_name = '&object_name')
+        OBJS AS(SELECT /*+materialize*/ * FROM &check_access_obj.objects WHERE data_object_id is not null and owner = '&object_owner' AND object_name = '&object_name')
         SELECT /*+leading(b a) use_hash(b a) no_merge(a) no_merge(b)*/ 
                a.rid,
-               b.object_id||','||
-               b.data_object_id||','||
-               a.cnt||','||
-               b.subobject_name obj
+               (select b.object_id||','||
+                       b.data_object_id||','||
+                       a.cnt||','||
+                       b.subobject_name
+                from   OBJS b
+                WHERE  b.data_object_id = a.dobj) obj
         FROM   (SELECT get_dobj(sub) dobj, rid,cnt
                 FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN full(a) &px*/
                                SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
                                count(1) cnt
                         FROM   &object_owner..&object_name @PART@ a &filter
-                        GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a,
-               OBJS b
-        WHERE  b.owner = '&object_owner'
-        AND    b.object_name = '&object_name'
-        AND    b.data_object_id = a.dobj
+                        GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a
         ORDER BY 1]';
     IF :object_subname IS NOT NULL THEN
         v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
@@ -201,6 +199,7 @@ BEGIN
     --dbms_output.put_line(v_stmt);
     --return;
     &dx EXECUTE IMMEDIATE 'alter session set "_small_table_threshold"=1  "_serial_direct_read"=always';
+
     BEGIN
         v_cnt  := 0;
         v_cnt2 := 0;

@@ -3,7 +3,8 @@ col "duration,roll_left,Est|Complete" format smhd2
 col "Undo|Bytes,Undo|Bytes1" for kmg
 set autohide col
 set feed off
-SELECT sess.sid || ',' || sess.serial# || ',@' || sess.inst_id sid,
+SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
+       sess.sid || ',' || sess.serial# || ',@' || sess.inst_id sid,
        schemaname SCHEMA,
        xid,
        XIDUSN || '.' || XIDSLOT || '.' || XIDSQN trans#,
@@ -63,7 +64,7 @@ grid {[[/*grid:{topic="Fast Start Transactions"}*/
            decode(cputime,
                   0,
                   'unknown',
-                  SYSDATE + (((undoblockstotal - undoblocksdone) / (undoblocksdone / cputime)) / 86400)) "Est|Complete"
+                  (undoblockstotal - undoblocksdone) / (undoblocksdone / cputime)) "Est|Complete"
     FROM   gv$fast_start_transactions
 ]],'|',[[/*grid:{topic="Fast Start Servers"}*/
     SELECT * FROM GV$FAST_START_SERVERS

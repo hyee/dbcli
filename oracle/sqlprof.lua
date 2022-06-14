@@ -42,7 +42,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             
             PROCEDURE get_sql(p_sqlid VARCHAR2) IS
             BEGIN
-                SELECT sql_text, src
+                SELECT  /*+PQ_CONCURRENT_UNION*/ sql_text, src
                 INTO   v_sql, v_source
                 FROM   (
                         --awr and sqlset
@@ -52,6 +52,10 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         UNION ALL
                         SELECT SQL_FULLTEXT, p_sqlid
                         FROM   gv$sql a
+                        WHERE  sql_id = p_sqlid
+                        UNION ALL
+                        SELECT SQL_TEXT, p_sqlid
+                        FROM   all_sqlset_statements a
                         WHERE  sql_id = p_sqlid
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
@@ -95,16 +99,14 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                               WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') then '-1'
                               ELSE nvl(regexp_substr(p_plan, '^\d+$'), 'z') || '%'
                           END;
-                SELECT xmltype(other_xml), src
+                SELECT /*+PQ_CONCURRENT_UNION*/ xmltype(other_xml), src
                 INTO   v_hints, v_plan_source
-                FROM   (SELECT /*+no_expand*/ other_xml, src
+                FROM   (SELECT  /*+PQ_CONCURRENT_UNION no_expand*/other_xml, src
                         FROM   (SELECT other_xml, 'memory' src, sql_id, plan_hash_value
                                 FROM   gv$sql_plan a
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 AND    nvl(p_sql_id,'-')!='_x_'
                                 UNION ALL
@@ -120,9 +122,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 UNION ALL
                                 SELECT other_xml, 'sqlset', sql_id, plan_hash_value
@@ -130,9 +130,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 $IF DBMS_DB_VERSION.VERSION>11 $THEN
                                 UNION ALL
@@ -141,9 +139,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND SQL_PLAN_HASH_VALUE LIKE v_plan OR 
-                                        SQL_PLAN_HASH_VALUE like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or sql_plan_hash_value=p_plan)
                                 AND     rownum<2
                                 $END
                                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
@@ -153,9 +149,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                 WHERE  other_xml IS NOT NULL
                                 AND    v_plan!='-1'
                                 AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = p_sqlid AND plan_hash_value LIKE v_plan OR 
-                                        plan_hash_value like p_sql_id OR 
-                                        sql_id = p_plan)
+                                AND    (sql_id = nvl(p_plan,p_sqlid) or plan_hash_value=p_plan)
                                 AND     rownum<2
                                 $END
                         )
@@ -215,7 +209,13 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 v_end   VARCHAR2(10):=']''';
                 v_size  PLS_INTEGER := length(p_SQL);
             BEGIN
-                IF instr(p_SQL,v_end)>0 THEN
+                IF instr(p_SQL,'~')=0 THEN
+                    v_begin := 'q''~';
+                    v_end   := '~''';
+                ELSIF instr(p_SQL,'!')=0 THEN
+                    v_begin := 'q''!';
+                    v_end   := '!''';
+                ELSIF instr(p_SQL,']')>0 THEN
                     v_begin := 'q''{';
                     v_end   := '}''';
                 END IF;
@@ -261,18 +261,18 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END IF;
             
             dbms_lob.createtemporary(v_text, TRUE);
-            pr('Set define off sqlbl on'||chr(10));
+            pr('Set define off sqlbl on serveroutput on'||chr(10));
             pr('DECLARE --Better for this script to have the access on gv$sqlarea');
             pr('    sql_txt   CLOB;');
             pr('    sql_txt1  CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
-            pr('    prof_name VARCHAR2(30):=''SQLPROF'';');
             pr('    sq_id     VARCHAR2(30):='''||p_sqlid||''';');
+            pr('    prof_name VARCHAR2(30);');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
            
-            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING sq_id,sq_id;');
+            pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_sqlset_statements WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING sq_id,sq_id,sq_id;');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
             writeSQL(v_sql,'sql_txt');
@@ -358,18 +358,20 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);');
-            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''');EXCEPTION WHEN OTHERS THEN NULL;END;');
+            pr('    prof_name := ''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''';');
+            pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(prof_name);EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
             pr('        profile     => sql_prof,');
-            pr('        name        => ''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''',');
-            pr('        description => ''' || replace(v_source,p_sqlid,'''||sq_id||''') || '_''||signature,');
+            pr('        name        => prof_name,');
+            pr('        description => prof_name || ''_''||signature,');
             pr('        category    => ''DEFAULT'',');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
+            pr(q'[    dbms_output.put_line('SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||prof_name||''')');]');
             pr('END;');
             pr('/');
-            pr('PRO SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||v_source||''')');
+            
             p_buffer := v_text;
         END;
     BEGIN
@@ -402,19 +404,22 @@ DECLARE --Better for this script to have the access on gv$sqlarea
     signature NUMBER;
     sq_id     VARCHAR2(30):='@sql_id@';
 BEGIN
-    BEGIN 
-        EXECUTE IMMEDIATE q'[SELECT * FROM (
+    BEGIN
+        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION*/ * FROM (
                                  SELECT SQL_FULLTEXT FROM gv$sqlarea
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
                                  SELECT SQL_TEXT FROM dba_hist_sqltext
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
+                                 SELECT SQL_TEXT FROM all_sqlset_statements
+                                 WHERE SQL_ID=:1 AND ROWNUM<2
+                                 UNION ALL
                                  SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor 
                                  WHERE SQL_ID=:1 AND IS_FULL_SQLTEXT='Y'
                                  AND   SQL_TEXT IS NOT NULL AND ROWNUM<2
                              ) WHERE ROWNUM<2]' 
-        INTO sql_txt USING sq_id,sq_id,sq_id;
+        INTO sql_txt USING sq_id,sq_id,sq_id,sq_id;
     EXCEPTION WHEN OTHERS THEN NULL;END;
     IF sql_txt IS NULL THEN
         raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);

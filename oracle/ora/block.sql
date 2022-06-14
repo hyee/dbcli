@@ -26,8 +26,8 @@
 
     --[[
         @CHECK_ACCESS_SEG: {
-            X$BH={select file#,block#,b.*
-                  from table(gv$(cursor(select OBJ objd,DBARFIL file#,DBABLK BLOCK# from x$bh where DBARFIL=&file and DBABLK=&block))) a,
+            sys.X$BH={select file#,block#,b.*
+                  from table(gv$(cursor(select OBJ objd,DBARFIL file#,DBABLK BLOCK# from sys.x$bh where DBARFIL=&file and DBABLK=&block))) a,
                        &CHECK_ACCESS_OBJ b
                   where a.objd=b.data_object_id}
 

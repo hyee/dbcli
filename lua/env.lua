@@ -663,7 +663,7 @@ function env.parse_args(cmd,rest,is_cross_line)
         args[#args+1]=(curr_cmd and cmd==curr_cmd:upper() and curr_cmd or cmd)..(rest and #rest> 0 and (" "..rest) or "")
         curr_cmd=nil
     elseif arg_count == 2 then
-        if type(rest)=="string" and not rest:match('".+".".+"') then
+        if type(rest)=="string" and not rest:match('".+" *%. *".+"') then
             rest=rest:gsub('^"(.*)"$','%1')
         end
         args[#args+1]=rest
@@ -683,7 +683,7 @@ function env.parse_args(cmd,rest,is_cross_line)
             
             if is_quote_string then--if the parameter starts with quote
                 piece = piece .. char
-                if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+".".+"') then
+                if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+" *%. *".+"') then
                     --end of a quote string if next char is a space
                     args[#args+1]=piece:gsub('^"(.*)"$','%1')
                     piece,is_quote_string='',false
@@ -1072,6 +1072,10 @@ end
 function env.set_option(name,value)
     if name=='MOUSE' then
         console:enableMouse(value)
+    elseif name=="TRACEVM" then
+        value=tonumber(value)
+        if not value then return end
+        java.trace(value)
     else
         console:enableBracketedPaste(value)
     end
@@ -1124,12 +1128,12 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
-        local enabled='off'
-        env.set_title('status',enabled)
-        env.set.init("Status",enabled,env.set_title,"core","Display the status bar","on,off")
+        env.set.init("Status",'off',env.set_title,"core","Display the status bar","on,off")
+        --env.set_title('status',enabled)
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
         env.set.init("MOUSE",'off',env.set_option,"core","Enable to use mouse to navigate the cursor, and use SHIFT+Mouse to select text","on,off")
         env.set.init("BRACKETED_PASTE",'on',env.set_option,"core","Enable Bracketed Paste","on,off")
+        env.set.init("TRACEVM",function() return java.trace(-1) end,env.set_option,"core","Set JVM/JNI trace level(bitand). 1:trace/2:timing/4:disable JVM trace/8:disable JNI trace","0-16")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then
@@ -1345,7 +1349,7 @@ function env.set_title(title,value,callee)
             titles="DBCLI - Disconnected"
         end
 
-        if (CURRENT_TITLE~=titles and (enabled or env.set.get("STATUS"))=="on") or enabled=='on' then
+        if (CURRENT_TITLE~=titles and (enabled or env.set.STATUS and env.set.get("STATUS"))=="on") or enabled=='on' then
             status=titles:split('   +')
             local color=env.ansi.get_color
             console:setStatus(' '..concat(status,' '..color("HIB")..'|'..color("NOR")..' '),color("HIB")) 

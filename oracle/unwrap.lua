@@ -554,21 +554,24 @@ local function parse_other_xml(xml,add_header,envs,outlines,qb_transforms,skp)
     if xml.hint_usage then
         for k,v in pairs(xml.hint_usage) do
             if k=='q' then
-                for idx,v1 in pair(v) do
+                for _,v1 in pair(v) do
                     local qb_='@"'..v1.n..'"'
-                    local t=v1.h or v1.t and v1.t.h or nil
-                    if t and t.x and not t.x:upper():find('^OPT_PARAM') then
-                        local hint,alias_,hint1=t.x
-                        local pos=hint:find('(',1,true)
-                        if hint:find('@"',1,true) then pos=nil end
-                        if t.r then hint=hint..' / '..t.r end
-                        local alias_= v1.t and v1.t.f or nil
-                        if pos then 
-                            hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
-                        else
-                            hint1=hint..'('..(alias_ or qb_)..')'
+                    for idx,t in pair(v1.t) do
+                        for idx2,h in pair(t.h) do
+                            if h.x and not h.x:upper():find('^OPT_PARAM') then
+                                local hint,alias_,hint1=h.x
+                                local pos=hint:find('(',1,true)
+                                if hint:find('@"',1,true) then pos=nil end
+                                if h.r then hint=hint..' / '..h.r end
+                                local alias_= t.f
+                                if pos then 
+                                    hint1=hint:sub(1,pos)..(alias_ or qb_)..' '..hint:sub(pos+1)
+                                else
+                                    hint1=hint..'('..(alias_ or qb_)..')'
+                                end
+                                add_hint(envs,outlines,hint1,hint..' (SQL Hint)')
+                            end
                         end
-                        add_hint(envs,outlines,hint1,hint..' (SQL Hint)')
                     end
                 end
             elseif k=='s' and v.h then
@@ -858,7 +861,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local error_msg=hd.error and hd.error[1]:trim():match('[^\n]+') or nil
     local default_dop,px_alloc,sql_id,status,plsql,interval,phv=0,0
     
-    --from x$qksxa_reason
+    --from sys.x$qksxa_reason
     local reasons={
         ['352']="DOP downgrade due to adaptive DOP",
         ['353']="DOP downgrade due to resource manager max DOP",
@@ -2356,11 +2359,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     options=(options and (options..' ') or '')..'[Spills='..math.round(s.spills*100/probe.cardinality,2)..'%]'
                 end
             end
-
+            local percent=tonumber(s.percent_complete)
+            if percent and percent<100 then
+                percent='['..percent..'%]'
+            end
             lines[#lines+1]={
                 id=id,
                 format_id(id,s.skp, px_group[id] and px_group[id].c>1 and ('$HEADCOLOR$'..(px_color or '')) or px_color,preds.ids[id],most_recent),
-                ord,
+                percent or ord,
                 '|',
                 px_type,
                 tonumber(s.dop),

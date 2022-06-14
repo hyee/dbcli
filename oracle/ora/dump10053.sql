@@ -47,9 +47,17 @@ BEGIN
         IF phv IS NULL THEN
             BEGIN
                 SELECT SQL_TEXT INTO sq_text
-                FROM   DBA_HIST_SQLTEXT
-                WHERE  SQL_ID=sq_id
-                AND    rownum<2;
+                FROM (
+                    SELECT SQL_FULLTEXT SQL_TEXT
+                    FROM   GV$SQLAREA
+                    WHERE  SQL_ID=sq_id
+                    AND    rownum<2
+                    UNION ALL
+                    SELECT SQL_TEXT
+                    FROM   DBA_HIST_SQLTEXT
+                    WHERE  SQL_ID=sq_id
+                    AND    rownum<2
+                ) WHERE rownum<2;
                 sq_id := NULL;
             EXCEPTION WHEN OTHERS THEN 
                 raise_application_error(-20001, 'Cannot find target SQL in v$sql_plan_statistics_all: '||sq_id);
@@ -64,7 +72,7 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
         NULL;
     END;
-    IF :opt1 = 1 OR regexp_like(sq_id,'^\d+$') or sq_id IS NULL THEN
+    IF :opt1 = 1 OR regexp_like(sq_id,'^\d+$') THEN
         IF nam IS NULL THEN
             raise_application_error(-20001, 'Please specify the target directory name');
         END IF;

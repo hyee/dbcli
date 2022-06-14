@@ -18,12 +18,12 @@ DECLARE
     CURSOR lstat(laddr_ RAW) IS /* latch statistics */
         SELECT kslltnum LATCH#, kslltwgt GETS, kslltwff MISSES, kslltwsl SLEEPS, ksllthst0 SPIN_GETS,
                kslltwtt latch_wait_time, kslltcnm child#
-        FROM   x$kslltr_children
+        FROM   sys.x$kslltr_children
         WHERE  kslltaddr = hextoraw(laddr_)
         UNION ALL
         SELECT kslltnum LATCH#, kslltwgt GETS, kslltwff MISSES, kslltwsl SLEEPS, ksllthst0 SPIN_GETS,
                kslltwtt latch_wait_time, 0 child#
-        FROM   x$kslltr_parent
+        FROM   sys.x$kslltr_parent
         WHERE  kslltaddr = hextoraw(laddr_);
     Lstat1  lstat%ROWTYPE;
     Lstat2  lstat%ROWTYPE;
@@ -75,12 +75,12 @@ BEGIN
     FOR i IN 1 .. Samples LOOP
         /*   number of pocesses waiting for the latch */
         FOR SAMPLE IN (SELECT COUNT(decode(ksllawat, '00', NULL, 1)) wat
-                       FROM   x$ksupr
+                       FROM   sys.x$ksupr
                        WHERE  ksllawat = laddr) LOOP
             Nw := Nw + Sample.wat;
         END LOOP;
         /*    Is latch busy  */
-        FOR Hold IN (SELECT 1 hold FROM x$ksuprlat WHERE ksuprlat = laddr) LOOP
+        FOR Hold IN (SELECT 1 hold FROM sys.x$ksuprlat WHERE ksuprlat = laddr) LOOP
             U := U + 1;
             EXIT;
         END LOOP;
@@ -106,7 +106,7 @@ BEGIN
     U      := U / Samples;
     lambda := dgets / dtime;
     W      := (lstat2.latch_wait_time - lstat1.latch_wait_time) / dtime * 1.E-6; /* wait time in seconds */
-    SELECT kslldnam, kslldlvl INTO lname, level_ FROM x$kslld WHERE indx = lstat2.latch#;
+    SELECT kslldnam, kslldlvl INTO lname, level_ FROM sys.x$kslld WHERE indx = lstat2.latch#;
     /* S:=eta*rho/lambda; */
     S := U / lambda;
     IF (dmisses > 0) THEN
@@ -146,8 +146,8 @@ BEGIN
     DBMS_OUTPUT.put_LINE('.   spin inefficiency k=' || to_char(kappa / (1 + kappa * rho), '9.999999'));
     /* latch parameters */
     FOR Param IN (SELECT ksppinm, ksppstvl
-                  FROM   x$ksppi x
-                  JOIN   x$ksppcv
+                  FROM   sys.x$ksppi x
+                  JOIN   sys.x$ksppcv
                   USING  (indx)
                   WHERE  ksppinm LIKE '\_latch\_class%' ESCAPE '\'
                   OR     ksppinm IN ('_spin_count',

@@ -13,7 +13,7 @@ SQL> ora hinth ign
 
 
   --[[
-    &filter: defaultr={UPPER(hi.name||' '||fh.path) LIKE UPPER('%&V1%')} f={}
+    &filter: defaultr={UPPER(hi.name||' '|| hi.version ||' '||fh.path) LIKE UPPER('%&V1%')} f={}
   ]]--
 ]]*/
 WITH feature_hierarchy AS

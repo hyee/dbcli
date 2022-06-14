@@ -39,7 +39,7 @@
         @ARGS: 1
     --]]
 ]]*/
-SET FEED OFF VERIFY ON autohide ON
+SET FEED OFF VERIFY ON autohide ON PRINTSIZE 3000
 ora _find_object &V1
 BEGIN
     IF nvl('&object_type','x') not like 'TABLE%' THEN
@@ -48,6 +48,8 @@ BEGIN
 END;
 /
 COL EXECS,ACCESSES,CARD,AVG_R_1K+,AVG_RTN,SAMPLE_SIZE,NUM_DISTINCT,STATS_VALUE,INSERTS,UPDATES,DELETES,EQ_PREDS,EQJ_PREDS,NO_EQ_PREDS,RANGE_PREDS,LIKE_PREDS,NULL_PREDS FORMAT TMB
+COL SPACE FOR KMG2
+COL LOGI_READS,PHY_READS,PHY_WRITES,SCANS,DX_READS,DX_WRITES,BLOCK_CHGS,BUFF_BUSY,ITL_WAITS,LOCK_WAITS,CR_BLOCKS,CU_BLOCKS,GC_BUF_BUSY,GRANTS FOR TMB
 VAR cur00 REFCURSOR "Table Modifications Since Last Analyzed"
 VAR cur01 REFCURSOR "Segment Statistics"
 VAR cur1 REFCURSOR "Column Usages"
@@ -74,21 +76,39 @@ BEGIN
         WHERE TABLE_OWNER=:OBJECT_OWNER
         AND   TABLE_NAME=:OBJECT_NAME;
     OPEN cb FOR
-        SELECT OWNER,OBJECT_NAME,OBJECT_TYPE,COUNT(DISTINCT DATAOBJ#) SEGMENTS,STATISTIC_NAME,SUM(VALUE) STATS_VALUE 
+        SELECT  OWNER,OBJECT_NAME,OBJECT_TYPE,COUNT(DISTINCT DATAOBJ#) SEGMENTS,
+                SUM(DECODE(statistic_name, 'space used', VALUE)) space,
+                SUM(DECODE(statistic_name, 'logical reads', VALUE)) logi_reads,
+                SUM(DECODE(statistic_name, 'physical reads', VALUE)) phy_reads,
+                SUM(DECODE(statistic_name, 'physical writes', VALUE)) phy_writes,
+                SUM(DECODE(statistic_name, 'segment scans', VALUE)) scans,
+                SUM(DECODE(statistic_name, 'physical reads direct', VALUE)) dx_reads,
+                SUM(DECODE(statistic_name, 'physical writes direct', VALUE)) dx_writes,
+                SUM(DECODE(statistic_name, 'db block changes', VALUE)) block_chgs,
+                SUM(DECODE(statistic_name, 'buffer busy waits', VALUE)) BUFF_BUSY,
+                '|' "|",
+                SUM(DECODE(statistic_name, 'gc buffer busy', VALUE)) gc_buf_busy,
+                SUM(DECODE(statistic_name, 'gc remote grants', VALUE)) grants,
+                SUM(DECODE(statistic_name, 'gc cr blocks received', VALUE)) cr_blocks,
+                SUM(DECODE(statistic_name, 'gc current blocks received', VALUE)) cu_blocks,
+                '|' "|",
+                SUM(DECODE(statistic_name, 'ITL waits', VALUE)) itl_waits,
+                SUM(DECODE(statistic_name, 'row lock waits', VALUE)) lock_waits
         FROM (
-            SELECT DISTINCT SEGMENT_OWNER OWNER,SEGMENT_NAME OBJECT_NAME,
+            SELECT /*+cardinality(1) opt_param('optimizer_dynamic_sampling' 11)*/
+                   DISTINCT SEGMENT_OWNER OWNER,SEGMENT_NAME OBJECT_NAME,
                    REGEXP_SUBSTR(SEGMENT_TYPE,'^[^ ]+') OBJECT_TYPE
             FROM  TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(:OBJECT_OWNER,:OBJECT_NAME,NULL,1))
         ) A JOIN GV$SEGMENT_STATISTICS B USING(OWNER,OBJECT_NAME,OBJECT_TYPE)
         WHERE VALUE>0
-        GROUP BY OWNER,OBJECT_NAME,OBJECT_TYPE,STATISTIC_NAME
-        ORDER BY 1,2,3,UPPER(STATISTIC_NAME); 
+        GROUP BY OWNER,OBJECT_NAME,OBJECT_TYPE
+        ORDER BY 1,2,3; 
     $IF &check_access_usage=0 $THEN
     OPEN c1 FOR
         SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner', '&object_name') report FROM dual;
     $ELSE
     OPEN c1 FOR
-        SELECT /*+ ordered use_nl(o c cu) no_expand*/
+        SELECT /*+ ordered use_nl(o c cu) no_expand opt_param('optimizer_dynamic_sampling' 11)*/
                  c.INTERNAL_COLUMN_ID intcol#,
                  C.column_name COL_NAME,
                  CU.EQUALITY_PREDS EQ_PREDS,
@@ -105,20 +125,22 @@ BEGIN
                  ROUND(((SELECT rowcnt FROM sys.tab$ WHERE obj# = o.object_id) - c.num_nulls) / GREATEST(c.NUM_DISTINCT, 1), 2) card,
                  C.DATA_DEFAULT "DEFAULT",
                  c.last_analyzed
-                FROM   dba_objects o, dba_tab_cols c, SYS.COL_USAGE$ CU
-                WHERE  o.owner = c.owner
-                AND    o.object_name = c.table_name
-                AND    cu.obj#(+) = &object_id
-                AND    c.INTERNAL_COLUMN_ID =cu.intcol# (+)
-                AND    o.object_id = &object_id
-                AND    o.object_name = '&object_name'
-                AND    o.owner       = '&object_owner'
-                AND    (cu.obj# is not null or c.column_name like 'SYS\_%' escape '\')
-                ORDER  BY 1;
+        FROM   dba_objects o, dba_tab_cols c, SYS.COL_USAGE$ CU
+        WHERE  o.owner = c.owner
+        AND    o.object_name = c.table_name
+        AND    cu.obj#(+) = &object_id
+        AND    c.INTERNAL_COLUMN_ID =cu.intcol# (+)
+        AND    o.object_id = &object_id
+        AND    o.object_name = '&object_name'
+        AND    o.owner       = '&object_owner'
+        AND    c.table_name = '&object_name'
+        AND    c.owner       = '&object_owner'
+        AND    (cu.obj# is not null or c.column_name like 'SYS\_%' escape '\')
+        ORDER  BY 1;
     $END
     $IF &check_access_usage=2 $THEN
     OPEN c2 FOR
-        SELECT COLS,
+        SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ COLS,
                REGEXP_SUBSTR(cols_and_cards,'[^//]+',1,1) col_names,
                REGEXP_SUBSTR(cols_and_cards,'[^//]+',1,2) cards,
                USAGES，
@@ -136,14 +158,14 @@ BEGIN
         FROM (
             SELECT CU.COLS,
                    LENGTH(cu.cols)-LENGTH(REPLACE(cu.cols,','))+1 col_count,
-                    (SELECT '('||listagg(C.COLUMN_NAME,',') 
-                                WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ','))||')/('||--
-                            listagg(ROUND((SELECT rowcnt- c.num_nulls FROM sys.tab$ WHERE obj# = cu.obj#) / GREATEST(c.NUM_DISTINCT, 1), 2) ,', ') 
-                                WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',')) ||')'
-                    FROM   dba_tab_cols c
-                    WHERE  c.owner = '&object_owner'
-                    AND    c.table_name = '&object_name'
-                    AND    INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',') > 0) cols_and_cards,
+                  (SELECT '('||listagg(C.COLUMN_NAME,',') 
+                               WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ','))||')/('||--
+                           listagg(ROUND((SELECT rowcnt- c.num_nulls FROM sys.tab$ WHERE obj# = cu.obj#) / GREATEST(c.NUM_DISTINCT, 1), 2) ,', ') 
+                               WITHIN GROUP(ORDER BY INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',')) ||')'
+                   FROM   dba_tab_cols c
+                   WHERE  c.owner = '&object_owner'
+                   AND    c.table_name = '&object_name'
+                   AND    INSTR(',' || cu.cols || ',', ',' || c.INTERNAL_COLUMN_ID || ',') > 0) cols_and_cards,
                    CASE
                        WHEN BITAND(CU.FLAGS, 1) = 1 THEN 'FILTER '
                    END || --
@@ -171,29 +193,32 @@ BEGIN
     $END
 
     $IF &check_access_index=1 $THEN
-        OPEN c3 for 
-            SELECT a.owner,
-                   a.index_name,
-                   (SELECT listagg(column_name || NULLIF(' ' || DESCEND, ' ASC'), ',') WITHIN GROUP(ORDER BY COLUMN_POSITION)
-                    FROM   dba_ind_columns c
-                    WHERE  c.index_owner = a.owner
-                    AND    c.index_name = a.index_name) cols,
-                   TOTAL_EXEC_COUNT EXECS,
-                   TOTAL_ACCESS_COUNT accesses,
-                   round(a.NUM_ROWS / GREATEST(a.DISTINCT_KEYS, 1), 2) card,
-                   round(TOTAL_ROWS_RETURNED / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) avg_rtn,
-                   ROUND(BUCKET_0_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_0 %",
-                   ROUND(BUCKET_1_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1 %",
-                   ROUND(BUCKET_2_10_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_2_10 %",
-                   ROUND(BUCKET_11_100_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_11_100 %",
-                   ROUND(BUCKET_101_1000_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_101_1K %",
-                   ROUND(BUCKET_1000_PLUS_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1K+ %",
-                   ROUND(BUCKET_1000_PLUS_ROWS_RETURNED / nullif(BUCKET_1000_PLUS_ACCESS_COUNT, 0), 2) "AVG_R_1K+"
-            FROM   dba_indexes a, dba_index_usage b
-            WHERE  a.owner = b.owner(+)
-            AND    a.index_name = b.name(+)
-            AND    a.table_owner = '&object_owner'
-            AND    a.table_name = '&object_name';
+    OPEN c3 for 
+        SELECT /*+opt_param('optimizer_dynamic_sampling' 11) */
+               a.owner,
+               a.index_name,
+               (SELECT listagg(column_name || NULLIF(' ' || DESCEND, ' ASC'), ',') WITHIN GROUP(ORDER BY COLUMN_POSITION)
+                FROM   dba_ind_columns c
+                WHERE  c.index_owner = a.owner
+                AND    c.index_name = a.index_name) cols,
+               TOTAL_EXEC_COUNT EXECS,
+               TOTAL_ACCESS_COUNT accesses,
+               round(a.NUM_ROWS / GREATEST(a.DISTINCT_KEYS, 1), 2) card,
+               round(TOTAL_ROWS_RETURNED / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) avg_rtn,
+               ROUND(BUCKET_0_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_0 %",
+               ROUND(BUCKET_1_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1 %",
+               ROUND(BUCKET_2_10_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_2_10 %",
+               ROUND(BUCKET_11_100_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_11_100 %",
+               ROUND(BUCKET_101_1000_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_101_1K %",
+               ROUND(BUCKET_1000_PLUS_ACCESS_COUNT * 100 / NULLIF(TOTAL_ACCESS_COUNT, 0), 2) "R_1K+ %",
+               ROUND(BUCKET_1000_PLUS_ROWS_RETURNED / nullif(BUCKET_1000_PLUS_ACCESS_COUNT, 0), 2) "AVG_R_1K+"
+        FROM   dba_indexes a, dba_index_usage b
+        WHERE  a.owner = b.owner(+)
+        AND    a.index_name = b.name(+)
+        AND    b.owner(+)= '&object_owner'
+        AND    b.name(+)= '&object_name'
+        AND    a.table_owner = '&object_owner'
+        AND    a.table_name = '&object_name';
     $END
     :cur00 := ca;
     :cur01 := cb;

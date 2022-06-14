@@ -30,7 +30,7 @@
 		<fullscreen start_in_fullscreen="0" fullscreen_monitor="0">
 			<controls show_menu="1" show_toolbar="1" show_searchbar="1" show_statusbar="1" show_tabs="1" hide_single_tab="1" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" hide_tab_new_button="0" show_scrollbars="1"/>
 			<transparency type="0" active_alpha="206" inactive_alpha="255" r="0" g="0" b="0" active="1"/></fullscreen>
-		<controls show_menu="1" show_toolbar="0" show_searchbar="0" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" hide_tab_new_button="0" show_scrollbars="1"/>
+		<controls show_menu="1" show_toolbar="0" show_searchbar="1" show_statusbar="0" show_tabs="1" hide_single_tab="0" tabs_on_bottom="0" hide_tab_icons="0" hide_tab_close_button="0" hide_tab_new_button="0" show_scrollbars="1"/>
 		<styles caption="1" resizable="1" taskbar_button="1" border="1" inside_border="2" split_bar_size="1" tray_icon="1" quake_like="0" quake_animation_time="300" jumplist="1" integrated_ime="1" hide_when_inactive="0" per_monitor_dpi="0" keep_view_theme="0">
 			<selection_color r="181" g="137" b="0"/>
 			<highlight_color r="191" g="191" b="191"/></styles>
@@ -44,7 +44,7 @@
 		<focus follow_mouse="1"/>
 		<instance allow_multi="0"/>
 		<clone use_current_dir="0"/>
-		<search match_case="0" match_whole_word="0"/>
+		<search match_case="1" match_whole_word="0"/>
 		<runas use_credprov="1"/>
 		<close allow_closing_last_view="0" exit_on_closing_of_last_tab="1" confirm_closing_multiple_views="1" save_workspace_on_exit="0"/></behavior>
 	<hotkeys use_scroll_lock="1">

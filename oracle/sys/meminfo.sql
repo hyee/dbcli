@@ -9,7 +9,7 @@ DECLARE
     cur   SYS_REFCURSOR;
 BEGIN
     FOR r IN (SELECT kqftanam t, c.kqfconam c
-              FROM   x$kqfta t, x$kqfco c
+              FROM   sys.x$kqfta t, sys.x$kqfco c
               WHERE  c.kqfcotab = t.indx
               AND    lower(kqftanam) NOT IN ('x$ksmsp')
               AND    INSTR(kqfconam, ' ') = 0
@@ -52,7 +52,7 @@ BEGIN
                          KSMCHTYP,
                          KSMCHPAR,
                          HEXTORAW(to_char(to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') + ksmchsiz - 1, 'FM0XXXXXXXXXXXXXXX')) KSMCHPTRN
-                  FROM   x$ksmsp
+                  FROM   sys.x$ksmsp
                   WHERE  nvl(upper(:V1),'SGA') NOT IN('UGA','PGA')
                   UNION ALL
                   SELECT 'UGA',
@@ -65,7 +65,7 @@ BEGIN
                          KSMCHTYP,
                          KSMCHPAR,
                          HEXTORAW(to_char(to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') + ksmchsiz - 1, 'FM0XXXXXXXXXXXXXXX'))
-                  FROM   x$ksmup
+                  FROM   sys.x$ksmup
                   WHERE  nvl(upper(:V1),'SGA') NOT IN('SGA','PGA')
                   UNION ALL
                   SELECT 'PGA',
@@ -78,7 +78,7 @@ BEGIN
                          KSMCHTYP,
                          KSMCHPAR,
                          HEXTORAW(to_char(to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') + ksmchsiz - 1, 'FM0XXXXXXXXXXXXXXX'))
-                  FROM   x$ksmpp
+                  FROM   sys.x$ksmpp
                   WHERE  nvl(upper(:V1),'SGA') NOT IN('SGA','UGA')) a
           ORDER BY KSMCHPTR,KSMCHPTRN)
         SELECT /*+leading(a) use_hash(a b)*/

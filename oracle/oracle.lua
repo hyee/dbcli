@@ -195,6 +195,8 @@ function oracle:connect(conn_str)
                     database..(server and (':'..server) or ''),
                     isdba and (' as '..isdba) or '')
             end
+        else
+            url=url..extras
         end
     end
 
@@ -230,7 +232,7 @@ function oracle:connect(conn_str)
     args["oracle.jdbc.implicitStatementCacheSize"]=tostring(math.floor(self.MAX_CACHE_SIZE/2))
     self.data_source=java.new('oracle.jdbc.pool.OracleDataSource')
     self.conn,args=self.super.connect(self,args,self.data_source)
-    self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
+    --self.conn=java.cast(self.conn,"oracle.jdbc.OracleConnection")
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],
@@ -261,21 +263,34 @@ function oracle:connect(conn_str)
             strval  VARCHAR2(300);
             blk_siz PLS_INTEGER:=8192;
             mbrc    NUMBER:=8;
-        BEGIN
+            PROCEDURE set_param(params VARCHAR2) IS
             BEGIN
-                EXECUTE IMMEDIATE q'[
-                    DECLARE
-                        x VARCHAR2(300);
-                        y INT;
-                        t INT;
-                    BEGIN
-                        t:=sys.dbms_utility.get_parameter_value('db_block_size',:1,x);
-                        t:=sys.dbms_utility.get_parameter_value('_db_file_optimizer_read_count',:2,x);
-                    EXCEPTION WHEN OTHERS THEN
-                        :1 := 8192;
-                        :2 := 8;
-                    END;]' USING IN OUT blk_siz,IN OUT mbrc;
-            EXCEPTION WHEN OTHERS THEN NULL;END;
+                EXECUTE IMMEDIATE 'alter session set '||params;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+
+            FUNCTION get_param(params VARCHAR2,dfl VARCHAR2 := NULL) RETURN VARCHAR2 IS
+                rs VARCHAR2(128);
+            BEGIN
+                IF dfl IS NULL THEN
+                    EXECUTE IMMEDIATE params INTO rs;
+                    RETURN rs;
+                ELSE
+                    intval:=null;
+                    EXECUTE IMMEDIATE 'BEGIN :1:=sys.dbms_utility.get_parameter_value(:pname,:2,:3);END;'
+                        USING OUT rtn,params,in out intval,in out rs;
+                    rs := coalesce(rs,''||intval,dfl);
+                    RETURN CASE WHEN UPPER(dfl) IN('TRUE','FALSE') THEN 
+                                CASE rs WHEN '0' THEN 'FALSE' ELSE 'TRUE' END
+                           ELSE  rs END; 
+                END IF;
+            EXCEPTION WHEN OTHERS THEN
+                RETURN dfl;
+            END;
+        BEGIN
+            blk_siz:=get_param('db_block_size',8192);
+            mbrc   :=get_param('_db_file_optimizer_read_count',8);
+            
             BEGIN
                 EXECUTE IMMEDIATE q'[
                     DECLARE
@@ -302,39 +317,30 @@ function oracle:connect(conn_str)
                 mbrc := CASE blk_siz WHEN 8192 THEN 0.271 WHEN 16384 THEN 0.375 ELSE 0.519 END;
             END;
             :mbrc := mbrc;
-
-            EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
-            BEGIN
-                dbms_output.enable(null);
-                EXECUTE IMMEDIATE 'alter session set statistics_level=all';
-                EXECUTE IMMEDIATE 'alter session set parallel_degree_policy=MANUAL';
-                EXECUTE IMMEDIATE 'alter session set "_query_execution_cache_max_size"=4194304';
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
-
+                
+            dbms_output.enable(null);
+            set_param(q'[nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']');
+            set_param('statistics_level=all "_rowsource_statistics_sampfreq"=16');
+            set_param('parallel_degree_policy=MANUAL');
+            set_param('"_query_execution_cache_max_size"=4194304');
+            --lateral view and JPPD
+            set_param(q'[events '22829 trace name context forever']');
+            set_param(q'["_fix_control"='30786641:1','22258300:1']');
+            
             $IF dbms_db_version.version > 12 $THEN
-                BEGIN
-                    EXECUTE IMMEDIATE 'SELECT VERSION_FULL FROM v$instance' INTO vf;
-                EXCEPTION WHEN OTHERS THEN NULL;
-                END;
-
-                BEGIN --Used on ADW/ATP
-                    IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
-                        SELECT COUNT(1)
-                        INTO   isADB
-                        FROM   ALL_USERS
-                        WHERE  USERNAME='C##CLOUD$SERVICE';
-                    END IF;
-                    EXECUTE IMMEDIATE 'alter session set optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false';
-                EXCEPTION WHEN OTHERS THEN NULL;
-                END;
+                vf := get_param('SELECT VERSION_FULL FROM v$instance');
+                --Used on ADW/ATP
+                IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
+                    SELECT COUNT(1)
+                    INTO   isADB
+                    FROM   ALL_USERS
+                    WHERE  USERNAME='C##CLOUD$SERVICE';
+                END IF;
+                set_param('optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false');
             $END
 
             $IF dbms_db_version.version < 18 $THEN
-            BEGIN
-                execute immediate 'select dbid from v$database' into did;
-            EXCEPTION WHEN OTHERS THEN NULL;
-            END;
+                did := get_param('select dbid from v$database');
             $ELSE
                 did := sys_context('userenv', 'dbid');
             $END
@@ -347,15 +353,12 @@ function oracle:connect(conn_str)
             :privs := pv;
 
             IF sv like 'SYS$%' THEN
-                sv := NULL;
-                BEGIN EXECUTE IMMEDIATE q'{select regexp_substr(value,'[^ ,]+') from v$parameter where name='service_names'}' into sv;
-                EXCEPTION WHEN OTHERS THEN NULL;END;
+                sv := regexp_substr(get_param('service_names','SQL'),'[^ ,]+');
             END IF;
 
             SELECT user,
                    nvl(vf,(SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION')) version,
-                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_LANGUAGE') || '_' ||
-                   (SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_TERRITORY') || '.' || value nls,
+                   userenv('language') nls,
             $IF dbms_db_version.version > 9 $THEN      
                    userenv('sid') ssid,
                    userenv('instance') inst,
@@ -380,21 +383,17 @@ function oracle:connect(conn_str)
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
-            BEGIN
-                IF :db_role IS NULL THEN 
-                    EXECUTE IMMEDIATE q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)>') from v$database]'
-                    into :db_role;
-                ELSIF :db_role = ' ' THEN
-                    :db_role := trim(:db_role);
-                END IF;
-            EXCEPTION WHEN OTHERS THEN NULL;END;
-            BEGIN
-                EXECUTE IMMEDIATE q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance]'
-                into :isRac;
-            EXCEPTION WHEN OTHERS THEN
-                rtn   := sys.dbms_utility.get_parameter_value('cluster_database_instances',intval,strval);
-                :isRac:= CASE WHEN intval > 1 THEN 'TRUE' ELSE 'FALSE' END;
-            END;
+            IF :db_role IS NULL THEN 
+                :db_role:=get_param(q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)>') from v$database]');
+            ELSIF :db_role = ' ' THEN
+                :db_role := trim(:db_role);
+            END IF;
+            
+            strval := get_param('cluster_database','FALSE');
+            IF strval = 'TRUE' THEN
+                strval := get_param(q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance where status='OPEN']');
+            END IF;
+            :isRac := strval;
         END;]],props)
     
     props.dbid=props.dbid or tonumber(self.properties['AUTH_DB_ID']) or 0
@@ -403,7 +402,7 @@ function oracle:connect(conn_str)
     props.isadb=props.isadb=='TRUE' and true or false
     props.mbrc,props.d_mbrc=props.mbrc or 0.271
     if not succ then
-        env.log_debug('DB',err)
+        env.log_debug('ERROR',err)
         env.checkerr(self.conn,"Database is disconnected")
         self.props={db_version=self.conn:getDatabaseProductVersion():match('%d+%.%d+%.[%d%.]+'),
                     version=self.conn:getVersionNumber(),privs={},db_user=self.conn:getUserName(),

@@ -52,17 +52,18 @@
 
    --[[
       &fields: {
-            sql={sql_id &V11,sql_opname &0},
+            default={"SQL Id" &V11,sql_opname &0},
+            sql={"SQL Id" &V11,sql_opname &0},
             e={wait_class &0}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
             o={obj &0},
             plan={plan_hash,obj,SQL_PLAN_LINE_ID &0} 
             none={1},
-            c={},
             op={operation,obj &0}
-            proc={sql_id,PLSQL_ENTRY_OBJECT_ID &0},
+            proc={"SQL Id",PLSQL_ENTRY_OBJECT_ID &0}
         }
+      &ev  : default={event_name}  noevent={1}
       &ela : ash={1} dash={7}
       &View: ash={gv$active_session_history}, dash={&check_access_pdb.Active_Sess_History}
       &BASE: ash={1}, dash={10}
@@ -87,8 +88,7 @@
       &wall1  : default={} wall={--}
     ]]--
 ]]*/
-col reads,writes format KMG
-col AVG_IO for tmb
+col reads,writes,AVG_IO format KMG
 COL WALL,SECS,AAS FOR smhd2
 WITH ASH_V AS(
     SELECT a.*,
@@ -117,6 +117,7 @@ WITH ASH_V AS(
                   OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
                 */ 
                 a.*,
+                coalesce(sql_id, &top_sql null) "SQL Id",
                 sql_plan_hash_value plan_hash,
                 nvl(trim(case 
                         when current_obj# < -1 then
@@ -172,14 +173,17 @@ WITH ASH_V AS(
         FROM &ash a) a
     WHERE &filter and (&more_filter))
 SELECT * FROM (
-    SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand opt_param('_sqlexec_hash_based_distagg_enabled' true) */
+    SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand 
+                opt_param('_sqlexec_hash_based_distagg_enabled' 'true')
+                opt_param('optimizer_dynamic_sampling' 11)
+           */
         &wall round(SUM(c)) Secs
       , ROUND(sum(&base)) AAS
       , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
       &counter
       &wall1 , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
       &wall1 , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
-      &wall1 , event_name event
+      &wall1 , &ev
       , &fields &IOS
       , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
@@ -198,7 +202,7 @@ SELECT * FROM (
       , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
       , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM ASH_V A
-    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,event_name,
+    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,
              a.u_id,&fields
     ORDER BY 1 desc nulls last,secs DESC nulls last,&fields
 )

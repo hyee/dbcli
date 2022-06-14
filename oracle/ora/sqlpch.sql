@@ -17,7 +17,7 @@ DECLARE
     curr      VARCHAR2(128)   := SYS_CONTEXT('USERENV','CURRENT_SCHEMA');
 BEGIN
     BEGIN
-        SELECT *
+        SELECT /*+PQ_CONCURRENT_UNION*/ *
         INTO   to_schema, sq_text
         FROM   (SELECT parsing_schema_name, sql_fulltext
                 FROM   gv$sqlarea
@@ -29,6 +29,11 @@ BEGIN
                 FROM   dba_hist_sqlstat
                 JOIN   dba_hist_sqltext
                 USING  (sql_id,dbid)
+                WHERE  sql_id = sq_id
+                AND    rownum < 2
+                UNION ALL
+                SELECT parsing_schema_name, sql_text
+                FROM   all_sqlset_statements
                 WHERE  sql_id = sq_id
                 AND    rownum < 2
                 UNION ALL

@@ -6,7 +6,7 @@ COL PACKETS_RECEIVED,PACKETS_SENT FORMAT TMB
 PRO Inter-Connect Stats:
 PRO ===================
 SELECT * FROM TABLE(GV$(CURSOR(
-    select NVL(b.PUB_KSXPIA,'Y') "PUBLIC",a.* from x$ksxpif a,X$KSXPIA b
+    select NVL(b.PUB_KSXPIA,'Y') "PUBLIC",a.* from sys.x$ksxpif a,sys.X$KSXPIA b
     WHERE  a.IF_NAME=b.NAME_KSXPIA(+)
     AND    a.IP_ADDR=b.IP_KSXPIA(+)
 )))

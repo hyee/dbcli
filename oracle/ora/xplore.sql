@@ -38,11 +38,11 @@
                        y.ksppstvl VALUE,
                        avails,
                        x.ksppdesc description
-                FROM   x$ksppi x, x$ksppcv y, (
+                FROM   sys.x$ksppi x, sys.x$ksppcv y, (
                           SELECT /*+ no_merge */
                                  PNAME_QKSCESYROW NAME,
                                  CAST(COLLECT(VALUE_KSPVLD_VALUES ORDER BY 0+regexp_substr(VALUE_KSPVLD_VALUES,'^\d+') desc,VALUE_KSPVLD_VALUES DESC) AS  SYS.ODCIVARCHAR2LIST) AS  avails
-                          FROM   X$QKSCESYS a, x$kspvld_values b
+                          FROM   sys.X$QKSCESYS a, sys.x$kspvld_values b
                           WHERE  PNAME_QKSCESYROW = NAME_KSPVLD_VALUES(+)
                           GROUP  BY PNAME_QKSCESYROW) cbo_param
                 WHERE  x.indx = y.indx
@@ -70,8 +70,8 @@
                        '_kcfis_rdbms_blockio_enabled',
                        '_kcfis_storageidx_disabled',
                        '_projection_pushdown',
-                       '_projection_pushdown',
                        '_slave_mapping_enabled',
+                       '_windowfunc_optimization_settings',
                        'cell_offload_processing',
                        'parallel_force_local'))
             }
@@ -164,6 +164,11 @@ BEGIN
                     AND    rownum < 2
                     UNION ALL
                     SELECT parsing_schema_name, sql_text
+                    FROM   all_sqlset_statements
+                    WHERE  sql_id = sq_id
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT parsing_schema_name, sql_text
                     FROM   dba_hist_sqlstat
                     JOIN   dba_hist_sqltext
                     USING  (sql_id)
@@ -233,7 +238,7 @@ BEGIN
                     CASE
                         WHEN lst(i).name = 'optimizer_index_cost_adj' THEN
                             avails := SYS.ODCIVARCHAR2LIST(1, 10, 25, 50, 100, 200, 400, 1000, 10000);
-                        WHEN lst(i).name = 'optimizer_index_cost_adj' THEN
+                        WHEN lst(i).name = 'optimizer_index_caching' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 12, 25, 50, 100);
                         WHEN lst(i).name = 'optimizer_dynamic_sampling' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 2, 3, 4, 6, 8, 10, 11);
@@ -243,6 +248,8 @@ BEGIN
                             avails := SYS.ODCIVARCHAR2LIST(4, 8, 16, 32, 64, 128);
                         WHEN lst(i).name = '_optimizer_max_permutations' THEN
                             avails := SYS.ODCIVARCHAR2LIST(100, 2000, 40000, 79999, 80000);
+                        WHEN lst(i).name = '_optimizer_degree' THEN
+                            avails := SYS.ODCIVARCHAR2LIST(1,4,16,32,64,128,256,512,1024);    
                         WHEN lst(i).name = '_sort_elimination_cost_ratio' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 3, 6, 12, 25, 50, 100, 1000);
                         WHEN lst(i).name = '_optimizer_extended_stats_usage_control' THEN
@@ -251,11 +258,17 @@ BEGIN
                             avails := SYS.ODCIVARCHAR2LIST(2, 5, 10, 20);
                         WHEN lst(i).name = '_recursive_with_branch_iterations' THEN
                             avails := SYS.ODCIVARCHAR2LIST(1,7);
+                        WHEN lst(i).name = '_windowfunc_optimization_settings' THEN
+                            avails := SYS.ODCIVARCHAR2LIST(2,8,16,32,128,256,1024,8192);
                         ELSE
                             avails := SYS.ODCIVARCHAR2LIST();
                     END CASE;
                 ELSE
-                    IF fix IS NOT NULL THEN
+                    IF fix = '16792882' THEN
+                        avails := SYS.ODCIVARCHAR2LIST(1,2,3);
+                    ELSIF fix = '20355502' THEN
+                        avails := SYS.ODCIVARCHAR2LIST(1,2,3,4,5,6,7,8,9,10);
+                    ELSIF fix IS NOT NULL THEN
                         avails := SYS.ODCIVARCHAR2LIST(0,1);
                     ELSIF upper(VALUE) IN ('ON', 'OFF') THEN
                         avails := SYS.ODCIVARCHAR2LIST('ON', 'OFF');
@@ -335,14 +348,13 @@ BEGIN
                    GROUP  BY STATEMENT_ID)
                   SELECT MIN(STATEMENT_ID) id, MIN(ID) seq, plan_hash, plan_hash2
                   FROM   PLANS
-
                   GROUP  BY plan_hash, plan_hash2
                   ORDER  BY seq) LOOP
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash2;
         wr(qry);
         wr(lpad('=', length(qry), '='));
         FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('&ptable', r.id, fmt))) LOOP
-            IF nvl(i.PLAN_TABLE_OUTPUT, 'X') NOT LIKE '%Plan hash value%' THEN
+            IF trim(i.PLAN_TABLE_OUTPUT) IS NOT NULL AND i.PLAN_TABLE_OUTPUT NOT LIKE '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
         END LOOP;

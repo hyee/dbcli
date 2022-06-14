@@ -2,7 +2,7 @@ local env=env
 local db,cfg=env.getdb(),env.set
 local desc={}
 
-local ad=[[(SELECT  /*+no_merge opt_param('optimizer_adaptive_plans' 'false') opt_param('_optimizer_cartesian_enabled' 'false')*/
+local ad=[[(SELECT  /*+no_merge opt_param('optimizer_dynamic_sampling' 5) opt_param('optimizer_adaptive_plans' 'false') opt_param('_optimizer_cartesian_enabled' 'false')*/
                      row_number() OVER(ORDER BY ba.seq, a.order_num) seq,
                      a.attribute_name,
                      ba.alt,
@@ -83,7 +83,7 @@ local ad=[[(SELECT  /*+no_merge opt_param('optimizer_adaptive_plans' 'false') op
                           GROUP  BY level_name, dimension_owner, dimension_name) e
               ON     (ba.level_name = e.level_name)
               ORDER  BY 1)]]
-local ah=([[ (SELECT /*+no_merge*/
+local ah=([[ (SELECT /*+no_merge opt_param('optimizer_dynamic_sampling' 5) */ 
                      row_number() OVER(ORDER BY adk.hier_seq DESC NULLS LAST, adt.seq, ahc.order_num) seq,
                      NVL(adk.hier_level, adt.level_name) hier_level,
                      adt.level_type,
@@ -181,7 +181,9 @@ local desc_sql={
         type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
         v_idx    t_idx;
     BEGIN
-        select nvl(max(object_id),oid) into oid from all_procedures where owner=own and object_name=:object_name and rownum<2;
+        select nvl(max(object_id),oid) into oid 
+        from   all_procedures where owner=own 
+        and    object_name=:object_name and rownum<2;
 
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for
@@ -192,19 +194,20 @@ local desc_sql={
                    IN_OUT, 
                    defaulted "Default?",
                    CHARSET
-            FROM   (SELECT overload,
+            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+                           overload,
                            SEQUENCE s,
                            DATA_LEVEL l,
                            POSITION p,
                            lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
                            CASE
-                               WHEN pls_type IS NOT NULL AND pls_type != data_type THEN
+                               WHEN pls_type != data_type THEN
                                 pls_type
                                WHEN type_subname IS NOT NULL THEN
                                 type_name || '.' || type_subname || '(' || DATA_TYPE || ')'
                                WHEN type_name IS NOT NULL THEN
                                 type_name || '(' || data_type || ')'
-                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1 AND nvl(data_scale, 0) = 0 THEN
+                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) >0 AND nvl(data_scale, 0) = 0 THEN
                                 'INTEGER'
                                WHEN data_type IN ('FLOAT',
                                                   'INTEGER',
@@ -347,17 +350,17 @@ local desc_sql={
         END LOOP;
 
         OPEN cur FOR
-            SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered*/
+            SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered opt_param('optimizer_dynamic_sampling' 5) */ 
                      decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
                      lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
                      nvl(CASE
-                         WHEN a.pls_type IS NOT NULL AND a.pls_type!=a.data_type THEN
+                         WHEN a.pls_type!=a.data_type THEN
                               a.pls_type
                          WHEN a.type_subname IS NOT NULL THEN
                               a.type_name || '.' || a.type_subname || '(' || DATA_TYPE || ')'
                          WHEN a.type_name IS NOT NULL THEN
                               a.type_name || '(' || a.data_type || ')'
-                         WHEN a.data_type='NUMBER' AND a.data_length=22 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
+                         WHEN a.data_type='NUMBER' AND a.data_length=22 AND a.data_precision>0 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
                          WHEN a.data_type IN('FLOAT','INTEGER','INT','BINARY_FLOAT','BINARY_DOUBLE') THEN a.data_type
                          ELSE a.data_type || 
                             CASE WHEN DATA_PRECISION>0 THEN '('||DATA_PRECISION||NULLIF(','||DATA_SCALE,',')||')'
@@ -367,7 +370,8 @@ local desc_sql={
                      decode(b.inout,0,'IN', 1, 'IN/OUT',2,'OUT','------') IN_OUT,
                      decode(b.default#, 1, 'Y', 0, 'N','--------') "Default?",
                      decode(b.pos,'-1','-------',a.character_set_name) charset
-            FROM   (SELECT extractvalue(column_value, '/ROW/OVERLOAD') + 0 OVERLOAD,
+            FROM   (SELECT /*+cardinality(1)*/
+                           extractvalue(column_value, '/ROW/OVERLOAD') + 0 OVERLOAD,
                            extractvalue(column_value, '/ROW/LEVEL') + 0  lv,
                            extractvalue(column_value, '/ROW/POSITION')  pos,
                            extractvalue(column_value, '/ROW/SEQUENCE') + 0  seq,
@@ -393,7 +397,8 @@ local desc_sql={
     SELECT NO#,ELEMENT,NVL2(RETURNS,'FUNCTION','PROCEDURE') Type,ARGUMENTS,RETURNS,
            AGGREGATE,PIPELINED,PARALLEL,INTERFACE,DETERMINISTIC,AUTHID
     FROM (
-        SELECT /*INTERNAL_DBCLI_CMD*/ SUBPROGRAM_ID NO#,
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+               SUBPROGRAM_ID NO#,
                PROCEDURE_NAME||NVL2(OVERLOAD,' (#'||OVERLOAD||')','') ELEMENT,
                (SELECT MAX(CASE
                            WHEN pls_type IS NOT NULL THEN
@@ -431,8 +436,9 @@ local desc_sql={
         AND    SUBPROGRAM_ID > 0
     ) ORDER  BY NO#]],
 
-    INDEX={[[select /*INTERNAL_DBCLI_CMD*/ table_owner||'.'||table_name table_name,column_position NO#,column_name,column_expression column_expr,column_length,char_length,descend
-            from all_ind_columns left join all_ind_expressions using(index_owner,index_name,column_position,table_owner,table_name)
+    INDEX={[[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+                   table_owner||'.'||table_name table_name,column_position NO#,column_name,column_expression column_expr,column_length,char_length,descend
+            from   all_ind_columns left join all_ind_expressions using(index_owner,index_name,column_position,table_owner,table_name)
             WHERE  index_owner=:1 and index_name=:2
             ORDER BY NO#]],
             [[WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
@@ -457,46 +463,45 @@ local desc_sql={
                 AND    owner = :owner]],
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
-        SELECT /*INTERNAL_DBCLI_CMD*/
+        SELECT /*INTERNAL_DBCLI_CMD*//*+opt_param('optimizer_dynamic_sampling' 5) */ 
                attr_no NO#,
-               attr_name,
-               attr_type_owner||NVL2(attr_type_owner,'.','')||
-               attr_TYPE_OWNER || NVL2(attr_TYPE_OWNER, '.', '') ||
-               CASE WHEN attr_type_name IN('CHAR',
-                                      'VARCHAR',
-                                      'VARCHAR2',
-                                      'NCHAR',
-                                      'NVARCHAR',
-                                      'NVARCHAR2',
-                                      'RAW') --
-               THEN attr_type_name||'(' || LENGTH || ')' --
-               WHEN attr_type_name = 'NUMBER' --
-               THEN (CASE WHEN nvl(scale, PRECISION) IS NULL THEN attr_type_name
-                          WHEN scale > 0 THEN attr_type_name||'(' || NVL(''||PRECISION, '38') || ',' || SCALE || ')'
-                          WHEN PRECISION IS NULL AND scale=0 THEN 'INTEGER'
-                          ELSE attr_type_name||'(' || PRECISION  || ')' END) ELSE attr_type_name END
-               data_type,
-               attr_type_name || CASE
-                   WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') --
-                   THEN '(' || LENGTH || ')'
+               decode(c, 1,
+                      CASE
+                          WHEN attr_no = 1 THEN
+                           (SELECT a.type_name||'['||DECODE(COLL_TYPE, 'TABLE', 'TABLE', 'VARRAY(' || UPPER_BOUND || ')') ||']'||CHR(10) || '  '
+                            FROM   ALL_COLL_TYPES
+                            WHERE  owner = :owner
+                            AND    type_name = :object_name)
+                          ELSE
+                           '  '
+                      END) || attr_name attr_name,
+               decode(attr_no*c, 1, chr(10)) || nullif(attr_type_owner||'.', '.') || --
+               CASE
+                   WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') THEN
+                    attr_type_name || '(' || LENGTH || ')' --
                    WHEN attr_type_name = 'NUMBER' THEN
                     (CASE
-                        WHEN scale IS NULL AND PRECISION IS NULL THEN
-                         ''
-                        WHEN scale <> 0 THEN
-                         '(' || NVL(PRECISION, 38) || ',' || SCALE || ')'
+                        WHEN nvl(scale, PRECISION) IS NULL THEN
+                         attr_type_name
+                        WHEN scale > 0 THEN
+                         attr_type_name || '(' || NVL('' || PRECISION, '38') || ',' || SCALE || ')'
+                        WHEN PRECISION IS NULL AND scale = 0 THEN
+                         'INTEGER'
                         ELSE
-                         '(' || NVL(PRECISION, 38) || ')'
+                         attr_type_name || '(' || PRECISION || ')'
                     END)
                    ELSE
-                    ''
-               END data_type,
-               Inherited
-        FROM   all_type_attrs
-        WHERE  owner=:owner and type_name=:object_name
-        ORDER BY NO#]],
+                    attr_type_name
+               END data_type, 
+               decode(attr_no*c, 1, chr(10)) || ATTR_TYPE_MOD ATTR_MOD, 
+               decode(attr_no*c, 1, chr(10)) || Inherited inherit, 
+               decode(attr_no*c, 1, chr(10)) || CHARACTER_SET_NAME "CHARSET"
+        FROM   (SELECT A.*, decode(type_name, :object_name, 0, 1) c
+                FROM   all_type_attrs a
+                WHERE  (owner = :owner AND type_name = :object_name)) a
+        ORDER  BY NO#]],
     TABLE={[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ 
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
                --+no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c)
                INTERNAL_COLUMN_ID NO#,
                COLUMN_NAME NAME,
@@ -612,7 +617,7 @@ local desc_sql={
         AND    a.column_name=c.cname(+)
         ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ 
+        WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
                            I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                            PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                     SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -662,7 +667,7 @@ local desc_sql={
         AND    :object_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false')
+        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
@@ -696,7 +701,8 @@ local desc_sql={
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
     [[/*grid={topic='ALL_TABLES', pivot=1}*/ 
-    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
+    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5)*/ * 
+                FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
                                  FROM   r1
@@ -716,12 +722,13 @@ local desc_sql={
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
-    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
       FROM   ALL_TABLES T
       WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]},
       
     ['TABLE PARTITION']={[[
-         SELECT /*INTERNAL_DBCLI_CMD*/ COLUMN_ID NO#,
+         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
                 CASE WHEN DATA_TYPE IN('CHAR',
@@ -831,11 +838,11 @@ local desc_sql={
          AND    upper(a.owner)=:owner and a.table_name=:object_name AND a.partition_name=:object_subname
          ORDER BY NO#]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/*
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
         FROM   all_tab_partitions T
         WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]},
     FIXED_TABLE=[[
-        SELECT /*+ordered use_nl(b c)*/
+        SELECT /*+ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5)*/ 
                a.*,
                C.avgcln AVG_LEN,
                C.DISTCNT "NDV",
@@ -950,13 +957,14 @@ local desc_sql={
                            182,'INTERVAL YEAR TO MONTH',
                            183,'INTERVAL DAY TO SECOND',
                            208,'UROWID',
-                           'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE, 
-                   c.kqfcooff offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
+                           'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE,
+                   c.kqfcosiz col_size, 
+                   c.kqfcooff col_offset, lpad('0x' || TRIM(to_char(c.kqfcooff, 'XXXXXX')), 8) offset_hex,
                    decode(c.kqfcoidx, 0,'','Yes('||c.kqfcoidx||')') "Indexed?"
-            FROM   x$kqfta t, x$kqfco c
+            FROM   sys.x$kqfta t, sys.x$kqfco c
             WHERE  c.kqfcotab = t.indx
             AND    c.inst_id = t.inst_id
-            AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM x$kqfdt WHERE KQFDTNAM=:object_name))) a,
+            AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM sys.x$kqfdt WHERE KQFDTNAM=:object_name))) a,
             sys.tab_stats$ b,
             sys.hist_head$ c
         WHERE a.obj#=b.obj#(+)
@@ -965,7 +973,8 @@ local desc_sql={
         ORDER  BY 1,2]],
   
   ['ATTRIBUTE DIMENSION']={
-    [[SELECT dimension_type,
+    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+             dimension_type,
              compile_state,
              table_owner,
              table_name,
@@ -986,7 +995,8 @@ local desc_sql={
       WHERE  owner = :owner
       AND    dimension_name = :object_name]],
     (([[
-      SELECT dtl.*
+      SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+             dtl.*
       FROM   all_attribute_dimensions ad
       CROSS  APPLY @ad@ dtl
       WHERE  owner=:owner 
@@ -994,7 +1004,8 @@ local desc_sql={
       ORDER  BY 1]]):gsub('@ad@',ad))},
 
   HIERARCHY={
-    [[SELECT dimension_owner, dimension_name,dim_source_table,parent_attr,caption,description
+    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+             dimension_owner, dimension_name,dim_source_table,parent_attr,caption,description
       FROM   all_hierarchies hr
       OUTER APPLY(SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
                          MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
@@ -1007,7 +1018,8 @@ local desc_sql={
      WHERE owner = :owner 
      AND   hier_name = :object_name]],
 
-    (([[SELECT dtl.*
+    (([[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+              dtl.*
       FROM   all_hierarchies ah
       CROSS  APPLY @ah@ dtl
       WHERE  ah.owner = :owner 
@@ -1015,7 +1027,7 @@ local desc_sql={
       ORDER  BY 1]]):gsub('@ah@',ah))},
 
   ['ANALYTIC VIEW']={
-   [[SELECT * 
+   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ * 
      FROM  all_analytic_views av
      OUTER APPLY( SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
                          MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
@@ -1033,7 +1045,8 @@ local desc_sql={
                     GROUP  BY av_lvlgrp_order) 
      WHERE owner = :owner 
      AND   analytic_view_name = :object_name]],
-   [[SELECT hier_alias,
+   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+           hier_alias,
            ltrim(nullif(hier_owner, owner) || '.' || hier_name, '.') src_hier_name,
            is_default hier_default,
            '||' "||",
@@ -1065,7 +1078,8 @@ local desc_sql={
     AND    analytic_view_name = :object_name
     ORDER  BY 1]],
   (([[
-    SELECT nvl2(avh.hier_name, 'HIER: ', '') || av.hier_name CATEGORY,
+    SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+           nvl2(avh.hier_name, 'HIER: ', '') || av.hier_name CATEGORY,
            row_number() over(partition by av.hier_name order by hier.seq,av.order_num) "#",
            hier.hier_level,
            hier.level_type,
@@ -1152,6 +1166,7 @@ function desc.desc(name,option)
     env.checkhelp(name)
     set.set("autohide","on")
     local rs,success,err
+    local desc=''
     local obj=db:check_obj(name)
     if obj.object_type=='SYNONYM' then
         local new_obj=db:dba_query(db.get_value,[[WITH r AS
@@ -1180,6 +1195,7 @@ function desc.desc(name,option)
     elseif obj.object_type=='TABLE' and obj.object_name:find('^X%$') and obj.owner=='SYS' and obj.object_id>=4200000000 then
         env.checkerr(db.props.isdba,"Cannot describe the fixed table without SYSDBA account.")
         obj.object_type="FIXED_TABLE"
+        --desc=' (Rows = '..db:get_value('select /*INTERNAL_DBCLI_CMD*/ kqftarsz from sys.x$kqfta where kqftanam=:1',{obj.object_name})..')'
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
@@ -1187,6 +1203,7 @@ function desc.desc(name,option)
        or obj.object_type,2}
 
     local sqls=desc_sql[rs[4]]
+    
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
     if type(sqls)~="table" then sqls={sqls} end
     if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
@@ -1196,17 +1213,35 @@ function desc.desc(name,option)
     elseif rs[4]=='ANALYTIC VIEW' then
         env.var.define_column('CATEGORY','BREAK','SKIP','-')
         cfg.set("colsep",'|')
+    elseif rs[4]=='TYPE' then
+        local result=db:dba_query(db.internal_call,
+                                  [[select ELEM_TYPE_OWNER,ELEM_TYPE_NAME,COLL_TYPE,UPPER_BOUND,ELEM_TYPE_MOD
+                                   from ALL_COLL_TYPES 
+                                   WHERE owner = :owner AND type_name = :object_name]],
+                                  {owner=rs[1],object_name=rs[2]})
+        result=db.resultset:rows(result,-1)
+        if #result>1 then
+            result=result[2]
+            if result[1]~='' then
+                rs[10],rs[11]=result[1],result[2]
+            end
+            desc=' ['..(result[3]=='TABLE' and 'TABLE' or ('VARRAY('..result[4]..')'))..' OF '..
+                       (result[5]~='' and (result[5]..' ') or '')..
+                       (result[1]~='' and (result[1]..'.') or '')..result[2]..']'
+        end
+    end
+    local dels='\n'..string.rep("=",80)
+    local feed,autohide=cfg.get("feed"),cfg.get("autohide")
+    cfg.set("feed","off",true)
+    cfg.set("autohide","col",true)
+    print(("%s : %s%s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],desc))
+    if rs[10] then
+        rs[1],rs[2]=rs[10],rs[11]
     end
 
     for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
         rs[k]=v
     end
-
-    local dels='\n'..string.rep("=",100)
-    local feed=cfg.get("feed")
-    cfg.set("feed","off",true)
-    print(("%s : %s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3]))
-    
 
     for i,sql in ipairs(sqls) do
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
@@ -1232,7 +1267,7 @@ function desc.desc(name,option)
         cfg.set("PIVOT",1)
         db:dba_query([[SELECT * FROM ALL_OBJECTS WHERE OWNER=:1 AND OBJECT_NAME=:2 AND nvl(SUBOBJECT_NAME,' ')=nvl(:3,' ')]],rs)
     end
-
+    cfg.temp("autohide",autohide,true)
     cfg.temp("feed",feed,true)
 end
 

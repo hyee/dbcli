@@ -1,10 +1,12 @@
 /*[[Get SQL Monitor report from dba_hist_reports, supports 12c only. Usage: @@NAME {[sql_id|report_id] [YYYYMMDDHH24MI] [YYYYMMDDHH24MI]} [-f"<filter>"] [-avg]
   
-  <sql_id>    : List the records related to the specific SQL_ID
-  -hub        : Genrate the SQL Perhub Report with specific date range
-  -u          : Only show the SQL list within current schema
-  -avg        : Show average cost instead of total cost
-  -t"<table>" : The data source, default as sys.dba_hist_reports
+  <sql_id>       : List the records related to the specific SQL_ID
+  -sql"<keyword>": List the records whose SQL text contains <keyword>
+  -hub           : Genrate the SQL Perhub Report with specific date range
+  -u             : Only show the SQL list within current schema
+  -avg           : Show average cost instead of total cost
+  -t"<table>"    : The data source, default as sys.dba_hist_reports
+  
 
   Format:
     -active : output file is in active HTML format
@@ -14,7 +16,7 @@
 
   --[[
     @ver   : 12.1={}
-    &filt  : default={KEY1=nvl(v_sql_id,KEY1)},f={},u={username=nvl('&0',sys_context('userenv','current_schema'))}
+    &filt  : default={KEY1=nvl(v_sql_id,KEY1)},sql={lower(EXTRACTVALUE(xmltype(a.report_summary), '//sql_text')) like lower('%&0%')},u={username=nvl('&0',sys_context('userenv','current_schema'))}
     &grp   : default={none}, g={g}, d={d}
     &filter: default={1=1}, f={} 
     &avg   : default={sum), avg={avg}
@@ -55,7 +57,7 @@ DECLARE
 BEGIN
     IF v_report_id IS NULL THEN
         OPEN :cur FOR
-        &agg SELECT sql_id, 
+        &agg SELECT sql_id, plan_hash,
         &agg        max(report_id) last_rpt, 
         &agg        count(1) seens,
         &agg        to_char(MIN(PERIOD_START_TIME), 'MMDD HH24:MI:SS') first_seen,
@@ -121,7 +123,7 @@ BEGIN
                     WHERE v_sql_id IS NOT NULL OR plan_hash>0
                 ) WHERE &filter
                 ORDER BY REPORT_ID DESC
-            &agg ) GROUP BY SQL_ID ORDER BY ELA DESC
+            &agg ) GROUP BY SQL_ID,plan_hash ORDER BY ELA DESC
             FETCH FIRST 50 ROWS ONLY;
         IF v_sql_id IS NOT NULL AND :dict='sys.dba_hist_reports' AND (&hub=1 OR :V2 IS NOT NULL OR :V3 IS NOT NULL) THEN
             $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN

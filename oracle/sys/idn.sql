@@ -164,9 +164,9 @@ BEGIN
                ,ob.kglnaown    owner
                ,ob.KGLNAOBJ    object
                ,ob.KGLFNOBJ    fn_obj
-        FROM   (select * from x$kglob where kglnahsh=v2
+        FROM   (select * from sys.x$kglob where kglnahsh=v2
                 union all 
-                select * from x$kglob where KGLOBT03=v1) ob
+                select * from sys.x$kglob where KGLOBT03=v1) ob
         WHERE  (ob.kglhdadr = ob.kglhdpar or lower(:v2)='-a')
         AND    rownum <=10
     )));

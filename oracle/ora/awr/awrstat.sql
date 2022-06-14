@@ -43,7 +43,7 @@ select time,
        max(vers)  vers,
        count(1)    SEENS,
        sum(ela)    ELA,
-       round(sum(ela)/nullif(decode(SUM(exec),0,floor(sum(parse)/greatest(sum(px_count),1)),sum(exec)),0),2) "ELA(Avg)",
+       round(sum(ela)/greatest(SUM(exec),1),2) "ELA(Avg)",
        sum(iowait)/nullif(sum(ioreqs),0) "Cost/IO",
        nullif(sum(iowait)/sum(ela),0) iowait,
        nullif(sum(cpuwait)/sum(ela),0) cpuwait,
@@ -110,9 +110,12 @@ FROM(
                buffer_gets buff,
                a.rows_processed rows#,
                a.fetches,
-               invalidations invalids
+               invalidations invalids,
+               SUM(executions) over(partition by &BASE,plan_hash_value) execs_,
+               delta_flag
          from &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
         WHERE :V1 in(sql_id,''||plan_hash_value,''||signature))
+    --WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
     group by snap_id,&BASE,plan_hash
     having sum(ela)>0)
  group by time,&BASE,plan_hash

@@ -60,7 +60,7 @@
                                183,'INTERVAL DAY TO SECOND',
                                208,'UROWID',
                                'UNKNOWN') || '(' || to_char(c.kqfcosiz) || ')' DATA_TYPE,'x$kqfco'
-                FROM   x$kqfta t, x$kqfco c
+                FROM   sys.x$kqfta t, sys.x$kqfco c
                 WHERE  c.kqfcotab = t.indx
                 AND    c.inst_id = t.inst_id
                 AND    upper(t.kqftanam||','||c.kqfconam||',x$kqfco') like upper('%&V1%')} default={}

@@ -1,9 +1,9 @@
 SPO sqlhc.log
 SET DEF ^
-SET TERM OFF ECHO ON AUTOP OFF VER OFF SERVEROUT ON SIZE 1000000 LONG 2000000 LONGC 2000;
+SET TERM OFF ECHO ON AUTOP OFF VER OFF SERVEROUT ON SIZE 1000000 LONG 2000000 LONGC 2000000;
 REM
 --REM $Header: 1366133.1 sqlhc.sql 12.1.08 2014/04/18 carlos.sierra mauro.pagano $
-REM PSR: $Header: 1366133.1 sqlhc.sql 12.1.09.PSRv10.20 2021/05/27 pushkar.upakare $
+REM PSR: $Header: 1366133.1 sqlhc.sql 12.1.09.PSRv10.21 2022/05/09 pushkar.upakare $
 REM
 REM Copyright (c) 2000-2013, Oracle Corporation. All rights reserved.
 REM
@@ -66,8 +66,8 @@ REM
 DEF script = 'sqlhc';
 DEF method = 'SQLHC';
 DEF mos_doc = '1366133.1';
-DEF doc_ver = '12.1.08.PSRv10.20';
-DEF doc_date = '2021/05/26';
+DEF doc_ver = '12.1.08.PSRv10.21';
+DEF doc_date = '2022/05/09';
 -- sqldx_output: HTML/CSV/BOTH/NONE
 -- uday disabled sqldx
 DEF sqldx_output = 'NONE';
@@ -76,6 +76,8 @@ DEF sqldx_output = 'NONE';
 
 EXEC DBMS_APPLICATION_INFO.SET_MODULE(module_name => '^^method. ^^doc_ver.', action_name => '^^script..sql');
 EXEC DBMS_APPLICATION_INFO.SET_CLIENT_INFO(client_info => '^^method.');
+EXEC DBMS_SESSION.SET_IDENTIFIER('^^METHOD.'); 
+
 VAR health_checks CHAR(1);
 EXEC :health_checks := '^^health_checks.';
 VAR shared_cursor CHAR(1);
@@ -101,6 +103,9 @@ COL unique_id NEW_V unique_id FOR A15;
 col sqlhcstart NEW_V sqlhcstart
 SELECT TO_CHAR(SYSDATE, 'YYYYMMDD_HH24MISS') unique_id, to_char(systimestamp, 'DD-Mon-RR HH24:MI:SS.FF') sqlhcstart FROM DUAL;
 -- SELECT TO_CHAR(SYSDATE, 'YYYYMMDD_HH24MISS') unique_id FROM DUAL;
+
+ALTER SESSION SET TRACEFILE_IDENTIFIER = 'SQLHC^^UNIQUE_ID.';
+ALTER SESSION DISABLE PARALLEL QUERY;
 
 SET TERM ON LIN 100 TRIMS ON FEED OFF;
 var Fusion_PDB     varchar2(128);
@@ -236,14 +241,14 @@ exception
 end;
 /
 
-select sys_context('USERENV', 'CON_NAME') Fusion_PDB from dual;
+select substr(regexp_replace(sys_context('USERENV', 'CON_NAME'),'(.*)_F$','\1',1,1,'i'),1,10) Fusion_PDB from dual;
 pro Proceeding with "^^Fusion_PDB."
 
 SET SERVEROUT ON SIZE 1000000
 WHENEVER SQLERROR EXIT SQL.SQLCODE;
 
-BEGIN
-  IF '^^license.' IS NULL OR '^^license.' NOT IN ('T', 'D', 'N', 'L') THEN
+BEGIN                                                                 -- 20211007
+  IF '^^license.' IS NULL OR '^^license.' NOT IN ('T', 'D', 'N', 'L', 'S') THEN
     RAISE_APPLICATION_ERROR(-20100, 'Oracle Pack License (Tuning, Diagnostics, None, Lite) must be specified as "T" or "D" or "N" or "L".');
   END IF;
 
@@ -251,7 +256,7 @@ BEGIN
   --  return;
   --END IF;
   
-  IF regexp_count(USER,'(SYS|DBSNMP)',1,'i')=0 then 
+  IF regexp_count(USER,'(SYS|DBSNMP|ADMIN)',1,'i')=0 then 
     RAISE_APPLICATION_ERROR(-20100, 'Connected as '||USER||CHR(10)||'********** Connect as SYS or SYSTEM to retry, preferrably from a DB host, as recommended!');
   END IF;
 END;
@@ -358,8 +363,7 @@ DEF doc_link = 'https://support.oracle.com/CSP/main/article?cmd=show&type=NOT&id
 DEF bug_link = 'https://support.oracle.com/CSP/main/article?cmd=show&type=BUG&id=';
 
 -- tracing script in case it takes long to execute so we can diagnose it
-ALTER SESSION SET MAX_DUMP_FILE_SIZE = '1G';
-ALTER SESSION SET TRACEFILE_IDENTIFIER = "^^script._^^unique_id.";
+--ALTER SESSION SET MAX_DUMP_FILE_SIZE = '1G';
 --ALTER SESSION SET STATISTICS_LEVEL = 'ALL';
 -- ALTER SESSION SET EVENTS '10046 TRACE NAME CONTEXT FOREVER, LEVEL 12';
 
@@ -371,7 +375,7 @@ Prompt ---;
 Prompt ignore below error if DB version is 11g
 Prompt ---;
 alter session set "_optimizer_adaptive_plans"=false;
-
+alter session set "_sqlmon_max_planlines"= 3000;
 /**************************************************************************************************/
 
 col instances new_value instances
@@ -423,7 +427,7 @@ EXEC :sql_text := NULL;
 
 -- get sql_text from memory
 DECLARE
-  l_sql_text VARCHAR2(32767);
+  l_sql_text clob;
 BEGIN -- 10g see bug 5017909
   DBMS_OUTPUT.PUT_LINE('getting sql_text from memory');
   FOR i IN (SELECT DISTINCT piece, sql_text
@@ -436,7 +440,7 @@ BEGIN -- 10g see bug 5017909
       DBMS_LOB.OPEN(:sql_text, DBMS_LOB.LOB_READWRITE);
     END IF;
     l_sql_text := REPLACE(i.sql_text, CHR(00), ' ');
-    l_sql_text := regexp_replace(i.sql_text, '<([a-z0-9]+?)','< \1',1,0,'i');
+ 	l_sql_text := replace(replace(i.sql_text, '<','&lt'),'>','&gt');
     DBMS_LOB.WRITEAPPEND(:sql_text, LENGTH(l_sql_text), l_sql_text);
   END LOOP;
   IF :sql_text IS NOT NULL THEN
@@ -453,7 +457,7 @@ END;
 BEGIN
   IF :license IN ('T', 'D', 'L') AND (:sql_text IS NULL OR NVL(DBMS_LOB.GETLENGTH(:sql_text), 0) = 0) THEN
     DBMS_OUTPUT.PUT_LINE('getting sql_text from awr');
-    SELECT regexp_replace(REPLACE(sql_text, CHR(00), ' '), '<([a-z0-9]+?)','< \1',1,0,'i')
+    SELECT replace(replace(sql_text, '<','&lt'),'>','&gt');
       INTO :sql_text
       FROM dba_hist_sqltext
      WHERE :license IN ('T', 'D', 'L')
@@ -504,7 +508,7 @@ end;
 /
 select :fa_release fa_release from dual;
 
-col service new_value service_name
+col service new_value service_name for A20
 col source new_value sql_source
 
   select service, 
@@ -517,7 +521,6 @@ col source new_value sql_source
      and rownum = 1
 ;
 
-col service new_value service_name
 col ash_plsql_entry new_value ash_plsql_entry
 col ash_plsql_object new_value ash_plsql_object
 col source_batch_ui new_value source_batch_ui
@@ -548,10 +551,40 @@ select case when '^^service_name' is null then
    and rownum = 1
 ;
 
-col service new_value service_name
 col ash_plsql_entry new_value ash_plsql_entry
 col ash_plsql_object new_value ash_plsql_object
 col source_batch_ui new_value source_batch_ui
+
+-- Uday.PSR.v6
+-- added below plsql block to fetch ASH in AWR using snap_id range
+-- otherwise, we are doing FTS of dba_hist_active_sess_history that has 172m rows in crmap
+--
+variable minsnap number
+variable maxsnap number
+
+exec :minsnap := -1;
+exec :maxsnap := -1;
+
+begin
+  select min(h.snap_id) minsnap, max(h.snap_id) maxsnap
+    into :minsnap, :maxsnap
+    from dba_hist_sqlstat h,
+       dba_hist_snapshot s 
+   where sql_id = :sql_id
+     and (:license IN ('T', 'D') or (:license = 'L' and s.begin_interval_time > systimestamp - interval '^^days.' day))
+     and s.dbid = ^^dbid.
+     and h.snap_id = s.snap_id
+     and h.dbid = s.dbid
+     and h.instance_number = s.instance_number
+   group by sql_id;
+exception 
+  when others then null;
+end;
+/
+
+col minsnap new_value minsnap
+col maxsnap new_value maxsnap
+select :minsnap minsnap, :maxsnap maxsnap from dual;
 
 select case when '^^service_name' is null then 
                 (select name from v$services s where s.name_hash = ash.service_hash) 
@@ -578,13 +611,10 @@ select case when '^^service_name' is null then
                end
           from DBA_RSRC_CONSUMER_GROUPS cg
          where cg.consumer_group_id = ash.consumer_group_id) source_batch_ui
-from dba_hist_active_sess_history ash, dba_hist_snapshot ss
+from dba_hist_active_sess_history ash
  where 1=1
-   and ss.dbid = (select dbid from v$database)
-   and (:license IN ('T', 'D') or (:license = 'L' and ss.begin_interval_time > systimestamp - interval '^^days.' day))
-   and ash.dbid = ss.dbid
-   and ash.snap_id = ss.snap_id
-   and ash.instance_number = ss.instance_number
+   and ash.dbid = ^^dbid.
+   and ash.snap_id between :minsnap and :maxsnap
    and sql_id = :sql_id
    and '^^service_name' is null
    and rownum = 1
@@ -810,7 +840,7 @@ INSERT INTO plan_table(STATEMENT_ID, object_owner, object_type, object_name, car
         UNION
        SELECT object_owner owner, object_name name, object_type
          FROM dba_hist_sql_plan
-        WHERE :license IN ('T', 'D')
+        WHERE (:license IN ('T', 'D') or (:license = 'L' and timestamp > sysdate - interval '^^days.' day))
           AND dbid = ^^dbid.
           AND sql_id = :sql_id
           AND object_owner IS NOT NULL
@@ -877,9 +907,9 @@ SET ECHO OFF FEED OFF VER OFF SHOW OFF HEA OFF LIN 2000 NEWP NONE PAGES 0 LONG 2
 
 /**************************************************************************************************/
 
-COL files_prefix NEW_V files_prefix FOR A40;
+COL files_prefix NEW_V files_prefix
 --SELECT '^^script._^^database_name_short._^^host_name_short._^^rdbms_version._^^sql_id._^^time_stamp.' files_prefix FROM DUAL
-SELECT '^^script._^^time_stamp._^^sql_id._^^license.' files_prefix FROM DUAL;
+SELECT '^^script._^^Fusion_PDB._^^time_stamp._^^sql_id._^^license.' files_prefix FROM DUAL;
 COL sqldx_prefix NEW_V sqldx_prefix FOR A40;
 SELECT '^^files_prefix._8_sqldx' sqldx_prefix FROM DUAL;
 
@@ -1272,7 +1302,7 @@ PRO <li><a href="#sys_params">System Parameters with Non-Default or Modified Val
 PRO <li><a href="#inst_params">Instance Parameters</a></li>
 PRO <li><a href="#vpd_policies">VPD Policies</a></li>
 PRO <li><a href="#sql_undo_usage">SQL Undo Usage</a></li>
-PRO <li><a href="#sql_stats_hard_parse_time">SQL Statistics based on Last Hard Parse Time</a></li>
+REM PRO <li><a href="#sql_stats_hard_parse_time">SQL Statistics based on Last Hard Parse Time</a></li>
 PRO <li><a href="#sql_obj_dependency">SQL Object Dependency</a></li>
 PRO <li><a href="#sql_views_dependency">View/Synonym Dependency Hierarchy</a></li>
 PRO <li><a href="#metadata">Metadata</a></li>
@@ -1363,10 +1393,11 @@ PRO    <h4>Miscellanious</h4>
 PRO     <ul>
 PRO      <li><a href="#vpd_policies">VPD Policies</a></li>
 PRO      <li><a href="#sql_undo_usage">SQL Undo Usage</a></li>
-PRO      <li><a href="#sql_stats_hard_parse_time">SQL Statistics based on Last Hard Parse Time</a></li>
+REM PRO      <li><a href="#sql_stats_hard_parse_time">SQL Statistics based on Last Hard Parse Time</a></li>
 PRO      <li><a href="#sql_obj_dependency">SQL Object Dependency</a></li>
 PRO      <li><a href="#sql_views_dependency">View/Synonym Dependency Hierarchy</a></li>
-PRO      <li><a href="#metadata">Metadata </a> (<a href="#index_metadata">Index</a> and <a href="#view_metadata">View</a>)</li>
+REM PRO      <li><a href="#metadata">Metadata </a> (<a href="#index_metadata">Index</a> and <a href="#view_metadata">View</a>)</li>
+PRO      <li><a href="#metadata">Metadata </a> (<a href="#view_metadata">View</a>)</li>
 PRO      <li><a href="#indexcontention">Index Contention</a></li>
 PRO     </ul>
 PRO    </td>
@@ -1406,6 +1437,7 @@ BEGIN
 
 END; 
 /
+
 
 
 PRO    DBID       : ^^dbid.
@@ -1550,33 +1582,26 @@ exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
  *
  * ------------------------- */
 PRO <script language="JavaScript" type="text/JavaScript">
-PRO function openInNewWindow(url)
-PRO {
-PRO   window.open(url,"_blank");
+PRO function copyToCB(elem) {
+PRO   var range = document.createRange();;
+PRO   range.selectNodeContents(elem);;
+PRO   var sel = window.getSelection();;
+PRO   sel.removeAllRanges();;
+PRO   sel.addRange(range);;
+PRO   document.execCommand('copy');;
+PRO }
+PRO function openInNewWindow(url) {
+PRO  var preTxt=document.getElementById("sqltext");;
+PRO  copyToCB(preTxt);;
+PRO  window.open(url,"_blank");;
 PRO }
 PRO </script>
 PRO <a name="text"></a><details open><br/><summary id="summary2">SQL Text</summary>
 PRO <FORM><BUTTON class="button button1" onclick="openInNewWindow(&quot;https://apex.oraclecorp.com/pls/apex/f?p=28906&quot;)">Analyze SQL Text via PSR Tool [use Upload SQL Button]</BUTTON></FORM> 
 PRO
-PRO <pre>
+PRO <pre ondblclick="javascript:copyToCB(this);" id="sqltext">
 
-DECLARE
-  l_sql_text CLOB := :sql_text;
-  l_pos NUMBER;
-BEGIN
-  WHILE NVL(LENGTH(l_sql_text), 0) > 0
-  LOOP
-    l_pos := INSTR(l_sql_text, CHR(10));
-    IF l_pos > 0 THEN
-      DBMS_OUTPUT.PUT_LINE(SUBSTR(l_sql_text, 1, l_pos - 1));
-      l_sql_text := SUBSTR(l_sql_text, l_pos + 1);
-    ELSE
-      DBMS_OUTPUT.PUT_LINE(l_sql_text);
-      l_sql_text := NULL;
-    END IF;
-  END LOOP;
-END;
-/
+SELECT :sql_text FROM DUAL;
 
 PRO </pre>
 
@@ -1629,6 +1654,8 @@ begin
     into v_sql_opname  
     from dba_hist_active_sess_history
     where sql_id = '^^sql_id.'
+      and dbid = ^^dbid.
+      and snap_id between :minsnap and :maxsnap
     and rownum = 1;
 
     if v_sql_opname = 'PL/SQL EXECUTE'
@@ -2697,7 +2724,7 @@ PRO <table>
 PRO
 PRO <tr>
 PRO <th>Inst<br>ID</th>
-PRO <th>Plan<br>Hash<br>Value</th>
+PRO <th>SQL<br>Hash<br>Value</th>
 PRO <th>Child<br>Number</th>
 PRO <th>Hint ID</th>
 PRO <th>Hint Text</th>
@@ -2843,8 +2870,9 @@ SELECT /*+ NO_MERGE */
   FROM dba_hist_sqlstat h,
        dba_hist_snapshot s
  WHERE 1=1
-   AND (:license IN ('T', 'D') or (:license = 'L' and s.begin_interval_time > systimestamp - interval '^^days.' day))
+   AND :license IN ('T', 'D', 'L')
    AND h.dbid = ^^dbid.
+   and h.snap_id between :minsnap and :maxsnap   
    AND h.sql_id = :sql_id
    AND h.snap_id = s.snap_id
    AND h.dbid = s.dbid
@@ -3036,11 +3064,12 @@ SELECT /*+ NO_MERGE */
        dba_hist_snapshot s
  WHERE 1=1
    AND h.dbid = ^^dbid.
+   AND h.snap_id between :minsnap and :maxsnap  
    AND h.sql_id = :sql_id
    AND h.snap_id = s.snap_id
    AND h.dbid = s.dbid
    AND h.instance_number = s.instance_number
-   AND (:license IN ('T', 'D') or (:license = 'L' and s.begin_interval_time > systimestamp - interval '^^days.' day))
+   AND :license IN ('T', 'D', 'L')
  ORDER BY
        s.end_interval_time,
        h.instance_number,
@@ -3222,11 +3251,12 @@ SELECT /*+ NO_MERGE */
        dba_hist_snapshot s
  WHERE 1=1
    AND h.dbid = ^^dbid.
+   AND h.snap_id between :minsnap and :maxsnap  
    AND h.sql_id = :sql_id
    AND h.snap_id = s.snap_id
    AND h.dbid = s.dbid
    AND h.instance_number = s.instance_number
-   AND (:license IN ('T', 'D') or (:license = 'L' and s.begin_interval_time > systimestamp - interval '^^days.' day))
+   AND :license IN ('T', 'D', 'L')
  ORDER BY
        s.end_interval_time,
        h.instance_number,
@@ -3576,34 +3606,6 @@ PRO </tr>
 PRO
 SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
 PRO <!-- Please Wait -->
-
--- Uday.PSR.v6
--- added below plsql block to fetch ASH in AWR using snap_id range
--- otherwise, we are doing FTS of dba_hist_active_sess_history that has 172m rows in crmap
---
-variable minsnap number
-variable maxsnap number
-
-exec :minsnap := -1;
-exec :maxsnap := -1;
-
-begin
-  select min(h.snap_id) minsnap, max(h.snap_id) maxsnap
-    into :minsnap, :maxsnap
-    from dba_hist_sqlstat h,
-       dba_hist_snapshot s 
-   where sql_id = :sql_id
-     and (:license IN ('T', 'D') or (:license = 'L' and s.begin_interval_time > systimestamp - interval '^^days.' day))
-     and h.dbid = ^^dbid.
-     and h.snap_id = s.snap_id
-     and h.dbid = s.dbid
-     and h.instance_number = s.instance_number
-   group by sql_id;
-exception 
-  when others then null;
-end;
-/
-
 
 SELECT CHR(10)||'<tr>'||CHR(10)||
        '<td class="r">'||ROWNUM||'</td>'||CHR(10)||
@@ -5152,8 +5154,8 @@ PRO <th>Version Type</th>
 PRO <th>Save Time</th>
 PRO <th>Last Analyzed</th>
 PRO <th>Num Rows</th>
-PRO <th>Row Change</th>
-PRO <th>%-<br>Row Change</th>
+PRO <th>Rows Ins/Del</th>
+PRO <th>%-<br>Rows Ins/Del</th>
 PRO <th>Sample<br>Size</th>
 PRO <th>Sample<br>Perc</th>
 PRO <th>Blocks</th>
@@ -5302,8 +5304,8 @@ PRO <th>Version Type</th>
 PRO <th>Save Time</th>
 PRO <th>Last Analyzed</th>
 PRO <th>Num Rows</th>
-PRO <th>Row Change</th>
-PRO <th>%-Row Change</th>
+PRO <th>Rows Ins/Del</th>
+PRO <th>%-<br>Rows Ins/Del</th>
 PRO <th>Sample<br>Size</th>
 PRO <th>Perc</th>
 PRO <th>Blocks</th>
@@ -5624,7 +5626,7 @@ INSERT INTO plan_table(STATEMENT_ID, object_owner, object_type, object_name)
         UNION
        SELECT object_owner owner, object_name name, object_type
          FROM dba_hist_sql_plan
-        WHERE :license IN ('T', 'D', 'L')
+        WHERE (:license IN ('T', 'D') or (:license = 'L' and timestamp > sysdate - interval '^^days.' day))
           AND dbid = ^^dbid.
           AND sql_id = :sql_id
           AND object_owner IS NOT NULL
@@ -5941,10 +5943,9 @@ PRO <!-- Please Wait -->
 
 set pages 500 lines 1500 verify off feedback off  
 SET HEAD OFF serverout on
-
+PRO
 PRO Text Indexes
-
-PRO <a name="top"></a>
+PRO
 
 pro <table>
 pro <tbody><tr>
@@ -6055,15 +6056,15 @@ BEGIN
           ||'<td class="r">'||vtabmod.idx_name||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.table_owner||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.table_name||'</td>'||CHR(10)
-          ||'<td class="r">'||vtabmod.Index_Type||'</td>'||CHR(10)
+          ||'<td nowrap>'||vtabmod.Index_Type||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.Index_Columns||'</td>'||CHR(10)
-          ||'<td class="r">'||vtabmod.Index_Status||'</td>'||CHR(10)
+          ||'<td nowrap>'||vtabmod.Index_Status||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.idx_docid_count||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.idx_sync_type||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.idx_sync_interval||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.uniqueness||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.compression||'</td>'||CHR(10)
-          ||'<td class="r">'||vtabmod.last_analyzed||'</td>'||CHR(10)
+          ||'<td nowrap>'||vtabmod.last_analyzed||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.degree||'</td>'||CHR(10)
           ||'<td class="r">'||vtabmod.partitioned||'</td>'||CHR(10)
           ||'<td class="r">'||vSmallrRow||'</td>'||CHR(10)
@@ -6078,7 +6079,6 @@ BEGIN
 
 END; 
 /
-
 
 pro <tr>
 pro <th>Index Owner</th>
@@ -6101,19 +6101,64 @@ pro <th>Fast DML</th>
 pro </tbody></tr>
 pro </table>
 pro
+pro <br>
+
+/* Size of Internal Text Index Tables/Columns	added by  Vivek Jha on 5/13/22  */
+
+PRO
+PRO Space used by Text Index Objects
+PRO
+pro <table>
+pro <tr>
+pro <th>Object Owner</th>
+pro <th>Index Name</th>
+pro <th>Object Name</th>
+pro <th>Object Type</th>
+pro <th>Tablespace Name</th>
+pro <th>#Blocks</th>
+pro <th>Space_GB</th>
+pro </tr>
+SELECT
+        CHR(10)||'<tr>'||CHR(10)
+    	  ||'<td class="r">'||v.idx_owner||'</td>'||CHR(10)
+          ||'<td class="r">'||v.idx_name||'</td>'||CHR(10)
+          ||'<td class="r">'||v.segment_name||'</td>'||CHR(10)
+          ||'<td class="r">'||v.segment_type||'</td>'||CHR(10)
+          ||'<td class="r">'||v.tablespace_name||'</td>'||CHR(10)
+          ||'<td class="r">'||v.blocks||'</td>'||CHR(10)
+          ||'<td class="r">'||v.Space_GB||'</td>'||CHR(10)
+          ||'</tr>'
+  FROM (
+	select /*+ LEADING(t t1 t2) */
+        t1.idx_owner, t1.idx_name, t2.segment_name, t2.segment_type, t2.tablespace_name, t2.blocks, round((t2.bytes)/1024/1024/1024,2) Space_GB
+	from ctxsys.ctx_indexes t1, plan_table t, dba_segments t2
+	where t1.idx_owner = t.object_owner
+	and t1.idx_name = t.object_name
+        and t1.idx_owner = t2.owner
+	and t2.segment_name like 'DR$' || t1.idx_name ||'%'
+	and t.STATEMENT_ID = :sql_id
+	and t1.idx_owner = 'FUSION'
+	order by t2.segment_name, t2.bytes desc
+	) v;
+pro <tr>
+pro <th>Object Owner</th>
+pro <th>Index Name</th>
+pro <th>Object Name</th>
+pro <th>Object Type</th>
+pro <th>Tablespace Name</th>
+pro <th>#Blocks</th>
+pro <th>Space_GB</th>
+pro </tr>
+PRO </table>
 
 select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
 PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
 PRO </details> <!--Pushkar--> 
 exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
 
-
-
 /* -------------------------------------------------------------------*/	   
 /* Text indexes     added by  Vivek Jha on 10/17/19     ENDS          */
 /* -------------------------------------------------------------------*/
-
-
 
 /* -------------------------
  *
@@ -7102,481 +7147,6 @@ PRO </details><!--Pushkar-->
 exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
 PRO
 
-
-
-
-/* ------------------------------------------------------------------------------------------------------------------------
--- Vivek Jha v10.5  2019/06/24
--- DESCRIPTION
---  This script generates the Table Stats, Column Stats, Index Stats, Index Column Stats
---  and Bind values for a given SQL ID and PLAN HASH VALUE based on the last HARD PARSE TIME
---  (current stats might be different from the time when the SQL was last hard parsed)
---  
---  Data is fetched from tables in memory. Depending on the Retention period for those tables, 
---  not all tables used in the execution plan might show up in the output
- ------------------------------------------------------------------------------------------------------------------------ */
-
-PRO <a name="sql_stats_hard_parse_time"></a><details open><br/><summary id="summary2">SQL Statistics based on Last Hard Parse Time</summary>
-PRO
-PRO This section includes Table/Column/Index/IndexColumn Stats and Bind values for a given SQL ID and PLAN HASH VALUE based on the Last Hard Parse Time<br />
-PRO (current stats might be different from the time when the SQL was last hard parsed) <br />
-PRO Data is fetched from tables in memory. Depending on the Retention period for those tables, not all tables used in the execution plan might show up in the output 
-pro <br></br>
-
-var  l_last_load_time varchar2(50) ;
-var  l_plan_hash_value number;
-
-begin
-select plan_hash_value into :l_plan_hash_value from gv$sql where sql_id = :sql_id order by last_load_time desc FETCH FIRST 1 ROW ONLY;
-select last_load_time into :l_last_load_time from gv$sql where sql_id = :sql_id order by last_load_time desc FETCH FIRST 1 ROW ONLY;
-end;
-/
-
-
---PRO <h5>SQL ID: &&sql_id    <br>  Plan Hash Value : &&plan_hash_value  </h5>
---PRO SQL ID: &&sql_id   Plan Hash Value: &&plan_hash_value  
---PRO SQL ID: :sql_id   
---SELECT 'Hard Parse Time: ' || :l_last_load_time from dual;
-SELECT '         Plan Hash Value:' ||:l_plan_hash_value ||'        Hard Parse Time: ' || :l_last_load_time from dual;
-
-pro <br></br>
-
--- Start of Table Stats
-PRO <br/><summary id="summary3">Table Statistics </summary>
-
--- column headers
-pro <table>
-pro <tbody><tr>
-pro <th>Table Name</th>
-pro <th>Rowcount</th>
-pro <th>Block Cnt</th>
-pro <th>Avg Length</th>
-pro <th>Analyze Time</th>
-pro </tr>
-
---prompt
---PROMPT ========================================================================================================================================================================
---PROMPT This script provides Table Stats, Column Stats, Index Stats and Index Column Stats for all tables and Indexes used for a particular SQL_ID and Plan_hash_Value
---PROMPT ========================================================================================================================================================================
---prompt
---Prompt **** SQL_ID : &1
---Prompt **** PLAN HASH VALUE : &2
---prompt
---prompt
---Prompt ***** TABLE STATS *****
---prompt
-
---pro <bluea>Table Stats</bluea>
---PRO <bluea><a name="TABLE_STATS">Table Stats</a></bluea>
---pro <br></br>
-
-
-   with tablist as
-    ( select distinct sql_id, plan_hash_value, object_owner table_owner, object_name table_name, object_type
-      from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
-      and object_type = 'TABLE' )
-SELECT  CHR(10)||'<tr>'||CHR(10)
-    || '<td class="r">'||table_name||'</td>'||CHR(10)
-    || '<td class="r">'||rowcnt||'</td>'||CHR(10)
-    || '<td class="r">'||blkcnt||'</td>'||CHR(10)
-    || '<td class="r">'||avgrln||'</td>'||CHR(10)
-    || '<td class="r">'||analyze_time||'</td>'||CHR(10)
-        ||'</TR>'
-from (select t2.object_name table_name, t1.rowcnt, t1.blkcnt, t1.avgrln, to_char(analyzetime, 'yyyy-mm-dd hh24:mi:ss') Analyze_time, row_number() over (partition by t2.object_name order by analyzetime desc) r
-   from SYS.WRI$_OPTSTAT_TAB_HISTORY t1,
-   dba_objects t2,
-   tablist t3
-   where t1.obj# = t2.object_id
-   and t2.object_name = t3.table_name
-   and t2.owner =  t3.table_owner
-   and analyzetime < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
-   order by t2.object_name)
-   where r=1;
-
-pro <tr>
-pro <th>Table Name</th>
-pro <th>Rowcount</th>
-pro <th>Block Cnt</th>
-pro <th>Avg Length</th>
-pro <th>Analyze Time</th>
-pro </tr>
-
-pro </tbody>
-PRO </table>
--- End of Table Stats
-
---select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
---PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
---exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
-
--- start of Column Stats SQL  
--- Modified on 4/27/21 to include only indexed columns and only last 3 stats for every column
--- Commented out on 4/28/21 since this was fetching lots of data
-
--- PRO <br/><summary id="summary3">Column Statistics </summary>
-
--- column headers
--- pro <table>
--- pro <tbody><tr>
--- pro <th>Table Name</th>
--- pro <th>CP</th>
--- pro <th>Column Name</th>
--- pro <th>Data Type</th>
--- pro <th>DISTCNT</th>
--- pro <th>NULL_CNT</th>
--- pro <th>AVGCLN</th>
--- pro <th>Sample Size</th>
--- pro <th>Low Value</th>
--- pro <th>High Value</th>
--- pro <th>Last Analyzed</th>
--- pro </tr>
-
---prompt 
---prompt 
---Prompt ***** COLUMN STATS *****
---prompt 
-
-
-
--- SELECT  CHR(10)||'<tr>'||CHR(10) 
--- 	|| '<td class="r">'||table_name||'</td>'||CHR(10)
--- 	|| '<td class="r">'||cp||'</td>'||CHR(10)
--- 	|| '<td class="r">'||cname||'</td>'||CHR(10)
--- 	|| '<td class="r">'||dty||'</td>'||CHR(10)
--- 	|| '<td class="r">'||distcnt||'</td>'||CHR(10)
--- 	|| '<td class="r">'||null_cnt||'</td>'||CHR(10)
--- 	|| '<td class="r">'||avgcln||'</td>'||CHR(10)
--- 	|| '<td class="r">'||sample_size||'</td>'||CHR(10)
--- 	|| '<td class="r">'||low_value||'</td>'||CHR(10)
--- 	|| '<td class="r">'||high_value||'</td>'||CHR(10)
--- 	|| '<td class="r">'||last_analyzed||'</td>'||CHR(10)
---     ||'</TR>'
--- from (
---with tablist as 
---    ( select distinct sql_id, plan_hash_value, object_owner table_owner, object_name table_name, object_type
---      from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
---      and object_type = 'TABLE' )
---SELECT table_name, CP, CNAME,  DTY, DISTCNT, NULL_CNT, AVGCLN, SAMPLE_SIZE, low_value, high_value, LAST_ANALYZED
---FROM (SELECT   /*+ OPT_PARAM('_optimizer_adaptive_plans','false') */ tab.table_name, C.COL# CP, RPAD(C.NAME,30) CNAME,  TC.DATA_TYPE DTY,
---          nvl(CSH.DISTCNT, TC.NUM_DISTINCT) DISTCNT,
---          nvl(CSH.NULL_CNT, TC.NUM_NULLS)  NULL_CNT,
---          NVL(CSH.AVGCLN, TC.AVG_COL_LEN) AVGCLN,
---          NVL(CSH.SAMPLE_SIZE, TC.SAMPLE_SIZE) SAMPLE_SIZE,
---       decode(substr(tc.data_type,1,9)
---          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(CSH.LOWVAL, TC.LOW_VALUE), TC.LOW_VALUE))) 
---          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
---          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
---          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
---          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
---          ,'DATE'         ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
---                                to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
---                                       + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
---                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
---                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
---                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
---                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
---                               to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00'))) 
---         ,'TIMESTAMP'    ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
---                           to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
---                                  + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
---                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
---                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
---                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
---                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
---                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00')||'.'||
---                           to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),15,8),'XXXXXXXX')  )) 
---                           , NVL(CSH.LOWVAL, TC.LOW_VALUE) ) low_value,
---       decode(substr(tc.data_type,1,9)
---          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(csh.hival, tc.high_value), tc.high_value))) 
---          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(csh.hival, tc.high_value))) 
---          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(csh.hival, tc.high_value))) 
---          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(csh.hival, tc.high_value))) 
---          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(csh.hival, tc.high_value))) 
---          ,'DATE'         ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
---                                to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
---                                       + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
---                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
---                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
---                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
---                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
---                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00'))) 
---          ,'TIMESTAMP'    ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
---                           to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
---                                  + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
---                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
---                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
---                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
---                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
---                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00')||'.'||
---                           to_number(substr(NVL(csh.hival, tc.high_value),15,8),'XXXXXXXX')  )) 
---                           , NVL(csh.hival, tc.high_value) ) high_value,
---          NVL(LPAD(TO_CHAR(CSH.TIMESTAMP#,'YYYY-MM-DD/HH24:MI:SS'),20), LPAD(TO_CHAR(TC.LAST_ANALYZED,'YYYY-MM-DD/HH24:MI:SS'),20)) LAST_ANALYZED,
---          (row_number() over (partition by tab.table_name, CSH.INTCOL# order by tab.table_name, CSH.INTCOL#, CSH.TIMESTAMP# DESC)) r
---          FROM tablist tab,
---               DBA_OBJECTS T,
---               SYS.COL$ C,
---               SYS.WRI$_OPTSTAT_HISTHEAD_HISTORY CSH,
---               DBA_TAB_COLUMNS TC
---          WHERE T.OBJECT_ID    = CSH.OBJ#(+)
---          AND   C.OBJ#         = T.OBJECT_ID
---          AND   C.INTCOL#      = CSH.INTCOL#(+)
---          AND T.OBJECT_NAME = tab.TABLE_NAME AND T.OBJECT_TYPE = 'TABLE'
---          AND   TC.OWNER = T.OWNER
---          AND   TC.TABLE_NAME = T.OBJECT_NAME
---          AND   TC.COLUMN_NAME = C.NAME
---          and timestamp# < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
---          ORDER BY tab.table_name, CSH.INTCOL#, CSH.TIMESTAMP# DESC ) 
---		  WHERE r < 4);
---
---pro <tr>
---pro <th>Table Name</th>
---pro <th>CP</th>
---pro <th>Column Name</th>
---pro <th>Data Type</th>
---pro <th>DISTCNT</th>
---pro <th>NULL_CNT</th>
---pro <th>AVGCLN</th>
---pro <th>Sample Size</th>
---pro <th>Low Value</th>
---pro <th>High Value</th>
---pro <th>Last Analyzed</th>
---pro </tr>
-
-
---pro </tbody>
---pro  </table>
-
--- end of column Stats SQL
-select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
-PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
-exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
-
--- start of index Stats SQL
-PRO <br/><summary id="summary3">Index Statistics </summary>
-
--- column headers
-pro <table>
-pro <tbody><tr>
-pro <th>Owner</th>
-pro <th>Table Name</th>
-pro <th>Index Name</th>
-pro <th>Flags</th>
-pro <th>Rowcount</th>
-pro <th>BLevel</th>
-pro <th>Leaf Cnt</th>
-pro <th>Dist Key</th>
-pro <th>Lblk Key</th>
-pro <th>Dblk Key</th>
-pro <th>Clustering Factor/th>
-pro <th>Sample Size</th>
-pro <th>Analyze Time</th>
-pro </tr>
-
---Prompt ***** INDEX STATS *****
---prompt 
-
-   with indlist as 
-    ( select distinct sql_id, plan_hash_value, object_owner index_owner, object_name index_name, object_type
-           from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
-      and object_type like 'INDEX%' )
-SELECT  CHR(10)||'<tr>'||CHR(10) 
-	|| '<td class="r">'||owner||'</td>'||CHR(10)
-	|| '<td class="r">'||table_name||'</td>'||CHR(10)
-	|| '<td class="r">'||index_name||'</td>'||CHR(10)
-	|| '<td class="r">'||flags||'</td>'||CHR(10)
-	|| '<td class="r">'||rowcnt||'</td>'||CHR(10)
-	|| '<td class="r">'||blevel||'</td>'||CHR(10)
-	|| '<td class="r">'||leafcnt||'</td>'||CHR(10)
-	|| '<td class="r">'||distkey||'</td>'||CHR(10)
-	|| '<td class="r">'||lblkkey||'</td>'||CHR(10)
-	|| '<td class="r">'||dblkkey||'</td>'||CHR(10)
-	|| '<td class="r">'||clufac||'</td>'||CHR(10)
-	|| '<td class="r">'||samplesize||'</td>'||CHR(10)
-	|| '<td class="r">'||analyze_time||'</td>'||CHR(10)
-        ||'</TR>'
- from (select ind.owner, ind.table_name, ind.index_name, flags, rowcnt, hist.blevel , hist.leafcnt, hist.distkey, hist.lblkkey, hist.dblkkey, hist.clufac,hist.samplesize, to_char(analyzetime, 'yyyy-mm-dd hh24:mi:ss') analyze_time, row_number() over (partition by ind.owner, ind.table_name, ind.index_name order by analyzetime desc) r
-   from sys.wri$_optstat_ind_history hist, 
-   dba_objects obj,
-   dba_indexes ind,
-   indlist i
-   where hist.obj# = obj.object_id 
-   and ind.index_name = obj.object_name
-   and ind.owner = obj.owner
-   and obj.object_type ='INDEX'
-   and ind.index_name = i.index_name
-   and ind.owner =  i.index_owner
---   and analyzetime < (select to_date(max(last_load_time),'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = '&&sql_id' and plan_hash_value = &&plan_hash_value)
-   and analyzetime < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
-   order by ind.table_name, ind.index_name)
-   where r=1;
-
-pro <tr>
-pro <th>Owner</th>
-pro <th>Table Name</th>
-pro <th>Index Name</th>
-pro <th>Flags</th>
-pro <th>Rowcount</th>
-pro <th>BLevel</th>
-pro <th>Leaf Cnt</th>
-pro <th>Dist Key</th>
-pro <th>Lblk Key</th>
-pro <th>Dblk Key</th>
-pro <th>Clustering Factor/th>
-pro <th>Sample Size</th>
-pro <th>Analyze Time</th>
-pro </tr>
-
-pro </tbody>
-pro  </table>
-
--- END OF INDEX STATS SQL
-select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
-PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
-exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
-
--- START OF INDEX COLUMN STATS SQL
---prompt ***** Modified on 4/27/21 to include only last 3 stats for every column
-PRO <br/><summary id="summary3">Index Column Statistics </summary>
-
-pro <table>
-pro <tbody><tr>
-pro <th>Table Name</th>
-pro <th>Index Owner</th>
-pro <th>Index Name</th>
-pro <th>CP</th>
-pro <th>Column Name</th>
-pro <th>Data Type</th>
-pro <th># of Distinct<br>Values</th>
-pro <th># of NULLs</th>
-pro <th>Avg Column Length</th>
-pro <th>Sample Size</th>
-pro <th>Low Value</th>
-pro <th>High Value</th>
-pro <th>Last Analyzed</th>
-pro </tr>
-
-
-SELECT  CHR(10)||'<tr>'||CHR(10) 
-	|| '<td class="r">'||table_name||'</td>'||CHR(10)
-	|| '<td class="r">'||index_owner||'</td>'||CHR(10)
-	|| '<td class="r">'||index_name||'</td>'||CHR(10)
-	|| '<td class="r">'||cp||'</td>'||CHR(10)
-	|| '<td class="r">'||cname||'</td>'||CHR(10)
-	|| '<td class="r">'||dty||'</td>'||CHR(10)
-	|| '<td class="r">'||distcnt||'</td>'||CHR(10)
-	|| '<td class="r">'||null_cnt||'</td>'||CHR(10)
-	|| '<td class="r">'||avgcln||'</td>'||CHR(10)
-	|| '<td class="r">'||sample_size||'</td>'||CHR(10)
-	|| '<td class="r">'||low_value||'</td>'||CHR(10)
-	|| '<td class="r">'||high_value||'</td>'||CHR(10)
-	|| '<td class="r">'||last_analyzed||'</td>'||CHR(10)
-    ||'</TR>'
-FROM (
-with indlist as 
-	    ( select distinct sql_id, plan_hash_value, object_owner index_owner, object_name index_name, object_type
-	      from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
-	      and object_type like 'INDEX%' )
-SELECT table_name, INDEX_OWNER, index_name, CP, CNAME,  DTY, DISTCNT, NULL_CNT, AVGCLN, SAMPLE_SIZE, 
-       case when regexp_like(:pii_tables,table_name,'i') then NULL else low_value  end low_value, 
-       case when regexp_like(:pii_tables,table_name,'i') then NULL else high_value end high_value, LAST_ANALYZED
-FROM (
-	SELECT   /*+ OPT_PARAM('_optimizer_adaptive_plans','false') */ TC.TABLE_NAME, IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION CP, RPAD(C.NAME,30) CNAME, TC.DATA_TYPE DTY, 
-		  nvl(CSH.DISTCNT, TC.NUM_DISTINCT) DISTCNT,
-		  nvl(CSH.NULL_CNT, TC.NUM_NULLS)  NULL_CNT,
-		  NVL(CSH.AVGCLN, TC.AVG_COL_LEN) AVGCLN,
-		  NVL(CSH.SAMPLE_SIZE, TC.SAMPLE_SIZE) SAMPLE_SIZE,
-       decode(substr(tc.data_type,1,9)
-          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(CSH.LOWVAL, TC.LOW_VALUE), TC.LOW_VALUE))) 
-          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
-          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
-          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
-          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
-          ,'DATE'         ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
-                                to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
-                                       + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
-                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
-                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
-                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
-                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
-                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00'))) 
-          ,'TIMESTAMP'    ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
-                           to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
-                                  + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
-                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
-                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
-                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
-                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
-                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00')||'.'||
-                           to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),15,8),'XXXXXXXX')  )) 
-                           , NVL(CSH.LOWVAL, TC.LOW_VALUE) ) low_value,
-       decode(substr(tc.data_type,1,9)
-          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(csh.hival, tc.high_value), tc.high_value))) 
-          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(csh.hival, tc.high_value))) 
-          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(csh.hival, tc.high_value))) 
-          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(csh.hival, tc.high_value))) 
-          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(csh.hival, tc.high_value))) 
-          ,'DATE'         ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
-                                to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
-                                       + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
-                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
-                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
-                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
-                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
-                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00'))) 
-          ,'TIMESTAMP'    ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
-                           to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
-                                  + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
-                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
-                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
-                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
-                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
-                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00')||'.'||
-                           to_number(substr(NVL(csh.hival, tc.high_value),15,8),'XXXXXXXX')  )) 
-                           , NVL(csh.hival, tc.high_value) ) high_value,
-		  NVL(LPAD(TO_CHAR(CSH.TIMESTAMP#,'YYYY-MM-DD/HH24:MI:SS'),20), LPAD(TO_CHAR(TC.LAST_ANALYZED,'YYYY-MM-DD/HH24:MI:SS'),20)) LAST_ANALYZED,
-		  (row_number() over (partition by IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION, CSH.INTCOL#  order by IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION, CSH.INTCOL#, CSH.TIMESTAMP# DESC )) r
-          FROM indlist indl,
-		       DBA_IND_COLUMNS IC, DBA_OBJECTS T, SYS.COL$ C, SYS.WRI$_OPTSTAT_HISTHEAD_HISTORY CSH,
-		       DBA_TAB_COLUMNS TC
-		  WHERE IC.TABLE_NAME  = T.OBJECT_NAME
-		  AND   IC.TABLE_OWNER = T.OWNER
-		  AND   IC.COLUMN_NAME = C.NAME
-		  AND   T.OBJECT_ID    = CSH.OBJ#(+)
-		  AND   C.OBJ#         = T.OBJECT_ID
-		  AND   C.INTCOL#      = CSH.INTCOL#(+)
-		  AND  T.OWNER = indl.INDEX_OWNER  AND   IC.index_name = indl.index_name AND T.OBJECT_TYPE = 'TABLE'
-		  AND TC.OWNER = T.OWNER
-		  AND TC.TABLE_NAME = T.OBJECT_NAME
-		  and csh.timestamp# < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value =  :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
-		  AND TC.COLUMN_NAME = C.NAME
-		  ORDER BY IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION, CSH.INTCOL#, CSH.TIMESTAMP# DESC )
-		  WHERE r < 4);
-
-
-pro <tr>
-pro <th>Table Name</th>
-pro <th>Index Owner</th>
-pro <th>Index Name</th>
-pro <th>CP</th>
-pro <th>Column Name</th>
-pro <th>Data Type</th>
-pro <th># of Distinct<br>Values</th>
-pro <th># of NULLs</th>
-pro <th>Avg Column Length</th>
-pro <th>Sample Size</th>
-pro <th>Low Value</th>
-pro <th>High Value</th>
-pro <th>Last Analyzed</th>
-pro </tr>
-
-pro </tbody>
-pro  </table>
-
--- end of Index Column Stats SQL
-select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
-PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
-exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
-
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ---------- BIND VALUES   -----------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -7954,8 +7524,8 @@ from
          dba_hist_sql_plan c
          , TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c.other_xml ), '/*/peeked_binds/bind'))) D
    where 1=1
-     and :license IN ('T', 'D', 'L')
-     and c.dbid = ^^dbid.
+     and (:license IN ('T', 'D') or (:license = 'L' and c.timestamp > sysdate - interval '^^days.' day))
+     and c.dbid = ^^dbid. 
      and c.sql_id = :sql_id
     and c.other_xml is not null
   -- order by sql_id, to_number(EXTRACTVALUE(VALUE(D), '/bind/@pos'))
@@ -8019,8 +7589,9 @@ captured_binds as
          -- , dba_hist_sql_bind_metadata bm  -- PSRv7 - using only to get name, which we are already getting from peeked binds
          , dba_hist_snapshot ss
    where 1 = 1
-     and (:license IN ('T', 'D') or (:license = 'L' and ss.begin_interval_time > systimestamp - interval '^^days.' day))
+     and :license IN ('T', 'D', 'L')
      and s.dbid = ^^dbid.
+     and s.snap_id between :minsnap and :maxsnap  
      and s.sql_id = :sql_id
      and s.bind_data is not null
      and s.dbid = ss.dbid
@@ -8489,28 +8060,27 @@ PRO <table style="width:100%"><tr><td style="text-align:right; background-color:
 PRO </details><!--Pushkar-->
 exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
 
-
 /* -------------------------
  *
  * Metadata
  *
  * ------------------------- */
-PRO <a name="metadata"></a><details><br/><summary id="summary2">Metadata</summary>
+PRO <a name="metadata"></a><details open><br/><summary id="summary2">Metadata</summary>
 -- PRO Table and Index Metadata of the objects involved in the plan and their dependent objects
-PRO Index and View Metadata of the objects involved in the plan and their dependent objects
-PRO
-SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
-PRO <!-- Please Wait -->
+--PRO Index and View Metadata of the objects involved in the plan and their dependent objects
+--PRO
+--SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
+--PRO <!-- Please Wait -->
 --PSRv10: compact index definitions
-PRO <a name="index_metadata"></a><details><br/><summary id="summary3">Indexes Metadata</summary>
-PRO
-PRO <pre>
-SET long 10000000 longchunksize 10000000
-
-exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'STORAGE', FALSE);
-exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'SEGMENT_ATTRIBUTES', false );
-exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'SQLTERMINATOR', FALSE);
-exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'TABLESPACE', FALSE);
+-- PRO <a name="index_metadata"></a><details><br/><summary id="summary3">Indexes Metadata</summary>
+-- PRO
+-- PRO <pre>
+-- SET LONG 1000000 LONGCHUNKSIZE 1000000
+-- 
+-- exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'STORAGE', FALSE);
+-- exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'SEGMENT_ATTRIBUTES', false );
+-- exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'SQLTERMINATOR', FALSE);
+-- exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'TABLESPACE', FALSE);
 
 --
 -- tables: FA tables are too long so not fetching tables metadata
@@ -8547,70 +8117,71 @@ exec dbms_metadata.set_transform_param( dbms_metadata.session_transform, 'TABLES
 --psrv10           WHERE i.owner = o.owner
 --psrv10             AND i.index_name = o.name) t;
 			
-WITH object AS (
-SELECT /*+ MATERIALIZE */
-       object_owner owner, object_name name, object_type
-  FROM gv$sql_plan
- WHERE inst_id IN (SELECT inst_id FROM gv$instance)
-   AND sql_id = :sql_id
-   AND object_owner IS NOT NULL
-   AND object_name IS NOT NULL
-   AND not (object_type = 'TABLE (TEMP)' and object_name like 'SYS_TEMP%') --Uday.v6
- UNION
-SELECT object_owner owner, object_name name, object_type
-  FROM dba_hist_sql_plan
- WHERE :license IN ('T', 'D', 'L')
-   AND dbid = ^^dbid.
-   AND sql_id = :sql_id
-   AND object_owner IS NOT NULL
-   AND object_name IS NOT NULL
-   AND not (object_type = 'TABLE (TEMP)' and object_name like 'SYS_TEMP%') --Uday.v6
- )
-, plan_tables AS (
---UdayRemoved.v6 SELECT /*+ MATERIALIZE */
---UdayRemoved.v6        'TABLE' object_type, t.owner object_owner, t.table_name object_name
---UdayRemoved.v6   FROM dba_tables t, -- include fixed objects
---UdayRemoved.v6        object o
---UdayRemoved.v6  WHERE t.owner = o.owner
---UdayRemoved.v6    AND t.table_name = o.name
- SELECT /*+ MATERIALIZE */
-        object_type, o.owner object_owner, o.name object_name
-   FROM object o
-  WHERE (o.object_type like 'TABLE%' OR o.object_type = 'VIEW')
-  UNION
- SELECT 'TABLE' object_type, i.table_owner object_owner, i.table_name object_name
-   FROM dba_indexes i,
-        object o
-  WHERE o.object_type like 'INDEX%'  --Uday.v6
-    AND i.owner = o.owner
-    AND i.index_name = o.name
-  UNION
- SELECT /*+ leading (o) */ 'TABLE' object_type, t.owner object_owner, t.table_name object_name
-   FROM dba_tables t,
-        object o
-  WHERE t.owner = o.owner
-    AND t.table_name = o.name
-    AND o.object_type IS NULL /* PUSHKAR 10.8: this helps in insert statement analysis */     
-)
---PSRv10 SELECT '<br/><summary id="summary3">Index: '||s.owner||'.'||s.index_name||'</summary>'||REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(DBMS_METADATA.GET_DDL('INDEX',s.index_name,s.owner), '<', CHR(38)||'lt;'), '>', CHR(38)||'gt;'), '''', CHR(38)||'#39;'), '"', CHR(38)||'quot;'), CHR(10), '<br>'||CHR(10))
-SELECT REPLACE(REPLACE(REPLACE(REPLACE(DBMS_METADATA.GET_DDL('INDEX',s.index_name,s.owner), '<', CHR(38)||'lt;'), '>', CHR(38)||'gt;'), '''', CHR(38)||'#39;'), '"', CHR(38)||'quot;')
-  FROM plan_tables pt,
-       dba_indexes s
- WHERE pt.object_type = 'TABLE'
-   AND pt.object_owner = s.table_owner
-   AND pt.object_name = s.table_name
-   AND s.index_type not like 'LOB%' --Uday.v6
- ORDER BY
-       s.table_name,
-       s.table_owner,
-       s.index_name,
-       s.owner;
-PRO </pre>
+-- WITH object AS (
+-- SELECT /*+ MATERIALIZE */
+--        object_owner owner, object_name name, object_type
+--   FROM gv$sql_plan
+--  WHERE inst_id IN (SELECT inst_id FROM gv$instance)
+--    AND sql_id = :sql_id
+--    AND object_owner IS NOT NULL
+--    AND object_name IS NOT NULL
+--    AND not (object_type = 'TABLE (TEMP)' and object_name like 'SYS_TEMP%') --Uday.v6
+--  UNION
+-- SELECT object_owner owner, object_name name, object_type
+--   FROM dba_hist_sql_plan
+--  WHERE :license IN ('T', 'D', 'L')
+--    AND dbid = ^^dbid.
+--    AND sql_id = :sql_id
+--    AND object_owner IS NOT NULL
+--    AND object_name IS NOT NULL
+--    AND not (object_type = 'TABLE (TEMP)' and object_name like 'SYS_TEMP%') --Uday.v6
+--  )
+-- , plan_tables AS (
+-- --UdayRemoved.v6 SELECT /*+ MATERIALIZE */
+-- --UdayRemoved.v6        'TABLE' object_type, t.owner object_owner, t.table_name object_name
+-- --UdayRemoved.v6   FROM dba_tables t, -- include fixed objects
+-- --UdayRemoved.v6        object o
+-- --UdayRemoved.v6  WHERE t.owner = o.owner
+-- --UdayRemoved.v6    AND t.table_name = o.name
+--  SELECT /*+ MATERIALIZE */
+--         object_type, o.owner object_owner, o.name object_name
+--    FROM object o
+--   WHERE (o.object_type like 'TABLE%' OR o.object_type = 'VIEW')
+--   UNION
+--  SELECT 'TABLE' object_type, i.table_owner object_owner, i.table_name object_name
+--    FROM dba_indexes i,
+--         object o
+--   WHERE o.object_type like 'INDEX%'  --Uday.v6
+--     AND i.owner = o.owner
+--     AND i.index_name = o.name
+--   UNION
+--  SELECT /*+ leading (o) */ 'TABLE' object_type, t.owner object_owner, t.table_name object_name
+--    FROM dba_tables t,
+--         object o
+--   WHERE t.owner = o.owner
+--     AND t.table_name = o.name
+--     AND o.object_type IS NULL /* PUSHKAR 10.8: this helps in insert statement analysis */     
+-- )
+-- --PSRv10 SELECT '<br/><summary id="summary3">Index: '||s.owner||'.'||s.index_name||'</summary>'||REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(DBMS_METADATA.GET_DDL('INDEX',s.index_name,s.owner), '<', CHR(38)||'lt;'), '>', CHR(38)||'gt;'), '''', CHR(38)||'#39;'), '"', CHR(38)||'quot;'), CHR(10), '<br>'||CHR(10))
+-- SELECT REPLACE(REPLACE(REPLACE(REPLACE(DBMS_METADATA.GET_DDL('INDEX',s.index_name,s.owner), '<', CHR(38)||'lt;'), '>', CHR(38)||'gt;'), '''', CHR(38)||'#39;'), '"', CHR(38)||'quot;')
+--   FROM plan_tables pt,
+--        dba_indexes s
+--  WHERE pt.object_type = 'TABLE'
+--    AND pt.object_owner = s.table_owner
+--    AND pt.object_name = s.table_name
+--    AND s.index_type not like 'LOB%' --Uday.v6
+--  ORDER BY
+--        s.table_name,
+--        s.table_owner,
+--        s.index_name,
+--        s.owner;
+-- PRO </pre>
+-- 
+-- select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
+-- PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
+-- PRO </details><!--Pushkar-->
+-- exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
 
-select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
-PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
-PRO </details><!--Pushkar-->
-exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
 --
 -- view metadata -- uday
 --
@@ -8631,8 +8202,8 @@ SELECT /*+ MATERIALIZE */
  UNION
 SELECT object_owner owner, object_name view_name, object_type, 'DBA_HIST_SQL_PLAN' source
   FROM dba_hist_sql_plan
- WHERE :license IN ('T', 'D', 'L')
-   AND dbid = ^^dbid.
+ WHERE (:license IN ('T', 'D') or (:license = 'L' and timestamp > sysdate - interval '^^days.' day))
+   AND dbid = ^^dbid. 
    AND sql_id = :sql_id
    AND object_owner IS NOT NULL
    AND object_name IS NOT NULL
@@ -9021,10 +8592,11 @@ select * from (
  WHERE pt.object_type = 'TABLE'
    AND pt.STATEMENT_ID = :sql_id
    AND pt.object_name = i.table_name
-   AND ash.sql_id = :sql_id
+   AND pt.object_owner = i.owner  
    AND ash.event like '%buffer busy%'
    AND ash.sql_id = pt.statement_id
    AND i.index_name = c.index_name
+   AND i.owner = c.index_owner
    AND c.column_position = 1) where rownum=1;
 
 
@@ -9144,33 +8716,26 @@ PRO </ul>
  *
  * ------------------------- */
 PRO <script language="JavaScript" type="text/JavaScript">
-PRO function openInNewWindow(url)
-PRO {
-PRO   window.open(url,"_blank");
+PRO function copyToCB(elem) {
+PRO   var range = document.createRange();;
+PRO   range.selectNodeContents(elem);;
+PRO   var sel = window.getSelection();;
+PRO   sel.removeAllRanges();;
+PRO   sel.addRange(range);;
+PRO   document.execCommand('copy');;
+PRO }
+PRO function openInNewWindow(url) {
+PRO  var preTxt=document.getElementById("sqltext");;
+PRO  copyToCB(preTxt);;
+PRO  window.open(url,"_blank");;
 PRO }
 PRO </script>
 PRO <a name="text"></a><details open><br/><summary id="summary2">SQL Text</summary>
 PRO <FORM><BUTTON class="button button1" onclick="openInNewWindow(&quot;https://apex.oraclecorp.com/pls/apex/f?p=28906&quot;)">Analyze SQL Text via PSR Tool [use Upload SQL Button]</BUTTON></FORM> 
 PRO
-PRO <pre>
+PRO <pre ondblclick="javascript:copyToCB(this);" id="sqltext">
 
-DECLARE
-  l_sql_text CLOB := :sql_text;
-  l_pos NUMBER;
-BEGIN
-  WHILE NVL(LENGTH(l_sql_text), 0) > 0
-  LOOP
-    l_pos := INSTR(l_sql_text, CHR(10));
-    IF l_pos > 0 THEN
-      DBMS_OUTPUT.PUT_LINE(SUBSTR(l_sql_text, 1, l_pos - 1));
-      l_sql_text := SUBSTR(l_sql_text, l_pos + 1);
-    ELSE
-      DBMS_OUTPUT.PUT_LINE(l_sql_text);
-      l_sql_text := NULL;
-    END IF;
-  END LOOP;
-END;
-/
+SELECT :sql_text FROM DUAL;
 
 PRO </pre>
 
@@ -9455,7 +9020,7 @@ With s as
 			 when t.plan_table_output like 'Column Projection Information%' then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  
        when t.plan_table_output like 'Hint Report%'                   then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  		
        when t.plan_table_output like 'Query Block Registry%'          then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'        
-       when t.plan_table_output like 'Note%'                          then '</pre></details><details open><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  			 
+       when t.plan_table_output like 'Note'                          then '</pre></details><details open><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  			 
        when t.plan_table_output like '% FULL%'                        then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'         
        when t.plan_table_output like '% CARTESIAN%'                   then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'  
        when t.plan_table_output like '%SKIP%'                         then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'              
@@ -9574,7 +9139,7 @@ With s as
 			 when t.plan_table_output like 'Column Projection Information%' then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  
        when t.plan_table_output like 'Hint Report%'                   then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  		
        when t.plan_table_output like 'Query Block Registry%'          then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'        
-       when t.plan_table_output like 'Note%'                          then '</pre></details open><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  			 
+       when t.plan_table_output like 'Note'                          then '</pre></details open><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  			 
        when t.plan_table_output like '% FULL%'                        then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'         
        when t.plan_table_output like '% CARTESIAN%'                   then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'  
        when t.plan_table_output like '%SKIP%'                         then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'              
@@ -9678,13 +9243,13 @@ begin
                                   depth       number PATH '@dep',     -- display depth
                                   skipped     number PATH '@skp'      -- whether to skip this in display
                                 ) xt
-                        where :license IN ('T', 'D', 'L') --??
+                        where (:license IN ('T', 'D') or (:license = 'L' and p.timestamp > sysdate - interval '^^days.' day))
                           and p.dbid = ^^dbid. 
                           and p.sql_id = :sql_id
                           and p.other_xml is not null
                       ) skp
-                where :license IN ('T', 'D', 'L') --?? 
-                  and sp.dbid = ^^dbid. 
+                where (:license IN ('T', 'D') or (:license = 'L' and sp.timestamp > sysdate - interval '^^days.' day)) 
+                  and sp.dbid = ^^dbid.   
                   and sp.sql_id = :sql_id
                   and skp.sql_id(+) = sp.sql_id
                   and skp.plan_hash_value(+) = sp.plan_hash_value
@@ -9728,7 +9293,7 @@ With s as
           FROM dba_hist_sql_plan 
          WHERE 1=1
            AND (:license IN ('T', 'D') or (:license = 'L' and timestamp > sysdate - interval '^^days.' day))
-           AND dbid = ^^dbid. 
+           AND dbid = ^^dbid.  
            AND sql_id = :sql_id
        ) v,
        TABLE(DBMS_XPLAN.DISPLAY_AWR(v.sql_id, v.plan_hash_value, v.dbid, 'ADVANCED'||case when :pii_used>0 then ' -peeked_binds' end)) t
@@ -9788,7 +9353,7 @@ With s as
 			 when t.plan_table_output like 'Column Projection Information%' then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  
        when t.plan_table_output like 'Hint Report%'                   then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  		
        when t.plan_table_output like 'Query Block Registry%'          then '</pre></details><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'        
-       when t.plan_table_output like 'Note%'                          then '</pre></details open><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  			 
+       when t.plan_table_output like 'Note'                          then '</pre></details open><details><summary ID="summary4">'||t.plan_table_output||'</summary><pre>'  			 
        when t.plan_table_output like '% FULL%'                        then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'         
        when t.plan_table_output like '% CARTESIAN%'                   then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'  
        when t.plan_table_output like '%SKIP%'                         then '<mark ID="mark_fmt">'||t.plan_table_output||'</mark>'              
@@ -9833,8 +9398,7 @@ PRO Please Wait
 
 VAR det CLOB;
 EXEC :det := 'SQL Detail Report is available on 11.2 and higher';
-alter session set events 'emx_control compress_xml=none';
-alter session set "_with_subquery"=inline;
+
 set serveroutput on 
 SPO ^^files_prefix._4_sql_detail.html;
 SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
@@ -9846,6 +9410,11 @@ DECLARE
   l_det clob := 'SQL Detail Report is available on 11.2 and higher';
   l_sql_id varchar2(13) := :sql_id;
 BEGIN
+  --bypass this ...
+  :det := 'SQL Detail Report is Commented Out for now';
+  RETURN;
+  
+  
   DBMS_LOB.CREATETEMPORARY(:det, TRUE);
   -- IF :minsnap is not null and :maxsnap is not null  -- PSRv8
   IF :minsnap <> -1 and :maxsnap <> -1 
@@ -9888,7 +9457,8 @@ BEGIN
     $IF DBMS_DB_VERSION.version > 11
     $THEN
        begin
-        l_det := DBMS_PERF.REPORT_SQL (
+       /* -- taking time .. so removed in the latest SQLHC by Pushkar (7/30/2021)
+         l_det := DBMS_PERF.REPORT_SQL (
            sql_id       => l_sql_id,
            is_realtime  => 0,
            outer_start_time   => l_start_time,
@@ -9901,6 +9471,8 @@ BEGIN
            report_reference   => null,
            report_level => 'typical',
            type         => 'ACTIVE' ); 
+       */
+         l_det := 'SQL Detail Report is Commented Out for now';
        end;
     $END
     NULL;
@@ -9913,7 +9485,7 @@ SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
 SELECT :det FROM DUAL;
 SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
 SPO OFF;
-alter session set "_with_subquery"=OPTIMIZER;
+
 /**************************************************************************************************/
 
 /**************************************************************************************************
@@ -10125,7 +9697,7 @@ DECLARE
   mon_rec mon_rt;
   mon_cv SYS_REFCURSOR;
 BEGIN
-  IF :license = 'T' 
+  IF :license in ('T', 'L') 
   THEN
     $IF DBMS_DB_VERSION.version > 11
     $THEN
@@ -10149,6 +9721,7 @@ BEGIN
                 FROM dba_hist_reports
                WHERE component_name = 'sqlmonitor'
                  AND key1 = '^^sql_id'
+                 AND dbid = ^^dbid.
                  --  and EXTRACTVALUE(XMLType(report_summary),'/report_repository_summary/sql/plan_hash') not in
                  --  PSRv9.1
                  -- and regexp_substr(report_summary, q'{<plan_hash>([[:digit:]]+)</plan_hash>}', 1, 1, null, 1) in 
@@ -10399,6 +9972,9 @@ select sql_id, client_id, count(*) cnt, count(distinct sql_exec_start) execs, co
 -- Uday.PSR.v6  order by  ash.sql_id, hp_pct desc, cnt desc, sql_plan_hash_value
 -- Uday.PSR.v6 ;
 
+/*
+Pushkar: 12/14/2021: commened out in version 21 for PERF reasons.. Uncomment and run if you need this to be run for some specific reason.
+
 PRO
 PRO Hard Parse percent by user (client_id) from on-disk AWR:
 PRO -------------------------------------------------------;
@@ -10418,7 +9994,7 @@ with hp as
 	   and ecid is not null
 	-- order by sql_id, ecid  
 	)
-select /*+ leading(ash) no_merge */
+select --+ leading(ash) no_merge
        sql_id, client_id, count(*) cnt, count(distinct sql_exec_start) execs, count(distinct ecid) ecid_cnt
        , min(ecid_hp_cnt) min_ecid_hp_cnt, max(ecid_hp_cnt) max_ecid_hp_cnt
        , sum(case when in_hard_parse = 'Y' then 1 else 0 end) hp_cnt
@@ -10429,6 +10005,7 @@ select /*+ leading(ash) no_merge */
  order by sql_id, hp_pct desc, cnt desc
 ;
 -- set timing off
+
 
 PRO
 PRO ---------------------------------;
@@ -10475,6 +10052,8 @@ from
          max(sample_time) - min(sample_time) elapsed_time
   from dba_hist_active_sess_history
   where sql_id = :sql_id
+  and dbid = ^^dbid. 
+  and snap_id between :minsnap and :maxsnap  
   and in_hard_parse = 'Y'
   and sample_time > sysdate - 7
   and ecid is not null
@@ -10485,7 +10064,7 @@ order by start_time;
 
 PRO 
 PRO 
-
+*/
 SPO OFF;
 
 
@@ -10561,7 +10140,7 @@ insert into plan_table(STATEMENT_ID, object_owner, object_type, object_name, car
         UNION
        SELECT object_owner owner, object_name name, object_type
          FROM dba_hist_sql_plan
-        WHERE :license IN ('T', 'D', 'L')
+        WHERE (:license IN ('T', 'D') or (:license = 'L' and timestamp > sysdate - interval '^^days.' day))
           AND dbid = ^^dbid.
           AND sql_id = :sql_id
           AND object_owner IS NOT NULL
@@ -11034,40 +10613,27 @@ DECLARE
   l_hints_limit constant pls_integer := 1000;
 
 	CURSOR c_phv is 
-	WITH
-	p AS (
-	SELECT sql_id, plan_hash_value
-	  FROM gv$sql_plan
-	 WHERE sql_id = TRIM(:sql_id)
-	   AND other_xml IS NOT NULL
-	 UNION
-	SELECT sql_id, plan_hash_value
-	  FROM dba_hist_sql_plan
-	 WHERE sql_id = TRIM(:sql_id)
-	   AND other_xml IS NOT NULL ),
-	m AS (
-	SELECT sql_id, plan_hash_value,
-	       SUM(elapsed_time)/SUM(executions) avg_et_secs
-	  FROM gv$sql
-	 WHERE sql_id = TRIM(:sql_id)
-	   AND executions > 0
-	 GROUP BY
-	       sql_id, plan_hash_value ),
-	a AS (
-	SELECT sql_id, plan_hash_value,
-	       SUM(elapsed_time_total)/SUM(executions_total) avg_et_secs
-	  FROM dba_hist_sqlstat
-	 WHERE sql_id = TRIM(:sql_id)
-	   AND executions_total > 0
-	 GROUP BY
-	       sql_id, plan_hash_value )
-	select * from 
-	(SELECT p.sql_id, p.plan_hash_value, NVL(m.avg_et_secs, a.avg_et_secs) avg_et_secs
-	  FROM p, m, a
-	  WHERE p.plan_hash_value = m.plan_hash_value(+)
-	  AND p.plan_hash_value = a.plan_hash_value(+)
-	  ORDER BY avg_et_secs )
-	WHERE rownum < 4;
+	select sql_id, plan_hash_value, min(avg_et_secs)
+   from
+   (
+    SELECT sql_id, plan_hash_value,
+           SUM(elapsed_time)/SUM(executions) avg_et_secs
+      FROM gv$sql
+     WHERE sql_id = TRIM(:sql_id)
+       AND executions > 0
+     GROUP BY sql_id, plan_hash_value
+    UNION
+    SELECT sql_id, plan_hash_value,
+           SUM(elapsed_time_total)/SUM(executions_total) avg_et_secs
+      FROM dba_hist_sqlstat
+     WHERE sql_id = TRIM(:sql_id)
+       AND dbid = ^^dbid.
+       AND snap_id between :minsnap and :maxsnap
+       AND executions_total > 0
+     GROUP BY sql_id, plan_hash_value
+    )
+    group by sql_id, plan_hash_value
+    order by 3 fetch first 3 rows only;
 
 BEGIN
 	DBMS_OUTPUT.PUT_LINE('REM');
@@ -11124,6 +10690,7 @@ BEGIN
 		    -- removes NULL characters
 		    l_sql_text := REPLACE(i.sql_text, CHR(00), ' ');
 		    -- adds a NULL character at the end of each line
+        DBMS_LOB.WRITEAPPEND(:sql_text, LENGTH(l_sql_text) + 1, l_sql_text||CHR(00));
 		  END LOOP;
 		  -- if found in memory then sql_text is not null
 		  IF :sql_text IS NOT NULL THEN
@@ -11215,7 +10782,9 @@ BEGIN
 			FROM dba_hist_sql_plan
 		       WHERE sql_id = TRIM(c_sql_id)
 			 AND plan_hash_value = TO_NUMBER(TRIM(c_plan_hash_value))
-			 AND other_xml IS NOT NULL
+          AND dbid = ^^dbid.
+          AND ('^^license.' IN ('T', 'D') or ('^^license.' = 'L' and timestamp > systimestamp - interval '^^days.' day))
+			    AND other_xml IS NOT NULL
 		       ORDER BY
 			     id)
 	    LOOP
@@ -11258,7 +10827,9 @@ BEGIN
 	    FOR i IN (SELECT other_xml
 			FROM dba_hist_sql_plan
 		       WHERE plan_hash_value = TO_NUMBER(TRIM(c_plan_hash_value))
-			 AND other_xml IS NOT NULL
+           AND dbid = ^^dbid.
+           AND ('^^license.' IN ('T', 'D') or ('^^license.' = 'L' and timestamp > systimestamp - interval '^^days.' day))
+			     AND other_xml IS NOT NULL
 		       ORDER BY
 			     id)
 	    LOOP
@@ -11729,6 +11300,603 @@ rem SELECT '<!-- '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS')||' -->' FROM dual;
 
 /*================================= SQL Profile - Vivek Jha END=================================*/
 
+/*================================ Start Table/Col/Index/IndexCol stats at Hard Parse ==========================*/
+
+SPO ^^files_prefix._17_table_column_index_indexcol_stats_atHardParse.html;
+
+SET heading off pages 10000
+col table_name for a30 heading "Table Name"
+col rowcnt for 99999999999 heading "Rowcount"
+col blkcnt for 99999999999 heading "Block Cnt"
+col avgrln for 99999999999 heading "Avg Length"
+col analyze_time for a40 heading "Analyze Time"
+
+col cp for 99999999999 heading "CP"
+col cname for a30 heading "Column Name"
+col dty for 99999999999 heading "Data Type"
+col distcnt for 99999999999 heading "DISTCNT"
+col null_cnt for 99999999999 heading "NULL_CNT"
+col avgcln for 99999999999 heading "AVGCLN"
+col sample_size for 99999999999 heading "Sample Size"
+col low_value for 99999999999 heading "Low Value"
+col high_value for 99999999999 heading "High Value"
+col last_analyzed for a40 heading "Last Analyzed"
+
+col owner for a30 heading "Owner"
+col index_name for a30 heading "Index Name"
+col flags for 99999999999 heading "Flags"
+col blevel for 99999999999 heading "BLevel"
+col leafcnt for 99999999999 heading "Leaf Cnt"
+col distkey for 99999999999 heading "Dist Key"
+col lblkkey for 99999999999 heading "Lblk Key"
+col dblkkey for 99999999999 heading "Dblk Key"
+col clufac for 99999999999 heading "Clustering Factor"
+col samplesize for 99999999999 heading "Sample Size"
+
+col index_owner for a30 heading "Index Owner"
+col null_cnt for 99999999999 heading "# of NULLs"
+col avgcln for 99999999999 heading "Avg Column Length"
+
+
+set colsep |
+
+
+rem set markup html on
+
+PRO <html>
+PRO <head><title>^^files_prefix._17_table_column_index_indexcol_stats_atHardParse.html</title>
+PRO 	<style type="text/css">
+PRO 	body {font:10pt Arial,Helvetica,Verdana,Geneva,sans-serif; color:black; background:white;}
+PRO 	a {font-weight:bold; color:#663300;}
+PRO 	pre {font:8pt Monaco,"Courier New",Courier,monospace;} /* for code */
+PRO 	h1 {font-size:16pt; font-weight:bold; color:#336699;}
+PRO 	h2 {font-size:14pt; font-weight:bold; color:#336699;}
+PRO 	h3 {font-size:12pt; font-weight:bold; color:#336699;}
+PRO 	h4 {font-size:12pt; font-weight:bold; color:#336699;}
+PRO 	li {font-size:10pt; font-weight:bold; color:#336699; padding:0.1em 0 0 0;}
+PRO 	table {font-size:8pt; color:black; background:white;}
+PRO 	th {font-weight:bold; background:#cccc99; color:#336699; vertical-align:bottom; padding-left:3pt; padding-right:3pt; padding-top:1pt; padding-bottom:1pt; position:sticky; top:0;}
+PRO 	tr.bg {background:#B3F3B3;}
+PRO 	td {text-align:left; background:#fcfcf0; vertical-align:top; padding-left:3pt; padding-right:3pt; padding-top:1pt; padding-bottom:1pt;}
+PRO 	td {text-align:left; vertical-align:top; padding-left:3pt; padding-right:3pt; padding-top:1pt; padding-bottom:1pt;}
+PRO 	td.c {text-align:center;} /* center */
+PRO 	td.l {text-align:left;} /* left (default) */
+PRO 	td.r {text-align:right;} /* right */
+PRO 	td.bg_c{text-align:center;background:#DCEEB0;}
+PRO 	tr:not(.tr):hover {background-color: #CCFFCC;}
+PRO 	font.n {font-size:8pt; font-style:italic; color:#336699;} /* table footnote in blue */
+PRO 	font.f {font-size:8pt; color:#999999;} /* footnote in gray */
+PRO 	#summary1 {font-weight: bold; font-size: 16pt; color:#336699;}
+PRO 	#summary2 {font-weight: bold; font-size: 14pt; color:#336699;}
+PRO 	#summary3 {font-weight: bold; font-size: 12pt; color:#336699;}
+PRO 	summary:hover {background-color: #FFFF99;}
+PRO 	.button  {cursor: pointer;}
+PRO 	.button1 {border-radius: 8px; background-color: #FFFF99; color: black;}
+PRO 	.button1:hover {background-color: #4CAF50;color: white;}
+PRO 	</style>
+PRO </head>
+PRO <body>
+PRO <h1><a target="MOS" href="^^doc_link.^^mos_doc.">^^mos_doc.</a> ^^method.
+PRO ^^doc_ver. Report: ^^files_prefix._17_table_column_index_indexcol_stats_atHardParse.html</h1>
+PRO
+PRO <pre>
+PRO License    : ^^input_license.
+PRO Input      : ^^input_parameter.
+PRO SIGNATURE  : ^^signature.
+PRO SIGNATUREF : ^^signaturef.
+PRO RDBMS      : ^^rdbms_version.
+PRO Platform   : ^^platform.
+PRO Database   : ^^database_name_short.
+PRO DBID       : ^^dbid.
+PRO Host       : ^^host_name_short.
+PRO Instance   : ^^instance_number.
+PRO CPU_Count  : ^^sys_cpu.
+PRO Num CPUs   : ^^num_cpus.
+PRO Num Cores  : ^^num_cores.
+PRO Num Sockets: ^^num_sockets.
+PRO Block Size : ^^sys_db_block_size.
+PRO OFE        : ^^sys_ofe.
+PRO DYN_SAMP   : ^^sys_ds.
+PRO EBS        : "^^is_ebs."
+PRO SIEBEL     : "^^is_siebel."
+PRO PSFT       : "^^is_psft."
+PRO Date       : ^^time_stamp2.
+PRO User       : ^^sessionuser.
+PRO </pre>
+
+PRO <ul>
+PRO <li><a href="#hp_table_stats">Table Statistics</a></li>
+PRO <li><a href="#hp_index_stats">Index Statistics</a></li>
+PRO <li><a href="#hp_index_col_stats">Index Column Statistics</a></li>
+PRO </ul>
+PRO </pre>
+
+PRO <pre>
+PRO # Table, Column, Index and Index Column stats at Hard parse time
+PRO
+PRO This script outputs the Column Histograms for a give SQL ID and PLAN HASH VALUE based on the last HARD PARSE TIME
+PRO (current histograms might be different from the time when the SQL was last hard parsed)
+PRO Data is fetched from tables in memory. Depending on the Retention period for those tables, not all tables used in the execution plan might show up in the output
+PRO 
+PRO </pre>
+
+/* ------------------------------------------------------------------------------------------------------------------------
+-- Vivek Jha v10.5  2019/06/24
+-- DESCRIPTION
+--  This script generates the Table Stats, Column Stats, Index Stats, Index Column Stats
+--  and Bind values for a given SQL ID and PLAN HASH VALUE based on the last HARD PARSE TIME
+--  (current stats might be different from the time when the SQL was last hard parsed)
+--  
+--  Data is fetched from tables in memory. Depending on the Retention period for those tables, 
+--  not all tables used in the execution plan might show up in the output
+ ------------------------------------------------------------------------------------------------------------------------ */
+
+pro <br></br>
+
+var  l_last_load_time varchar2(50) ;
+var  l_plan_hash_value number;
+
+begin
+select plan_hash_value into :l_plan_hash_value from gv$sql where sql_id = :sql_id order by last_load_time desc FETCH FIRST 1 ROW ONLY;
+select last_load_time into :l_last_load_time from gv$sql where sql_id = :sql_id order by last_load_time desc FETCH FIRST 1 ROW ONLY;
+end;
+/
+
+
+--PRO <h5>SQL ID: &&sql_id    <br>  Plan Hash Value : &&plan_hash_value  </h5>
+--PRO SQL ID: &&sql_id   Plan Hash Value: &&plan_hash_value  
+--PRO SQL ID: :sql_id   
+--SELECT 'Hard Parse Time: ' || :l_last_load_time from dual;
+PRO <pre>
+SELECT '         Plan Hash Value:' ||:l_plan_hash_value ||'        Hard Parse Time: ' || :l_last_load_time "Hard Parse time" from dual;
+PRO </pre>
+
+pro <br/>
+
+-- Start of Table Stats
+PRO <a name="hp_table_stats"></a><details><summary id="summary3">Table Statistics</summary>
+
+-- column headers
+pro <table>
+pro <tbody><tr>
+pro <th>Table Name</th>
+pro <th>Rowcount</th>
+pro <th>Block Cnt</th>
+pro <th>Avg Length</th>
+pro <th>Analyze Time</th>
+pro </tr>
+
+--prompt
+--PROMPT ========================================================================================================================================================================
+--PROMPT This script provides Table Stats, Column Stats, Index Stats and Index Column Stats for all tables and Indexes used for a particular SQL_ID and Plan_hash_Value
+--PROMPT ========================================================================================================================================================================
+--prompt
+--Prompt **** SQL_ID : &1
+--Prompt **** PLAN HASH VALUE : &2
+--prompt
+--prompt
+--Prompt ***** TABLE STATS *****
+--prompt
+
+--pro <bluea>Table Stats</bluea>
+--PRO <bluea><a name="TABLE_STATS">Table Stats</a></bluea>
+--pro <br></br>
+
+
+   with tablist as
+    ( select distinct sql_id, plan_hash_value, object_owner table_owner, object_name table_name, object_type
+      from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
+      and object_type = 'TABLE' )
+SELECT  CHR(10)||'<tr>'||CHR(10)
+    || '<td class="r">'||table_name||'</td>'||CHR(10)
+    || '<td class="r">'||rowcnt||'</td>'||CHR(10)
+    || '<td class="r">'||blkcnt||'</td>'||CHR(10)
+    || '<td class="r">'||avgrln||'</td>'||CHR(10)
+    || '<td class="r">'||analyze_time||'</td>'||CHR(10)
+        ||'</TR>'
+from (select t2.object_name table_name, t1.rowcnt, t1.blkcnt, t1.avgrln, to_char(analyzetime, 'yyyy-mm-dd hh24:mi:ss') Analyze_time, row_number() over (partition by t2.object_name order by analyzetime desc) r
+   from SYS.WRI$_OPTSTAT_TAB_HISTORY t1,
+   dba_objects t2,
+   tablist t3
+   where t1.obj# = t2.object_id
+   and t2.object_name = t3.table_name
+   and t2.owner =  t3.table_owner
+   and analyzetime < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
+   order by t2.object_name)
+   where r=1;
+
+pro <tr>
+pro <th>Table Name</th>
+pro <th>Rowcount</th>
+pro <th>Block Cnt</th>
+pro <th>Avg Length</th>
+pro <th>Analyze Time</th>
+pro </tr>
+
+pro </tbody>
+PRO </table>
+-- End of Table Stats
+
+--select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
+--PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table>
+--exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
+
+-- start of Column Stats SQL  
+-- Modified on 4/27/21 to include only indexed columns and only last 3 stats for every column
+-- Commented out on 4/28/21 since this was fetching lots of data
+
+-- PRO <br/><summary id="summary3">Column Statistics </summary>
+
+-- column headers
+-- pro <table>
+-- pro <tbody><tr>
+-- pro <th>Table Name</th>
+-- pro <th>CP</th>
+-- pro <th>Column Name</th>
+-- pro <th>Data Type</th>
+-- pro <th>DISTCNT</th>
+-- pro <th>NULL_CNT</th>
+-- pro <th>AVGCLN</th>
+-- pro <th>Sample Size</th>
+-- pro <th>Low Value</th>
+-- pro <th>High Value</th>
+-- pro <th>Last Analyzed</th>
+-- pro </tr>
+
+--prompt 
+--prompt 
+--Prompt ***** COLUMN STATS *****
+--prompt 
+
+
+
+-- SELECT  CHR(10)||'<tr>'||CHR(10) 
+-- 	|| '<td class="r">'||table_name||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||cp||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||cname||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||dty||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||distcnt||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||null_cnt||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||avgcln||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||sample_size||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||low_value||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||high_value||'</td>'||CHR(10)
+-- 	|| '<td class="r">'||last_analyzed||'</td>'||CHR(10)
+--     ||'</TR>'
+-- from (
+--with tablist as 
+--    ( select distinct sql_id, plan_hash_value, object_owner table_owner, object_name table_name, object_type
+--      from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
+--      and object_type = 'TABLE' )
+--SELECT table_name, CP, CNAME,  DTY, DISTCNT, NULL_CNT, AVGCLN, SAMPLE_SIZE, low_value, high_value, LAST_ANALYZED
+--FROM (SELECT   /*+ OPT_PARAM('_optimizer_adaptive_plans','false') */ tab.table_name, C.COL# CP, RPAD(C.NAME,30) CNAME,  TC.DATA_TYPE DTY,
+--          nvl(CSH.DISTCNT, TC.NUM_DISTINCT) DISTCNT,
+--          nvl(CSH.NULL_CNT, TC.NUM_NULLS)  NULL_CNT,
+--          NVL(CSH.AVGCLN, TC.AVG_COL_LEN) AVGCLN,
+--          NVL(CSH.SAMPLE_SIZE, TC.SAMPLE_SIZE) SAMPLE_SIZE,
+--       decode(substr(tc.data_type,1,9)
+--          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(CSH.LOWVAL, TC.LOW_VALUE), TC.LOW_VALUE))) 
+--          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+--          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+--          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+--          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+--          ,'DATE'         ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
+--                                to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
+--                                       + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
+--                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
+--                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
+--                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
+--                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
+--                               to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00'))) 
+--         ,'TIMESTAMP'    ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
+--                           to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
+--                                  + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
+--                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
+--                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
+--                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
+--                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
+--                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00')||'.'||
+--                           to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),15,8),'XXXXXXXX')  )) 
+--                           , NVL(CSH.LOWVAL, TC.LOW_VALUE) ) low_value,
+--       decode(substr(tc.data_type,1,9)
+--          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(csh.hival, tc.high_value), tc.high_value))) 
+--          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(csh.hival, tc.high_value))) 
+--          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(csh.hival, tc.high_value))) 
+--          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(csh.hival, tc.high_value))) 
+--          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(csh.hival, tc.high_value))) 
+--          ,'DATE'         ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
+--                                to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
+--                                       + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
+--                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
+--                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
+--                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
+--                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
+--                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00'))) 
+--          ,'TIMESTAMP'    ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
+--                           to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
+--                                  + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
+--                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
+--                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
+--                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
+--                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
+--                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00')||'.'||
+--                           to_number(substr(NVL(csh.hival, tc.high_value),15,8),'XXXXXXXX')  )) 
+--                           , NVL(csh.hival, tc.high_value) ) high_value,
+--          NVL(LPAD(TO_CHAR(CSH.TIMESTAMP#,'YYYY-MM-DD/HH24:MI:SS'),20), LPAD(TO_CHAR(TC.LAST_ANALYZED,'YYYY-MM-DD/HH24:MI:SS'),20)) LAST_ANALYZED,
+--          (row_number() over (partition by tab.table_name, CSH.INTCOL# order by tab.table_name, CSH.INTCOL#, CSH.TIMESTAMP# DESC)) r
+--          FROM tablist tab,
+--               DBA_OBJECTS T,
+--               SYS.COL$ C,
+--               SYS.WRI$_OPTSTAT_HISTHEAD_HISTORY CSH,
+--               DBA_TAB_COLUMNS TC
+--          WHERE T.OBJECT_ID    = CSH.OBJ#(+)
+--          AND   C.OBJ#         = T.OBJECT_ID
+--          AND   C.INTCOL#      = CSH.INTCOL#(+)
+--          AND T.OBJECT_NAME = tab.TABLE_NAME AND T.OBJECT_TYPE = 'TABLE'
+--          AND   TC.OWNER = T.OWNER
+--          AND   TC.TABLE_NAME = T.OBJECT_NAME
+--          AND   TC.COLUMN_NAME = C.NAME
+--          and timestamp# < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
+--          ORDER BY tab.table_name, CSH.INTCOL#, CSH.TIMESTAMP# DESC ) 
+--		  WHERE r < 4);
+--
+--pro <tr>
+--pro <th>Table Name</th>
+--pro <th>CP</th>
+--pro <th>Column Name</th>
+--pro <th>Data Type</th>
+--pro <th>DISTCNT</th>
+--pro <th>NULL_CNT</th>
+--pro <th>AVGCLN</th>
+--pro <th>Sample Size</th>
+--pro <th>Low Value</th>
+--pro <th>High Value</th>
+--pro <th>Last Analyzed</th>
+--pro </tr>
+
+
+--pro </tbody>
+--pro  </table>
+
+-- end of column Stats SQL
+select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
+PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table></details>
+exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
+
+-- start of index Stats SQL
+PRO <br/>
+PRO <a name="hp_index_stats"></a><details><summary id="summary3">Index Statistics</summary>
+
+-- column headers
+pro <table>
+pro <tbody><tr>
+pro <th>Owner</th>
+pro <th>Table Name</th>
+pro <th>Index Name</th>
+pro <th>Flags</th>
+pro <th>Rowcount</th>
+pro <th>BLevel</th>
+pro <th>Leaf Cnt</th>
+pro <th>Dist Key</th>
+pro <th>Lblk Key</th>
+pro <th>Dblk Key</th>
+pro <th>Clustering Factor/th>
+pro <th>Sample Size</th>
+pro <th>Analyze Time</th>
+pro </tr>
+
+--Prompt ***** INDEX STATS *****
+--prompt 
+
+   with indlist as 
+    ( select distinct sql_id, plan_hash_value, object_owner index_owner, object_name index_name, object_type
+           from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
+      and object_type like 'INDEX%' )
+SELECT  CHR(10)||'<tr>'||CHR(10) 
+	|| '<td class="r">'||owner||'</td>'||CHR(10)
+	|| '<td class="r">'||table_name||'</td>'||CHR(10)
+	|| '<td class="r">'||index_name||'</td>'||CHR(10)
+	|| '<td class="r">'||flags||'</td>'||CHR(10)
+	|| '<td class="r">'||rowcnt||'</td>'||CHR(10)
+	|| '<td class="r">'||blevel||'</td>'||CHR(10)
+	|| '<td class="r">'||leafcnt||'</td>'||CHR(10)
+	|| '<td class="r">'||distkey||'</td>'||CHR(10)
+	|| '<td class="r">'||lblkkey||'</td>'||CHR(10)
+	|| '<td class="r">'||dblkkey||'</td>'||CHR(10)
+	|| '<td class="r">'||clufac||'</td>'||CHR(10)
+	|| '<td class="r">'||samplesize||'</td>'||CHR(10)
+	|| '<td class="r">'||analyze_time||'</td>'||CHR(10)
+        ||'</TR>'
+ from (select ind.owner, ind.table_name, ind.index_name, flags, rowcnt, hist.blevel , hist.leafcnt, hist.distkey, hist.lblkkey, hist.dblkkey, hist.clufac,hist.samplesize, to_char(analyzetime, 'yyyy-mm-dd hh24:mi:ss') analyze_time, row_number() over (partition by ind.owner, ind.table_name, ind.index_name order by analyzetime desc) r
+   from sys.wri$_optstat_ind_history hist, 
+   dba_objects obj,
+   dba_indexes ind,
+   indlist i
+   where hist.obj# = obj.object_id 
+   and ind.index_name = obj.object_name
+   and ind.owner = obj.owner
+   and obj.object_type ='INDEX'
+   and ind.index_name = i.index_name
+   and ind.owner =  i.index_owner
+--   and analyzetime < (select to_date(max(last_load_time),'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = '&&sql_id' and plan_hash_value = &&plan_hash_value)
+   and analyzetime < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
+   order by ind.table_name, ind.index_name)
+   where r=1;
+
+pro <tr>
+pro <th>Owner</th>
+pro <th>Table Name</th>
+pro <th>Index Name</th>
+pro <th>Flags</th>
+pro <th>Rowcount</th>
+pro <th>BLevel</th>
+pro <th>Leaf Cnt</th>
+pro <th>Dist Key</th>
+pro <th>Lblk Key</th>
+pro <th>Dblk Key</th>
+pro <th>Clustering Factor/th>
+pro <th>Sample Size</th>
+pro <th>Analyze Time</th>
+pro </tr>
+
+pro </tbody>
+pro  </table>
+
+-- END OF INDEX STATS SQL
+select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
+PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table></details>
+exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
+
+-- START OF INDEX COLUMN STATS SQL
+--prompt ***** Modified on 4/27/21 to include only last 3 stats for every column
+PRO <br/>
+PRO <a name="hp_index_col_stats"></a><details><summary id="summary3">Index Column Statistics</summary>
+
+pro <table>
+pro <tbody><tr>
+pro <th>Table Name</th>
+pro <th>Index Owner</th>
+pro <th>Index Name</th>
+pro <th>CP</th>
+pro <th>Column Name</th>
+pro <th>Data Type</th>
+pro <th># of Distinct<br>Values</th>
+pro <th># of NULLs</th>
+pro <th>Avg Column Length</th>
+pro <th>Sample Size</th>
+pro <th>Low Value</th>
+pro <th>High Value</th>
+pro <th>Last Analyzed</th>
+pro </tr>
+
+
+SELECT  CHR(10)||'<tr>'||CHR(10) 
+	|| '<td class="r">'||table_name||'</td>'||CHR(10)
+	|| '<td class="r">'||index_owner||'</td>'||CHR(10)
+	|| '<td class="r">'||index_name||'</td>'||CHR(10)
+	|| '<td class="r">'||cp||'</td>'||CHR(10)
+	|| '<td class="r">'||cname||'</td>'||CHR(10)
+	|| '<td class="r">'||dty||'</td>'||CHR(10)
+	|| '<td class="r">'||distcnt||'</td>'||CHR(10)
+	|| '<td class="r">'||null_cnt||'</td>'||CHR(10)
+	|| '<td class="r">'||avgcln||'</td>'||CHR(10)
+	|| '<td class="r">'||sample_size||'</td>'||CHR(10)
+	|| '<td class="r">'||low_value||'</td>'||CHR(10)
+	|| '<td class="r">'||high_value||'</td>'||CHR(10)
+	|| '<td class="r">'||last_analyzed||'</td>'||CHR(10)
+    ||'</TR>'
+FROM (
+with indlist as 
+	    ( select distinct sql_id, plan_hash_value, object_owner index_owner, object_name index_name, object_type
+	      from gv$sql_plan where sql_id = :sql_id and plan_hash_value = :l_plan_hash_value
+	      and object_type like 'INDEX%' )
+SELECT table_name, INDEX_OWNER, index_name, CP, CNAME,  DTY, DISTCNT, NULL_CNT, AVGCLN, SAMPLE_SIZE, 
+       case when regexp_like(:pii_tables,table_name,'i') then NULL else low_value  end low_value, 
+       case when regexp_like(:pii_tables,table_name,'i') then NULL else high_value end high_value, LAST_ANALYZED
+FROM (
+	SELECT   /*+ OPT_PARAM('_optimizer_adaptive_plans','false') */ TC.TABLE_NAME, IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION CP, RPAD(C.NAME,30) CNAME, TC.DATA_TYPE DTY, 
+		  nvl(CSH.DISTCNT, TC.NUM_DISTINCT) DISTCNT,
+		  nvl(CSH.NULL_CNT, TC.NUM_NULLS)  NULL_CNT,
+		  NVL(CSH.AVGCLN, TC.AVG_COL_LEN) AVGCLN,
+		  NVL(CSH.SAMPLE_SIZE, TC.SAMPLE_SIZE) SAMPLE_SIZE,
+       decode(substr(tc.data_type,1,9)
+          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(CSH.LOWVAL, TC.LOW_VALUE), TC.LOW_VALUE))) 
+          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(CSH.LOWVAL, TC.LOW_VALUE))) 
+          ,'DATE'         ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
+                                to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
+                                       + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
+                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
+                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
+                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
+                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
+                                to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00'))) 
+          ,'TIMESTAMP'    ,decode(NVL(CSH.LOWVAL, TC.LOW_VALUE), NULL, NULL, rtrim(
+                           to_char(100*(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),1,2),'XX')-100)
+                                  + (to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),3,2),'XX')-100),'fm0000')||'-'||
+                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),5,2),'XX'),'fm00')||'-'||
+                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),7,2),'XX'),'fm00')||' '||
+                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),9,2),'XX')-1,'fm00')||':'||
+                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),11,2),'XX')-1,'fm00')||':'||
+                           to_char(to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),13,2),'XX')-1,'fm00')||'.'||
+                           to_number(substr(NVL(CSH.LOWVAL, TC.LOW_VALUE),15,8),'XXXXXXXX')  )) 
+                           , NVL(CSH.LOWVAL, TC.LOW_VALUE) ) low_value,
+       decode(substr(tc.data_type,1,9)
+          ,'NUMBER'       ,to_char(utl_raw.cast_to_number(NVL(NVL(csh.hival, tc.high_value), tc.high_value))) 
+          ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(NVL(csh.hival, tc.high_value))) 
+          ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(NVL(csh.hival, tc.high_value))) 
+          ,'BINARY_DO'    ,to_char(utl_raw.cast_to_binary_double(NVL(csh.hival, tc.high_value))) 
+          ,'BINARY_FL'    ,to_char(utl_raw.cast_to_binary_float(NVL(csh.hival, tc.high_value))) 
+          ,'DATE'         ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
+                                to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
+                                       + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
+                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
+                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
+                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
+                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
+                                to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00'))) 
+          ,'TIMESTAMP'    ,decode(NVL(csh.hival, tc.high_value), NULL, NULL, rtrim(
+                           to_char(100*(to_number(substr(NVL(csh.hival, tc.high_value),1,2),'XX')-100)
+                                  + (to_number(substr(NVL(csh.hival, tc.high_value),3,2),'XX')-100),'fm0000')||'-'||
+                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),5,2),'XX'),'fm00')||'-'||
+                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),7,2),'XX'),'fm00')||' '||
+                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),9,2),'XX')-1,'fm00')||':'||
+                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),11,2),'XX')-1,'fm00')||':'||
+                           to_char(to_number(substr(NVL(csh.hival, tc.high_value),13,2),'XX')-1,'fm00')||'.'||
+                           to_number(substr(NVL(csh.hival, tc.high_value),15,8),'XXXXXXXX')  )) 
+                           , NVL(csh.hival, tc.high_value) ) high_value,
+		  NVL(LPAD(TO_CHAR(CSH.TIMESTAMP#,'YYYY-MM-DD/HH24:MI:SS'),20), LPAD(TO_CHAR(TC.LAST_ANALYZED,'YYYY-MM-DD/HH24:MI:SS'),20)) LAST_ANALYZED,
+		  (row_number() over (partition by IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION, CSH.INTCOL#  order by IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION, CSH.INTCOL#, CSH.TIMESTAMP# DESC )) r
+          FROM indlist indl,
+		       DBA_IND_COLUMNS IC, DBA_OBJECTS T, SYS.COL$ C, SYS.WRI$_OPTSTAT_HISTHEAD_HISTORY CSH,
+		       DBA_TAB_COLUMNS TC
+		  WHERE IC.TABLE_NAME  = T.OBJECT_NAME
+		  AND   IC.TABLE_OWNER = T.OWNER
+		  AND   IC.COLUMN_NAME = C.NAME
+		  AND   T.OBJECT_ID    = CSH.OBJ#(+)
+		  AND   C.OBJ#         = T.OBJECT_ID
+		  AND   C.INTCOL#      = CSH.INTCOL#(+)
+		  AND  T.OWNER = indl.INDEX_OWNER  AND   IC.index_name = indl.index_name AND T.OBJECT_TYPE = 'TABLE'
+		  AND TC.OWNER = T.OWNER
+		  AND TC.TABLE_NAME = T.OBJECT_NAME
+		  and csh.timestamp# < (select to_date(last_load_time,'yyyy-mm-dd hh24:mi:ss') from gv$sql where sql_id = :sql_id and plan_hash_value =  :l_plan_hash_value order by last_load_time desc FETCH FIRST 1 ROW ONLY)
+		  AND TC.COLUMN_NAME = C.NAME
+		  ORDER BY IC.INDEX_OWNER, IC.INDEX_NAME, IC.COLUMN_POSITION, CSH.INTCOL#, CSH.TIMESTAMP# DESC )
+		  WHERE r < 4);
+
+
+pro <tr>
+pro <th>Table Name</th>
+pro <th>Index Owner</th>
+pro <th>Index Name</th>
+pro <th>CP</th>
+pro <th>Column Name</th>
+pro <th>Data Type</th>
+pro <th># of Distinct<br>Values</th>
+pro <th># of NULLs</th>
+pro <th>Avg Column Length</th>
+pro <th>Sample Size</th>
+pro <th>Low Value</th>
+pro <th>High Value</th>
+pro <th>Last Analyzed</th>
+pro </tr>
+
+pro </tbody>
+pro  </table>
+
+-- end of Index Column Stats SQL
+select round((sysdate-to_date(:start_time,'dd-mon-rr hh24:mi:ss'))*86400) diff from dual;
+PRO <table style="width:100%"><tr><td style="text-align:right; background-color:#ffffff">Time taken: ^^diff. seconds</td></tr></table></details>
+exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
+
+
+PRO </body></html>
+rem set markup html off
+SPO OFF;
+
+/*================================ End Table/Col/Index/IndexCol stats at Hard Parse ==========================*/
 
 
 /**************************************************************************************************
@@ -12100,9 +12268,10 @@ captured_binds as
          -- , dba_hist_sql_bind_metadata bm  -- PSRv7 - using only to get name, which we are already getting from peeked binds
          , dba_hist_snapshot ss
    where 1 = 1
-     and (:license IN ('T', 'D') or (:license = 'L' and ss.begin_interval_time > systimestamp - interval '^^days.' day))
+     and :license IN ('T', 'D', 'L')
      and s.dbid = ^^dbid.
      and s.sql_id = :sql_id
+     and s.snap_id between :minsnap and :maxsnap
      and s.bind_data is not null
      and s.dbid = ss.dbid
      and s.instance_number = ss.instance_number
@@ -12352,6 +12521,7 @@ with str(sql_text) as
         SELECT sql_text
           FROM dba_hist_sqltext
          WHERE sql_id = :sql_id
+           AND dbid = ^^dbid. 
            AND ROWNUM = 1
        ),
 cnt as (select sql_text, 
@@ -12480,10 +12650,10 @@ SELECT value||DECODE(INSTR(value, '/'), 0, '\', '/') udump_path FROM v$diag_info
 SPO ^^script..log APP
 set head off
 SELECT 'START: ' || to_timestamp('^^sqlhcstart', 'DD-Mon-RR HH24:MI:SS.FF') from dual;
-SELECT 'End:   ' || to_timestamp(to_char(systimestamp, 'DD-Mon-RR HH24:MI:SS.FF'), 'DD-Mon-RR HH24:MI:SS.FF') from dual;
+SELECT 'END  : ' || to_timestamp(to_char(systimestamp, 'DD-Mon-RR HH24:MI:SS.FF'), 'DD-Mon-RR HH24:MI:SS.FF') from dual;
 
 -- SELECT 'END:   '||TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS') FROM dual;
-SELECT 'Time: ' || (to_timestamp(to_char(systimestamp, 'DD-Mon-RR HH24:MI:SS.FF'), 'DD-Mon-RR HH24:MI:SS.FF') - to_timestamp('^^sqlhcstart', 'DD-Mon-RR HH24:MI:SS.FF')) as sqlhc_runtime from dual;
+SELECT 'TIME : ' || (to_timestamp(to_char(systimestamp, 'DD-Mon-RR HH24:MI:SS.FF'), 'DD-Mon-RR HH24:MI:SS.FF') - to_timestamp('^^sqlhcstart', 'DD-Mon-RR HH24:MI:SS.FF')) as sqlhc_runtime from dual;
 set head on
 SPO OFF;
 
@@ -12516,6 +12686,7 @@ HOS zip -m ^^files_prefix..zip ^^files_prefix._13_all_bind_values.html
 HOS zip -m ^^files_prefix..zip ^^files_prefix._14_executable_script.sql
 HOS zip -m ^^files_prefix..zip ^^files_prefix._15_histogram_actual_values_atHardParse.html
 HOS zip -m ^^files_prefix..zip ^^files_prefix._16_sql_profiles.sql
+HOS zip -m ^^files_prefix..zip ^^files_prefix._17_table_column_index_indexcol_stats_atHardParse.html
 
 -- generate DBMS_SQLDIAG.DUMP_TRACE 10053. this api is called down here in case it disconnects.
 EXEC DBMS_APPLICATION_INFO.SET_CLIENT_INFO('^^method.: DBMS_SQLDIAG.DUMP_TRACE - ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS'));
@@ -12529,15 +12700,21 @@ BEGIN
   IF childno is not null 
   THEN
     IF '^^rdbms_version.' >= '11.2' THEN
-      DBMS_SQLDIAG.DUMP_TRACE (
+       NULL;
+
+       DBMS_SQLDIAG.DUMP_TRACE (
         p_sql_id    => :sql_id,
         p_child_number => childno,
         p_component => 'Optimizer',
         p_file_id   => 'SQLHCCBO_^^unique_id.');
+
     END IF;
   ELSE
     :cbo_trace_generated := 'N';
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN 
+    NULL;
 END;
 /
 EXEC DBMS_APPLICATION_INFO.SET_CLIENT_INFO('^^method.: DBMS_SQLDIAG.DUMP_TRACE Done - ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD/HH24:MI:SS'));
@@ -12552,8 +12729,6 @@ SET TERM OFF;
 HOS cp ^^udump_path.*_SQLHCCBO_^^unique_id.*.trc   ^^files_prefix._6_10053_trace_from_cursor.trc
 HOS copy ^^udump_path.*_SQLHCCBO_^^unique_id.*.trc ^^files_prefix._6_10053_trace_from_cursor.trc
 HOS zip -m ^^files_prefix..zip ^^files_prefix._6_10053_trace_from_cursor.trc
-HOS zip -m ^^files_prefix._9_log.zip ^^script..log
-HOS zip -m ^^files_prefix..zip ^^files_prefix._9_log.zip
 
 SET TERM ON;
 EXEC :L_SQLHC_MIN := round((sysdate - TO_DATE('^^unique_id.', 'YYYYMMDD_HH24MISS')) * 24 * 60);
@@ -12567,7 +12742,7 @@ PRINT L_SQLHC_MIN
 
 Set echo off  FEED OFF verify off heading on LINESIZE 300 pagesize 500 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
 REM
-REM $Header: 1294364.1 sma.sql 19c 6 2021/05/27 jinsoo.eo $
+REM $Header: 1294364.1 sma.sql 19c10 2022/05/15 jinsoo.eo $
 REM
 REM Copyright (c) 2018, Oracle Corporation. All rights reserved.
 REM
@@ -12643,7 +12818,7 @@ REM
 REM   more detail information : https://confluence.oraclecorp.com/confluence/display/~jinsoo.eo@oracle.com/SMA+log
 REM
 
-set echo off  FEED OFF verify off heading on LINESIZE 300 pagesize 500 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
+set echo off  FEED OFF verify off heading on LINESIZE 600 pagesize 500 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
 alter session set "_optimizer_adaptive_plans"=false;
 alter session set nls_date_format = 'YYYY-MM-DD HH24:MI:SS';
 exec DBMS_APPLICATION_INFO.SET_MODULE ( module_name=>'SMA', action_name=>'SMA');
@@ -12692,6 +12867,8 @@ VAR L_SNAP_ID          NUMBER
 VAR SQL_FROM_MEM       NUMBER
 VAR SQL_FROM_AWR       NUMBER
 VAR SQL_FROM_SPM       NUMBER
+VAR SQL_FROM_STS       NUMBER
+
 VAR SQL_FROM_AWR_SPM   NUMBER
 EXEC :SQL_FROM_AWR_SPM := 0;
 
@@ -12917,14 +13094,14 @@ SELECT TO_CHAR(SYSDATE, 'YYYYMMDD_HH24MISS') unique_id FROM DUAL;
 VAR L_PLAN_PRINT      VARCHAR2(10)
 
 /*   need to use rem each line for sma. */
-/* rem FOR SMA
-rem FOR SMA
-rem EXEC :L_SQL_ID := TRIM('&&sql_id.');
-rem EXEC :L_PLAN_PRINT := NVL(TRIM('&&PLAN_PRINT.'),'NO');
-rem COL files_prefix NEW_V files_prefix FOR A40;
-rem SELECT '&&unique_id._&&sql_id.' files_prefix FROM DUAL;
-rem SPOOL sma_&&files_prefix..sql1;
-*/
+--rem FOR SMA
+--rem FOR SMA
+-- EXEC :L_SQL_ID := TRIM('&&sql_id.');
+-- EXEC :L_PLAN_PRINT := NVL(TRIM('&&PLAN_PRINT.'),'NO');
+-- COL files_prefix NEW_V files_prefix FOR A40;
+-- SELECT '&&unique_id._&&sql_id.' files_prefix FROM DUAL;
+-- SPOOL sma_&&files_prefix..sql1;
+
 
 REM FOR SQLHC
 EXEC :L_SQL_ID := TRIM('^^input_sql_id.');
@@ -12938,7 +13115,7 @@ PRO
 -- sma
 --PRO <head>
 --PRO <title>sma_&&files_prefix..html</title>
-PRO
+--PRO
 -- sqlhc
 PRO <head>
 PRO <title>sma_^^files_prefix..html</title>
@@ -13004,9 +13181,9 @@ PRO </script>
 
 PRO <a name="top"></a>
 --sma
---PRO <h1>SMA V19C05 Beta sma_&&files_prefix..html</h1>
+--PRO <h1>SMA V19C10 sma_&&files_prefix..html</h1>
 --sqlhc
-PRO <h1>SMA V19C05 Beta sma_^^files_prefix..html</h1>
+PRO <h1>SMA V19C10 sma_^^files_prefix..html</h1>
 SET DEFINE OFF
 PRO <table border="0">
 PRO <tr>
@@ -14266,15 +14443,15 @@ PROMPT SQL TEXT SCAN  : As it needs the parser, hold it here.
 -- 20210302
 -- SQL PLAN COMPARISON AND GENERATE HINT START
 
-
-BEGIN
-  SELECT
-   NVL( (SELECT 1 FROM GV$SQL_SHARED_CURSOR SC
-         WHERE SC.AUTH_CHECK_MISMATCH = 'Y' AND ROWNUM = 1 AND SC.SQL_ID = :L_SQL_ID), 0)
-  INTO :L_VPD_CNT
-  FROM DUAL;
-END;
-/
+--20210804
+--BEGIN
+--  SELECT
+--   NVL( (SELECT 1 FROM GV$SQL_SHARED_CURSOR SC
+--         WHERE SC.AUTH_CHECK_MISMATCH = 'Y' AND ROWNUM = 1 AND SC.SQL_ID = :L_SQL_ID), 0)
+--  INTO :L_VPD_CNT
+--  FROM DUAL;
+--END;
+--/
 
 
 VAR L_CURRENT_BEST1 number;
@@ -14288,14 +14465,20 @@ DELETE PLAN_TABLE ;
 COMMIT;
 
 
-INSERT INTO PLAN_TABLE 
+INSERT INTO PLAN_TABLE
 (ID, STATEMENT_ID, PLAN_ID, PARENT_ID, DEPTH, POSITION, CARDINALITY, BYTES, PARTITION_ID, OBJECT_NODE, OBJECT_OWNER, COST, OBJECT_TYPE)
 WITH
-p AS ( select sql_id, plan_hash_value, max(cost) cost from (
-       SELECT sql_id, plan_hash_value, max(cost) cost FROM gv$sql_plan       WHERE sql_id = :L_SQL_ID group by sql_id, plan_hash_value  UNION
-       SELECT sql_id, plan_hash_value, max(cost) cost FROM dba_hist_sql_plan WHERE sql_id = :L_SQL_ID
-       AND DBID = :L_DBID group by sql_id, plan_hash_value )
-       group by sql_id, plan_hash_value       ),
+p AS ( select MAX(SRC) SRC, sql_id, plan_hash_value, max(cost) cost from (
+       SELECT 3 src, sql_id, plan_hash_value, max(cost) cost FROM gv$sql_plan       WHERE sql_id = :L_SQL_ID group by sql_id, plan_hash_value  UNION
+       SELECT 2 src, sql_id, plan_hash_value, max(cost) cost FROM dba_hist_sql_plan WHERE sql_id = :L_SQL_ID AND DBID = :L_DBID group by sql_id, plan_hash_value UNION
+       SELECT 1 src, SQL_ID, PLAN_HASH_VALUE, MAX(COST) COST FROM dba_sqlset_plans
+       WHERE SQL_ID = :L_SQL_ID 
+       AND SQLSET_OWNER = 'SYS'
+       AND SQLSET_NAME in ('SYS_AUTO_STS_12C_NonCDB', 'SYS_AUTO_STS')
+       --and LAST_EXECUTION > to_date('31-MAY-2019','DD-MON-YYYY')
+       group by sql_id, plan_hash_value
+       )
+       group by sql_id, plan_hash_value  ),
 m AS (
 SELECT sql_id, plan_hash_value,
        SUM(elapsed_time)/greatest(sum(executions),1) avg_et_secs,
@@ -14326,39 +14509,149 @@ SELECT sql_id,plan_hash_value,
    AND DBID = :L_DBID
    AND SNAP_ID BETWEEN :L_SNAP_ID - 720 AND :L_SNAP_ID
  GROUP BY sql_id,plan_hash_value ),
+STS AS (
+SELECT SQL_ID, PLAN_HASH_VALUE,
+       ET_SEC/GREATEST(executions,1) avg_et_secs,
+       CPU_SEC/GREATEST(executions,1) avg_cpu_secs,
+       ROUND(buffer_gets/GREATEST(executions,1)) avg_bfgs,
+       ROUND(DISK_READS/GREATEST(executions,1)) avg_disk,
+       ROUND(rows_processed/GREATEST(executions,1)) avg_rows_processed,
+       executions total_exec,
+     ( SELECT MAX(P.PLAN_TIMESTAMP) PLAN_TIME FROM SYS.WRI$_SQLSET_PLANS P
+       WHERE P.STMT_ID = H.STMT_ID AND P.PLAN_HASH_VALUE = H.PLAN_HASH_VALUE ) LAST_LOAD_TIME,
+       LAST_EXEC_START_TIME LAST_ACTIVE_TIME
+FROM (
+select S.SQL_ID, c.plan_hash_value, MAX(s.ID) STMT_ID,
+       SUM(C.elapsed_time) et_sec,  SUM(C.CPU_time) CPU_sec,  SUM(C.buffer_gets) buffer_gets,
+       SUM(C.DISK_READS) DISK_READS, sum(C.rows_processed) rows_processed, SUM(C.executions) executions,
+       max(C.LAST_EXEC_START_TIME) LAST_EXEC_START_TIME
+from sys.WRI$_SQLSET_STATEMENTS s, sys.WRI$_SQLSET_DEFINITIONS d, sys.WRI$_SQLSET_STATISTICS c
+where sql_id = :L_SQL_ID and d.id = s.sqlset_id
+AND s.id = c.stmt_id
+AND s.con_dbid = c.con_dbid
+AND d.OWNER = 'SYS'
+AND D.NAME in ('SYS_AUTO_STS_12C_NonCDB', 'SYS_AUTO_STS')
+AND d.last_modified > to_date('31-MAY-2019','DD-MON-YYYY')
+GROUP BY s.sql_id, c.plan_hash_value ) h
+--ORDER BY ROUND(buffer_gets/GREATEST(executions,1))
+) ,
 SSET AS (
-SELECT p.sql_id, p.plan_hash_value, 
-       NVL(m.avg_et_secs, a.avg_et_secs)   avg_et_secs,
-       --ROUND(NVL(m.avg_et_secs, a.avg_et_secs)/1e6, 3)   avg_et_secs,
-       NVL(m.avg_cpu_secs, a.avg_cpu_secs) avg_cpu_secs,
-       --ROUND(NVL(m.avg_cpu_secs, a.avg_cpu_secs)/1e6, 3) avg_cpu_secs,
-       ROUND(NVL(m.avg_rows_processed, a.avg_rows_processed)) avg_rows_processed,
-       ROUND(NVL(m.avg_bfgs, a.avg_bfgs)) avg_bfgs,
-       ROUND(NVL(m.avg_disk, a.avg_disk)) avg_disk,
-       ROUND(NVL(m.total_exec, a.total_exec)) total_exec,
-       NVL(TO_CHAR(m.LAST_LOAD_TIME), ' ') LAST_LOAD_TIME,
+ SELECT ROWNUM RM, SQL_ID, PLAN_HASH_VALUE,avg_et_secs,  avg_cpu_secs, avg_rows_processed,  avg_bfgs, avg_disk,  total_exec, LAST_LOAD_TIME,
+  LAST_ACTIVE_TIME, cost,src
+ FROM
+ (SELECT p.sql_id, p.plan_hash_value,
+       DECODE(P.SRC, 3, M.avg_et_secs, 2, a.avg_et_secs, 1, STS.AVG_ET_SECS)   avg_et_secs,
+       DECODE(P.SRC, 3, m.avg_cpu_secs,2, a.avg_cpu_secs,1, STS.avg_cpu_secs)  avg_cpu_secs,
+       ROUND(DECODE(P.SRC, 3, m.avg_rows_processed, 2, a.avg_rows_processed, 1, STS.avg_rows_processed)) avg_rows_processed,
+       ROUND(DECODE(P.SRC, 3, m.avg_bfgs, 2, a.avg_bfgs, 1, STS.avg_bfgs)) avg_bfgs,
+       ROUND(DECODE(P.SRC, 3, m.avg_disk, 2, a.avg_disk,1, STS.avg_disk)) avg_disk,
+       ROUND(DECODE(P.SRC, 3, m.total_exec, 2, a.total_exec,1, STS.total_exec)) total_exec,
+       DECODE(P.SRC, 3, TO_CHAR(m.LAST_LOAD_TIME),2, ' ',1, STS.LAST_LOAD_TIME) LAST_LOAD_TIME,
       -- NVL(TO_CHAR(m.LAST_ACTIVE_TIME), a.LAST_ACTIVE_TIME) LAST_ACTIVE_TIME,
-       NVL( TO_CHAR(m.LAST_ACTIVE_TIME),
+       DECODE(P.SRC, 3,  TO_CHAR(m.LAST_ACTIVE_TIME), 2,
             (select max(END_INTERVAL_TIME) from dba_hist_snapshot
              where snap_id = a.snap_id AND DBID = :L_DBID and rownum = 1)
-           ) LAST_ACTIVE_TIME,
+           , 1, STS.LAST_ACTIVE_TIME ) LAST_ACTIVE_TIME,
        p.cost,
-       DECODE(m.avg_et_secs,NULL,'AWR','MEM') SRC
-  FROM p, m, a
+--       DECODE(m.avg_et_secs,NULL,'AWR','MEM') SRC
+       DECODE(P.SRC, 3, 'MEM' , 2, 'AWR', 1, 'STS') SRC
+  FROM p, m, a, STS
  WHERE p.plan_hash_value = m.plan_hash_value(+)
    AND p.plan_hash_value = a.plan_hash_value(+)
- ORDER BY avg_et_secs NULLS LAST  ) ,
-MAXROWS AS ( SELECT decode(MAX(avg_rows_processed),0,0,1) MAX_PROCCESSED, count(*) LAST_CNT  FROM SSET )
+   AND P.PLAN_HASH_VALUE = STS.PLAN_HASH_VALUE(+)
+ ORDER BY avg_et_secs NULLS LAST  )
+ )
+, MAXROWS AS ( SELECT decode(MAX(avg_rows_processed),0,0,1) MAX_PROCCESSED, count(*) LAST_CNT  FROM SSET )
 SELECT ROWNUM RWNM, SQL_ID, PLAN_HASH_VALUE, AVG_ET_SECS, avg_cpu_secs, AVG_ROWS_PROCESSED, AVG_BFGS,
                     avg_disk, total_exec, LAST_LOAD_TIME, LAST_ACTIVE_TIME,
                     COST, SRC
 FROM ( SELECT SQL_ID, PLAN_HASH_VALUE, AVG_ET_SECS, avg_cpu_secs, AVG_ROWS_PROCESSED, AVG_BFGS,
               avg_disk, total_exec, LAST_LOAD_TIME, LAST_ACTIVE_TIME, COST, SRC
-       FROM SSET S1  WHERE   AVG_ROWS_PROCESSED >= (SELECT MAX_PROCCESSED FROM MAXROWS)
-       ORDER BY  AVG_ET_SECS, AVG_BFGS ) 
+       FROM SSET S1
+       WHERE ( AVG_ROWS_PROCESSED >= (SELECT MAX_PROCCESSED FROM MAXROWS)
+            OR RM = (SELECT LAST_CNT FROM MAXROWS) )
+       ORDER BY  AVG_ET_SECS/greatest(AVG_ROWS_PROCESSED,1), AVG_BFGS/greatest(AVG_ROWS_PROCESSED,1) )
 /
 
+--20210804
 
+VAR L_VPD NUMBER;
+EXEC :L_VPD := 0;
+
+BEGIN
+   select
+   nvl( (SELECT 1 FROM PLAN_TABLE WHERE OBJECT_TYPE = 'MEM' AND ROWNUM = 1), 0 )
+   INTO :SQL_FROM_MEM  from dual;
+
+   select
+   nvl( (SELECT 1 FROM PLAN_TABLE WHERE OBJECT_TYPE = 'AWR' AND ROWNUM = 1), 0 )
+   INTO :SQL_FROM_AWR  from dual ;
+
+   select
+   nvl( (SELECT 1 FROM PLAN_TABLE WHERE OBJECT_TYPE = 'STS' AND ROWNUM = 1), 0 )
+   INTO :SQL_FROM_STS  from dual ;
+
+END;
+/
+
+BEGIN
+  WITH
+    object AS (
+       SELECT /*+ MATERIALIZE */
+              object_owner, object_name, object_type
+         FROM gv$sql_plan
+        WHERE inst_id IN (SELECT inst_id FROM gv$instance)
+          AND sql_id = :L_SQL_ID
+          AND :SQL_FROM_MEM = 1
+          AND object_owner IS NOT NULL AND object_name IS NOT NULL
+          AND ( OPERATION LIKE 'TABLE%' OR OPERATION LIKE 'INDEX%' OR OPERATION LIKE 'MAT_VIEW%')
+          AND OBJECT_TYPE <> 'TABLE (TEMP)'
+        UNION
+       SELECT object_owner, object_name, object_type
+         FROM dba_hist_sql_plan
+        WHERE dbid = :L_DBID
+          AND sql_id = :L_SQL_ID
+          AND :SQL_FROM_AWR = 1
+          AND object_owner IS NOT NULL AND object_name IS NOT NULL
+          AND ( OPERATION LIKE 'TABLE%' OR OPERATION LIKE 'INDEX%' OR OPERATION LIKE 'MAT_VIEW%')
+          AND  OBJECT_TYPE <> 'TABLE (TEMP)'
+        UNION
+       SELECT L.OBJECT_OWNER, L.OBJECT_NAME, L.OBJECT_TYPE
+         FROM SYS.WRI$_SQLSET_STATEMENTS S,
+              SYS.WRI$_SQLSET_PLAN_LINES L
+        WHERE S.SQL_ID = :L_SQL_ID
+          AND L.STMT_ID = S.id
+          AND L.OBJECT_OWNER IS NOT NULL AND L.OBJECT_NAME IS NOT NULL
+          AND ( L.OPERATION LIKE 'TABLE%' OR L.OPERATION LIKE 'INDEX%' OR L.OPERATION LIKE 'MAT_VIEW%')
+          AND L.OBJECT_TYPE <> 'TABLE (TEMP)'
+    ),
+    table_list AS (
+         SELECT /*+ MATERIALIZE */
+                object_owner, object_name
+           FROM object o
+          WHERE (o.object_type like 'TABLE%' OR o.object_type like 'MAT_VIEW%')
+          UNION
+         SELECT i.table_owner object_owner, i.table_name object_name
+           FROM dba_indexes i,
+                object o
+          WHERE o.object_type like 'INDEX%'
+            AND i.owner = o.OBJECT_owner
+            AND i.index_name = o.OBJECT_name
+    )
+  select count(*) INTO :L_VPD
+  from table_list l
+  where exists ( select 1
+                 from  DBA_POLICIES p
+                 where p.object_owner = l.object_owner
+                 and   p.object_name  = upper(l.object_name)
+                 and   policy_name not like 'FND_ENTERPRISE'
+                 and policy_name not like '%BGID%'
+                 and policy_name not like '%EBR%' )
+  and  rownum = 1 ;
+END;
+/
+
+--20210804
 
 pro <table>
 pro <tbody><tr>
@@ -14374,6 +14667,7 @@ pro <th>MEMORY<br>LAST LOAD TIME</th>
 pro <th>LAST ACTIVE TIME</th>
 pro <th>Cost</th>
 pro <th>Source</th>
+pro <th>Ratio of Time<br>Per Row</th>
 pro </tr>
 
 /*
@@ -14399,9 +14693,10 @@ SELECT CHR(10)||'<tr>'||CHR(10)||
 '<td class="r">'||LAST_ACTIVE_TIME||'</td>'||CHR(10)||
 '<td class="r">'||COST||'</td>'||CHR(10)||
 '<td class="r">'||SRC||'</td>'||CHR(10)||
+'<td class="r">'||TR||'</td>'||CHR(10)||
 '</TR>'
 FROM  (
- SELECT RWNM, PLAN_HASH_VALUE,
+ SELECT rownum RWNM, PLAN_HASH_VALUE,
   nvl(CASE
       WHEN AVG_ET_SECS >= 1e18 THEN ROUND(AVG_ET_SECS /1e18,1) || 'E'
       WHEN AVG_ET_SECS >= 1e15 THEN ROUND(AVG_ET_SECS /1e15,1) || 'P'
@@ -14409,7 +14704,7 @@ FROM  (
       WHEN AVG_ET_SECS >= 1e9  THEN ROUND(AVG_ET_SECS / 1e9,1) || 'G'
       WHEN AVG_ET_SECS >= 1e6  THEN ROUND(AVG_ET_SECS / 1e6,1) || 'M'
       WHEN AVG_ET_SECS >= 1e3  THEN ROUND(AVG_ET_SECS / 1e3,1) || 'K'
-      ELSE to_char(round(AVG_ET_SECS,2)) END, ' ')  AVG_ET_SECS,
+      ELSE to_char(round(AVG_ET_SECS,5)) END, ' ')  AVG_ET_SECS,
   nvl(CASE
       WHEN AVG_CPU_SECS >= 1e18 THEN ROUND(AVG_CPU_SECS /1e18,1) || 'E'
       WHEN AVG_CPU_SECS >= 1e15 THEN ROUND(AVG_CPU_SECS /1e15,1) || 'P'
@@ -14417,14 +14712,14 @@ FROM  (
       WHEN AVG_CPU_SECS >= 1e9  THEN ROUND(AVG_CPU_SECS / 1e9,1) || 'G'
       WHEN AVG_CPU_SECS >= 1e6  THEN ROUND(AVG_CPU_SECS / 1e6,1) || 'M'
       WHEN AVG_CPU_SECS >= 1e3  THEN ROUND(AVG_CPU_SECS / 1e3,1) || 'K'
-      ELSE to_char(round(AVG_CPU_SECS,2)) END, ' ')  AVG_CPU_SECS,
+      ELSE to_char(round(AVG_CPU_SECS,5)) END, ' ')  AVG_CPU_SECS,
   nvl(CASE
       WHEN AVG_BFGS >= 1e18 THEN ROUND(AVG_BFGS /1e18,1) || 'E'
-      WHEN AVG_BFGS >= 1e15 THEN ROUND(AVG_BFGS /1e15,1) || 'P'                                
-      WHEN AVG_BFGS >= 1e12 THEN ROUND(AVG_BFGS /1e12,1) || 'T'                                
-      WHEN AVG_BFGS >= 1e9  THEN ROUND(AVG_BFGS / 1e9,1) || 'G'                                
-      WHEN AVG_BFGS >= 1e6  THEN ROUND(AVG_BFGS / 1e6,1) || 'M'                                
-      WHEN AVG_BFGS >= 1e3  THEN ROUND(AVG_BFGS / 1e3,1) || 'K'                                
+      WHEN AVG_BFGS >= 1e15 THEN ROUND(AVG_BFGS /1e15,1) || 'P'
+      WHEN AVG_BFGS >= 1e12 THEN ROUND(AVG_BFGS /1e12,1) || 'T'
+      WHEN AVG_BFGS >= 1e9  THEN ROUND(AVG_BFGS / 1e9,1) || 'G'
+      WHEN AVG_BFGS >= 1e6  THEN ROUND(AVG_BFGS / 1e6,1) || 'M'
+      WHEN AVG_BFGS >= 1e3  THEN ROUND(AVG_BFGS / 1e3,1) || 'K'
       ELSE to_char(round(AVG_BFGS,2)) END, ' ') AVG_BFGS,
   nvl(CASE
       WHEN AVG_DISK >= 1e18 THEN ROUND(AVG_DISK /1e18,1) || 'E'
@@ -14459,23 +14754,34 @@ FROM  (
       WHEN COST >= 1e6  THEN ROUND(COST / 1e6,1) || 'M'                                
       WHEN COST >= 1e3  THEN ROUND(COST / 1e3,1) || 'K'                                
       ELSE to_char(round(COST,2)) END, ' ') COST,
-  SRC
+  SRC, TR
 FROM
 (
-SELECT ID RWNM, STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE,
+SELECT --ID RWNM, 
+STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE,
 ROUND(PARENT_ID/1E6,3) AVG_ET_SECS, ROUND(DEPTH/1E6,3) avg_cpu_secs,
 CARDINALITY AVG_BFGS, BYTES avg_disk,
 POSITION  AVG_ROWS_PROCESSED, PARTITION_ID total_exec,
 OBJECT_NODE LAST_LOAD_TIME, OBJECT_OWNER LAST_ACTIVE_TIME,
-COST COST, OBJECT_TYPE SRC
-FROM PLAN_TABLE 
-ORDER BY ID ) )
+COST COST, OBJECT_TYPE SRC,
+ROUND(PARENT_ID/1E6/greatest(POSITION,1),5) TR
+FROM PLAN_TABLE
+order by ROUND(PARENT_ID/1E6/greatest(POSITION,1),5)  ))
+--order by ETIME/greatest(AVGROWS,1)  ))
+--ORDER BY ID ) )
 /
 
 VAR L_LAST_RWNM NUMBER
 VAR L_CURRENT_BEST_BFG   NUMBER
 VAR L_CURRENT_BEST1_BFG  NUMBER
 VAR L_CURRENT_WORST1_BFG NUMBER
+
+
+/*
+(ID,   STATEMENT_ID, PLAN_ID,         PARENT_ID,   DEPTH,        POSITION,           CARDINALITY, BYTES,    PARTITION_ID, OBJECT_NODE,    OBJECT_OWNER,     COST, OBJECT_TYPE)
+ RWNM, SQL_ID,       PLAN_HASH_VALUE, AVG_ET_SECS, avg_cpu_secs, AVG_ROWS_PROCESSED, AVG_BFGS,    avg_disk, total_exec,   LAST_LOAD_TIME, LAST_ACTIVE_TIME, COST, SRC
+ SELECT decode(MAX(POSITION),0,0,1) MAX_PROCCESSED, count(*) LAST_CNT  FROM PLAN_TABLE
+*/
 
 
 BEGIN  SELECT COUNT(*) INTO :L_LAST_RWNM FROM PLAN_TABLE ; END;
@@ -14492,19 +14798,29 @@ BEGIN :L_COUNT := :L_LAST_RWNM; END ;
 PRO </tbody>
 PRO </TABLE>
 
+--set head on
+--
+---- 20210302
+---- SQL PLAN COMPARISON AND GENERATE HINT END
+--
+--pro </pre><a name="PHV_ANALYSIS"></a><h2>PHV level Analysis</h2><pre>
+
+-- 2021108start
+
+
+VAR L_HINT_FACTOR NUMBER
+EXEC :L_HINT_FACTOR := 1;
+
 PROMPT <DETAILS>
 PROMPT <SUMMARY><BLUE>HINT SUGGESTION FROM BETTER PLAN.</BLUE></SUMMARY>
 PROMPT
---select ' Note. The sql_id, '||:L_SQL_ID||' is working under <blue>'||:L_SQL_GROUP||'</blue>.' from dual ;
-select ' The hint is from phv '||:L_CURRENT_BEST||decode(:L_CURRENT_WORST1, :L_CURRENT_BEST1,'', ' or '||:L_CURRENT_BEST1)||', if there is some suggestion' from dual;
 
---20210303
 insert into plan_table (PLAN_ID,REMARKS)
 SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  1,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
-        from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 1 AND OBJECT_TYPE = 'MEM' 
-                and :L_CURRENT_BEST_TIME*2 < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
+        from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 1 AND OBJECT_TYPE = 'MEM'
+                and :L_CURRENT_BEST_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14518,7 +14834,21 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  1,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 1 AND OBJECT_TYPE = 'AWR'
-        and :L_CURRENT_BEST_TIME*2 < :L_CURRENT_WORST1_TIME  and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        and :L_CURRENT_BEST_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME  and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
+        AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
+      TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
+where ( SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'LEADING%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_NL%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_HASH%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'PUSH_%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'INDEX%' )
+UNION ALL
+SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
+ 1,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
+FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
+        from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 1 AND OBJECT_TYPE = 'STS'
+        and :L_CURRENT_BEST_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME  and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_SQLSET_PLANS S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14532,7 +14862,7 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  1,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = :L_LAST_RWNM AND OBJECT_TYPE = 'MEM'
-        and :L_CURRENT_BEST_TIME*2 < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
+        and :L_CURRENT_BEST_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14546,7 +14876,21 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  1,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = :L_LAST_RWNM AND OBJECT_TYPE = 'AWR'
-        and :L_CURRENT_BEST_TIME*2 < :L_CURRENT_WORST1_TIME  and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        and :L_CURRENT_BEST_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME  and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
+        AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
+      TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
+where ( SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'LEADING%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_NL%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_HASH%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'PUSH_%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'INDEX%' )
+MINUS
+SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
+ 1,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
+FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
+        from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = :L_LAST_RWNM AND OBJECT_TYPE = 'STS'
+        and :L_CURRENT_BEST_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME  and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_SQLSET_PLANS S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14562,7 +14906,7 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  2,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 2 AND OBJECT_TYPE = 'MEM'
-        and :L_CURRENT_BEST1_TIME*2 < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
+        and :L_CURRENT_BEST1_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14576,7 +14920,21 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  2,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 2 AND OBJECT_TYPE = 'AWR'
-        and :L_CURRENT_BEST1_TIME*2 < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        and :L_CURRENT_BEST1_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
+        AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
+      TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
+where ( SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'LEADING%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_NL%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_HASH%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'PUSH_%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'INDEX%' )
+UNION ALL
+SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
+ 2,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
+FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
+        from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = 2 AND OBJECT_TYPE = 'STS'
+        and :L_CURRENT_BEST1_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_SQLSET_PLANS S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14590,7 +14948,7 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  2,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = :L_LAST_RWNM AND OBJECT_TYPE = 'MEM'
-        and :L_CURRENT_BEST1_TIME*2 < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
+        and :L_CURRENT_BEST1_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, gv$sql_plan S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14604,7 +14962,21 @@ SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
  2,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
 FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
         from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = :L_LAST_RWNM AND OBJECT_TYPE = 'AWR'
-        and :L_CURRENT_BEST1_TIME*2 < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        and :L_CURRENT_BEST1_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_HIST_SQL_PLAN S
+        WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
+        AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
+      TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
+where ( SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'LEADING%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_NL%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'USE_HASH%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'PUSH_%'
+    or  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) like 'INDEX%' )
+MINUS
+SELECT  /*+ opt_param('parallel_execution_enabled', 'false') */
+ 2,  SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hintS
+FROM  ( select /*+ LEADING(F,S) */ S.OTHER_XML
+        from  ( SELECT STATEMENT_ID SQL_ID, PLAN_ID PLAN_HASH_VALUE FROM PLAN_TABLE WHERE ID = :L_LAST_RWNM AND OBJECT_TYPE = 'STS'
+        and :L_CURRENT_BEST1_TIME*:L_HINT_FACTOR < :L_CURRENT_WORST1_TIME and :L_CURRENT_BEST1_BFG < :L_CURRENT_WORST1_BFG ) F, DBA_SQLSET_PLANS S
         WHERE  F.SQL_ID  = S.SQL_ID AND F.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE
         AND S.OTHER_XML IS NOT NULL AND ROWNUM = 1 ) S,
       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(S.OTHER_XML), '/*/outline_data/hint'))) d
@@ -14625,7 +14997,6 @@ where plan_id =
            when h1.cnt > 7       and h2.cnt > 7        then 0
       end)
 /
-
 
 PROMPT </DETAILS>
 
@@ -14671,13 +15042,16 @@ order by table_name,COLUMN_COMBINATION   )
 
 PROMPT </DETAILS>
 
-set head on
+-- 2021108end
 
 -- 20210302
 -- SQL PLAN COMPARISON AND GENERATE HINT END
 
+set head on
+
 pro </pre><a name="PHV_ANALYSIS"></a><h2>PHV level Analysis</h2><pre>
 
+-- 2021108start
 
 VAR L_PRINT_OUTPUT_RATIO VARCHAR2(200);
 VAR L_TABLE_NAME   VARCHAR2(100);
@@ -18276,68 +18650,175 @@ END;
 
 /* THERE IS NO DATA IN SQL_MONITOR but there is data in AWR_SQL_MONITOR.*/
 
+/***** new verion start for AWR SQL MONITORING REPORT BY PACKAGE ****************************************************/
+--20220430
+PROMPT <DETAILS>
+PROMPT <SUMMARY><BLUE>SQL MONITORING REPORT BY PACKAGE</BLUE></SUMMARY>
+
+SET ECHO OFF FEED OFF VER OFF SHOW OFF HEA OFF LINES 32000 NEWP NONE PAGES 0 LONG 2000000 LONGC 2000 SQLC MIX TAB ON TRIMS ON TI OFF TIMI OFF
+
+
 BEGIN
-   :L_WHERE_LOG := 'AWR SQL MONITOR';
-   IF (  :SQL_FROM_SPM in (0,1)   ) THEN   -- 20190904 to get dba_hist_report_details always
-     SELECT 1 INTO :SQL_FROM_AWR_SPM
-     from  dba_hist_reports  dhr
-     WHERE component_name='sqlmonitor'
-     and   key1 = :l_sql_id
-     AND DBID = :L_DBID
-     --2020922
-     AND SNAP_ID BETWEEN :L_SNAP_ID - 720 AND :L_SNAP_ID
-     --AND   :SQL_FROM_SPM = 0
-     AND   ROWNUM = 1 ;
-   END IF ;
-   EXCEPTION  WHEN OTHERS THEN
-     --DBMS_OUTPUT.PUT_LINE('+');    --||SQLERRM);
-     --DBMS_OUTPUT.PUT_LINE('There is no AWR SQL PLAN MONITOR information.');    --||SQLERRM);
-     null;
+     FOR SM IN (
+      SELECT rownum p_rownum, p_sql_id, p_report_id, p_dbid, p_instance_number, p_phv
+       from ( select key1 p_sql_id, report_id p_report_id, dbid p_dbid, instance_number p_instance_number, phv p_phv, etime,
+                     rank() over(partition by phv order by etime desc) rank_by_elapsed_desc
+        from ( select key1 , dbid , instance_number, REPORT_ID,
+                      regexp_substr(report_summary, q'{<plan_hash>([[:digit:]]+)</plan_hash>}', 1, 1, null, 1)  phv,
+                      round(to_number(regexp_substr(report_summary, q'{<stat name="elapsed_time">([[:digit:]]+)</stat>}', 1, 1, null, 1))/1e6,3) etime
+               FROM dba_hist_reports
+               WHERE component_name = 'sqlmonitor'  AND KEY1 = :L_SQL_ID
+               AND  DBID = :L_DBID
+               AND SNAP_ID BETWEEN :L_SNAP_ID - 720 AND :L_SNAP_ID
+               ) )
+       --where rank_by_elapsed_desc <= decode(:L_SQLHC_MIN_FLAG,16,1,10,2) )
+       where rank_by_elapsed_desc <= 1 )
+     LOOP
+      if  SM.p_rownum = 1  then
+        DBMS_OUTPUT.PUT_LINE('<BLUE>'||sm.p_rownum||'. >>>>>> Latest Run from Memory for phv: '||sm.p_phv||'</BLUE>');
+        for memsm in ( select dbms_sqltune.report_sql_monitor(sql_id => SM.p_sql_id ) memsm_output from dual )
+        loop
+         DBMS_OUTPUT.PUT_LINE(memsm.memsm_output);
+        end loop;
+      end if ;
+      DBMS_OUTPUT.PUT_LINE('+');
+      DBMS_OUTPUT.PUT_LINE('+');
+      DBMS_OUTPUT.PUT_LINE('<BLUE>'||sm.p_rownum||'. >>>>>> AWR REPORT_ID : '||SM.p_report_id||', for phv: '||sm.p_phv||'</BLUE>');
+      for rmcg in (
+        select
+            'RMCG:'||extractValue(value(d), '/target/rminfo/@rmcg')
+        ||'  ADPP:'||extractValue(value(d), '/target/adaptive_plan')
+        ||'  FNLP:'||extractValue(value(d), '/target/adaptive_plan/@is_final')
+        ||chr(10)  head
+        from  DBA_HIST_REPORTS_DETAILS c,
+              TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c.report), '/report/sql_monitor_report/target'))) D
+        where c.DBID =  SM.p_dbid  AND C.INSTANCE_NUMBER = SM.p_instance_number
+        and   c.report_id = SM.p_report_id
+        union all
+        select
+            'SF:'||extractValue(value(d), '/other_xml/info[@type="cardinality_feedback"]')
+        ||'  PR:'||extractValue(value(d), '/other_xml/info[@type="sql_profile"]')
+        ||'  PA:'||extractValue(value(d), '/other_xml/info[@type="sql_patch"]')
+        ||'  BL:'||extractValue(value(d), '/other_xml/info[@type="baseline"]')
+        ||chr(10)  head
+        from  DBA_HIST_REPORTS_DETAILS c,
+              TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c.report), '/report/sql_monitor_report/plan/operation/other_xml'))) D
+        where c.DBID =  SM.p_dbid  AND C.INSTANCE_NUMBER = SM.p_instance_number
+        and   c.report_id = SM.p_report_id
+      )
+      loop
+        DBMS_OUTPUT.PUT_LINE(rmcg.head);
+      end loop;
+      for smd in (
+      select DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID=> sm.p_report_id, TYPE => 'text') sm_output from dual
+      )
+      loop
+        DBMS_OUTPUT.PUT_LINE(smd.sm_output);
+      end loop;
+        DBMS_OUTPUT.PUT_LINE('*** Predicates ***');
+      for prd in (
+         SELECT lpad('     ',5-length(d.pid))||to_number(D.PID)
+        || decode(D.ACCESS_PREDICATES, null, null, ' - access (')
+        || substr(D.ACCESS_PREDICATES,1,200)
+        || decode(sign( D.ap_size - 200),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES, 201,200)
+        || decode(sign( D.ap_size - 400),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES, 401,200)
+        || decode(sign( D.ap_size - 600),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES, 601,200)
+        || decode(sign( D.ap_size - 800),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES, 801,200)
+        || decode(sign( D.ap_size -1000),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES,1001,200)
+        || decode(sign( D.ap_size -1200),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES,1201,200)
+        || decode(sign( D.ap_size -1400),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES,1401,200)
+        || decode(sign( D.ap_size -1600),1, chr(10)||'                  ')||substr(D.ACCESS_PREDICATES,1601)
+        || decode(D.ACCESS_PREDICATES, null, null, ')')
+        || DECODE(D.FILTER_PREDICATES, NULL,NULL, decode(D.ACCESS_PREDICATES, null, ' - filter (', chr(10)||'        - filter (') )
+        || substr(D.FILTER_PREDICATES,1,200)
+        || decode(sign( D.fp_size - 200),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES, 201,200)
+        || decode(sign( D.fp_size - 400),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES, 401,200)
+        || decode(sign( D.fp_size - 600),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES, 601,200)
+        || decode(sign( D.fp_size - 800),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES, 801,200)
+        || decode(sign( D.fp_size -1000),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES,1001,200)
+        || decode(sign( D.fp_size -1200),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES,1201,200)
+        || decode(sign( D.fp_size -1400),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES,1401,200)
+        || decode(sign( D.fp_size -1600),1, chr(10)||'                  ')||substr(D.FILTER_PREDICATES,1601)
+        || decode(D.FILTER_PREDICATES, null, null, ')')  predicates
+        FROM ( SELECT  d.pid, d.access_predicates, length(d.access_predicates) ap_size, d.filter_predicates, length(d.filter_predicates) fp_size
+          FROM   (select report, DBID, report_id
+          from DBA_HIST_REPORTS_DETAILS c
+          where c.DBID =  sm.p_dbid  AND C.INSTANCE_NUMBER = sm.p_instance_number
+          and   c.report_id = sm.p_report_id
+          ) c,
+          xmltable (
+            '/report/sql_monitor_report/plan/operation'
+            passing XMLTYPE(c.report)
+            columns
+              pid path '@id',
+              operation path '@name',
+              --qblock path 'qblock',
+              --object_alias path 'object_alias',
+              object path 'object',
+              --skip_op path '@skp',
+              ACCESS_PREDICATES varchar2(4000) path 'predicates[@type="access"]',
+          --    ACCESS_PREDICATES clob path 'predicates[@type="access"]',
+              FILTER_PREDICATES varchar2(4000) path 'predicates[@type="filter"]'
+          --    FILTER_PREDICATES clob path 'predicates[@type="filter"]'
+          ) d
+         where( d.ACCESS_PREDICATES is NOT NULL OR d.FILTER_PREDICATES IS NOT NULL )
+       ) d
+       order by to_number(d.pid)
+      )
+      loop
+        DBMS_OUTPUT.PUT_LINE(prd.predicates);
+      end loop;
+        DBMS_OUTPUT.PUT_LINE('*** Event and Cpu ***');
+      for waits in (
+        select
+        lpad('     ',5-length(id))||id||' - '
+        ||'(<red>'||ROUND((RATIO_TO_REPORT(NVL(cpu_cnt,0)
+                                     +NVL(event_cnt1,0)+NVL(event_cnt2,0)+NVL(event_cnt3,0)+NVL(event_cnt4,0)+NVL(event_cnt5,0)
+                                     )
+             over(partition by REPORT_ID))*100, 2)||'%</red>)  '
+        ||decode(cpu_cnt,null,null,'Cpu ('||cpu_cnt||')  ')
+        ||decode(event_cnt1,null,null,event_name1||' ('||event_cnt1||')  ')
+        ||decode(event_cnt2,null,null,event_name2||' ('||event_cnt2||')  ')
+        ||decode(event_cnt3,null,null,event_name3||' ('||event_cnt3||')  ')
+        ||decode(event_cnt4,null,null,event_name4||' ('||event_cnt4||')  ')
+        ||decode(event_cnt5,null,null,event_name5||' ('||event_cnt5||')  ')
+        EVENT
+       FROM
+         (select c.report_id, extractValue(value(d), '/operation/@id') id,
+              extractValue(value(d), '/operation/activity_sampled/activity[1][@class="Cpu"]') cpu_cnt,
+              extractValue(value(d), '/operation/activity_sampled/activity[1]/@event')   event_name1,
+              extractValue(value(d), '/operation/activity_sampled/activity[1][@event]')  event_cnt1,
+              extractValue(value(d), '/operation/activity_sampled/activity[2]/@event')   event_name2,
+              extractValue(value(d), '/operation/activity_sampled/activity[2][@event]')  event_cnt2,
+              extractValue(value(d), '/operation/activity_sampled/activity[3]/@event')   event_name3,
+              extractValue(value(d), '/operation/activity_sampled/activity[3][@event]')  event_cnt3,
+              extractValue(value(d), '/operation/activity_sampled/activity[4]/@event')   event_name4,
+              extractValue(value(d), '/operation/activity_sampled/activity[4][@event]')  event_cnt4,
+              extractValue(value(d), '/operation/activity_sampled/activity[5]/@event')   event_name5,
+              extractValue(value(d), '/operation/activity_sampled/activity[5][@event]')  event_cnt5
+          from  DBA_HIST_REPORTS_DETAILS c,
+             TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c.report), '/report/sql_monitor_report/plan_monitor/*'))) D
+          where c.DBID = sm.p_dbid AND C.INSTANCE_NUMBER = sm.p_instance_number
+          and   c.report_id = sm.p_report_id
+         )
+       where ( cpu_cnt IS NOT NULL
+              OR event_cnt1 IS NOT NULL
+              OR event_cnt2 IS NOT NULL
+              OR event_cnt3 IS NOT NULL
+              OR event_cnt4 IS NOT NULL
+              OR event_cnt5 IS NOT NULL )
+       )
+      loop
+        DBMS_OUTPUT.PUT_LINE(waits.EVENT);
+      end loop;
+    end loop;
+    exception when others then null;
 END;
 /
--- for test only
---exec  :SQL_FROM_AWR_SPM := 1;
---exec  :SQL_FROM_SPM := 0;
+PROMPT </DETAILS>
+set lines 600
 
---prompt FOR SMA  and SQLHC
-set echo off  FEED OFF verify off heading off LINESIZE 300 pagesize 0 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
-spool run_sma_&&files_prefix..sql
-
-select 'set long 10000000 longchunksize 10000000 LIN 500  trims on' from dual
-where   :SQL_FROM_AWR_SPM = 1
-AND     :SQL_FROM_SPM = 0
-/
-PROMPT PROMPT <DETAILS>
-PROMPT PROMPT <SUMMARY><BLUE>AWR SQL MONITORING REPORT BY PACKAGE</BLUE></SUMMARY>
-PROMPT PROMPT
-select 'SELECT DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL(RID => '||report_id||', TYPE => ''text'') FROM dual;'
-FROM ( SELECT  report_id
-from dba_hist_reports
-WHERE component_name='sqlmonitor'
-and   key1 = :l_sql_id
-AND  DBID = :L_DBID
---2020922
-AND SNAP_ID BETWEEN :L_SNAP_ID - 720 AND :L_SNAP_ID
-AND   :SQL_FROM_AWR_SPM = 1
-AND   :SQL_FROM_SPM = 0
-ORDER BY GENERATION_TIME DESC )
-WHERE ROWNUM < 3
-/
-PROMPT PROMPT </DETAILS>
-spool off
-set trims on
--- FOR SMA AND SQLHC
-SPOOL sma_&&files_prefix..sql3 APPEND
-
-prompt +
-start run_sma_&&files_prefix..sql
-spool off
-host rm -f run_sma_&&files_prefix..sql
-rem for windows
-host del -f  run_sma_&&files_prefix..sql
-
-
-SPOOL sma_&&files_prefix..sql3 APPEND
+/***** new verion end for AWR SQL MONITORING REPORT BY PACKAGE ****************************************************/
 
 /*
 asm2p.sql start
@@ -18347,6 +18828,11 @@ var L_REPORT_ID          NUMBER;
 var L_INSTANCE_NUMBER    NUMBER;
 var L_B_SNAP_ID          NUMBER;
 var L_E_SNAP_ID          NUMBER;
+
+--2021/06/01
+
+var L_PERIOD_START_TIME  VARCHAR2(50);
+VAR L_PERIOD_END_TIME    VARCHAR2(50);
 
 begin
      FOR SM IN ( select report_id, INSTANCE_NUMBER,
@@ -18364,6 +18850,8 @@ begin
                         AND E.SNAP_ID BETWEEN :L_SNAP_ID - 720 AND :L_SNAP_ID
                         and E.END_INTERVAL_TIME >= A.PERIOD_END_TIME
                         and E.instance_number = A.instance_number ) E_SNAP_ID
+--2021/06/01
+                        , PERIOD_START_TIME, PERIOD_END_TIME
                  FROM ( SELECT  report_id, INSTANCE_NUMBER, PERIOD_START_TIME, PERIOD_END_TIME
                         FROM DBA_HIST_REPORTS
                         WHERE COMPONENT_NAME ='sqlmonitor'
@@ -18380,13 +18868,32 @@ begin
            :L_INSTANCE_NUMBER   := SM.INSTANCE_NUMBER ;
            :L_B_SNAP_ID         := SM.B_SNAP_ID ;
            :L_E_SNAP_ID         := SM.E_SNAP_ID ;
+--2021/06/01
+           :L_PERIOD_START_TIME := SM.PERIOD_START_TIME ;
+           :L_PERIOD_END_TIME   := SM.PERIOD_END_TIME ;
       END LOOP;
       EXCEPTION  WHEN OTHERS THEN
            :L_REPORT_ID       := 0;
            :L_INSTANCE_NUMBER := 0;
 end ;
 /
+--2021/06/01
 
+prompt <details>
+prompt <summary><blue>ACTIVE SESSION HISOTRY REPORT COMMAND BY PACKAGE</blue></summary>
+
+begin
+DBMS_OUTPUT.PUT_LINE('SELECT  output FROM TABLE ( dbms_workload_repository.ASH_REPORT_HTML('||:L_DBID||','||:L_INSTANCE_NUMBER||',');
+DBMS_OUTPUT.PUT_LINE('to_date('''||:L_PERIOD_START_TIME||''',''yyyy-mm-dd hh24:mi:ss'')'||',to_date('''||:L_PERIOD_END_TIME||''',''yyyy-mm-dd hh24:mi:ss'')'||',0,0, null'||','''||:L_SQL_ID||'''))');
+end;
+/
+-- embedded code
+--SELECT  output FROM TABLE ( dbms_workload_repository.ASH_REPORT_HTML
+--       (:L_DBID,:L_INSTANCE_NUMBER, :L_PERIOD_START_TIME, :L_PERIOD_END_TIME,0,0, null,:L_SQL_ID )  )
+--where :L_PERIOD_START_TIME <> :L_PERIOD_END_TIME ;
+
+PROMPT </DETAILS>
+--PROMPT PROMPT </DETAILS>
 
 prompt <details>
 prompt <summary><blue>AWR SQL MONITORING REPORT BY SMA</blue></summary>
@@ -18724,6 +19231,40 @@ from (
 
 pro </TR></tbody>
 pro </table>
+
+-- 2022/02/22  CELL_OPEN_ALERTS BEGIN
+
+pro <table>
+pro <tbody><tr>
+pro <th>CELL_HASH</th>
+pro <th>BEGIN_TIME</th>
+pro <th>SEQ_NO</th>
+pro <th>STATEFUL</th>
+pro <th>SEVERITY</th>
+pro <th>MESSAGE</th>
+pro </tr>
+SET HEAD OFF
+
+SELECT  CHR(10)||'<tr>'||CHR(10)
+     ||'<td class="r">'||CELL_HASH||'</td>'||CHR(10)
+     ||'<td class="r">'||BEGIN_TIME||'</td>'||CHR(10)
+     ||'<td class="r">'||SEQ_NO||'</td>'||CHR(10)
+     ||'<td class="r">'||STATEFUL||'</td>'||CHR(10)
+     ||'<td class="r">'||SEVERITY||'</td>'||CHR(10)
+     ||'<td class="r">'||MESSAGE||'</td>'||CHR(10)
+     ||'</TR>'
+from ( select CELL_HASH, BEGIN_TIME, SEQ_NO, STATEFUL, SEVERITY, replace(MESSAGE,:L_SQL_ID,'<RED>'||:L_SQL_ID||'</RED>') MESSAGE
+       from DBA_HIST_CELL_OPEN_ALERTS
+       where dbid = :L_DBID
+       and snap_id between :L_B_SNAP_ID and :L_E_SNAP_ID
+       and message like '%'||:L_SQL_ID||'%'
+       order by snap_id desc, SEQ_NO desc )
+/
+
+pro </TR></tbody>
+pro </table>
+
+-- 2022/02/22 CELL_OPEN_ALERTS END
 
 SET HEAD ON
 ---------exec order start--------
@@ -19250,9 +19791,9 @@ col bvalue  format  a60
 PROMPT ============================== ==================== ========== ==========================================================
 PROMPT BIND_VARIABLE_NAME             TYPE                 LENGTH     BIND_VALUE
 PROMPT ============================== ==================== ========== ==========================================================
---2021/05/27
+--2022/02/16
 select bname, dtystr, dlength,
-substr(bvalue, length(bvalue)/3+1)||rpad('***********************************', length(bvalue)*2/3)  bvalue
+substr(bvalue, 1, length(bvalue)/3+1)||rpad('***********************************', length(bvalue)*2/3)  bvalue
 from (
 select extractValue(value(d), '/bind/@name')   bname,
        --extractValue(value(d), '/bind/@dty')    dtype,
@@ -19351,6 +19892,7 @@ order by to_number(d.pid)
 /
 select  id as pid, qblock_name as QBLOCK, object_alias as OBJECT_ALIAS, object_name as OBJECT, trim(remarks) AS WAIT_CPU
 from    plan_table
+order by id  --20220216
 /
 
 var l_object_alias_1st  varchar2(100)
@@ -19514,7 +20056,8 @@ BEGIN
                           FROM GV$ACTIVE_SESSION_HISTORY ASH
                           WHERE ASH.INST_ID = M1.INST_ID
                           AND   ASH.SQL_ID  = M1.SQL_ID
-                          and   ash.SQL_CHILD_NUMBER    = m1.child_number   -- 20200811
+                          and   ash.SQL_CHILD_NUMBER in (m1.child_number,0) -- 20220503
+                          --    and   ash.SQL_CHILD_NUMBER    = m1.child_number   -- 20200811
                           AND   ASH.SQL_PLAN_HASH_VALUE = M1.PLAN_HASH_VALUE),
                          (SELECT ASH.INST_ID, ASH.SQL_ID, ASH.SQL_PLAN_HASH_VALUE, ASH.SQL_PLAN_LINE_ID,
                           -- NVL(ASH.EVENT, ASH.SESSION_STATE) EVENT, ASH.CURRENT_OBJ# ,
@@ -19526,7 +20069,8 @@ BEGIN
                           WHERE ASH.INST_ID = M1.INST_ID
                           AND   ASH.SQL_ID  = M1.SQL_ID
                           AND   ASH.SQL_PLAN_HASH_VALUE = M1.PLAN_HASH_VALUE
-                          and   ash.SQL_CHILD_NUMBER    = m1.child_number   -- 20200811
+                          and   ash.SQL_CHILD_NUMBER in (m1.child_number,0) -- 20220503
+                          --    and   ash.SQL_CHILD_NUMBER    = m1.child_number   -- 20200811
                           --AND   ASH.SESSION_ID      = M1.SID             -- NOT MANY ROWS --
                           --AND   ASH.SESSION_SERIAL# = M1.SESSION_SERIAL# -- NOT MANY ROWS --
                           --AND   ASH.EVENT IS NOT NULL                      -- PICK ONLY WAITS except CPU --
@@ -19536,9 +20080,9 @@ BEGIN
                           --,NVL(ASH.EVENT, ASH.SESSION_STATE), ASH.CURRENT_OBJ#
                           ORDER BY  COUNT(ASH.EVENT)+COUNT(ASH.SESSION_STATE) DESC )
                      WHERE ROWNUM < 6
-                     AND ( ROUND(WAITS_CNT/TSNAP_COUNT*100,2) > 19.9
-                        OR ROUND(CPU_CNT/TSNAP_COUNT*100,2)   > 19.9 )
-                     AND   SNAP_COUNT > 1 )
+                     --AND ( ROUND(WAITS_CNT/TSNAP_COUNT*100,2) > 19.9
+                     --   OR ROUND(CPU_CNT/TSNAP_COUNT*100,2)   > 19.9 )
+                     AND   SNAP_COUNT > 0 )
                 ),
 /* v4 sql plan order : 20190827 */
                 SP_EXEC_ORDER AS (
@@ -19561,21 +20105,21 @@ BEGIN
                 XPLAN AS (
                 SELECT
                 sp.id           AS id,
-                sp.output_rows  AS NUM_output_rows,
+                sp.last_output_rows  AS NUM_output_rows,
                 -----
                 SEO.OID         AS OID,
                 -----
                 CASE
-                WHEN sp.output_rows < 1000 THEN TO_CHAR(sp.output_rows)
-                WHEN sp.output_rows >= 1000 AND sp.output_rows < 1000000 THEN ROUND(sp.output_rows/1000)||'K'
-                WHEN sp.output_rows >= 1000000 AND sp.output_rows < 1000000000 THEN ROUND(sp.output_rows/1000000)||'M'
-                WHEN sp.output_rows >= 1000000000          AND sp.output_rows < 1000000000000          THEN ROUND(sp.output_rows/1000000000)||'G'
-                WHEN sp.output_rows >= 1000000000000       AND sp.output_rows < 1000000000000000       THEN ROUND(sp.output_rows/1000000000000)||'T'
-                WHEN sp.output_rows >= 1000000000000000    AND sp.output_rows < 1000000000000000000    THEN ROUND(sp.output_rows/1000000000000000)||'P'
-                WHEN sp.output_rows >= 1000000000000000000 AND sp.output_rows < 1000000000000000000000 THEN ROUND(sp.output_rows/1000000000000000000)||'E'
+                WHEN sp.last_output_rows < 1000 THEN TO_CHAR(sp.last_output_rows)
+                WHEN sp.last_output_rows >= 1000 AND sp.last_output_rows < 1000000 THEN ROUND(sp.last_output_rows/1000)||'K'
+                WHEN sp.last_output_rows >= 1000000 AND sp.last_output_rows < 1000000000 THEN ROUND(sp.last_output_rows/1000000)||'M'
+                WHEN sp.last_output_rows >= 1000000000          AND sp.last_output_rows < 1000000000000          THEN ROUND(sp.last_output_rows/1000000000)||'G'
+                WHEN sp.last_output_rows >= 1000000000000       AND sp.last_output_rows < 1000000000000000       THEN ROUND(sp.last_output_rows/1000000000000)||'T'
+                WHEN sp.last_output_rows >= 1000000000000000    AND sp.last_output_rows < 1000000000000000000    THEN ROUND(sp.last_output_rows/1000000000000000)||'P'
+                WHEN sp.last_output_rows >= 1000000000000000000 AND sp.last_output_rows < 1000000000000000000000 THEN ROUND(sp.last_output_rows/1000000000000000000)||'E'
                 END AS OUTPUT_ROWS   ,
 -----------------------------
-                sp.output_rows R_output_rows,
+                sp.last_output_rows R_output_rows,
 -----------------------------
                 nvl(sp.cost,0)  AS NUM_cost,
                 CASE
@@ -19750,8 +20294,8 @@ BEGIN
         IF ( M2.WAITS_CNT > 0 OR M2.CPU_CNT > 0 ) THEN
            :l_as5 := :l_as4;
            :l_as4 := :l_as3;
-           :l_as3 := :l_as3;
-           :l_as2 := :l_as2;
+           :l_as3 := :l_as2;
+           :l_as2 := :l_as1;
            :l_as1 :=  M2.ID;
         END IF;
       END IF;
@@ -20114,6 +20658,7 @@ BEGIN
                      SP_EXEC_ORDER   SEO
                 WHERE SEO.ID = SP.ID
                 AND   SP.DBID            = M1.DBID
+                AND   SP.DBID            = :L_DBID
                 --AND   SP.INSTANCE_NUMBER = M1.INSTANCE_NUMBER
                 AND   SP.SQL_ID          = M1.SQL_ID
                 AND   sp.plan_hash_value = M1.plan_hash_value
@@ -20201,7 +20746,7 @@ END ;
 /
 --prompt </DETAILS>
 
-set long 1000000 lines 500
+set long 1000000 lines 600
 PRO
 pro </pre><a name="APPENDIX"></a><h2>Appendix/Supporting details</h2><pre>
 BEGIN
@@ -20428,7 +20973,7 @@ END;
 
 PROMPT SPOOL sma_ep_&&files_prefix..output
 --PROMPT SPOOL sma_exp_pred_&&files_prefix..output
-PROMPT SET LINES 500
+PROMPT SET LINES 600
 PROMPT select '<details>' FROM DUAL WHERE (:SQL_FROM_SPM = 1 or :SQL_FROM_AWR = 1 or :SQL_FROM_AWR_SPM = 1) AND :L_PLAN_HASH_VALUE2 <> 0
 PROMPT /
 --prompt prompt <summary><blue>Explain Plan Predicates</blue></summary>
@@ -20560,7 +21105,7 @@ END;
 
 PROMPT SPOOL sma_ep1_&&files_prefix..output
 --PROMPT SPOOL sma_exp_pred1_&&files_prefix..output
-PROMPT SET LINES 500
+PROMPT SET LINES 600
 --prompt prompt <details>
 PROMPT select '<details>' FROM DUAL WHERE (:SQL_FROM_SPM = 1 or :SQL_FROM_AWR = 1 or :SQL_FROM_AWR_SPM = 1) AND :L_PLAN_HASH_VALUE1 <> 0
 PROMPT /
@@ -20614,6 +21159,35 @@ END;
 pro   <a name="STATSFEEDBACK"></a>
 pro <details>
 pro   <summary><blue>STATISTICS FEEDBACK (MEM)</blue></summary>
+
+--20220502
+
+pro <table>
+pro <tbody><tr>
+pro <th>SRC</th>
+pro <th>INST_ID</th>
+pro <th>CHILD_NUMBER</th>
+pro <th>USE_FEEDBACK_STATS</th>
+pro </tr>
+
+select  CHR(10)||'<tr>'||CHR(10)
+     ||'<td class="r">'||SRC||'</td>'||CHR(10)
+     ||'<td class="r">'||INST_ID||'</td>'||CHR(10)
+     ||'<td class="r">'||CHILD_NUMBER||'</td>'||CHR(10)
+     ||'<td class="r"><RED>'||USE_FEEDBACK_STATS||'</RED></td>'||CHR(10)
+     ||'</TR>'
+FROM (
+SELECT 'MEM' AS SRC, INST_ID, count(distinct CHILD_NUMBER) CHILD_NUMBER, COUNT(decode(USE_FEEDBACK_STATS,'Y',1)) USE_FEEDBACK_STATS
+FROM  gv$sql_shared_cursor
+WHERE SQL_ID = :L_SQL_ID
+AND   USE_FEEDBACK_STATS = 'Y'
+GROUP BY inst_id
+order by inst_id
+)
+/
+
+pro </tbody>
+pro </table>
 
 pro <table>
 pro <tbody><tr>
@@ -20671,28 +21245,47 @@ pro <th>PLAN_HASH<br>VALUE</th>
 pro <th>CHILD<br>NUMBER</th>
 pro <th>IS_REOPTIMIZABLE</th>
 pro <th>LAST_LOAD_TIME</th>
+pro <th>AVG_ETIME</th>
+pro <th>AVG_BFG</th>
+pro <th>ROWS_PROCESSED</th>
 pro <th>FEEDBACK_STATS</th>
 pro </tr>
 SET HEAD OFF
-
-SELECT  CHR(10)||'<tr>'||CHR(10)
+--20220429
+with drv as (
+ select to_number(sum(elapsed_time)/greatest(sum(executions),1)/greatest(sum(ROWS_PROCESSED),1)) ttpr from gv$sql where sql_id = :l_sql_id )
+SELECT
+      CHR(10)||'<tr>'||CHR(10)
      ||'<td class="r">'||INST_ID||'</td>'||CHR(10)
      ||'<td class="r">'||PLAN_HASH_VALUE||'</td>'||CHR(10)
      ||'<td class="r">'||CHILD_NUMBER||'</td>'||CHR(10)
      ||'<td class="r">'||IS_REOPTIMIZABLE||'</td>'||CHR(10)
      ||'<td class="r">'||LAST_LOAD_TIME||'</td>'||CHR(10)
+     ||'<td class="r">'||AVG_ETIME||'</td>'||CHR(10)
+     ||'<td class="r">'||AVG_BFG||'</td>'||CHR(10)
+     ||'<td class="r">'||ROWS_PROCESSED||'</td>'||CHR(10)
      ||'<td class="r">'||FEEDBACK_STATS||'</td>'||CHR(10)
      ||'</TR>'
 FROM (
-SELECT INST_ID, PLAN_HASH_VALUE, CHILD_NUMBER, IS_REOPTIMIZABLE, LAST_LOAD_TIME, 'STATS FEEDBACK' FEEDBACK_STATS
+SELECT INST_ID, PLAN_HASH_VALUE, CHILD_NUMBER, IS_REOPTIMIZABLE, LAST_LOAD_TIME,
+avg_etime,
+avg_bfg,
+rows_processed,
+decode( sign( ptpr - ttpr ), 1, '<red>'||feedback_stats||'</red>', feedback_stats ) feedback_stats
 FROM (
-SELECT s.inst_id, S.SQL_ID, S.plan_hash_value, s.CHILD_NUMBER ,S.IS_REOPTIMIZABLE, S.LAST_LOAD_TIME
-  FROM GV$SQL S
- WHERE S.sql_id = :L_SQL_ID
- AND EXISTS (SELECT 'Y' FROM GV$SQL_PLAN P
+SELECT s.inst_id, S.SQL_ID, S.plan_hash_value, s.CHILD_NUMBER ,S.IS_REOPTIMIZABLE, S.LAST_LOAD_TIME,
+   round(s.elapsed_time/greatest(s.executions,1)/1e6,4) avg_etime,
+   ROUND(s.rows_processed/greatest(s.executions,1)) rows_processed,
+   s.elapsed_time/greatest(s.executions,1)/greatest(s.rows_processed,1)  ptpr,
+   round(s.buffer_gets/greatest(s.executions,1)) avg_bfg,
+    (SELECT 'STATS FEEDBACK'  FROM GV$SQL_PLAN P
                      WHERE P.INST_ID = S.INST_ID AND P.SQL_ID = S.SQL_ID AND P.PLAN_HASH_VALUE = S.PLAN_HASH_VALUE AND P.CHILD_NUMBER = S.CHILD_NUMBER
-                     AND P.OTHER_XML IS NOT NULL AND P.OTHER_XML LIKE '%cardinality_feedback" note="y">yes%' AND ROWNUM = 1 )
+                     AND P.OTHER_XML IS NOT NULL AND P.OTHER_XML LIKE '%cardinality_feedback" note="y">yes%' AND ROWNUM = 1 )   FEEDBACK_STATS
+    , drv.ttpr
+  FROM GV$SQL S , drv
+ WHERE S.sql_id = :L_SQL_ID
 )  S ) ;
+
 
 pro </tbody>
 pro </table>
@@ -20704,6 +21297,33 @@ pro   <a name="HARDPARSE"></a>
 pro <details>
 pro   <summary><blue>HARD PARSING TIME AND VPD BY PLAN HASH VALUE (MEM)</blue></summary>
 -- SMA19C 2020/02/04
+
+pro <table>
+pro <tbody><tr>
+pro <th>SRC</th>
+pro <th>INST_ID</th>
+pro <th>CHILD_NUMBER</th>
+pro <th>AUTH_CHECK_MISMATCH</th>
+pro </tr>
+
+select  CHR(10)||'<tr>'||CHR(10)
+     ||'<td class="r">'||SRC||'</td>'||CHR(10)
+     ||'<td class="r">'||INST_ID||'</td>'||CHR(10)
+     ||'<td class="r">'||CHILD_NUMBER||'</td>'||CHR(10)
+     ||'<td class="r"><RED>'||AUTH_CHECK_MISMATCH||'</RED></td>'||CHR(10)
+     ||'</TR>'
+FROM (
+SELECT 'MEM' AS SRC, INST_ID, count(distinct CHILD_NUMBER) CHILD_NUMBER, COUNT(DECODE(AUTH_CHECK_MISMATCH,'Y',1)) AUTH_CHECK_MISMATCH
+FROM  gv$sql_shared_cursor
+WHERE SQL_ID = :L_SQL_ID
+AND   AUTH_CHECK_MISMATCH = 'Y'
+GROUP BY inst_id
+order by inst_id
+)
+/
+
+pro </tbody>
+pro </table>
 
 pro <table>
 pro <tbody><tr>
@@ -20964,6 +21584,39 @@ pro <blue>MIS-BIND TYPE/SIZE FROM GV$SQL_BIND_CAPTURE/DBA_HIST_SQLBIND</blue>
 pro <table>
 pro <tbody><tr>
 pro <th>SRC</th>
+pro <th>INST_ID</th>
+pro <th>CHILD_NUMBER</th>
+pro <th>BIND_LENGTH_UPGRADEABLE</th>
+pro <th>BIND_MISMATCH</th>
+pro <th>USER_BIND_PEEK_MISMATCH</th>
+pro </tr>
+
+select  CHR(10)||'<tr>'||CHR(10)
+     ||'<td class="r">'||SRC||'</td>'||CHR(10)
+     ||'<td class="r">'||INST_ID||'</td>'||CHR(10)
+     ||'<td class="r">'||CHILD_NUMBER||'</td>'||CHR(10)
+     ||'<td class="r"><RED>'||BIND_LENGTH_UPGRADEABLE||'</RED></td>'||CHR(10)
+     ||'<td class="r"><RED>'||BIND_MISMATCH||'</RED></td>'||CHR(10)
+     ||'<td class="r"><RED>'||USER_BIND_PEEK_MISMATCH||'</RED></td>'||CHR(10)
+     ||'</TR>'
+FROM (
+SELECT 'MEM' AS SRC, INST_ID, count(DISTINCT CHILD_NUMBER) CHILD_NUMBER, COUNT(DECODE(BIND_LENGTH_UPGRADEABLE,'Y',1)) BIND_LENGTH_UPGRADEABLE, 
+       COUNT(DECODE(BIND_MISMATCH,'Y',1)) BIND_MISMATCH,
+       count(DECODE(USER_BIND_PEEK_MISMATCH,'Y',1)) USER_BIND_PEEK_MISMATCH
+FROM  gv$sql_shared_cursor
+WHERE SQL_ID = :L_SQL_ID
+AND ( BIND_LENGTH_UPGRADEABLE = 'Y' OR BIND_MISMATCH = 'Y' or USER_BIND_PEEK_MISMATCH = 'Y' )
+GROUP BY inst_id
+order by inst_id
+)
+/
+
+pro </tbody>
+pro </table>
+
+pro <table>
+pro <tbody><tr>
+pro <th>SRC</th>
 pro <th>NAME</th>
 pro <th>POSISION</th>
 pro <th>DATATYPE_STRING1</th>
@@ -21014,7 +21667,37 @@ pro </table>
 
 
 /***************************************************************************************/
-pro <blue>GV$SQL_BIND_CAPTURE/CAPTURED_BIND</blue>
+--20220429
+--add ACS_NOTE column
+pro <blue>GV$SQL_BIND_CAPTURE/CAPTURED_BIND/ACS</blue>
+
+
+pro <table>
+pro <tbody><tr>
+pro <th>SRC</th>
+pro <th>INST_ID</th>
+pro <th>CHILD_NUMBER</th>
+pro <th>BIND_EQUIV_FAILURE</th>
+pro </tr>
+
+select  CHR(10)||'<tr>'||CHR(10)
+     ||'<td class="r">'||SRC||'</td>'||CHR(10)
+     ||'<td class="r">'||INST_ID||'</td>'||CHR(10)
+     ||'<td class="r">'||CHILD_NUMBER||'</td>'||CHR(10)
+     ||'<td class="r"><RED>'||BIND_EQUIV_FAILURE||'</RED></td>'||CHR(10)
+     ||'</TR>'
+FROM (
+SELECT 'MEM' AS SRC, INST_ID, count(DISTINCT CHILD_NUMBER) CHILD_NUMBER, COUNT(DECODE(BIND_EQUIV_FAILURE,'Y',1)) BIND_EQUIV_FAILURE
+FROM  gv$sql_shared_cursor
+WHERE SQL_ID = :L_SQL_ID
+AND   BIND_EQUIV_FAILURE = 'Y'
+GROUP BY inst_id
+order by inst_id
+)
+/
+
+pro </tbody>
+pro </table>
 
 pro <table>
 pro <tbody><tr>
@@ -21029,8 +21712,17 @@ pro <th>CAPTURED<BR>BIND_VALUE</th>
 pro <th>BIND<BR>SENSITIVE</th>
 pro <th>BIND<BR>AWARE</th>
 pro <th>SHAREABLE</th>
+pro <th>AVG_ETIME</th>
+pro <th>ACS_NOTE</th>
 pro </tr>
 
+with cs_pred as (
+select distinct replace(replace(replace(replace(PREDICATE,'='),'<'),'>'),'%')  predicate
+from gv$sql_cs_selectivity
+where  sql_id = :l_sql_id
+)
+, drv as (
+ select to_number(sum(elapsed_time)/greatest(sum(executions),1)/greatest(sum(ROWS_PROCESSED),1)) ttpr from gv$sql where sql_id = :l_sql_id )
 select  CHR(10)||'<tr>'||CHR(10)
      ||'<td class="r">'||INST_ID||'</td>'||CHR(10)
      ||'<td class="r">'||CHILD_NUMBER||'</td>'||CHR(10)
@@ -21043,20 +21735,32 @@ select  CHR(10)||'<tr>'||CHR(10)
      ||'<td class="c">'||BIND_SENSITIVE||'</td>'||CHR(10)
      ||'<td class="c">'||BIND_AWARE||'</td>'||CHR(10)
      ||'<td class="c">'||SHAREABLE||'</td>'||CHR(10)
+     ||'<td class="c">'||AVG_ETIME||'</td>'||CHR(10)
+     ||'<td class="c">'||ACS_NOTE||'</td>'||CHR(10)
      ||'</TR>'
 from  (
 --2021/05/27
 select  inst_id, child_number, plan_hash_value,  last_load_time, position, BIND_DATATYPE,  BIND_NAME,
-        substr(CAPTURED_BIND_VALUE,1,length(CAPTURED_BIND_VALUE)/3+1)||rpad('***********************************', length(CAPTURED_BIND_VALUE)*2/3)  CAPTURED_BIND_VALUE ,
-        BIND_SENSITIVE, BIND_AWARE, SHAREABLE
+--        substr(CAPTURED_BIND_VALUE,1,length(CAPTURED_BIND_VALUE)/3+1)||rpad('***********************************', length(CAPTURED_BIND_VALUE)*2/3)  CAPTURED_BIND_VALUE ,
+        CAPTURED_BIND_VALUE,
+        BIND_SENSITIVE, BIND_AWARE, SHAREABLE,  AVG_ETIME,
+        decode( sign( PTPR - TTPR), 1,
+         DECODE(bind_aware,'Y',
+         ( select '<red>Check Histogram</red>'
+           from cs_pred cs
+           where instr(BIND_NAME,cs.predicate) > 0
+           and rownum = 1 ) ) )   ACS_NOTE
  from (
  select d.inst_id, d.child_number, c.plan_hash_value,  c.last_load_time, d.position, d.DATATYPE_STRING BIND_DATATYPE,
        decode(:L_DYN_BIND,'Y','<BLUE>'||d.NAME||'</BLUE>',d.NAME) BIND_NAME,
        decode(:L_DYN_BIND,'Y','<BLUE>'||substr(d.VALUE_STRING,1,100)||'</BLUE>',substr(d.VALUE_STRING,1,100))  CAPTURED_BIND_VALUE ,
-       is_bind_sensitive BIND_SENSITIVE, is_bind_aware BIND_AWARE, IS_SHAREABLE SHAREABLE
+       is_bind_sensitive BIND_SENSITIVE, is_bind_aware BIND_AWARE, IS_SHAREABLE SHAREABLE, avg_etime, PTPR, ttpr
  FROM gv$sql_bind_capture  D,
+      drv,
          (   select  inst_id, sql_id, plan_hash_value, LAST_LOAD_TIME, child_number, address, child_address,
-                     is_bind_sensitive, is_bind_aware, IS_SHAREABLE
+                     is_bind_sensitive, is_bind_aware, IS_SHAREABLE,
+                     ROUND(elapsed_time/greatest(executions,1)/1E6,4)  avg_etime,
+                     elapsed_time/greatest(executions,1)/greatest(rows_processed,1)  PTPR
             from gv$sql
             where (inst_id, sql_id, plan_hash_value, LAST_LOAD_TIME) in
                  (select inst_id, sql_id, plan_hash_value, max(LAST_LOAD_TIME) LAST_LOAD_TIME
@@ -21073,7 +21777,6 @@ select  inst_id, child_number, plan_hash_value,  last_load_time, position, BIND_
  order by  1, 2, 3, 4, 5  )
 )
 /
-
 
 pro </tbody>
 pro </table>
@@ -21265,7 +21968,7 @@ END;
 /* collect only sql statement bind end */
 
 --set heading off  head off
-set echo off  FEED OFF verify off heading off LINESIZE 300 pagesize 500 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
+set echo off  FEED OFF verify off heading off LINESIZE 1300 pagesize 500 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
 
 prompt <blue>BASED ON CURRENT STATS</blue>
 
@@ -23631,7 +24334,7 @@ pro  </table>
 --COL SQL_TEXT FORMAT A300
 --select :sql_text SQL_TEXT from dual ;
 
-set heading off LINESIZE 300 pagesize 0
+set heading off LINESIZE 1300 pagesize 0
 
 pro </details>
 
@@ -23651,7 +24354,7 @@ pro   <summary><blue>MISSING TABLE STATS PREFS, UNNECESSARY HISTOGRAM/EXTENDED S
 VAR L_EXISTS           VARCHAR2(3)
 VAR L_EBR              varchar2(3)
 
-EXEC DBMS_SPD.flush_sql_plan_directive;
+REM EXEC DBMS_SPD.flush_sql_plan_directive; /* Pushkar - EEHO PERF issue 400+ secs */
 
 BEGIN
   :L_EXISTS := 'NO';
@@ -23767,6 +24470,7 @@ BEGIN
     ||''''||', column_name=> '||''''||c.column_name||''''||',col_stat_type=>'||'''HISTOGRAM'''||');'  CMD
     FROM PREFS P, DBA_TAB_COLUMNS C
     WHERE P.OBJECT_OWNER = C.OWNER
+    AND   C.OWNER = 'FUSION'
     AND   P.OBJECT_NAME  = C.TABLE_NAME
     AND   C.COLUMN_NAME LIKE '%_ID'
     AND   C.NUM_DISTINCT > 256
@@ -23806,6 +24510,96 @@ END ;
 pro </details>
 --  tsp end : prefs, delete histogram, drop extended stats by spd and drop spd.
 
+
+--sma19c-20200423
+
+pro   <a name="19C_GV$SQL_INVALID"></a>
+pro <details>
+pro   <summary><blue>19C_GV$SQL_INVALID</blue></summary>
+
+
+pro <table>
+pro <tbody><tr>
+pro <th>INST_ID</th>
+pro <th>SQL_ID</th>
+pro <th>CHILD<BR>NUMBER</th>
+pro <th>PLAN_HASH_VALUE</th>
+pro <th>DDL<BR>NO<BR>INVALIDATE</th>
+pro <th>IS<BR>ROLLING<BR>INVALID</th>
+pro <th>IS<BR>ROLLING<BR>REFRESH<BR>INVALID</th>
+pro <th>INVALIDATIONS</th>
+pro <th>PARSE<br>CALLS</th>
+pro <th>EXECUTIONS</th>
+pro <th>LAST_LOAD_TIME</th>
+pro <th>LAST_ACTIVE_TIME</th>
+pro </tr>
+
+SET HEAD OFF
+
+DECLARE
+  QUERY VARCHAR2(4000);
+  TYPE    CurTyp IS REF CURSOR;
+  SM_CV   CurTyp;
+  QR_INST_ID                        VARCHAR2(50);
+  QR_SQL_ID                         VARCHAR2(50);
+  QR_CHILD_NUMBER                   VARCHAR2(50);
+  QR_PLAN_HASH_VALUE                VARCHAR2(50);
+  QR_DDL_NO_INVALIDATE              VARCHAR2(50);
+  QR_IS_ROLLING_INVALID             VARCHAR2(50);
+  QR_IS_ROLLING_REFRESH_INVALID     VARCHAR2(50);
+  QR_INVALIDATIONS                  VARCHAR2(50);
+  QR_PARSE_CALLS                    VARCHAR2(50);
+  QR_EXECUTIONS                     VARCHAR2(50);
+  QR_LAST_LOAD_TIME                 VARCHAR2(80);
+  QR_LAST_ACTIVE_TIME               VARCHAR2(80);
+BEGIN
+
+     IF ( :SQL_FROM_MEM = 1 AND (:L_SHORT_DB_VERSION LIKE '19%' OR :L_SHORT_DB_VERSION LIKE '2%') ) THEN
+       QUERY := 'SELECT INST_ID, SQL_ID, CHILD_NUMBER, PLAN_HASH_VALUE, DDL_NO_INVALIDATE,  IS_ROLLING_INVALID, IS_ROLLING_REFRESH_INVALID, INVALIDATIONS, PARSE_CALLS,EXECUTIONS, LAST_LOAD_TIME, LAST_ACTIVE_TIME '
+             ||' FROM GV$SQL WHERE SQL_ID = '''||:L_SQL_ID||''' ORDER BY 1,2,3';
+       OPEN SM_CV FOR QUERY ;
+       LOOP
+          FETCH SM_CV INTO QR_INST_ID, QR_SQL_ID, QR_CHILD_NUMBER, QR_PLAN_HASH_VALUE, QR_DDL_NO_INVALIDATE, QR_IS_ROLLING_INVALID, QR_IS_ROLLING_REFRESH_INVALID, QR_INVALIDATIONS, 
+          QR_PARSE_CALLS, QR_EXECUTIONS, QR_LAST_LOAD_TIME, QR_LAST_ACTIVE_TIME ;
+          EXIT WHEN SM_CV%NOTFOUND;
+
+          IF( QR_DDL_NO_INVALIDATE  = 'Y' ) THEN QR_DDL_NO_INVALIDATE  := '<RED>'||QR_DDL_NO_INVALIDATE ||'</RED>'; END IF ;
+          IF( QR_IS_ROLLING_INVALID = 'Y' ) THEN QR_IS_ROLLING_INVALID := '<RED>'||QR_IS_ROLLING_INVALID||'</RED>'; END IF ;
+          IF( QR_IS_ROLLING_REFRESH_INVALID = 'Y' ) THEN QR_IS_ROLLING_REFRESH_INVALID := '<RED>'||QR_IS_ROLLING_REFRESH_INVALID||'</RED>'; END IF ;
+          IF( QR_INVALIDATIONS  <> 0 ) THEN QR_INVALIDATIONS := '<RED>'||QR_INVALIDATIONS||'</RED>'; END IF ;
+
+          DBMS_OUTPUT.PUT_LINE(
+ 		   CHR(10)||'<tr>'||CHR(10)
+			  ||'<td class="r">'||QR_INST_ID                          ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_SQL_ID                           ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_CHILD_NUMBER                     ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_PLAN_HASH_VALUE                  ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_DDL_NO_INVALIDATE                ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_IS_ROLLING_INVALID               ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_IS_ROLLING_REFRESH_INVALID       ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_INVALIDATIONS                    ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_PARSE_CALLS                      ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_EXECUTIONS                       ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_LAST_LOAD_TIME                   ||'</td>'||CHR(10)
+			  ||'<td class="r">'||QR_LAST_ACTIVE_TIME                 ||'</td>'||CHR(10)
+			  ||'</tr>'	);
+       END LOOP;
+       CLOSE SM_CV;
+     END IF;
+     EXCEPTION
+     WHEN OTHERS THEN
+       NULL;
+       -- :L_POD_SIZE := NULL;
+END;
+/
+
+pro </tbody>
+pro </table>
+pro </details>
+
+SET HEAD ON
+
+---20201223
 
 pro   <a name="OBJECTDDL"></a>
 pro <details>
@@ -23879,7 +24673,7 @@ pro <th>ORIGINAL_BUFFER_GETS</th>
 pro <th>AUTO_INDEX_BUFFER_GETS</th>
 pro <th>STATUS</th>
 pro </tr>
-
+SET HEAD OFF
 
 DECLARE
 
@@ -23916,13 +24710,13 @@ BEGIN
             EXIT WHEN AIR_SQL_CURSOR%NOTFOUND;
 	    DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r">'||L_EXECUTION_NAME            ||'</td>'||CHR(10)
-			  ||'<td class="r">'||L_SQL_ID                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||L_ORIGINAL_PLAN_HASH_VALUE  ||'</td>'||CHR(10)
+			  ||'<td class="r">'||L_EXECUTION_NAME||'</td>'||CHR(10)
+			  ||'<td class="r">'||L_SQL_ID||'</td>'||CHR(10)
+			  ||'<td class="r">'||L_ORIGINAL_PLAN_HASH_VALUE||'</td>'||CHR(10)
 			  ||'<td class="r">'||L_AUTO_INDEX_PLAN_HASH_VALUE||'</td>'||CHR(10)
-			  ||'<td class="r">'||L_ORIGINAL_BUFFER_GETS      ||'</td>'||CHR(10)
-			  ||'<td class="r">'||L_AUTO_INDEX_BUFFER_GETS    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||L_STATUS                    ||'</td>'||CHR(10)
+			  ||'<td class="r">'||L_ORIGINAL_BUFFER_GETS||'</td>'||CHR(10)
+			  ||'<td class="r">'||L_AUTO_INDEX_BUFFER_GETS||'</td>'||CHR(10)
+			  ||'<td class="r">'||L_STATUS||'</td>'||CHR(10)
 			  ||'</tr>'	);
 	END LOOP;
 	CLOSE AIR_SQL_CURSOR;
@@ -23977,7 +24771,7 @@ VAR  L_MIN_ID2  NUMBER
 VAR  L_MAX_ID2  NUMBER
 
 BEGIN
-     SELECT MAX(CONSUMER_GROUP_ID) INTO :L_SQL_GROUP_ID
+     SELECT CONSUMER_GROUP_ID INTO :L_SQL_GROUP_ID
      FROM DBA_RSRC_CONSUMER_GROUPS CR
      WHERE CR.CONSUMER_GROUP = 'FUSIONAPPS_ONLINE_GROUP' AND ROWNUM = 1 ;
 
@@ -24028,34 +24822,34 @@ BEGIN
                    :L_GRP_BY  := SM.GRP_BY;
       	           DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r"><RED>'||SM.ECID                ||'</RED></td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV1                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV2                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_START               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_END                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_TIME                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ASH_CNT                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_SQL                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.EXECUTIONS               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_PHV                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.TOT_HP                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SESSIONS                 ||'</td>'||CHR(10)
+			  ||'<td class="r"><RED>'||SM.ECID ||'</RED></td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV1||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV2||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_START||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_END||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_TIME||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ASH_CNT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_SQL||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.EXECUTIONS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_PHV||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.TOT_HP||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SESSIONS||'</td>'||CHR(10)
 			  ||'</tr>'	);
             ELSE
 	           DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV1                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV2                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_START               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_END                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_TIME                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ASH_CNT                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_SQL                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.EXECUTIONS               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_PHV                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.TOT_HP                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SESSIONS                 ||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV1||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV2||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_START||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_END||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_TIME||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ASH_CNT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_SQL||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.EXECUTIONS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_PHV||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.TOT_HP||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SESSIONS||'</td>'||CHR(10)
 			  ||'</tr>'	);
             END IF;
             IF( SM.ROW_NUM = 2 AND SM.GRP_BY = 2 ) THEN
@@ -24335,54 +25129,48 @@ BEGIN
      LOOP
 	    DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r">'||SM.MODULE                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SQL_ID                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SQL_OPNAME                 ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.PLAN_HASH_VALUE            ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.LINE_ID                    ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.OBJ_NAME                   ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.EVENT                      ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SAMPLES                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PCT                        ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.EXECS               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.WAIT                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.IO                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.CPU                   ||'</td>'||CHR(10)
------
-			  ||'<td class="r">'||  SM.control                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.cursor                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.cell                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.db_file                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.direct                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.enq                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.gc                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.latch                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.library                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.log                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.px                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.resmgr                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.row_cache                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.sql_net                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.utl_file                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.DBOP                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.pga_M                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.temp_m                  ||'</td>'||CHR(10)
-------
-			  ||'<td class="r">'||  SM.CONNECTION_MGMT          ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PARSE                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.HARD_PARSE               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.SQL_EXECUTION            ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PLSQL_EXECUTION          ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PLSQL_RPC                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PLSQL_COMPILATION         ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.JAVA_EXECUTION           ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.BIND                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.CURSOR_CLOSE             ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.SEQUENCE_LOAD            ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.BLK_SIDS                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.FIRST_SAMPLE               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.LAST_SAMPLE                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ELAPSED_TIME               ||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.MODULE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SQL_ID||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SQL_OPNAME||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SAMPLES||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PCT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.EXECS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.WAIT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.IO||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.CPU||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.control||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.cursor||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.cell||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.db_file||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.direct||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.enq||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.gc||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.latch||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.library||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.log||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.px||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.resmgr||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.row_cache||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.sql_net||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.utl_file||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.DBOP||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.pga_M||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.temp_m||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.CONNECTION_MGMT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PARSE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.HARD_PARSE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SQL_EXECUTION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PLSQL_EXECUTION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PLSQL_RPC||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PLSQL_COMPILATION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.JAVA_EXECUTION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.BIND||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.CURSOR_CLOSE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SEQUENCE_LOAD||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.BLK_SIDS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.FIRST_SAMPLE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.LAST_SAMPLE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ELAPSED_TIME||'</td>'||CHR(10)
 			  ||'</tr>'	);
      END LOOP ;
      EXCEPTION
@@ -24429,7 +25217,7 @@ SET HEAD OFF
 BEGIN
 
      FOR SM IN ( with drv as ( select distinct nvl(ecid, sql_id) lecid  from   DBA_HIST_active_sess_history
-                               where sql_id = :L_SQL_ID  
+                               where sql_id = :L_SQL_ID
                                --AND :L_ECID IS NULL
                                AND  DBID = :L_DBID
                                AND   :L_SQLHC_MIN_FLAG < 15
@@ -24485,34 +25273,34 @@ BEGIN
                    :L_GRP_BY  := SM.GRP_BY;
       	           DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r"><RED>'||SM.ECID                ||'</RED></td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV1                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV2                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_START               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_END                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_TIME                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ASH_CNT                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_SQL                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.EXECUTIONS               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_PHV                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.TOT_HP                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SESSIONS                 ||'</td>'||CHR(10)
+			  ||'<td class="r"><RED>'||SM.ECID ||'</RED></td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV1||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV2||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_START||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_END||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_TIME||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ASH_CNT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_SQL||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.EXECUTIONS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_PHV||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.TOT_HP||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SESSIONS||'</td>'||CHR(10)
 			  ||'</tr>'	);
             ELSE
 	           DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV1                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PHV2                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_START               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_END                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ECID_TIME                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ASH_CNT                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_SQL                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.EXECUTIONS               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ND_PHV                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.TOT_HP                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SESSIONS                 ||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV1||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PHV2||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_START||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_END||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ECID_TIME||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ASH_CNT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_SQL||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.EXECUTIONS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ND_PHV||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.TOT_HP||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SESSIONS||'</td>'||CHR(10)
 			  ||'</tr>'	);
             END IF;
             IF( SM.ROW_NUM = 2 AND SM.GRP_BY = 2 ) THEN
@@ -24690,7 +25478,6 @@ BEGIN
          sum(decode(session_state,'WAITING',1,0)) - sum(decode(session_state,'WAITING', decode(wait_class, 'User I/O',1,0),0)) as WAIT,
          sum(decode(session_state,'WAITING', decode(wait_class, 'User I/O',1,0),0)) as IO,
          SUM(DECODE(SESSION_STATE,'ON CPU',1,0))    CPU,
--------------
        SUM( case when event like 'control%' then 1 end ) control,
        SUM( case when event like 'cursor%' then 1 end ) cursor,
        SUM( case when event like 'cell%' then 1 end ) cell,
@@ -24706,11 +25493,9 @@ BEGIN
        SUM( case when event like 'row cache%' then 1 end ) row_cache,
        SUM( case when event like 'SQL*Net%' then 1 end ) sql_net ,
        SUM( case when event like 'utl_file%' then 1 end ) utl_file,
--------------
          SUM(DECODE(DBOP_EXEC_ID,'Y',1))   DBOP,
          ROUND(MAX(PGA_ALLOCATED)/1000000,2)  PGA_M,
          ROUND(MAX(TEMP_SPACE_ALLOCATED)/1000000,2) TEMP_M,
--------------
          SUM(DECODE(IN_CONNECTION_MGMT,'Y',1))      CONNECTION_MGMT,
          SUM(DECODE(IN_PARSE          ,     'Y',1)) PARSE,
          SUM(DECODE(IN_HARD_PARSE     ,     'Y',1)) HARD_PARSE,
@@ -24748,7 +25533,6 @@ BEGIN
          sum(decode(session_state,'WAITING',1,0)) - sum(decode(session_state,'WAITING', decode(wait_class, 'User I/O',1,0),0)) as WAIT,
          sum(decode(session_state,'WAITING', decode(wait_class, 'User I/O',1,0),0)) as IO,
          SUM(DECODE(SESSION_STATE,'ON CPU',1,0))    CPU,
--------------
        SUM( case when event like 'control%' then 1 end ) control,
        SUM( case when event like 'cursor%' then 1 end ) cursor,
        SUM( case when event like 'cell%' then 1 end ) cell,
@@ -24764,11 +25548,9 @@ BEGIN
        SUM( case when event like 'row cache%' then 1 end ) row_cache,
        SUM( case when event like 'SQL*Net%' then 1 end ) sql_net ,
        SUM( case when event like 'utl_file%' then 1 end ) utl_file,
--------------
          SUM(DECODE(DBOP_EXEC_ID,'Y',1))   DBOP,
          ROUND(MAX(PGA_ALLOCATED)/1000000,2)  PGA_M,
          ROUND(MAX(TEMP_SPACE_ALLOCATED)/1000000,2) TEMP_M,
--------------
          SUM(DECODE(IN_CONNECTION_MGMT,'Y',1))      CONNECTION_MGMT,
          SUM(DECODE(IN_PARSE          ,     'Y',1)) PARSE,
          SUM(DECODE(IN_HARD_PARSE     ,     'Y',1)) HARD_PARSE,
@@ -24800,54 +25582,48 @@ BEGIN
      LOOP
 	    DBMS_OUTPUT.PUT_LINE(
  		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r">'||SM.MODULE                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SQL_ID                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SQL_OPNAME                 ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.PLAN_HASH_VALUE            ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.LINE_ID                    ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.OBJ_NAME                   ||'</td>'||CHR(10)
---			  ||'<td class="r">'||SM.EVENT                      ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.SAMPLES                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.PCT                        ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.EXECS               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.WAIT                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.IO                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.CPU                   ||'</td>'||CHR(10)
------
-			  ||'<td class="r">'||  SM.control                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.cursor                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.cell                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.db_file                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.direct                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.enq                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.gc                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.latch                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.library                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.log                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.px                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.resmgr                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.row_cache                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.sql_net                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.utl_file                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.DBOP                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.pga_M                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.temp_m                  ||'</td>'||CHR(10)
-------
-			  ||'<td class="r">'||  SM.CONNECTION_MGMT          ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PARSE                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.HARD_PARSE               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.SQL_EXECUTION            ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PLSQL_EXECUTION          ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PLSQL_RPC                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.PLSQL_COMPILATION         ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.JAVA_EXECUTION           ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.BIND                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.CURSOR_CLOSE             ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.SEQUENCE_LOAD            ||'</td>'||CHR(10)
-			  ||'<td class="r">'||  SM.BLK_SIDS                 ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.FIRST_SAMPLE               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.LAST_SAMPLE                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||SM.ELAPSED_TIME               ||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.MODULE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SQL_ID||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SQL_OPNAME||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SAMPLES||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PCT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.EXECS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.WAIT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.IO||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.CPU||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.control||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.cursor||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.cell||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.db_file||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.direct||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.enq||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.gc||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.latch||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.library||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.log||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.px||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.resmgr||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.row_cache||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.sql_net||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.utl_file||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.DBOP||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.pga_M||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.temp_m||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.CONNECTION_MGMT||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PARSE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.HARD_PARSE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SQL_EXECUTION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PLSQL_EXECUTION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PLSQL_RPC||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.PLSQL_COMPILATION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.JAVA_EXECUTION||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.BIND||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.CURSOR_CLOSE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.SEQUENCE_LOAD||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.BLK_SIDS||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.FIRST_SAMPLE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.LAST_SAMPLE||'</td>'||CHR(10)
+			  ||'<td class="r">'||SM.ELAPSED_TIME||'</td>'||CHR(10)
 			  ||'</tr>'	);
      END LOOP ;
      EXCEPTION
@@ -24871,95 +25647,6 @@ pro </details>
 SET HEAD ON
 
 -- ECID report start
---sma19c-20200423
-
-pro   <a name="19C_GV$SQL_INVALID"></a>
-pro <details>
-pro   <summary><blue>19C_GV$SQL_INVALID</blue></summary>
-
-
-pro <table>
-pro <tbody><tr>
-pro <th>INST_ID</th>
-pro <th>SQL_ID</th>
-pro <th>CHILD<BR>NUMBER</th>
-pro <th>PLAN_HASH_VALUE</th>
-pro <th>DDL<BR>NO<BR>INVALIDATE</th>
-pro <th>IS<BR>ROLLING<BR>INVALID</th>
-pro <th>IS<BR>ROLLING<BR>REFRESH<BR>INVALID</th>
-pro <th>INVALIDATIONS</th>
-pro <th>PARSE<br>CALLS</th>
-pro <th>EXECUTIONS</th>
-pro <th>LAST_LOAD_TIME</th>
-pro <th>LAST_ACTIVE_TIME</th>
-pro </tr>
-
-SET HEAD OFF
-
-DECLARE
-  QUERY VARCHAR2(4000);
-  TYPE    CurTyp IS REF CURSOR;
-  SM_CV   CurTyp;
-  QR_INST_ID                        VARCHAR2(50);
-  QR_SQL_ID                         VARCHAR2(50);
-  QR_CHILD_NUMBER                   VARCHAR2(50);
-  QR_PLAN_HASH_VALUE                VARCHAR2(50);
-  QR_DDL_NO_INVALIDATE              VARCHAR2(50);
-  QR_IS_ROLLING_INVALID             VARCHAR2(50);
-  QR_IS_ROLLING_REFRESH_INVALID     VARCHAR2(50);
-  QR_INVALIDATIONS                  VARCHAR2(50);
-  QR_PARSE_CALLS                    VARCHAR2(50);
-  QR_EXECUTIONS                     VARCHAR2(50);
-  QR_LAST_LOAD_TIME                 VARCHAR2(80);
-  QR_LAST_ACTIVE_TIME               VARCHAR2(80);
-BEGIN
-
-     IF ( :SQL_FROM_MEM = 1 AND (:L_SHORT_DB_VERSION LIKE '19%' OR :L_SHORT_DB_VERSION LIKE '2%') ) THEN
-       QUERY := 'SELECT INST_ID, SQL_ID, CHILD_NUMBER, PLAN_HASH_VALUE, DDL_NO_INVALIDATE,  IS_ROLLING_INVALID, IS_ROLLING_REFRESH_INVALID, INVALIDATIONS, PARSE_CALLS,EXECUTIONS, LAST_LOAD_TIME, LAST_ACTIVE_TIME '
-             ||' FROM GV$SQL WHERE SQL_ID = '''||:L_SQL_ID||''' ORDER BY 1,2,3';
-       OPEN SM_CV FOR QUERY ;
-       LOOP
-          FETCH SM_CV INTO QR_INST_ID, QR_SQL_ID, QR_CHILD_NUMBER, QR_PLAN_HASH_VALUE, QR_DDL_NO_INVALIDATE, QR_IS_ROLLING_INVALID, QR_IS_ROLLING_REFRESH_INVALID, QR_INVALIDATIONS, 
-          QR_PARSE_CALLS, QR_EXECUTIONS, QR_LAST_LOAD_TIME, QR_LAST_ACTIVE_TIME ;
-          EXIT WHEN SM_CV%NOTFOUND;
-
-          IF( QR_DDL_NO_INVALIDATE  = 'Y' ) THEN QR_DDL_NO_INVALIDATE  := '<RED>'||QR_DDL_NO_INVALIDATE ||'</RED>'; END IF ;
-          IF( QR_IS_ROLLING_INVALID = 'Y' ) THEN QR_IS_ROLLING_INVALID := '<RED>'||QR_IS_ROLLING_INVALID||'</RED>'; END IF ;
-          IF( QR_IS_ROLLING_REFRESH_INVALID = 'Y' ) THEN QR_IS_ROLLING_REFRESH_INVALID := '<RED>'||QR_IS_ROLLING_REFRESH_INVALID||'</RED>'; END IF ;
-          IF( QR_INVALIDATIONS  <> 0 ) THEN QR_INVALIDATIONS := '<RED>'||QR_INVALIDATIONS||'</RED>'; END IF ;
-
-          DBMS_OUTPUT.PUT_LINE(
- 		   CHR(10)||'<tr>'||CHR(10)
-			  ||'<td class="r">'||QR_INST_ID                          ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_SQL_ID                           ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_CHILD_NUMBER                     ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_PLAN_HASH_VALUE                  ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_DDL_NO_INVALIDATE                ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_IS_ROLLING_INVALID               ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_IS_ROLLING_REFRESH_INVALID       ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_INVALIDATIONS                    ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_PARSE_CALLS                      ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_EXECUTIONS                       ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_LAST_LOAD_TIME                   ||'</td>'||CHR(10)
-			  ||'<td class="r">'||QR_LAST_ACTIVE_TIME                 ||'</td>'||CHR(10)
-			  ||'</tr>'	);
-       END LOOP;
-       CLOSE SM_CV;
-     END IF;
-     EXCEPTION
-     WHEN OTHERS THEN
-       NULL;
-       -- :L_POD_SIZE := NULL;
-END;
-/
-
-pro </tbody>
-pro </table>
-pro </details>
-
-SET HEAD ON
-
----20201223
 -- sqlset start
 
 pro   <a name="SQLSET_SQL_STATS"></a>
@@ -24979,12 +25666,14 @@ pro <th>PLAN_HASH_VALUE</th>
 pro <th>SQLSET_ID</th>
 pro <th>SQLSET_NAME</th>
 pro <th>LAST_MODIFIED</th>
+pro <th>PLAN_TIMESTAMP</th>
 pro <th>AVG_BUFFER_GETS</th>
 pro <th>AVG_ET_SEC</th>
 pro <th>AVG_CPU_SEC</th>
 pro <th>AVG_ROWS</th>
 pro <th>TOTAL_EXEC</th>
 pro <th>NOTES</th>
+pro <th>RATIO_TR</th>
 pro </tr>
 
 SET HEAD OFF
@@ -24995,15 +25684,17 @@ SELECT  		   CHR(10)||'<tr>'||CHR(10)
 			  ||'<td class="r">'||SQLSET_ID         ||'</td>'||CHR(10)
 			  ||'<td class="r">'||SQLSET_NAME       ||'</td>'||CHR(10)
 			  ||'<td class="r">'||LAST_MODIFIED     ||'</td>'||CHR(10)
+			  ||'<td class="r">'||PLAN_TIMESTAMP    ||'</td>'||CHR(10)
 			  ||'<td class="r">'||AVG_BUFFER_GETS   ||'</td>'||CHR(10)
 			  ||'<td class="r">'||AVG_ET_SEC        ||'</td>'||CHR(10)
 			  ||'<td class="r">'||AVG_CPU_SEC       ||'</td>'||CHR(10)
 			  ||'<td class="r">'||AVG_ROWS          ||'</td>'||CHR(10)
 			  ||'<td class="r">'||TOTAL_EXEC        ||'</td>'||CHR(10)
 			  ||'<td class="r">'||NOTES             ||'</td>'||CHR(10)
+			  ||'<td class="r">'||TR                ||'</td>'||CHR(10)
 			  ||'</tr>'
 FROM (
-SELECT  SQL_ID, PLAN_HASH_VALUE, SQLSET_ID, LAST_MODIFIED, substr(SQLSET_NAME,1,50) SQLSET_NAME,
+SELECT  SQL_ID, PLAN_HASH_VALUE, SQLSET_ID, LAST_MODIFIED, PLAN_TIMESTAMP, substr(SQLSET_NAME,1,50) SQLSET_NAME,
               CASE WHEN buffer_gets >= 1e18 THEN ROUND(buffer_gets /1e18,1) || 'E'
                    WHEN buffer_gets >= 1e15 THEN ROUND(buffer_gets /1e15,1) || 'P'
                    WHEN buffer_gets >= 1e12 THEN ROUND(buffer_gets /1e12,1) || 'T'
@@ -25040,8 +25731,12 @@ SELECT  SQL_ID, PLAN_HASH_VALUE, SQLSET_ID, LAST_MODIFIED, substr(SQLSET_NAME,1,
                    WHEN executions >= 1e3 THEN ROUND(executions / 1e3,1) || 'K'
                    ELSE to_char(round(executions)) END  TOTAL_EXEC,
               replace(replace(replace(replace(replace(notes,'CardFB:,',''),'SQL_PROFILE:,',''),'SQL_PATCH:,',''),'SQL_BSL:,',''),'ADPTV_PLAN:,','') NOTES
+              , ROUND(ET_SEC/greatest(rows_processed,1),5) TR
 FROM (
-SELECT SQL_ID, PLAN_HASH_VALUE, SQLSET_ID, SQLSET_NAME,  LAST_MODIFIED, ROUND(buffer_gets/GREATEST(executions,1)) buffer_gets,
+SELECT SQL_ID, PLAN_HASH_VALUE, SQLSET_ID, SQLSET_NAME,  LAST_MODIFIED,
+   (   SELECT MIN(P.PLAN_TIMESTAMP) PLAN_TIME FROM SYS.WRI$_SQLSET_PLANS P WHERE P.STMT_ID = H.STMT_ID AND P.PLAN_HASH_VALUE = H.PLAN_HASH_VALUE
+    ) PLAN_TIMESTAMP,
+       ROUND(buffer_gets/GREATEST(executions,1)) buffer_gets,
        ROUND(ET_SEC/GREATEST(executions,1)/1E6,3) ET_SEC,
        ROUND(CPU_SEC/GREATEST(executions,1)/1E6,3) CPU_SEC,
        ROUND(rows_processed/GREATEST(executions,1)) rows_processed, executions,
@@ -25065,10 +25760,14 @@ select MAX(s.id) stmt_id, MAX(s.sqlset_id) sqlset_id, MAX(d.name) sqlset_NAME, m
 from sys.WRI$_SQLSET_STATEMENTS s, sys.WRI$_SQLSET_DEFINITIONS d, sys.WRI$_SQLSET_STATISTICS c
 where sql_id = :L_SQL_ID and d.id = s.sqlset_id
 AND s.id = c.stmt_id
+and exists ( select 1 from DBA_SQLSET_PLANS sp
+       where sp.sqlset_id = s.sqlset_id and sp.sql_id = s.sql_id and sp.plan_hash_value = c.plan_hash_value )
 AND s.con_dbid = c.con_dbid
 AND d.last_modified > to_date('31-MAY-2019','DD-MON-YYYY')
-GROUP BY s.sql_id, c.plan_hash_value ) h
-ORDER BY 6 ) ) ;
+AND d.OWNER = 'SYS'
+AND D.NAME in ('SYS_AUTO_STS_12C_NonCDB', 'SYS_AUTO_STS')
+GROUP BY s.sql_id, c.plan_hash_value ) h  )
+ORDER BY ROUND(ET_SEC/greatest(rows_processed,1),5)  ) ;
 
 pro </tbody>
 pro </table>
@@ -25085,18 +25784,28 @@ pro   <summary><blue>SQLSET_PLAN_DETAILS</blue></summary>
 
 begin
     for l_sqlset in (
-               select  *
-               from (
-               select MAX(s.id) stmt_id, MAX(s.sqlset_id) sqlset_id, MAX(d.name) sqlset_NAME, s.sql_id, c.plan_hash_value,
-               SUM(executions) executions, SUM(buffer_gets) buffer_gets, SUM(elapsed_time)/greatest(1,SUM(executions)) et_sec,  SUM(CPU_time) CPU_sec, sum(rows_processed) rows_processed
+             select * from  
+            (select  *
+             from (
+               select MAX(s.id) stmt_id, MAX(s.sqlset_id) sqlset_id, MAX(d.name) sqlset_NAME, s.sql_id,
+               c.plan_hash_value,  SUM(executions) executions, SUM(buffer_gets) buffer_gets,
+               SUM(elapsed_time) et_sec,
+               SUM(CPU_time) CPU_sec,
+               sum(rows_processed) rows_processed
                from sys.WRI$_SQLSET_STATEMENTS s, sys.WRI$_SQLSET_DEFINITIONS d, sys.WRI$_SQLSET_STATISTICS c
-               where sql_id = :L_SQL_ID and d.id = s.sqlset_id
+               where s.sql_id = :L_SQL_ID and d.id = s.sqlset_id
                AND s.id = c.stmt_id
                AND s.con_dbid = c.con_dbid
+               and exists ( select 1 from DBA_SQLSET_PLANS sp
+                   where sp.sqlset_id = s.sqlset_id and sp.sql_id = s.sql_id and sp.plan_hash_value = c.plan_hash_value )
                AND d.last_modified > to_date('31-MAY-2019','DD-MON-YYYY')
-               GROUP BY s.sql_id, c.plan_hash_value order by 8 )
+               AND d.OWNER = 'SYS'
+               AND D.NAME in ('SYS_AUTO_STS_12C_NonCDB', 'SYS_AUTO_STS')
+               GROUP BY s.sql_id, c.plan_hash_value
+               )
+              order by round(et_sec/greatest(rows_processed,1),5) asc )
                -- 20210111
-               where rownum <  decode(:L_SQLHC_MIN_FLAG,16,6,11)
+              where rownum <  decode(:L_SQLHC_MIN_FLAG,16,6,11)
                )
     loop
        for l_sqlset_plan  in (
@@ -25184,7 +25893,7 @@ Pro   <a href="https://confluence.oraclecorp.com/confluence/display/~jinsoo.eo@o
 set head off
 SELECT 'Start: ' || to_timestamp(:L_smastart, 'YYYY-MM-DD HH24:MI:SS:FF') from dual;
 SELECT 'End  : ' || to_timestamp(to_char(systimestamp, 'YYYY-MM-DD HH24:MI:SS:FF'), 'YYYY-MM-DD HH24:MI:SS:FF') from dual;
-SELECT 'The sma took ' || (to_timestamp(to_char(systimestamp, 'YYYY-MM-DD HH24:MI:SS:FF'), 'YYYY-MM-DD HH24:MI:SS:FF') - to_timestamp(:L_smastart, 'YYYY-MM-DD HH24:MI:SS:FF')) as sqlhc_runtime from dual;
+SELECT 'The SMA took ' || (to_timestamp(to_char(systimestamp, 'YYYY-MM-DD HH24:MI:SS:FF'), 'YYYY-MM-DD HH24:MI:SS:FF') - to_timestamp(:L_smastart, 'YYYY-MM-DD HH24:MI:SS:FF')) as sqlhc_runtime from dual;
 SELECT 'SQLHC took '||:L_SQLHC_MIN||' mins' FROM DUAL ;
 
 set head on
@@ -25360,28 +26069,8 @@ begin
 /* 20200722 repeated predicates end */
 end;
 /
---20210317
+--20210804
 BEGIN
-  IF( :L_CURRENT_BEST IS NOT NULL AND :L_CURRENT_BEST <> -1 AND :L_COUNT >= 2 AND :L_SQL_PROFILE IS NULL AND :L_CURRENT_BEST_TIME*2 < :L_CURRENT_WORST1_TIME
-       and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG AND :L_VPD_CNT = 0 ) THEN
-    DBMS_OUTPUT.PUT_LINE('.');
-    DBMS_OUTPUT.PUT_LINE('<blue>Action Item : DEVELOPMENT TEAM/OPERATION TEAM</BLUE>');
-    DBMS_OUTPUT.PUT_LINE('Better Plan is available : <blue>YES</blue>');
-    DBMS_OUTPUT.PUT_LINE('=> If the sql is using VPD, do not setup the sql profile.');
-    DBMS_OUTPUT.PUT_LINE('=> How to set the sql profile with current better plan');
-    DBMS_OUTPUT.PUT_LINE('$<blue>sqlplus / as sysdba</blue>');
-    IF ( :L_PDB <> 'NOPDB' ) THEN
-      DBMS_OUTPUT.PUT_LINE('SQL><blue>'||:L_PDB||'</blue>');
-    END IF;
-    DBMS_OUTPUT.PUT_LINE('SQL><blue>start coe_xfr_sql_profile.sql '||:L_SQL_ID||' '||:L_CURRENT_BEST||'</blue>');
-    DBMS_OUTPUT.PUT_LINE('SQL><blue>start coe_xfr_sql_profile_'||:L_SQL_ID||'_'||:L_CURRENT_BEST||'.sql</blue>');
-    --DBMS_OUTPUT.PUT_LINE('is under <a href="https://stbeehive.oracle.com/teamcollab/library/st/PSR+DB+Team/Public+Documents/Tools">https://stbeehive.oracle.com/teamcollab/library/st/PSR+DB+Team/Public+Documents/Tools</blue></a>');
---20200706
-    DBMS_OUTPUT.PUT_LINE('<blue>The file, coe_xfr_sql_profile.sql is under <a href="https://oradocs-corp.documents.us2.oraclecloud.com/documents/folder/FA310826A083983F8A71E262F6C3FF17C1177A968060/_Tools" target="_blank">PSR/Tools</blue></a>');
-    DBMS_OUTPUT.PUT_LINE('<blue>For the detail instruction, refer <a href="https://confluence.oraclecorp.com/confluence/display/PSR/Create+a+SQL+Profile" target="_blank">PSR/Create_a_SQL_Profile</blue></a>');
-  END IF;
-
-/* V3 bugdb searching */
      DBMS_OUTPUT.PUT_LINE('+');
 --20200706
      DBMS_OUTPUT.PUT_LINE('<a href="https://bug.oraclecorp.com/pls/bug/webbug_reports.km_search?p_search='||:l_sql_id||'" target="_blank">Bug DB search with the SQL_ID, <blue>'||:l_sql_id||'</blue></a>');
@@ -25389,26 +26078,88 @@ BEGIN
 --20210125
      DBMS_OUTPUT.PUT_LINE('+');
      DBMS_OUTPUT.PUT_LINE('<a href="http://100.100.123.145:8080/apex/f?p=101:2002:::NO::P2002_SQL_ID:'||:l_sql_id||'" target="_blank">PSR SQL REP search with the SQL_ID, <blue>'||:l_sql_id||'</blue></a>');
+END;
+/
+VAR L_ERROR NUMBER
 
+---20211005start
+begin
+    SELECT TO_NUMBER( NVL(
+    (select COUNT(1)
+     from (
+      select ERROR_number from gv$sql_monitor where sql_id = :L_SQL_ID and error_number is not null and SQL_PLAN_HASH_VALUE = :L_CURRENT_BEST union all
+      select /*+ LEADING(R,C) */ extractValue(value(d), '/error/@number') ERROR_number from DBA_HIST_REPORTS R, DBA_HIST_REPORTS_DETAILS c,
+       TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(c.report), '/report/sql_monitor_report/error'))) D
+      where r.key1 = :L_SQL_ID and regexp_substr(R.report_summary, q'{<plan_hash>([[:digit:]]+)</plan_hash>}', 1, 1, null, 1) = :L_CURRENT_BEST
+      and c.report_id = r.report_id  and c.DBID = r.dbid and r.dbid = :L_DBID and extractValue(value(d), '/error/@number') is not null
+      and c.INSTANCE_NUMBER = r.instance_number AND r.component_name = 'sqlmonitor' )
+     where rownum = 1 ), '0' ) ) INTO :L_ERROR
+    FROM DUAL ;
+end;
+/
+
+BEGIN
+  IF (:L_VPD <> 0) THEN
+       DBMS_OUTPUT.PUT_LINE('<BLUE>This SQL can use VPD(PII) predicates.</blue>');
+  END IF;
+  IF( :L_CURRENT_BEST IS NOT NULL AND :L_CURRENT_BEST <> -1 AND :L_COUNT >= 2 AND :L_SQL_PROFILE IS NULL AND :L_CURRENT_BEST_TIME*2 < :L_CURRENT_WORST1_TIME
+       and :L_CURRENT_BEST_BFG < :L_CURRENT_WORST1_BFG AND :L_VPD_CNT = 0 AND :L_VPD = 0 AND :L_ERROR = 0 ) THEN
+     DBMS_OUTPUT.PUT_LINE('.');
+     DBMS_OUTPUT.PUT_LINE('<blue>Action Item : DEVELOPMENT TEAM/OPERATION TEAM</BLUE>');
+     DBMS_OUTPUT.PUT_LINE('Better Plan is available : <blue>YES</blue>');
+     DBMS_OUTPUT.PUT_LINE('=> To pin good plan, there is two ways; option 1) sql profile and option 2) sql baseline');
+     DBMS_OUTPUT.PUT_LINE('+ SMA checked that the sql did not use VPD(PII). But if the sql can use VPD(PII) due to its variance, we should not pin the plan');
+     DBMS_OUTPUT.PUT_LINE('+ We should not implement baseline and profile both. Choose one');
+     DBMS_OUTPUT.PUT_LINE('=> Option 1) How to set the sql baseline with current better plan');
+     DBMS_OUTPUT.PUT_LINE('$<blue>sqlplus / as sysdba</blue>');
+     IF ( :L_PDB <> 'NOPDB' ) THEN
+       DBMS_OUTPUT.PUT_LINE('SQL><blue>'||:L_PDB||'</blue>');
+     END IF;
+     DBMS_OUTPUT.PUT_LINE('SQL><blue>start create_sql_baseline.sql '||:L_SQL_ID||' '||:L_CURRENT_BEST||'</blue>');
+     DBMS_OUTPUT.PUT_LINE('<blue>The file, create_sql_baseline.sql is under <a href="https://confluence.oraclecorp.com/confluence/download/attachments/3179718991/create_sql_baseline.sql" target="_blank">PSR/Tools</blue></a>');
+     DBMS_OUTPUT.PUT_LINE('<blue>For the detail instruction, refer <a href="https://confluence.oraclecorp.com/confluence/display/PSR/Create+a+SQL+Baseline" target="_blank">PSR/Create_a_SQL_Baseline</blue></a>');
+     DBMS_OUTPUT.PUT_LINE('.');
+--     DBMS_OUTPUT.PUT_LINE('=> Option 2) How to set the sql profile with current better plan');
+--     DBMS_OUTPUT.PUT_LINE('$<blue>sqlplus / as sysdba</blue>');
+--     IF ( :L_PDB <> 'NOPDB' ) THEN
+--       DBMS_OUTPUT.PUT_LINE('SQL><blue>'||:L_PDB||'</blue>');
+--     END IF;
+--     DBMS_OUTPUT.PUT_LINE('SQL><blue>start coe_xfr_sql_profile.sql '||:L_SQL_ID||' '||:L_CURRENT_BEST||'</blue>');
+--     DBMS_OUTPUT.PUT_LINE('SQL><blue>start coe_xfr_sql_profile_'||:L_SQL_ID||'_'||:L_CURRENT_BEST||'.sql</blue>');
+--     DBMS_OUTPUT.PUT_LINE('<blue>The file, coe_xfr_sql_profile.sql is under <a href="https://oradocs-corp.documents.us2.oraclecloud.com/documents/folder/FA310826A083983F8A71E262F6C3FF17C1177A968060/_Tools" target="_blank">PSR/Tools</blue></a>');
+--     DBMS_OUTPUT.PUT_LINE('<blue>For the detail instruction, refer <a href="https://confluence.oraclecorp.com/confluence/display/PSR/Create+a+SQL+Profile" target="_blank">PSR/Create_a_SQL_Profile</blue></a>');
+---20211005end
+  END IF;
 END;
 /
 
+
 -- 19C
+--20210804
+PROMPT
+PROMPT <DETAILS>
+PROMPT <SUMMARY><BLUE>SQL QUARANTINE</BLUE></SUMMARY>
+
 DECLARE
     QUARANTINE_NAME VARCHAR2(60);
 BEGIN
 IF ( :L_SHORT_DB_VERSION LIKE '19%' or :L_SHORT_DB_VERSION LIKE '2%') THEN
 -- SMA19C
  IF ( :L_CURRENT_WORST1 <> -1 ) THEN
+    --DBMS_OUTPUT.PUT_LINE('.');
     DBMS_OUTPUT.PUT_LINE('.');
-    DBMS_OUTPUT.PUT_LINE('<blue>DB 19C only</BLUE>');
-    DBMS_OUTPUT.PUT_LINE('<blue>Action Item : DEVELOPMENT TEAM/OPERATION TEAM</BLUE>');
+    DBMS_OUTPUT.PUT_LINE('<blue>Action Item : DEVELOPMENT TEAM/OPERATION TEAM with PSR</BLUE>');
     DBMS_OUTPUT.PUT_LINE('Worst Plan is available : <blue>YES</blue>');
+    DBMS_OUTPUT.PUT_LINE('=> QUARANTINE has the sql stop its execution with <RED>error</RED>');
+    DBMS_OUTPUT.PUT_LINE('+ If we do not want to see the error, we should not setup QUARANTINE.');
     DBMS_OUTPUT.PUT_LINE('=> How to set the sql quarantine with current worst plan');
     DBMS_OUTPUT.PUT_LINE('$<blue>sqlplus / as sysdba</blue>');
     IF ( :L_PDB <> 'NOPDB' ) THEN
       DBMS_OUTPUT.PUT_LINE('SQL><blue>'||:L_PDB||'</blue>');
     END IF;
+    DBMS_OUTPUT.PUT_LINE('PROMPT IF YOU WANT TO STOP ALL PLANS');
+    DBMS_OUTPUT.PUT_LINE('SQL><BLUE>SELECT DBMS_SQLQ.CREATE_QUARANTINE_BY_SQL_ID(SQL_ID => '''||:L_SQL_ID||''') QUARANTINE_NAME FROM DUAL;</BLUE>');
+    DBMS_OUTPUT.PUT_LINE('PROMPT IF YOU WANT TO STOP ONLY PLAN HASH VALUE '||:L_CURRENT_WORST1);
     DBMS_OUTPUT.PUT_LINE('SQL><BLUE>SELECT DBMS_SQLQ.CREATE_QUARANTINE_BY_SQL_ID(SQL_ID => '''||:L_SQL_ID||''', PLAN_HASH_VALUE => '||:L_CURRENT_WORST1||' ) QUARANTINE_NAME FROM DUAL;</BLUE>');
  END IF;
  IF ( :L_CURRENT_WORST2 <> -1 ) THEN
@@ -25423,10 +26174,10 @@ IF ( :L_SHORT_DB_VERSION LIKE '19%' or :L_SHORT_DB_VERSION LIKE '2%') THEN
  IF ( :L_CURRENT_WORST5 <> -1 ) THEN
     DBMS_OUTPUT.PUT_LINE('SQL><BLUE>SELECT DBMS_SQLQ.CREATE_QUARANTINE_BY_SQL_ID(SQL_ID => '''||:L_SQL_ID||''', PLAN_HASH_VALUE => '||:L_CURRENT_WORST5||' ) QUARANTINE_NAME FROM DUAL;</BLUE>');
  END IF;
-END IF;
+ END IF;
 END;
 /
-
+PROMPT </DETAILS>
 -- FOR SMA AND SQLHC
 spool off
 
@@ -25453,20 +26204,14 @@ HOS rm  -f sma_exp_&&files_prefix..sql sma_exp1_&&files_prefix..sql
 HOS del -f sma_exp_&&files_prefix..sql sma_exp1_&&files_prefix..sql
 
 REM For SQLHC for no zipping of sma
+--nothing
+--rem sma only
 --HOS zip -m sma_&&files_prefix..zip  sma_&&files_prefix..html
---20200705 start
 --HOS zip -m sma_&&files_prefix..zip  sma_summary_&&files_prefix..html
---20200705 end
-
-
 
 REM FOR SQLHC additionally
---HOS zip -m &&files_prefix..zip  sma_&&files_prefix..zip
 HOS zip -m &&files_prefix..zip  sma_&&files_prefix..html
 HOS zip -m &&files_prefix..zip  sma_summary_&&files_prefix..html
-
-
---20200630
 
 REM GET EXPANDED SQL TEXT
 set long 1000000 longc 10000000 trims on trim on head off term off feed off pagesize 50000
@@ -25477,7 +26222,6 @@ spool expanded_sql_text_&&files_prefix..sql
 print expanded_sql_text
 spool off
 --20200706
-set head on term on trims off  trim off long 80 longc 80
 --PRO ;;
 --SPO sqlhc.log APP;
 
@@ -25487,6 +26231,7 @@ REM PUSH THE expanded text file in the SQLHC zip
 rem for sqlhc
 HOS zip -m &&files_prefix..zip expanded_sql_text_&&files_prefix..sql
 
+set head on term on trims off  trim off long 80 longc 80
 
 --exec :l_sql_id := null;
 --exec :sql_text := null;
@@ -25494,9 +26239,26 @@ UNDEF 1 2 PLAN_PRINT
 set echo on  FEED On verify on heading on LINESIZE 100 pagesize 100
 EXEC DBMS_APPLICATION_INFO.SET_MODULE(module_name => NULL, action_name => NULL);
 
+
 /*
 sma ends
 */
+
+set head off echo off feed off
+SPO &&script..log APP
+
+PRO 
+PRO
+
+SELECT 'SMA START: ' || to_timestamp(:L_smastart, 'YYYY-MM-DD HH24:MI:SS:FF') from dual;
+SELECT 'SMA END  : ' || to_timestamp(to_char(systimestamp, 'YYYY-MM-DD HH24:MI:SS:FF'), 'YYYY-MM-DD HH24:MI:SS:FF') from dual;
+SELECT 'SMA TIME : ' || (to_timestamp(to_char(systimestamp, 'YYYY-MM-DD HH24:MI:SS:FF'), 'YYYY-MM-DD HH24:MI:SS:FF') - to_timestamp(:L_smastart, 'YYYY-MM-DD HH24:MI:SS:FF')) as sqlhc_sma_runtime from dual;
+
+SPO OFF;
+set head on echo on feed on
+
+HOS zip -m &&files_prefix._9_log.zip &&script..log
+HOS zip -m &&files_prefix..zip &&files_prefix._9_log.zip
 
 PRO
 PRO &&files_prefix..zip has been created.
@@ -25517,9 +26279,11 @@ END;
 /
 -- end
 EXEC DBMS_APPLICATION_INFO.SET_MODULE(module_name => NULL, action_name => NULL);
+ALTER SESSION SET TRACEFILE_IDENTIFIER=null;
+
 --Uday EXEC DBMS_APPLICATION_INFO.SET_CLIENT_INFO(client_info => '^^sqldx_prefix.');
 --Uday @@sqldx.sql ^^license. ^^sqldx_output. ^^sql_id.
-SET TERM ON ECHO OFF FEED 6 VER ON SHOW OFF HEA ON LIN 80 NEWP 1 PAGES 14 LONG 80 LONGC 80 SQLC MIX TAB ON TRIMS OFF TI OFF TIMI OFF ARRAY 15 NUMF "" SQLP SQL> SUF sql BLO . RECSEP WR APPI OFF SERVEROUT OFF AUTOT OFF;
+SET TERM ON ECHO OFF FEED 6 VER ON SHOW OFF HEA ON LIN 200 NEWP 1 PAGES 14 LONG 80 LONGC 80 SQLC MIX TAB ON TRIMS OFF TI OFF TIMI OFF ARRAY 15 NUMF "" SQLP SQL> SUF sql BLO . RECSEP WR APPI OFF SERVEROUT OFF AUTOT OFF;
 PRO
 SET DEF ON;
 --Uday HOS zip -m &&files_prefix..zip &&sqldx_prefix.*
@@ -25528,8 +26292,4 @@ PRO
 PRO
 HOS unzip -l &&files_prefix..zip
 CL COL;
-UNDEF 1 2 method script mos_doc doc_ver doc_date doc_link bug_link input_parameter input_sql_id input_license unique_id sql_id signature signaturef license udump_path sqldx_prefix sqldx_output ebr_date;
-
-
-
-
+UNDEF 1 2 method script mos_doc doc_ver doc_date doc_link bug_link input_parameter input_sql_id input_license sql_id signature signaturef license udump_path sqldx_prefix sqldx_output ebr_date;

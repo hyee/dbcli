@@ -12,12 +12,12 @@ SELECT grouping_id(inst_id,dbwr_num) gid,
        SUM(anum_repl) "Aux Chain|Blocks",
        SUM(cnum_write) "All Dirty|Blocks",
        SUM(anum_write) "Aux Dirty|Blocks"
-FROM   TABLE(gv$(CURSOR (SELECT * FROM x$kcbwds WHERE cnum_set > 0)))
+FROM   TABLE(gv$(CURSOR (SELECT * FROM sys.x$kcbwds WHERE cnum_set > 0)))
 GROUP  BY ROLLUP(inst_id, (dbwr_num, addr, SET_ID))
 ORDER  BY 1,2, 3, set_id;
 pro x$kcbbhs
 pro ========
-SELECT * FROM TABLE(gv$(CURSOR(select * from X$KCBBHS where ISSUED > 0))) order by 1,2,3;
+SELECT * FROM TABLE(gv$(CURSOR(select * from sys.X$KCBBHS where ISSUED > 0))) order by 1,2,3;
 
 --From Tanel Poder
 pro x$kcbbes
@@ -88,6 +88,6 @@ SELECT * FROM TABLE(gv$(CURSOR(
               END io_proc_status,
               savecode io_count,
               ROUND(NULLIF(RATIO_TO_REPORT(savecode) OVER() * 100, 0), 1) "STATUS%"
-       FROM   x$kcbbes
+       FROM   sys.x$kcbbes
        WHERE  GREATEST(reason, priority, savecode) > 0)))
 ORDER BY inst_id,indx;

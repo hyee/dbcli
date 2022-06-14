@@ -76,7 +76,7 @@ BEGIN
                      MAX(decode(KSPPINM, '_gc_policy_minimum', KSPPSTVL)) po,
                      MAX(decode(KSPPINM, '_gc_affinity_ratio', KSPPSTVL / 100)) aff,
                      MAX(decode(KSPPINM, '_gc_transfer_ratio', CASE WHEN KSPPSTVL>10 THEN KSPPSTVL/100 ELSE 1/KSPPSTVL END)) rd
-              FROM   x$ksppcv a, x$ksppi b
+              FROM   sys.x$ksppcv a, sys.x$ksppi b
               WHERE  b.indx = a.indx
               AND    KSPPINM IN ('_gc_policy_minimum', '_gc_affinity_ratio', '_gc_transfer_ratio')),
             stat AS
@@ -102,8 +102,8 @@ BEGIN
                       FROM   TABLE(gv$(CURSOR(
                                 SELECT OBJECT,INST_ID,SUM(SOPENS) SOPENS,SUM(XOPENS) XOPENS,SUM(XFERS) XFERS,SUM(DIRTY) DIRTY,
                                        MAX(BUFF) BUFF
-                                FROM   x$object_policy_statistics
-                                JOIN   (SELECT obj# OBJECT, SUM(num_buf) buff FROM X$KCBOQH GROUP BY obj#)
+                                FROM   sys.x$object_policy_statistics
+                                JOIN   (SELECT obj# OBJECT, SUM(num_buf) buff FROM sys.X$KCBOQH GROUP BY obj#)
                                 USING  (OBJECT)
                                 GROUP  BY OBJECT,INST_ID))) a) A
               GROUP  BY OBJECT),

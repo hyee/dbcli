@@ -29,7 +29,7 @@ select  /*+ ORDERED */
     bh.mode_held,
     bh.dirty_queue                DQ
 from
-    x$bh        bh,
+    sys.x$bh       bh,
     dba_objects    o
 where
     bh.obj = o.data_object_id

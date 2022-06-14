@@ -56,17 +56,17 @@ SELECT * FROM TABLE(GV$(CURSOR(
     SELECT /*+PQ_CONCURRENT_UNION*/ userenv('instance') inst_id,a.* 
     FROM (
         SELECT 'SGA' LOC, KSMCHPTR, KSMCHIDX, KSMCHDUR, KSMCHCOM, KSMCHSIZ, KSMCHCLS, KSMCHTYP, KSMCHPAR
-        FROM   x$ksmsp
+        FROM   sys.x$ksmsp
         WHERE  to_number(substr('&V1', instr(lower('&V1'), 'x') + 1), 'XXXXXXXXXXXXXXXX') BETWEEN
                to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') AND to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') + ksmchsiz - 1
         UNION ALL
         SELECT 'UGA', KSMCHPTR, NULL, NULL, KSMCHCOM, KSMCHSIZ, KSMCHCLS, KSMCHTYP, KSMCHPAR
-        FROM   x$ksmup
+        FROM   sys.x$ksmup
         WHERE  to_number(substr('&V1', instr(lower('&V1'), 'x') + 1), 'XXXXXXXXXXXXXXXX') BETWEEN
                to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') AND to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') + ksmchsiz - 1
         UNION ALL
         SELECT 'PGA', KSMCHPTR, NULL, NULL, KSMCHCOM, KSMCHSIZ, KSMCHCLS, KSMCHTYP, KSMCHPAR
-        FROM   x$ksmpp
+        FROM   sys.x$ksmpp
         WHERE  to_number(substr('&V1', instr(lower('&V1'), 'x') + 1), 'XXXXXXXXXXXXXXXX') BETWEEN
                to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') AND to_number(ksmchptr, 'XXXXXXXXXXXXXXXX') + ksmchsiz - 1
     ) A

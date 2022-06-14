@@ -112,7 +112,7 @@ Stats AS (
     SELECT /*+ordered use_hash(a hs s) opt_param('_optimizer_cartesian_enabled' 'false')  opt_param('_optimizer_mjc_enabled' 'false') */
            hs.sql_id,dbid &con,sorttype,
            SUM(elapsed_time_delta) TOTAL_ELA,
-           SUM(nvl(executions_delta, parse_calls_delta)) execs,
+           SUM(executions_delta) execs,
            op,obj,object_name,
            MAX(TIME) TIME,
            plan_hash_value plan_hash
@@ -176,7 +176,7 @@ FROM (select plan_hash,dbid &con,
              sum(total_ela) total_ela,
              sum(execs) execs,
              sorttype,max(time) time,
-             round(sum(total_ela)/nullif(sum(execs),0),2) avg_ela
+             round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela
       from   stats
       group  by dbid &con,sorttype,plan_hash,obj,object_name,op)
 LEFT JOIN &check_access_pdb.sqltext USING(dbid &con,sql_id)

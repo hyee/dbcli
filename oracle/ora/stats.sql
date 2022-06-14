@@ -1,37 +1,98 @@
 /*[[
-Get preferences and stats of the target object. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-advise]
+Get preferences/stats of the target object or compare stats. Usage: @@NAME {[owner] | [owner.]<object_name>[.partition_name]} [-pending|<yymmddhh24mi>] [<yymmddhh24mi>] [-advise]
 
--advise: execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
+    -advise               : execute SQL Statistics Advisor on the target table, refer to v$stats_advisor_rules
 
+    Compare Stats:
+    ==============
+        -t"<stattab>"                  ：compare the stattab stats with current/historical stats
+        -pending       [<yymmddhh24mi>]：compare the pending stats with current/historical stats
+        <yymmddhh24mi> [<yymmddhh24mi>]: compare the stats of 2 historical stats
 Trace Flags:
-    0    : disable
-    1    : use dbms_output.put_line instead of writing into trace file
-    2    : enable dbms_stat trace only at session level
-    4    : trace table stats
-    8    : trace index stats
-    16   : trace column stats
-    32   : trace auto stats - logs to sys.stats_target$_log
-    64   : trace scaling
-    128  : dump backtrace on error
-    256  : dubious stats detection
-    512  : auto stats job
-    1024 : parallel execution tracing
-    2048 : print query before execution
-    4096 : partition prune tracing
-    8192 : trace stat differences
-    16384: trace extended column stats gathering
-    32768: trace approximate NDV (number distinct values) gathering                                                                            
+    0     : disable
+    1     : use dbms_output.put_line instead of writing into trace file
+    2     : enable dbms_stat trace only at session level
+    4     : trace table stats
+    8     : trace index stats
+    16    : trace column stats
+    32    : trace auto stats - logs to sys.stats_target$_log
+    64    : trace scaling
+    128   : dump backtrace on error
+    256   : dubious stats detection
+    512   : auto stats job
+    1024  : parallel execution tracing
+    2048  : print query before execution
+    4096  : partition prune tracing
+    8192  : trace stat differences
+    16384 : trace extended column stats gathering(11.1+)
+    32768 : trace approximate NDV (number distinct values) gathering(11.2+)
+    65536 : trace "online gather optimizer statistics"(12.1+)
+    131072: Automatic DOP trace
+    262144: System statistics trace(12.2+)
+    524288: Advisor trace
 
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}
        @notes           : 12.1={,t.notes} default={}
+       @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
+       &t               : default={} t={}
+       @check_access_sys: {
+        sys.wri$_optstat_tab_history={
+            SELECT CASE WHEN type='Pending' THEN 'PENDING' 
+                   ELSE to_char(savetime+numtodsinterval(1,'minute'),'YYMMDDHH24MI') 
+                   END "#",A.* FROM (
+                SELECT CASE WHEN savetime>sysdate THEN 'Pending' 
+                       WHEN row_number() OVER(ORDER BY CASE WHEN savetime<=sysdate THEN savetime END DESC NULLS LAST)=1 THEN 'Current'
+                       ELSE 'History' END TYPE,a.*,
+                       CASE WHEN rowcnt > 0 THEN ROUND(samplesize/ rowcnt, 4) END "Samples(%)"
+                FROM (
+                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,
+                           cast(h.savtime at time zone to_char(systimestamp,'TZH:TZM') as date) savetime, 
+                           analyzetime
+                    FROM   dba_objects o, sys.wri$_optstat_tab_history h
+                    WHERE  o.object_id = h.obj#
+                    AND    o.owner=own
+                    AND    o.object_name=nam
+                    AND    nvl(o.subobject_name,' ') = NVL(sub,' ')
+                    UNION ALL
+                    SELECT h.obj#,h.FLAGS,ROWCNT,BLKCNT,AVGRLN,SAMPLESIZE &scanrate,
+                           cast(h.savtime at time zone to_char(systimestamp,'TZH:TZM') as date) savetime, 
+                           analyzetime
+                    FROM   v$fixed_table t, sys.wri$_optstat_tab_history h
+                    WHERE  t.object_id = h.obj#
+                    AND    'SYS'=own
+                    AND    t.name=nam) a
+            ORDER BY savetime DESC) a WHERE ROWNUM<=16}
+
+        default={
+            SELECT CASE WHEN type='Pending' THEN 'PENDING' 
+                   ELSE to_char("TIMESTAMP"+numtodsinterval(1,'minute'),'YYMMDDHH24MI') 
+                   END "#",A.*
+            FROM (
+                SELECT 'Pending' type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,
+                       LAST_ANALYZED "TIMESTAMP" 
+                FROM   &check_access_dba.tab_pending_stats
+                WHERE  owner=own
+                AND    table_name=nam
+                AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
+                UNION ALL
+                SELECT Decode(SEQ,1,'Current','History') type,OWNER,TABLE_NAME,PARTITION_NAME,SUBPARTITION_NAME,savetime
+                FROM (
+                    SELECT A.*,ROW_NUMBER() OVER(ORDER BY STATS_UPDATE_TIME DESC) SEQ,
+                           cast(STATS_UPDATE_TIME at time zone to_char(systimestamp,'TZH:TZM') as date) savetime
+                    FROM   &check_access_dba.tab_stats_history A
+                    WHERE  owner=own
+                    AND    table_name=nam
+                    AND    nvl(sub,' ') = COALESCE(PARTITION_NAME,SUBPARTITION_NAME,' ')
+                    ORDER BY SEQ)
+                WHERE ROWNUM<=15) a}
+        }
     --]]
 ]]*/
 ora _find_object "&V1" 1
 set feed off serveroutput on printsize 10000 verify off
-pro Preferences
-pro ***********
+
 DECLARE
     input       varchar2(128) := :V1;
     owner       varchar2(128) := :object_owner;
@@ -41,6 +102,8 @@ DECLARE
     st          date;
     et          date;
     status      varchar2(300);
+    pval        varchar2(300);
+    len         int;
     val         number;
     numrows     int;
     numblks     int;
@@ -52,75 +115,73 @@ DECLARE
     type t is table of varchar2(300);
     LST    SYS.ODCIOBJECTLIST := SYS.ODCIOBJECTLIST();
     --SOURCE:  SYS.OPTSTAT_HIST_CONTROL$/SYS.OPTSTAT_USER_PREFS$
-    prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE', 'TRUE/FALSE',
-                'APPROXIMATE_NDV','TRUE/FALSE',
-                'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
-                'AUTOSTATS_TARGET','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)',
-                'AUTO_STATS_ADVISOR_TASK','TRUE/FALSE',
-                'AUTO_STAT_EXTENSIONS','ON/OFF',
-                'AUTO_TASK_STATUS','HIGH FREQUENCY STATISTICS: ON/OFF, see SYS.STATS_TARGET$/dba_auto_stat_executions',
-                'AUTO_TASK_MAX_RUN_TIME','HIGH FREQUENCY STATISTICS: Max run secs',
-                'AUTO_TASK_INTERVAL','HIGH FREQUENCY STATISTICS: Interval in secs',
-                'CASCADE','TRUE/FALSE/null(AUTO_CASCADE)',
-                'CONCURRENT','MANUAL/AUTOMATIC/ALL/OFF/FALSE/TRUE',
-                'COORDINATOR_TRIGGER_SHARD','TRUE/FALSE',
-                'DEBUG','1[AUTO_TLIST_ONLY],2[MANUAL_TLIST],4[PARALLEL_SYNOP],8[CLOB_SQL],16[FORCE_TF],32[BATCHINGSQL]',
-                'DEGREE','n/32766(DEFAULT_DEGREE_VALUE)/32767(DEFAULT_DEGREE)/32768(AUTO_DEGREE)',
-                'ENABLE_HYBRID_HISTOGRAMS','0:disable 1/2/3',
-                'ENABLE_TOP_FREQ_HISTOGRAMS','0:disable 1/2/3',
-                'ESTIMATE_PERCENT','0(AUTO_SAMPLE_SIZE)/[0.000001-100]/101(DEFAULT_ESTIMATE_PERCENT)',
-                'GATHER_AUTO','AFTER_LOAD/ALWAYS',
-                'GATHER_SCAN_RATE','HADOOP_ONLY/ON/OFF',
-                'GLOBAL_TEMP_TABLE_STATS','SHARED/SESSION',
-                'GRANULARITY','Partition: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
-                'INCREMENTAL','Partition: TRUE/FALSE, fix controls: 13583722/16726844',
-                'INCREMENTAL_INTERNAL_CONTROL','Partition: TRUE/FALSE',
-                'INCREMENTAL_LEVEL','Partition: TABLE/PARTITION synopses',
-                'INCREMENTAL_STALENESS','Partition: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
-                'JOB_OVERHEAD','-1',
-                'JOB_OVERHEAD_PERC','1',
-                'MAINTAIN_STATISTICS_STATUS','TRUE/FALSE',
-                'METHOD_OPT','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
-                'MON_MODS_ALL_UPD_TIME','',
-                'NO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE(_optimizer_invalidation_period))',
-                'OPTIONS','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
-                'PREFERENCE_OVERRIDES_PARAMETER','TRUE/FALSE',
-                'PUBLISH','TRUE/FALSE',
-                'REAL_TIME_STATISTICS','ON/OFF',
-                'ROOT_TRIGGER_PDB','FALSE/TRUE',
-                'SCAN_RATE','0',
-                'SKIP_TIME','',
-                'SNAPSHOT_UPD_TIME','',
-                'SPD_RETENTION_WEEKS','53',
-                'STATS_MODEL','ON/OFF',
-                'STATS_MODEL_INTERNAL_CONTROL','0',
-                'STATS_MODEL_INTERNAL_MINRSQ','0.9',
-                'STALE_PERCENT','10',
-                'STATS_RETENTION','',
-                'STAT_CATEGORY','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
-                'SYS_FLAGS','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
-                'TABLE_CACHED_BLOCKS','0(AUTO_TABLE_CACHED_BLOCKS)/n',
-                'TRACE','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC[sys.stats_target$_log]),...524288',
-                'WAIT_TIME_TO_UPDATE_STATS','15');
+    --         SYS.DBMS_STATS_INTERNAL.FILL_IN_PARAMS/FILL_IN_PARAMS_WITH_NO_PREFS
+    prefs t:= t('ANDV_ALGO_INTERNAL_OBSERVE','FALSE', 'TRUE/FALSE',
+                'APPROXIMATE_NDV','TRUE','TRUE/FALSE',
+                'APPROXIMATE_NDV_ALGORITHM','REPEAT OR HYPERLOGLOG','REPEAT OR HYPERLOGLOG/ADAPTIVE SAMPLING/HYPERLOGLOG',
+                'AUTO_STAT_EXTENSIONS','OFF','ON/OFF',
+                'AUTO_STATS_ADVISOR_TASK','TRUE','TRUE/FALSE',
+                'AUTO_TASK_INTERVAL', '900','HIGH FREQUENCY STATISTICS: Interval in secs',
+                'AUTO_TASK_MAX_RUN_TIME', '3600','HIGH FREQUENCY STATISTICS: Max run secs',
+                'AUTO_TASK_STATUS','OFF','HIGH FREQUENCY STATISTICS: ON/OFF, see SYS.STATS_TARGET$/dba_auto_stat_executions',
+                'AUTOSTATS_TARGET','AUTO','ALL/AUTO/ORACLE/Z(DEFAULT_AUTOSTATS_TARGET)', 
+                'BLOCK_SAMPLE', 'FALSE','TABLE: TRUE/FALSE,whether sample in block level',
+                'CASCADE', 'DBMS_STATS.AUTO_CASCADE','TRUE/FALSE/null(AUTO_CASCADE),cascade collect index stats',
+                'CONCURRENT','OFF', 'MANUAL/AUTOMATIC/ALL/OFF/FALSE/TRUE',
+                'COORDINATOR_TRIGGER_SHARD','FALSE', 'TRUE/FALSE',
+                'DEBUG','0','1[AUTO_TLIST_ONLY],2[MANUAL_TLIST],4[PARALLEL_SYNOP],8[CLOB_SQL],16[FORCE_TF],32[BATCHINGSQL]',
+                'DEGREE','NULL','n/32766(DEFAULT_DEGREE_VALUE)/32767(DEFAULT_DEGREE)/32768(AUTO_DEGREE)',
+                'ENABLE_HYBRID_HISTOGRAMS','3','0:disable 1/2/3',
+                'ENABLE_TOP_FREQ_HISTOGRAMS','3','0:disable 1/2/3',
+                'ESTIMATE_PERCENT','DBMS_STATS.AUTO_SAMPLE_SIZE','0(AUTO_SAMPLE_SIZE)/[0.000001-100]/101(DEFAULT_ESTIMATE_PERCENT)',
+                'FORCE', 'FALSE','TRUE/FALSE',
+                'GATHER_AUTO','AFTER_LOAD', 'AFTER_LOAD/ALWAYS',
+                'GATHER_SCAN_RATE','HADOOP_ONLY','HADOOP_ONLY/ON/OFF',
+                'GLOBAL_TEMP_TABLE_STATS','SESSION', 'SHARED/SESSION',
+                'GRANULARITY','AUTO','Partition: AUTO/ALL/DEFAULT/GLOBAL/PARTITION/SUBPARTITION/GLOBAL AND PARTITION/PART AND SUBPART/GLOBAL AND SUBPART/APPROX_GLOBAL AND PARTITION',
+                'INCREMENTAL','FALSE','Partition: TRUE/FALSE, fix controls: 13583722/16726844',
+                'INCREMENTAL_INTERNAL_CONTROL','TRUE', 'Partition: TRUE/FALSE',
+                'INCREMENTAL_LEVEL','PARTITION','Partition: TABLE/PARTITION synopses',
+                'INCREMENTAL_STALENESS','ALLOW_MIXED_FORMAT','Partition: ALLOW_MIXED_FORMAT,USE_STALE_PERCENT,USE_LOCKED_STATS/NULL',
+                'JOB_OVERHEAD','-1','-1',
+                'JOB_OVERHEAD_PERC','1','1',
+                'MAINTAIN_STATISTICS_STATUS','FALSE', 'TRUE/FALSE',
+                'METHOD_OPT','FOR ALL COLUMNS SIZE AUTO','FOR ALL [INDEXED|HIDDEN] COLUMNS [SIZE {integer|REPEAT|AUTO|SKEWONLY}]/Z(DEFAULT_METHOD_OPT)',
+                'MON_MODS_ALL_UPD_TIME','','',
+                'NO_INVALIDATE','DBMS_STATS.AUTO_INVALIDATE','TRUE/FALSE/null(AUTO_INVALIDATE(_optimizer_invalidation_period))',
+                'OBJ_FILTER_LIST','','',
+                'OPTIONS','GATHER','GATHER/GATHER AUTO/Z(DEFAULT_OPTIONS)(additional schema/system: GATHER STALE/GATHER EMPTY/LIST AUTO/LIST STALE/LIST EMPTY)',
+                'PREFERENCE_OVERRIDES_PARAMETER','FALSE', 'TRUE/FALSE',
+                'PUBLISH','TRUE','TRUE/FALSE',
+                'REAL_TIME_STATISTICS','OFF','ON/OFF',
+                'ROOT_TRIGGER_PDB','FALSE','FALSE/TRUE',
+                'SCAN_RATE','0','0',
+                'SKIP_TIME','','',
+                'SNAPSHOT_UPD_TIME','','',
+                'SPD_RETENTION_WEEKS','53','53',
+                'STATS_MODEL','OFF','ON/OFF',
+                'STATS_MODEL_INTERNAL_CONTROL','0','0',
+                'STATS_MODEL_INTERNAL_MINRSQ','0.9','0.9',
+                'STALE_PERCENT','10','10',
+                'STATS_RETENTION','','',
+                'STAT_CATEGORY','OBJECT_STATS, REALTIME_STATS','OBJECT_STATS,SYNOPSES,REALTIME_STATS/Z(DEFAULT_STAT_CATEGORY)',
+                'SYS_FLAGS','1','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
+                'TABLE_CACHED_BLOCKS','1','0(AUTO_TABLE_CACHED_BLOCKS)/n',
+                'TRACE','0','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC[sys.stats_target$_log]),...524288',
+                'WAIT_TIME_TO_UPDATE_STATS','15','15');
 
 BEGIN
+    IF :V2 IS NOT NULL OR :T IS NOT NULL THEN
+        RETURN;
+    END IF;
     dbms_output.enable(null);
+    dbms_output.put_line('Preferences');
+    dbms_output.put_line('***********');
     IF typ IS NOT NULL and typ NOT like 'TABLE%' THEN
         RAISE_APPLICATION_ERROR(-20001,'Only table is supported!');
     END IF;
 
-    $IF DBMS_DB_VERSION.VERSION<11 $THEN
-        for i in 0..prefs.count/2 loop
-            begin
-                status :=rpad('Param - '||prefs(i*2+1),45)||': '||rpad(dbms_stats.get_param(prefs(i*2+1)),35);
-                if prefs(i*2+2) is not null then
-                    status := status || '('||prefs(i*2+2)||')';
-                end if;
-                dbms_output.put_line(status);
-            exception when others then null;
-            end;
-        end loop;    
-    $ELSE
+    $IF DBMS_DB_VERSION.VERSION>10 $THEN
         IF owner IS NULL THEN
             typ:='system';
             IF input IS NOT NULL THEN
@@ -133,17 +194,30 @@ BEGIN
                 END IF;
             END IF;
         END IF;
-        for i in 0..prefs.count/2 loop
-            begin
-                status :=rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i*2+1),45)||': '||rpad(dbms_stats.get_prefs(prefs(i*2+1),owner,object_name),35);
-                if prefs(i*2+2) is not null then
-                    status := status || '('||prefs(i*2+2)||')';
-                end if;
-                dbms_output.put_line(status);
-            exception when others then null;
-            end;
-        end loop;
+    $ELSE
+        typ:='';
     $END
+
+    for i in 0..(prefs.count/3-1) loop
+        begin
+            $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                pval:=substr(dbms_stats.get_prefs(prefs(i*3+1),owner,object_name),1,35);
+            $ELSE
+                pval:=substr(dbms_stats.get_param(prefs(i*3+1)),1,35);
+            $END
+            len := length(pval);
+            IF pval!=substr(prefs(i*3+2),1,35) THEN
+                pval := '$HIR$*'||substr(pval,1,34)||'$NOR$';
+                len:=len+1;
+            END IF;
+            status :=rpad(initcap(nvl(typ,'system')||' ')||'Prefs - '||prefs(i*3+1),45)||': '||pval||rpad(' ',35-len);
+            if prefs(i*3+3) is not null then
+                status := status || '('||prefs(i*3+3)||')';
+            end if;
+            dbms_output.put_line(status);
+        exception when others then null;
+        end;
+    end loop;
     
     prefs := t('iotfrspeed', 'ioseektim', 'mbrc','sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw',  'maxthr', 'slavethr');
     for i in 1..prefs.count loop
@@ -231,16 +305,78 @@ pro
 var c1 REFCURSOR "&OBJECT_TYPE INFO"
 var c2 REFCURSOR "&OBJECT_TYPE COLUMN INFO"
 var c3 REFCURSOR "&OBJECT_TYPE INDEX INFO"
-var c4 REFCURSOR "&OBJECT_TYPE CHILD PARTS"
+var c4 REFCURSOR "&OBJECT_TYPE TOP 100 CHILD PARTS"
+var c5 REFCURSOR "&OBJECT_TYPE STATS HISTORY IN SYSTEM TIMEZONE"
+var c6 REFCURSOR "&OBJECT_TYPE STATS DIFF REPORT"
 col "Samples(%)" for pct
+col rowcnt,blkcnt,samplesize for tmb
+col scan_rate for kmg
+set printsize 3000
+
 DECLARE
-    typ VARCHAR2(30):=:OBJECT_TYPE;
-    c1 SYS_REFCURSOR;
-    c2 SYS_REFCURSOR;
-    c3 SYS_REFCURSOR;
-    c4 SYS_REFCURSOR;
+    own  VARCHAR2(128):=:OBJECT_OWNER;
+    nam  VARCHAR2(128):=:OBJECT_NAME;
+    sub  VARCHAR2(128):=:OBJECT_SUBNAME;
+    typ  VARCHAR2(128):=:OBJECT_TYPE;
+    st   VARCHAR2(128):=UPPER(:V2);
+    ed   VARCHAR2(128):=regexp_substr(:V3,'^\d+$');
+    town VARCHAR2(128);
+    tnam VARCHAR2(512) := replace(trim(upper(:t)),' '); 
+    tz1  VARCHAR2(10) := to_char(systimestamp,'TZH:TZM');
+    ss   TIMESTAMP WITH TIME ZONE:=from_tz(to_timestamp(regexp_substr(st,'^\d+$'),'YYMMDDHH24MISS'),tz1);
+    es   TIMESTAMP WITH TIME ZONE:=from_tz(to_timestamp(ed,'YYMMDDHH24MISS'),tz1);
+    c1   SYS_REFCURSOR;
+    c2   SYS_REFCURSOR;
+    c3   SYS_REFCURSOR;
+    c4   SYS_REFCURSOR;
+    msg  VARCHAR2(300);
+
 BEGIN
-    IF typ='TABLE' THEN
+    IF NVL(typ,'X') NOT LIKE 'TABLE%' THEN 
+        RETURN;
+    END IF;
+
+    IF tnam IS NOT NULL THEN
+        IF tnam='.' THEN
+            raise_application_error(-20001,'Invalid stat table: .');
+        END IF;
+
+        IF instr(tnam,'.')=0 THEN
+            town:=sys_context('userenv','current_schema');
+        ELSE
+            town:=regexp_substr(tnam,'[^\.]+',1,1);
+            tnam:=regexp_substr(tnam,'[^\.]+',1,2);
+        END IF;
+
+        BEGIN
+            EXECUTE IMMEDIATE 'SELECT 1 FROM '||town||'.'||tnam||' WHERE STATID IS NULL AND C4 IS NOT NULL';
+        EXCEPTION WHEN OTHERS THEN
+            IF SQLCODE=-904 THEN
+                raise_application_error(-20001,'Invalid stats table: '||town||'.'||tnam);
+            ELSE
+                raise_application_error(-20001,'No access to target stats table: &t, consider create it with: exec dbms_stats.create_stat_table('''||town||''','''||tnam||''');');
+            END IF;
+        END;
+    END IF;
+
+    msg := '| '||typ||' '||own||'.'||nam||trim('.' FROM '.'||sub)||' |';
+    DBMS_OUTPUT.PUT_LINE(RPAD('*',LENGTH(MSG),'*'));
+    DBMS_OUTPUT.PUT_LINE(msg);
+    DBMS_OUTPUT.PUT_LINE('| '||RPAD('=',LENGTH(MSG)-4,'=')||' |');
+    DBMS_OUTPUT.PUT_LINE(RPAD('*',LENGTH(MSG),'*'));
+    OPEN :C5 FOR &check_access_sys;
+    IF st IN ('-PENDING','PENDING') THEN
+        OPEN :c6 FOR 
+            SELECT * FROM TABLE(dbms_stats.diff_table_stats_in_pending(own,nam,es,pctthreshold=>0.01));
+    ELSIF tnam IS NOT NULL THEN
+        OPEN :c6 FOR
+            SELECT * FROM TABLE(dbms_stats.diff_table_stats_in_stattab(own,nam,stattab1own=>town,stattab1=>tnam,pctthreshold=>0.01));
+    ELSIF ss IS NOT NULL THEN
+        OPEN :c6 FOR 
+            SELECT * FROM TABLE(dbms_stats.diff_table_stats_in_history(own,nam,ss,es,pctthreshold=>0.01));
+    ELSIF st IS NOT NULL THEN
+        raise_application_error(-20001,'Invalid parameter: '||:V2);
+    ELSIF typ='TABLE' THEN
         OPEN c1 FOR 
             select 
                 TABLE_NAME,
@@ -256,8 +392,8 @@ BEGIN
                 USER_STATS,
                 t.last_analyzed
             from &check_access_dba.tables t
-            where owner = :object_owner
-            and table_name = :object_name;
+            where owner = own
+            and table_name = nam;
         OPEN c2 FOR
             SELECT t1.COLUMN_NAME,
                    decode(t1.DATA_TYPE,
@@ -281,16 +417,19 @@ BEGIN
                    t1.DATA_DEFAULT "DEFAULT",
                    t.LAST_ANALYZED &notes
             FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
-                   (select table_name,num_rows from &check_access_dba.tables where owner = :object_owner and table_name = :object_name) t2
+                   (select /*+cardinality(1)*/ table_name,num_rows 
+                    from  &check_access_dba.tables 
+                    where owner = own 
+                    and   table_name = nam) t2
             WHERE  t2.table_name=t1.table_name
-            AND    t1.table_name = :object_name
-            AND    t1.owner = :object_owner
-            AND    t.table_name = :object_name
-            AND    t.owner = :object_owner
+            AND    t1.table_name = nam
+            AND    t1.owner = own
+            AND    t.table_name = nam
+            AND    t.owner = own
             AND    t1.column_name=t.column_name;
 
         OPEN C3 FOR
-            WITH I AS (SELECT /*+no_merge opt_param('cursor_sharing' 'force')*/ 
+            WITH I AS (SELECT /*+no_merge*/ 
                                I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                                PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -305,9 +444,9 @@ BEGIN
                         FROM   &check_access_dba.INDEXES I,&check_access_dba.PART_INDEXES C
                         WHERE  C.OWNER(+) = I.OWNER
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME
-                        AND    I.TABLE_OWNER = :object_owner
-                        AND    I.TABLE_NAME = :object_name)
-            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('_optim_peek_user_binds','false')
+                        AND    I.TABLE_OWNER = own
+                        AND    I.TABLE_NAME = nam)
+            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('optimizer_dynamic_sampling' 11)
                  DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -337,23 +476,29 @@ BEGIN
             ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION;
 
         OPEN C4 FOR
-            SELECT PARTITION_NAME,
-                   t.NUM_ROWS,
-                   t.SAMPLE_SIZE,
-                   round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
-                   BLOCKS,
-                   EMPTY_BLOCKS,
-                   AVG_SPACE,
-                   CHAIN_CNT,
-                   AVG_ROW_LEN,
-                   GLOBAL_STATS,
-                   USER_STATS,
-                   t.last_analyzed
-            FROM   &check_access_dba.tab_partitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    partition_name =nvl(:object_subname,partition_name)
-            ORDER  BY partition_position;
+            SELECT * FROM (
+                SELECT PARTITION_NAME,
+                       PARTITION_POSITION POSITION,
+                       t.NUM_ROWS,
+                       t.SAMPLE_SIZE,
+                       round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
+                       BLOCKS,
+                       EMPTY_BLOCKS,
+                       AVG_SPACE,
+                       CHAIN_CNT,
+                       AVG_ROW_LEN,
+                       GLOBAL_STATS,
+                       USER_STATS,
+                       last_analyzed,
+                       o.created
+                FROM   &check_access_dba.tab_partitions t,&check_access_dba.objects o
+                WHERE  table_owner = own
+                AND    table_name = nam
+                AND    o.owner=own
+                AND    o.object_name=nam
+                AND    o.subobject_name=t.partition_name
+                ORDER  BY created DESC,POSITION)
+            WHERE ROWNUM<=100;
     ELSIF typ='TABLE PARTITION' THEN
         OPEN C1 FOR
             SELECT PARTITION_NAME,
@@ -369,12 +514,12 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.tab_partitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    partition_name =nvl(:object_subname,partition_name)
+            WHERE  table_owner = own
+            AND    table_name = nam
+            AND    partition_name =nvl(sub,partition_name)
             ORDER  BY partition_position;
         OPEN C2 FOR
-            SELECT PARTITION_NAME,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(t1)*/ PARTITION_NAME,
                    COLUMN_NAME,
                    HISTOGRAM,
                    ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
@@ -387,12 +532,11 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed  &notes
             FROM   &check_access_dba.PART_COL_STATISTICS t,
-                   (select table_name,num_rows from &check_access_dba.tab_partitions p where p.table_owner = :object_owner and p.table_name = :object_name and p.partition_name=:object_subname) t1
-            WHERE  t.table_name = :object_name
-            AND    owner = :object_owner
+                   (select table_name,num_rows from &check_access_dba.tab_partitions p where p.table_owner = own and p.table_name = nam and p.partition_name=sub) t1
+            WHERE  t.table_name = nam
+            AND    owner = own
             AND    t1.table_name=t.table_name
-            AND    PARTITION_NAME =:object_subname
-            AND    partition_name =nvl(:object_subname,partition_name);
+            AND    partition_name =sub;
         OPEN C3 FOR
             SELECT t.INDEX_NAME,
                    t.PARTITION_NAME,
@@ -408,15 +552,15 @@ BEGIN
                    t.USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.ind_partitions t, &check_access_dba.indexes i
-            WHERE  i.table_name = :object_name
-            AND    i.table_owner = :object_owner
+            WHERE  i.table_name = nam
+            AND    i.table_owner = own
             AND    i.owner = t.index_owner
             AND    i.index_name = t.index_name
-            AND    t.partition_name =nvl(:object_subname,t.partition_name);
+            AND    t.partition_name =sub;
 
         OPEN C4 FOR
-            SELECT PARTITION_NAME,
-                   SUBPARTITION_NAME,
+            SELECT SUBPARTITION_NAME,
+                   SUBPARTITION_POSITION POSITION,
                    NUM_ROWS,
                    SAMPLE_SIZE,
                    round((nvl(t.SAMPLE_SIZE,0))/nullif(NUM_ROWS,0),4) "Samples(%)",
@@ -429,11 +573,11 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.tab_subpartitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    subpartition_name =nvl(:object_subname,subpartition_name)
+            WHERE  table_owner = own
+            AND    table_name = nam
+            AND    partition_name =sub
             ORDER  BY SUBPARTITION_POSITION;
-    ELSIF typ='TABLE PARTITION' THEN
+    ELSIF typ='TABLE SUBPARTITION' THEN
         OPEN C1 FOR
             SELECT PARTITION_NAME,
                    SUBPARTITION_NAME,
@@ -449,13 +593,11 @@ BEGIN
                    USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.tab_subpartitions t
-            WHERE  table_owner = :object_owner
-            AND    table_name = :object_name
-            AND    subpartition_name =nvl(:object_subname,subpartition_name)
-            ORDER  BY SUBPARTITION_POSITION;
+            WHERE  table_owner = own
+            AND    table_name = nam
+            AND    subpartition_name =sub;
         OPEN C2 FOR
-            SELECT p.PARTITION_NAME,
-                   t.SUBPARTITION_NAME,
+            SELECT t.SUBPARTITION_NAME,
                    t.COLUMN_NAME,
                    NUM_BUCKETS BUCKETS,
                    t.SAMPLE_SIZE,
@@ -466,12 +608,12 @@ BEGIN
                    t.USER_STATS,
                    t.last_analyzed &notes
             FROM   &check_access_dba.SUBPART_COL_STATISTICS t, &check_access_dba.tab_subpartitions p
-            WHERE  t.table_name = :object_name
-            AND    t.owner = :object_owner
+            WHERE  t.table_name = nam
+            AND    t.owner = own
             AND    t.subpartition_name = p.subpartition_name
             AND    t.owner = p.table_owner
             AND    t.table_name = p.table_name
-            AND    t.subpartition_name =:object_subname;
+            AND    t.subpartition_name =sub;
         OPEN C3 FOR
             SELECT t.INDEX_NAME,
                    t.PARTITION_NAME,
@@ -489,25 +631,25 @@ BEGIN
                    t.USER_STATS,
                    t.last_analyzed
             FROM   &check_access_dba.ind_subpartitions t, &check_access_dba.indexes i
-            WHERE  i.table_name = :object_name
-            AND    i.table_owner = :object_owner
+            WHERE  i.table_name = nam
+            AND    i.table_owner = own
             AND    i.owner = t.index_owner
             AND    i.index_name = t.index_name
-            AND    t.subpartition_name =nvl(:object_subname,t.subpartition_name);
+            AND    t.subpartition_name =sub;
     END IF;
-
+    
     :C1 := C1;
     :C2 := C2;
     :C3 := C3;
     :C4 := C4;
 END;
 /
-
 PRINT C1;
+PRINT C5;
+PRINT C6;
 PRINT C2;
 PRINT C3;
 PRINT C4;
-
 
 DECLARE
     input  VARCHAR2(128) := :V1;

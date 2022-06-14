@@ -86,11 +86,11 @@ function helper.env(target,depth)
     
     
     
-    add("Memory.JVM.Used(KB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024))
-    add("Memory.LUA(KB)",math.floor(collectgarbage("count")))
-    add("Memory.JVM.Free(KB)",math.floor(runtime:freeMemory()/1024))
+    add("Memory.JVM.Used(MB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024/1024))
+    add("Memory.LUA(MB)",env.uv and env.uv.resident_set_memory()/1024/1024 or math.floor(collectgarbage("count")/1024))
+    add("Memory.JVM.Free(MB)",math.floor(runtime:freeMemory()/1024/1024))
     if rows[2][1] and rows[2][2] then
-        add("Memory.Total(KB)",rows[2][1]+rows[2][2]+rows[2][3])
+        add("Memory.Total(MB)",rows[2][1]+rows[2][2]+rows[2][3])
     end
     add("TERM",console.terminal:getType())
     add("CodePoint",e)
@@ -281,6 +281,7 @@ function helper.help(cmd,...)
         if not dest then
             dest=env.WORK_DIR.."cache"..env.PATH_DEL.."verbose.log"
             local f=io.open(dest)
+            env.checkerr(f,"Cannot find verbose file at %s",dest)
             local txt=f:read("*a")
             f:close()
             for v in txt:gmatch("%[Loaded%s+(%S+).-%]") do

@@ -12,7 +12,7 @@ SELECT * FROM TABLE(GV$(CURSOR(
            decode(kqrsttyp, 1, 'PARENT', 'SUBORDINATE') TYPE,
            decode(kqrsttyp, 2, kqrstsno, NULL) subordinate#, kqrstgrq cache_gets,
            kqrstgmi cache_get_misses, kqrstmrq updates,l.gets latch_gets, l.misses latch_misses
-    FROM   x$kqrst s, v$session ses, v$latch_children l,v$latchholder h
+    FROM   sys.x$kqrst s, v$session ses, v$latch_children l,v$latchholder h
     WHERE  ses.p1raw = l.addr
     AND    l.child# = s.kqrstcln
     AND    l.addr   =h.laddr(+)
@@ -34,7 +34,7 @@ SELECT * FROM TABLE(GV$(CURSOR(
            w.sql_id waiter_sqlid,
            w.event waiter_Event,
            decode(w.p3,0,'NULL',3,'SHARED',5,'EXCLUSIVE','FAIL TO AQUIRE INST LOCK') req_mode
-    FROM   X$KQRFP s, v$session h, v$session w
+    FROM   sys.X$KQRFP s, v$session h, v$session w
     WHERE  w.p1(+)=s.KQRFPCID and s.KQRFPSES=h.saddr(+)
     AND    w.p1text='cache id'
     AND    greatest(KQRFPMOD, KQRFPREQ, KQRFPIRQ)>0

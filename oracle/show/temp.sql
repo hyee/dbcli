@@ -9,12 +9,14 @@ set feed off
 col BYTES_CACHED,BYTES_FREE,BYTES_USED,bytes,BLOCK_SIZE for kmg
 PRO GV$TEMP_EXTENT_POOL:
 PRO ====================
-select DISTINCT * from gv$temp_extent_pool order by 2,3,1;
+select /*+opt_param('optimizer_dynamic_sampling' 5)*/ DISTINCT * 
+from gv$temp_extent_pool order by 2,3,1;
 
 PRO UNLOCKED SEGMENTS(In dba_segments where segment_type = 'TEMPORARY')
 PRO         (Use level 2147483647 to cleanup all tablespaces)
 PRO ===================================================================
-SELECT inst_id inst,
+SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
+       inst_id inst,
        T1.TS#,
        TABLESPACE_NAME,
        S.USED_EXTENTS,
@@ -33,7 +35,7 @@ JOIN   DBA_TABLESPACES T2 USING(TABLESPACE_NAME)
 
 PRO GV$TEMP_EXTENT_POOL:
 PRO ====================
-SELECT /*+ ordered opt_param('cursor_sharing' 'force')*/
+SELECT /*+ ordered opt_param('optimizer_dynamic_sampling' 5)*/
      B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,
      P.SPID,
      B.USERNAME,

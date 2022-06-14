@@ -68,7 +68,7 @@ SELECT --+ORDERED
                     'KILLED'),
              1,
              1) "STATUS", s2.event "WAITING"
-FROM   x$k2gte g, x$ktcxb t, x$ksuse s, gv$session s2
+FROM   sys.x$k2gte g, sys.x$ktcxb t, sys.x$ksuse s, gv$session s2
 WHERE  g.K2GTDXCB = t.ktcxbxba
 AND    g.K2GTDSES = t.ktcxbses
 AND    s.addr = g.K2GTDSES

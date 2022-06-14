@@ -3,6 +3,7 @@ set feed off
 col PGA_TARGET_FOR_ESTIMATE,BYTES_PROCESSED,ESTD_EXTRA_BYTES_RW for kmg
 col ESTD_TIME for smhd2
 col PGA_TARGET_FACTOR for pct2
+col avg_value,min_value,max_value for k2
 pro PGA Advise:
 pro ================
 select PGA_TARGET_FOR_ESTIMATE,

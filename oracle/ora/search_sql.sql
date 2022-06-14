@@ -8,7 +8,7 @@
     --[[
         @ARGS: 1
         &vw     : default={'A'} g={'G'} d={'D'} AWR={'AWR'}
-        &filter : default={upper(sql_text_) like upper('%&V1%') or (sql_id='&v1')} r={regexp_like(sql_text_||SQL_ID,'&V1','in') or (sql_id='&v1')}
+        &filter : default={upper(sql_text_) like upper(q'~%&V1%~') or (sql_id=q'~&v1~')} r={regexp_like(sql_text_||SQL_ID,q'~&V1~','in') or (sql_id=q'~&v1~')}
         @CHECK_ACCESS_GV: {
             GV$SQLSTATS_PLAN_HASH={V$SQLSTATS_PLAN_HASH}
             GV$SQLSTATS={V$SQLSTATS_PLAN_HASH}
@@ -52,15 +52,6 @@
             }
         }
 
-        @CHECK_ACCESS_SQLSET_STATEMENTS: {
-            DBA_SQLSET_STATEMENTS={
-                UNION
-                SELECT 'DBA_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
-                FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM DBA_SQLSET_STATEMENTS A)
-                WHERE  &vw in('A','D') AND (&filter)
-            }
-        }
-
         @CHECK_ACCESS_SQL_MONITOR: {
             GV$SQL_MONITOR={
                 UNION
@@ -73,7 +64,7 @@
         }
     --]]
 ]]*/
-SELECT /*+no_expand*/
+SELECT /*+no_expand PQ_CONCURRENT_UNION*/
        SOURCE,SQL_ID,
        substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 300) sql_text
 FROM (
@@ -83,6 +74,10 @@ FROM (
                substr(sql_text,1,1000) sql_text
         FROM   (SELECT a.*, a.SQL_FULLTEXT sql_text_ FROM &CHECK_ACCESS_GV a)
         WHERE  &vw in('A','G') AND (&filter)))) a
+    UNION
+    SELECT 'ALL_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
+    FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM ALL_SQLSET_STATEMENTS A)
+    WHERE  &vw in('A','D') AND (&filter)
     &CHECK_ACCESS_AWR
     &CHECK_ACCESS_SPM
     &CHECK_ACCESS_SQL_PROFILES
@@ -90,6 +85,6 @@ FROM (
     &CHECK_ACCESS_SQLSET_STATEMENTS
     &CHECK_ACCESS_SQL_MONITOR
 )
-WHERE instr(lower(sql_text),'sql_text')=0
+WHERE instr(lower(sql_text),'sql_text_')=0
 AND   ROWNUM<=100
 ORDER BY 1,2

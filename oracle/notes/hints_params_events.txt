@@ -157,9 +157,10 @@ Parameters
     _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
     _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
     _px_reuse_server_groups: reuse existing px server group for CDT
+    _ktb_debug_flags: 2 - disable oustanding read events on SecureFile insertion, but increase the undo header lookups during cleanouts
     _dbg_scan: default as 0
         1: Disable LOB predicate pushdown to Smart Scan
-        128: disable HCC read-ahead 
+        128: disable HCC read-ahead and disable preventing tiny HCC tiny CU(buffer_size<block_size) creation(bug 32290386)
         4096: Disable rowset function evaluation in Smart Scan
         8192: Disable aggregation pushdown to Smart Scan
         131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
@@ -168,7 +169,8 @@ Parameters
     _cell_cache_thrashing_detection_tolerance(cell): set to 1 to reduce high latency of direct path read/write temp in Exadata, relative cell param: _cell_fc_lw_max_percentage(default 20%)
     _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
     _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
-    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query
+    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query(NOSORTSTOPKEY)
+                                       8    to turn off new sort(_newsort_type)
                                        256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism
                                        1024 to disable including sys_op_cycle_seq as part of extended TQ keys
     _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
@@ -177,10 +179,17 @@ Parameters
     _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
     _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
                      64 - Disable HCC array deletes within updates
-                     128 - 
+                     128 - disable fix on 32290386(During HCC block creation if the inserted data is smaller than the block size,insert the data uncompressed to avoid having tiny CUs) 
+    _smu_debug_mode: 33554432 - TUNED_UNDORETENTION is not calculated based on a percentage of the fixed size undo tablespace.
+                                Instead it is set to the max(MAXQUERYLEN + 300, UNDO_RETENTION).
+                                Use _undo_autotune=false instead when undo datafile's AUTOEXTENSIBLE=YES
+                     134217728 - turn off storage index
     
     
 Events:
+    turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
+    enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'
+    reduce high single blocks read for insert in non-ASSM tablespace(bug #18938517): alter session set events '45051 trace name context forever'
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
     merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
@@ -231,7 +240,7 @@ Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
-    20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time)
+    20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time), for example the large inlist
     25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
     6708183 :  allow dynamic sampling on table functions
     8619631 :  Allow hash aggregation for insert select except for plsql calls
@@ -241,7 +250,9 @@ Fix Controls:
     30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
     33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
     9721439:   Forces bloom filter and bypasses all the statistics based heuristics
-    16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE 
+    16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE
+    31626438:  use smart scan on partition table when partition size > 100MB
+    27268249:  0 to disable approximate ndv on gathering (index) stats and possible to reduce IO (bug 33427856)
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
@@ -249,5 +260,5 @@ Others:
        * compatible=12.2+ 
        * ASSM tablespace(SEGMENT SPACE MANAGEMENT AUTO)
        * HCC table on exadata storage 
-       * _force_oltp_compress=false
+       * _force_oltp_compress=false(_disable_hcc_array_insert=true to disable)
        * enable_goldengate_replication=true if supplemental logging is enabled

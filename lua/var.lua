@@ -276,7 +276,7 @@ function var.after_db_exec(item)
 end
 
 local vertical_pattern,verticals=env.VERTICAL_PATTERN
-function var.print(name)
+function var.print(name,desc)
     local db=var.current_db
     if not name then return end
     if type(name)=="string" and name:lower()~='-a' then
@@ -293,8 +293,11 @@ function var.print(name)
             name=name:upper()
             local obj=var.inputs[name]
             env.checkerr(obj,'Target variable[%s] does not exist!',name)
+            desc = desc or var.desc[name]
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-                var.inputs[name]=db.resultset:print(obj,db.conn, var.desc[name] and (var.desc[name]..':\n'..string.rep('=',var.desc[name]:len()+1)),verticals)
+                var.inputs[name]=db.resultset:print(obj,db.conn, 
+                    desc and (desc..':\n'..string.rep('=',desc:len()+1)),
+                    verticals)
                 var.outputs[name]="#CURSOR"
             elseif type(obj)=='table' then
                 grid.print(obj,nil,nil,nil,nil,prefix,"\n")
@@ -806,7 +809,8 @@ function var.onload()
         1) @@NAME <columns> NEW_V[ALUE] <var>    [PRINT|NOPRINT]
         2) @@NAME <columns> HEAD[ING]   <title>
         3) @@NAME <columns> FOR[MAT]    <format> [JUS[TIFY] LEFT|L|RIGHT|R]
-        4) @@NAME <columns> CLE[AR]
+        4) @@NAME <columns> JUS[TIFY]   LEFT|L|RIGHT|R
+        5) @@NAME <columns> CLE[AR]
 
     Other addtional features:
         1) @@NAME <columns> ADDRATIO <name>[scale]: Create an additional field to show the report_to_ratio value

@@ -183,7 +183,7 @@ BEGIN
               WHERE  b.chose IS NOT NULL
               OR     a.b_sid IS NOT NULL),
             chains AS (
-                SELECT /*+NO_EXPAND opt_param('_connect_by_use_union_all','old_plan_mode')*/
+                SELECT /*+NO_EXPAND opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 11)*/
                       level lvl,
                       sid w_sid,
                       SYS_CONNECT_BY_PATH(case when :filter2 = 1 then 1 when &filter then 1 else 0 end ,',') is_found,
@@ -215,7 +215,7 @@ BEGIN
             WITH bclass AS (SELECT class, ROWNUM r from v$waitstat),
             ash_base as (select /*+materialize */ a.*,nullif(b_sid_,'@') b_sid from &target a),
             ash_data AS (
-                SELECT /*+&hint DYNAMIC_SAMPLING(0) ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
+                SELECT /*+&hint opt_param('optimizer_dynamic_sampling' 11) ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 
                         nvl2(b.chose,0,1) is_root,
                         u.username,

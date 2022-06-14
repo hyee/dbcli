@@ -486,8 +486,28 @@ FL_SKIP_OUTLIERS =>  [FLASHLOG] The number of outliers when redo log write skips
 DB_PC_BY_ALLOCATED =>  [PMEM] Number of megabytes allocated in PMEM cache for this database.
 PC_BY_ALLOCATED =>  [PMEM] The number of megabytes allocated in PMEM cache. Tracks how many cachelines are used in the PMEM cache. If the value is close to the PMEM cache size, then the PMEM cache is fully populated.
 PDB_PC_BY_ALLOCATED =>  [PMEM] Number of megabytes allocated in PMEM cache for this pluggable database (PDB).
+===================================================
+DW setttings;
 
+cat > setparams.sh<<'EOF'
+#cellcli -e 'alter iormplan objective=balanced'
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance', 1)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_disable_lw_flash_wear_heuristic', 'TRUE')\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_lw_max_percentage', 80)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 10)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_max_iops', 150)\""
+v=`date +'%Y%m%d%H%M'`
+cp /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora.$v
+echo "_cell_cache_thrashing_detection_tolerance=1">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_disable_lw_flash_wear_heuristic=TRUE">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_lw_max_percentage=80">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_datasync_min_iops=10">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_datasync_max_iops=150">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+EOF
+dcli -g cells -l root -f setparams.sh
+dcli -g cells -l root sh setparams.sh
 
+====================================================
 FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)"'      -- or 0,0,1
             cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Resetstats,0,0,0)"' -- or 0,0,1
             cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpStats,0,0,0)"'  -- or 0,0,1
@@ -503,17 +523,17 @@ FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcach
             alter cell events = "cellsrv.cellsrv_iorm_ctl[MAX_LIO] opval=250"  --_cell_iorm_max_lio
             alter cell events = "cellsrv.cellsrv_iorm_ctl[WL_MODE] opval=1" --_cell_iorm_wl_mode
             alter cell events = "cellsrv.cellsrv_iorm_ctl[PERF_STATS] opval=1" --Collect IORM performance stats, set it back to 0 after several minutes
-            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_oflsrv_fplib_passthru_timeout_msec', 20000)";
+            cellcli -e $'alter cell events = "immediate cellsrv.cellsrv_setparam(\'_cell_oflsrv_fplib_passthru_timeout_msec\', 20000)"';
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_toresilver_limit_chdrs', 780000)"; -Datasync starts at the condition of numElems>target to flush dirty data into hard disk
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_max_iops', 120)";
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 30)";
-            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance, 1)"; --95 to 1 to reduce temp io/large io latency due to spill to disk
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance', 1)"; --95 to 1 to reduce temp io/large io latency due to spill to disk
                                                                      _cell_fc_row_allowlist
                                                                      _cell_fc_lw_max_row_age_in_sec
                                                                      _cell_iorm_lw_flash_busy_threshold --if the flash is utilized <_cell_iorm_lw_flash_busy_threshold(20%,not counting LW), will use _cell_iorm_lw_flash_idle_hd_util_threshold(50%) as the IORM disk busy threshold instead of 100%.
                                                                      _cell_fc_disable_lw_flash_wear_heuristic=TRUE --those 3 are to disable large write rejections due to max limit
                                                                      _cell_fc_lw_max_percentage=100  --0 to disable large write(tempsort) on FC
-                                                                     _cell_fc_disable_lw_background_flush=TRUE
+                                                                     _cell_fc_disable_lw_background_flush=TRUE --to disable datasync job
             cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpctdstats,0,0,0)"'; 
 Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_storidx('dumpridx','all',0, 0,0)"'
                   cellcli -e 'alter cell offloadgroupEvents = "immediate cellsrv.cellsrv_storidx(dumpridx,all, 0, 0, 0)"'

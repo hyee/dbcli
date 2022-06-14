@@ -193,7 +193,7 @@ function os.timer()
     local uv=env.luv
     if uv and uv.now then
         uv.update_time()
-        return uv.now()
+        return uv.now()/1000
     else
         return clocker()/1000
     end
@@ -410,6 +410,12 @@ function table.dump(tbl,indent,maxdep,tabs)
     local keys={}
 
     local fmtfun=string.format
+    if type(tbl)=='userdata' then
+        local t=debug.getmetatable(tbl)
+        if type(t)~='table' or not t.__pairs then
+            return indent..tostring(tbl)
+        end
+    end
     for k,_ in pairs(tbl) do
         local k1=k
         if type(k)=="string" and not k:match("^[%w_]+$") then k1=string.format("[%q]",k) end
@@ -427,7 +433,14 @@ function table.dump(tbl,indent,maxdep,tabs)
         local fmt =(ind==0 and "{ " or pad)  .. fmtfun('%-'..maxlen..'s%s' ,tostring(k),'= ')
         local margin=(ind==0 and indent or '')..fmt
         rs=rs..fmt
-        if type(v) == "table" then
+        local is_javaobj=false
+        if type(v) =='userdata' then
+            local t=debug.getmetatable(tbl)
+            if type(t)=='table' and t.__pairs then
+                is_javaobj=true
+            end
+        end
+        if type(v) == "table" --[[or is_javaobj]] then
             if k=='root' then
                 rs=rs..'<<Bypass root>>'
             elseif tabs then
