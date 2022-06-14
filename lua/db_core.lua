@@ -469,7 +469,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         self:is_connect(nil,true)
-        local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
+        local info,internal={db=self,sql=sql,error=tostring(obj):rtrim()}
         local code=''
 
         if obj.getErrorCode then

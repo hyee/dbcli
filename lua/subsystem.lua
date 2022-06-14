@@ -197,13 +197,13 @@ function system:call_process(cmd,is_native)
             To switch to the native CLI mode, execute '-n' or '.%s -n'.
             Type 'lls' to list the files in current working dir, to change the working dir, execute 'lcd <path>'.
             Type '.<cmd>' to run the root command, 'bye' to leave, or 'exit' to terminate.]]
-        help=help:format(self.name,self.work_dir,self.name):gsub("%s%s%s+",'\n'):gsub("^%s+","")
+        help=help:format(self.name,self.work_dir,self.name):gsub("%s%s%s+",'\n'):ltrim()
         print(env.ansi.mask("PromptColor",help))
         env.set_subsystem(self.name,self.prompt)
         return
     end
 
-    local command=cmd:upper():gsub("^%s+","")
+    local command=cmd:upper():ltrim()
     if command=='BYE' then
         self.enter_flag=false
         return env.set_subsystem(nil)

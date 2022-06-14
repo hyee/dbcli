@@ -414,7 +414,7 @@ function env.format_error(src,errmsg,...)
         end
     end
     errmsg=errmsg:gsub("\n%s+at%s+.*$","")
-    errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):gsub("%s+$","")
+    errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):rtrim()
     if src then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then
@@ -639,7 +639,7 @@ function env.parse_args(cmd,rest,is_cross_line)
         arg_count=_CMDS[cmd].ARGS
     end
 
-    if rest then rest=rest:gsub("%s+$","") end
+    if rest then rest=rest:rtrim() end
     if rest=="" then 
         rest = nil 
     elseif rest then
@@ -704,9 +704,9 @@ function env.parse_args(cmd,rest,is_cross_line)
                 local name=args[count]:upper()
                 local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
                 if count>=arg_count-2 or is_multi_cmd then--the last parameter
-                    piece=rest:sub(i+1):gsub("^(%s+)",""):gsub('^"(.*)"$','%1')
+                    piece=rest:sub(i+1):ltrim():gsub('^"(.*)"$','%1')
                     if terminator and piece:find(terminator_str,1,true)==1 then
-                        piece=piece:sub(#terminator_str+1):gsub("^%s+","")
+                        piece=piece:sub(#terminator_str+1):ltrim()
                     end
                     if is_multi_cmd and _CMDS[name].ARGS==1 then
                         args[count],piece=args[count]..' '..piece,''

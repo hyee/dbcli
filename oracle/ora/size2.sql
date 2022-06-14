@@ -111,6 +111,7 @@ WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs) opt_param('optimiz
 SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name,'--TOTAL--') object_name,
        object_type,
        max(TABLESPACE) keep(dense_rank last order by bytes) TABLESPACE,
+       MAX(segment_subtype) keep(dense_rank last order by bytes) tbstype,
        COUNT(1) segs,
        SUM(extents) extents,
        SUM(blocks) blocks,
@@ -125,6 +126,7 @@ FROM   (SELECT /*+ordered use_hash(segs exa) no_merge(objs)*/
                  trim('%' from decode(:object_subname||:OPT2, '', regexp_substr(nvl(segs.segment_type,objs.segment_type), '^\S+'), nvl(segs.segment_type,objs.segment_type))) object_type,
                  nvl(segs.TABLESPACE_NAME,objs.TABLESPACE_NAME) TABLESPACE,
                  nvl(segs.partition_name,objs.partition_name) partition_name,
+                 segs.segment_subtype,
                  BLOCKS,
                  BYTES,
                  EXTENTS,
@@ -146,7 +148,6 @@ FROM   (SELECT /*+ordered use_hash(segs exa) no_merge(objs)*/
                &check_access_exa1 exa
         WHERE  objs.segment_owner = segs.owner(+)
         AND    objs.segment_name = segs.segment_name(+)
-        --AND    segs.segment_type(+) LIKE objs.segment_type
         AND    objs.segment_owner = exa.owner(+)
         AND    objs.segment_name = exa.object_name(+)
         --AND    objs.segment_type = exa.object_type(+)

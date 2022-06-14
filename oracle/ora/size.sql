@@ -18,7 +18,7 @@
     SYS   I_OBJ3                     INDEX       141.89 KB 256.00 KB       4        1     32      64    1024 SYSTEM                             3       10        2      1
 
     --[[
-        @CHECK_ACCESS_OBJ: SYS.OBJ$/SYS.USER$/SYS.TAB$={}
+        @CHECK_ACCESS_OBJ: SYS.OBJ$/SYS.TAB$={}
         &OPT2: default={}, d={partition_name,}
         &OPT3: default={null}, d={partition_name}
         &OPT4: default={OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')}, a={1=1}
@@ -28,6 +28,7 @@ ora _find_object "&V1" 1
 set feed off
 VAR cur REFCURSOR
 col act_bytes,est_bytes format kmg
+col num_rows for tmb
 DECLARE
     cur        SYS_REFCURSOR;
     v_xml      XMLTYPE;
@@ -45,10 +46,10 @@ BEGIN
             SELECT /*+ordered use_nl(u o) opt_param('optimizer_dynamic_sampling' 11)*/ 0 lv,
                    MIN(o.obj#) obj#,
                    :object_subname||'%' subname
-            FROM   sys.user$ u, sys.obj$ o
-            WHERE  o.owner# = u.user#
+            FROM   dba_users u, sys.obj$ o
+            WHERE  o.owner# = user_id
             AND    o.type#!=10
-            AND    u.name = :object_owner
+            AND    u.username = :object_owner
             AND    o.name = :object_name
             GROUP BY o.owner#,o.name),
         tab  AS(SELECT * FROM clu UNION ALL SELECT /*+ordered use_nl(c t)*/lv+1, t.obj#, c.subname FROM clu c, sys.tab$ t WHERE  t.bobj# = c.obj#),
@@ -61,7 +62,7 @@ BEGIN
                 END num_rows
         FROM(
             SELECT /*+first_rows(1000) ordered use_nl(t o b o2) no_merge(t) no_merge opt_param('cursor_sharing' 'force')*/
-                u.user# user_id,u.name owner, o.name object_name,
+                u.user_id,u.username owner, o.name object_name,
                 nvl(extractvalue(b.column_value, '/ROW/P'),rtrim(t.subname,'%')) PARTITION_NAME,
                 extractvalue(b.column_value, '/ROW/T') object_type,
                 extractvalue(b.column_value, '/ROW/C1') +0 bytes,
@@ -71,8 +72,9 @@ BEGIN
                 extractvalue(b.column_value, '/ROW/C7') + 0 blocks,
                 round(extractvalue(b.column_value, '/ROW/C4') / 1024) init_kb,
                 round(extractvalue(b.column_value, '/ROW/C5') / 1024) next_kb,
-                extractvalue(b.column_value, '/ROW/C6') tablespace_name
-            FROM lobs t,sys.obj$ o,sys.user$ u,
+                extractvalue(b.column_value, '/ROW/C6') tablespace_name,
+                extractvalue(b.column_value, '/ROW/C8') tbstype
+            FROM lobs t,sys.obj$ o,dba_users u,
                 TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
                    q'[SELECT * FROM (
                         SELECT /*+opt_param('optimizer_index_cost_adj',1) ordered use_nl(a b) no_merge(b) push_pred(b)*/
@@ -80,20 +82,21 @@ BEGIN
                                SUM(bytes) C1, SUM(EXTENTS) C2,
                                COUNT(1) C3, AVG(initial_extent) C4, AVG(nvl(next_extent, 0)) C5,
                                MAX(tablespace_name) KEEP(dense_rank LAST ORDER BY blocks) C6,
+                               MAX(segment_subtype) KEEP(dense_rank LAST ORDER BY blocks) C8,
                                sum(blocks) c7
                         FROM   dba_objects a, dba_segments b
                         WHERE  b.segment_type not in('ROLLBACK','TYPE2 UNDO','DEFERRED ROLLBACK','TEMPORARY','CACHE','SPACE HEADER','UNDEFINED')
-                        AND    b.owner = ']' || u.name || '''
+                        AND    b.owner = ']' || u.username || '''
                         AND    b.segment_name = ''' || o.name || '''
                         AND    b.segment_type LIKE a.object_type || ''%''
                         AND    nvl(b.partition_name, '' '') LIKE ''' || t.subname || '''
                         AND    a.object_id = ' || t.obj# || '
-                        AND    a.owner = ''' || u.name || '''
+                        AND    a.owner = ''' || u.username || '''
                         AND    a.object_name = ''' || o.name || '''
                         GROUP  BY a.object_type, &OPT3,b.segment_type
                         ORDER  BY C1 DESC)
                     WHERE  ROWNUM <= 1000'),'/ROWSET/ROW'))) B
-            WHERE t.obj#=o.obj# AND o.owner#=u.user#
+            WHERE t.obj#=o.obj# AND o.owner#=u.user_id
         ) a
         LEFT JOIN sys.obj$ o2 on(o2.owner#=a.user_id AND o2.name=a.object_name and nvl(o2.subname,' ')=nvl(a.partition_name,' ') and o2.namespace=1)
         LEFT JOIN rws b ON(a.owner=b.table_owner and a.object_name=b.table_name and 
@@ -111,7 +114,8 @@ BEGIN
                              extractvalue(column_value,'//OBJECT_NAME') object_name,
                              extractvalue(column_value,'//PARTITION_NAME') PARTITION_NAME,
                              extractvalue(column_value,'//OBJECT_TYPE') object_type,
-                             extractvalue(column_value,'//TABLESPACE_NAME') TABLESPACE_NAME
+                             extractvalue(column_value,'//TABLESPACE_NAME') TABLESPACE_NAME,
+                             extractvalue(column_value,'//TBSTYPE') TBSTYPE
                       FROM   table(xmlsequence(extract(v_xml,'/ROWSET/ROW')))) LOOP
                 v_alloc := null;
                 v_used  := null;
@@ -159,8 +163,10 @@ BEGIN
             open cur for 
                 SELECT  extractvalue(column_value,'//OWNER') owner,
                         extractvalue(column_value,'//OBJECT_NAME') object_name,
-                        extractvalue(column_value,'//PARTITION_NAME') PARTITION_NAME,
+                        extractvalue(column_value,'//PARTITION_NAME') PARTITION,
                         extractvalue(column_value,'//OBJECT_TYPE') object_type,
+                        extractvalue(column_value,'//TABLESPACE_NAME') "TABLESPACE",
+                        extractvalue(column_value,'//TBSTYPE') "TBSTYPE",
                         extractvalue(column_value,'//ALLOC_BYTES')+0 EST_BYTES,
                         extractvalue(column_value,'//BYTES')+0 ACT_BYTES,
                         extractvalue(column_value,'//EXTENTS')+0 EXTENTS,
@@ -168,7 +174,6 @@ BEGIN
                         extractvalue(column_value,'//BLOCKS')+0 BLOCKS,
                         extractvalue(column_value,'//INIT_KB')+0 INIT_KB,
                         extractvalue(column_value,'//NEXT_KB')+0 NEXT_KB,
-                        extractvalue(column_value,'//TABLESPACE_NAME') TABLESPACE_NAME,
                         extractvalue(column_value,'//NUM_ROWS')+0 num_rows,
                         extractvalue(column_value,'//AVG_ROW_LEN')+0 avg_row_len,
                         extractvalue(column_value,'//PCT_FREE')+0 pct_free,
@@ -182,14 +187,15 @@ BEGIN
         SELECT rownum "#",a.*
         FROM   ( SELECT OWNER,
                         SEGMENT_NAME,&OPT2  decode('&OPT2','',regexp_substr(segment_type, '\S+'),segment_type) object_type,
+                        MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) "TABLESPACE",
+                        MAX(SEGMENT_SUBTYPE) KEEP(DENSE_RANK LAST ORDER BY BYTES) "TBSTYPE",
                         round(SUM(bytes) / 1024 / 1024, 2) SIZE_MB,
                         round(SUM(bytes) / 1024 / 1024 /1024, 3) SIZE_GB,
                         SUM(EXTENTS) EXTENTS,
                         count(1) SEGMENTS,
                         sum(blocks) blocks,
                         ROUND(AVG(INITIAL_EXTENT)/1024) init_ext_kb,
-                        ROUND(AVG(next_extent)/1024) next_ext_kb,
-                    MAX(TABLESPACE_NAME) KEEP(DENSE_RANK LAST ORDER BY BYTES) TABLESPACE_NAME
+                        ROUND(AVG(next_extent)/1024) next_ext_kb
             FROM   dba_segments s
             WHERE  &OPT4
             GROUP BY OWNER,SEGMENT_NAME,&OPT2  decode('&OPT2','',regexp_substr(segment_type, '\S+'),segment_type)

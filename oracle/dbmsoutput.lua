@@ -331,7 +331,7 @@ function output.getOutput(item)
         
         local result=args.lob or args.buff
         if (enabled == "on" or autotrace~="off") and result and result:match("[^\n%s]+") then
-            result=result:gsub("\r\n","\n"):gsub("%s+$","")
+            result=result:gsub("\r\n","\n"):rtrim()
             if result~="" then
                 if autotrace~="off" and result:find('Plan hash value',1,true) then
                     local rows=env.grid.new()

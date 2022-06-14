@@ -366,7 +366,7 @@ BEGIN
                     IF lst(hv)<=1000 THEN
                         val := tabs(lst(hv)).argtype;
                         tabs(lst(hv)).argtype:=val-bitand(val,power(2,j-1))+power(2,j-1);
-                        IF (j=1 OR val=1) AND &nopart=1 THEN
+                        IF j=1 AND &nopart=1 THEN
                             tabs(lst(hv)).cardinality:=tabs(lst(hv)).cardinality+1;
                             tabs(lst(hv)).TABLEPARTITIONUPPER:=NULL;
                             tabs(lst(hv)).TABLEPARTITIONLOWER:=NULL;

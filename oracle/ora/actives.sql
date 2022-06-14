@@ -36,23 +36,23 @@
             }
         &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
         &fil1: {
-            default={event NOT LIKE 'Streams%' or wait_class!='Idle' or event not like 'SQL*%'}
+            default={NOT(wait_class='Idle' and (event like 'SQL*%' or event LIKE 'Streams%'))}
             f={}
             u={schemaname=nvl(upper('&0'),sys_context('userenv','current_schema'))}
-            i={wait_class!='Idle'}
+            i={wait_class!='Idle' &0}
         }
         
         &fil2: {
             default={}
-            sql={--}
-            f={JOIN (select inst_id,sid from gv$session where &0) using(inst_id,sid)}
-            i={JOIN (select inst_id,sid from gv$session where wait_class!='Idle') using(inst_id,sid)}
-            u={JOIN (select inst_id,sid from gv$session where schemaname=nvl(upper('&0'),sys_context('userenv','current_schema'))) using(inst_id,sid)}
+            sql={AND 1=1}
+            f={AND &0}
+            i={AND &fil1}
+            u={AND &fil1}
         }
         &text: default={}  sql={AND upper(sql_fulltext) like upper(q'~%&0%~')}
         &ouj : default={(+)} sql={/**/}  
         &smen : default={0}, m={&CHECK_ACCESS_M}
-        &ord  : default={} cpu={cpu desc nulls last,} io={preads desc nulls last,} log={lreads desc nulls last,}
+        &ord  : default={} cpu={"CPU%" desc nulls last,} io={"Physical|Reads" desc nulls last,} log={"Logical|Reads" desc nulls last,}
         @COST : 11.0={1440*(sysdate-sql_exec_start)},10.0={sql_secs/60}
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects},all_objects={all_objects}
         @CHECK_ACCESS_PX11: {
@@ -154,54 +154,58 @@ BEGIN
         OR     (ROOT_SID =1 OR status='ACTIVE' and wait_class!='Idle')
         ORDER  BY r}' USING :fil2;
     $IF &smen=1 $THEN
-        OPEN time_model FOR
-            SELECT r "#",
-                   sid || ',' || serial# || ',@' || inst_id session#,
-                   px dop,
-                   schemaname usr,
-                   nvl(regexp_substr(program,'\(.\S+\)'),substr(regexp_replace(program,'[@\(\-].*'),1,30)) program,
-                   nullif(CPU,0) "CPU%",
-                   nullif(ppct,0) "Physical|Reads%",
-                   nullif(lpct,0) "Logical|Reads%",
-                   nullif(preads,0) "Physical|Reads",
-                   nullif(lreads,0) "Logical|Reads",
-                   nullif(pga,0) "PGA|MEM",
-                   nullif(hparses,0) "HARD|PARSE",
-                   nullif(spares,0) "SOFT|PARSE",
-                   nvl(a.sql_id,b.sql_id) "LAST|SQL",
-                   SQL_ACTIVE "LAST SQL|ACTIVE",
-                   SQL_OP_TYPE "LAST SQL|OPERATION",
-                   SQL_MEM "LAST SQL|MEM",
-                   TEMP "LAST SQL|TEMP",
-                   passes "HASH JOIN|PASSES"
-            FROM   (SELECT ROWNUM r,a.*
-                    FROM   (SELECT nvl(nvl2(a.qcsid,a.qcinst_id,b.qcinst_id),inst_id) inst_id,
-                                   coalesce(a.qcsid,b.qcsid, sid) sid,
-                                   greatest(count(1),nvl(max(degree),0)) px,
-                                   round(ratio_to_report(SUM(CPU)) over(),4) CPU,
-                                   MAX(SQL_ID) SQL_ID,
-                                   MAX(OPERATION_TYPE) KEEP(DENSE_RANK LAST ORDER BY ACTIVE_TIME) SQL_OP_TYPE,
-                                   SUM(ACTIVE_TIME) SQL_ACTIVE,
-                                   SUM(ACTUAL_MEM_USED) SQL_MEM,
-                                   SUM(TEMPSEG_SIZE) TEMP,
-                                   SUM(NUMBER_PASSES) PASSES,
-                                   SUM(PHYSICAL_READS) preads,
-                                   SUM(LOGICAL_READS) lreads,
-                                   SUM(PGA_MEMORY) pga,
-                                   SUM(HARD_PARSES) hparses,
-                                   SUM(SOFT_PARSES) spares,
-                                   round(ratio_to_report(SUM(PHYSICAL_READ_PCT)) over(),4) ppct,
-                                   round(ratio_to_report(SUM(LOGICAL_READ_PCT)) over(),4)  lpct
-                            FROM  (SELECT a.*,session_id sid FROM gv$sessmetric a)
-                            &fil2
-                            LEFT   JOIN gv$px_session a USING (inst_id, sid)
-                            LEFT   JOIN gv$sql_workarea_active b USING (inst_id, sid)
-                            GROUP  BY nvl(nvl2(a.qcsid,a.qcinst_id,b.qcinst_id),inst_id),
-                                      coalesce(a.qcsid,b.qcsid, sid)
-                            ORDER  BY &ord nvl(CPU,0) + nvl(ppct/2,0) + nvl(lpct / 15,0) DESC,pga desc,hparses desc,spares desc) a
-                    WHERE  ROWNUM <= 50) a
-            JOIN   gv$session b USING(inst_id, sid)
-            ORDER BY r;
+    OPEN time_model FOR q'~
+        SELECT rownum "#",a.*
+        FROM   (SELECT session#,
+                       MAX(usr) usr,
+                       MAX(program) program,
+                       greatest(count(1),nvl(max(degree),1)) dop,
+                       round(ratio_to_report(SUM(CPU)) over(),4) "CPU%",
+                       round(ratio_to_report(SUM(PHYSICAL_READ_PCT)) over(),4) "Physical|Reads%",
+                       round(ratio_to_report(SUM(LOGICAL_READ_PCT)) over(),4)  "Logical|Reads%",
+                       SUM(PHYSICAL_READS) "Physical|Reads",
+                       SUM(LOGICAL_READS) "Logical|Reads",
+                       SUM(PGA_MEMORY) "PGA|MEM",
+                       SUM(HARD_PARSES) "HARD|PARSE",
+                       SUM(SOFT_PARSES) "SOFT|PARSE",
+                       MAX(SQL_ID) "LAST|SQL",
+                       SUM(ACTIVE_TIME) "LAST SQL|ACTIVE",
+                       MAX(OPERATION_TYPE) KEEP(DENSE_RANK LAST ORDER BY ACTIVE_TIME) "LAST SQL|OPERATION",
+                       SUM(ACTUAL_MEM_USED) "LAST SQL|MEM",
+                       SUM(TEMPSEG_SIZE) "LAST SQL|TEMP",
+                       SUM(NUMBER_PASSES) "HASH JOIN|PASSES"
+                FROM TABLE(GV$(CURSOR(
+                        SELECT /*+use_hash(m s p w)*/
+                               coalesce(p.qcsid,w.qcsid,sid)
+                               ||',' ||nvl(p.qcserial#,s.serial#)
+                               ||',@'||nvl(nvl2(p.qcsid,p.qcinst_id,w.qcinst_id),inst_id) session#,
+                               s.schemaname usr,
+                               nvl(regexp_substr(s.program,'\(.\S+\)'),substr(regexp_replace(s.program,'[@\(\-].*'),1,30)) program,
+                               nvl(w.sql_id,s.sql_id) sql_id,
+                               w.OPERATION_TYPE,
+                               w.ACTIVE_TIME,
+                               w.ACTUAL_MEM_USED,
+                               w.TEMPSEG_SIZE,
+                               w.NUMBER_PASSES,
+                               m.CPU,
+                               m.PHYSICAL_READS,
+                               m.LOGICAL_READS,
+                               m.PGA_MEMORY,
+                               m.HARD_PARSES,
+                               m.SOFT_PARSES,
+                               m.PHYSICAL_READ_PCT,
+                               m.LOGICAL_READ_PCT,
+                               p.degree
+                        FROM  (SELECT m.*,session_id sid FROM v$sessmetric m) m
+                        JOIN  (SELECT s.*,userenv('instance') inst_id FROM V$SESSION s) s USING (sid)
+                        LEFT   JOIN v$px_session p USING (sid)
+                        LEFT   JOIN v$sql_workarea_active w USING (sid)
+                        WHERE  inst_id=nvl('&instance',inst_id) 
+                        &fil2
+                ))) a 
+                GROUP BY session#
+                ORDER  BY &ord nvl("CPU%",0) + nvl("Physical|Reads%"/2,0) + nvl("Logical|Reads%"/15,0) DESC,"PGA|MEM" desc
+        ) a WHERE ROWNUM<=50~';
     $END
     :time_model:=time_model;
 END;

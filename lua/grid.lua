@@ -743,7 +743,7 @@ function grid:wellform(col_del, row_del)
     row_del = (row_del or grid.row_del):sub(1, 1)
     local pivot = grid.pivot
     local indx = rownum == "on" and 1 or 0
-    fmt = col_del:gsub("^%s+", "")
+    fmt = col_del:ltrim()
     local format_func = grid.fmt
     grid.colsize = self.colsize
     if type(self.ratio_cols) == "table" and grid.pivot == 0 then
@@ -813,7 +813,7 @@ function grid:wellform(col_del, row_del)
             del = col_del
         end
 
-        if k == cols then del = del:gsub("%s+$", "") end
+        if k == cols then del = del:rtrim() end
 
         if siz == 0 then
             fmt = fmt .. "%s".. (k==cols and nor or '').. del

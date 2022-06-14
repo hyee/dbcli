@@ -665,7 +665,7 @@ function oracle:handle_error(info)
     if ora_code then
         if prefix=='ORA' and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
             info.sql=nil
-            info.error=msg:gsub('\r?\n%s*ORA%-%d+.*$',''):gsub('%s+$','')
+            info.error=msg:gsub('\r?\n%s*ORA%-%d+.*$',''):rtrim()
         else
             info.error=prefix..'-'..ora_code..': '..msg
         end
