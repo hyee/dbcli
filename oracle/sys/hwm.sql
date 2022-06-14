@@ -14,7 +14,8 @@ The script lists the highwater marks for the following parameters:
 - HIGH_PROCESSES
 - MAX_PROCESSES
 ]]*/
-SELECT * FROM TABLE(GV$(CURSOR(
+SELECT * FROM 
+TABLE(GV$(CURSOR(
         SELECT userenv('instance') inst_id,'HIGH_DML_LOCKS' NAME, COUNT(*) VALUE
         FROM   sys.x$ktadm
         WHERE  ksqlkses != hextoraw('00')
@@ -60,4 +61,4 @@ SELECT * FROM TABLE(GV$(CURSOR(
         SELECT userenv('instance') inst_id,'MAX_PROCESSES', COUNT(*) MAX_PROCESSES
         FROM   sys.x$ksupr)))
 PIVOT (MAX(VALUE) FOR INST_ID IN(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16))
-ORDER BY 1
+ORDER BY regexp_substr(name,'_.*'), 1

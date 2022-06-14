@@ -9,7 +9,7 @@
   
   idn: => v$sqlarea.hash_value 
        => v$db_object_cache.hash_value
-       => v$object_dependency.from_hash/to_hash
+       => v$object_dependency.from_hash/to_hash/to_hash
        => x$kglob.knlnahsh
 
   Mainly used to diagnostic below events:
@@ -148,9 +148,9 @@ FROM   TABLE(gv$(CURSOR( --
                   sid,
                   a.event,
                   P1 HASH_VALUE,
-                  nullif(trunc(p3 / 4294967296),0) obj#,
+                  nullif(trunc(p3 / power(16,8)),0) obj#,
                   nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
-                  nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid,
+                  nullif(decode(trunc(p2 / power(16,8)), 0, trunc(P2 / 65536), trunc(P2 / power(16,8))),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
                   substr(TRIM(b.to_name), 1, 100) || 

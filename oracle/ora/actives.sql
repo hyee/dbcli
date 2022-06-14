@@ -31,28 +31,11 @@
                o={schemaname schema,osuser,logon_time,regexp_replace(machine,'(\..*|^.*\\)') machine,regexp_replace(program,' *\(.*') program &0},
                p={p1,p2,p2text,p3 &0},
                b={NULLIF(BLOCKING_SESSION||',@'||BLOCKING_INSTANCE,',@') BLOCK_BY,
-                 (SELECT OBJECT_NAME FROM ALL_OBJECTS WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
+                 (SELECT OBJECT_NAME FROM &CHECK_ACCESS_OBJ WHERE OBJECT_ID=ROW_WAIT_OBJ# AND ROWNUM<2) WAITING_OBJ,
                  ROW_WAIT_BLOCK# WAIT_BLOCK# &0},
-               m={execs, ela,cpu,io,app,cc,cl,plsql,java,read_mb,write_mb &0}
                c={USERNAME,RESOURCE_CONSUMER_GROUP RSRC_GROUP,CURRENT_QUEUE_DURATION QUEUED &0}
             }
         &V1 :   sid={''||sid},wt={wait_secs desc},ev={event},sql={sql_text},o={logon_time}
-        &SQLM:  {default={},
-                 m={LEFT JOIN (
-                        SELECT --+ no_merge
-                               sid, sql_id, count(distinct sql_exec_id) execs,
-                               round(SUM(ELAPSED_TIME)*1e-6/60,2) ela, round(SUM(QUEUING_TIME)*1e-6,2) QUEUE, 
-                               round(SUM(CPU_TIME)*1e-6/60,2) CPU, round(SUM(APPLICATION_WAIT_TIME)*1e-6/60,2) app,
-                               round(SUM(CONCURRENCY_WAIT_TIME)*1e-6/60,2) cc, 
-                               round(SUM(CLUSTER_WAIT_TIME)*1e-6/60,2) cl, 
-                               round(SUM(PLSQL_EXEC_TIME)*1e-6/60,2) plsql, 
-                               round(SUM(JAVA_EXEC_TIME)*1e-6/60,2) JAVA, round(SUM(USER_IO_WAIT_TIME)*1e-6/60,2) io,
-                               round(SUM(PHYSICAL_READ_BYTES)/1024/1024,2) read_mb, round(SUM(PHYSICAL_WRITE_BYTES)/1024/1024,2) write_mb
-                        FROM   v$sql_monitor
-                        WHERE  status = 'EXECUTING'
-                        GROUP BY sid, sql_id) m
-                    USING (sid, sql_id)}
-                }
         &Filter: {default={ROOT_SID =1 OR status='ACTIVE' and (wait_class!='Idle' and event not like 'SQL*Net message from client')}, 
                   f={},
                   text={upper(sql_text) like upper('%&0%')}
@@ -75,10 +58,7 @@
             v$process={(select addr,spid from v$process)},
             default={(select null addr,null spid from dual where 1=2)}
         }
-
-        @CHECK_ACCESS_SES: gv$session={gv$session}, v$session={(select /*+merge*/ userenv('instance') inst_id,a.* from v$session a)}
         @CHECK_ACCESS_SQL: gv$sql={gv$sql}, v$sql={(select /*+merge*/ userenv('instance') inst_id,a.* from v$sql a)}
-        
         @CHECK_ACCESS_M: gv$sql_workarea_active/gv$sessmetric={1},default={0}
     --]]
 ]]*/
@@ -92,7 +72,8 @@ DECLARE
     time_model sys_refcursor;
     cur SYS_REFCURSOR;
 BEGIN
-    OPEN :actives FOR q'{WITH sess AS
+    OPEN :actives --don't materialize sess or v$sql will not use index. Use dynamic SQL to support older version
+    FOR q'{WITH sess AS
          (SELECT /*+inline*/ (select /*+index(o) opt_param('optimizer_dynamic_sampling' 0)*/ 
                  object_name from &CHECK_ACCESS_OBJ o where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
                  s.*
@@ -104,24 +85,28 @@ BEGIN
                                  nvl2(px.qcsid,px.qcsid||'@'||nvl(px.qcinst_id,inst_id),'') qcsid,
                                  p.spid|| regexp_substr(s.program, '\(\S+\)') spid,
                                  s.*, nvl(sq.sq_id,s.sql_id) sq_id,
-                                 sq.program_id,sq.program_line#,sq.plan_hash_value,sq.sql_text,sq.sql_secs
+                                 sq.program_id,sq.program_line#,sq.plan_hash_value,
+                                 coalesce(sq.sql_text,nvl2(idn,'idn: '||idn,'')) sql_text,
+                                 sq.sql_secs
                         FROM   (select  userenv('instance') inst_id,
-                                        case when a.p1text='idn' and a.p1>131072 then a.p1 end idn,
+                                        case when a.p1text='idn' 
+                                             and (a.p1>131072 or event not like 'library%') then a.p1 end idn,
                                         a.*
                                  from   v$session a
                                  WHERE  (event NOT LIKE 'Streams%' or wait_class!='Idle' or event not like 'SQL*%')
                                  AND    userenv('instance')=nvl('&instance',userenv('instance'))) s,
                                 lateral(
                                  select  program_line#,program_id,plan_hash_value,sql_id sq_id,
-                                         substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 1024) sql_text,
+                                         substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 1024) sql_text,
                                          round(decode(child_number,0,elapsed_time * 1e-6 / (1 + executions), 86400 * (SYSDATE - to_date(last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
                                  from    v$sql sq
                                  WHERE   s.idn is null
+                                 AND     s.sql_id is not null
                                  AND     s.sql_id=sq.sql_id
                                  AND     nvl(s.sql_child_number,0)=sq.child_number
                                  UNION ALL 
                                  select  program_line#,program_id,plan_hash_value,sql_id,
-                                         substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 1024) sql_text,
+                                         substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 1024) sql_text,
                                          round(decode(child_number,0,elapsed_time * 1e-6 / (1 + executions), 86400 * (SYSDATE - to_date(last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
                                  from    v$sql sq
                                  WHERE   s.idn is not null
@@ -157,7 +142,6 @@ BEGIN
         FROM   s4 a
         WHERE  (&filter) AND (&Filter2)
         ORDER  BY r}';
-    
     $IF &smen=1 $THEN
         OPEN time_model FOR
             SELECT *
@@ -179,29 +163,24 @@ BEGIN
                            round(100 * ratio_to_report(SUM(logical_reads)) OVER(), 2) "LGC%",
                            SUM(hard_parses) hard_parse,
                            SUM(soft_parses) soft_parse
-                    FROM   (SELECT a.*,
+                    FROM   (SELECT nvl(qcsid, session_id) || ',@' || nvl(qcinst_id, a.inst_id) SESSION#,
+                                   a.*,
                                    b.*,
-                                   nvl(qcsid, session_id) || ',@' || nvl(qcinst_id, a.inst_id) SESSION#,
                                    SUM(b.ACTUAL_MEM_USED) over(PARTITION BY b.sid, b.inst_id) exp_size,
                                    SUM(b.TEMPSEG_SIZE) over(PARTITION BY b.sid, b.inst_id) TEMP_SIZE,
                                    row_number() OVER(PARTITION BY b.sid, b.inst_id ORDER BY ACTUAL_MEM_USED DESC) r
                             FROM   gv$sql_workarea_active b, gv$sessmetric a
                             WHERE  a.session_id = b.sid(+)
-                            AND    a.inst_id = b.inst_id(+)
-                            ) a,
-                           (SELECT /*+no_merge*/
-                             VALUE / 1024 / 1024 blksiz
+                            AND    a.inst_id = b.inst_id(+)) a,
+                           (SELECT /*+no_merge*/VALUE / 1024 / 1024 blksiz
                             FROM   v$parameter
                             WHERE  NAME = 'db_block_size'),
                             gv$session c
                     WHERE  r = 1
                     AND    SESSION#=(c.sid||',@'||c.inst_id)
-                    AND    c.sid != USERENV('SID')
-                    AND    c.audsid != userenv('sessionid')
                     GROUP  BY session#)
             WHERE  "CPU%" + "PSC%" + nvl("LGC%",0) + hard_parse > 0
             ORDER  BY GREATEST("CPU%", "PSC%", "LGC%") DESC;
-
     $END
     :time_model:=time_model;
 END;
