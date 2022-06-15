@@ -101,7 +101,6 @@ BEGIN
                             FROM dual 
                             connect by level<=length(sq_id))) A)A
             ORDER BY lv;
-
         load_idn;
     END IF;
 

@@ -256,9 +256,9 @@ function ResultSet:rows(rs,count,null_value,is_close)
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
                     if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
-                        rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                        rows[i][j]=tostring(rows[i][j]):gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     elseif info.data_typeName=="BLOB" then
-                        rows[i][j]=rows[i][j]:sub(1,255)
+                        rows[i][j]=tostring(rows[i][j]):sub(1,255)
                     elseif info.is_number and type(rows[i][j])~="number" then
                         local int=tonumber(rows[i][j])
                         rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]

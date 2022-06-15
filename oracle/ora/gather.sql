@@ -1,4 +1,4 @@
-/*[[Gather object/SQL/db/schema statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent|0> ["<method_opt>"] [-async|-trace]
+/*[[Gather object/SQL/db/schema statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent|0>] ["<method_opt>"] [-async|-trace]
     @@NAME <owner>.]<name>[.<partition>]: Gather Statistics for target object
     @@NAME <SQL Id>                     : Gather statistics of all objects relative to target SQL
     @@NAME [<schema>] <options>         : Database/schema operations, if the schema is null(.) then for the whole database.
@@ -120,10 +120,10 @@ DECLARE
     typ   VARCHAR2(128) := :object_type;
     part  VARCHAR2(128) := :object_subname;
     key   VARCHAR2(128) := trim('%' from upper(:filter));
-    pct   NUMBER        := regexp_substr(:V3,'^[\.0-9]+$');
+    pct   NUMBER        := nvl(0+regexp_substr(:V3,'^[\.0-9]+$'),0);
     dop   INT           := regexp_substr(:V2,'^\d+$');
     opt   VARCHAR2(300) := trim(:V4);
-    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> 0|<percent> -async';
+    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent> -async';
     fmt   VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s%s,degree=>%s&invalid.&force.%s);]';
     pub   VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
     cls   VARCHAR2(300) := q'[dbms_stats.delete_pending_stats('%s','%s');]';
@@ -365,8 +365,9 @@ BEGIN
                 IF lst.exists(hv) THEN
                     IF lst(hv)<=1000 THEN
                         val := tabs(lst(hv)).argtype;
-                        tabs(lst(hv)).argtype:=val-bitand(val,power(2,j-1))+power(2,j-1);
-                        IF j=1 AND &nopart=1 THEN
+                        val := val-bitand(val,power(2,j-1))+power(2,j-1);
+                        tabs(lst(hv)).argtype:=val;
+                        IF &nopart=1 AND val=bitand(val,power(2,j-1)) THEN
                             tabs(lst(hv)).cardinality:=tabs(lst(hv)).cardinality+1;
                             tabs(lst(hv)).TABLEPARTITIONUPPER:=NULL;
                             tabs(lst(hv)).TABLEPARTITIONLOWER:=NULL;
@@ -419,7 +420,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF (pct IS NULL OR dop IS NULL) and &pending!=2 THEN
+    IF (pct=0 AND :V3 IS NOT NULL OR dop IS NULL) and &pending!=2 THEN
         raise_application_error(-20001,msg);
     ELSIF key IS NOT NULL THEN
         raise_application_error(-20001,'Option -f"<filter>" is only used to list database/schema stale stats');

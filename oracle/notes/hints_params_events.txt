@@ -184,8 +184,11 @@ Parameters
                                 Instead it is set to the max(MAXQUERYLEN + 300, UNDO_RETENTION).
                                 Use _undo_autotune=false instead when undo datafile's AUTOEXTENSIBLE=YES
                      134217728 - turn off storage index
-    
-    
+    _direct_read_decision_statistics_driven: 
+        Direct path read decision is done based on the segment header's block count,
+            instead of statistics(TAB$.BLKCNT/TABPART$.BLKCNT/IND$.LEAFCNT/etc)
+        But for partitioned table, the decision relies on each individual segment, not the total size of impacted partitions. 
+            and direct path may not be triggerred unexpectly for small partitions ,and fix control 27268249:1 may not work as well.
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
     enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'

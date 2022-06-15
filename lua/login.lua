@@ -194,11 +194,11 @@ function login.onload()
     cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
     local help_login=[[
         Logon with saved accounts, type 'help login' for more detail. Usage: @@NAME [ -d | -a |<number|account_name>]
-            @@NAME                     : list all saved a/c
-            @@NAME -d <num|name|alias> : delete matched a/c
-            @@NAME -p <num|name|alias> : print the connection information for a specific a/c
-            @@NAME    <num|name|alias> : login a/c
-            @@NAME -a <alias> <id|name>: set alias to an existing account
+            @@NAME                     : List all saved account
+            @@NAME    <num|name|alias> : Login account
+            @@NAME -d <num|name|alias> : Delete matched account
+            @@NAME -p <num|name|alias> : Print the connection information for a specific account
+            @@NAME -a <alias> <id|name>: Set alias to an existing account
         Use 'set savelogin off' to disable the autosave.]]
     env.set_command{obj=nil,cmd={"login","logon"}, 
                     help_func=help_login,
