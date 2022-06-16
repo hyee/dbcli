@@ -72,7 +72,7 @@ BEGIN
                sum(DELETES) DELETES,
                count(decode(TRUNCATED,'YES',1)) TRUNCATES,
                max(TIMESTAMP) LAST_TIMESTAMP
-        FROM  &check_access_mdf
+        FROM  &check_access_mdf  -- v$dml_stats -> sys.mon_mods_all$ -> sys.optstat_snapshot$
         WHERE TABLE_OWNER=:OBJECT_OWNER
         AND   TABLE_NAME=:OBJECT_NAME;
     OPEN cb FOR

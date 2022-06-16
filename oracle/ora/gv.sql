@@ -17,13 +17,7 @@
         Parallel Query                 |GV$PX_PROCESS_TRACE
         Real Application Clusters (RAC)|GV$ACTIVE_INSTANCES            GV$CACHE_TRANSFER             GV$CLUSTER_INTERCONNECTS      GV$CONFIGURED_INTERCONNECTS
         Real Application Clusters (RAC)|GV$CR_BLOCK_SERVER             GV$CURRENT_BLOCK_SERVER       GV$DLM_ALL_LOCKS              GV$DLM_CONVERT_LOCAL
-        Real Application Clusters (RAC)|GV$DLM_CONVERT_REMOTE          GV$DLM_LATCH                  GV$DLM_LOCKS                  GV$DLM_MISC
-        Real Application Clusters (RAC)|GV$DLM_RESS                    GV$DLM_TRAFFIC_CONTROLLER     GV$DML_STATS                  GV$DYNAMIC_REMASTER_STATS
-        Real Application Clusters (RAC)|GV$FILE_CACHE_TRANSFER         GV$GCR_ACTIONS                GV$GCR_LOG                    GV$GCR_METRICS
-        Real Application Clusters (RAC)|GV$GCR_STATUS                  GV$GCSHVMASTER_INFO           GV$GCSPFMASTER_INFO           GV$GC_ELEMENT
-        Real Application Clusters (RAC)|GV$GC_ELEMENTS_WITH_COLLISIONS GV$GES_BLOCKING_ENQUEUE       GV$GES_CONVERT_LOCAL          GV$GES_CONVERT_REMOTE
-        Real Application Clusters (RAC)|GV$GES_DEADLOCKS               GV$GES_DEADLOCK_SESSIONS      GV$GES_ENQUEUE                GV$GES_LATCH
-        Real Application Clusters (RAC)|GV$GES_RESOURCE                GV$GES_STATISTICS             GV$GES_TRAFFIC_CONTROLLER     GV$GLOBAL_BLOCKED_LOCKS
+        ...
         Real Application Clusters (RAC)|GV$GLOBAL_TRANSACTION          GV$GWM_RAC_AFFINITY           GV$INSTANCE_CACHE_TRANSFER    GV$INSTANCE_PING
         Real Application Clusters (RAC)|GV$POLICY_HISTORY              GV$TEMP_CACHE_TRANSFER
         Streams                        |GV$STREAMS_MESSAGE_TRACKING
@@ -816,7 +810,6 @@ BEGIN
             'gv$dlm_misc',
             'gv$dlm_ress',
             'gv$dlm_traffic_controller',
-            'gv$dml_stats',
             'gv$global_transaction',
             'gv$global_blocked_locks',
             'gv$ges_blocking_enqueue',

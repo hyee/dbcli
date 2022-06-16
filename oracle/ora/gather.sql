@@ -241,7 +241,9 @@ DECLARE
                 exception when others then null;
                 end; ~'
                 ||CASE WHEN c>0 then ln||q'[    execute immediate 'alter session set "_serial_direct_read"=always';]' END
-                ||stmt||ln||'    end;','            '),'@trace',CASE &trace WHEN 0 THEN 0 ELSE 2+4+8+16+64+1024 END);
+                ||stmt||ln||'    end;','            '),
+                '@trace',CASE &trace WHEN 0 THEN 0 
+                         ELSE 2+4+8+64+1024+CASE when instr(stmt,'gather_fixed')>0 then 0 else 16 END END);
             IF &exec THEN
                 job:=dbms_scheduler.generate_job_name('GATHER_STATS_');
                 dbms_scheduler.create_job(job_name   => job,

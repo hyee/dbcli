@@ -8,33 +8,36 @@ Get preferences/stats of the target object or compare stats. Usage: @@NAME {[own
         -t"<stattab>"                  ：compare the stattab stats with current/historical stats
         -pending       [<yymmddhh24mi>]：compare the pending stats with current/historical stats
         <yymmddhh24mi> [<yymmddhh24mi>]: compare the stats of 2 historical stats
-Trace Flags:
-    0     : disable
-    1     : use dbms_output.put_line instead of writing into trace file
-    2     : enable dbms_stat trace only at session level
-    4     : trace table stats
-    8     : trace index stats
-    16    : trace column stats
-    32    : trace auto stats - logs to sys.stats_target$_log
-    64    : trace scaling
-    128   : dump backtrace on error
-    256   : dubious stats detection
-    512   : auto stats job
-    1024  : parallel execution tracing
-    2048  : print query before execution
-    4096  : partition prune tracing
-    8192  : trace stat differences
-    16384 : trace extended column stats gathering(11.1+)
-    32768 : trace approximate NDV (number distinct values) gathering(11.2+)
-    65536 : trace "online gather optimizer statistics"(12.1+)
-    131072: Automatic DOP trace
-    262144: System statistics trace(12.2+)
-    524288: Advisor trace
+
+    Trace Flags:
+    ===========
+        0     : disable
+        1     : use dbms_output.put_line instead of writing into trace file
+        2     : enable dbms_stat trace only at session level
+        4     : trace table stats
+        8     : trace index stats
+        16    : trace column stats
+        32    : trace auto stats - logs to sys.stats_target$_log
+        64    : trace scaling
+        128   : dump backtrace on error
+        256   : dubious stats detection
+        512   : auto stats job
+        1024  : parallel execution tracing
+        2048  : print query before execution
+        4096  : partition prune tracing
+        8192  : trace stat differences
+        16384 : trace extended column stats gathering(11.1+)
+        32768 : trace approximate NDV (number distinct values) gathering(11.2+)
+        65536 : trace "online gather optimizer statistics"(12.1+)
+        131072: Automatic DOP trace
+        262144: System statistics trace(12.2+)
+        524288: trace Statistics Advisor
 
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}
        @notes           : 12.1={,t.notes} default={}
+       @im              : 12.2={} default={--}
        @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
        &t               : default={} t={}
        @check_access_sys: {
@@ -390,10 +393,18 @@ BEGIN
                 AVG_ROW_LEN,
                 GLOBAL_STATS,
                 USER_STATS,
-                t.last_analyzed
-            from &check_access_dba.tables t
+                last_analyzed
+                &im ,t1.notes,IMCU,IM_BLOCK,IM_TIME
+            from &check_access_dba.tables t 
+            left join 
+                (select owner,table_name &im ,t1.notes,t1.IM_IMCU_COUNT IMCU,t1.IM_BLOCK_COUNT IM_BLOCK,t1.IM_STAT_UPDATE_TIME IM_TIME
+                  from &check_access_dba.tab_statistics t1
+                  where owner = own
+                  and   table_name = nam
+                  and   rownum<2) t1
+            using (owner,table_name)
             where owner = own
-            and table_name = nam;
+            and   table_name = nam;
         OPEN c2 FOR
             SELECT t1.COLUMN_NAME,
                    decode(t1.DATA_TYPE,
@@ -417,8 +428,8 @@ BEGIN
                    t1.DATA_DEFAULT "DEFAULT",
                    t.LAST_ANALYZED &notes
             FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
-                   (select /*+cardinality(1)*/ table_name,num_rows 
-                    from  &check_access_dba.tables 
+                   (select /*+cardinality(1)*/ table_name,num_rows
+                    from  &check_access_dba.tab_statistics t
                     where owner = own 
                     and   table_name = nam) t2
             WHERE  t2.table_name=t1.table_name

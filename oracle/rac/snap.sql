@@ -1,22 +1,34 @@
-/*[[Snap relative gv$ views within specific time and output the delta result. Usage: @@NAME <secs>
+/*[[Snap relative gv$ views for RAC stats within specific time and output the delta result. Usage: @@NAME <secs>
     --[[
-        &v1: default={5}
+        &v1: default={30}
         @check_access_sleep: sys.dbms_session={sys.dbms_session.sleep} default={sys.dbms_lock.sleep}
+        @event:{
+            12.1={SELECT A.*,1 L from gv$event_histogram_micro a} 
+            default={select /*+merge*/ event#,wait_time_milli*1024 wait_time_micro,wait_count,1024 L from gv$event_histogram}
+        }
     --]]
 ]]*/
 
 set feed off verify off autohide col
 var c1 refcursor "GC INSTANCE CACHE TRANSFER PER SECOND"
 var c2 refcursor "CLUSTER EVENTS PER SECOND"
-var c3 refcursor "RAC STATISTICS PER SECOND"
-var c4 refcursor "GC CR/CU SERVER PER SECOND"
+var c31 refcursor "GC CR/CU LATERNCY PER SECOND"
+var c32 refcursor "GC MESSAGE LATERNCY PER SECOND"
+var c4 refcursor "LMS SERVER STATS PER SECOND"
 COL "TIME,AVG,RECV|TIME,CR AVG|IMMED,CR AVG|BUSY,CR AVG|2-HOP,CR AVG|3-HOP,CR AVG|CONGST" for usmhd2
 COL "LOST|TIME,LOST|AVG,AVG|TIME,CU AVG|IMMED,CU AVG|BUSY,CU AVG|2-HOP,CU AVG|3-HOP,CU AVG|CONGST" for usmhd2
 COL "GC CR|IMMED,CR TIM|IMMED,GC CR|2-HOP,CR TIM|2-HOP,GC CR|3-HOP,CR TIM|3-HOP,GC CR|BUSY,CR TIM|BUSY,GC CR|CONGST,CR TIM|CONGST" FOR PCT
 COL "GC CU|IMMED,CU TIM|IMMED,GC CU|2-HOP,CU TIM|2-HOP,GC CU|3-HOP,CU TIM|3-HOP,GC CU|BUSY,CU TIM|BUSY,GC CU|CONGST,CU TIM|CONGST" FOR PCT
 COL "1us,2us,4us,8us,16us,32us,64us,128us,256us,512us,1ms,2ms,4ms,8ms,16ms,32ms,65ms,131ms,262ms,524ms,1s,2s,4s,8s,16s,>16s" for pct1
+COL "AVG TM|RECEIV,BUILD|EST TM,FLUSH|EST TM,BUILD|AVG TM,FLUSH|AVG TM,PIN|EST TM,PIN|AVG TM,FLUSH|AVG TM,CR CU|AVG TM" for usmhd2
+COL "BUILD|SERVED,FLUSH|SERVED,LGWR|SERVED,PIN|SERVED" for pct
+COL "ENQUE|GET,RECV|QUEUE,GCS|PROX,GES|PROX,CR|BUILD,CU|PIN,CR CU|FLUSH,LGWR|SYNC" for pct
+
+COL grp noprint
 PRO Sampling data for &v1 seconds, please wait ...
 declare
+    sleeps int := :v1;
+    c    sys_refcursor;
     type t_xmls is table of xmltype;
     type t_sqls is table of varchar2(32767);
     type t_curs is table of number;
@@ -38,10 +50,24 @@ declare
                 rs1(i):=dbms_xmlgen.getxmltype(curs(i));
             else
                 rs2(i):=dbms_xmlgen.getxmltype(curs(i));
+                if rs1(i) is null then
+                    rs1(i):=xmltype('<ROWSET/>');
+                end if;
             end if;
             dbms_xmlgen.closecontext(curs(i));
         end loop;
     end;
+
+    function toXML return XMLTYPE is
+        ctx NUMBER;
+        xml XMLTYPE;
+    BEGIN
+        ctx := dbms_xmlgen.newcontext(c);
+        xml := dbms_xmlgen.getxmltype(ctx);
+        dbms_xmlgen.closecontext(ctx);
+        close c;
+        return xml;
+    END;
 begin
     sqls.extend(5);
     curs.extend(sqls.count);
@@ -50,86 +76,89 @@ begin
     tim1 := dbms_utility.get_time;
     sqls(1):='SELECT * FROM GV$INSTANCE_CACHE_TRANSFER WHERE LOST+CR_BLOCK+CURRENT_BLOCK>0';
     sqls(2):=q'~select /*+no_expand use_hash(a b)*/
-                       a.event# n,u,
-                       sum(wait_count) v,
-                       max(sum(time_waited_micro)) over(partition by a.event#) m,
-                       max(sum(total_waits)) over(partition by a.event#) t
+                       inst_id i,
+                       a.event# n,
+                       u,
+                       wait_count v,
+                       decode(u,l,time_waited_micro) m,
+                       decode(u,l,total_waits) t,
+                       decode(u,l,1) f
                 from   gv$system_event B 
-                join   (select a.*, least(wait_time_micro,16777217) u from gv$event_histogram_micro a) A 
+                join   (select a.*, least(wait_time_micro,16777217) u from (&event) a) A 
                 using (inst_id,event)
-                where  a.wait_count>0 
+                where (a.wait_count>0 or u=l) 
                 and   (b.wait_class='Cluster' or 
                        event like 'gcs%' or event like '%LGWR%' or
                        event in('buffer busy waits',
                                 'remote log force - commit',
                                 'log file sync',
-                                'log file parallel write'))
-                group  by a.event#,u~';
+                                'log file parallel write'))~';
     sqls(3):=q'~
-            SELECT nvl(i,0) i,n,sum(v) v
-            FROM   (select inst_id i,name n,value v from gv$sysstat 
-                    union all 
-                    select inst_id,name,value from gv$dlm_misc)
-            WHERE  n like 'gc%'
-            OR     n IN(
-                'consistent gets from cache',
-                'db block gets from cache',
-                'DBWR fusion writes',
-                'gcs messages sent',
-                'gcs msgs process time(ms)',
-                'gcs msgs received',
-                'ges messages sent',
-                'ges msgs process time(ms)',
-                'ges msgs received',
-                'global enqueue get time',
-                'msgs received queue time (ms)',
-                'msgs received queued',
-                'msgs sent queue time (ms)',
-                'msgs sent queue time on ksxp (ms)',
-                'msgs sent queued on ksxp',
-                'msgs sent queued',
-                'physical reads cache',
-                'user commits',
-                'user rollbacks')
-            GROUP BY n,rollup(i)
-            HAVING SUM(v)>0~';
+        select i,v,n
+        FROM   (select inst_id i,name n,value v from gv$sysstat 
+                union all 
+                select inst_id,name,value from gv$dlm_misc)
+        WHERE  v > 0
+        AND   (n like 'gc %' or n like 'global%' or n like '%undo %' OR
+               n IN(
+            'consistent gets from cache',
+            'data blocks consistent reads - undo records applied',
+            'db block changes',
+            'db block gets from cache',
+            'DBWR fusion writes',
+            'deferred (CURRENT) block cleanout applications',
+            'gcs messages sent',
+            'gcs msgs process time(ms)',
+            'gcs msgs received',
+            'ges messages sent',
+            'ges msgs process time(ms)',
+            'ges msgs received',
+            'IPC CPU used by this session',
+            'ka messages sent',
+            'ka grants received',
+            'msgs received queue time (ms)',
+            'msgs received queued',
+            'msgs sent queue time (ms)',
+            'msgs sent queue time on ksxp (ms)',
+            'msgs sent queued on ksxp',
+            'msgs sent queued',
+            'physical reads cache',
+            'user commits',
+            'user rollbacks'))~';
     sqls(4):='SELECT * FROM GV$CR_BLOCK_SERVER';
     sqls(5):='SELECT * FROM GV$CURRENT_BLOCK_SERVER';
-    snap(1);
-    tim1 := dbms_utility.get_time-tim1;
-    dbms_output.put_line('Sampling data took external '|| round(tim1*2/100,2) ||' secs.');
-    dbms_output.put_line('*******************************');
-    tim1 := greatest(1,:v1-(dbms_utility.get_time-tim)/100);
-    &check_access_sleep(tim1);
+    IF sleeps > 0 THEN
+        snap(1);
+        tim1 := dbms_utility.get_time-tim1;
+        dbms_output.put_line('Sampling data took external '|| round(tim1*2/100,2) ||' secs.');
+        dbms_output.put_line('*******************************');
+        tim1 := greatest(1,sleeps-(dbms_utility.get_time-tim)/100);
+        &check_access_sleep(tim1);
+    ELSE
+        SELECT 86400*(sysdate-startup_time) into tim1
+        FROM   v$instance;
+    END IF;
     snap(2);
 
     open :c1 for
         WITH delta AS (
-            SELECT DIR,CLASS,NAME,(SUM(R2.VALUE)-NVL(SUM(R1.VALUE),0))/tim1 V
+            SELECT DIR,CLASS,NAME,SUM(T*V)/tim1 V
             FROM   (
-                SELECT A.TARGET|| ' -> '||A.INST_ID dir,A.CLASS,b.name,b.value
-                FROM   XMLTABLE('//ROW' PASSING rs2(1)
+                SELECT T,A.TARGET|| '->'||A.INST_ID dir,A.CLASS,b.name,V
+                FROM  (SELECT 1 T,rs2(1) X FROM DUAL 
+                       UNION ALL 
+                       SELECT -1,rs1(1) FROM DUAL) X,
+                       XMLTABLE('//ROW' PASSING X.X
                        COLUMNS INST_ID INT PATH 'INST_ID',
                                TARGET INT PATH 'INSTANCE',
                                CLASS VARCHAR2(30) PATH 'CLASS',
                                NODE XMLTYPE PATH 'node()') A,
                        XMLTABLE('*[not(name()="INST_ID" or name()="CLASS" or name()="INSTANCE")]' PASSING A.NODE 
                        COLUMNS NAME VARCHAR2(30) PATH 'name()',
-                               VALUE INT PATH '.') B) R2
-            LEFT JOIN (
-                SELECT A.TARGET|| ' -> '||A.INST_ID dir,A.CLASS,b.name,b.value
-                FROM   XMLTABLE('//ROW' PASSING rs1(1)
-                       COLUMNS INST_ID INT PATH 'INST_ID',
-                               TARGET INT PATH 'INSTANCE',
-                               CLASS VARCHAR2(30) PATH 'CLASS',
-                               NODE XMLTYPE PATH 'node()') A,
-                       XMLTABLE('*[not(name()="INST_ID" or name()="CLASS" or name()="INSTANCE")]' PASSING A.NODE 
-                       COLUMNS NAME VARCHAR2(30) PATH 'name()',
-                               VALUE INT PATH '.') B) R1 
-            USING (DIR,CLASS,NAME)
+                               V INT PATH '.') B) R2
             GROUP BY DIR,CLASS,NAME)
         SELECT DIR,CLASS,
-               ROUND(LOST,2) "GC|LOST",LOST_TIME "LOST|TIME",LOST_TIME/NULLIF(LOST,0) "LOST|AVG",
+               ROUND(LOST,2) "GC|LOST",LOST_TIME "LOST|TIME",LOST_AVG "LOST|AVG",
                ROUND(TOTAL,2) "RECV|TOTAL",TOTAL_TIME "RECV|TIME",TOTAL_TIME/nullif(TOTAL,0) "AVG|TIME",
                '$HEADCOLOR$/$NOR$' "/",
                CR_BLOCK "GC CR|IMMED",CR_BLOCK_TIME "CR TIM|IMMED",CR_BLOCK_AVG "CR AVG|IMMED",
@@ -169,10 +198,10 @@ begin
                         WHERE v>0 OR (name not like '%TIME' and name not like '%HOP%' and name not like '%CONGESTED%')
                         ) a,
                        (select rownum r from dual connect by rownum<=3)
-                WHERE  a.v1>0
                 GROUP  BY r,DIR,CLASS,decode(r,1,name,2,n1,3,n2))
+
         PIVOT( SUM(V) FOR 
-               NAME IN ('LOST' LOST,'LOST_TIME' LOST_TIME,
+               NAME IN ('LOST' LOST,'LOST_TIME' LOST_TIME,'LOST_AVG' LOST_AVG,
                         'TOTAL' TOTAL,'TOTAL_TIME' TOTAL_TIME,
                         'CR_BLOCK' CR_BLOCK,'CR_BLOCK_TIME' CR_BLOCK_TIME,'CR_BLOCK_AVG' CR_BLOCK_AVG,
                         'CR_2HOP' CR_2HOP,'CR_2HOP_TIME' CR_2HOP_TIME,'CR_2HOP_AVG' CR_2HOP_AVG,
@@ -185,38 +214,50 @@ begin
                         'CURRENT_BUSY' CU_BUSY,'CURRENT_BUSY_TIME' CU_BUSY_TIME,'CURRENT_BUSY_AVG' CU_BUSY_AVG,
                         'CURRENT_CONGESTED' CU_CONGESTED,'CURRENT_CONGESTED_TIME' CU_CONGESTED_TIME,'CURRENT_CONGESTED_AVG' CU_CONGESTED_AVG)
         )
+        WHERE ROUND(least(TOTAL,TOTAL_TIME),2)>0
         ORDER BY "RECV|TIME" desc nulls last,1,2;
+
+    OPEN c FOR
+        SELECT i,b.name n,u,t,v,m,f
+        FROM   v$event_name b,
+              (SELECT /*+no_merge*/ 
+                      nvl(i,0) i,n,u, 
+                      MAX(F) F,
+                      ROUND(SUM(c*V)/tim1,2) V,
+                      MAX(ROUND(SUM(c*m)/tim1,2)) OVER(PARTITION BY n,i) m,
+                      MAX(ROUND(SUM(c*t)/tim1,2)) OVER(PARTITION BY n,i) t
+               FROM  (SELECT 1 c,rs2(2) X FROM DUAL 
+                      UNION ALL 
+                      SELECT -1,rs1(2) FROM DUAL) X,
+                      XMLTABLE('//ROW' passing X.X
+                      COLUMNS i INT PATH 'I',
+                              n INT PATH 'N',
+                              u INT PATH 'U',
+                              v INT PATH 'V',
+                              m INT PATH 'M',
+                              t INT PATH 'T',
+                              f INT PATH 'F') r2
+               GROUP BY n,u,rollup(i)) a
+        WHERE a.n=b.event#(+) and t>0;
+    rs2(2) := toXML();
 
     OPEN :c2 FOR
         WITH delta AS (
-            SELECT n,u,
-                   round((r2.v-nvl(r1.v,0))/tim1,2) v,
-                   round((r2.m-nvl(r1.m,0))/tim1,2) m,
-                   round((r2.t-nvl(r1.t,0))/tim1,2) t
-            FROM   XMLTABLE('//ROW' passing rs2(2)
-                   COLUMNS n INT PATH 'N',
+            SELECT n name,
+                      m "Time",
+                      round(m/t,2) "Avg",
+                      t "Count",'|' "|",
+                      u,
+                      nullif(round(v/t,3),0) v
+            FROM   XMLTABLE('//ROW[I=0]' PASSING rs2(2)
+                   COLUMNS n VARCHAR2(100) PATH 'N',
                            u INT PATH 'U',
-                           v INT PATH 'V',
-                           m INT PATH 'M',
-                           t INT PATH 'T') r2
-            JOIN XMLTABLE('//ROW' passing rs1(2)
-                   COLUMNS n INT PATH 'N',
-                           u INT PATH 'U',
-                           v INT PATH 'V',
-                           m INT PATH 'M',
-                           t INT PATH 'T') r1
-            USING(n,u)
-            WHERE r2.t-nvl(r1.t,0)>0)
+                           v NUMBER PATH 'V',
+                           m NUMBER PATH 'M',
+                           t NUMBER PATH 'T') r2
+        )
         SELECT * 
-        FROM  (select /*+no_merge(a)*/ 
-                      b.name,
-                      a.m "Time",
-                      round(a.m/a.t,2) "Avg",
-                      a.t "Count",'|' "|",
-                      a.u,
-                      nullif(round(a.v/a.t,3),0) v
-               from   delta a,v$event_name b 
-               where  a.n=b.event#)
+        FROM  delta
         PIVOT(max(v) for u in(
             1 "1us", 2 "2us", 4 "4us", 8 "8us",16 "16us", 32 "32us", 64 "64us", 128 "128us", 256 "256us",  512 "512us", 
             1024 "1ms", 2048 "2ms", 4096 "4ms", 8192 "8ms", 16384 "16ms", 32768 "32ms", 65536 "65ms", 131072 "131ms", 
@@ -224,46 +265,43 @@ begin
             16777217 ">16s"))
         ORDER BY "Time" DESC;
 
-    OPEN :c3 FOR
-        WITH delta AS (
-            SELECT n,i,
-                   ROUND((r2.v-nvl(r1.v,0))/tim1,4) v
-            FROM   XMLTABLE('//ROW' passing rs2(3)
-                   COLUMNS n VARCHAR2(100) PATH 'N',
-                           i INT PATH 'I',
-                           v INT PATH 'V') r2
-            JOIN  XMLTABLE('//ROW' passing rs1(3)
-                   COLUMNS n VARCHAR2(100) PATH 'N',
-                           i INT PATH 'I',
-                           v INT PATH 'V') r1
-            USING(n,i)
-            WHERE ROUND((r2.v-nvl(r1.v,0))/tim1,4)>0)
-        SELECT /*+no_merge(a)*/ 
-               i inst,n,v
-        FROM delta a;
+    OPEN c FOR
+        SELECT * FROM (
+            SELECT S,
+                   grp,
+                   decode(grouping_id(N),0,nvl2(grp,'  '||n,n),grp) n,
+                   NVL(I,0) I,
+                   round(SUM(V)/tim1,2) v
+            FROM (
+                SELECT S,
+                       N,
+                       CASE WHEN n IN('DATA_REQUESTS','UNDO_REQUESTS','TX_REQUESTS','OTHER_REQUESTS') THEN 'LMS SERVER REQUESTS'
+                            WHEN s='CURRENT' AND regexp_substr(n,'^\D+') in ('FLUSH','PIN','WRITE') THEN regexp_substr(n,'^\D+')
+                       END grp,
+                       I,
+                       T*V V
+                FROM  (SELECT 'CR' S,1 T,rs2(4) x FROM DUAL
+                       UNION ALL
+                       SELECT 'CR' S,-1 T,rs1(4) x FROM DUAL
+                       UNION ALL
+                       SELECT 'CURRENT' S,1 T,rs2(5) x FROM DUAL
+                       UNION ALL
+                       SELECT 'CURRENT' S,-1 T,rs1(5) x FROM DUAL
+                      ) X,
+                      XMLTABLE('//ROW' PASSING X.X
+                       COLUMNS I INT PATH 'INST_ID',
+                               NODE XMLTYPE PATH 'node()') A,
+                      XMLTABLE('*[not(name()="INST_ID")]' PASSING A.NODE 
+                       COLUMNS N VARCHAR2(30) PATH 'name()',
+                               V INT PATH '.') B
+            ) GROUP BY S,grp,CUBE(I,N))
+        WHERE V>0 AND n IS NOT NULL;
+
+    rs2(4) := toXML();
 
     open :c4 for
-        WITH delta AS (
-            SELECT S SERVER,N NAME,
-                   NVL(I,0) I,
-                   ROUND((SUM(DECODE(T,2,V))-SUM(DECODE(T,1,V)))/tim1,2) V
-            FROM  (SELECT 'CR SERVER' S,2 T,rs2(4) x FROM DUAL
-                   UNION ALL
-                   SELECT 'CR SERVER' S,1 T,rs1(4) x FROM DUAL
-                   UNION ALL
-                   SELECT 'CU SERVER' S,2 T,rs2(5) x FROM DUAL
-                   UNION ALL
-                   SELECT 'CR SERVER' S,1 T,rs1(5) x FROM DUAL
-                  ) X,
-                  XMLTABLE('//ROW' PASSING X.X
-                   COLUMNS I INT PATH 'INST_ID',
-                           NODE XMLTYPE PATH 'node()') A,
-                  XMLTABLE('*[not(name()="INST_ID")]' PASSING A.NODE 
-                   COLUMNS N VARCHAR2(30) PATH 'name()',
-                           V INT PATH '.') B
-            GROUP BY S,N,ROLLUP(I)) 
         SELECT  A.*,
-                decode(name,
+                decode(trim(name),
                         'CR_REQUESTS','CR blocks served due to remote CR block requests',
                         'CURRENT_REQUESTS','current blocks served due to remote CR block requests',
                         'DATA_REQUESTS','current or CR requests for data blocks',
@@ -285,12 +323,14 @@ begin
                         'FLUSH_MAX_TIME','Maximum time for flush',
                         'LIGHT_WORKS','times the light-work rule was evoked. This rule prevents the LMS processes from going to disk to complete responding to CR requests',
                         'ERRORS','times an error was signalled by an LMS process',
-                        'PIN1','Pins taking less than 1 ms',
+                        'PIN0','Pins taking less than 100 us',
+                        'PIN1','Pins taking 100 us to 1 ms',
                         'PIN10','Pins taking 1 to 10 ms',
                         'PIN100','Pins taking 10 to 100 ms',
                         'PIN1000','Pins taking 100 to 1000 ms',
                         'PIN10000','Pins taking 1000 to 10000 ms',
-                        'FLUSH1','Flushes taking less than 1 ms',
+                        'FLUSH0','Flushes taking less than 100 us',
+                        'FLUSH1','Flushes taking 100 us to 1 ms',
                         'FLUSH10','Flushes taking 1 to 10 ms',
                         'FLUSH100','Flushes taking 10 to 100 ms',
                         'FLUSH1000','Flushes taking 100 to 1000 ms',
@@ -307,15 +347,153 @@ begin
                         'WRITEDC','Number of dirty blocks in read-mostly objects which were written and the X lock down-converted to S locks'
                 ) MEMO
         FROM (
-            SELECT * FROM  (SELECT * FROM DELTA WHERE V>0)
+            SELECT * 
+            FROM XMLTABLE('//ROW' PASSING rs2(4)
+                 COLUMNS server VARCHAR2(10) PATH 'S',
+                         name   VARCHAR2(30) PATH 'N',
+                         grp    VARCHAR2(30) PATH 'GRP',
+                         I      INT PATH 'I',
+                         V      NUMBER PATH 'V')
             PIVOT (MAX(V) 
                    FOR I IN(0 "Total",1 "#1", 2 "#2",3 "#3", 4 "#4",5 "#5",6 "#6", 7 "#7", 8 "#8",
                             9 "#9", 10 "#10",11 "#11", 12 "#12",13 "#13", 14 "#14",15 "#15", 16 "#16"))) A
-        ORDER BY 1,2;
+        ORDER BY server,grp,decode(grp,name,1,2),name;
+
+    OPEN c FOR
+        SELECT nvl(i,0) i, n,
+               ROUND(SUM(t*v)/tim1,6) v
+        FROM   (SELECT 1 T,rs2(3) x FROM DUAL
+                UNION ALL
+                SELECT -1 ,rs1(3) x FROM DUAL) X,
+               XMLTABLE('//ROW' passing x
+               COLUMNS n VARCHAR2(100) PATH 'N',
+                       i INT PATH 'I',
+                       v INT PATH 'V') r2
+        GROUP BY n,rollup(i)
+        HAVING ROUND(SUM(t*v)/tim1,6)>0;
+    rs2(3) := toXML();
+
+    OPEN :c31 FOR
+        WITH delta AS(
+            SELECT /*+no_merge*/ *
+            FROM XMLTABLE('//ROW' PASSING rs2(3)
+                   COLUMNS n VARCHAR2(100) PATH 'N',
+                           i INT PATH 'I',
+                           v NUMBER PATH 'V')
+            LEFT JOIN  (
+                   SELECT * 
+                   FROM XMLTABLE('//ROW[N="FLUSH" or N="PIN" or N="FLUSHES"]' PASSING rs2(4)
+                        COLUMNS I INT PATH 'I',
+                        n  VARCHAR2(30) PATH 'N',
+                        v  NUMBER PATH 'V')
+                   PIVOT (MAX(V) FOR N IN('FLUSHES' gccrfl,'FLUSH' gccufl,'PIN' gccupn)))
+            USING (I)
+        )
+        SELECT decode(i,0,'*',''||i) inst
+             , round(gccrrv+gccurv,2) "RECV|BLKS"
+             , round(gccrsv+gccusv,2) "SERV|BLKS"
+             , '$HEADCOLOR$/$NOR$' "/"
+             , round(gccrrv,2) "CR BLKS|RECEIVE"
+             , round(gccrrt/gccrrv*10000,2)         "AVG TM|RECEIV"
+             , round(gccrbt/gccrsv*10000,2) "BUILD|EST TM"
+             , round(gccrft/gccrsv*10000,2) "FLUSH|EST TM"
+             , '|' "|"
+             , round(gccrsv,2)               "CR BLKS|SERVED"
+             , round(gccrbc/gccrsv,4)               "BUILD|SERVED"
+             , round(gccrfc/gccrsv,4)               "FLUSH|SERVED"
+             , round(gccrfl/gccrsv,4)               "LGWR|SERVED"
+             , round(gccrbt/gccrbc*10000,2)         "BUILD|AVG TM"
+             , round(gccrft/nvl(gccrfc,gccrfl)*10000,2)         "FLUSH|AVG TM"
+             , '$HEADCOLOR$/$NOR$' "/"
+             , round(gccurv,2) "CU BLKS|RECEIVE"
+             , round(gccurt/gccurv*10000,2)         "AVG TM|RECEIV"
+             , round(gccupt/gccusv*10000,2)         "PIN|EST TM"
+             , round(gccuft/gccusv*10000,2)         "FLUSH|EST TM"
+             , '|' "|"
+             , round(gccusv,2) "CU BLKS|SERVED"
+             , round(nvl(gccupc,gccupn)/gccusv,4)   "PIN|SERVED"
+             , round(nvl(gccufc,gccufl)/gccusv,4)               "FLUSH|SERVED"
+             , round(gccufl/gccusv,4)               "LGWR|SERVED"
+             , round(gccupt/nvl(gccupc,gccupn)*10000,2)         "PIN|AVG TM"
+             , round(gccuft/nvl(gccufc,gccufl)*10000,2)         "FLUSH|AVG TM"
+             , '$HEADCOLOR$/$NOR$' "/"
+             --, round(glgt/nullif(nvl(glag,0)+nvl(glsg,0),0)*10000,4)  "GC ENQ|GET TIME"
+        FROM  delta
+        pivot (sum(v) for n in (
+             'gc cr blocks received'         gccrrv
+           , 'gc cr block receive time'      gccrrt
+           , 'gc cr blocks served'           gccrsv
+           , 'gc cr blocks built'            gccrbc
+           , 'gc cr block build time'        gccrbt
+           , 'gc cr blocks flushed'          gccrfc
+           , 'gc cr block flush time'        gccrft
+           , 'gc current blocks received'    gccurv
+           , 'gc current block receive time' gccurt
+           , 'gc current blocks served'      gccusv
+           , 'gc current blocks pinned'      gccupc
+           , 'gc current block pin time'     gccupt
+           , 'gc current blocks flushed'     gccufc
+           , 'gc current block flush time'   gccuft
+           , 'global enqueue get time'       glgt
+           , 'global enqueue gets sync'      glsg
+           , 'global enqueue gets async'     glag))
+        ORDER BY i;
+
+    OPEN :c32 FOR
+        WITH delta AS(
+            SELECT /*+no_merge*/ *
+            FROM XMLTABLE('//ROW' PASSING rs2(3)
+                   COLUMNS n VARCHAR2(100) PATH 'N',
+                           i INT PATH 'I',
+                           v NUMBER PATH 'V')
+            pivot (sum(v) for n in (
+             'gc cr blocks received'         gccrrv
+           , 'gc cr block receive time'      gccrrt
+           , 'gc current blocks received'    gccurv
+           , 'gc current block receive time' gccurt
+           , 'gc cr block build time'        gccrbt
+           , 'gc cr block flush time'        gccrft
+           , 'gc cr blocks served'           gccrsv
+           , 'gc current block pin time'     gccupt
+           , 'gc current block flush time'   gccuft
+           , 'gc current blocks served'      gccusv
+           , 'global enqueue get time'       glgt
+           , 'global enqueue gets sync'      glsg
+           , 'global enqueue gets async'     glag
+           , 'gcs msgs received'             gcsmr
+           , 'gcs msgs process time(ms)'     gcsmpt
+           , 'ges msgs received'             gesmr 
+           , 'ges msgs process time(ms)'     gesmpt
+           , 'msgs sent queued'              msq
+           , 'msgs sent queue time (ms)'     msqt
+           , 'msgs sent queued on ksxp'      msqk
+           , 'msgs sent queue time on ksxp (ms)' msqkt
+           , 'msgs received queued'             mrq
+           , 'msgs received queue time (ms)'    mrqt))
+        )
+        SELECT decode(i,0,'*',''||i) inst,
+               round(gcrv,2) "CR CU|BLOCKS",
+               round(gcrt*10000/gcrv,2) "CR CU|AVG TM",
+               round(glgt/gcrt,4)  "ENQUE|GET",
+               --round(msqt/gcrt/10,4) "SENT|QUEUE",
+               --round(msqkt/gcrt/10,4) "SENT|ksxp",
+               round(mrqt/gcrt/10,4) "RECV|QUEUE",
+               round(gcsmpt/gcrt/10,4) "GCS|PROX",
+               round(gesmpt/gcrt/10,4) "GES|PROX",
+               round(gccrbt*gccrrv/gccrsv/gcrt,4) "CR|BUILD",
+               round(gccupt*gccurv/gccusv/gcrt,4) "CU|PIN",
+               round((nvl(gccrft*gccrrv/gccrsv,0)+nvl(gccuft*gccurv/gccusv,0))/gcrt,4) "CR CU|FLUSH",
+               round(lgwrt/gcrt/10000,4) "LGWR|SYNC"
+        FROM (select a.*,nullif(nvl(gccrrv,0)+nvl(gccurv,0),0) gcrv,nullif(nvl(gccrrt,0)+nvl(gccurt,0),0) gcrt from delta a)
+        LEFT JOIN xmltable('//ROW[N="gcs log flush sync" and F="1"]' PASSING rs2(2)
+                       COLUMNS lgwrt NUMBER PATH 'M',
+                               lgwrc NUMBER PATH 'T',
+                               i NUMBER PATH 'I')
+        USING(i);
 end;
 /
-
+print c4
 print c1
 print c2
---print c3
-print c4
+print c31
+print c32
