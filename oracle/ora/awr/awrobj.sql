@@ -1,5 +1,4 @@
 /*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME <name|obj#|dataobj#> [<sort_by>] [yymmddhhmi] [yymmddhhmi] 
-    <keyword>: Used to fussily search over OWNER+OBJECT_NAME+SUBOBJECT_NAME+OBJ#+DATAOBJ#
     <sort_by>: Sort the records with specific order, available options:
         ela  : elapsed time (default)
         exe  : executions
@@ -15,19 +14,6 @@
     1u8v867f5ys43      14.7       0.0     99975 STORAGE FULL                                 0.0     14 SEG$                               1 select ts#, file#, bl
     6uxga5vnsgugt      12.1       0.0     19995 UNIQUE SCAN                                         727 I_TABCOMPART$                      1  select s.file#, s.bl
     9x2prazfz86dz       5.3       0.0     11811 STORAGE FULL                                 0.0     14 SEG$                               1  select s.file#, s.bl
-    cvtv8s2vthrt2       4.6       0.0        98 STORAGE FULL                                 0.0 727556 OBJ$                               2  with r as( SELECT /*
-    9sg6u8xys290z       4.0       0.0      2564 RANGE SCAN                                   0.0 727557 I_OBJ1                             1 select count(*) num_e
-    cvtv8s2vthrt2       3.9       0.0        84 RANGE SCAN                                   0.0 727557 I_OBJ1                             2  with r as( SELECT /*
-    cvtv8s2vthrt2       3.3       0.0        70 BY INDEX ROWID BATCHED                       0.0 727556 OBJ$                               2  with r as( SELECT /*
-    9b0n8jufpyqzv       3.0       0.0      1256 RANGE SCAN                                   0.0 727557 I_OBJ1                             1 select /*jskqjobqlod1
-    9b0n8jufpyqzv       3.0       0.0      1256 STORAGE FULL                                 0.0 727556 OBJ$                               1 select /*jskqjobqlod1
-    3dbzmtf9ahvzt       2.2       0.0    203486 UNIQUE SCAN                                         727 I_TABCOMPART$                      1 merge /* KSXM:OPTIM_D
-    b3wn8qaj1r6d3       2.1       0.5         4 STORAGE FAST FULL SCAN                       0.0 727561 I_OBJ5                             1 WITH O AS (SELECT /*+
-    b3wn8qaj1r6d3       2.1       0.5         4 RANGE SCAN                                   0.0    610 I_OPT_FINDING_OBJ_ID_OBJ_TYPE      1 WITH O AS (SELECT /*+
-    9sg6u8xys290z       2.0       0.0      1282 BY INDEX ROWID BATCHED                       0.0 727556 OBJ$                               1 select count(*) num_e
-    9sg6u8xys290z       2.0       0.0      1282 RS-I_OBJ1                                    0.0 727556 OBJ$                               1 select count(*) num_e
-    9x2prazfz86dz       1.8       0.0      3937 UNIQUE SCAN                                         727 I_TABCOMPART$                      1  select s.file#, s.bl
-    b3wn8qaj1r6d3       1.6       0.5         3 STORAGE FAST FULL SCAN                       0.0    610 I_OPT_FINDING_OBJ_ID_OBJ_TYPE      1 WITH O AS (SELECT /*+
 
     --[[
         @ARGS: 1

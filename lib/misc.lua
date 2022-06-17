@@ -232,13 +232,7 @@ if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 local system=java.system
 local clocker=system.currentTimeMillis
 function os.timer()
-    local uv=env.luv
-    if uv and uv.now then
-        uv.update_time()
-        return uv.now()/1000
-    else
-        return clocker()/1000
-    end
+    return clocker()/1000
 end
 
 function string.from(v)

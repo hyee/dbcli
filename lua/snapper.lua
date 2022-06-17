@@ -221,7 +221,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
             end
             return
         elseif interval=="BEGIN" then
-            self.start_time=os.clock()
+            self.start_time=os.timer()
             begin_flag=true
         end
     end

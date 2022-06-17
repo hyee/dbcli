@@ -1,4 +1,7 @@
-/*[[Snap relative gv$ views for RAC stats within specific time and output the delta result. Usage: @@NAME <secs>
+/*[[
+    Snap relative gv$ views for RAC stats within specific secs and output the delta result. Usage: @@NAME <secs>
+    <secs>: sample from gv$views default as 30 secs, and 0 is to show global stats instead of snapping
+        -d: analyze dba_hist_*view instead within optional <yymmddhh24mi> [<yymmddhh24mi>] date range parameter 
     --[[
         &v1: default={30}
         @check_access_sleep: sys.dbms_session={sys.dbms_session.sleep} default={sys.dbms_lock.sleep}
@@ -6,23 +9,25 @@
             12.1={SELECT A.*,1 L from gv$event_histogram_micro a} 
             default={select /*+merge*/ event#,wait_time_milli*1024 wait_time_micro,wait_count,1024 L from gv$event_histogram}
         }
+        @lms_cpu: 18.1={CPU_USED} default={null}
     --]]
 ]]*/
 
 set feed off verify off autohide col
-var c1 refcursor "GC INSTANCE CACHE TRANSFER PER SECOND"
-var c2 refcursor "CLUSTER EVENTS PER SECOND"
-var c31 refcursor "GC CR/CU LATERNCY PER SECOND"
-var c32 refcursor "GC MESSAGE LATERNCY PER SECOND"
+var c1 refcursor "INSTANCE CACHE TRANSFER PER SECOND"
+var c2 refcursor "EVENT HISTOGRAM PER SECOND"
+var c31 refcursor "CR/CU LATERNCY PER SECOND"
+var c32 refcursor "MESSAGE LATERNCY PER SECOND"
 var c4 refcursor "LMS SERVER STATS PER SECOND"
 COL "TIME,AVG,RECV|TIME,CR AVG|IMMED,CR AVG|BUSY,CR AVG|2-HOP,CR AVG|3-HOP,CR AVG|CONGST" for usmhd2
 COL "LOST|TIME,LOST|AVG,AVG|TIME,CU AVG|IMMED,CU AVG|BUSY,CU AVG|2-HOP,CU AVG|3-HOP,CU AVG|CONGST" for usmhd2
 COL "GC CR|IMMED,CR TIM|IMMED,GC CR|2-HOP,CR TIM|2-HOP,GC CR|3-HOP,CR TIM|3-HOP,GC CR|BUSY,CR TIM|BUSY,GC CR|CONGST,CR TIM|CONGST" FOR PCT
 COL "GC CU|IMMED,CU TIM|IMMED,GC CU|2-HOP,CU TIM|2-HOP,GC CU|3-HOP,CU TIM|3-HOP,GC CU|BUSY,CU TIM|BUSY,GC CU|CONGST,CU TIM|CONGST" FOR PCT
 COL "1us,2us,4us,8us,16us,32us,64us,128us,256us,512us,1ms,2ms,4ms,8ms,16ms,32ms,65ms,131ms,262ms,524ms,1s,2s,4s,8s,16s,>16s" for pct1
-COL "AVG TM|RECEIV,BUILD|EST TM,FLUSH|EST TM,BUILD|AVG TM,FLUSH|AVG TM,PIN|EST TM,PIN|AVG TM,FLUSH|AVG TM,CR CU|AVG TM" for usmhd2
-COL "BUILD|SERVED,FLUSH|SERVED,LGWR|SERVED,PIN|SERVED" for pct
-COL "ENQUE|GET,RECV|QUEUE,GCS|PROX,GES|PROX,CR|BUILD,CU|PIN,CR CU|FLUSH,LGWR|SYNC" for pct
+COL "AVG TM|RECEIV,BUILD|EST TM,FLUSH|EST TM,BUILD|AVG TM,FLUSH|AVG TM,PIN|EST TM,PIN|AVG TM,FLUSH|AVG TM" for usmhd2
+COL "BUILD|SERVED,FLUSH|SERVED,LGWR|SERVED,PIN|SERVED,QUEU|RECV,QUEU|SENT,QUEU|KSXP,DIRX|SENT,NO-DX|SENT" for pct
+COL "LMS|BUSY,ENQUE|GET,RECV|QUEUE,GCS|PROX,GES|PROX,GC CR|BUILD,GC CU|PIN,CR CU|FLUSH,GCS|LGWR" for pct
+COL "LMS|TIME,CR CU|TIME,CR CU|AVG TM,AVG|RECV,AVG|KERNEL,AVG|SENT,AVG|KSXP,GC|CPU,IPC|CPU" for usmhd2
 
 COL grp noprint
 PRO Sampling data for &v1 seconds, please wait ...
@@ -69,29 +74,31 @@ declare
         return xml;
     END;
 begin
-    sqls.extend(5);
+    sqls.extend(6);
     curs.extend(sqls.count);
     rs1.extend(sqls.count);
     rs2.extend(sqls.count); 
     tim1 := dbms_utility.get_time;
     sqls(1):='SELECT * FROM GV$INSTANCE_CACHE_TRANSFER WHERE LOST+CR_BLOCK+CURRENT_BLOCK>0';
-    sqls(2):=q'~select /*+no_expand use_hash(a b)*/
-                       inst_id i,
-                       a.event# n,
-                       u,
-                       wait_count v,
-                       decode(u,l,time_waited_micro) m,
-                       decode(u,l,total_waits) t,
-                       decode(u,l,1) f
-                from   gv$system_event B 
-                join   (select a.*, least(wait_time_micro,16777217) u from (&event) a) A 
-                using (inst_id,event)
-                where (a.wait_count>0 or u=l) 
-                and   (b.wait_class='Cluster' or 
-                       event like 'gcs%' or event like '%LGWR%' or
-                       event in('buffer busy waits',
-                                'remote log force - commit',
-                                'log file sync',
+    sqls(2):=q'~
+        select /*+no_expand use_hash(a b)*/
+               inst_id i,
+               a.event# n,
+               u,
+               wait_count v,
+               decode(u,l,time_waited_micro) m,
+               decode(u,l,total_waits) t,
+               decode(u,l,1) f
+        from   gv$system_event B 
+        join  (select a.*, least(wait_time_micro,16777217) u from (&event) a) A 
+        using (inst_id,event)
+        where (a.wait_count>0 or u=l and total_waits>0)
+        and    b.wait_class!='Idle'
+        and   (b.wait_class='Cluster' or event like '%LGWR%' or event like '%LMS%' or
+               event like 'gcs%' or event like 'ges%' or 
+               event in('buffer busy waits',
+                        'remote log force - commit',
+                        'log file sync',
                                 'log file parallel write'))~';
     sqls(3):=q'~
         select i,v,n
@@ -116,6 +123,7 @@ begin
             'IPC CPU used by this session',
             'ka messages sent',
             'ka grants received',
+            'msgs received kernel queue time (ns)',
             'msgs received queue time (ms)',
             'msgs received queued',
             'msgs sent queue time (ms)',
@@ -123,10 +131,19 @@ begin
             'msgs sent queued on ksxp',
             'msgs sent queued',
             'physical reads cache',
+            'messages sent directly',
+            'messages sent indirectly',
             'user commits',
             'user rollbacks'))~';
     sqls(4):='SELECT * FROM GV$CR_BLOCK_SERVER';
     sqls(5):='SELECT * FROM GV$CURRENT_BLOCK_SERVER';
+    sqls(6):=q'~select nvl(inst_id,0) i,count(distinct sid*1000+inst_id) n,sum(value) v 
+                from   gv$sess_time_model join gv$session using(inst_id,sid) 
+                where  program like '%(LMS%)%'
+                and    type='BACKGROUND'
+                and    stat_name like 'background%time' 
+                and    value>0 
+                group by rollup(inst_id)~';
     IF sleeps > 0 THEN
         snap(1);
         tim1 := dbms_utility.get_time-tim1;
@@ -142,7 +159,7 @@ begin
 
     open :c1 for
         WITH delta AS (
-            SELECT DIR,CLASS,NAME,SUM(T*V)/tim1 V
+            SELECT nvl(dir,'ALL') dir,CLASS,NAME,SUM(T*V)/tim1 V
             FROM   (
                 SELECT T,A.TARGET|| '->'||A.INST_ID dir,A.CLASS,b.name,V
                 FROM  (SELECT 1 T,rs2(1) X FROM DUAL 
@@ -156,28 +173,28 @@ begin
                        XMLTABLE('*[not(name()="INST_ID" or name()="CLASS" or name()="INSTANCE")]' PASSING A.NODE 
                        COLUMNS NAME VARCHAR2(30) PATH 'name()',
                                V INT PATH '.') B) R2
-            GROUP BY DIR,CLASS,NAME)
+            GROUP BY ROLLUP((DIR,CLASS)),NAME)
         SELECT DIR,CLASS,
                ROUND(LOST,2) "GC|LOST",LOST_TIME "LOST|TIME",LOST_AVG "LOST|AVG",
                ROUND(TOTAL,2) "RECV|TOTAL",TOTAL_TIME "RECV|TIME",TOTAL_TIME/nullif(TOTAL,0) "AVG|TIME",
-               '$HEADCOLOR$/$NOR$' "/",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
                CR_BLOCK "GC CR|IMMED",CR_BLOCK_TIME "CR TIM|IMMED",CR_BLOCK_AVG "CR AVG|IMMED",
                '|' "|",
                CR_2HOP "GC CR|2-HOP",CR_2HOP_TIME "CR TIM|2-HOP",CR_2HOP_AVG "CR AVG|2-HOP",
                '|' "|",
                CR_3HOP "GC CR|3-HOP",CR_3HOP_TIME "CR TIM|3-HOP",CR_3HOP_AVG "CR AVG|3-HOP",
                '|' "|",
-               CR_CONGESTED "GC CR|CONGST",CR_CONGESTED_TIME "CR TIM|CONGST",CR_CONGESTED_AVG "CR TIM|CONGST",
+               CR_CONGESTED "GC CR|CONGST",CR_CONGESTED_TIME "CR TIM|CONGST",CR_CONGESTED_AVG "CR AVG|CONGST",
                '|' "|",
                CR_BUSY "GC CR|BUSY",CR_BUSY_TIME "CR TIM|BUSY",CR_BUSY_AVG "CR AVG|BUSY",
-               '$HEADCOLOR$/$NOR$' "/",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
                CU_BLOCK "GC CU|IMMED",CU_BLOCK_TIME "CU TIM|IMMED",CU_BLOCK_AVG "CU AVG|IMMED",
                '|' "|",
                CU_2HOP "GC CU|2-HOP",CU_2HOP_TIME "CU TIM|2-HOP",CU_2HOP_AVG "CU AVG|2-HOP",
                '|' "|",
                CU_3HOP "GC CU|3-HOP",CU_3HOP_TIME "CU TIM|3-HOP",CU_3HOP_AVG "CU AVG|3-HOP",
                '|' "|",
-               CU_CONGESTED "GC CU|CONGST",CU_CONGESTED_TIME "CU TIM|CONGST",CU_CONGESTED_AVG "CU TIM|CONGST",
+               CU_CONGESTED "GC CU|CONGST",CU_CONGESTED_TIME "CU TIM|CONGST",CU_CONGESTED_AVG "CU AVG|CONGST",
                '|' "|",
                 CU_BUSY "GC CU|BUSY",CU_BUSY_TIME "CU TIM|BUSY",CU_BUSY_AVG "CU AVG|BUSY"
         FROM   (SELECT /*+no_merge a*/ 
@@ -392,7 +409,7 @@ begin
         SELECT decode(i,0,'*',''||i) inst
              , round(gccrrv+gccurv,2) "RECV|BLKS"
              , round(gccrsv+gccusv,2) "SERV|BLKS"
-             , '$HEADCOLOR$/$NOR$' "/"
+             , '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$"
              , round(gccrrv,2) "CR BLKS|RECEIVE"
              , round(gccrrt/gccrrv*10000,2)         "AVG TM|RECEIV"
              , round(gccrbt/gccrsv*10000,2) "BUILD|EST TM"
@@ -404,7 +421,7 @@ begin
              , round(gccrfl/gccrsv,4)               "LGWR|SERVED"
              , round(gccrbt/gccrbc*10000,2)         "BUILD|AVG TM"
              , round(gccrft/nvl(gccrfc,gccrfl)*10000,2)         "FLUSH|AVG TM"
-             , '$HEADCOLOR$/$NOR$' "/"
+             , '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$"
              , round(gccurv,2) "CU BLKS|RECEIVE"
              , round(gccurt/gccurv*10000,2)         "AVG TM|RECEIV"
              , round(gccupt/gccusv*10000,2)         "PIN|EST TM"
@@ -412,11 +429,12 @@ begin
              , '|' "|"
              , round(gccusv,2) "CU BLKS|SERVED"
              , round(nvl(gccupc,gccupn)/gccusv,4)   "PIN|SERVED"
-             , round(nvl(gccufc,gccufl)/gccusv,4)               "FLUSH|SERVED"
+             , round(nvl(gccufc,gccufl)/gccusv,4)   "FLUSH|SERVED"
              , round(gccufl/gccusv,4)               "LGWR|SERVED"
+             , '|' "|"
              , round(gccupt/nvl(gccupc,gccupn)*10000,2)         "PIN|AVG TM"
              , round(gccuft/nvl(gccufc,gccufl)*10000,2)         "FLUSH|AVG TM"
-             , '$HEADCOLOR$/$NOR$' "/"
+             , '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$"
              --, round(glgt/nullif(nvl(glag,0)+nvl(glsg,0),0)*10000,4)  "GC ENQ|GET TIME"
         FROM  delta
         pivot (sum(v) for n in (
@@ -437,8 +455,9 @@ begin
            , 'global enqueue get time'       glgt
            , 'global enqueue gets sync'      glsg
            , 'global enqueue gets async'     glag))
-        ORDER BY i;
+        ORDER BY inst;
 
+    rs1(6):=rs1(6).deleteXML('//N');
     OPEN :c32 FOR
         WITH delta AS(
             SELECT /*+no_merge*/ *
@@ -457,39 +476,91 @@ begin
            , 'gc current block pin time'     gccupt
            , 'gc current block flush time'   gccuft
            , 'gc current blocks served'      gccusv
+           , 'gc blocks lost' gcl
            , 'global enqueue get time'       glgt
            , 'global enqueue gets sync'      glsg
            , 'global enqueue gets async'     glag
            , 'gcs msgs received'             gcsmr
+           , 'gc status messages received'   gssmr
            , 'gcs msgs process time(ms)'     gcsmpt
            , 'ges msgs received'             gesmr 
            , 'ges msgs process time(ms)'     gesmpt
+           , 'ges messages sent'             gems
+           , 'gcs messages sent'             gcms
            , 'msgs sent queued'              msq
            , 'msgs sent queue time (ms)'     msqt
            , 'msgs sent queued on ksxp'      msqk
            , 'msgs sent queue time on ksxp (ms)' msqkt
+           , 'msgs received kernel queue time (ns)' msqkrt
+           , 'ka grants received'                kagr
+           , 'ka messages sent'                  kams
+           , 'gc status messages sent'           gsms
            , 'msgs received queued'             mrq
-           , 'msgs received queue time (ms)'    mrqt))
-        )
-        SELECT decode(i,0,'*',''||i) inst,
-               round(gcrv,2) "CR CU|BLOCKS",
+           , 'msgs received queue time (ms)'    mrqt
+           , 'messages sent directly'   msd
+           , 'messages sent indirectly' msi
+           , 'gc CPU used by this session' gccpu
+           , 'IPC CPU used by this session'         ipccpu))
+        ),
+        LMS AS(
+            select i,max(n) lms,round(sum(t*v)/tim1) lms_busy
+            from  (select 1 t,rs2(6) x from dual union all select -1,rs1(6) from dual) x,
+                    xmltable('//ROW' PASSING x.x
+                       COLUMNS v INT PATH 'V',
+                               n INT PATH 'N',
+                               i INT PATH 'I')
+            group by i
+            )
+        SELECT /*+no_merge(a) no_merge(b) no_merge(c) use_hash(a b c)*/
+               decode(i,0,'*',''||i) inst,
+               lms "LMS|NUM",
+               lms_busy "LMS|TIME",
+               round(lms_busy*1E-6/lms,4) "LMS|BUSY",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
+               round(gcrv,2) "CR CU|RECV",
+               round(gcl,2)  "CR CU|LOST",
+               round(gcf,2)  "GC CU|FAILS",
+               round(gcrt*10000,2) "CR CU|TIME",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
                round(gcrt*10000/gcrv,2) "CR CU|AVG TM",
                round(glgt/gcrt,4)  "ENQUE|GET",
-               --round(msqt/gcrt/10,4) "SENT|QUEUE",
-               --round(msqkt/gcrt/10,4) "SENT|ksxp",
-               round(mrqt/gcrt/10,4) "RECV|QUEUE",
-               round(gcsmpt/gcrt/10,4) "GCS|PROX",
-               round(gesmpt/gcrt/10,4) "GES|PROX",
-               round(gccrbt*gccrrv/gccrsv/gcrt,4) "CR|BUILD",
-               round(gccupt*gccurv/gccusv/gcrt,4) "CU|PIN",
-               round((nvl(gccrft*gccrrv/gccrsv,0)+nvl(gccuft*gccurv/gccusv,0))/gcrt,4) "CR CU|FLUSH",
-               round(lgwrt/gcrt/10000,4) "LGWR|SYNC"
-        FROM (select a.*,nullif(nvl(gccrrv,0)+nvl(gccurv,0),0) gcrv,nullif(nvl(gccrrt,0)+nvl(gccurt,0),0) gcrt from delta a)
-        LEFT JOIN xmltable('//ROW[N="gcs log flush sync" and F="1"]' PASSING rs2(2)
-                       COLUMNS lgwrt NUMBER PATH 'M',
-                               lgwrc NUMBER PATH 'T',
+               nullif(round(gccrbt*gccrrv/gccrsv/gcrt,4),0) "GC CR|BUILD",
+               nullif(round(gccupt*gccurv/gccusv/gcrt,4),0) "GC CU|PIN",
+               nullif(round((nvl(gccrft*gccrrv/gccrsv,0)+nvl(gccuft*gccurv/gccusv,0))/gcrt,4),0) "CR CU|FLUSH",
+               nullif(round(lgwrt/gcrt/10000,4),0) "GCS|LGWR",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
+               gccpu*1e4 "GC|CPU",
+               nvl(ipccpu*1e4,0) "IPC|CPU",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
+               msgrv "MSGS|RECV",
+               round(mrq/msgrv,4) "QUEU|RECV",
+               nullif(round((nvl(msqt,0)+nvl(gesmpt,0)+nvl(mrqt,0))*1000/msgrv,2),0) "AVG|RECV",
+               nullif(round(msqkrt/msgrv/1000,2),0) "AVG|KERNEL",
+               '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
+               msgst "MSGS|SENT",
+               round(msq/msgst,4) "QUEU|SENT",
+               round(msqk/msgst,4) "QUEU|KSXP",
+               round(msd/msgst,4) "DIRX|SENT",
+               round(msi/msgst,4) "NO-DX|SENT",
+               '|' "|",
+               nullif(round((nvl(msqt,0)+nvl(msqkt,0))*1000/msgst,2),0) "AVG|SENT",
+               nullif(round(msqkt/msqk*1000,2),0) "AVG|KSXP"
+        FROM (select a.*,
+                     nullif(nvl(gccrrv,0)+nvl(gccurv,0),0) gcrv,
+                     nullif(nvl(gccrrt,0)+nvl(gccurt,0),0) gcrt,
+                     nullif(round(nvl(gcsmr,0)+nvl(gssmr,0)+nvl(kagr,0)+nvl(gesmr,0),2),2) msgrv,
+                     nullif(round(nvl(gcms,0)+nvl(gsms,0)+nvl(kams,0)+nvl(gems,0),2),2) msgst
+              from delta a) a
+        LEFT JOIN lms b USING(i)
+        LEFT JOIN (
+              select *
+              from xmltable('//ROW[F="1"]' PASSING rs2(2)
+                       COLUMNS v NUMBER PATH 'M',
+                               n VARCHAR2(100) PATH 'N',
                                i NUMBER PATH 'I')
-        USING(i);
+              pivot(max(v) for n in('gcs log flush sync' lgwrt,'gc cr failure' gcf))) c
+        USING(i)
+        ORDER BY inst;
 end;
 /
 print c4

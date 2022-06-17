@@ -1,5 +1,5 @@
 /*[[
-    Show top segments, default sort by logical reads. Usage: @@NAME {[-u|<owner>|<object_name>[.<partition_name>]]] [<sort_by_field>]} [-a] [-d]
+    Show top segments, default sort by logical reads. Usage: @@NAME {[<owner>|<object_name>[.<partition_name>]] [<sort_by_field>]} [-a] [-d]
     Options:
         -d      :  Show the detail segment, instead of grouping by object name
         -u      :  Only show the segment statistics of current schema
@@ -22,32 +22,34 @@
 
     --[[
         &cols   : default={object_name,regexp_substr(object_type,'^[^ ]+')}, d={object_name,subobject_name,object_type}, a={'ALL'}
-        &V2     : default={logi_reads}
-        &Filter : default={instr('.'||owner||'.'||object_name||'.'||subobject_name||'.',upper('.'||:V1||'.'))>0}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
+        &V2     : default={'0'}
+        &Filter : default={UPPER('.'||owner||'.'||object_name||'.'||subobject_name||'.') LIKE upper('%&V1%')}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
+        @IM     : 12.2={} default={--}
     --]]
 ]]*/
-set rownum on sqltimeout 1800 sep4k on
+set rownum on sqltimeout 1800 sep4k on AUTOHIDE COL
 col space for kmg
 SELECT * FROM (
     SELECT /*+NO_EXPAND MONITOR opt_param('optimizer_dynamic_sampling' 6) opt_param('_optimizer_sortmerge_join_enabled','false') */ 
             min(obj#) obj#,owner,  &cols object_type,
-            SUM(DECODE(statistic_name, 'space used', VALUE)) space,
-            SUM(DECODE(statistic_name, 'logical reads', VALUE)) logi_reads,
-            SUM(DECODE(statistic_name, 'physical reads', VALUE)) phy_reads,
-            SUM(DECODE(statistic_name, 'physical writes', VALUE)) phy_writes,
-            SUM(DECODE(statistic_name, 'segment scans', VALUE)) scans,
-            SUM(DECODE(statistic_name, 'physical reads direct', VALUE)) dx_reads,
-            SUM(DECODE(statistic_name, 'physical writes direct', VALUE)) dx_writes,
-            SUM(DECODE(statistic_name, 'db block changes', VALUE)) block_chgs,
-            SUM(DECODE(statistic_name, 'buffer busy waits', VALUE)) busy_waits,
-            SUM(DECODE(statistic_name, 'ITL waits', VALUE)) itl_waits,
-            SUM(DECODE(statistic_name, 'row lock waits', VALUE)) row_lock_waits,
-            SUM(DECODE(statistic_name, 'gc buffer busy', VALUE)) gc_buff_busy,
-            SUM(DECODE(statistic_name, 'gc remote grants', VALUE)) gc_grants,
-            SUM(DECODE(statistic_name, 'gc cr blocks received', VALUE)) gc_cr_blocks,
-            SUM(DECODE(statistic_name, 'gc current blocks received', VALUE)) gc_cu_blocks
+            nullif(SUM(DECODE(statistic_name, 'space used', VALUE)),0) space,
+            nullif(SUM(DECODE(statistic_name, 'logical reads', VALUE)),0) logi_reads,
+            nullif(SUM(DECODE(statistic_name, 'physical reads', VALUE)),0) phy_reads,
+            nullif(SUM(DECODE(statistic_name, 'physical writes', VALUE)),0) phy_writes,
+            nullif(SUM(DECODE(statistic_name, 'segment scans', VALUE)),0) scans,
+            &im nullif(SUM(DECODE(statistic_name, 'IM scans', VALUE)),0) IMSCANS,
+            nullif(SUM(DECODE(statistic_name, 'physical reads direct', VALUE)),0) dx_reads,
+            nullif(SUM(DECODE(statistic_name, 'physical writes direct', VALUE)),0) dx_writes,
+            nullif(SUM(DECODE(statistic_name, 'db block changes', VALUE)),0) block_chgs,
+            nullif(SUM(DECODE(statistic_name, 'buffer busy waits', VALUE)),0) busy_waits,
+            nullif(SUM(DECODE(statistic_name, 'ITL waits', VALUE)),0) itl_waits,
+            nullif(SUM(DECODE(statistic_name, 'row lock waits', VALUE)),0) lock_waits,
+            nullif(SUM(DECODE(statistic_name, 'gc buffer busy', VALUE)),0) gc_busy,
+            nullif(SUM(DECODE(statistic_name, 'gc remote grants', VALUE)),0) gc_grants,
+            nullif(SUM(DECODE(statistic_name, 'gc cr blocks received', VALUE)),0) cr_blocks,
+            nullif(SUM(DECODE(statistic_name, 'gc current blocks received', VALUE)),0) cu_blocks
     FROM   GV$SEGMENT_STATISTICS
-    WHERE  (:V1 is null OR (&filter))
+    WHERE  (&filter)
     GROUP  BY owner,  &cols
-    ORDER  BY &V2 DESC)
-WHERE ROWNUM<=100;
+    ORDER  BY  &v2 desc,nvl(logi_reads,0)/15+nvl(phy_reads,0)+nvl(phy_writes,0) DESC)
+WHERE ROWNUM<=50;

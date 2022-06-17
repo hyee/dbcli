@@ -129,7 +129,7 @@ function lexer:read(data,file,seq)
     end
 
     local counter,batch_size=0,math.max(4,math.ceil((end_line-start_line+1)/8192))
-    local clock=os.clock()
+    local clock=os.timer()
     local fmod,floor=math.fmod,math.floor
     print('Analyzing the trace file'..(target and (' for '..target) or '')..' ...')
     root.seeks[0]=f:seek()
@@ -287,7 +287,7 @@ function lexer:read(data,file,seq)
             h.probe.on_finish(h.probe,root[h.name])
         end
     end
-    print('\n'..(end_line-start_line+1)..' lines processed in '..math.round(os.clock()-clock,3)..' secs. Following commands are available: '..table.concat(options,','))
+    print('\n'..(end_line-start_line+1)..' lines processed in '..math.round(os.timer()-clock,3)..' secs. Following commands are available: '..table.concat(options,','))
 end
 
 function lexer:close()

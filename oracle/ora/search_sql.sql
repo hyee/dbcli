@@ -62,6 +62,15 @@
                 )))
             }
         }
+
+        @&CHECK_ACCESS_SQLSET_STATEMENTS: {
+            ALL_SQLSET_STATEMENTS={
+                UNION
+                SELECT 'ALL_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
+                FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM ALL_SQLSET_STATEMENTS A)
+                WHERE  &vw in('A','D') AND (&filter)
+            }
+        }
     --]]
 ]]*/
 SELECT /*+no_expand PQ_CONCURRENT_UNION*/

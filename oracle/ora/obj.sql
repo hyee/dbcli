@@ -56,7 +56,7 @@ BEGIN
                 ORDER  BY pos,OBJECT_ID)
             WHERE ROWNUM<=50;
     ELSE
-        dbms_output.put_line('No results from dba_objects, searching from recyclebin...')
+        dbms_output.put_line('No results from dba_objects, searching from recyclebin...');
         OPEN rec FOR
         SELECT * FROM(
             SELECT * 

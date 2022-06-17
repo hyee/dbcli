@@ -1158,9 +1158,9 @@ function oradebug.profile(sid,samples,interval,event)
             samples=tonumber(samples) or 100
             interval=tonumber(interval) or samples>=500 and 0.01 or 0.1
             local prep=db.conn:prepareStatement([[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
-            local clock=os.clock()
+            local clock=os.timer()
             out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
-            print("Sampling complete within "..(os.clock()-clock).." secs.")
+            print("Sampling complete within "..(os.timer()-clock).." secs.")
             log=env.write_cache("shortstacks_"..org_sid..".log",out)
         end
     end

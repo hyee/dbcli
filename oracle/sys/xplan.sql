@@ -312,7 +312,7 @@ BEGIN
         IF bitand(&opt,3)>0 THEN
             OPEN cur FOR
                 SELECT xplan_cost, a.name,
-                       '$BRED$$HIW$/$NOR$' "/",
+                       '$HEADCOLOR$/$NOR$' "/",
                        exec_cost,b.name
                 FROM (
                     SELECT a.*,row_number() over(order by name) r

@@ -220,7 +220,7 @@ function ResultSet:close(rs)
         close(rs)
         if self[rs] then self[rs]=nil end
     end
-    local clock=os.clock()
+    local clock=os.timer()
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then

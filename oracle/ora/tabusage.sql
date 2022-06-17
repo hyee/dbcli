@@ -35,7 +35,8 @@
     --[[
         @check_access_usage: SYS.COL_USAGE$/SYS.COL_GROUP_USAGE$={2} SYS.COL_USAGE$={1} default={0}
         @check_access_index: dba_index_usage={1} default={0}
-        @check_access_mdf: sys.dba_tab_modifications={sys.dba_tab_modifications} sys.all_tab_modifications={sys.all_tab_modifications}
+        @IM                : 12.2={} default={--}
+        @check_access_mdf  : sys.dba_tab_modifications={sys.dba_tab_modifications} sys.all_tab_modifications={sys.all_tab_modifications}
         @ARGS: 1
     --]]
 ]]*/
@@ -82,6 +83,7 @@ BEGIN
                 SUM(DECODE(statistic_name, 'physical reads', VALUE)) phy_reads,
                 SUM(DECODE(statistic_name, 'physical writes', VALUE)) phy_writes,
                 SUM(DECODE(statistic_name, 'segment scans', VALUE)) scans,
+                &im SUM(DECODE(statistic_name, 'IM scans', VALUE)) IMSCANS,
                 SUM(DECODE(statistic_name, 'physical reads direct', VALUE)) dx_reads,
                 SUM(DECODE(statistic_name, 'physical writes direct', VALUE)) dx_writes,
                 SUM(DECODE(statistic_name, 'db block changes', VALUE)) block_chgs,

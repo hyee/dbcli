@@ -180,7 +180,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     if cache_obj~=db.C.dict.cache_obj then cache_obj=nil end
     if not cache_obj then
         cache_obj={}
-        local clock=os.clock()
+        local clock=os.timer()
         --env.printer.write("    Loading object dictionary...")
         local args={"#CLOB"}
         local sql=[[
@@ -248,7 +248,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
             end
         end
         db.C.dict.cache_obj=cache_obj
-        --printer.write("done in "..string.format("%.3f",os.clock()-clock).." secs.\n")
+        --printer.write("done in "..string.format("%.3f",os.timer()-clock).." secs.\n")
     end
 
     local args

@@ -316,7 +316,7 @@ function output.getOutput(item)
         end
 
         local args1=args or {}
-        local clock=os.clock()
+        local clock=os.timer()
         args=table.clone(default_args)
         args.sql_id=args1.last_sql_id or sql_id
         args.child=tonumber(args1.last_child) or ''
