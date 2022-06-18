@@ -87,7 +87,7 @@ function unwrap.unwrap_schema(obj,ext)
 end
 
 local thresholds={
-    skew_rate=0.7,
+    skew_rate=0.8,
     skew_min_diff=100,
     px_process_count=4,
     sqlstat_aas_min=10,
