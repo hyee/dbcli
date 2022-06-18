@@ -807,6 +807,7 @@ end
 
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 local vertical_pattern,verticals=env.VERTICAL_PATTERN
+local DDL={CREATE=1,ALTER=1,DROP=1}
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
@@ -840,6 +841,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     end
     
     verticals,env.VERTICALS=env.VERTICALS or self.VERTICALS
+    local tmp_sql
     if is_not_prep then
         sql=sql:sub(1,-128)..sql:sub(-127):gsub(vertical_pattern,
                 function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
@@ -847,17 +849,24 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if type(sql)~="string" then
             return sql
         end
-        prep,sql,params=self:parse(sql,params)
-        prep:setEscapeProcessing(false)
-        local str = tostring(prep)
-        caches=__stmts[prep] or {}
-        caches.verticals=verticals
-        caches.count,__stmts[prep]=0,caches
-        prep:setFetchSize(cfg.get("FETCHSIZE"))
-        prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-        self.current_stmt=prep
-        env.log_debug("db","SQL:",sql)
-        self.log_param(params)
+        local cmd_type=self.get_command_type(sql)
+        if DDL[cmd_type] then
+            env.log_debug("db","SQL:",sql)
+            prep=self.conn:createStatement()
+            tmp_sql=sql
+        else
+            prep,sql,params=self:parse(sql,params)
+            prep:setEscapeProcessing(false)
+            local str = tostring(prep)
+            caches=__stmts[prep] or {}
+            caches.verticals=verticals
+            caches.count,__stmts[prep]=0,caches
+            prep:setFetchSize(cfg.get("FETCHSIZE"))
+            prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+            self.current_stmt=prep
+            env.log_debug("db","SQL:",sql)
+            self.log_param(params)
+        end
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}
@@ -868,7 +877,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
     end
 
-    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
+    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql)
     exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3

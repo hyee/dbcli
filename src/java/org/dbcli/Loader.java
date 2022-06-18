@@ -41,7 +41,7 @@ public class Loader {
     KeyMap keyMap;
     KeyListner q = new KeyListner('q');
     Future sleeper;
-    private volatile CallableStatement stmt = null;
+    private volatile Statement stmt = null;
     private final Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
     private final IOException CancelError = new IOException("Statement is aborted.");
@@ -513,12 +513,14 @@ public class Loader {
         return encoding.equals("OTHER") ? result : new String(buffer, encoding);
     }
 
-    public synchronized boolean setStatement(final CallableStatement p) throws Exception {
+    public synchronized boolean setStatement(final Statement p,String sql) throws Exception {
         try (Closeable ignored = console::setEvents) {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
             if (p == null) return false;
-            boolean result = p.execute();
+            boolean result;
+            if(sql==null) result=((CallableStatement)p).execute();
+            else result=p.execute(sql);
             if (p.isClosed()) throw CancelError;
             return result;
         } catch (SQLException e) {

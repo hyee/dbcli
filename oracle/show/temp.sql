@@ -7,6 +7,11 @@
 ]]*/
 set feed off
 col BYTES_CACHED,BYTES_FREE,BYTES_USED,bytes,BLOCK_SIZE for kmg
+col inst_id head INST
+col tablespace_name head TABLESPACE
+col EXTENTS_CACHED,EXTENTS_USED,USED_EXTENTS,FREE_EXTENTS noprint
+col BLOCKS_CACHED,BLOCKS_USED for tmb
+
 PRO GV$TEMP_EXTENT_POOL:
 PRO ====================
 select /*+opt_param('optimizer_dynamic_sampling' 5)*/ DISTINCT * 
