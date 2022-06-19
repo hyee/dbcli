@@ -78,6 +78,7 @@ DECLARE
                                             WHEN 'NESTED_TABLE' THEN 2
                                             WHEN 'MATERIALIZED VIEW' THEN 13
                                             WHEN 'MATERIALIZED VIEW LOG' THEN 14
+                                            WHEN 'MATERIALIZED ZONEMAP' THEN 1
                                             WHEN 'LOB' THEN 21
                                             WHEN 'LOB PARTITION' THEN 40
                                             WHEN 'LOB SUBPARTITION' THEN 41

@@ -66,48 +66,51 @@ findobj "&V1" "" 1
 COL BYTES,INI_EXT,NEXT_EXT,FC_CACHED,FC_CCCACHED,FC_WRITE,FC_KEEP,FC_CCKEEP FOR KMG
 COL BLOCKS,EXTENTS,fc_reqs FOR TMB
 COL "fc_hit%,fc_cc%" for pct
-WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs) opt_param('optimizer_dynamic_sampling' 11)*/
-                    objs.segment_owner,
-                    coalesce(subs.lob_name,parts.lob_name,lobs.segment_name,objs.segment_name) segment_name,
-                    coalesce(subs.lob_subpartition_name,parts.lob_partition_name,objs.partition_name) partition_name,
-                    objs.segment_type segment_type,
-                    coalesce(lobs.tablespace_name,objs.tablespace_name) tablespace_name,
-                    objs.lob_column_name,
-                    lobs.index_name index_name,
-                    nvl(subs.lob_indsubpart_name,parts.lob_indpart_name) index_part
-            FROM    TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(:object_owner, --objowner
-                                        :object_name, --objname
-                                        NULL, --partname
-                                        CASE regexp_substr(:object_type, '[^ ]+')
-                                            WHEN 'TABLE' THEN 1
-                                            WHEN 'TABLE PARTITION' THEN 7
-                                            WHEN 'TABLE SUBPARTITION' THEN 9
-                                            WHEN 'INDEX' THEN 3
-                                            WHEN 'INDEX PARTITION' THEN 8
-                                            WHEN 'INDEX SUBPARTITION' THEN 10
-                                            WHEN 'CLUSTER' THEN 4
-                                            WHEN 'NESTED_TABLE' THEN 2
-                                            WHEN 'MATERIALIZED VIEW' THEN 13
-                                            WHEN 'MATERIALIZED VIEW LOG' THEN 14
-                                            WHEN 'LOB' THEN 21
-                                            WHEN 'LOB PARTITION' THEN 40
-                                            WHEN 'LOB SUBPARTITION' THEN 41
-                                        END)) objs,
-                   &check_access_dba.lobs lobs,
-                   &check_access_dba.lob_partitions parts,
-                   &check_access_dba.lob_subpartitions subs
-            WHERE  objs.segment_owner = lobs.owner(+)
-            AND    objs.segment_name = lobs.table_name(+)
-            AND    objs.lob_column_name = lobs.column_name(+)
-            AND    objs.segment_owner = parts.table_owner(+)
-            AND    objs.segment_name = parts.table_name(+)
-            AND    objs.lob_column_name = parts.column_name(+)
-            AND    objs.partition_name=parts.partition_name(+)
-            AND    objs.segment_owner = subs.table_owner(+)
-            AND    objs.segment_name = subs.table_name(+)
-            AND    objs.lob_column_name = subs.column_name(+)
-            AND    objs.partition_name=subs.subpartition_name(+)
-            AND    nvl(objs.partition_name, ' ') LIKE :object_subname || '%')
+WITH objs AS(
+    SELECT /*+ordered use_hash(objs lobs parts subs) opt_param('optimizer_dynamic_sampling' 11)*/
+            objs.segment_owner,
+            coalesce(subs.lob_name,parts.lob_name,lobs.segment_name,objs.segment_name) segment_name,
+            coalesce(subs.lob_subpartition_name,parts.lob_partition_name,objs.partition_name) partition_name,
+            objs.segment_type segment_type,
+            coalesce(lobs.tablespace_name,objs.tablespace_name) tablespace_name,
+            objs.lob_column_name,
+            lobs.index_name index_name,
+            nvl(subs.lob_indsubpart_name,parts.lob_indpart_name) index_part
+    FROM    TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(
+                :object_owner, --objowner
+                :object_name, --objname
+                NULL, --partname
+                CASE regexp_substr(:object_type, '[^ ]+')
+                    WHEN 'TABLE' THEN 1
+                    WHEN 'TABLE PARTITION' THEN 7
+                    WHEN 'TABLE SUBPARTITION' THEN 9
+                    WHEN 'INDEX' THEN 3
+                    WHEN 'INDEX PARTITION' THEN 8
+                    WHEN 'INDEX SUBPARTITION' THEN 10
+                    WHEN 'CLUSTER' THEN 4
+                    WHEN 'NESTED_TABLE' THEN 2
+                    WHEN 'MATERIALIZED VIEW' THEN 13
+                    WHEN 'MATERIALIZED VIEW LOG' THEN 14
+                    WHEN 'MATERIALIZED ZONEMAP' THEN 1
+                    WHEN 'LOB' THEN 21
+                    WHEN 'LOB PARTITION' THEN 40
+                    WHEN 'LOB SUBPARTITION' THEN 41
+                END)) objs,
+           &check_access_dba.lobs lobs,
+           &check_access_dba.lob_partitions parts,
+           &check_access_dba.lob_subpartitions subs
+    WHERE  objs.segment_owner = lobs.owner(+)
+    AND    objs.segment_name = lobs.table_name(+)
+    AND    objs.lob_column_name = lobs.column_name(+)
+    AND    objs.segment_owner = parts.table_owner(+)
+    AND    objs.segment_name = parts.table_name(+)
+    AND    objs.lob_column_name = parts.column_name(+)
+    AND    objs.partition_name=parts.partition_name(+)
+    AND    objs.segment_owner = subs.table_owner(+)
+    AND    objs.segment_name = subs.table_name(+)
+    AND    objs.lob_column_name = subs.column_name(+)
+    AND    objs.partition_name=subs.subpartition_name(+)
+    AND    nvl(objs.partition_name, ' ') LIKE :object_subname || '%')
 SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name,'--TOTAL--') object_name,
        object_type,
        max(TABLESPACE) keep(dense_rank last order by bytes) TABLESPACE,
@@ -119,7 +122,7 @@ SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name,'--TOTAL--') object_n
        MAX(INI_EXT) INI_EXT,
        MAX(NEXT_EXT) NEXT_EXT
        &check_access_exa2 max(cells) fc_cells,sum(pieces) fc_segs,sum(hits+misses) fc_reqs,sum(hits)/nullif(sum(hits+misses),0) "FC_HIT%",sum(cachedsize) fc_cached,sum(columnarcache)/nullif(sum(cachedsize),0) "FC_CC%",sum(cachedwrite) fc_write,sum(cachedkeep) FC_KEEP,sum(columnarkeep) FC_CCKEEP
-FROM   (SELECT /*+ordered use_hash(segs exa) no_merge(objs)*/
+FROM   (SELECT /*+ordered use_hash(segs objs) use_hash(exa) no_merge(objs) NO_EXPAND_GSET_TO_UNION*/
         DISTINCT decode(:object_name||:OPT2, objs.segment_name, 1, 2) lv,
                  NVL2(objs.lob_column_name,'['||objs.lob_column_name||'] ','')||objs.segment_owner || '.' || objs.segment_name || 
                  decode(:object_subname||:OPT2, '', '', nvl2(objs.partition_name, '.' || objs.partition_name, '')) object_name,
@@ -150,7 +153,6 @@ FROM   (SELECT /*+ordered use_hash(segs exa) no_merge(objs)*/
         AND    objs.segment_name = segs.segment_name(+)
         AND    objs.segment_owner = exa.owner(+)
         AND    objs.segment_name = exa.object_name(+)
-        --AND    objs.segment_type = exa.object_type(+)
         AND    nvl(objs.partition_name, ' ') = nvl2(exa.owner,nvl(exa.subobject_name, ' '),nvl(objs.partition_name, ' '))
         AND    nvl(objs.partition_name, ' ') = nvl2(segs.owner,nvl(segs.partition_name, ' '),nvl(objs.partition_name, ' '))) a
 GROUP  BY rollup((object_name, object_type, lv)) 

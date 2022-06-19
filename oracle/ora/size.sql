@@ -88,7 +88,6 @@ BEGIN
                         WHERE  b.segment_type not in('ROLLBACK','TYPE2 UNDO','DEFERRED ROLLBACK','TEMPORARY','CACHE','SPACE HEADER','UNDEFINED')
                         AND    b.owner = ']' || u.username || '''
                         AND    b.segment_name = ''' || o.name || '''
-                        AND    b.segment_type LIKE a.object_type || ''%''
                         AND    nvl(b.partition_name, '' '') LIKE ''' || t.subname || '''
                         AND    a.object_id = ' || t.obj# || '
                         AND    a.owner = ''' || u.username || '''
