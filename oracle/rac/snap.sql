@@ -1,8 +1,12 @@
 /*[[
     Snap RAC stats within specific secs and output the delta result. Usage: @@NAME [<secs> | {-awr|-pdb <yymmddhh24mi> [<yymmddhh24mi>]}] 
-    <secs>: sample from gv$views default as 30 secs, and 0 is to show global stats instead of snapping
-      -awr: analyze dba_hist_*view instead within optional <yymmddhh24mi> [<yymmddhh24mi>] date range parameter
-      -pdb: analyze awr_pdb_*view instead within optional <yymmddhh24mi> [<yymmddhh24mi>] date range parameter
+
+    Parameters:
+    ===========
+    <secs>: Sample from gv$*   views, default as 30 secs, and 0 is to show global stats instead of snapping
+      -awr: Analyze dba_hist_* views instead within the optional "<yymmddhh24mi> [<yymmddhh24mi>]" parameters
+      -pdb: Analyze awr_pdb_*  views instead within the optional "<yymmddhh24mi> [<yymmddhh24mi>]" parameters
+
     --[[
         &v1: default={30} awr={&starttime} pdb={&starttime}
         &v2: default={&endtime}
@@ -10,19 +14,20 @@
             12.1={select /*+merge*/ inst_id,event#,event,wait_time_micro/1024 wait_time_milli,wait_count from gv$event_histogram_micro} 
             default={gv$event_histogram}
         }
-        @lms_cpu: 18.1={CPU_USED} default={null}
-        @con :12.1={,con_dbid} default={}
+        @con : 12.1={,con_dbid} default={}
         &awr : default={false} awr={true} pdb={true}
         &vw  : default={dba_hist_} pdb={awr_pdb_}
+        &msg : default={sampling data for &v1 secs} awr={Analyzing AWR views} pdb={Analyzing PDB AWR views}
         @check_access_x: {
             sys.x$ksxpif={
                 SELECT * FROM TABLE(GV$(CURSOR(
                     SELECT a.* 
                     FROM   sys.x$ksxpif a,v$cluster_interconnects b
                     WHERE  a.IF_NAME=b.NAME
-                    AND    a.IP_ADDR=b.IP_ADDRESS)))}
+                    AND    a.IP_ADDR=b.IP_ADDRESS)))
+            }
             default={}
-)))}}
+        }
     --]]
 ]]*/
 
@@ -49,7 +54,7 @@ COL "RECV|PACK,SENT|PACK" FOR TMB
 
 
 COL grp noprint
-PRO Sampling data, please wait ...
+PRO &msg, please wait ...
 DECLARE
     sleeps INT := :v1;
     awr    BOOLEAN := &awr;
@@ -328,7 +333,11 @@ BEGIN
                                   V   INT          PATH '.') B) R2
           GROUP  BY ROLLUP(CLASS, DIR), NAME)
         SELECT DIR,
-               PING_AVG PING,
+               CASE WHEN DIR='ALL' AND CLASS IS NOT NULL THEN 
+                    round(100*ratio_to_report(TOTAL_TIME) OVER(PARTITION BY dir)*2,2)||'%'
+               ELSE
+                    ''||PING_AVG 
+               END PING,
                CLASS,
                ROUND(LOST, 2) "GC|LOST",
                LOST_TIME "LOST|TIME",
@@ -517,7 +526,7 @@ BEGIN
                                         V INT          PATH '.') B)
                 GROUP  BY S, grp, CUBE(I, N))
         WHERE V > 0
-        AND    n IS NOT NULL;
+        AND   n IS NOT NULL;
     --dbms_output.put_line(dbms_utility.get_time-tim);
     tim := dbms_utility.get_time;
     rs2(4) := toXML();
@@ -525,92 +534,50 @@ BEGIN
     OPEN :c4 FOR
         SELECT A.*,
                decode(TRIM(NAME),
-                      'CR_REQUESTS',
-                      'CR blocks served due to remote CR block requests',
-                      'CURRENT_REQUESTS',
-                      'Current blocks served due to remote CR block requests',
-                      'DATA_REQUESTS',
-                      'Current OR CR requests for data blocks',
-                      'UNDO_REQUESTS',
-                      'CR requests for undo blocks',
-                      'TX_REQUESTS',
-                      'CR requests for undo segment header blocks',
-                      'OTHER_REQUESTS',
-                      'CR requests for other types of blocks',
-                      'CURRENT_RESULTS',
-                      'requests for which no changes were rolled out of the block returned to the requesting instance',
-                      'PRIVATE_RESULTS',
-                      'requests for which changes were rolled out of the block returned to the requesting instance, AND only the requesting transaction can use the resulting CR block',
-                      'ZERO_RESULTS',
-                      'requests for which changes were rolled out of the block returned to the requesting instance. Only zero-XID transactions can use the block.',
-                      'DISK_READ_RESULTS',
-                      'requests for which the requesting instance had to read the requested block FROM disk',
-                      'FAIL_RESULTS',
-                      'requests that failed; the requesting transaction must reissue the request',
-                      'STALE',
-                      'requests for which the disk read of the requested block was stale',
-                      'FAIRNESS_DOWN_CONVERTS',
-                      'times an instance receiving a request has down-converted an X lock on a block because it was not modifying the block',
-                      'FAIRNESS_CLEARS',
-                      'times the "fairness counter" was cleared. This counter tracks the times a block was modified after it was served.',
-                      'FREE_GC_ELEMENTS',
-                      'times a request was received FROM another instance AND the X lock had no buffers',
-                      'FLUSHES',
-                      'times the log has been flushed by an LMS process',
-                      'FLUSHES_QUEUED',
-                      'flushes queued by an LMS process',
-                      'FLUSH_QUEUE_FULL',
-                      'times the flush queue was full',
-                      'FLUSH_MAX_TIME',
-                      'Maximum time for flush',
-                      'LIGHT_WORKS',
-                      'times the light-work rule was evoked. This rule prevents the LMS processes FROM going to disk to complete responding to CR requests',
-                      'ERRORS',
-                      'times an error was signalled by an LMS process',
-                      'PIN0',
-                      'Pins taking less than 100 us',
-                      'PIN1',
-                      'Pins taking 100 us to 1 ms',
-                      'PIN10',
-                      'Pins taking 1 to 10 ms',
-                      'PIN100',
-                      'Pins taking 10 to 100 ms',
-                      'PIN1000',
-                      'Pins taking 100 to 1000 ms',
-                      'PIN10000',
-                      'Pins taking 1000 to 10000 ms',
-                      'FLUSH0',
-                      'Flushes taking less than 100 us',
-                      'FLUSH1',
-                      'Flushes taking 100 us to 1 ms',
-                      'FLUSH10',
-                      'Flushes taking 1 to 10 ms',
-                      'FLUSH100',
-                      'Flushes taking 10 to 100 ms',
-                      'FLUSH1000',
-                      'Flushes taking 100 to 1000 ms',
-                      'FLUSH10000',
-                      'Flushes taking 1000 to 10000 ms',
-                      'WRITE1',
-                      'Writes taking less than 1 ms',
-                      'WRITE10',
-                      'Writes taking 1 to 10 ms',
-                      'WRITE100',
-                      'Writes taking 10 to 100 ms',
-                      'WRITE1000',
-                      'Writes taking 100 to 1000 ms',
-                      'WRITE10000',
-                      'Writes taking 1000 to 10000 ms',
-                      'CLEANDC',
-                      'Reserved for internal use',
-                      'RCVDC',
-                      'Number of lock down-converts to S (shared) caused by instance recovery',
-                      'QUEUEDC',
-                      'Number of queued lock down-converts to NULL',
-                      'EVICTDC',
-                      'Number of lock down-converts to NULL caused by an SGA shrink',
-                      'WRITEDC',
-                      'Number of dirty blocks in read-mostly objects which were written AND the X lock down-converted to S locks') MEMO
+                      'CR_REQUESTS','CR blocks served due to remote CR block requests',
+                      'CURRENT_REQUESTS','Current blocks served due to remote CR block requests',
+                      'DATA_REQUESTS','Current or CR requests for data blocks',
+                      'UNDO_REQUESTS','CR requests for undo blocks',
+                      'TX_REQUESTS','CR requests for undo segment header blocks',
+                      'OTHER_REQUESTS','CR requests for other types of blocks',
+                      'CURRENT_RESULTS','requests for which no changes were rolled out of the block returned to the requesting instance',
+                      'PRIVATE_RESULTS','requests for which changes were rolled out of the block returned to the requesting instance, and only the requesting transaction can use the resulting CR block',
+                      'ZERO_RESULTS','requests for which changes were rolled out of the block returned to the requesting instance. Only zero-XID transactions can use the block.',
+                      'DISK_READ_RESULTS','requests for which the requesting instance had to read the requested block from disk',
+                      'FAIL_RESULTS','requests that failed; the requesting transaction must reissue the request',
+                      'STALE','requests for which the disk read of the requested block was stale',
+                      'FAIRNESS_DOWN_CONVERTS','times an instance receiving a request has down-converted an X lock on a block because it was not modifying the block',
+                      'FAIRNESS_CLEARS','times the "fairness counter" was cleared. This counter tracks the times a block was modified after it was served.',
+                      'FREE_GC_ELEMENTS','times a request was received from another instance and the X lock had no buffers',
+                      'FLUSHES','times the log has been flushed by an LMS process',
+                      'FLUSHES_QUEUED','flushes queued by an LMS process',
+                      'FLUSH_QUEUE_FULL','times the flush queue was full',
+                      'FLUSH_MAX_TIME','Maximum time for flush',
+                      'LIGHT_WORKS','times the light-work rule was evoked. This rule prevents the LMS processes from going to disk to complete responding to CR requests',
+                      'ERRORS','times an error was signalled by an LMS process',
+                      'PIN0','Pins taking less than 100 us',
+                      'PIN1','Pins taking 100 us to 1 ms',
+                      'PIN10','Pins taking 1 to 10 ms',
+                      'PIN100','Pins taking 10 to 100 ms',
+                      'PIN1000','Pins taking 100 to 1000 ms',
+                      'PIN10000','Pins taking 1000 to 10000 ms',
+                      'FLUSH0','Flushes taking less than 100 us',
+                      'FLUSH1','Flushes taking 100 us to 1 ms',
+                      'FLUSH10','Flushes taking 1 to 10 ms',
+                      'FLUSH100','Flushes taking 10 to 100 ms',
+                      'FLUSH1000','Flushes taking 100 to 1000 ms',
+                      'FLUSH10000','Flushes taking 1000 to 10000 ms',
+                      'WRITE1','Writes taking less than 1 ms',
+                      'WRITE10','Writes taking 1 to 10 ms',
+                      'WRITE100','Writes taking 10 to 100 ms',
+                      'WRITE1000','Writes taking 100 to 1000 ms',
+                      'WRITE10000','Writes taking 1000 to 10000 ms',
+                      'CLEANDC','Reserved for internal use',
+                      'RCVDC','Number of lock down-converts to S (shared) caused by instance recovery',
+                      'QUEUEDC','Number of queued lock down-converts to NULL',
+                      'EVICTDC','Number of lock down-converts to NULL caused by an SGA shrink',
+                      'WRITEDC','Number of dirty blocks in read-mostly objects which were written and the X lock down-converted to S locks'
+                ) MEMO
         FROM   (SELECT *
                 FROM   XMLTABLE('//ROW' PASSING rs2(4) 
                        COLUMNS  server VARCHAR2(10) PATH 'S',
@@ -656,13 +623,14 @@ BEGIN
                          COLUMNS  n VARCHAR2(100) PATH 'N',
                                   i INT           PATH 'I',
                                   v NUMBER        PATH 'V')
-                  LEFT   JOIN (SELECT *
-                               FROM   XMLTABLE('//ROW' PASSING rs2(4) 
-                                      COLUMNS I INT          PATH 'I',
-                                              n VARCHAR2(30) PATH 'N',
-                                              v NUMBER       PATH 'V')
-                              PIVOT(MAX(V) FOR n IN('FLUSHES' gccrfl, 'FLUSH' gccufl, 'PIN' gccupn, 'ERRORS' errs)))
-                  USING  (I))
+          LEFT JOIN (
+                  SELECT *
+                  FROM   XMLTABLE('//ROW' PASSING rs2(4) 
+                         COLUMNS I INT          PATH 'I',
+                                 n VARCHAR2(30) PATH 'N',
+                                 v NUMBER       PATH 'V')
+                  PIVOT(MAX(V) FOR n IN('FLUSHES' gccrfl, 'FLUSH' gccufl, 'PIN' gccupn, 'ERRORS' errs))
+          ) USING  (I))
           PIVOT(SUM(v) FOR n IN(
                      'gc cr blocks received' gccrrv,
                      'gc cr block receive time' gccrrt,
@@ -767,7 +735,7 @@ BEGIN
         LMS AS
          (SELECT i, MAX(n) lms, f * round(SUM(t * v) / tim1) + decode(f, 1, 0, MAX(n) * 1e6) lms_busy
           FROM   (SELECT 1 t, rs2(6) x FROM dual UNION ALL SELECT -1, rs1(6) FROM dual) x,
-                 xmltable('//ROW' PASSING x.x COLUMNS v INT PATH 'V', n INT PATH 'N', i INT PATH 'I', f INT PATH 'F')
+                 XMLTABLE('//ROW' PASSING x.x COLUMNS v INT PATH 'V', n INT PATH 'N', i INT PATH 'I', f INT PATH 'F')
           GROUP  BY i, f)
         SELECT /*+no_merge(a) no_merge(b) no_merge(c) use_hash(a b c)*/
                  decode(i, 0, '*', '' || i) inst,
@@ -820,21 +788,20 @@ BEGIN
                        MAX(decode(i, 0, gccupt)) over() - decode(i, 0, 0, gccupt) r_gccupt,
                        MAX(decode(i, 0, gccuft)) over() - decode(i, 0, 0, gccuft) r_gccuft
                 FROM   delta a) a
-        LEFT   JOIN lms b
-        USING  (i)
-        LEFT   JOIN (SELECT i,
-                            nullif(nvl(gccrf, 0) + nvl(gccuf, 0), 0) gcf,
-                            MAX(decode(i, 0, lgwrt)) over() - decode(i, 0, 0, lgwrt) r_lgwrt
-                     FROM   XMLTABLE('//ROW[F="1"]' PASSING rs2(2) 
-                            COLUMNS  i NUMBER        PATH 'I',
-                                     v NUMBER        PATH 'T',
-                                     n VARCHAR2(100) PATH 'N')
-                     PIVOT(MAX(v) FOR n IN(
-                                'gcs log flush sync' lgwrt,
-                                'gc cr failure' gccrf, --a cr(consistent read) block was requested AND a failure status was received OR some other exceptional event such as a lost block has occurred.
-                                'gc current retry' gccuf --Current block was requested AND a failure status was received OR some other exceptional event such as a lost block has occurred.
-                                ))) c
-        USING  (i)
+        LEFT   JOIN lms b USING  (i)
+        LEFT   JOIN (
+                SELECT i,
+                       nullif(nvl(gccrf, 0) + nvl(gccuf, 0), 0) gcf,
+                       MAX(decode(i, 0, lgwrt)) over() - decode(i, 0, 0, lgwrt) r_lgwrt
+                FROM   XMLTABLE('//ROW[F="1"]' PASSING rs2(2) 
+                       COLUMNS  i NUMBER        PATH 'I',
+                                v NUMBER        PATH 'T',
+                                n VARCHAR2(100) PATH 'N')
+                PIVOT(MAX(v) FOR n IN(
+                           'gcs log flush sync' lgwrt,
+                           'gc cr failure' gccrf, --a cr(consistent read) block was requested AND a failure status was received OR some other exceptional event such as a lost block has occurred.
+                           'gc current retry' gccuf --Current block was requested AND a failure status was received OR some other exceptional event such as a lost block has occurred.
+        ))) c USING  (i)
         ORDER  BY inst;
 
     OPEN :c5 FOR
