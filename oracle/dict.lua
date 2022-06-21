@@ -120,7 +120,9 @@ local noparallel_sql=[[
         execute immediate 'alter session set events ''10384 trace name context %s''';
     exception
         when others then
-            if sqlcode=-1031 then execute immediate 'alter session %s parallel query';end if;
+            if sqlcode=-1031 then 
+                execute immediate 'alter session %s parallel query';
+            end if;
     end;
 ]]
 function dicts.set_noparallel(name,value)

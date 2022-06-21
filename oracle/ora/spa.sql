@@ -60,6 +60,7 @@ DECLARE
         IF dyn_lvl != 5 THEN
             EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=5';
         END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
     END;
 
     PROCEDURE report_end IS
@@ -67,6 +68,7 @@ DECLARE
         IF dyn_lvl != 5 THEN
             EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
         END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
     END;
 BEGIN
     SELECT MAX(task_name),max(owner),nvl(max(task_id),tid)

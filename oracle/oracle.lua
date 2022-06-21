@@ -131,6 +131,7 @@ function oracle:connect(conn_str)
                 else
                     if k:upper()=='TNS_ADMIN' then
                         tns_admin=v:replace('\\','/')
+                        v=tns_admin
                         prompt=conn_desc:match('([^@%? ]+) *%?')
                     end
                     extras[#extras+1]=k:lower()..'='..v

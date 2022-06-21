@@ -3,11 +3,12 @@
         @insts: 11.2={listagg(b.inst_id) within group(order by b.inst_id)} {default=to_char(wmsys.wm_concat(b.inst_id))}
     --]]--
 ]]*/
-col "Current|Undo Size,Exp Undo Size|For Retention" format kmg
-col "Max|Undo Size,Current|Undo Size,Avg Active|Undo Size" format kmg
+col "Current|Undo Size,Exp Undo Size|For Retention,HWM|Roll Size" format kmg
+col "Max|Undo Size,Current|Roll Size,Avg Active|Roll Size,Avg|Extent Size" format kmg
 col "Necessary|Undo Size" format kmg
 col "Max|Used Size,BYTES,BLOCK_SIZE" format kmg
 col "Undo Size|/ Sec,ActiveS|/ Sec,Expired|/ Sec,Unexpired|/ Sec,Steal-Tries|/ Sec,Steal-Succ|/ Sec,Reused|/Sec" format kmg
+col "Total|Header Gets,Total|Header Waits,Total|Shrinks,Total|Extends" FOR TMB
 SET FEED OFF
 
 PRO DBA_UNDO_EXTENTS:
@@ -45,11 +46,19 @@ SELECT decode(row_number() over(partition by INST_ID order by 1),1,INST_ID) inst
        DECODE(XACTS,0,STATUS,'ACTIVE') STATUS,
        COUNT(1) SEGS,
        SUM(XACTS) "Current|Transactions",
-       SUM(RSSIZE) "Current|Undo Size",
-       SUM(RSSIZE) "Avg Active|Undo Size"
+       SUM(EXTENTS) "Current|Extents",
+       SUM(RSSIZE) "Current|Roll Size",
+       ROUND(SUM(RSSIZE)/nullif(SUM(EXTENTS),0))  "Avg|Extent Size",
+       '|' "|",
+       SUM(RSSIZE) "Avg Active|Roll Size",
+       SUM(HWMSIZE) "HWM|Roll Size",
+       SUM(GETS) "Total|Header Gets",
+       SUM(WAITS) "Total|Header Waits",
+       SUM(SHRINKS) "Total|Shrinks",
+       SUM(EXTENDS) "Total|Extends"
 FROM   GV$ROLLSTAT
 GROUP  BY INST_ID,DECODE(XACTS,0,STATUS,'ACTIVE')
-ORDER BY 1,2;
+ORDER BY inst_id,2;
 
 PRO GV$UNDOSTAT:
 PRO ============

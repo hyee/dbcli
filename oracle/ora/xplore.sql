@@ -204,9 +204,9 @@ BEGIN
         EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     END IF;
     EXECUTE IMMEDIATE q'{
-                SELECT *
-                FROM   ( &SOURCE )
-                ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0), DECODE(name, 'optimizer_features_enable', ' ', name)}' --
+            SELECT *
+            FROM   ( &SOURCE )
+            ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0), DECODE(name, 'optimizer_features_enable', ' ', name)}' --
         BULK COLLECT
         INTO lst;
     EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=' || to_schema;

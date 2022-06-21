@@ -762,8 +762,8 @@ BEGIN
                  '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
                  msgrv "MSGS|RECV",
                  round(mrq / msgrv, 4) "QUEU|RECV",
-                 nullif(round((nvl(msqt, 0) + nvl(gesmpt, 0) + nvl(mrqt, 0)) * 1000 / msgrv, 2), 0) "AVG|RECV",
-                 nullif(round(mrqt / msgrv / 1000, 2), 0) "AVG|QUEUE",
+                 nullif(round((nvl(mrqt, 0) + nvl(msqkrt*1e-6, 0) + nvl(gesmpt, 0) + nvl(gcsmpt, 0)) * 1000 / msgrv, 2), 0) "AVG|RECV",
+                 nullif(round(mrqt / msgrv * 1000, 2), 0) "AVG|QUEUE",
                  nullif(round(msqkrt / msgrv / 1000, 2), 0) "AVG|KERNEL",
                  '$PROMPTCOLOR$||$NOR$' "$PROMPTCOLOR$||$NOR$",
                  msgst "MSGS|SENT",
@@ -793,10 +793,13 @@ BEGIN
                 SELECT i,
                        nullif(nvl(gccrf, 0) + nvl(gccuf, 0), 0) gcf,
                        MAX(decode(i, 0, lgwrt)) over() - decode(i, 0, 0, lgwrt) r_lgwrt
-                FROM   XMLTABLE('//ROW[F="1"]' PASSING rs2(2) 
-                       COLUMNS  i NUMBER        PATH 'I',
-                                v NUMBER        PATH 'T',
-                                n VARCHAR2(100) PATH 'N')
+                FROM(
+                    SELECT I,N,decode(n,'gcs log flush sync',m,t) v
+                    FROM   XMLTABLE('//ROW[F="1"]' PASSING rs2(2) 
+                           COLUMNS  i NUMBER        PATH 'I',
+                                    M NUMBER        PATH 'M',
+                                    T NUMBER        PATH 'T',
+                                    n VARCHAR2(100) PATH 'N'))
                 PIVOT(MAX(v) FOR n IN(
                            'gcs log flush sync' lgwrt,
                            'gc cr failure' gccrf, --a cr(consistent read) block was requested AND a failure status was received OR some other exceptional event such as a lost block has occurred.
