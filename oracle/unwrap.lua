@@ -933,9 +933,17 @@ function unwrap.analyze_sqlmon(text,file,seq)
         pr(string.rep('=',#msg:strip_ansi()+1))
     end
 
+    local insts={}
     --build PX process name <sid>@<inst_id>
     local function insid(sid,inst_id)
-        sid=(sid or session_id)..'@'..(tonumber(inst_id) or instance_id)
+        local inst=tonumber(inst_id)
+        if inst and sid and not tonumber(sid) then
+            insts[inst_id]=insts[inst_id] or {_count=0}
+            if not insts[inst_id][sid] then
+                insts[inst_id][sid],insts[inst_id]._count=1,insts[inst_id]._count+1
+            end
+        end
+        sid=(sid or session_id)..'@'..(inst or instance_id)
         return sid
     end
     sql_id=hd.report_parameters.sql_id or hd.target._attr.sql_id
@@ -1536,8 +1544,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 max_stats.childs=#(instances.instance or {})
                 for k,s in pair(instances.instance) do
                     local att=s.activity_sampled and s.activity_sampled._attr or {}
-                    local start_at=get_attr(att,'first_sample_time');
-                    sqlstat[#sqlstat+1]={'Inst #'..s._attr.inst_id,
+                    local start_at=get_attr(att,'first_sample_time') or get_attr(att,'start_time');
+                    local cnt=insts[s._attr.inst_id] and insts[s._attr.inst_id]._count
+                    cnt=cnt and (' ('..cnt..')') or ''
+                    sqlstat[#sqlstat+1]={'Inst #'..s._attr.inst_id..cnt,
                                          get_attr(att,'duration',1e6,max_stats),
                                          start_at and time2num(start_at)-start_clock or nil,
                                          get_attr(att,'count',nil,max_stats),
@@ -2074,8 +2084,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
-                    elseif event=='Parallel Skew' and infos[id] and not infos[id].dop then
-                        clock[id][4]=(clock[id][4] or 0)+v/(infos[id].gs and infos[id].gs.cnt or default_dop)
+                    elseif event=='Parallel Skew' and infos[id] then
+                        clock[id][4]=(clock[id][4] or 0)+v
                     else
                         clock[id][i]=(clock[id][i] or 0)+v
                     end
@@ -2160,6 +2170,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             for e,aas in pairs(v.events) do
                 if e:lower():find('skew') and infos[id] then
                     infos[id].skew=sec2num(math.max(aas[1] or 0,aas[2] or 0))
+                    --if v.clock[2] then v.clock[2]=v.clock[2]+math.max(aas[1] or 0,aas[2] or 0) end
                 end
             end
             for clz,num in pairs(v.class) do
