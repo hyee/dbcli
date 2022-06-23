@@ -201,7 +201,7 @@ BEGIN
         report_start;
         OPEN :actives FOR
             WITH s1 AS(
-              SELECT /*+inline*/*
+              SELECT /*+materialize*/*
               FROM   &CHECK_ACCESS_SES 
               WHERE (&fil1)
               AND    sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')

@@ -2085,7 +2085,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
                     elseif event=='Parallel Skew' and infos[id] then
-                        clock[id][4]=(clock[id][4] or 0)+v
+                        clock[id][4]=(clock[id][4] or 0)+v/(infos[id].dop or default_dop)
                     else
                         clock[id][i]=(clock[id][i] or 0)+v
                     end
@@ -2373,6 +2373,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local percent=tonumber(s.percent_complete)
             if percent and percent<100 then
                 percent='['..percent..'%]'
+            else
+                percent=nil
             end
             lines[#lines+1]={
                 id=id,
@@ -2538,7 +2540,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                     val=math.round((val-c[j])/math.max(1,dop-1),4)
                                 end
                                 if is_compare then
-                                    if math.abs(c[j]-val)<thresholds.skew_min_diff then
+                                    if (math.abs(c[j]-val)<thresholds.skew_min_diff) and s~='starts' then
                                         row[idx],val=nil
                                         counter=counter-1
                                     elseif dop==1 and px_alloc<2 and math.round(val)==0 then
@@ -2546,7 +2548,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                         counter=counter-1
                                     elseif val~=0 then
                                         local pct=c[j]/val
-                                        if pct>thresholds.skew_rate and pct<1/thresholds.skew_rate then
+                                        if pct>0 and thresholds.skew_rate<=math.min(pct,1/pct) then
                                             row[idx],val=nil
                                             counter=counter-1
                                         end

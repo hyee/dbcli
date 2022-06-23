@@ -12,10 +12,14 @@ WITH b AS
            table_stats(SYS.X$KSQRS set rows=1000000) 
            table_stats(SYS.X$KSUSE set rows=100000)
         */
-         l.*
-  FROM   v$lock_type t, gv$lock l
+         l.*,nvl2(s.sid,s.sid||'@'||s.inst_id,'') blocking
+  FROM   v$lock_type t, gv$lock l, gv$session s
   WHERE  t.type = l.type
-  AND    (t.id1_tag LIKE 'object%' and id1>0))
+  AND    l.id1>0
+  AND    l.id1=s.p2(+)
+  AND    l.id2=s.p3(+)
+  AND    s.event like 'enq:%'
+  AND    (t.id1_tag LIKE 'obj%' or s.sid is not null))
 SELECT /*+ opt_param('_optimizer_mjc_enabled' 'false')*/
          c.sid||','||c.serial#||',@'||c.inst_id session#,
          d.type,
@@ -24,6 +28,7 @@ SELECT /*+ opt_param('_optimizer_mjc_enabled' 'false')*/
                 6, 'Exclusive', 'Invalid') || ']' lock_mode,
          decode(d.REQUEST, 0, 'Hold', 'Request') ltype,
          NULLIF(BLOCKING_SESSION || ',@' || BLOCKING_INSTANCE, ',@') BLOCKER,
+         blocking,
          d.id1 object_id,
          b.owner,
          b.object_name table_name,

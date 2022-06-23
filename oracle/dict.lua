@@ -275,8 +275,8 @@ function dicts.test_grid()
     merge({rs3,'|',merge{rs1,'-',{rs2,'+',rs5}},'-',rs4},true)
 end
 
-function dicts.set_dict(type,scope)
-    if not type then
+function dicts.set_dict(typ,scope)
+    if not typ then
         local dict=dicts.current_dict
         if not dict then return print('Please run "dict public" to build the global dictionary.') end
         if dict.cache==0 then
@@ -292,11 +292,11 @@ function dicts.set_dict(type,scope)
         print(fmt:format('Level#2 Keywords',dict.subobjects,'(Tab-completion on <L1 Keyword>.<L2 Keyword>)'))
         print(fmt:format(' Cached Objects',dict.cache,"(Caches the current db's online dictionary that used for quick search(i.e.: desc/ora obj))"))
         print(fmt:format('    VPD Objects',dict.vpd,'(Used to auto-rewrite SQL for options "SET instance/container/dbid/schema")'))
-        checkhelp(type)
+        checkhelp(typ)
     end
-    type=type:lower()
-    env.checkerr(type=='public' or type=='init' or type=='param' or type=='obj',"Invalid parameter!")
-    env.checkerr(scope or (type=='public' or type=='init'),"Invalid parameter!")
+    typ=typ:lower()
+    env.checkerr(typ=='public' or typ=='init' or typ=='param' or typ=='obj',"Invalid parameter!")
+    env.checkerr(scope or (typ=='public' or typ=='init'),"Invalid parameter!")
     scope=(scope or "all"):lower()
     local sql;
     local path=datapath
@@ -304,13 +304,16 @@ function dicts.set_dict(type,scope)
     local dict,keywords,params={},{},{}
     local pattern=scope:gsub('%%','@'):escape():gsub('@','.*')
     local keys={}
-    if type=='param' then
+    if typ=='param' then
         params=dicts.params
         local is_connect=db:is_connect()
         for k,v in pairs(params) do
             if (k..' '..v[1]..' '..v[7]):lower():find(pattern) and (not is_connect or v[1]<=db.props.version) then
                 keys[#keys+1]=k
             end
+        end
+        if is_connect and #keys==0 and pattern:find('^[0-9_a-z]+$') then
+            keys[#keys+1]={pattern:lower(),99,0,0,1,1,'unkown'}
         end
         env.checkerr(#keys<=2000,"Too many matched parameters.")
         table.sort(keys)
@@ -319,6 +322,7 @@ function dicts.set_dict(type,scope)
         if not show_value then table.remove(rows[1],4) end
         for i,k in ipairs(keys) do
             local v,value=params[k],''
+            if type(k)=='table' then v,k=k,k[1] end
             if is_connect and #keys <=50 then
                 local args={name=k..':'..v[2],value='#VARCHAR'}
                 local res=pcall(db.exec_cache,db,[[
@@ -330,7 +334,7 @@ function dicts.set_dict(type,scope)
                         p PLS_INTEGER := instr(n,':');
                     BEGIN
                         t:=sys.dbms_utility.get_parameter_value(substr(n,1,p-1),y,x);
-                        :value := CASE WHEN substr(n,p+1) IN ('1','3','6') THEN ''||y ELSE x END;
+                        :value := NVL(CASE WHEN substr(n,p+1) IN ('1','3','6','99') THEN ''||y END, x);
                     EXCEPTION WHEN OTHERS THEN
                         :value := 'N/A'||CASE WHEN substr(n,p+1) = '6' THEN '(Type 6)' END;
                     END;]],args,'Internal_GetDBParameter')
@@ -340,7 +344,7 @@ function dicts.set_dict(type,scope)
                 i,
                 k,
                 v[2],
-                v[2]==1 and value=='0' and 'FALSE' or v[2]==1 and value=='1' and 'TRUE' or value,
+                v[2]==1 and (value=='0' and 'FALSE' or value=='1' and 'TRUE') or value,
                 v[1],
                 v[3]==1 and 'TRUE' or 'FALSE',
                 v[4]==1 and 'TRUE' or 'FALSE',
@@ -350,7 +354,7 @@ function dicts.set_dict(type,scope)
             if not show_value then table.remove(rows[i+1],4) end
         end
         return env.grid.print(rows)
-    elseif type=='obj' then
+    elseif typ=='obj' then
         dict=dicts.dict
         for k,v in pairs(dict) do
             if (k..' '..(v.comm_view or '')):lower():find(pattern) then
@@ -374,7 +378,7 @@ function dicts.set_dict(type,scope)
                 v.comm_view or ''}
         end
         return env.grid.print(rows)
-    elseif type=='init' then 
+    elseif typ=='init' then 
         path=dicts.db_dict_path
         dicts.dict,dicts.keywords,dicts.params={},{},{}
         sql=[[
@@ -549,7 +553,7 @@ function dicts.set_dict(type,scope)
         end
     end
 
-    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(type=='init' and dicts.cache_obj) or nil},31*1024*1024)
+    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(typ=='init' and dicts.cache_obj) or nil},31*1024*1024)
     dicts.load_dict(path)
     print((cnt1+cnt2+cnt3-2)..' records saved into '..path)
 end

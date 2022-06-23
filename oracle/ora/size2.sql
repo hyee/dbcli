@@ -99,15 +99,15 @@ WITH objs AS(
            &check_access_dba.lobs lobs,
            &check_access_dba.lob_partitions parts,
            &check_access_dba.lob_subpartitions subs
-    WHERE  objs.segment_owner = lobs.owner(+)
-    AND    objs.segment_name = lobs.table_name(+)
+    WHERE  :object_owner = lobs.owner(+)
+    AND    :object_name = lobs.table_name(+)
     AND    objs.lob_column_name = lobs.column_name(+)
-    AND    objs.segment_owner = parts.table_owner(+)
-    AND    objs.segment_name = parts.table_name(+)
+    AND    :object_owner = parts.table_owner(+)
+    AND    :object_name = parts.table_name(+)
     AND    objs.lob_column_name = parts.column_name(+)
     AND    objs.partition_name=parts.partition_name(+)
-    AND    objs.segment_owner = subs.table_owner(+)
-    AND    objs.segment_name = subs.table_name(+)
+    AND    :object_owner = subs.table_owner(+)
+    AND    :object_name = subs.table_name(+)
     AND    objs.lob_column_name = subs.column_name(+)
     AND    objs.partition_name=subs.subpartition_name(+)
     AND    nvl(objs.partition_name, ' ') LIKE :object_subname || '%')
