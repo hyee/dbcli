@@ -25,7 +25,7 @@
 
     --[[
         @ALIAS  : nonshare
-        &sql_id : default={} s={WHERE sql_id='&0'}
+        &sql_id : default={} s={WHERE SQL_ID='&0'}
         &cnt    : default={AND CNT_>1} s={AND 1=1}
         &sep    : default={' | '} s={chr(10)||' '}
         &inst1  : default={:instance} i={0+'&0'}
@@ -35,7 +35,7 @@
 
 col ela,avg_ela for usmhd2
 col mem for kmg2
-set feed off
+set feed off verify off
 SELECT *
 FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT vers),1e6) vers,
                SUM(distinct ela) ela,
@@ -200,8 +200,44 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
         ORDER  BY 2 DESC)
 WHERE  ROWNUM <= 50;
 
+VAR c REFCURSOR "MISMATCH DETAILS &sql_id";
+
 DECLARE
-    XML  XMLTYPE;
+    XML    XMLTYPE := XMLTYPE('<ROWSET/>');
+    R      XMLTYPE;
+    TYPE   t IS TABLE OF VARCHAR2(32767) INDEX BY VARCHAR2(32767);
+    lst    t;
+    key    VARCHAR2(32767);
+    val    VARCHAR2(32767);
+    v      VARCHAR2(32767);
+    bits   PLS_INTEGER;
+    phv    int;
+    id     int;
+    chd    int;
+    reason VARCHAR2(2000);
+    memo   VARCHAR2(32767);
+    n      PLS_INTEGER := 0;
+    PROCEDURE flush IS
+    BEGIN
+        IF reason IS NULL THEN 
+            return;
+        END IF;
+        select xmlelement(R,xmlelement(P,phv)
+                           ,xmlelement(I,id)
+                           ,xmlelement(R,reason)
+                           ,xmlelement(M,trim(chr(10) from memo))).getstringval()
+        into   key from dual;
+
+        IF lst.exists(key) THEN
+            lst(key):= substr(lst(key),1,32750)||','||chd;
+        ELSE
+            lst(key):= chd;
+        END IF;
+
+        id:=null;
+        reason:=null;
+        memo:=null;
+    END;
 BEGIN
     IF :sql_id IS NULL THEN
         RETURN;
@@ -218,18 +254,57 @@ BEGIN
                       USING  (inst_id, sql_id, child_number)
                       WHERE  INSTR(reason, 'ChildNode') > 0
                       AND    inst_id=nvl(&inst1,inst_id))
-              WHERE  seq = 1) LOOP
+              WHERE  seq = 1
+              ORDER  BY c) LOOP
+        flush;
+        id  := null; 
+        val := '';
+        phv := r.phv;
+        chd := r.c;
+        bits:= 0;
         XML := xmltype('<R>' || SUBSTR(r.reason, 1, INSTR(r.reason, '</ChildNode>', -1) + LENGTH('</ChildNode>') - 1) || '</R>');
-        dbms_output.put_line('--------------------------------------------------------------------');
-        dbms_output.put_line('Plan_Hash_Value: '||r.phv||'    Child# :'||r.c);
         FOR r1 IN (SELECT *
                    FROM   XMLTABLE('/R/ChildNode' PASSING XML COLUMNS n XMLTYPE PATH 'node()') a,
                           XMLTABLE('/*' PASSING a.n COLUMNS t VARCHAR2(128) PATH 'name()', v VARCHAR2(128) PATH 'text()') b) LOOP
+            v := regexp_replace(trim(r1.v),'\s{3,}',' => ');
             IF upper(r1.t)='ID' THEN
-                dbms_output.put_line('********');
+                IF id IS NOT NULL THEN
+                    flush;
+                END IF;
+                id := v;
+            ELSIF upper(r1.t)='REASON' THEN
+                IF reason IS NOT NULL THEN
+                    flush;
+                END IF;
+                reason := v;
+            ELSE
+                memo := memo|| chr(10) || r1.t || ': ' || v;
             END IF;
-            dbms_output.put_line(r1.t || ': ' || regexp_replace(trim(r1.v),'\s{3,}',' => '));
         END LOOP;
     END LOOP;
+    flush;
+    key:=lst.first;
+    XML := xmltype('<ROWSET/>'); 
+    WHILE key IS NOT NULL LOOP
+        lst(key) := regexp_replace(lst(key),'(\d+)(,\1)+','\1');
+        xml := xml.appendChildXML('/ROWSET',xmltype(key)
+            .appendChildXML('/R',XMLTYPE('<C>'||substr(lst(key),1,4000)||'</C>'))
+            .appendChildXML('/R',XMLTYPE('<CNT>'||(1+length(lst(key))-length(replace(lst(key),',')))||'</CNT>')));
+        key := lst.next(key);
+    END LOOP;
+
+    OPEN :c FOR
+        SELECT *
+        FROM  XMLTABLE('/ROWSET/R' PASSING xml 
+              COLUMNS CURSORS INT PATH 'CNT',
+                      PLAN_HASH INT PATH 'P',
+                      Reason  VARCHAR2(2000) PATH 'R',
+                      ID INT PATH 'I',
+                      MEMO VARCHAR2(2000) PATH 'M',
+                      CHILD_CURSORS VARCHAR(4000) PATH 'C')
+        ORDER BY CURSORS DESC,REASON;
 END;
 /
+
+set rowsep - colsep |
+print c

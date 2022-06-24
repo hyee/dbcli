@@ -3,7 +3,7 @@
         @12c: 19={} default={--}
         @CHECK_USER_SYSDBA: SYSDBA={1},default={0}
         @check_access_obj: cdb_objects={cdb_objects} dba_objects={dba_objects} default={all_objects}
-        @check_access_seg: sys.sys_dba_segs={(select SEGMENT_OBJD,segment_flags from sys.sys_dba_segs)} default={(select to_number(null) SEGMENT_OBJD,to_number(null) segment_flags from dual)}
+        @check_access_seg: sys.sys_dba_segs={(select SEGMENT_OBJD,segment_flags from sys.sys_dba_segs)} default={(select 0+null SEGMENT_OBJD,0+null segment_flags from dual)}
     --]]
 ]]*/
 

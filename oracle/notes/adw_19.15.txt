@@ -266,3 +266,173 @@
          0 timezone_version_upgrade_online
        290 undo_retention
        290 undo_tablespace
+
+
+
+-----ATP
+
+select con_id,parameter_name,VALUE from awr_pdb_parameter where snap_id=(select max(snap_id) from awr_pdb_parameter) and isdefault='FALSE' order by 2;
+    CON_ID  PARAMETER_NAME                                      VALUE
+    ------ ---------------------------------------------------- -----
+           _allow_user$_col_update
+         0 _allowed_pvf_owners
+         0 _apppdb_multi_slave_sync
+         0 _asm_write_cancel
+         0 _auto_start_pdb_services
+         0 _awr_disabled_flush_tables
+         0 _awr_warehouse_enabled
+         0 _backup_interrupt_wait_time
+         0 _bct_public_dba_buffer_dynresize
+         0 _bct_public_dba_buffer_maxsize
+         0 _bct_public_dba_buffer_size
+         0 _bigdata_external_table
+         0 _bigdata_offload_flag
+         0 _block_corruption_track_limit
+         0 _bug29274428_modsvc_call_out_enabled
+         0 _cdb_port
+         0 _cdb_svlt_use_tcps
+         0 _cdb_view_no_skip_restricted
+         0 _cell_offload_vector_groupby
+         0 _cloud_mandatory_profile_setup
+         0 _cloud_service_type
+         0 _cloud_trace
+         0 _cloud_trace_temp_table
+         0 _common_load_check_timestamp
+         0 _controlfile_block_corruption_keep_records
+         0 _datapump_gather_stats_on_load
+         0 _datapump_inherit_svcname
+         0 _db_block_check_for_debug
+         0 _db_full_caching
+         0 _default_ini_trans_index
+         0 _default_ini_trans_table
+         0 _default_pdb_filecopy_dop
+         0 _diag_deadlock_detection_enabled
+         0 _diag_hm_rc_enabled
+         0 _disable_foreign_scn_adjust
+         0 _disable_inheritpriv_grant_public
+         0 _disable_mandatory_profile_onclone
+         0 _disable_oradebug_commands
+         0 _edition_enable_oracle_users
+         0 _enable_guid_endpoint_service
+         0 _enable_parallel_dml
+         0 _enable_per_container_acl
+         0 _enable_tenant_id_transfer
+         0 _fix_control
+         0 _force_level0_for_local_create_df
+         0 _group_partition_data_for_impdp_ok
+         0 _gwm_disable_ra
+         0 _hang_enable_processstate
+         0 _hang_fast_track_critical_database_processes_enabled
+         0 _hang_fast_track_progressing_sessions
+         0 _honor_maxfsize_autoextend_on
+         0 _host_internal_gateway
+         0 _hybrid_table_hidden_column
+         0 _ignore_svc_name_conv_mismatch
+         0 _kd_dbg_control
+         0 _kd_rows_chk
+         0 _kerberos_service_host
+         0 _kgl_kill_final_blocker
+         0 _kill_session_force
+         0 _kra_obsolete_rule
+         0 _ksmg_granule_size
+         0 _ksws_perf_control
+         0 _link_ts_name
+         0 _logminer_parallel_read
+         0 _modify_protected_profile_parameters
+         0 _no_catalog
+         0 _no_snapshot_root_clone
+         0 _one-hundred-and-sixtieth_spare_parameter
+         0 _optimize_dvconfig_cloudpdb
+         0 _optimizer_gather_stats_on_load_all
+         0 _optimizer_gather_stats_on_load_hist
+         0 _parallel_cluster_cache_policy
+         0 _pdb_auto_save_state
+         0 _pdb_datapatch_violation_restricted
+         0 _pdb_inherit_cfd
+           _pdb_ldp_cascade
+         0 _pdb_lockdown_ddl_clauses
+         0 _pdb_max_audit_size
+         0 _pdb_max_diag_size
+         0 _pdb_oper_trace_threshold_softassert
+         0 _pdb_refresh_apply_master_key_rekey
+         0 _pdb_refresh_use_dblink_to_catalog
+         0 _pdb_skiplist_apply_callout
+         0 _pdb_skiplist_redogen_callout
+         0 _port_internal_gateway
+         0 _preplugin_backup
+         0 _profile_sensitive_users
+         0 _px_diag_dump
+         0 _px_xtgranule_size
+         0 _rce_dns_suffix
+         0 _restrict_pdb_gv
+         0 _rm_exadata_partition_fc
+         0 _rm_exadata_pdb_cpu_cnt
+         0 _runtime_index_key_length_check
+         0 _sensitive_common_users
+         0 _skippriv_emailserver_credential
+         0 _spfdc
+         0 _spfoc
+         0 _sqlmon_max_plan
+         0 _suspended_session_timeout
+         0 _tablespace_encryption_default_algorithm
+           _undo_autotune
+         0 _xt_table_hidden_column
+         0 aq_tm_processes
+         0 audit_file_dest
+         0 audit_trail
+           awr_pdb_autoflush_enabled
+         0 cluster_database
+         0 compatible
+         0 control_files
+         0 db_block_checking
+         0 db_block_checksum
+         0 db_block_size
+         0 db_create_file_dest
+         0 db_files
+         0 db_flashback_retention_target
+         0 db_lost_write_protect
+         0 db_name
+         0 db_recovery_file_dest
+         0 db_recovery_file_dest_size
+         0 db_securefile
+         0 diagnostic_dest
+         0 dispatchers
+         0 distributed_lock_timeout
+         0 enable_goldengate_replication
+         0 enable_pluggable_database
+         0 encrypt_new_tablespaces
+         0 external_keystore_credential_location
+         0 filesystemio_options
+         0 gcs_server_processes
+         0 job_queue_processes
+         0 large_pool_size
+         0 local_listener
+         0 log_archive_format
+         0 mandatory_user_profile
+         0 max_dump_file_size
+         0 max_idle_blocker_time
+         0 max_string_size
+         0 nls_language
+         0 nls_territory
+         0 ofs_threads
+         0 open_cursors
+         0 open_links
+         0 parallel_execution_message_size
+         0 parallel_max_servers
+         0 parallel_min_servers
+         0 parallel_threads_per_cpu
+           pdb_lockdown
+         0 pga_aggregate_limit
+         0 pga_aggregate_target
+         0 processes
+         0 query_rewrite_integrity
+         0 remote_login_passwordfile
+         0 resource_manager_plan
+         0 sec_protocol_error_trace_action
+         0 sga_max_size
+           sga_target
+         0 shadow_core_dump
+         0 spatial_vector_acceleration
+         0 timezone_version_upgrade_online
+           undo_retention
+           undo_tablespace

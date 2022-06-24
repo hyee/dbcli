@@ -142,7 +142,7 @@ BEGIN
                                  sq.sql_secs
                         FROM   (select  userenv('instance') inst_id,
                                         case when a.p1text='idn' 
-                                             and (a.p1>131072 or event not like 'library%') then a.p1 end idn,
+                                             and (a.p1>131072 or event not like '%bucket%') then a.p1 end idn,
                                         a.*
                                  from   v$session a
                                  WHERE  (&fil1)

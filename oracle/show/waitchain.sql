@@ -18,32 +18,32 @@ WITH c AS(SELECT /*+materialize*/c.*, c.SID||','||c.sess_serial#||',@'||c.instan
       AND    r1.lv < 10)
     SEARCH DEPTH FIRST BY cid SET cid_order
 SELECT rpad(' ',lv*3)|| nvl(wait_event_text,chain_signature) wait_event_text,
-       c.sess# sid,
+       sess# sid,
        c.blocker# block_sid,
-       (SELECT s1.sql_id
-        FROM   gv$session s1
-        WHERE  s1.inst_id = c.instance
-        AND    s1.sid = c.sid
-        AND    s1.serial# = c.sess_serial#) sql_id,
-       (SELECT s2.sql_id
-        FROM   gv$session s2
-        WHERE  s2.inst_id = c.blocker_instance
-        AND    s2.sid = c.blocker_sid
-        AND    s2.serial# = c.blocker_sess_serial#) bl_sql_id,
+       s1.sql_id sql_id,
+       s2.sql_id bl_sql_id,
        osid,
        pid,
        blocker_osid bl_osid,
        blocker_pid bl_pid,
        in_wait_secs in_wait,
-       p1,
-       p1_text p1text,
-       p2,
-       p2_text p2text,
-       p3,
-       p3_text p3text,
-       row_wait_obj#
-FROM   (select r1.*,max(lv) over(partition by root) max_lv from r1) r ,c
-WHERE  c.sess#=r.sess#
-  AND  (max_lv>0 or not exists(select * from v$event_name where wait_class='Idle' and name=wait_event_text) and wait_event_text!='<not in a wait>')
+       c.p1,
+       c.p1_text p1text,
+       c.p2,
+       c.p2_text p2text,
+       c.p3,
+       c.p3_text p3text,
+       c.row_wait_obj#
+FROM   (select r1.*,max(lv) over(partition by root) max_lv from r1) r 
+JOIN   c USING(sess#)
+LEFT   JOIN gv$session s1
+ON     s1.inst_id = c.instance
+AND    s1.sid = c.sid
+AND    s1.serial# = c.sess_serial#
+LEFT  JOIN gv$session s2
+ON     s2.inst_id = c.blocker_instance
+AND    s2.sid = c.blocker_sid
+AND    s2.serial# = c.blocker_sess_serial#
+WHERE  (max_lv>0 or not exists(select * from v$event_name where wait_class='Idle' and name=wait_event_text) and wait_event_text!='<not in a wait>')
 ORDER  BY cid_order
 

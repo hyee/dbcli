@@ -14,12 +14,19 @@
 
   Mainly used to diagnostic below events:
   =======================================
-  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode(anonymous PL/SQL block is executed concurrently at high frequency)            
-  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode(several versions of same the SQL)
+  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode.Happens when:
+  *                   1) anonymous PL/SQL block is executed concurrently at high frequency
+  *                   2) build new cursor or capture SQL bind data
+  *                   3) update SQL stats
+  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode.Happens when:
+  *                   1) high version count
+  *                   2) update cursor ref count
+  *                   3) wait for mutex X holder to release
   * cursor: pin X   - A cursor is being parsed and is trying to get the cursor pin in eXclusive mode               
-  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode(the same SQL operator is executed concurrently)
+  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode
+  *                   Happens when the same SQL operator is executed concurrently at high frequency
   * cursor: pin S wait on X - A cursor is being parsed and has the cursor pin in Share but another session has it in eXclusive mode
-  * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode
+  * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode, commonly happen on PL/SQL block or sequence
   * library cache: bucket mutex X    
   * library cache: dependency mutex X
   * library cache: mutex S - A library cache operation is being performed and is trying to get the library cache mutex in Share mode         

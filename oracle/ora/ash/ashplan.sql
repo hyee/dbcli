@@ -310,7 +310,7 @@ ash_raw as (
     WHERE  seq = 1),
 sql_list as(select /*+MATERIALIZE*/ distinct sql_id,phv1 plan_hash_value,dbid,count(1) over(PARTITION BY dbid,phv1,sql_id) cnt from ash_raw where SQL_ID IS NOT NULL AND (phv1>0 OR SQL_OPNAME='INSERT')),
 ALL_PLANS AS(
-    SELECT  /*+MATERIALIZE opt_estimate(query_block rows=100000)*/
+    SELECT  /*+MATERIALIZE opt_estimate(query_block rows=100000) no_parallel*/
             h.dbid,
             EXTRACTVALUE(COLUMN_VALUE,'//ID')+0 id,
             EXTRACTVALUE(COLUMN_VALUE,'//PARENT_ID')+0 PARENT_ID,
