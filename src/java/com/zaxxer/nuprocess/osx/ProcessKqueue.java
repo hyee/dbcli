@@ -43,12 +43,12 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
     private static final int NUM_KEVENTS = 64;
     private static final int JAVA_PID;
 
-    private volatile int kqueue;
+    private final int kqueue;
 
     // Re-used in process() to avoid repeatedly allocating and destroying array of events.
-    private Kevent[] processEvents;
-    private BlockingQueue<OsxProcess> closeQueue;
-    private BlockingQueue<OsxProcess> wantsWrite;
+    private final Kevent[] processEvents;
+    private final BlockingQueue<OsxProcess> closeQueue;
+    private final BlockingQueue<OsxProcess> wantsWrite;
 
     static {
         JAVA_PID = LibC.getpid();
@@ -108,7 +108,7 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
             // called on the event processor thread.
             Kevent[] events = (Kevent[]) new Kevent().toArray(4);
             // Listen for process exit (one-shot event)
-            events[0].EV_SET((long) pid, Kevent.EVFILT_PROC, Kevent.EV_ADD | Kevent.EV_RECEIPT | Kevent.EV_ONESHOT,
+            events[0].EV_SET(pid, Kevent.EVFILT_PROC, Kevent.EV_ADD | Kevent.EV_RECEIPT | Kevent.EV_ONESHOT,
                     Kevent.NOTE_EXIT | Kevent.NOTE_EXITSTATUS | Kevent.NOTE_REAP, 0L, pidPointer);
             // Listen for stdout and stderr data availability (events deleted automatically when file descriptors closed)
             events[1].EV_SET(stdoutFd, Kevent.EVFILT_READ, Kevent.EV_ADD | Kevent.EV_RECEIPT, 0, 0L, pidPointer);
@@ -236,7 +236,7 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
 
     private void processEvent(Kevent kevent) {
         int ident = kevent.ident.intValue();
-        int filter = (int) kevent.filter;
+        int filter = kevent.filter;
         int udata = (int) (Pointer.nativeValue(kevent.udata));
 
         if (filter == Kevent.EVFILT_SIGNAL) {

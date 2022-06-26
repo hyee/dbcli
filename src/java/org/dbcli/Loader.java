@@ -513,14 +513,14 @@ public class Loader {
         return encoding.equals("OTHER") ? result : new String(buffer, encoding);
     }
 
-    public synchronized boolean setStatement(final Statement p,String sql) throws Exception {
+    public synchronized boolean setStatement(final Statement p, String sql) throws Exception {
         try (Closeable ignored = console::setEvents) {
             this.stmt = p;
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
             if (p == null) return false;
             boolean result;
-            if(sql==null) result=((CallableStatement)p).execute();
-            else result=p.execute(sql);
+            if (sql == null) result = ((CallableStatement) p).execute();
+            else result = p.execute(sql);
             if (p.isClosed()) throw CancelError;
             return result;
         } catch (SQLException e) {
@@ -561,7 +561,7 @@ public class Loader {
     }
 
     public Connection getConnection(String url, Properties props) throws Throwable {
-        return (Connection) asyncCall((Callable) () ->(DriverManager.getConnection(url,props)));
+        return (Connection) asyncCall((Callable) () -> (DriverManager.getConnection(url, props)));
     }
 
     public synchronized void sleep(int millSeconds) throws Exception {
@@ -578,7 +578,7 @@ public class Loader {
     }
 
     public void shutdown() throws IOException {
-        console.threadPool.shutdown();
+        Console.threadPool.shutdown();
         console.terminal.close();
     }
 

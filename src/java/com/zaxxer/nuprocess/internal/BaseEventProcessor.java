@@ -40,7 +40,7 @@ public abstract class BaseEventProcessor<T extends BasePosixProcess> implements 
     protected volatile boolean shutdown;
 
     private CyclicBarrier startBarrier;
-    private AtomicBoolean isRunning;
+    private final AtomicBoolean isRunning;
 
     static {
         LINGER_TIME_MS = Math.max(1000, Integer.getInteger("com.zaxxer.nuprocess.lingerTimeMs", 2500));

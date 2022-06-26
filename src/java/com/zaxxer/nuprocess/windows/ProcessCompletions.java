@@ -42,18 +42,18 @@ public final class ProcessCompletions implements Runnable {
 
     private HANDLE ioCompletionPort;
 
-    private List<WindowsProcess> deadPool;
-    private BlockingQueue<WindowsProcess> pendingPool;
-    private BlockingQueue<WindowsProcess> wantsWrite;
+    private final List<WindowsProcess> deadPool;
+    private final BlockingQueue<WindowsProcess> pendingPool;
+    private final BlockingQueue<WindowsProcess> wantsWrite;
 
-    private Map<Long, WindowsProcess> completionKeyToProcessMap;
+    private final Map<Long, WindowsProcess> completionKeyToProcessMap;
 
     private volatile CyclicBarrier startBarrier;
     private volatile boolean shutdown;
-    private AtomicBoolean isRunning;
-    private IntByReference numberOfBytes;
-    private ULONG_PTRByReference completionKey;
-    private PointerByReference lpOverlapped;
+    private final AtomicBoolean isRunning;
+    private final IntByReference numberOfBytes;
+    private final ULONG_PTRByReference completionKey;
+    private final PointerByReference lpOverlapped;
 
     static {
         int lingerTimeMs = Math.max(1000, Integer.getInteger("com.zaxxer.nuprocess.lingerTimeMs", 2500));

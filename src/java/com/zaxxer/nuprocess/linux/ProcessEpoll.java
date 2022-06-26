@@ -37,9 +37,9 @@ class ProcessEpoll extends BaseEventProcessor<LinuxProcess> {
     private static final int EVENT_POOL_SIZE = 64;
     private static final BlockingQueue<EpollEvent> eventPool;
 
-    private int epoll;
-    private EpollEvent triggeredEvent;
-    private List<LinuxProcess> deadPool;
+    private final int epoll;
+    private final EpollEvent triggeredEvent;
+    private final List<LinuxProcess> deadPool;
     private LinuxProcess process;
 
     static {

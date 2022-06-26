@@ -577,7 +577,7 @@ BEGIN
                             GROUP BY sql_id,sql_exec_start,sql_exec_id
                             $IF &check_access_report=1 AND &pred=1 $THEN
                             UNION ALL
-                            select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(HIST)',
+                            select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(HIST)' sql_exec_id,
                                    plan_hash,
                                    plan_hash SQL_PLAN_HASH_VALUE,
                                    sid,
@@ -599,7 +599,7 @@ BEGIN
                                    PHYSICAL_READ_BYTES
                                    &ver ,IO_CELL_OFFLOAD_ELIGIBLE_BYTES,IO_CELL_OFFLOAD_RETURNED_BYTES
                             FROM (
-                                SELECT /*+no_expand no_or_expand*/
+                                SELECT /*+no_expand no_or_expand no_merge*/
                                        a.*,
                                        period_end_time last_refresh_time,
                                        session_id sid,

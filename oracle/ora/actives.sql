@@ -214,7 +214,7 @@ BEGIN
                     extractvalue(b.column_value,'/ROW/A3')              sql_text,
                     extractvalue(b.column_value,'/ROW/A4')              plan_hash_value,
                     nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
-              FROM (select distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
+              FROM (select /*+no_merge*/ distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
                         SELECT /*+opt_param('_optim_peek_user_binds','false') opt_param('cursor_sharing','force')*/
                               (select c.owner  ||'.' || c.object_name 

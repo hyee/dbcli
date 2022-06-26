@@ -165,6 +165,7 @@ public final class Console {
             }
         };
         Interrupter.listen(this, callback);
+        display = new More.Play(terminal, false);
     }
 
     public void initDisplay() {
@@ -355,6 +356,8 @@ public final class Console {
 
     public int cancelSeq = 0;
     private String currentBuffer;
+    private String firstPrompt = "SQL> ";
+    private int promptWidth = 5;
 
     public String readLine(String prompt, String buffer) {
         try {
@@ -371,7 +374,12 @@ public final class Console {
             }
             pause = false;
             currentBuffer = buffer;
+            if (prompt != null && !prompt.equals(parser.secondPrompt)) {
+                firstPrompt = prompt;
+                promptWidth = wcwidth(firstPrompt);
+            }
             String line = reader.readLine(prompt, null, buffer);
+
             if (line != null) {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
@@ -540,8 +548,14 @@ public final class Console {
             lines += (int) result[3];
             if ((Boolean) result[0]) {
                 if (result.length > 1 && !secondPrompt.equals(result[1])) {
-                    secondPrompt = (String) result[1];
-                    reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
+                    String prompt = (String) result[1];
+                    if (prompt == null || prompt.length() != promptWidth && prompt.trim().equals("")) {
+                        prompt = String.format("%" + promptWidth + "s", " ");
+                    }
+                    if (!prompt.equals(secondPrompt)) {
+                        secondPrompt = prompt;
+                        reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);
+                    }
                 }
                 return null;
             }

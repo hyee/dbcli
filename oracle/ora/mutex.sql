@@ -9,7 +9,7 @@
   
   idn: => v$sqlarea.hash_value 
        => v$db_object_cache.hash_value
-       => v$object_dependency.from_hash/to_hash/to_hash
+       => v$object_dependency.from_hash/to_hash
        => x$kglob.knlnahsh
 
   Mainly used to diagnostic below events:
@@ -47,7 +47,7 @@
   --[[
         &V2: default={&instance}
         @OBJ_CACHE: {
-                  12.1={(select owner to_owner,name to_name,addr to_address,TYPE,hash_value from_hash from v$db_object_cache)} 
+                  11.2={(select owner to_owner,name to_name,TYPE,hash_value from_hash from v$db_object_cache)} 
                   default={(select a.*,
                     decode(to_type,
                           -1,'NONE',
@@ -152,9 +152,9 @@ SELECT DISTINCT *
 FROM   TABLE(gv$(CURSOR( --
           SELECT /*+ordered use_hash(b)*/
                   userenv('instance') inst_id,
+                  P1 idn,
                   sid,
                   a.event,
-                  P1 HASH_VALUE,
                   nullif(trunc(p3 / power(16,8)),0) obj#,
                   nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
                   nullif(decode(trunc(p2 / power(16,8)), 0, trunc(P2 / 65536), trunc(P2 / power(16,8))),0) holder_sid,
@@ -180,12 +180,11 @@ FROM   (SELECT *
         FROM   TABLE(gv$(CURSOR (
                           SELECT /*+ordered use_hash(b)*/
                                   DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
-                          FROM   (SELECT userenv('instance') inst_id,
+                          FROM   (SELECT userenv('instance') inst_id,p1 idn,
                                          obj#,loc#,
                                          sql_id,
                                          event,
                                          MAX(sample_time) last_time,
-                                         p1 idn,
                                          COUNT(1) cnt
                                   FROM   (SELECT session_id sid,
                                                  sample_time,
@@ -218,7 +217,7 @@ SELECT * FROM (
                               a.*,
                               substr(to_name, 1, 100) OBJ
                       FROM   (
-                          SELECT mutex_identifier HASH_VALUE,
+                          SELECT mutex_identifier idn,
                                  nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*') "H/W",
                                  MAX(SLEEP_TIMESTAMP) LAST_TIME,
                                  SUM(sleeps) sleeps,
@@ -232,7 +231,7 @@ SELECT * FROM (
                           AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session)
                           GROUP  BY mutex_identifier,location, mutex_type,p1raw,nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*')
                       ) A,&OBJ_CACHE b
-                      WHERE a.HASH_VALUE=b.from_hash(+)
+                      WHERE a.idn=b.from_hash(+)
                      )))
     ORDER  BY LAST_TIME DESC)
 WHERE  rownum <= 50;

@@ -102,8 +102,8 @@ public class MyCompleter implements org.jline.reader.Completer {
                 e.printStackTrace();
             }
 
-            if(keywords instanceof AbstractTableMap)
-                ((AbstractTableMap)keywords).unRef();
+            if (keywords instanceof AbstractTableMap)
+                ((AbstractTableMap) keywords).unRef();
         }
     }
 

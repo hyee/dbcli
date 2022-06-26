@@ -192,6 +192,7 @@ Parameters
     ignore_session_set_param_errors: all/<parameter_names seperated by comma>
     _kd_rows_chk (Bug 27940222 : CPU SHARPLY UP WITH DB_BLOCK_CHECKING >= MEDIUM + HCC ROW LEVEL LOCKING FOR DML )
     _gc_persistent_readmostly:  sys.sys_dba_segs => bitand(segment_flags,power(2,28))>0 , or sys.seg$=> bitand(spare1,power(2,28))>0
+    _parallel_server_resiliency: 1 or gv to fix ORA-12801/12850 issue when query gv$ views
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
     enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'
@@ -205,7 +206,7 @@ Events:
                     level 32: disables  table queue IN row source
                     level 512: disables rowsets for EVA functions
                     level 20971520: disables “rowset to one row” in hash join probe side
- 
+    65002: enable to free temp LOB spaces when no active temp lob in the session
  
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis

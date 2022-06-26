@@ -1,6 +1,6 @@
 /*[[Show temp tablespace usage. Usage: @@NAME [-f"<filter>"|-text"<keyword>"] 
     --[[--
-        &filter: default={} f={AND (&0)} text={AND UPPER(extractvalue(c.column_value,'/ROW/SQL_TEXT')) LIKE UPPER('%&0%')}
+        &filter: default={1=1} f={(&0)} text={UPPER(sql_text) LIKE UPPER('%&0%')}
         @sq_id:  12.1={a.SQL_ID_TEMPSEG} default={a.sql_id}
         @cid: 12.1={,con_id} default={}
     --]]--
@@ -17,7 +17,7 @@ PRO ====================
 select /*+opt_param('optimizer_dynamic_sampling' 5)*/ DISTINCT * 
 from gv$temp_extent_pool order by 2,3,1;
 
-PRO UNLOCKED SEGMENTS(In dba_segments where segment_type = 'TEMPORARY')
+PRO GV$SORT_SEGMENT(In dba_segments where segment_type = 'TEMPORARY')
 PRO         (Use level 2147483647 to cleanup all tablespaces)
 PRO ===================================================================
 SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
@@ -38,26 +38,35 @@ JOIN   (SELECT TS#,NAME TABLESPACE_NAME &cid FROM V$TABLESPACE) T1 USING(TABLESP
 JOIN   DBA_TABLESPACES T2 USING(TABLESPACE_NAME)
 ;
 
-PRO GV$TEMP_EXTENT_POOL:
-PRO ====================
-SELECT /*+ ordered opt_param('optimizer_dynamic_sampling' 5)*/
-     B.SID||','||B.SERIAL#||',@'||B.INST_ID sid,
-     P.SPID,
-     B.USERNAME,
-     TABLESPACE,
-     round(A.BLOCKS*(select value from v$parameter where name='db_block_size'), 2) bytes,
-     A.SEGTYPE,
-     b.event,
-     &sq_id SQL_ID,
-     SUBSTR(extractvalue(c.column_value,'/ROW/SQL_TEXT'),1,200)  sql_text
-FROM   gv$tempseg_usage A, gV$SESSION B, gv$PROCESS P,
-       TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'{
-           SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'\s+',' '),1,512) sql_text
-           FROM   gv$sqlstats
-           WHERE  sql_id = '}'||&sq_id||'''
-           AND    inst_id = '||a.inst_id),'/ROWSET/ROW')))(+) c
-WHERE  A.SESSION_ADDR = B.SADDR
-AND    B.PADDR = P.ADDR
-AND    a.inst_id = b.inst_id
-AND    b.inst_id = p.inst_id &filter
+PRO GV$TEMPSEG_USAGE:
+PRO =================
+WITH tmps AS (    
+    SELECT /*+inline*/ sid,spid,username,tablespace,
+           round(BLOCKS*(select value from v$parameter where name='db_block_size'), 2) bytes,
+           segtype,event,sql_id
+    FROM TABLE(GV$(CURSOR(
+        SELECT /*+ordered*/
+               B.SID||','||B.SERIAL#||',@'||userenv('instance') sid,
+               P.SPID,
+               B.USERNAME,
+               TABLESPACE,
+               a.blocks,
+               A.SEGTYPE,
+               b.event,
+               &sq_id SQL_ID
+        FROM   v$tempseg_usage A, V$SESSION B, v$PROCESS P
+        WHERE  A.SESSION_ADDR = B.SADDR
+        AND    B.PADDR = P.ADDR))))
+SELECT A.*,trim(substr(b.sql_text,1,200)) sql_text
+FROM   tmps a
+LEFT JOIN (
+    SELECT sql_id,extractvalue(column_value,'/ROW/SQL_TEXT') sql_text
+    FROM   (select /*+no_merge*/ distinct sql_id from tmps) a,
+           TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'{
+               SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'\s+',' '),1,2000) sql_text
+               FROM   gv$sqlstats
+               WHERE  sql_id = '}'||a.sql_id||'''
+               AND    rownum<2'),'/ROWSET/ROW'))) ) b
+ON a.sql_id=b.sql_id
+WHERE &filter
 ORDER  BY BYTES DESC;

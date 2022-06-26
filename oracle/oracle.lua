@@ -669,6 +669,9 @@ function oracle:handle_error(info)
             info.error=msg:gsub('\r?\n%s*ORA%-%d+.*$',''):rtrim()
         else
             info.error=prefix..'-'..ora_code..': '..msg
+            if prefix=='ORA' and (ora_code=='12801' or ora_code=='12850') then
+                info.error=info.error:gsub('\n','\nORA-'..ora_code..': If this error is happened on querying gv$ view, try "set noparallel on" as temp workaround\n',1)
+            end
         end
         if info.cause then
             info.position=tonumber(info.cause:sub(1,255):match('Position%s*:%s*(%d+)'))

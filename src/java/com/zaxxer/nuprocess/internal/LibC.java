@@ -78,12 +78,12 @@ public class LibC {
     // from /usr/include/sys/syscall.h
     // We can't use JNA direct mapping for syscall(), since it takes varargs.
     public interface SyscallLibrary extends Library {
-        public static final int SYS___pthread_chdir = 348;
+        int SYS___pthread_chdir = 348;
 
         int syscall(int syscall_number, Object... args);
     }
 
-    public static SyscallLibrary SYSCALL = (SyscallLibrary) Native.loadLibrary(Platform.C_LIBRARY_NAME, SyscallLibrary.class);
+    public static SyscallLibrary SYSCALL = Native.loadLibrary(Platform.C_LIBRARY_NAME, SyscallLibrary.class);
 
     public static final int F_GETFL = 3;
     public static final int F_SETFL = 4;

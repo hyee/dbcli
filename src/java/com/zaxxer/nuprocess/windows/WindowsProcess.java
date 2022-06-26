@@ -59,12 +59,12 @@ public final class WindowsProcess implements NuProcess {
     private volatile NuProcessHandler processHandler;
 
     protected volatile boolean isRunning;
-    private AtomicInteger exitCode;
-    private CountDownLatch exitPending;
+    private final AtomicInteger exitCode;
+    private final CountDownLatch exitPending;
 
     AtomicBoolean userWantsWrite;
     private volatile boolean writePending;
-    private AtomicBoolean stdinClosing;
+    private final AtomicBoolean stdinClosing;
 
     private volatile PipeBundle stdinPipe;
     private volatile PipeBundle stdoutPipe;
@@ -84,7 +84,7 @@ public final class WindowsProcess implements NuProcess {
     private PROCESS_INFORMATION processInfo;
 
     static {
-        namedPipePathPrefix = "\\\\.\\pipe\\NuProcess-" + UUID.randomUUID().toString() + "-";
+        namedPipePathPrefix = "\\\\.\\pipe\\NuProcess-" + UUID.randomUUID() + "-";
         namedPipeCounter = new AtomicInteger(100);
 
         IS_SOFTEXIT_DETECTION = Boolean.parseBoolean(System.getProperty("com.zaxxer.nuprocess.softExitDetection", "true"));

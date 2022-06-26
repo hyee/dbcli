@@ -245,7 +245,7 @@ WITH gash as(
             a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
-    AND    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)
+    AND    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
     AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
     AND    nvl(0+regexp_substr(:V2,'^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND   '&vw' IN('A','G')
@@ -370,18 +370,18 @@ ALL_PLANS AS(
                     UNION ALL
                     SELECT  id,
                             decode(parent_id,-1,id-1,parent_id) parent_id,
-                            plan_hash_value,
-                            2,
-                            to_char(TIMESTAMP,'YYYY-MM-DD HH24:MI:SS'),
+                            plan_hash_value ha,
+                            2 flag,
+                            to_char(TIMESTAMP,'YYYY-MM-DD HH24:MI:SS') tm,
                             NULL child_number,
                             sql_id,
-                            nvl(plan_hash_value,0),
-                            &cid,
-                            object#,
+                            nvl(plan_hash_value,0) phv,
+                            &cid inst_id,
+                            object# obj,
                             object_name,
                             object_alias,
                             position pos,
-                            object_node tq,operation||' '||options,
+                            object_node tq,operation||' '||options operation,
                             &phf2 plan_hash_full,
                             instr(other_xml,'adaptive_plan') is_adaptive_,
                             io_cost,access_predicates ap,filter_predicates fp,search_columns sc,
