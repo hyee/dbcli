@@ -87,7 +87,7 @@ function grid.cut(row, format_func, format_str, is_head)
     return row .. env.ansi.get_color('NOR')
 end
 
-local s_format = "%s%%%s%ss%s"
+local s_format = "%s%%s%s"
 function grid.fmt(format, ...)
     local idx, v, lpad, rpad, pad = 0, nil
     local args = {...}
@@ -99,7 +99,7 @@ function grid.fmt(format, ...)
             if not v or type(v) ~= "string" then return g end
             siz=tonumber(siz)
             lpad, rpad, pad = "", "", ""
-            local l1,l2=v:ulen()
+            local l1,l2=tostring(v):ulen()
             if l1~=l2 or siz>99 then
                 pad = reps(" ", siz-l2)
                 if flag ~= "-" then
@@ -107,12 +107,10 @@ function grid.fmt(format, ...)
                 else
                     rpad = pad
                 end
-                siz,flag='',''
-                return s_format:format(lpad, flag, tostring(siz), rpad)
+                return s_format:format(lpad, rpad)
             end
             return g
         end)
-    --print(fmt,...)
     return fmt:format(...)
 end
 
@@ -539,7 +537,8 @@ function grid:add(row)
             end
             colsize[k][3],colsize[k][4]=nil
         elseif type(v) ~= "string" or v == "" or (v==null_value) then
-            csize = strip_len(tostring(v) or "")
+            v=tostring(v)
+            csize,colsize[k][2] = (strip_len(v)),-1
         else
             local grp = empty
             v = v:convert_ansi()
