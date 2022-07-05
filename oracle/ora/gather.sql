@@ -259,7 +259,9 @@ DECLARE
         END IF;
 
         IF c>0 THEN
+        BEGIN
             execute immediate 'alter session set "_serial_direct_read"=always';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         END IF;
 
         stmt := 'DECLARE err VARCHAR2(500);BEGIN'||stmt||'END;';
@@ -283,7 +285,9 @@ DECLARE
             END;
         END IF;
         IF c>0 THEN
+        BEGIN
             execute immediate 'alter session set "_serial_direct_read"=auto';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         END IF;
         IF tim IS NOT NULL THEN
             dbms_output.put_line('==========================');
@@ -294,7 +298,9 @@ DECLARE
         END IF;
     EXCEPTION WHEN OTHERS THEN
         IF c>0 THEN
+        BEGIN
             execute immediate 'alter session set "_serial_direct_read"=auto';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         END IF;
         RAISE;
     END;

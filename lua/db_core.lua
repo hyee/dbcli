@@ -252,6 +252,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
             for j=1,cols do
                 local info=head.colinfo[j]
                 if rows[i][j]~=nil then
+                    if type(rows[i][j])=="userdata" then rows[i][j]=tostring(rows[i][j]) end
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end

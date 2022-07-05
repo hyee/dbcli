@@ -102,7 +102,7 @@ function grid.fmt(format, ...)
             local l1,l2=tostring(v):ulen()
             if l1~=l2 or siz>99 then
                 pad = reps(" ", siz-l2)
-                if flag ~= "-" then
+                if flag ~= "-" and siz<99 then
                     lpad = pad
                 else
                     rpad = pad
@@ -508,6 +508,7 @@ function grid:add(row)
     end
     for k = 1, cols do
         local v = rs[k]
+        if type(v)=='userdata' then v=tostring(v) end
         rs._org[k] = v
         if k > grid.maxcol then break end
         local csize,usize,v1, is_number = 0,0,v
@@ -538,7 +539,7 @@ function grid:add(row)
             colsize[k][3],colsize[k][4]=nil
         elseif type(v) ~= "string" or v == "" or (v==null_value) then
             v=tostring(v)
-            csize,colsize[k][2] = (strip_len(v)),-1
+            csize = strip_len(v)
         else
             local grp = empty
             v = v:convert_ansi()
