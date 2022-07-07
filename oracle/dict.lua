@@ -420,7 +420,7 @@ function dicts.set_dict(typ,scope)
             with r as(
                     SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
-                    WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
+                    WHERE  username IN (SELECT COMP_ID FROM dba_registry_schemas UNION SELECT COMP_ID FROM dba_registry)
                     AND    username = owner
                     AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE'))  
                     @XTABLE@)
@@ -442,13 +442,13 @@ function dicts.set_dict(typ,scope)
                     union  all
                     select owner,object_name,null,object_type
                     from   dba_objects
-                    where  owner='SYS' 
+                    where  owner IN('SYS') 
                     and    regexp_like(object_name,'^(DBMS_|UTL_)')
                     and    instr(object_type,' ')=0
                     union  all
                     select distinct owner,object_name||'.'||procedure_name,null,'PROCEDURE'
                     from   dba_procedures
-                    where  owner='SYS' 
+                    where  owner IN('SYS') 
                     and    regexp_like(object_name,'^(DBMS_|UTL_)')
                     and    procedure_name is not null
                     union  all

@@ -90,8 +90,7 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
             FROM (
                 SELECT /*+no_merge no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) 
                          opt_param('_optimizer_sortmerge_join_enabled','false')
-                         table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=640)
-                         table_stats(SYS.RECYCLEBIN$ SET ROWS=327680)*/
+                         table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=640)*/
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
                        max(b.bytes/b.blocks) blocksiz, 

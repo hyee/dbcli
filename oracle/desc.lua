@@ -397,10 +397,20 @@ local desc_sql={
     SELECT NO#,ELEMENT,NVL2(RETURNS,'FUNCTION','PROCEDURE') Type,ARGUMENTS,RETURNS,
            AGGREGATE,PIPELINED,PARALLEL,INTERFACE,DETERMINISTIC,AUTHID
     FROM (
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
-               SUBPROGRAM_ID NO#,
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b)*/ 
+               A.SUBPROGRAM_ID NO#,
                PROCEDURE_NAME||NVL2(OVERLOAD,' (#'||OVERLOAD||')','') ELEMENT,
-               (SELECT MAX(CASE
+               b.RETURNS,
+               b.ARGUMENTS,
+               AGGREGATE,
+               PIPELINED,
+               PARALLEL,
+               INTERFACE,
+               DETERMINISTIC,
+               AUTHID
+        FROM   ALL_PROCEDURES a,
+               (SELECT SUBPROGRAM_ID,
+                       MAX(decode(position,1,CASE
                            WHEN pls_type IS NOT NULL THEN
                             pls_type
                            WHEN type_subname IS NOT NULL THEN
@@ -409,31 +419,16 @@ local desc_sql={
                             type_name||'('||DATA_TYPE||')'
                            ELSE
                             data_type
-                       END)
+                       END)) returns,
+                       COUNT(CASE WHEN position>0 THEN 1 END) ARGUMENTS
                 FROM   all_Arguments b
-                WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
-                AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
-                AND    position = 0
-                AND    b.owner=a.owner
-                AND    b.object_id=a.object_id
-                AND    b.object_name = a.procedure_name) RETURNS,
-               (SELECT COUNT(1)
-                FROM   all_Arguments b
-                WHERE  a.SUBPROGRAM_ID = b.SUBPROGRAM_ID
-                AND    NVL(a.OVERLOAD, -1) = NVL(b.OVERLOAD, -1)
-                AND    position > 0
-                AND    b.owner=a.owner
-                AND    b.object_id=a.object_id
-                AND    b.object_name = a.procedure_name) ARGUMENTS,
-               AGGREGATE,
-               PIPELINED,
-               PARALLEL,
-               INTERFACE,
-               DETERMINISTIC,
-               AUTHID
-        FROM   ALL_PROCEDURES a
-        WHERE  owner=:owner and object_name=:object_name
-        AND    SUBPROGRAM_ID > 0
+                WHERE  owner=:owner 
+                AND    package_name=:object_name
+                GROUP  BY SUBPROGRAM_ID) b
+        WHERE  a.owner=:owner 
+        AND    a.object_name=:object_name
+        AND    a.SUBPROGRAM_ID=b.SUBPROGRAM_ID(+)
+        AND    a.SUBPROGRAM_ID > 0
     ) ORDER  BY NO#]],
 
     INDEX={[[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
@@ -445,14 +440,14 @@ local desc_sql={
                     r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
              SELECT LOCALITY,
                     PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                            FROM   r1
-                                            START  WITH column_position = 1
-                                            CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
+                                          FROM   r1
+                                          START  WITH column_position = 1
+                                          CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
                     PARTITION_COUNT PARTS,
                     SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
-                                                FROM   R2
-                                                START  WITH column_position = 1
-                                                CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
+                                             FROM   R2
+                                             START  WITH column_position = 1
+                                             CONNECT BY PRIOR column_position = column_position - 1) SUBPART_BY,
                     def_subpartition_count subs,
                     DEF_TABLESPACE_NAME,
                     DEF_PCT_FREE,
