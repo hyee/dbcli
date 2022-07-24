@@ -422,11 +422,11 @@ local desc_sql={
                        END)) returns,
                        COUNT(CASE WHEN position>0 THEN 1 END) ARGUMENTS
                 FROM   all_Arguments b
-                WHERE  owner=:owner 
-                AND    package_name=:object_name
+                WHERE  owner='&owner'
+                AND    package_name='&object_name'
                 GROUP  BY SUBPROGRAM_ID) b
-        WHERE  a.owner=:owner 
-        AND    a.object_name=:object_name
+        WHERE  a.owner='&owner'
+        AND    a.object_name='&object_name'
         AND    a.SUBPROGRAM_ID=b.SUBPROGRAM_ID(+)
         AND    a.SUBPROGRAM_ID > 0
     ) ORDER  BY NO#]],

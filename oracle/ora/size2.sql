@@ -24,7 +24,7 @@
         @ARGS: 1
         &OPT2: default={}, d={1}
         @check_access_dba: dba_objects={dba_} default={_all}
-        @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
+        @check_access_segs: sys.sys_dba_segs={(select * from sys.sys_dba_segs where object_type_id>0)} dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
         &check_access_exa1: {
           default={(select ' ' owner,' ' object_name,' ' subobject_name,' ' object_type,
                             0 object_id,
@@ -151,6 +151,7 @@ FROM   (SELECT /*+ordered use_hash(segs objs) use_hash(exa) no_merge(objs) NO_EX
                &check_access_exa1 exa
         WHERE  objs.segment_owner = segs.owner(+)
         AND    objs.segment_name = segs.segment_name(+)
+        AND    segs.segment_subtype(+) IS NOT NULL
         AND    objs.segment_owner = exa.owner(+)
         AND    objs.segment_name = exa.object_name(+)
         AND    nvl(objs.partition_name, ' ') = nvl2(exa.owner,nvl(exa.subobject_name, ' '),nvl(objs.partition_name, ' '))

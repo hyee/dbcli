@@ -850,24 +850,29 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if type(sql)~="string" then
             return sql
         end
-        local cmd_type=self.get_command_type(sql)
-        if DDL[cmd_type] then
-            env.log_debug("db","SQL:",sql)
+        
+        prep,sql,params=self:parse(sql,params)
+        local param_count = 0
+        for k,v in pairs(params) do
+            param_count=1
+        end
+
+        if param_count==0 then
+            prep:close()
             prep=self.conn:createStatement()
             tmp_sql=sql
         else
-            prep,sql,params=self:parse(sql,params)
             prep:setEscapeProcessing(false)
-            local str = tostring(prep)
-            caches=__stmts[prep] or {}
-            caches.verticals=verticals
-            caches.count,__stmts[prep]=0,caches
-            prep:setFetchSize(cfg.get("FETCHSIZE"))
-            prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-            self.current_stmt=prep
-            env.log_debug("db","SQL:",sql)
-            self.log_param(params)
         end
+        local str = tostring(prep)
+        caches=__stmts[prep] or {}
+        caches.verticals=verticals
+        caches.count,__stmts[prep]=0,caches
+        prep:setFetchSize(cfg.get("FETCHSIZE"))
+        prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
+        self.current_stmt=prep
+        env.log_debug("db","SQL:",sql)
+        self.log_param(params)
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}

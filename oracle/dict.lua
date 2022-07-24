@@ -204,15 +204,15 @@ function dicts.set_cdbmode(name,value)
             if tonumber(prev_container.dbid) == nil then
                 cfg.force_set('dbid',db.props.container_dbid)
             end
-            pcall(db.internal_call,db,'alter session set container_data=current');
+            --pcall(db.internal_call,db,'alter session set container_data=current');
             --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then
         if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
             cfg.force_set('dbid','default')
-            if db:is_connect() then
-                pcall(db.internal_call,db,'alter session set container_data=all');
-            end;
+            --if db:is_connect() then
+            --    pcall(db.internal_call,db,'alter session set container_data=all');
+            --end;
             --cfg.force_set('container','default')
         end
     end

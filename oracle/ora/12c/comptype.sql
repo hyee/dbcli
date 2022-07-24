@@ -29,6 +29,7 @@
         @check_access_obj: dba_objects/dba_tables={dba_} default={all_}
         @check_access_seg: dba_segments={1} default={0}
         &filter: default={@ROWS@} f={where (&0) @ROWS@}
+        &full  : default={full(a)} f={none}
         &dx    : default={--} dx={}
         &v2    : default={2e6} all={A}
         &px    : default={parallel(4)} dx={no_parallel}
@@ -131,7 +132,7 @@ BEGIN
                 from   OBJS b
                 WHERE  b.data_object_id = a.dobj) obj
         FROM   (SELECT get_dobj(sub) dobj, rid,cnt
-                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN full(a) &px*/
+                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN rowid(a) &full &px*/
                                SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
                                count(1) cnt
