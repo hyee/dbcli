@@ -129,17 +129,19 @@ Options:
                          access_predicates ap,filter_predicates fp,search_columns sc,
                          &dop over(partition by PLAN_ID) dop,
                          &g_mbrc mbrc
-                  FROM   sys.sql$text st,sys.sqlobj$plan a
-                  WHERE  st.sql_handle = '&v1'
+                  FROM   sys.sql$text st,sys.sqlobj$plan a,(select plan_id p,signature,name from sys.sqlobj$) o
+                  WHERE  '&v1' in(st.sql_handle,o.name)
                   AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.signature = st.signature
-                  AND    a.plan_id = coalesce('&V2'+0,(
+                  AND    a.signature = o.signature
+                  AND    a.plan_id   = o.p
+                  AND    ('&v1' = o.name or a.plan_id = coalesce('&V2'+0,(
                         select max(plan_id) keep(dense_rank last order by timestamp) 
                         from   sys.sqlobj$plan b 
                         where  b.signature=a.signature
                         AND    &SRC = 0
-                        AND   '&v1' not in('X','&_sql_id')))
+                        AND   '&v1' not in('X','&_sql_id'))))
            }
            default={}
     }

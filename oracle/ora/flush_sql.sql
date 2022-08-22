@@ -3,6 +3,7 @@
         @version: 12.1={1} 11.1={0} 10.2.0.4={} 
         @ARGS: 1
         @CHECK_ACCESS_DIAG: SYS.DBMS_SQLDIAG_INTERNAL={1} DEFAULT={&version}
+        @CHECK_ACCESS_SP  : sys.dbms_shared_pool={1} DEFAULT={0}
     ]]--
 ]]*/
 SET FEED OFF
@@ -26,6 +27,7 @@ BEGIN
             return;
     END;
 
+    $IF &CHECK_ACCESS_SP=1 $THEN
     IF version + 0 = 10 THEN
         EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context forever']'; -- bug fix for 10.2.0.4 backport
     END IF;
@@ -36,7 +38,8 @@ BEGIN
         EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context off']';
         RETURN;
     END IF;
-
+    $END
+    
     dbms_output.put_line('Purging SQL: '||sq_id);
 
     SELECT COUNT(1) INTO   cnt
