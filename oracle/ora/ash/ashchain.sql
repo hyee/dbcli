@@ -314,7 +314,7 @@ BEGIN
             calc AS (
                SELECT /*+materialize*/ * 
                FROM (SELECT a.*,
-                            100*aas/sum(aas*decode(lvl,0,1,0)) over() pct,
+                            100*aas/nullif(sum(aas*decode(lvl,0,1,0)) over(),0) pct,
                             dense_rank() over(order by rnk desc) rnk_ 
                  FROM (
                   SELECT /*+leading(b a)*/

@@ -702,7 +702,8 @@ local desc_sql={
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
                                  FROM   r1
                                  START  WITH column_position = 1
-                                 CONNECT BY PRIOR column_position = column_position - 1) PARTITIONED_BY,
+                                 CONNECT BY PRIOR column_position = column_position - 1)
+                              PARTITIONED_BY,
             PARTITION_COUNT PARTS,
             SUBPARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
                                      FROM   R2

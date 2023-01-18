@@ -32,6 +32,10 @@ function xplan.explain(fmt,sql)
         fmt = 'adaptive '..fmt
     end
 
+    if db.props.version>=19 then
+        fmt = fmt..' hint_report'
+    end
+
     sql=env.COMMAND_SEPS.match(sql)
     local sql1= sql:gsub("\r?\n","")
     

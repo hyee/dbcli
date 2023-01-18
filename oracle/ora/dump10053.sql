@@ -150,7 +150,10 @@ BEGIN
         IF phv IS NULL THEN
             raise_application_error(-20001, 'Please specify a valid SQL ID that exists in v$sql_plan_statistics_all.');
         ELSE
-            EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             sys.dbms_sqldiag.dump_trace(sq_id, child_num, nam);
         END IF;
         :file := 'default';

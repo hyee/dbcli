@@ -189,7 +189,7 @@ BEGIN
                     delta_time['redo write finish time']=avg_time['redo write finish time']-nvl(avg_time['redo write issue time'],avg_time['redo write schedule time']),
                     delta_time['redo write time (usec)']=avg_time['redo write time (usec)']-avg_time['redo write finish time'],
                     delta_time['redo write total time']=round(avg_time['redo write total time']-avg_time['expect_redo_synch_time']/2,2),
-                    delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-NVL(micro['redo synch time overhead (usec)'],0)-avg_time['expect_redo_synch_time']/2*LEAST(micro['redo synch writes'],micro['redo writes']))/micro['redo synch writes'],2),
+                    delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-avg_time['expect_redo_synch_time']/2*LEAST(micro['redo synch writes'],micro['redo writes']))/micro['redo synch writes'],2),
                     micro['redo total time']=SUM(delta_time*cnt)[ANY],
                     delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
                     delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN','Redo log write request latency','Redo log write I/O latency')]=round(micro[CV()]/micro['redo total time'],5),

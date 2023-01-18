@@ -324,9 +324,16 @@ ORDER  BY MEM + TEMP DESC NULLS LAST]]}
 PRO 
 SELECT PLAN_HASH_VALUE PHV,
        NULLIF(program_id || NULLIF('#' || program_line#, '#0'),'0') program#,
-       &ver trim(chr(10) from ''||&ver12 decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))||
-       &ver decode(IS_BIND_SENSITIVE, 'Y', 'IS_BIND_SENSITIVE'||chr(10)) || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10)))
-       &ver ACS,
+       &ver trim(chr(10) from ''
+       &ver12      || decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))
+       &ver12      ||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))
+       &ver        || decode(IS_BIND_SENSITIVE, 'Y', 'BIND_SENSITIVE'||chr(10)) 
+       &ver        || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) 
+       &ver        || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10))
+       &ver        || decode(IS_OBSOLETE, 'Y', 'OBSOLETE'||chr(10))
+       &ver12      || decode(IS_ROLLING_INVALID, 'Y', 'ROLLING_INVALID'||chr(10))
+       &ver12      || decode(IS_ROLLING_REFRESH_INVALID, 'Y', 'ROLLING_REFRESH_INVALID'||chr(10))
+       &ver ) ACS,
        TRIM('/' FROM SQL_PROFILE 
        &ver || '/' || SQL_PLAN_BASELINE
        ) OUTLINE,
@@ -358,10 +365,8 @@ FROM   (SELECT greatest(EXECUTIONS + users_executing, 1) exec,a.*
         AND    inst_id=nvl(regexp_substr(:V2,'^\d+$')+0,inst_id))
 GROUP  BY SQL_ID,
           PLAN_HASH_VALUE,
-          &ver12 is_reoptimizable,is_resolved_adaptive_plan,
-          &ver IS_BIND_SENSITIVE,
-          &ver IS_BIND_AWARE,
-          &ver IS_SHAREABLE,
+          &ver12 is_reoptimizable,is_resolved_adaptive_plan,IS_ROLLING_INVALID,IS_ROLLING_REFRESH_INVALID,
+          &ver IS_BIND_SENSITIVE,IS_OBSOLETE,IS_BIND_AWARE,IS_SHAREABLE,
           program_id,
           program_line#,
           SQL_PROFILE,

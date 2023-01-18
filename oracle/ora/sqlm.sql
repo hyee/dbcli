@@ -367,7 +367,7 @@ BEGIN
                     into  sq_id,sql_exec,sql_start
                     from  gv$sql_monitor
                     where sql_id=sq_id
-                    AND   sql_exec_id=sql_exec
+                    AND   sql_exec in(sql_exec_id,sql_plan_hash_value)
                     AND   PX_SERVER# IS NULL
                     AND   sql_text IS NOT NULL
                     AND   inst_id=nvl(inst,inst_id);
@@ -384,8 +384,7 @@ BEGIN
                             where (did IS NULL OR did in(dbid,con_dbid))
                             AND   key1=nvl(sq_id,sq_id1)
                             AND   key2>0
-                            AND   (sql_exec  IS NULL OR KEY2=sql_exec)
-                            AND   (plan_hash IS NULL OR key2=plan_hash OR report_id=plan_hash or instr(report_summary,'plan_hash>'||plan_hash||'<')>0)
+                            AND   (sql_exec IS NULL OR key2=sql_exec OR report_id=sql_exec or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
                             AND   component_name='sqlmonitor'
                             AND   dbid=nvl(did,dbid)
                             AND   instance_number=nvl(inst,instance_number));
@@ -585,7 +584,7 @@ BEGIN
                                    sql_text,
                                    status,
                                    last_refresh_time,
-                                   dur ela,
+                                   GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME) ela,
                                    ELAPSED_TIME,
                                    cpu_time,
                                    QUEUING_TIME,

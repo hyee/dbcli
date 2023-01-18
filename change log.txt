@@ -1,3 +1,4 @@
+2023-01-13: + oracle: new scripts "ora markhot"
 2022-06-17: + oracle: new scripts "ora awrseg"
 2022-06-14: + oracle: new scripts "ora idn"
 2022-06-12: + oracle: new scripts "show slowsegs"

@@ -21,6 +21,8 @@ SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(p) no_merge(undo)*/
        XIDUSN || '.' || XIDSLOT || '.' || XIDSQN trans#,
        t.START_SCNB scn#,
        r.name rollback_seg_name,
+       decode(bitand(t.flag, 4096),0,'Private','Shared') strand,
+       decode(bitand(t.flag, 2),0,'N','Y') IMU,
        TRIM(',' FROM DECODE(t.space,'YES','SPACE,')||DECODE(t.recursive, 'YES', 'RECURSIVE,')
        ||DECODE(t.noundo, 'YES', 'NO UNDO,')||DECODE(t.PTX, 'YES', 'PARALLEL,'))||t.STATUS status,
        t.used_urec "Undo|Records",
@@ -35,7 +37,7 @@ SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(p) no_merge(undo)*/
        END AS "Is|Rollback",
        CASE
            WHEN bitand(t.flag, power(2, 7)) > 0 THEN
-                ROUND((SYSDATE - t.start_date) * 86400 * (t.used_ublk * nvl(p.blocksize,8192)) 
+                ROUND((SYSDATE - t.start_date) * 86400 * (t.used_ublk * nvl(p.blocksize,8192)) --or x$ktuxe.ktuxesiz
                     / nullIF(nvl(undo_bytes,rssize) - t.used_ublk * nvl(p.blocksize,8192), 0))
            ELSE 0
        END "Est|Complete",

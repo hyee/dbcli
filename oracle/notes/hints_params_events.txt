@@ -194,7 +194,9 @@ Parameters
     _gc_persistent_readmostly:  sys.sys_dba_segs => bitand(segment_flags,power(2,28))>0 , or sys.seg$=> bitand(spare1,power(2,28))>0
     _parallel_server_resiliency: 1 or gv to fix ORA-12801/12850 issue when query gv$ views
     _sql_compatibility: 1 to support "group by 1,2,..."
-    
+    _ges_optimizations: 1-KJIGESOPTS_NO_ESM / 2-KJIGESOPTS_FREE_SLOCK / 4-KJIGESOPTS_CLIENT_FREE_SLOCK
+    _kkpogpi_nocpy: enable nocopy(remove shared lock) behaviours on source objects for specific long-running statements:
+        1:  create table  2: alter table  4: truncate table/create view  8: alter index rebuild  16: create index  32: explain plan 
     
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
@@ -263,6 +265,7 @@ Fix Controls:
     16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE
     31626438:  use smart scan on partition table when partition size > 100MB
     27268249:  0 to disable approximate ndv on gathering (index) stats and possible to reduce IO (bug 33427856)
+    30822446:  enable window pushed rank optimization with partition by keys
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
