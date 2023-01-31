@@ -242,7 +242,7 @@ Sample Ouput:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH gash as(
-    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)*/
+    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000) */
             a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
@@ -282,7 +282,6 @@ ash_raw as (
                       opt_param('cursor_sharing' 'force')
                       opt_param('_optim_peek_user_binds' 'false') 
                       opt_param('_optimizer_connect_by_combine_sw', 'false')
-                      opt_param('optimizer_dynamic_sampling' 11)
                     */ 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    row_number() OVER(PARTITION BY dbid,stime,inst_id,sid ORDER BY AAS_,lv desc) seq,
@@ -311,7 +310,7 @@ ash_raw as (
     WHERE  seq = 1),
 sql_list as(select /*+MATERIALIZE*/ distinct sql_id,phv1 plan_hash_value,dbid,count(1) over(PARTITION BY dbid,phv1,sql_id) cnt from ash_raw where SQL_ID IS NOT NULL AND (phv1>0 OR SQL_OPNAME='INSERT')),
 ALL_PLANS AS(
-    SELECT  /*+MATERIALIZE opt_estimate(query_block rows=100000) no_parallel*/
+    SELECT  /*+MATERIALIZE OPT_PARAM('_fix_control' '26552730:0') opt_estimate(query_block rows=100000) no_parallel*/
             h.dbid,
             EXTRACTVALUE(COLUMN_VALUE,'//ID')+0 id,
             EXTRACTVALUE(COLUMN_VALUE,'//PARENT_ID')+0 PARENT_ID,
@@ -339,7 +338,7 @@ ALL_PLANS AS(
     FROM    (select a.*,row_number() over(partition by plan_hash_value,dbid order by cnt desc) plan_seq
              from   sql_list a) h,
             TABLE(XMLSEQUENCE(EXTRACT(DBMS_XMLGEN.GETXMLTYPE(q'!
-                SELECT * 
+                SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ * 
                 FROM (SELECT A.*,DENSE_RANK() OVER(ORDER BY FLAG,inst_id) SEQ
                 FROM (
                     SELECT id,

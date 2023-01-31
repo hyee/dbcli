@@ -27,7 +27,7 @@
     --[[
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &BASE : s={sql_id}, m={signature} p={plan_hash_value}
-        &grp  : s={sql_id,phvs,top_phv top_plan,} m={signature,top_sql,phvs,top_phv top_plan,} p={top_phv plan_hash,phvs sqls,top_sql,}
+        &grp  : s={sql_id,phvs,top_phv top_plan,} m={signature,sqls,top_sql,phvs,top_phv top_plan,} p={top_phv plan_hash,phvs sqls,top_sql,}
         &v2   : df={ela} default={}
     --]]
 ]]*/
@@ -57,6 +57,7 @@ FROM (SELECT rownum r,
                    max(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time_total),
                    max(plan_hash_value) KEEP(dense_rank LAST ORDER BY elapsed_time_total)  top_phv,
                    max(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time_total) top_sql,
+                   count(distinct sql_id) sqls,
                    max(dbid) dbid,
                    typ,
                    count(distinct decode('&base','plan_hash_value',sql_id,s.plan_hash_value)) phvs,

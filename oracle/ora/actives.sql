@@ -131,8 +131,9 @@ BEGIN
                 SELECT CASE WHEN s.seconds_in_wait > 1.3E9 THEN 0 ELSE round(seconds_in_wait-wait_time/100) END wait_secs,
                        CASE WHEN s.SID||'@'||inst_id = s.qcsid THEN 1 ELSE 0 END ROOT_SID,
                        s.*
-                FROM  (SELECT  /*+ordered no_merge(s) use_hash(s p px) 
-                                  table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000)
+                FROM  (SELECT  /*+ordered no_merge(s) use_hash(s p px) push_pred(sq)
+                                  table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000)
+                                  
                                 */
                                  nvl2(px.qcsid,px.qcsid||'@'||nvl(px.qcinst_id,inst_id),'') qcsid,
                                  p.spid|| regexp_substr(s.program, '\(\S+\)') spid,
@@ -201,7 +202,7 @@ BEGIN
         report_start;
         OPEN :actives FOR
             WITH s1 AS(
-              SELECT /*+materialize*/*
+              SELECT /*+materialize table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000)*/*
               FROM   &CHECK_ACCESS_SES 
               WHERE (&fil1)
               AND    sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')
@@ -216,7 +217,7 @@ BEGIN
                     nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
               FROM (select /*+no_merge*/ distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                        SELECT /*+opt_param('_optim_peek_user_binds','false') opt_param('cursor_sharing','force')*/
+                        SELECT /*+opt_param('_optim_peek_user_binds','false') opt_param('cursor_sharing','force') index(a)*/ 
                               (select c.owner  ||'.' || c.object_name 
                                from &CHECK_ACCESS_OBJ c 
                                where program_id>0
@@ -227,7 +228,7 @@ BEGIN
                                substr(trim(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' ')),1,200) A3,
                                plan_hash_value A4,
                                round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
-                        FROM  &CHECK_ACCESS_SQL
+                        FROM  &CHECK_ACCESS_SQL a
                         WHERE ROWNUM<2 &text
                         AND   sql_id=']'||a.sql_id||''' AND inst_id='||a.inst_id||' and child_number='||a.child)
                     ,'/ROWSET/ROW')))&ouj B),

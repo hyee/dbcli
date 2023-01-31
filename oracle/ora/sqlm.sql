@@ -31,7 +31,7 @@
             @ver: 12.2={} 11.2={--}
             &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))} l={1}
             &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
-            &option1: {default={&uniq execs,round(sum(ela)/&uniq,2) avg_ela,
+            &option1: {default={&uniq execs,GREATEST(max(last_refresh_time - sql_exec_start) keep(dense_rank last order by last_refresh_time) *86400*1e6, 1E6) "LAST",
                                 to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
                                 to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,} 
                       l={}}
@@ -62,7 +62,7 @@ var rs CLOB;
 var filename varchar2;
 var plan_hash number;
 col parse,queue,cpu,app,cc,cl,plsql,java,pljava,io,oth for pct2
-col dur,avg_ela,ela,time format usmhd1
+col dur,last,ela,time format usmhd1
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl,bytes,OFLOUT format kmg1
 col est_cost,est_rows,act_rows,ioreq,outputs,FETCHES,dxwrite,calc_tmb format TMB1
 col execs for tmb0
@@ -253,11 +253,11 @@ BEGIN
             open c2 for 
                 SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
                 FROM   (SELECT MAX(DECODE(MOD(rnk, 3), 1, NAME)) stat_name#1,
-                                 MAX(DECODE(MOD(rnk, 3), 1, VALUE)) stat_value#1,
-                                 MAX(DECODE(MOD(rnk, 3), 2, NAME)) stat_name#2,
-                                 MAX(DECODE(MOD(rnk, 3), 2, VALUE)) stat_value#2,
-                                 MAX(DECODE(MOD(rnk, 3), 0, NAME)) stat_name#3,
-                                 MAX(DECODE(MOD(rnk, 3), 0, VALUE)) stat_value#3
+                               MAX(DECODE(MOD(rnk, 3), 1, VALUE)) stat_value#1,
+                               MAX(DECODE(MOD(rnk, 3), 2, NAME)) stat_name#2,
+                               MAX(DECODE(MOD(rnk, 3), 2, VALUE)) stat_value#2,
+                               MAX(DECODE(MOD(rnk, 3), 0, NAME)) stat_name#3,
+                               MAX(DECODE(MOD(rnk, 3), 0, VALUE)) stat_value#3
                         FROM   (SELECT  /*+ordered use_hash(b)*/
                                 substr(NAME, 1, 35) NAME, SUM(VALUE) VALUE, row_number() OVER(ORDER BY SUM(VALUE) DESC) rnk
                                 FROM   gv$sql_monitor
@@ -539,8 +539,8 @@ BEGIN
                              a.sql_id &OPTION,
                              &option1 
                              MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
-                             MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
-                             greatest(1,round(sum(last_refresh_time - sql_exec_start)/&avg * 86400*1e6, 2)) dur,
+                             MAX(NVL(REGEXP_SUBSTR(status,'\(.*\)'),STATUS)) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
+                             greatest(1E6,round(sum(last_refresh_time - sql_exec_start)/&avg*86400*1e6, 2)) dur,
                              round(sum(ela)/&avg , 2) ela,
                              nullif(round(sum(QUEUING_TIME)/sum(ela) , 4),0) QUEUE,
                              nullif(round(sum(CPU_TIME)/sum(ela) , 4),0) CPU,
@@ -715,7 +715,7 @@ BEGIN
                         regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
                 FROM   (SELECT a.*,sql_plan_hash_value phv,
                                  GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME) ELA,
-                                 max(nvl(greatest((last_refresh_time-sql_exec_start)*86400,1),greatest(ELAPSED_TIME,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))))  over(partition by sql_exec_id,sql_exec_start) dur,
+                                 greatest((last_refresh_time-sql_exec_start)*86400*1E6,1E6) dur,
                                  count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 
                         FROM gv$sql_monitor a WHERE sql_id = sq_id) b
                 GROUP  BY phv

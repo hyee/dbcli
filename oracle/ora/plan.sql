@@ -276,7 +276,7 @@ END;
 
 print c
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
- (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) */ *
+ (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ *
   FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT /*+no_expand*/ id,

@@ -25,9 +25,22 @@
 
     --[[
         @ver   : 12.1={}
+        &null_extent: default={SELECT to_char(null) pname,0+null f,0+null xid,0+null bid,0+null eid from dual WHERE 1=2}
         @check_access_comp: sys.dbms_compression={}
         @check_access_obj: dba_objects/dba_tables={dba_} default={all_}
         @check_access_seg: dba_segments={1} default={0}
+        @check_access_extents: {
+            dba_extents={SELECT /*+materialize table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=1024)*/ 
+                  nvl(partition_name,' ') pname,
+                  RELATIVE_FNO f,
+                  extent_id xid,
+                  block_id bid, block_id+blocks-1 eid
+            FROM DBA_EXTENTS 
+            WHERE owner = '&object_owner' 
+            AND   segment_name = '&object_name'}
+            default={&null_extent}
+        }
+        &extent: default={&check_access_extents} f={&null_extent} sample={&null_extent}
         &filter: default={@ROWS@} f={where (&0) @ROWS@}
         &full  : default={full(a)} f={none}
         &dx    : default={--} dx={}
@@ -63,6 +76,7 @@ DECLARE
     v_pext PLS_INTEGER := -1;
     v_cnt  INT := 0;
     v_cnt2 INT := 0;
+    v_cnt3 INT := 0;
     v_ctyp INT := 0;
     v_xml  CLOB := '<ROWSET>';
     v_dx   VARCHAR2(128);
@@ -70,7 +84,7 @@ DECLARE
     v_dobj INT;
     v_part VARCHAR2(512);
     v_len  INT;
-    v_blocks INT;
+    v_blks INT;
     v_bsize  INT;
     v_sample VARCHAR2(512);
     v_comps  ttypes;
@@ -79,10 +93,11 @@ DECLARE
 
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
-        v_oid := regexp_substr(c, '[^,]+', 1, 1);
-        v_did := regexp_substr(c, '[^,]+', 1, 2);
-        v_rows:= regexp_substr(c, '[^,]+', 1, 3);
-        v_sub := regexp_substr(c, '[^,]+', 1, 4);
+        v_oid := trim(substr(c, 1, 10));
+        v_did := trim(substr(c,11, 10));
+        v_rows:= trim(substr(c,21, 10));
+        v_blks:= trim(substr(c,31, 10));
+        v_sub := substr(c,41);
     END;
 
     PROCEDURE flush_xml IS
@@ -91,11 +106,12 @@ DECLARE
         IF v_cnt < 1 THEN
             RETURN;
         END IF;
-        v_row := utl_lms.format_message(chr(10) || '<ROW><COMTYP>%s</COMTYP><OID>%s</OID><DID>%s</DID><PART>%s</PART><CNT>%s</CNT><R>%s</R></ROW>',
+        v_row := utl_lms.format_message(chr(10) || '<ROW><COMTYP>%s</COMTYP><OID>%s</OID><DID>%s</DID><PART>%s</PART><BLK>%s</BLK><CNT>%s</CNT><R>%s</R></ROW>',
                                         ''||v_ptyp,
                                         ''||v_oid,
                                         ''||v_did,
                                         ''||v_sub,
+                                        ''||v_cnt3,
                                         ''||v_cnt,
                                         ''||v_cnt2);
         dbms_lob.writeappend(v_xml, length(v_row), v_row);
@@ -129,20 +145,41 @@ BEGIN
             END IF;
             RETURN v_id;
         END;
-        OBJS AS(SELECT /*+materialize*/ * FROM &check_access_obj.objects WHERE data_object_id is not null and owner = '&object_owner' AND object_name = '&object_name')
-        SELECT /*+leading(b a) use_hash(b a) use_hash(c) no_merge(a)*/ 
+        FUNCTION extr(rid VARCHAR2) RETURN VARCHAR2 IS
+            PRAGMA UDF;
+            rowid_type         NUMBER;
+            object_number      NUMBER;
+            relative_fno       NUMBER;
+            block_number       NUMBER;
+            row_number         NUMBER;
+        BEGIN
+            SYS.DBMS_ROWID.ROWID_INFO(RID,rowid_type,object_number,relative_fno,block_number,row_number);
+            RETURN RPAD(object_number,10)||RPAD(relative_fno,10)||RPAD(block_number,10)||SYS.DBMS_ROWID.ROWID_BLOCK_NUMBER(RID,'bigfile');
+        END;
+        OBJS AS(SELECT /*+materialize*/ object_id,data_object_id,nvl(subobject_name,' ') pname FROM &check_access_obj.objects a WHERE data_object_id is not null and owner = '&object_owner' AND object_name = '&object_name'),
+        EXTS AS(&extent)
+        SELECT /*+leading(b a) use_hash(b a) use_merge(e) no_merge(a)*/ 
                a.rid,
-               b.object_id||','||b.data_object_id||','||a.cnt||','||b.subobject_name obj
+               rpad(b.object_id,10)||rpad(b.data_object_id,10)||rpad(a.cnt,10)
+               ||rpad(nvl2(e.bid,nvl(lead(DECODE(e.f,1024,a.blk2,a.blk1)) over(partition by e.pname,e.bid,e.xid order by DECODE(e.f,1024,a.blk2,a.blk1)),e.eid+1)-DECODE(e.f,1024,a.blk2,a.blk1),0),10)
+               ||trim(b.pname) obj
         FROM   OBJS b
-        JOIN   (SELECT id(sub,6) dobj, rid,cnt
+        JOIN   (SELECT 0+trim(substr(extrs,1,10)) dobj, 
+                       0+trim(substr(extrs,11,10)) f,
+                       0+trim(substr(extrs,21,10)) blk1,
+                       0+trim(substr(extrs,31)) blk2,
+                       rid,cnt
                 FROM   (SELECT /*+use_hash_aggregation no_merge GBY_PUSHDOWN rowid(a) &full &px*/
                                SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
+                               extr(MIN(ROWID)) extrs,
                                count(1) cnt
                         FROM   &object_owner..&object_name @PART@ a &filter
                         GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a
         ON (b.data_object_id = a.dobj)
-        ORDER BY 1]';
+        LEFT JOIN EXTS e 
+        ON(b.pname=e.pname and e.f=DECODE(e.f,1024,1024,a.f) and DECODE(e.f,1024,a.blk2,a.blk1) between e.bid and e.eid)
+        ORDER BY a.dobj,nvl(e.f,a.f),DECODE(e.f,1024,a.blk2,a.blk1) ]';
     IF :object_subname IS NOT NULL THEN
         v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
     END IF;
@@ -154,7 +191,7 @@ BEGIN
     ELSIF trim(v_tops) !='A' THEN
         IF &sp=1 THEN
             SELECT MAX(avg_row_len)*1.2,NULLIF(max(blocks),0)
-            INTO   v_len,v_blocks
+            INTO   v_len,v_blks
             FROM   (SELECT avg_row_len,num_rows,blocks
                     FROM   &check_access_obj.tables
                     WHERE  v_typ IN ('TABLE','MATERIALIZED')
@@ -177,7 +214,7 @@ BEGIN
 
             $IF &check_access_seg=1 $THEN
                 SELECT SUM(blocks),sum(bytes)/sum(blocks)
-                INTO   v_blocks,v_bsize
+                INTO   v_blks,v_bsize
                 FROM   dba_segments b
                 WHERE  owner = v_own
                 AND    segment_name = v_nam
@@ -187,7 +224,7 @@ BEGIN
             $END
         END IF;
         
-        v_sample := round(v_tops/(v_bsize/nvl(v_len,256))*100/v_blocks,4);
+        v_sample := round(v_tops/(v_bsize/nvl(v_len,256))*100/v_blks,4);
         IF v_sample+0 >=80 THEN 
             v_sample := NULL;
         ELSIF v_sample IS NULL THEN
@@ -208,6 +245,7 @@ BEGIN
     BEGIN
         v_cnt  := 0;
         v_cnt2 := 0;
+        v_cnt3 := 0;
         OPEN v_cur FOR v_stmt;
         LOOP
             FETCH v_cur BULK COLLECT
@@ -224,6 +262,7 @@ BEGIN
                     v_ptyp := v_ctyp;
                     v_cnt  := 0;
                     v_cnt2 := 0;
+                    v_cnt3 := 0;
 
                     IF v_ctyp>1 AND NOT v_comps.exists(v_ctyp) AND v_snam IS NULL THEN
                         v_comps(v_ctyp) := 'Y';
@@ -235,8 +274,13 @@ BEGIN
                         END;
                     END IF;
                 END IF;
+
+                IF v_blks=0 AND v_ctyp NOT IN(4,8,16,32) THEN
+                    v_blks := 1;
+                END IF;
                 v_cnt  := v_cnt + 1;
                 v_cnt2 := v_cnt2 + v_rows;
+                v_cnt3 := v_cnt3 + v_blks;
             END LOOP;
         END LOOP;
         flush_xml;
@@ -274,20 +318,22 @@ BEGIN
                        65536,'INMEMORY_QUERY_HIGH',
                        131072,'INMEMORY_CAPACITY_LOW',
                        262144,'INMEMORY_CAPACITY_HIGH') COMPESSION_TYPE,
-              SUM(BLOCKS) HEADER_BLOCKS,
+              SUM(HEADER_BLOCKS) HEADER_BLOCKS,
+              NULLIF(SUM(BLOCKS),0) BLOCKS,
               SUM(NUM_ROWS) "ROWS",
-              ROUND(SUM(NUM_ROWS)/SUM(BLOCKS),2) "Rows/Block"
+              ROUND(SUM(NUM_ROWS)/NULLIF(SUM(BLOCKS),0),2) "Rows/Block"
         FROM  XMLTABLE('/ROWSET/ROW' passing(xmltype(v_xml)) COLUMNS
                             COMTYP INT PATH 'COMTYP',
                             OBJECT_ID INT PATH 'OID',
                             DATA_OBJECT_ID INT PATH 'DID',
                             PARTITION_NAME VARCHAR2(128) PATH 'PART',
-                            BLOCKS INT PATH 'CNT',
+                            HEADER_BLOCKS INT PATH 'CNT',
+                            BLOCKS INT PATH 'BLK',
                             NUM_ROWS INT PATH 'R') a
         GROUP BY COMTYP,ROLLUP((OBJECT_ID,DATA_OBJECT_ID,PARTITION_NAME))
         ORDER BY a.object_id nulls last,2,3,4,5;
 END;
 /
-col blocks,rows for K0
+col header_blocks,blocks,rows for K0
 col object_id,data_object_id,partition_name break
 print cur
