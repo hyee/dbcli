@@ -1,16 +1,17 @@
 /*[[
-   Sample V$SESSION_WAIT at high frequency and show resulting session wait event and parameter profile by session.  Usage: @@NAME {<sid> [<seconds>] [<inst_id>]} [-p|-sql|-block]
+   Sample V$SESSION_WAIT at high frequency and show resulting session wait event and parameter profile by session.  Usage: @@NAME {<sid> [<seconds>] [<inst_id>]} [-p|-sql|-block|-obj]
    Refer to Tanel Poder's same script
     --[[
         &V1    : default={1}
         &v2    : default={10}
         &v3    : default={&instance}
-        &fields: p={sw_p1,sw_p2,sw_p3,sql_id,wait_obj#}, sql={sw_p1,sw_p2,sw_p3,sql_id}, block={sql_id,wait_obj#,block#}
+        &fields: p={sw_p1,sw_p2,sw_p3,sql_id,wait_obj#}, sql={sw_p1,sw_p2,sw_p3,sql_id}, block={sql_id,wait_obj#,block#}, obj={sql_id,wait_obj#}
         @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
     --]]
 ]]*/
 
 col all_samples noprint
+col "% Total|Time" for pct2
 PRO Sampling, it could take around &V2 seconds ...
 WITH
    t1 AS (SELECT hsecs FROM v$timer),
@@ -39,7 +40,7 @@ WITH
    t2 AS (SELECT hsecs FROM v$timer)
 SELECT /*+ordered monitor*/ 
        s.*,
-       round(s.samples /all_samples* 100,4)  "% Total|Time",
+       round(s.samples /all_samples,4)  "% Total|Time",
        round((t2.hsecs - t1.hsecs) * 10 * s.samples /all_samples,4) "Total Event|Time (ms)",
        round((t2.hsecs - t1.hsecs) * 10 * s.samples / waits / all_samples,4) "Avg time|ms/Event"
 FROM   t1,samples s,t2;

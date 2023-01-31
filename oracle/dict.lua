@@ -33,7 +33,7 @@ local function rep_instance(prefix,full,obj,suffix)
             end
         else
             new_obj=obj:gsub(cdbmode=='cdb' and '^[DA][BL][AL]_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_') 
-            if new_obj~=obj and dicts.dict[new_obj] then
+            if new_obj~=obj and dicts.dict[new_obj] and (db.props.version or 10)>=(dicts.dict[new_obj].ver or 10) then
                 if not full:find(obj) then new_obj=new_obj:lower() end
                 full=full:gsub(obj:escape('*i'),new_obj)
                 obj=new_obj
@@ -497,7 +497,8 @@ function dicts.set_dict(typ,scope)
                 dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
                 usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
                 owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
-                comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view)
+                comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view),
+                ver=not exists and db.props.version or math.min(dict[rows[i][1]].ver,db.props.version) or nil
             }
             local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
             if prefix=='GV_$' or prefix=='V_$' then

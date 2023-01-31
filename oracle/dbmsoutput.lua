@@ -143,7 +143,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
 
         IF l_trace NOT IN('off','statistics','sql_id') THEN
             IF dbms_db_version.version>11 THEN
-                l_fmt := l_fmt||' +METRICS +REPORT +ADAPTIVE';
+                l_fmt := l_fmt||' +METRICS +REPORT -ADAPTIVE';
             ELSIF dbms_db_version.version>10 THEN
                 l_fmt := l_fmt||' +METRICS';
             END IF;

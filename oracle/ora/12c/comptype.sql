@@ -44,7 +44,7 @@ var cur REFCURSOR "&OBJECT_TYPE: &OBJECT_OWNER..&OBJECT_NAME"
 DECLARE
     TYPE t_rid IS TABLE OF ROWID;
     TYPE t_rec IS TABLE OF VARCHAR2(500);
-    type ttypes IS TABLE OF VARCHAR2(1) INDEX BY PLS_INTEGER;
+    TYPE ttypes IS TABLE OF VARCHAR2(1) INDEX BY PLS_INTEGER;
     v_rids t_rid;
     v_recs t_rec;
     v_stmt VARCHAR2(4000);
@@ -60,6 +60,7 @@ DECLARE
     v_rows INT := 0;
     v_pid  INT := 0;
     v_ptyp INT := 0;
+    v_pext PLS_INTEGER := -1;
     v_cnt  INT := 0;
     v_cnt2 INT := 0;
     v_ctyp INT := 0;
@@ -73,6 +74,8 @@ DECLARE
     v_bsize  INT;
     v_sample VARCHAR2(512);
     v_comps  ttypes;
+    v_fmt    VARCHAR2(80):=q'[sys.dbms_compression.get_compression_type('%s', '%s', '%s', '%s')]';
+    
 
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
@@ -97,19 +100,20 @@ DECLARE
                                         ''||v_cnt2);
         dbms_lob.writeappend(v_xml, length(v_row), v_row);
     END;
+
 BEGIN
     IF regexp_substr(v_typ,'\S+') NOT IN('TABLE','MATERIALIZED') THEN
         raise_application_error(-20001,'Invalid object type: '||v_typ);
     END IF;
 
     v_stmt := q'[
-        WITH FUNCTION GET_DOBJ(rid VARCHAR2) RETURN INT DETERMINISTIC IS
-        PRAGMA UDF;
+        WITH FUNCTION id(rid VARCHAR2,len INT) RETURN INT DETERMINISTIC IS
+            PRAGMA UDF;
             v_id INT := 0;
             v_p  SIMPLE_INTEGER :=0;
             v_c  CHAR(1);
         BEGIN
-            FOR i IN 1..6 LOOP
+            FOR i IN 1..len LOOP
                 v_c :=substr(rid,i,1);
                 v_p :=CASE WHEN v_c  = '+' THEN  -19
                            WHEN v_c  = '/' THEN  -16
@@ -118,26 +122,26 @@ BEGIN
                            WHEN v_c >= '0' THEN  -4                           
                            ELSE -18
                       END;
-                v_id := v_id+(ascii(v_c)-v_p)*power(64,6-i);
+                v_id := v_id+(ascii(v_c)-v_p)*power(64,len-i);
             END LOOP;
+            IF v_id=0 AND len=3 THEN 
+                RETURN 1024;
+            END IF;
             RETURN v_id;
         END;
         OBJS AS(SELECT /*+materialize*/ * FROM &check_access_obj.objects WHERE data_object_id is not null and owner = '&object_owner' AND object_name = '&object_name')
-        SELECT /*+leading(b a) use_hash(b a) no_merge(a) no_merge(b)*/ 
+        SELECT /*+leading(b a) use_hash(b a) use_hash(c) no_merge(a)*/ 
                a.rid,
-               (select b.object_id||','||
-                       b.data_object_id||','||
-                       a.cnt||','||
-                       b.subobject_name
-                from   OBJS b
-                WHERE  b.data_object_id = a.dobj) obj
-        FROM   (SELECT get_dobj(sub) dobj, rid,cnt
-                FROM   (SELECT /*+use_hash_aggregation GBY_PUSHDOWN rowid(a) &full &px*/
+               b.object_id||','||b.data_object_id||','||a.cnt||','||b.subobject_name obj
+        FROM   OBJS b
+        JOIN   (SELECT id(sub,6) dobj, rid,cnt
+                FROM   (SELECT /*+use_hash_aggregation no_merge GBY_PUSHDOWN rowid(a) &full &px*/
                                SUBSTR(ROWID, 1, 6) sub,
                                MIN(ROWID) rid, 
                                count(1) cnt
                         FROM   &object_owner..&object_name @PART@ a &filter
                         GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a
+        ON (b.data_object_id = a.dobj)
         ORDER BY 1]';
     IF :object_subname IS NOT NULL THEN
         v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
@@ -211,8 +215,9 @@ BEGIN
             EXIT WHEN v_rids.COUNT = 0;
             FOR I IN 1 .. v_rids.COUNT LOOP
                 extr(v_recs(i));
-                v_stmt:=utl_lms.format_message(q'[sys.dbms_compression.get_compression_type('%s', '%s', '%s', '%s')]',v_own, v_nam, v_rids(i), v_sub);
+                --v_stmt:= sys.utl_lms.format_message(v_fmt,v_own, v_nam, v_rids(i), v_sub);
                 v_ctyp := sys.dbms_compression.get_compression_type(v_own, v_nam, v_rids(i), v_sub);
+
                 IF v_pid != v_oid OR v_ptyp != v_ctyp THEN
                     flush_xml;
                     v_pid  := v_oid;
@@ -269,7 +274,7 @@ BEGIN
                        65536,'INMEMORY_QUERY_HIGH',
                        131072,'INMEMORY_CAPACITY_LOW',
                        262144,'INMEMORY_CAPACITY_HIGH') COMPESSION_TYPE,
-              SUM(BLOCKS) BLOCKS,
+              SUM(BLOCKS) HEADER_BLOCKS,
               SUM(NUM_ROWS) "ROWS",
               ROUND(SUM(NUM_ROWS)/SUM(BLOCKS),2) "Rows/Block"
         FROM  XMLTABLE('/ROWSET/ROW' passing(xmltype(v_xml)) COLUMNS

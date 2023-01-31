@@ -788,6 +788,13 @@ function var.expr(expr)
         end
         if math[c] then return 'math.'..c end
         return s 
+    end):gsub('[0-9%.,]+',function(s) --handle thousandths 
+        local s0,s1=s:match('^(%d%d?%d?,)([0-9%.,]+)$')
+        if s1 and s1:gsub('%.%d+$',''):gsub('%d%d%d,',''):match('^%d%d%d$') then
+            return s:gsub(',','')
+        else
+            return s
+        end
     end)
     local err,f=pcall(loadstring,'return '..expr)
     env.checkerr(err,f)

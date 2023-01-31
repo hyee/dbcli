@@ -205,6 +205,7 @@ Sample Ouput:
                         tm_delta_time,
                         tm_delta_db_time,
                         delta_time,
+                        in_parse,
                         DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
                         IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION,DECODE(IS_SQLID_CURRENT,'Y','N','Y') IS_NOT_CURRENT,
                         sample_time,
@@ -270,7 +271,7 @@ dash as(
     AND    sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)),
 ash_raw as (
     select /*+MATERIALIZE qb_name(ash_raw) NO_DATA_SECURITY_REWRITE opt_estimate(query_block rows=3000000)*/ h.*,
-            nvl(event,'ON CPU') ev,
+            nvl(event,'ON CPU')||decode(IN_PARSE,'Y',' [PARSE]') ev,
             nvl(wait_class,'ON CPU') wl,
             nvl(nullif(plan_hash_full,'0'),''||phv1) phf,
             max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec,pid) dop,
