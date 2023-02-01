@@ -37,7 +37,7 @@
                   block_id bid, block_id+blocks-1 eid
             FROM DBA_EXTENTS 
             WHERE owner = '&object_owner' 
-            AND   segment_name = '&object_name'}
+            AND   segment_name = '&object_name'  @PART2@}
             default={&null_extent}
         }
         &extent: default={&check_access_extents} f={&null_extent} sample={&null_extent}
@@ -89,7 +89,8 @@ DECLARE
     v_sample VARCHAR2(512);
     v_comps  ttypes;
     v_fmt    VARCHAR2(80):=q'[sys.dbms_compression.get_compression_type('%s', '%s', '%s', '%s')]';
-    
+    v_parttype VARCHAR2(30);
+    v_subtype  VARCHAR2(30);
 
     PROCEDURE extr(c VARCHAR2) IS
     BEGIN
@@ -120,6 +121,20 @@ DECLARE
 BEGIN
     IF regexp_substr(v_typ,'\S+') NOT IN('TABLE','MATERIALIZED') THEN
         raise_application_error(-20001,'Invalid object type: '||v_typ);
+    END IF;
+
+    SELECT  NVL(MAX(PARTITIONING_TYPE),'NONE'),NVL(MAX(SUBPARTITIONING_TYPE),'NONE')
+    INTO    v_parttype,v_subtype
+    FROM    &check_access_obj.part_tables
+    WHERE   owner=v_own
+    AND     table_name=v_nam;
+
+    IF v_subtype='NONE' AND v_parttype!='NONE' THEN
+        v_parttype:=' PARTITION';
+    ELSIF v_subtype!='NONE' THEN
+        v_parttype:=' SUBPARTITION';
+    ELSE
+        v_parttype:=NULL;
     END IF;
 
     v_stmt := q'[
@@ -156,31 +171,41 @@ BEGIN
             SYS.DBMS_ROWID.ROWID_INFO(RID,rowid_type,object_number,relative_fno,block_number,row_number);
             RETURN RPAD(object_number,10)||RPAD(relative_fno,10)||RPAD(block_number,10)||SYS.DBMS_ROWID.ROWID_BLOCK_NUMBER(RID,'bigfile');
         END;
-        OBJS AS(SELECT /*+materialize*/ object_id,data_object_id,nvl(subobject_name,' ') pname FROM &check_access_obj.objects a WHERE data_object_id is not null and owner = '&object_owner' AND object_name = '&object_name'),
+        OBJS AS(SELECT /*+materialize*/ object_id,data_object_id,nvl(subobject_name,' ') pname 
+                FROM &check_access_obj.objects a 
+                WHERE data_object_id is not null and owner = '&object_owner' AND object_name = '&object_name' @PART1@),
         EXTS AS(&extent)
-        SELECT /*+leading(b a) use_hash(b a) use_merge(e) no_merge(a)*/ 
-               a.rid,
-               rpad(b.object_id,10)||rpad(b.data_object_id,10)||rpad(a.cnt,10)
-               ||rpad(nvl2(e.bid,nvl(lead(DECODE(e.f,1024,a.blk2,a.blk1)) over(partition by e.pname,e.bid,e.xid order by DECODE(e.f,1024,a.blk2,a.blk1)),e.eid+1)-DECODE(e.f,1024,a.blk2,a.blk1),0),10)
-               ||trim(b.pname) obj
-        FROM   OBJS b
-        JOIN   (SELECT 0+trim(substr(extrs,1,10)) dobj, 
-                       0+trim(substr(extrs,11,10)) f,
-                       0+trim(substr(extrs,21,10)) blk1,
-                       0+trim(substr(extrs,31)) blk2,
-                       rid,cnt
-                FROM   (SELECT /*+use_hash_aggregation no_merge GBY_PUSHDOWN rowid(a) &full &px*/
-                               SUBSTR(ROWID, 1, 6) sub,
-                               MIN(ROWID) rid, 
-                               extr(MIN(ROWID)) extrs,
-                               count(1) cnt
-                        FROM   &object_owner..&object_name @PART@ a &filter
-                        GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a
-        ON (b.data_object_id = a.dobj)
-        LEFT JOIN EXTS e 
-        ON(b.pname=e.pname and e.f=DECODE(e.f,1024,1024,a.f) and DECODE(e.f,1024,a.blk2,a.blk1) between e.bid and e.eid)
-        ORDER BY a.dobj,nvl(e.f,a.f),DECODE(e.f,1024,a.blk2,a.blk1) ]';
-    IF :object_subname IS NOT NULL THEN
+        SELECT * FROM (
+            SELECT /*+leading(b a) use_hash(b a) use_merge(e) no_merge(a)*/ 
+                   a.rid,
+                   rpad(b.object_id,10)||rpad(b.data_object_id,10)||rpad(a.cnt,10)
+                   ||rpad(nvl2(e.bid,nvl(lead(DECODE(e.f,1024,a.blk2,a.blk1)) over(partition by e.pname,e.bid,e.xid order by DECODE(e.f,1024,a.blk2,a.blk1)),e.eid+1)-DECODE(e.f,1024,a.blk2,a.blk1),0),10)
+                   ||nvl2(trim(b.pname),b.pname,'') obj
+            FROM   OBJS b
+            JOIN   (SELECT 0+trim(substr(extrs,1,10)) dobj, 
+                           0+trim(substr(extrs,11,10)) f,
+                           0+trim(substr(extrs,21,10)) blk1,
+                           0+trim(substr(extrs,31)) blk2,
+                           rid,cnt
+                    FROM   (SELECT /*+use_hash_aggregation no_merge GBY_PUSHDOWN rowid(a) &full &px*/
+                                   SUBSTR(ROWID, 1, 6) sub,
+                                   MIN(ROWID) rid, 
+                                   extr(MIN(ROWID)) extrs,
+                                   count(1) cnt
+                            FROM   &object_owner..&object_name @PART@ a &filter
+                            GROUP  BY SUBSTR(ROWID, 1, 6), SUBSTR(ROWID, 1, 15))) a
+            ON (b.data_object_id = a.dobj)
+            LEFT JOIN EXTS e 
+            ON(b.pname=e.pname and e.f=DECODE(e.f,1024,1024,a.f) and DECODE(e.f,1024,a.blk2,a.blk1) between e.bid and e.eid)
+            ORDER BY a.dobj,nvl(e.f,a.f),DECODE(e.f,1024,a.blk2,a.blk1) 
+        ) WHERE ROWNUM<=1E5]'; --slow performance of sys.dbms_compression.get_compression_type
+    IF instr(v_typ,v_parttype)>1 THEN
+        v_stmt := replace(replace(v_stmt,'@PART1@','and subobject_name='''||v_snam||''''),'@PART2@','and partition_name='''||v_snam||'''');
+    ELSE
+        v_stmt := replace(replace(v_stmt,'@PART1@'),'@PART2@');
+    END IF;
+    
+    IF v_snam IS NOT NULL THEN
         v_part:=regexp_substr(v_typ, '\S+$') || '(' || v_snam || ')';
     END IF;
 
@@ -230,7 +255,7 @@ BEGIN
         ELSIF v_sample IS NULL THEN
             v_stmt := REPLACE(v_stmt, '@ROWS@','WHERE ROWNUM<='||v_tops);
         ELSE
-            v_sample := 'SAMPLE BLOCK ('||greatest(1e-3,v_sample)||')';
+            v_sample := ' SAMPLE BLOCK ('||greatest(1e-3,v_sample)||',1) SEED(1)';
         END IF;
     END IF;
     v_stmt := REPLACE(v_stmt, '@ROWS@');
@@ -246,6 +271,7 @@ BEGIN
         v_cnt  := 0;
         v_cnt2 := 0;
         v_cnt3 := 0;
+
         OPEN v_cur FOR v_stmt;
         LOOP
             FETCH v_cur BULK COLLECT

@@ -164,7 +164,8 @@ DECLARE/*INTERNAL_DBCLI_CMD*/
 BEGIN
     IF :binds = 'PEEKED_BINDS' THEN
         FOR r IN (WITH qry AS
-                       (SELECT a.*, dense_rank() over(ORDER BY decode('&V2',c,0,1),captured, r DESC) seq
+                       (SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 
+                               a.*, dense_rank() over(ORDER BY decode('&V2',c,0,1),captured, r DESC) seq
                        FROM   (SELECT a.*, decode(MAX(was_captured) over(PARTITION BY r), 'YES', 0, 1) captured
                                FROM   (SELECT MAX(LAST_CAPTURED) OVER(PARTITION BY child_number,inst_id) || child_number || ':' || INST_ID r,
                                               ''||child_number c,

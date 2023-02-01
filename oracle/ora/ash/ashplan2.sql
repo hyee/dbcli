@@ -34,7 +34,7 @@ WITH sql_plan_data AS
  (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 11)*/ *
   FROM   (SELECT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id desc) seq
-          FROM   (SELECT *
+          FROM   (SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ *
                   FROM TABLE(GV$(CURSOR(
                       SELECT id,position pos,
                              decode(parent_id,-1,id-1,parent_id) parent_id,
@@ -94,7 +94,7 @@ ash_detail as (
         FROM (
             select h.*,
                    nvl(sql_id,'<Parsing>') sql_id_,
-                   nvl(event,'ON CPU') ev,
+                   nvl(event,'ON CPU')||decode(in_parse,'Y',' [PARSE]') ev,
                    nvl(trim(case 
                         when current_obj# < -1 then
                             'Temp I/O'

@@ -628,7 +628,7 @@ local desc_sql={
                     WHERE  C.OWNER(+) = I.OWNER
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
-                    AND    I.TABLE_NAME = :object_name)
+                    AND    I.TABLE_NAME = :table_name)
         SELECT /*+no_parallel leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
@@ -657,9 +657,9 @@ local desc_sql={
         AND    C.INDEX_OWNER = e.INDEX_OWNER(+)
         AND    C.column_position = e.column_position(+)
         AND    :owner = c.table_owner
-        AND    :object_name =c.table_name
+        AND    :table_name =c.table_name
         AND    :owner = E.table_owner(+)
-        AND    :object_name =e.table_name(+)
+        AND    :table_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
@@ -1202,7 +1202,16 @@ function desc.desc(name,option)
     
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
     if type(sqls)~="table" then sqls={sqls} end
-    if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
+    if rs[4]=="TABLE" then
+        local result=db:dba_query(db.internal_call,
+                                  [[select nvl(cluster_name,table_name)
+                                   from ALL_TABLES
+                                   WHERE owner = :owner AND table_name = :object_name]],
+                                  {owner=rs[1],object_name=rs[2]})
+        result=db.resultset:rows(result,-1)
+        result=result[2] or {}
+        obj.table_name=result[1]
+    elseif (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
         rs[2],rs[3]=rs[3],rs[2]
     elseif rs[4]=='VIEW' then
         env.var.define_column('Default,Hidden?,AVG_LEN,NDV,Nulls(%),CARDINALITY,HISTOGRAM,BUCKETS,LOW_VALUE,HIGH_VALUE','NOPRINT')
@@ -1235,7 +1244,7 @@ function desc.desc(name,option)
         rs[1],rs[2]=rs[10],rs[11]
     end
 
-    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
+    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id,table_name=obj.table_name} do
         rs[k]=v
     end
 

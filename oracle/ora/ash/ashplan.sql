@@ -396,7 +396,6 @@ ALL_PLANS AS(
                     AND    a.dbid='||h.dbid||') a
                 ) WHERE SEQ=1 ORDER BY ID'), '//ROW'))) B
     WHERE PLAN_SEQ<=10),
-plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
@@ -582,16 +581,16 @@ ash_agg as(
                                     /greatest(avg(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#),5e6),2),0) skew
                     FROM (select /*+ordered use_hash(b)*/ * 
                           from ash_phv_agg natural join (
-                            select b.*,
+                            select  /*+use_hash(b c)*/ b.*,
                                    nvl(trim(case 
                                     when current_obj# < -1 then
                                         'Temp I/O'
                                     when current_obj# > 0 then 
-                                        nvl((select max(object_name) from plan_objs where object#=current_obj#),''||current_obj#) 
+                                        nvl(c.object_name,''||current_obj#) 
                                     when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                                         'Undo'
                                     when p3text like '%namespace' and p3>power(16,8) then 
-                                        nvl((select max(object_name) from plan_objs where object#=trunc(p3/power(16,8))),''||trunc(p3/power(16,8))) 
+                                        nvl(c.object_name,''||trunc(p3/power(16,8))) 
                                     when p3text like '%namespace' then 
                                         'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
                                     when p1text like 'cache id' then 
@@ -632,7 +631,9 @@ ash_agg as(
                                 end),''||current_obj#) curr_obj#,
                                 decode(sec_seq,1,least(coalesce(tm_delta_db_time,delta_time,AAS*1e6),coalesce(tm_delta_time,delta_time,AAS*1e6),AAS*2e6) * 1e-6) secs,
                                 sum(case when is_px_slave=1 and px_flags>65536 then least(tm_delta_db_time,AAS*2e6) end) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#,sid,inst_id) dbtime
-                            from ASH_AAS b)) A
+                            from ASH_AAS b,
+                                 (SELECT /*+no_merge*/ DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS) c
+                            WHERE c.object#(+)=decode(sign(current_obj#),1,current_obj#,trunc(p3/power(16,8))))) A
                     )
                 group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),(phv1,sql_id,top1),id,(id,top1),top1,(top1,top2))) A) A
     ) a WHERE g IS NOT NULL
