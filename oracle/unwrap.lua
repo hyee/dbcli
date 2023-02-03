@@ -1990,7 +1990,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local function load_activity_detail()
         local stats=hd.activity_detail
         if stats then stats=stats.bucket end
-        local cl,ev,rt,as,pct,top,bk=1,2,4,5,6,7,8
+        local cl,ev,rt,bk,as,pct,top=1,2,4,5,6,7,8
         local max_event_len=#('cell single block physical read')
         local total_clock=0
         if not stats then return end
@@ -2037,7 +2037,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     attr.top_sql_id and ('Top-SQL: ' .. attr.top_sql_id) or
                     attr.step or nil,
                 '|',
-                nil,nil,nil,nil,0, --buckets
+                nil,0,nil,nil,nil, --buckets
                 lines={}
             }
             if attr.step then
@@ -2059,7 +2059,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 stacks[stack]=#events
             end
             grp=events[stacks[stack]]
-            grp[bk]=grp[bk]+1
+            grp[bk]=grp[bk]+interval
             --rt(response time) and aas
             if not grp.lines[id] then grp.lines[id]={} end
             if not clock[id] then clock[id]={} end
@@ -2163,7 +2163,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         table.sort(events, function(a,b) return (a[as] or 0)>(b[as] or 0) end)
-        table.insert(events,1,{'Class','Event','|','Resp','AAS','Pct','Top Lines','Buckets'})
+        table.insert(events,1,{'Class','Event','|','Resp','Clock','AAS','Pct','Top Lines'})
         local top_lines={}
         for id,v in pairs(ids) do
             v[2],v[1]=get_top_events(v.events,v[4],v[3])

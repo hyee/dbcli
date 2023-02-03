@@ -30,11 +30,10 @@
      --[[
             @ver: 12.2={} 11.2={--}
             &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))} l={1}
-            &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
-            &option1: {default={&uniq execs,GREATEST(max(last_refresh_time - sql_exec_start) keep(dense_rank last order by last_refresh_time) *86400*1e6, 1E6) "LAST",
-                                to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
-                                to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,} 
-                      l={}}
+            &group : default={}, l={,sql_exec_id,plan_hash,sql_exec_start,last_refresh_time}
+            &fields: {default={&uniq execs,GREATEST(max(last_refresh_time - sql_exec_start) keep(dense_rank last order by last_refresh_time) *86400*1e6, 1E6) "LAST",
+                                to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,} 
+                      l={MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) sid,}}
             &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
@@ -339,7 +338,7 @@ BEGIN
         END IF;
     END IF;
     
-    IF sq_id IS NOT NULL AND '&option' IS NULL THEN
+    IF sq_id IS NOT NULL AND '&group' IS NULL THEN
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
         IF xml IS NULL THEN
             BEGIN
@@ -387,7 +386,7 @@ BEGIN
                             where (did IS NULL OR did in(dbid,con_dbid))
                             AND   key1=nvl(sq_id,sq_id1)
                             AND   key2>0
-                            AND   (sql_exec IS NULL OR key2=sql_exec OR report_id=sql_exec or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
+                            AND   (sql_exec IS NULL OR sql_exec in(key2,report_id) or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
                             AND   component_name='sqlmonitor'
                             AND   dbid=nvl(did,dbid)
                             AND   instance_number=nvl(inst,instance_number));
@@ -536,10 +535,10 @@ BEGIN
         OPEN :c FOR
             SELECT * --fix control 26552730 causes ORA-12850: Could not allocate slaves on all specified instances: 2 needed, 0 allocated
             FROM   (SELECT   /*+no_expand OPT_PARAM('_fix_control' '26552730:0') no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
-                             a.sql_id &OPTION,
-                             &option1 
-                             MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
+                             a.sql_id &group,
+                             &fields 
                              MAX(NVL(REGEXP_SUBSTR(status,'\(.*\)'),STATUS)) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
+                             '|' "|",
                              greatest(1E6,round(sum(last_refresh_time - sql_exec_start)/&avg*86400*1e6, 2)) dur,
                              round(sum(ela)/&avg , 2) ela,
                              nullif(round(sum(QUEUING_TIME)/sum(ela) , 4),0) QUEUE,
@@ -549,7 +548,7 @@ BEGIN
                              nullif(round(sum(CLUSTER_WAIT_TIME)/sum(ela), 4),0) cl,
                              nullif(round(sum(nvl(PLSQL_EXEC_TIME,0)+nvl(JAVA_EXEC_TIME,0))/sum(ela), 4),0) pljava,
                              nullif(round(sum(USER_IO_WAIT_TIME)/sum(ela), 4),0) io,
-                             nullif(round(sum(NVL(OTHER_TIME,ELA-ELAPSED_TIME))/sum(ela), 4),0) oth,
+                             nullif(round(sum(nvl(OTHER_TIME,ELA-ELA1))/sum(ela), 4),0) oth,
                              nullif(round(sum(nvl(PHYSICAL_READ_BYTES,0)+nvl(PHYSICAL_WRITE_BYTES,0) )/&avg, 2),0) bytes,
                              &ver nullif(round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2),0) OFL, nullif(round(sum(IO_CELL_OFFLOAD_RETURNED_BYTES)/&avg,2),0) OFLOUT,
                              nullif(round(avg(px)/&avg),0) PX,
@@ -566,6 +565,7 @@ BEGIN
                                    max(last_refresh_time) last_refresh_time,
                                    sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) ela,
                                    sum(ELAPSED_TIME) ELAPSED_TIME,
+                                   SUM(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME) ela1,
                                    TO_NUMBER(NULL) OTHER_TIME,
                                    sum(CPU_TIME) cpu_time,
                                    sum(QUEUING_TIME) QUEUING_TIME,
@@ -594,7 +594,8 @@ BEGIN
                                last_refresh_time,
                                GREATEST(ELAPSED_TIME,nvl(CPU_TIME,0)+nvl(APPLICATION_WAIT_TIME,0)+nvl(CONCURRENCY_WAIT_TIME,0)+nvl(CLUSTER_WAIT_TIME,0)+nvl(USER_IO_WAIT_TIME,0)+nvl(QUEUING_TIME,0)) ela,
                                ELAPSED_TIME,
-                               OTHER_WAIT_TIME,
+                               nvl(CPU_TIME,0)+nvl(APPLICATION_WAIT_TIME,0)+nvl(CONCURRENCY_WAIT_TIME,0)+nvl(CLUSTER_WAIT_TIME,0)+nvl(USER_IO_WAIT_TIME,0)+nvl(QUEUING_TIME,0) ela1,
+                               OTHER_WAIT_TIME OTHER_TIME,
                                cpu_time,
                                QUEUING_TIME,
                                APPLICATION_WAIT_TIME,
@@ -654,12 +655,12 @@ BEGIN
             ) a
             WHERE  (&SNAP=1 OR (keyw IS NOT NULL AND plan_hash IS NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
             AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || keyw || '%'))
-            GROUP  BY sql_id &OPTION
+            GROUP  BY sql_id &group
             ORDER  BY 4 DESC)
         WHERE  ROWNUM <= 30
         ORDER  BY 4, ela;
 
-        IF sq_id IS NOT NULL AND '&option' IS NOT NULL THEN
+        IF sq_id IS NOT NULL AND '&group' IS NOT NULL THEN
             IF plan_hash IS NOT NULL THEN
                 $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN
                     SELECT MIN(sql_exec_start), MAX(last_refresh_time), &uniq

@@ -1,7 +1,6 @@
 /*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
     The script will call DBMS_SQLTUNE_INTERNAL.I_PROCESS_SQL_CALLOUT instead of "EXPLAIN PLAN" or "EXECUTE IMMEDIATE" so that the bind variables can be applied.
-    And the actual SQL text will start with the "/* SQL Analyzer(<sid>,0) */ " prefix
-
+   
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
     -exec          : execute SQL instead of explain only
@@ -109,7 +108,7 @@ BEGIN
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT nvl(upper(own),nam),txt,sig,br,phv
+        SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv
         INTO own,sq_text,sig,bw,phv
         FROM (
             SELECT * FROM (

@@ -17,6 +17,17 @@
        }           
        &method: default={CREATE_} u={UPDATE_}
        &place:  default={} u={new_}
+       @check_access_adb: {
+            SYS.CS_RESOURCE_MANAGER={[[SELECT /*grid={topic="CS_RESOURCE_MANAGER.LIST_CURRENT_RULES()"}*/ 
+                CONSUMER_GROUP,
+                ELAPSED_TIME_LIMIT ELAPSED_LIMIT, 
+                IO_MEGABYTES_LIMIT IO_MB_LIMIT, 
+                SHARES,CONCURRENCY_LIMIT CONCURRENCY,
+                DEGREE_OF_PARALLELISM DOP 
+            FROM SYS.CS_RESOURCE_MANAGER.LIST_CURRENT_RULES()]],'|',}
+             
+            default={}
+        }    
 }
    ]]--
 ]]*/
@@ -60,12 +71,12 @@ grid {
 };
 
 
-PRO
-PRO GV$RSRC_PLANS
-PRO ===============
-select &ver5 from gv$rsrc_plan
-ORDER BY 1,2;
+grid {
+&check_access_adb
+[[/*grid={topic="GV$RSRC_PLANS"}*/ select &ver5 from gv$rsrc_plan ORDER BY 1,2]]
+}
 
+PRO
 PRO GV$RSRC_CONSUMER_GROUP
 PRO =======================
 SELECT INST_ID,REPLACE(NAME,'_ORACLE_BACKGROUND_GROUP_','BACKGROUND@') RSRC_GROUP,ACTIVE_SESSIONS ACT_SSS, EXECUTION_WAITERS WAITERS,

@@ -196,7 +196,9 @@ Parameters
     _sql_compatibility: 1 to support "group by 1,2,..."
     _ges_optimizations: 1-KJIGESOPTS_NO_ESM / 2-KJIGESOPTS_FREE_SLOCK / 4-KJIGESOPTS_CLIENT_FREE_SLOCK
     _kkpogpi_nocpy: enable nocopy(remove shared lock) behaviours on source objects for specific long-running statements:
-        1:  create table  2: alter table  4: truncate table/create view  8: alter index rebuild  16: create index  32: explain plan 
+        1:  create table  2: alter table  4: truncate table/create view  8: alter index rebuild  16: create index  32: explain plan
+    _px_hybrid_TSM_HWMB_load: false to disbale PDML TSM/HWMB broker and use traditional HWM broker instead, 
+                              together with _force_tmp_segment_loads=true to use "TEMP SEG MERGE" to fix HV contention in some cases
     
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'

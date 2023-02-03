@@ -51,10 +51,10 @@ FROM (
            STATUS,
            TEMPORARY
     FROM   &check_access_obj
-    WHERE  UPPER(OWNER || '.' || OBJECT_NAME || chr(1) || OBJECT_ID || chr(1) ||
-                 SUBOBJECT_NAME || chr(1) || DATA_OBJECT_ID || chr(1) ||object_type|| chr(1)||
+    WHERE  UPPER(OWNER || '.' || OBJECT_NAME || '.' ||SUBOBJECT_NAME|| chr(1) || OBJECT_ID || chr(1) ||
+                  DATA_OBJECT_ID || chr(1) ||object_type|| chr(1)||
                  TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') || chr(1) ||
-                 TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(1) || STATUS) LIKE '%' || NVL(UPPER(:V1), 'xxxx') || '%' escape '\'
+                 TO_CHAR(LAST_DDL_TIME, 'YYYY-MM-DD HH24:MI:SS') || chr(1) || STATUS) LIKE '%' || UPPER(:V1) || '%' escape '\'
     UNION ALL
     SELECT a.owner,
            a.object_name,

@@ -133,7 +133,7 @@ BEGIN
                        s.*
                 FROM  (SELECT  /*+ordered no_merge(s) use_hash(s p px) push_pred(sq)
                                   table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000)
-                                  
+                                  use_nl(sq)
                                 */
                                  nvl2(px.qcsid,px.qcsid||'@'||nvl(px.qcinst_id,inst_id),'') qcsid,
                                  p.spid|| regexp_substr(s.program, '\(\S+\)') spid,
@@ -141,7 +141,8 @@ BEGIN
                                  sq.program_id,sq.program_line#,sq.plan_hash_value,
                                  coalesce(sq.sql_text,nvl2(idn,'idn: '||idn,'')) sql_text,
                                  sq.sql_secs
-                        FROM   (select  userenv('instance') inst_id,
+                        FROM   (select  /*+opt_estimate(query_block rows=1000)*/
+                                        userenv('instance') inst_id,
                                         case when a.p1text='idn' 
                                              and (a.p1>131072 or event not like '%bucket%') then a.p1 end idn,
                                         a.*
@@ -149,7 +150,7 @@ BEGIN
                                  WHERE  (&fil1)
                                  AND    userenv('instance')=nvl('&instance',userenv('instance'))) s,
                                 lateral(
-                                 select  /*+merge(sq)*/
+                                 select  /*+merge(sq) index(sq)*/
                                          program_line#,program_id,plan_hash_value,sql_id sq_id,
                                          substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 1024) sql_text,
                                          round(decode(child_number,0,elapsed_time * 1e-6 / (1 + executions), 86400 * (SYSDATE - to_date(last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
@@ -159,7 +160,7 @@ BEGIN
                                  AND     s.sql_id=sq.sql_id
                                  AND     nvl(s.sql_child_number,0)=sq.child_number &text
                                  UNION ALL 
-                                 select  /*+merge(sq)*/
+                                 select  /*+merge(sq) index(sq)*/
                                          program_line#,program_id,plan_hash_value,sql_id,
                                          substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 1024) sql_text,
                                          round(decode(child_number,0,elapsed_time * 1e-6 / (1 + executions), 86400 * (SYSDATE - to_date(last_load_time, 'yyyy-mm-dd/hh24:mi:ss')))) sql_secs
@@ -202,14 +203,14 @@ BEGIN
         report_start;
         OPEN :actives FOR
             WITH s1 AS(
-              SELECT /*+materialize table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000)*/*
+              SELECT /*+materialize OPT_PARAM('_fix_control' '26552730:0') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000)*/*
               FROM   &CHECK_ACCESS_SES 
               WHERE (&fil1)
               AND    sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')
               AND    userenv('instance')=nvl('&instance',userenv('instance'))),
             s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
             sq1 AS(
-              SELECT /*+materialize ordered use_nl(a b) opt_param('cursor_sharing' 'force')*/ a.*,
+              SELECT /*+materialize ordered use_nl(a b)*/ a.*,
                     extractvalue(b.column_value,'/ROW/A1')              program_name,
                     extractvalue(b.column_value,'/ROW/A2')              program_line#,
                     extractvalue(b.column_value,'/ROW/A3')              sql_text,
@@ -217,7 +218,7 @@ BEGIN
                     nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
               FROM (select /*+no_merge*/ distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                        SELECT /*+opt_param('_optim_peek_user_binds','false') opt_param('cursor_sharing','force') index(a)*/ 
+                        SELECT /*+opt_param('_optim_peek_user_binds','false') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000) index(a)*/ 
                               (select c.owner  ||'.' || c.object_name 
                                from &CHECK_ACCESS_OBJ c 
                                where program_id>0

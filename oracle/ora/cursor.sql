@@ -13,8 +13,7 @@
 
 SELECT DISTINCT * 
 FROM TABLE(GV$(CURSOR(
-    SELECT /*+use_nl(c) use_nl(a b)*/
-           USERENV('instance') inst_id,
+    SELECT USERENV('instance') inst_id,
            a.sid,
            &V10
            a.sql_id,
