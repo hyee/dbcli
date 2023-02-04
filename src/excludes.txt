@@ -2,6 +2,7 @@
 .dat
 .ini
 .log
+.swp
 \jre\
 \src\
 \cache\

@@ -1,54 +1,70 @@
 local db,var=env.getdb(),env.var
-local current_credential=''
+local credential,bucket=''
 
 local adb=env.class(db.C.ora)
 function adb:ctor()
     self.db=env.getdb()
     self.command={"adb"}
-    self.help_title='Run SQL script relative to Oracle Autonomous Database(ADW/ATP). User must have the access to DBMS_CLOUD package'
+    self.help_title='Run SQL script relative to Oracle Autonomous Database(ADW/ATP)'
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."adb",{}
-    env.set.init('credential','',adb.set_credential,'oracle.cloud','Set session default credential that defined in dba_credentials','*')
+    env.set.init('credential','',adb.set_credential,'oracle.cloud','Set account default credential that defined in user_credentials','*')
+    env.set.init('bucket','',adb.set_credential,'oracle.cloud','Set account default Object Storage bucket','*')
+    
     env.event.snoop("AFTER_ORACLE_CONNECT",adb.on_login,nil,99)
     env.event.snoop("BEFORE_DB_EXEC",adb.set_param,nil,99)
-    env.event.snoop("BEFORE_DB_CONNECT",function() current_credential='';env.set.force_set('credential','') end,nil,99)
+    env.event.snoop("BEFORE_DB_CONNECT",
+        function()
+            credential,bucket='','';
+            env.set.force_set('credential','')
+            env.set.force_set('bucket','') 
+        end,nil,99)
 end
 
 
 function adb.set_credential(name,value)
-    if current_credential~=value then
+    if (name=='CREDENTIAL' and credential or bucket)~=value then
         db:assert_connect()
-        if value~='' then 
-            value=db:get_value([[select max(credential_name) from user_credentials where upper(credential_name)=upper(:1)]],{value})
+        if value~='' and name=='CREDENTIAL' then 
+            value=db:get_value([[select max(credential_name) from user_credentials where upper(credential_name)=upper(:1) and enabled='TRUE']],{value})
             if value=='' then
-                return print('Cannot find the target credential in view user_credentials.')
+                return print('Cannot find the enabled credential in view user_credentials.')
             end
+        else
+            value=value:trim('/')
         end
-
-        db.last_login_account.credential=value~='' and value or nil
+        if name=='CREDENTIAL' then
+            db.last_login_account.credential=value~='' and value or nil
+        else
+            db.last_login_account.objbucket=value~='' and value or nil
+        end
         env.login.capture(db,nil,db.last_login_account)
-        print('Setting default credential as "'..value..'".')
+        print('Setting default '..name:lower()..' as "'..value..'".')
     end
-    current_credential=value
+    if name=='CREDENTIAL' then
+        credential=value
+    else
+        bucket=value
+    end
     return value
 end
 
 function adb.set_param(db) 
-    if var.outputs['CREDENTIAL']==nil then var.setInputs('CREDENTIAL',current_credential) end;
+    if var.outputs['CREDENTIAL']==nil then var.setInputs('CREDENTIAL',credential) end;
+    if var.outputs['OBJBUCKET']==nil then var.setInputs('OBJBUCKET',bucket) end;
 end 
 
 function adb.on_login(oracle,url,props)
     if props.credential then
-        current_credential=props.credential
-        env.set.force_set('credential',current_credential)
-        print('Setting default credential as "'..current_credential..'".')
+        credential=props.credential
+        env.set.force_set('credential',credential)
+        print('Default credential as "'..credential..'".')
+    end
+
+    if props.objbucket then
+        bucket=props.objbucket
+        env.set.force_set('bucket',bucket)
+        print('Default bucket as "'..bucket..'".')
     end
 end
-
-function adb:run_sql(sql,args,cmds,files)
-    env.checkerr(db:check_access('DBMS_CLOUD',true),"You must have the execution privilege on package DBMS_CLOUD");
-    
-    return self.super.run_sql(self,sql,args,cmds,files)
-end
-
 
 return adb.new()

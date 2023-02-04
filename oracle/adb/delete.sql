@@ -1,4 +1,7 @@
-/*[[Delete files in cloud object store or Oracle directory. Usage: @@NAME {<directory>|{[<credential>] <URL>}} [<REGEXP_LIKE pattern>|<keyword>] 
+/*[[
+    Delete files in cloud object store or Oracle directory. Usage: @@NAME {<directory>|{[<credential>] <URL>}} <keyword>
+    Same to 'adb list [<credential>] <keyword> -delete'
+    Type 'adb list' for more information of the parameters
     --[[
         @ARGS: 2
     --]]
