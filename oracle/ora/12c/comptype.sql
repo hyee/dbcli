@@ -351,5 +351,5 @@ BEGIN
 END;
 /
 col header_blocks,blocks,rows for K0
-col object_id,data_object_id,partition_name break
+col object_id,data_object_id,partition_name break -
 print cur

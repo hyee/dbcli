@@ -23,6 +23,7 @@ oracle.module_list={
     "dict",
     "oradebug",
     "sqlcl",
+    "pdb",
     "adb",
     "parse10053"
 }

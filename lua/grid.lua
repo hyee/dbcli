@@ -698,9 +698,9 @@ function grid:add(row)
         for k,v in ipairs(self.colinfo) do
             if self.break_groups[v.column_name:upper()] then
                 row[k]=sep
-                if rs[k]=='' then
-                    rs[k]=self.break_groups[v.column_name:upper()] 
-                end
+                --if rs[k]=='' then
+                --    rs[k]=self.break_groups[v.column_name:upper()] 
+                --end
             end
         end
         self.break_groups.__SEP__=nil

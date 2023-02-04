@@ -44,9 +44,9 @@ function login.generate_name(url,props)
 end
 
 function login.capture(db,url,props)
-    local typ,url1=env.set.get("database")
+    local typ,url1,privs=env.set.get("database")
     login.load()
-    url,url1=login.generate_name(url,props)
+    url,url1=login.generate_name(url or props.jdbc_alias or props.url,props)
     local d=os.date('*t',os.time())
     props.password,props.lastlogin=env.packer.pack_str(props.password),string.format("%d-%02d-%02d %02d:%02d:%02d",d.year,d.month,d.day,d.hour,d.min,d.sec)
     if not login.list[typ] then login.list[typ]={} end
@@ -60,8 +60,10 @@ function login.capture(db,url,props)
     if url~=url1 and list[url1] then list[url1]=nil end
 
     if type(db)=="string" then props.connect_object=db end
+    privs,props.privs=props.privs,nil
     list[url]=props
     login.save()
+    props.privs=privs
     return url
 end
 

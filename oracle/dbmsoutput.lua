@@ -155,7 +155,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                              FROM sys.V_$OPEN_CURSOR 
                              WHERE sid=:sid
                              AND   cursor_type like '%OPEN%'
-                             AND   instr(sql_text,'dbcli_ignore')=0
+                             AND   (instr(sql_text,'dbcli_ignore')=0 and instr(sql_text,'INTERNAL_DBCLI_CMD')=0)
                              AND   (last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second') or
                                     last_sql_active_time is null and cursor_type='OPEN' and sql_exec_id IS NOT NULL)
                              AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')!';

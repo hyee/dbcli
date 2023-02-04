@@ -1,1 +1,1 @@
-alter system disconnect session '$*' immediate
+alter system kill session '$*'

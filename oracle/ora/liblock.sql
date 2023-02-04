@@ -126,7 +126,7 @@
 set feed off verify on
 
 WITH LP AS (
-    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ * 
+    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ * 
     FROM &GV
         SELECT /*+ordered no_merge(h) use_hash(h l d)*/DISTINCT 
                  l.type lock_type,

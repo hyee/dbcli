@@ -534,7 +534,7 @@ BEGIN
     ELSE
         OPEN :c FOR
             SELECT * --fix control 26552730 causes ORA-12850: Could not allocate slaves on all specified instances: 2 needed, 0 allocated
-            FROM   (SELECT   /*+no_expand OPT_PARAM('_fix_control' '26552730:0') no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
+            FROM   (SELECT   /*+no_expand no_parallel OPT_PARAM('_fix_control' '26552730:0') no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
                              a.sql_id &group,
                              &fields 
                              MAX(NVL(REGEXP_SUBSTR(status,'\(.*\)'),STATUS)) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,

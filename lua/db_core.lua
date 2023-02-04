@@ -1031,7 +1031,7 @@ function db_core:connect(attrs,data_source)
     local props = java.new("java.util.Properties")
 
     for k,v in pairs(attrs) do
-        props:put(k,v)
+        if type(v)=='string' then props:put(k,v) end
     end
     self.login_alias=env.login.generate_name(attrs.jdbc_alias or url,attrs)
     if event then event("BEFORE_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
@@ -1062,6 +1062,7 @@ function db_core:connect(attrs,data_source)
 
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
+    self.last_login_account=attrs
     if event then
         event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
@@ -1079,7 +1080,7 @@ function db_core:connect(attrs,data_source)
     end
 
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
-    self.last_login_account=attrs
+    
     prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
     return self.conn,attrs
 end

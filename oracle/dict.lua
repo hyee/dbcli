@@ -15,7 +15,7 @@ local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
 local checking_access
-local function rep_instance(prefix,full,obj,suffix)
+local function rep_instance(prefix,full,obj,suffix) 
     obj=obj:upper()
     local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and dicts.dict[obj] and obj:find(cdbstr) then
@@ -23,7 +23,7 @@ local function rep_instance(prefix,full,obj,suffix)
         if cdbmode=='pdb' and (dicts.dict[new_obj] or {}).comm_view and db.props.version<21 then 
             if db.props.select_dict==nil then
                 checking_access=true
-                db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false
+                db.props.select_dict=db.props.isdba or false
                 checking_access=false
             end
             if db.props.select_dict  then

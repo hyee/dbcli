@@ -203,12 +203,12 @@ BEGIN
         report_start;
         OPEN :actives FOR
             WITH s1 AS(
-              SELECT /*+materialize OPT_PARAM('_fix_control' '26552730:0') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000)*/*
+              SELECT /*+no_parallel materialize OPT_PARAM('_fix_control' '26552730:0') opt_estimate(query_block rows=3000) table_stats(SYS.X$KSLWT set rows=3000)*/*
               FROM   &CHECK_ACCESS_SES 
               WHERE (&fil1)
               AND    sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')
               AND    userenv('instance')=nvl('&instance',userenv('instance'))),
-            s3  AS(SELECT /*+no_merge no_merge(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
+            s3  AS(SELECT /*+no_merge no_merge(s2) use_hash(s2)*/ s1.*,qcinst_id,qcsid FROM s1,&CHECK_ACCESS_PX s2 where s1.inst_id=s2.inst_id(+) and s1.SID=s2.sid(+)),
             sq1 AS(
               SELECT /*+materialize ordered use_nl(a b)*/ a.*,
                     extractvalue(b.column_value,'/ROW/A1')              program_name,
@@ -255,7 +255,7 @@ BEGIN
                   AND    ROOT_SID=0
                   AND    LEVEL < 3
               ORDER SIBLINGS BY &V1)
-            SELECT /*+cardinality(a 1)*/
+            SELECT /*+cardinality(a 1) use_hash(d)*/
                    rownum "#",
                    a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                    d.spid || regexp_substr(A.program, '\(\S+\)') spid,

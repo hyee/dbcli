@@ -6,6 +6,7 @@
     _optimizer_extended_stats_usage_control
     _optimizer_dsdir_usage_control
     _sql_plan_directive_mgmt_control
+    _fast_cursor_reexecute
     _kgl_hot_object_copies => hot copies group by mod(sid,_kgl_hot_object_copies)+1
   
   idn: => v$sqlarea.hash_value 
