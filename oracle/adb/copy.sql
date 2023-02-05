@@ -1,5 +1,5 @@
 /*[[
-    Copy files in cloud object store or Oracle directory. Usage: @@NAME [<credential>] {<directory>|<URL>} {<directory>|<URL>} <keyword>
+    Copy files between Object Storage and Oracle directory. Usage: @@NAME [<credential>] {<directory>|<URL>} {<directory>|<URL>} <keyword>
     Same to 'adb list [<credential>] <from> <to> <keyword> -copy'
     Type 'adb list' for more information of the parameters
     --[[

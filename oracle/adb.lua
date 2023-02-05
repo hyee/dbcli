@@ -5,7 +5,7 @@ local adb=env.class(db.C.ora)
 function adb:ctor()
     self.db=env.getdb()
     self.command={"adb"}
-    self.help_title='Run SQL script relative to Oracle Autonomous Database(ADW/ATP)'
+    self.help_title='Run SQL script relative to Oracle Autonomous Database(ADW/ATP).'
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."adb",{}
     env.set.init('credential','',adb.set_credential,'oracle.cloud','Set account default credential that defined in user_credentials','*')
     env.set.init('bucket','',adb.set_credential,'oracle.cloud','Set account default Object Storage bucket','*')

@@ -199,6 +199,7 @@ Parameters
         1:  create table  2: alter table  4: truncate table/create view  8: alter index rebuild  16: create index  32: explain plan
     _px_hybrid_TSM_HWMB_load: false to disbale PDML TSM/HWMB broker and use traditional HWM broker instead, 
                               together with _force_tmp_segment_loads=true to use "TEMP SEG MERGE" to fix HV contention in some cases
+    _disable_directory_link_check: true with _kolfuseslf to resolve symbol like issue of accessing Oracle directory files. (DBMS_UTILITY.DIRECTORY_HAS_SYMLINK)
     
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'

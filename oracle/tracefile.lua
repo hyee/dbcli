@@ -70,6 +70,7 @@ function trace.get_trace(filename,mb,from_mb)
             flag       := 1;
             trace_file := bfilename(dir, f);
             flag       := 2;
+            --consider _disable_directory_link_check/_kolfuseslf=true in case symbolic links issue
             dbms_lob.fileopen(trace_file);
             fsize := dbms_lob.getlength(trace_file);
             IF fsize = 0 THEN

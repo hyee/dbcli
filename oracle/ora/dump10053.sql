@@ -154,6 +154,7 @@ BEGIN
             BEGIN
                 EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
             EXCEPTION WHEN OTHERS THEN NULL;
+                DBMS_SESSION.SET_IDENTIFIER(ROUND(DBMS_RANDOM.VALUE(1,1E6)));
             END;
             sys.dbms_sqldiag.dump_trace(sq_id, child_num, nam);
         END IF;

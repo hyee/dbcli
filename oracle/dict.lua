@@ -363,7 +363,7 @@ function dicts.set_dict(typ,scope)
         end
         env.checkerr(#keys<=1000,"Too many matched views.")
         table.sort(keys)
-        local rows={{"#","Object|Owner","Object|Name","Object|SubName","Instance|Column","CDB|Column","DBID|Column","User|Column","Comm|View"}}
+        local rows={{"#","Object|Owner","Object|Name","Object|SubName","Instance|Column","CDB|Column","DBID|Column","User|Column","Comm|View","Version|Sinced"}}
         for i,k in ipairs(keys) do
             local v=dict[k]
             rows[i+1]={
@@ -375,7 +375,8 @@ function dicts.set_dict(typ,scope)
                 v.cdb_col or '',
                 v.dbid_col or '',
                 v.usr_col or '',
-                v.comm_view or ''}
+                v.comm_view or '',
+                v.ver or ''}
         end
         return env.grid.print(rows)
     elseif typ=='init' then 
@@ -454,7 +455,7 @@ function dicts.set_dict(typ,scope)
                     union  all
                     select owner,table_name,null,null 
                     from   dba_tab_privs a
-                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA')
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA','C##CLOUD$SERVICE','PDB_DBA')
                     union  all
                     SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
                            a.owner, a.name, nvl(b.referenced_name, a.referenced_name) ref_name,'REF'
@@ -498,7 +499,7 @@ function dicts.set_dict(typ,scope)
                 usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
                 owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
                 comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view),
-                ver=not exists and db.props.version or math.min(dict[rows[i][1]].ver,db.props.version) or nil
+                ver=not exists and db.props.version or dict[rows[i][1]].ver and math.min(dict[rows[i][1]].ver,db.props.version) or nil
             }
             local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
             if prefix=='GV_$' or prefix=='V_$' then
@@ -725,7 +726,7 @@ db.lz_compress=[[
         RETURN t_out;
     END;
 
-    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
+    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL,prefix BOOLEAN := FALSE) IS
         v_blob       BLOB;
         v_raw        RAW(32767);
         v_chars      VARCHAR2(32767);
@@ -760,6 +761,9 @@ db.lz_compress=[[
         dbms_lob.createtemporary(v_blob, TRUE);
         dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
         dbms_lob.createtemporary(p_clob, TRUE);
+        IF prefix THEN
+            dbms_lob.writeappend(p_clob,13,'base64encode:');
+        END IF;
         IF NOT v_impmode THEN
             v_blob := zlib_compress(v_blob);
         ELSE

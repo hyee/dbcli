@@ -923,6 +923,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     for k,v in pairs(args) do
         if type(v)=="string" and v:sub(1,1)=="#" then
             args[k]=params[tostring(k):upper()]
+            if type(args[k])=='string' and args[k]:sub(1,13)=='base64encode:' then
+                local pieces=args[k]:sub(14,256):match('^[0-9a-zA-Z+/=]+')
+                if pieces and #pieces>=64 then
+                    pieces=args[k]:sub(14):split('\n')
+                    args[k]=loader:Base64ZlibToText(pieces);
+                end
+            end
             outputs[k]=true
         end
     end
