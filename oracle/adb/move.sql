@@ -1,4 +1,4 @@
-/*[[Move files between Object Storage and Oracle directory. Usage: @@NAME [<credential>] {<directory>|<URL>} {<directory>|<URL>} <keyword> 
+/*[[Move files between Object Storage and Oracle directory. Usage: @@NAME [<credential>] {<directory>|<URL>} {<URL>|<directory>} <keyword> 
     Same to 'adb list [<credential>] <from> <to> <keyword> -move'
     Type 'adb list' for more information of the parameters
     --[[

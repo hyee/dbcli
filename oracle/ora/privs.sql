@@ -1,5 +1,6 @@
 /*[[Show object privileges. Usage: @@NAME <object_name>
     --[[
+        @ARGS: 1
         @CHECK_ACCESS_TAB: dba_tab_privs={dba} default={all}
         @CHECK_ACCESS_OWN: dba_tab_privs={OWNER} default={TABLE_SCHEMA}
         @CHECK_ACCESS_R1 : DBA_ROLE_PRIVS={DBA_ROLE_PRIVS} DEFAULT={role_role_privs}

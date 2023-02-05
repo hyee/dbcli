@@ -27,8 +27,13 @@ BEGIN
     DBMS_SESSION.SET_IDENTIFIER('dbcli');
     dbms_application_info.set_module(c,'');
     dbms_output.put_line('Trace file will be created under '||trim('/' from bucket)||'/sqltrace/dbcli/'||c);
-    IF not regexp_like(substr(ctx,-256),'end;\s+') then
-        ctx := ctx ||';';
+    ctx := regexp_replace(ctx,'\s+$');
+    IF not regexp_like(substr(ctx,-64),'end;') then
+        IF substr(ctx,-1)!=';' then
+            ctx := ctx ||';';
+        END IF;
+    ELSE
+        ctx := ctx || chr(10)||'/';
     END IF;
     :ctx := ctx;
 END;
@@ -43,24 +48,40 @@ set internal off ONERREXIT On
 VAR nam VARCHAR2(128)
 VAR ctx CLOB;
 DECLARE
-    ctx    CLOB;
-    c      PLS_INTEGER:=0;
-    piece  VARCHAR2(32767);
+    ctx     CLOB;
+    c       PLS_INTEGER := 0;
+    piece   VARCHAR2(32767);
+    isbreak BOOLEAN := FALSE;
+    pattern VARCHAR2(100) := '^[' || chr(13) || chr(10) || ']*(.*?)\s*$';
     @lz_compress@
 BEGIN
     DBMS_SESSION.SET_IDENTIFIER('');
-    dbms_lob.createtemporary(ctx,true);
-    FOR r IN(SELECT TRACE FROM SESSION_CLOUD_TRACE ORDER BY ROW_NUMBER) LOOP
-        piece:=trim(chr(13) from trim(chr(10) from r.trace))||chr(10);
-        dbms_lob.writeappend(ctx,length(piece),piece);
-        c := lengthb(piece);
-        EXIT WHEN c > 16*1024*1024;
+    dbms_lob.createtemporary(ctx, TRUE);
+    FOR r IN (SELECT trace FROM SESSION_CLOUD_TRACE ORDER BY row_number) LOOP
+        --handle unexpected line breaks in the view
+        piece := regexp_replace(r.trace, pattern, '\1');
+        IF substr(piece, 1, 6) = 'STAT #' AND substr(piece, -1) != '''' THEN
+            IF isbreak THEN
+                piece := chr(10) || piece;
+            END IF;
+            isbreak := TRUE;
+        ELSIF isbreak THEN
+            IF piece IS NULL OR instr(substr(piece, 1, 32), ' #') > 0 OR instr(substr(piece, 1, 32), '===') > 0 THEN
+                isbreak := FALSE;
+                piece   := chr(10) || piece || chr(10);
+            ELSIF substr(piece, -1) = '''' THEN
+                isbreak := FALSE;
+                piece   := piece || chr(10);
+            END IF;
+        ELSE
+            piece := piece || chr(10);
+        END IF;
+        dbms_lob.writeappend(ctx, length(piece), piece);
+        c := c + lengthb(piece);
+        EXIT WHEN c > 32 * 1024 * 1024;
     END LOOP;
-    base64encode(ctx,NULL,TRUE);
-    SELECT regexp_substr(value,'[^/]+$')
-    INTO   :nam
-    FROM   v$diag_info 
-    WHERE  name='Default Trace File';
+    base64encode(ctx, NULL, TRUE);
+    SELECT regexp_substr(value, '[^/]+$') INTO :nam FROM v$diag_info WHERE NAME = 'Default Trace File';
     :ctx := ctx;
 END;
 /
