@@ -3,8 +3,8 @@
     Same to 'adb list [<credential>] <query> -unload'
     
     File extentions:
-        -csv : export in CSV format(default)
-        -json: export in JSON format
+        -csv : export in CSV format
+        -json: export in JSON format (default)
         -xml : export in XML format
         -dump: export in Oracle Data Pump format
     Compression:

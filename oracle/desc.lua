@@ -194,7 +194,7 @@ local desc_sql={
                    IN_OUT, 
                    defaulted "Default?",
                    CHARSET
-            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5) NO_RESULT_CACHE*/ 
                            overload,
                            SEQUENCE s,
                            DATA_LEVEL l,

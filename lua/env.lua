@@ -668,52 +668,62 @@ function env.parse_args(cmd,rest,is_cross_line)
         end
         args[#args+1]=rest
     elseif rest then
-        local piece=""
+        local piece,char=""
         local quote='"'
         local is_quote_string = false
         local count=#args
+        local scope_index=0
         for i=1,#rest,1 do
-            local char=rest:sub(i,i)
-            if char=='<' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
-                rest=rest:sub(i+#terminator_str):trim()
-                if piece~="" then args[#args+1],piece=piece,"" end
-                args[#args+1]=rest
-                break
-            end
-            
-            if is_quote_string then--if the parameter starts with quote
-                piece = piece .. char
-                if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+" *%. *".+"') then
-                    --end of a quote string if next char is a space
-                    args[#args+1]=piece:gsub('^"(.*)"$','%1')
-                    piece,is_quote_string='',false
-                end
-            else
-                if char==quote then
-                    --begin a quote string, if its previous char is not a space, then bypass
-                    is_quote_string,piece = true,piece..quote
-                elseif not char:match("%s") then
-                    piece = piece ..char
-                elseif piece ~= '' then
-                    args[#args+1],piece=piece,''
-                end
-            end
-
-            if count ~= #args then
-                count=#args
-                local name=args[count]:upper()
-                local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
-                if count>=arg_count-2 or is_multi_cmd then--the last parameter
-                    piece=rest:sub(i+1):ltrim():gsub('^"(.*)"$','%1')
-                    if terminator and piece:find(terminator_str,1,true)==1 then
-                        piece=piece:sub(#terminator_str+1):ltrim()
-                    end
-                    if is_multi_cmd and _CMDS[name].ARGS==1 then
-                        args[count],piece=args[count]..' '..piece,''
-                    elseif piece~='' then
-                        args[count+1],piece=piece,''
-                    end
+            if i>=scope_index then
+                char=rest:sub(i,i)
+                if char=='<' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
+                    rest=rest:sub(i+#terminator_str):trim()
+                    if piece~="" then args[#args+1],piece=piece,"" end
+                    args[#args+1]=rest
                     break
+                end
+                
+                if is_quote_string then--if the parameter starts with quote
+                    piece = piece .. char
+                    if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+" *%. *".+"') then
+                        --end of a quote string if next char is a space
+                        args[#args+1]=piece:gsub('^"(.*)"$','%1')
+                        piece,is_quote_string='',false
+                    end
+                else
+                    if char==quote then
+                        --begin a quote string, if its previous char is not a space, then bypass
+                        is_quote_string,piece = true,piece..quote
+                    elseif piece=='' and (char=='[' or char=='{') then
+                        local scope=(rest:sub(i)..' '):match('^%b'..char..(char=='[' and ']' or ']')..'%s')
+                        if scope then
+                            args[#args+1],scope_index,piece=scope,i+#scope,''
+                        else
+                            piece = char
+                        end
+                    elseif not char:match("%s") then
+                        piece = piece ..char
+                    elseif piece ~= '' then
+                        args[#args+1],piece=piece,''
+                    end
+                end
+
+                if count ~= #args then
+                    count=#args
+                    local name=args[count]:upper()
+                    local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
+                    if count>=arg_count-2 or is_multi_cmd then--the last parameter
+                        piece=rest:sub(i+1):ltrim():gsub('^"(.*)"$','%1')
+                        if terminator and piece:find(terminator_str,1,true)==1 then
+                            piece=piece:sub(#terminator_str+1):ltrim()
+                        end
+                        if is_multi_cmd and _CMDS[name].ARGS==1 then
+                            args[count],piece=args[count]..' '..piece,''
+                        elseif piece~='' then
+                            args[count+1],piece=piece,''
+                        end
+                        break
+                    end
                 end
             end
         end

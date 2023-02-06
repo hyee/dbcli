@@ -1019,6 +1019,19 @@ function db_core:print_result(rs,sql,verticals)
     self.print_feed(sql,rs)
 end
 
+local proxy_type=nil
+function set_proxy(typ,addr,port)
+    if not typ then return end
+    if typ=='http' then
+        proxy_type='http'
+        java.system:setProperty('https.proxyHost',addr)
+        java.system:setProperty('https.proxyPort',port)
+    else
+        proxy_type='socks'
+        java.system:setProperty('socksProxyHost',addr)
+        java.system:setProperty('socksProxyPort',port)
+    end
+end
 --the connection is a table that contain the connection properties
 local prep_test_connection
 function db_core:connect(attrs,data_source)
@@ -1042,8 +1055,17 @@ function db_core:connect(attrs,data_source)
     end
     self.login_alias=env.login.generate_name(attrs.jdbc_alias or url,attrs)
     if event then event("BEFORE_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
-    local err,res
+    local err,res,proxy
 
+    proxy=url:match("[?&]proxy=[^& ]+")
+    if proxy then
+        url=url:replace(proxy,'')
+        proxy=proxy:sub(2)
+        local addr,port=proxy:match('^proxy=(.+):(%d+)%s*$')
+        env.checkerr(addr,'Invalid pattern for proxy paramter: '..proxy)
+        proxy_type=addr:lower():find('^http') and 'http' or 'socks'
+        set_proxy(proxy_type,addr,port)
+    end
     if data_source then
         for k,v in pairs{setURL=url,
                          setUser=attrs.user,
@@ -1057,6 +1079,7 @@ function db_core:connect(attrs,data_source)
         --err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
         err,res=pcall(loader.getConnection,loader,url,props)
     end
+    --set_proxy(proxy_type,"","")
 
     env.checkerr(err,tostring(res))
 
@@ -1066,7 +1089,6 @@ function db_core:connect(attrs,data_source)
         self.conn=nil
         env.raise("Unable to connect to database, connection !")
     end
-
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
     self.last_login_account=attrs
@@ -1557,6 +1579,8 @@ function db_core:disconnect(feed)
         env.set_prompt(nil,"SQL")
         env.set_title("",nil,self.__class.__className)
         load_titles()
+        set_proxy(proxy_type,"","")
+        proxy_type=nil
         event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end

@@ -7,6 +7,9 @@
                   1) the "LIKE" pattern that supports wildchars '%' and '_'
                   2) the 'REGEXP_LIKE' pattern
                   3) customized the WHERE clause by -f"<filter>"
+    -object     : sort result by object_name
+    -created    : sort result by created
+    -asc        : sort in asc orderd
     --[[
         @ARGS: 1
         @CHECK_ACCESS_CLOUD: DBMS_CLOUD={}
@@ -14,8 +17,11 @@
         &f     : default={0} f={1}
         &op    : default={list} delete={delete} copy={copy} move={move} unload={unload} view={view}
         &ops   : default={} delete={ deleted} copy={ copied} move={ to be moved} unload={ unloaded}
-        &typ   : csv={"CSV","header":true} json={"JSON"} xml={"XML"} dmp={dmp}
+        &pubs  : default={,"maxfilesize":2147483648}
+        &typ   : json={"json"&pubs} csv={"csv","header":true&pubs} xml={"xml"&pubs} dmp={"datapump","compression":"medium","version":"compatible"}
         &gzip  : default={} gzip={,"compression":"gzip"}
+        &sort  : default={last_modified} object={object_name} created={created}
+        &asc   : default={desc} asc={}
     --]]
 ]]*/
 
@@ -144,10 +150,6 @@ BEGIN
     END IF;
 
     IF op = 'unload' THEN
-        IF :typ = 'dmp' THEN
-            raise_application_error(-20001, 'Unsupported currently.');
-        END IF;
-    
         IF target LIKE '%/' THEN
             target := target || 'unload';
         END IF;
@@ -159,7 +161,7 @@ BEGIN
         SELECT JSON_ARRAYAGG(JSON_OBJECT('OBJECT_NAME' VALUE FILE_URI_LIST,
                                          'CHECKSUM' VALUE STATUS,
                                          'Created' VALUE TO_CHAR(START_TIME, 'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM'),
-                                         'LastModified' VALUE TO_CHAR(UPDATE_TIME, 'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')))
+                                         'Last_Modified' VALUE TO_CHAR(UPDATE_TIME, 'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')))
         INTO   CTX
         FROM   USER_LOAD_OPERATIONS
         WHERE  ID = OID;
@@ -173,7 +175,7 @@ BEGIN
             content := dbms_cloud.get_object(credential_name => credential,
                                              object_uri      => target,
                                              startoffset     => 0,
-                                             endoffset       => 1048576);
+                                             endoffset       => 1024*1024);
         ELSE
             target := TRIM('"' FROM target);
             IF keyword IS NULL THEN
@@ -214,11 +216,11 @@ BEGIN
                         BYTES,
                         CHECKSUM,
                         'Created' VALUE TO_CHAR(CREATED, 'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM'),
-                        'LastModified' VALUE TO_CHAR(LAST_MODIFIED, 'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')) RETURNING CLOB)
+                        'Last_Modified' VALUE TO_CHAR(LAST_MODIFIED, 'yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM')) RETURNING CLOB)
             FROM   (SELECT *
                     FROM   DBMS_CLOUD.LIST_$OBJ$ :target)
                     WHERE  &filter
-                    ORDER  BY LAST_MODIFIED DESC FETCH FIRST decode(:op, 'list', 100, 1024) ROWS ONLY)~',
+                    ORDER  BY &sort &asc FETCH FIRST decode(:op, 'list', 100, 1024) ROWS ONLY)~',
             '$OBJ$',CASE WHEN is_url1 THEN 'OBJECTS('''||credential||''',' ELSE 'FILES(' END),
             '$KEYWORD$','q''~'||keyword||'~''');
         EXECUTE IMMEDIATE stmt INTO ctx USING target,op;
@@ -256,7 +258,7 @@ BEGIN
                 '$OP1$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'download' ELSE 'upload' END),
                 '$OP2$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'get'      ELSE 'put'    END),
                 '$OP3$',CASE WHEN is_url1!=is_url2 THEN ',file_name=>t1(i)' 
-                             WHEN is_url1=is_url2 AND regexp_like(dest,'\.\w+$') THEN '' 
+                             WHEN regexp_like(CASE WHEN is_url1 THEN dest   ELSE target END,'\.\w+$') THEN '' 
                              ELSE q'[||'/'||t1(i)]' 
                         END);
             EXECUTE IMMEDIATE stmt USING 
@@ -307,7 +309,7 @@ BEGIN
                               BYTES INT,
                               CHECKSUM VARCHAR2(64),
                               Created VARCHAR2(40),
-                              LastModified VARCHAR2(40))
+                              Last_Modified VARCHAR2(40))
             WHERE  ROWNUM <= 100;
     END IF;
     :c := c;
