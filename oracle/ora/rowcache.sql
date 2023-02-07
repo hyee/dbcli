@@ -19,7 +19,7 @@ SELECT INST,
        ADDRESS,
        CACHE#,CACHE_NAME,EXISTENT,LOCK_MODE,LOCK_REQUEST,INST_REQ,INST_RELEASE,INST_TYPE,TXN, OBJECT_NAME,NUM,KEY
 FROM   TABLE(GV$(CURSOR(
-      SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge*/ 
+      SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
            userenv('instance') INST,
            sid,
            INDX,

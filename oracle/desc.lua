@@ -182,8 +182,10 @@ local desc_sql={
         v_idx    t_idx;
     BEGIN
         select nvl(max(object_id),oid) into oid 
-        from   all_procedures where owner=own 
-        and    object_name=:object_name and rownum<2;
+        from   all_procedures 
+        where  owner=own 
+        and    object_name=:object_name 
+        and    rownum<2;
 
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for
@@ -252,7 +254,7 @@ local desc_sql={
             MODEL PARTITION BY(0+overload o) DIMENSION BY(s, l) 
             MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
             RULES SEQUENTIAL ORDER(
-                p [ANY,ANY] ORDER BY s = max(p) [ s < cv(s), CV(l) - 1 ] || '.' || lpad(p [ CV(), CV() ],4),
+                p [ANY,ANY] ORDER BY s = max(p) [s < cv(s), CV(l) - 1] || '.' || lpad(p [CV(), CV()],4),
                 p [9999,0]='-'
             )
             ORDER  BY o, s;
@@ -394,42 +396,51 @@ local desc_sql={
     END;]],
 
     PACKAGE=[[
-    SELECT NO#,ELEMENT,NVL2(RETURNS,'FUNCTION','PROCEDURE') Type,ARGUMENTS,RETURNS,
-           AGGREGATE,PIPELINED,PARALLEL,INTERFACE,DETERMINISTIC,AUTHID
-    FROM (
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b)*/ 
-               A.SUBPROGRAM_ID NO#,
-               PROCEDURE_NAME||NVL2(OVERLOAD,' (#'||OVERLOAD||')','') ELEMENT,
-               b.RETURNS,
-               b.ARGUMENTS,
-               AGGREGATE,
-               PIPELINED,
-               PARALLEL,
-               INTERFACE,
-               DETERMINISTIC,
-               AUTHID
-        FROM   ALL_PROCEDURES a,
-               (SELECT SUBPROGRAM_ID,
-                       MAX(decode(position,1,CASE
-                           WHEN pls_type IS NOT NULL THEN
-                            pls_type
-                           WHEN type_subname IS NOT NULL THEN
-                            type_name || '.' || type_subname
-                           WHEN type_name IS NOT NULL THEN
-                            type_name||'('||DATA_TYPE||')'
-                           ELSE
-                            data_type
-                       END)) returns,
-                       COUNT(CASE WHEN position>0 THEN 1 END) ARGUMENTS
-                FROM   all_Arguments b
-                WHERE  owner='&owner'
-                AND    package_name='&object_name'
-                GROUP  BY SUBPROGRAM_ID) b
-        WHERE  a.owner='&owner'
-        AND    a.object_name='&object_name'
-        AND    a.SUBPROGRAM_ID=b.SUBPROGRAM_ID(+)
-        AND    a.SUBPROGRAM_ID > 0
-    ) ORDER  BY NO#]],
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b) NATIVE_FULL_OUTER_JOIN*/ 
+               SUBPROGRAM_ID PROG#,
+               NVL(A.ELEMENT,B.ELEMENT) ELEMENT,
+               NVL2(a.RETURNS,'FUNCTION',decode(sign(b.results),1,'FUNCTION','PROCEDURE')) Type,
+               ARGUMENTS,
+               NVL(a.RETURNS,DECODE(INHERITED,'YES','<INHERITED FROM SUPER>')) returns,
+               AGGREGATE,PIPELINED,PARALLEL,INTERFACE,DETERMINISTIC,AUTHID
+        FROM   (SELECT /*+no_merge use_hash(a b)*/
+                       a.*, 
+                       b.returns,
+                       b.ARGUMENTS,
+                       PROCEDURE_NAME||NVL2(a.OVERLOAD,' (#'||a.OVERLOAD||')','') ELEMENT,
+                       row_number() OVER(PARTITION BY A.PROCEDURE_NAME,b.ARGUMENTS ORDER BY A.SUBPROGRAM_ID) OV
+                FROM   ALL_PROCEDURES A LEFT JOIN (
+                    SELECT /*+no_merge*/
+                           SUBPROGRAM_ID,
+                           MAX(decode(position,0,CASE
+                               WHEN pls_type IS NOT NULL THEN
+                                pls_type
+                               WHEN type_subname IS NOT NULL THEN
+                                type_name || '.' || type_subname
+                               WHEN type_name IS NOT NULL THEN
+                                type_name||'('||DATA_TYPE||')'
+                               ELSE
+                                data_type
+                           END)) returns,
+                           COUNT(CASE WHEN position>0 THEN 1 END) ARGUMENTS
+                    FROM   all_Arguments b
+                    WHERE  owner=:owner
+                    AND    package_name=:object_name
+                    GROUP  BY SUBPROGRAM_ID) b
+                ON     (a.SUBPROGRAM_ID=b.SUBPROGRAM_ID)
+                WHERE  owner=:owner AND object_name=:object_name
+                AND    a.SUBPROGRAM_ID > 0
+        ) a FULL JOIN (
+            SELECT /*+no_merge*/
+                   a.*,DECODE(INHERITED,'NO',METHOD_NAME) PROCEDURE_NAME,PARAMETERS ARGUMENTS,
+                   MIN(METHOD_NO) OVER(PARTITION BY DECODE(INHERITED,'YES',METHOD_NAME)) METHOD_SEQ,
+                   METHOD_NAME||DECODE(COUNT(1) OVER(PARTITION BY METHOD_NAME),1,'',' (#'||ROW_NUMBER() OVER(PARTITION BY METHOD_NAME ORDER BY METHOD_NO)||')') ELEMENT,
+                   row_number() OVER(PARTITION BY DECODE(INHERITED,'NO',METHOD_NAME),PARAMETERS ORDER BY METHOD_NO) OV
+            FROM   all_type_methods A 
+            WHERE  :object_type='TYPE' 
+            AND    owner=:owner AND type_name=:object_name) b
+        USING   (PROCEDURE_NAME,ARGUMENTS,OV)
+        ORDER BY SUBPROGRAM_ID,method_seq,method_no]],
 
     INDEX={[[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
                    table_owner||'.'||table_name table_name,column_position NO#,column_name,column_expression column_expr,column_length,char_length,descend
@@ -458,19 +469,17 @@ local desc_sql={
                 AND    owner = :owner]],
             [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]},
     TYPE=[[
-        SELECT /*INTERNAL_DBCLI_CMD*//*+opt_param('optimizer_dynamic_sampling' 5) */ 
+        SELECT /*INTERNAL_DBCLI_CMD*//*+opt_param('optimizer_dynamic_sampling' 5) */
+               TYPE_NAME,
                attr_no NO#,
-               decode(c, 1,
-                      CASE
-                          WHEN attr_no = 1 THEN
-                           (SELECT a.type_name||'['||DECODE(COLL_TYPE, 'TABLE', 'TABLE', 'VARRAY(' || UPPER_BOUND || ')') ||']'||CHR(10) || '  '
-                            FROM   ALL_COLL_TYPES
-                            WHERE  owner = :owner
-                            AND    type_name = :object_name)
-                          ELSE
-                           '  '
-                      END) || attr_name attr_name,
-               decode(attr_no*c, 1, chr(10)) || nullif(attr_type_owner||'.', '.') || --
+               CASE
+                  WHEN attr_no = 1 THEN
+                   (SELECT a.type_name||'['||DECODE(COLL_TYPE, 'TABLE', 'TABLE', 'VARRAY(' || UPPER_BOUND || ')') ||']'|| '  '
+                    FROM   ALL_COLL_TYPES
+                    WHERE  owner = :owner
+                    AND    type_name = a.type_name)
+               END || attr_name attr_name,
+               nullif(attr_type_owner||'.', '.') || --
                CASE
                    WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') THEN
                     attr_type_name || '(' || LENGTH || ')' --
@@ -486,15 +495,16 @@ local desc_sql={
                          attr_type_name || '(' || PRECISION || ')'
                     END)
                    ELSE
-                    attr_type_name
+                    trim(attr_type_name)
                END data_type, 
-               decode(attr_no*c, 1, chr(10)) || ATTR_TYPE_MOD ATTR_MOD, 
-               decode(attr_no*c, 1, chr(10)) || Inherited inherit, 
-               decode(attr_no*c, 1, chr(10)) || CHARACTER_SET_NAME "CHARSET"
-        FROM   (SELECT A.*, decode(type_name, :object_name, 0, 1) c
+               ATTR_TYPE_MOD ATTR_MOD, 
+               Inherited inherit, 
+               CHARACTER_SET_NAME "CHARSET"
+        FROM   (SELECT A.*
                 FROM   all_type_attrs a
-                WHERE  (owner = :owner AND type_name = :object_name)) a
-        ORDER  BY NO#]],
+                WHERE  owner = :owner AND type_name = :object_name) a
+        ORDER  BY TYPE_NAME,NO#]],
+
     TABLE={[[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
                --+no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c)
@@ -522,6 +532,11 @@ local desc_sql={
                    ELSE
                     NULL
                END) "Default",
+               $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
+               CASE WHEN nvl(COLLATION,'USING_NLS_COMP')!='USING_NLS_COMP' THEN REPLACE(COLLATION,'USING_') END COLLATION,
+               $END
+               NVL2(d.cname,''''||INTEGRITY_ALG||''''||decode(SALT,'NO',' NO SALT'),'') ENCRYPTION,
+               e.redaction,
                HIDDEN_COLUMN "Hidden?",
                AVG_COL_LEN AVG_LEN,
                num_distinct "NDV",
@@ -604,12 +619,24 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)
                         ,  high_value),1,32) end high_value
-        FROM   (select /*+no_merge*/ a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a,
-               (select /*+no_merge*/ * from all_tables a where a.owner=:owner and a.table_name=:object_name) b,
-               (select /*+no_merge*/ column_name cname,substr(trim(comments),1,256) comments from all_col_comments where owner=:owner and table_name=:object_name) c
-        WHERE  a.table_name=b.table_name(+)
-        AND    a.owner=b.owner(+)
-        AND    a.column_name=c.cname(+)
+        FROM      (select /*+no_merge*/ a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a
+        LEFT JOIN (select /*+no_merge*/ * from all_tables a where a.owner=:owner and a.table_name=:object_name) b 
+        ON        (a.table_name=b.table_name)
+        LEFT JOIN (select /*+no_merge*/ column_name cname,comments from all_col_comments where owner=:owner and table_name=:object_name) c
+        ON        (a.column_name=c.cname)
+        LEFT JOIN (select /*+no_merge*/ column_name cname,SALT,INTEGRITY_ALG from all_encrypted_columns where owner=:owner and table_name=:object_name) d
+        ON        (a.column_name=d.cname)
+        LEFT JOIN (
+        $IF $$VERSION > 1101 AND ($$SELECT_CATALOG_ROLE OR $$SYSDBA) $THEN
+            select /*+no_merge*/ column_name cname,REPLACE(FUNCTION_TYPE,' REDACTION') REDACTION
+            from  REDACTION_COLUMNS 
+            join  REDACTION_POLICIES USING (object_owner,object_name)
+            where object_owner='&owner' and object_name='&object_name'
+        $ELSE
+            SELECT ''  cname,'' REDACTION FROM DUAL where 1=2
+        $END
+        ) e
+        ON        (a.column_name=e.cname)
         ORDER BY NO#]],
     [[
         WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
@@ -827,7 +854,9 @@ local desc_sql={
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(a.high_value, 13, 2), 'XX')-1,2,0)
                         ,  a.high_value),1,32) end high_value
-         FROM   (select c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c) c,  all_Part_Col_Statistics a ,all_tab_partitions  b
+         FROM   (select c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c) c,  
+                all_Part_Col_Statisticsa ,
+                all_tab_partitions  b
          WHERE  a.owner=c.owner and a.table_name=c.table_name
          AND    a.column_name=c.column_name
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
@@ -1202,6 +1231,7 @@ function desc.desc(name,option)
     
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
     if type(sqls)~="table" then sqls={sqls} end
+    sqls={table.unpack(sqls)}
     if rs[4]=="TABLE" then
         local result=db:dba_query(db.internal_call,
                                   [[select nvl(cluster_name,table_name)
@@ -1233,6 +1263,13 @@ function desc.desc(name,option)
             desc=' ['..(result[3]=='TABLE' and 'TABLE' or ('VARRAY('..result[4]..')'))..' OF '..
                        (result[5]~='' and (result[5]..' ') or '')..
                        (result[1]~='' and (result[1]..'.') or '')..result[2]..']'
+        else
+            result=db:dba_query(db.internal_call,[[select SUPERTYPE_NAME from ALL_TYPES WHERE SUPERTYPE_NAME IS NOT NULL AND owner = :owner AND type_name = :object_name]],{owner=rs[1],object_name=rs[2]})
+            result=db.resultset:rows(result,-1)
+            if #result>1 then
+                result=result[2]
+                desc=' [INHERITED FROM '..rs[1]..'.'..result[1]..']'
+            end
         end
     end
     local dels='\n'..string.rep("=",80)
@@ -1252,13 +1289,13 @@ function desc.desc(name,option)
         if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
         local typ=db.get_command_type(sql)
         local result
+        rs['v_cur']='#CURSOR'
         if typ=='DECLARE' or typ=='BEGIN' then
-            rs['v_cur']='#CURSOR'
             db:dba_query(db.internal_call,sql,rs)
-            result=rs.v_cur
         else
-            result=db:dba_query(db.internal_call,sql,rs)
+            db:dba_query(db.internal_call,'BEGIN OPEN :v_cur FOR '..sql..';END;',rs)
         end
+        result=rs.v_cur
         result=db.resultset:rows(result,-1)
         if #result>1 then 
             grid.print(result)

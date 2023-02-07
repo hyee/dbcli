@@ -1020,16 +1020,25 @@ function db_core:print_result(rs,sql,verticals)
 end
 
 local proxy_type=nil
-function set_proxy(typ,addr,port)
-    if not typ then return end
-    if typ=='http' then
-        proxy_type='http'
-        java.system:setProperty('https.proxyHost',addr)
-        java.system:setProperty('https.proxyPort',port)
+function set_proxy(addr,port)
+    if not proxy_type then return end
+    if addr then
+        if proxy_type=='http' then
+            java.system:setProperty('https.proxyHost',addr)
+            java.system:setProperty('https.proxyPort',port)
+        else
+            java.system:setProperty('socksProxyHost',addr)
+            java.system:setProperty('socksProxyPort',port)
+        end
     else
-        proxy_type='socks'
-        java.system:setProperty('socksProxyHost',addr)
-        java.system:setProperty('socksProxyPort',port)
+        if proxy_type=='http' then
+            java.system:clearProperty('https.proxyHost')
+            java.system:clearProperty('https.proxyPort')
+        else
+            java.system:clearProperty('socksProxyHost')
+            java.system:clearProperty('socksProxyPort')
+        end
+        proxy_type=nil
     end
 end
 --the connection is a table that contain the connection properties
@@ -1064,7 +1073,9 @@ function db_core:connect(attrs,data_source)
         local addr,port=proxy:match('^proxy=(.+):(%d+)%s*$')
         env.checkerr(addr,'Invalid pattern for proxy paramter: '..proxy)
         proxy_type=addr:lower():find('^http') and 'http' or 'socks'
-        set_proxy(proxy_type,addr,port)
+        set_proxy(addr,port)
+    elseif proxy_type then
+        set_proxy(nil,nil)
     end
     if data_source then
         for k,v in pairs{setURL=url,
@@ -1438,6 +1449,7 @@ db_core.source_objs={
     DECLARE=1,
     BEGIN=1,
     JAVA=1,
+    AND=1,
     DEFINER=1,
     EVENT=1}
 
@@ -1579,8 +1591,7 @@ function db_core:disconnect(feed)
         env.set_prompt(nil,"SQL")
         env.set_title("",nil,self.__class.__className)
         load_titles()
-        set_proxy(proxy_type,"","")
-        proxy_type=nil
+        set_proxy(nil,nil)
         event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end

@@ -1219,7 +1219,7 @@ function oradebug.profile(sid,samples,interval,event)
             ela=ela and tonumber(ela)/1000 or 1
             line='<-'..line
         elseif sid then
-            title="OraDebug Short Stack Profiling (Session Id:"..sid..")"
+            title="OraDebug Short Stack Profiling (Session PID:"..sid..")"
             line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
             if cnt==0 then
                 line,cnt=line:gsub('^.-sspuser%(%)','',1)

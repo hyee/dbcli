@@ -295,8 +295,8 @@ function dicts.set_dict(typ,scope)
         checkhelp(typ)
     end
     typ=typ:lower()
-    env.checkerr(typ=='public' or typ=='init' or typ=='param' or typ=='obj',"Invalid parameter!")
-    env.checkerr(scope or (typ=='public' or typ=='init'),"Invalid parameter!")
+    env.checkerr(typ=='public' or typ=='init' or typ=='param' or typ=='obj' or typ=='remap',"Invalid parameter!")
+    env.checkerr(scope or (typ=='public' or typ=='init' or typ=='remap'),"Invalid parameter!")
     scope=(scope or "all"):lower()
     local sql;
     local path=datapath
@@ -354,6 +354,19 @@ function dicts.set_dict(typ,scope)
             if not show_value then table.remove(rows[i+1],4) end
         end
         return env.grid.print(rows)
+    elseif typ=='remap' then
+        local dict1={dict={},keywords=dicts.keywords,params=dicts.params}
+        for name,obj in pairs(dicts.dict) do
+            dict1.dict[name]={obj.inst_col,
+                    obj.cdb_col,
+                    obj.dbid_col,
+                    obj.usr_col,
+                    obj.owner,
+                    obj.comm_view,
+                    obj.ver}
+        end;
+        env.save_data((path:gsub('dict','dict1')),dict1)
+        return;
     elseif typ=='obj' then
         dict=dicts.dict
         for k,v in pairs(dict) do
@@ -424,7 +437,16 @@ function dicts.set_dict(typ,scope)
                     WHERE  username IN (SELECT COMP_ID FROM dba_registry_schemas UNION SELECT COMP_ID FROM dba_registry)
                     AND    username = owner
                     AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE'))  
-                    @XTABLE@)
+                    @XTABLE@),
+            objs AS(select owner,object_name,null,object_type
+                    from   dba_objects
+                    where  owner IN('SYS') 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    instr(object_type,' ')=0
+                    union  all
+                    select owner,table_name,null,null 
+                    from   dba_tab_privs a
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA','C##CLOUD$SERVICE','PDB_DBA','DWROLE'))
             SELECT  table_name,
                     MAX(CASE WHEN col = 'INST_ID' and substr(table_name,1,3) NOT IN('DBA','PDB','CDB','ALL') OR col='INSTANCE_NUMBER' THEN col END) INST_COL,
                     MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
@@ -441,21 +463,13 @@ function dicts.set_dict(typ,scope)
                     and    r.owner=s.table_owner
                     and    s.synonym_name!=s.table_name
                     union  all
-                    select owner,object_name,null,object_type
-                    from   dba_objects
-                    where  owner IN('SYS') 
-                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
-                    and    instr(object_type,' ')=0
+                    SELECT * FROM objs
                     union  all
-                    select distinct owner,object_name||'.'||procedure_name,null,'PROCEDURE'
-                    from   dba_procedures
-                    where  owner IN('SYS') 
-                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    select distinct a.owner,a.object_name||'.'||b.procedure_name,null,'PROCEDURE'
+                    from   objs a,dba_procedures b
+                    where  a.owner=b.owner
+                    and    a.object_name=b.object_name
                     and    procedure_name is not null
-                    union  all
-                    select owner,table_name,null,null 
-                    from   dba_tab_privs a
-                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA','C##CLOUD$SERVICE','PDB_DBA')
                     union  all
                     SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
                            a.owner, a.name, nvl(b.referenced_name, a.referenced_name) ref_name,'REF'
@@ -491,19 +505,27 @@ function dicts.set_dict(typ,scope)
         rows=db.resultset:rows(rs,-1)
         cnt1=#rows
         for i=2,cnt1 do
-            local exists=dict[rows[i][1]]
-            dict[rows[i][1]]={
-                inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
-                cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
-                dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
-                usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
-                owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
-                comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view),
-                ver=not exists and db.props.version or dict[rows[i][1]].ver and math.min(dict[rows[i][1]].ver,db.props.version) or nil
-            }
-            local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
-            if prefix=='GV_$' or prefix=='V_$' then
-                dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
+            local name=rows[i][1]
+            local exists=dict[name]
+            local prefix,suffix=name:match('^(.*)%.(.*)$')
+            if not prefix then prefix,suffix=name,'' end
+            if #prefix > 30 or #suffix>30 then
+                dict[name]=nil
+                print(name)
+            else
+                dict[name]={
+                    inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and exists.inst_col),
+                    cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and exists.cdb_col),
+                    dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and exists.dbid_col),
+                    usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and exists.usr_col),
+                    owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and exists.owner),
+                    comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and exists.comm_view),
+                    ver=not exists and db.props.version or exists.ver and math.min(exists.ver,db.props.version) or nil
+                }
+                prefix,suffix=name:match('(.-$)(.*)')
+                if prefix=='GV_$' or prefix=='V_$' then
+                    dict[prefix:gsub('_','')..suffix]=dict[name]
+                end
             end
         end
         local done={}

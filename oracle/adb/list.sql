@@ -53,13 +53,17 @@ DECLARE
 
     FUNCTION BLOB2CLOB(ctx IN OUT NOCOPY BLOB) RETURN CLOB IS
         v_clob CLOB;
+        v_len  PLS_INTEGER :=dbms_lob.getlength(ctx);
     BEGIN
+        IF v_len = 0 THEN
+            RETURN empty_clob();
+        END IF; 
         dest_offset := 1;
         src_offset  := 1;
         dbms_lob.createtemporary(v_clob, TRUE);
         dbms_lob.ConvertToCLOB(v_clob,
                                ctx,
-                               dbms_lob.getlength(ctx),
+                               v_len,
                                dest_offset,
                                src_offset,
                                lob_csid,

@@ -264,6 +264,7 @@ function oracle:connect(conn_str)
             intval  NUMBER;
             strval  VARCHAR2(300);
             blk_siz PLS_INTEGER:=8192;
+            ccflags VARCHAR2(2000):='VERSION:'||(dbms_db_version.version*100+dbms_db_version.release);
             mbrc    NUMBER:=8;
             PROCEDURE set_param(params VARCHAR2) IS
             BEGIN
@@ -350,8 +351,17 @@ function oracle:connect(conn_str)
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
                 pv := pv||'/'||r.p;
                 exit when length(pv)>32000;
+                IF r.p IN('DBA','PDB_DBA','CDB_DBA','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE') THEN
+                    ccflags := ccflags||','||replace(r.p,' ','_')||':true';
+                END IF;
             END LOOP;
+            IF USER='SYS' THEN
+                ccflags := ccflags||','||'SYSDBA:TRUE';
+            END IF;
 
+            IF ccflags IS NOT NULL THEN
+                set_param('PLSQL_CCFLAGS='''||ccflags||'''');
+            END IF;
             :privs := pv;
 
             IF sv like 'SYS$%' THEN
