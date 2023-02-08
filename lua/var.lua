@@ -739,8 +739,6 @@ function var.trigger_column(field)
         if index then
             field[2],var.columns[index:upper()]=index,obj
         end
-        if obj.print==false then field[2]='' end
-        --return
     elseif rownum>0 and grid and not grid.__var_parsed then
         grid.__var_parsed=true
         for col,config in pairs(var.columns) do
@@ -768,7 +766,7 @@ function var.trigger_column(field)
         if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 
-    if obj.print==false then field[2]='' end
+    if obj.print==false then field[2],field.no_print='',true end
 end
 
 function var.getBaseLog(x, y)

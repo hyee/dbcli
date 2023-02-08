@@ -38,14 +38,9 @@ function desc.desc(name,option)
     end
 
     rs={obj.owner,obj.object_name,obj.object_subname or "",
-       obj.object_subname and obj.object_subname~='' and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE"
-       or obj.object_type,2}
+       (obj.object_subname or '')~='' and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE" or obj.object_type}
 
-    if (rs[4]=="PROCEDURE" or rs[4]=="FUNCTION") and rs[5]~=2 then
-        rs[2],rs[3]=rs[3],rs[2]
-    end
-
-    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id,table_name=obj.table_name} do
+    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
         rs[k]=v
     end
 
@@ -69,6 +64,7 @@ function desc.desc(name,option)
             return rs.load_sql(file:gsub(rs.object_type:lower():gsub(' ','_')..'.lua$',target:lower()..'.lua'))
         end
         sqls=rs.load_sql(file)
+        env.checkerr(type(sqls)=='table' or type(sqls)=='string',"Describing "..rs.object_type..' returns no result.')
     end
 
     if not sqls then return print("Cannot describe "..rs[4]..'!') end
@@ -81,11 +77,12 @@ function desc.desc(name,option)
     local dels='\n'..string.rep("=",80)
     local feed,autohide=cfg.get("feed"),cfg.get("autohide")
     cfg.set("feed","off",true)
-    cfg.set("autohide","col",true)
     print(("%s : %s%s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],rs.desc))
-    
     for i,sql in ipairs(sqls) do
-        if sql:find("/*PIVOT*/",1,true) then cfg.set("PIVOT",1) end
+        cfg.set("COLWRAP",120)
+        cfg.set("PIVOT",sql:sub(1,256):find("/*PIVOT*/",1,true) and 1 or 0)
+        cfg.set("autohide",sql:sub(1,256):find("/*NO_HIDE*/",1,true) and 'off' or 'col')
+
         local typ=db.get_command_type(sql)
         local result
         rs['v_cur']='#CURSOR'
@@ -100,6 +97,8 @@ function desc.desc(name,option)
             grid.print(result)
             if i<#sqls then print(dels) end
         end
+        cfg.set("PIVOT",0)
+        cfg.set("COLWRAP",'default')
     end
 
     if option and option:upper()=='ALL' then

@@ -1,3 +1,4 @@
+env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {[[
          SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b c)*/ 
                 COLUMN_ID NO#,
@@ -110,7 +111,8 @@ return {[[
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
          ORDER BY NO#]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
-        FROM   all_tab_partitions T
-        WHERE  T.TABLE_OWNER = :1 AND T.TABLE_NAME = :2 AND partition_name=:3]]
+        SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*NO_HIDE*/ /*+OUTLINE_LEAF*/ *
+        FROM   (SELECT * FROM ALL_TAB_PARTITIONS   WHERE TABLE_OWNER = :owner AND TABLE_NAME = :object_name AND PARTITION_NAME=:object_subname) T,
+               (SELECT * FROM ALL_OBJECTS  WHERE OWNER = :owner AND OBJECT_NAME = :object_name AND subobject_name=:object_subname) O
+        WHERE  T.TABLE_NAME=O.OBJECT_NAME]]
 }

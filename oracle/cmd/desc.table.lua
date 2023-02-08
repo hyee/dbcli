@@ -15,6 +15,7 @@ if obj.object_type:find('^table') then
 else
     obj.table_name=''
 end
+env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 
 return  obj.object_type=='FIXED TABLE' and [[
         SELECT /*+ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5)*/ 
@@ -386,7 +387,8 @@ return  obj.object_type=='FIXED TABLE' and [[
     FROM   all_part_tables
     WHERE  table_name = :object_name
     AND    owner = :owner]],
-    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
-      FROM   ALL_TABLES T
-      WHERE  T.OWNER = :owner AND T.TABLE_NAME = :object_name]]
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*NO_HIDE*/ /*+OUTLINE_LEAF*/ *
+      FROM   (SELECT * FROM ALL_TABLES   WHERE OWNER = :owner AND TABLE_NAME = :object_name) T,
+             (SELECT * FROM ALL_OBJECTS  WHERE OWNER = :owner AND OBJECT_NAME = :object_name) O
+      WHERE  T.TABLE_NAME=O.OBJECT_NAME]]
 }

@@ -1,3 +1,4 @@
+
 local result=db:dba_query(db.internal_call,
                           [[select ELEM_TYPE_OWNER,ELEM_TYPE_NAME,COLL_TYPE,UPPER_BOUND,ELEM_TYPE_MOD
                            from ALL_COLL_TYPES 
@@ -57,4 +58,9 @@ return {[[
             FROM   all_type_attrs a
             WHERE  owner = :owner AND type_name = :object_name) a
     ORDER  BY TYPE_NAME,NO#]],
-    obj.redirect('package')}
+    obj.redirect('package'),
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*NO_HIDE*/ /*+OUTLINE_LEAF*/ *
+      FROM   (SELECT * FROM ALL_TYPES   WHERE OWNER = :owner AND TYPE_NAME = :object_name) T,
+             (SELECT * FROM ALL_OBJECTS  WHERE OWNER = :owner AND OBJECT_NAME = :object_name) O
+      WHERE  T.TYPE_NAME=O.OBJECT_NAME]]
+}

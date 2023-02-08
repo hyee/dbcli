@@ -1,3 +1,4 @@
+
 return [[
     DECLARE /*INTERNAL_DBCLI_CMD*/
         cur     SYS_REFCURSOR;
@@ -41,7 +42,7 @@ return [[
                    IN_OUT, 
                    defaulted "Default?",
                    CHARSET
-            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5) NO_RESULT_CACHE*/ 
+            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                            overload,
                            SEQUENCE s,
                            DATA_LEVEL l,
@@ -100,8 +101,7 @@ return [[
             MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
             RULES SEQUENTIAL ORDER(
                 p [ANY,ANY] ORDER BY s = max(p) [s < cv(s), CV(l) - 1] || '.' || lpad(p [CV(), CV()],4),
-                p [9999,0]='-'
-            )
+                p [9999,0]='-')
             ORDER  BY o, s;
         $ELSE
 

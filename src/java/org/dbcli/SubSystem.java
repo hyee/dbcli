@@ -37,7 +37,7 @@ public class SubSystem {
     volatile int determinPromptCount = 12;
     //return null means the process is terminated
     CountDownLatch lock = new CountDownLatch(1);
-    CountDownLatch responseLock = null;
+    volatile CountDownLatch responseLock = null;
     ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue(1);
 
     public SubSystem() {

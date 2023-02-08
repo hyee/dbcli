@@ -1,7 +1,11 @@
+env.var.define_column('OWNER,INDEX_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {
     [[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
-               table_owner||'.'||table_name table_name,column_position NO#,column_name,column_expression column_expr,column_length,char_length,descend
-        from   all_ind_columns left join all_ind_expressions using(index_owner,index_name,column_position,table_owner,table_name)
+               DECODE(column_position,1,table_owner||'.'||table_name) table_name,
+               column_position NO#,
+               column_name,column_expression column_expr,column_length,char_length,descend
+        from   all_ind_columns 
+        left   join all_ind_expressions using(index_owner,index_name,column_position,table_owner,table_name)
         WHERE  index_owner=:1 and index_name=:2
         ORDER BY NO#]],
     [[WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
@@ -24,5 +28,8 @@ return {
         FROM   all_part_indexes
         WHERE  index_name = :object_name
         AND    owner = :owner]],
-    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/* FROM ALL_INDEXES WHERE owner=:1 and index_name=:2]]
+    [[SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*NO_HIDE*/ /*+OUTLINE_LEAF*/ *
+      FROM   (SELECT * FROM ALL_INDEXES  WHERE OWNER = :owner AND INDEX_NAME = :object_name) T,
+             (SELECT * FROM ALL_OBJECTS  WHERE OWNER = :owner AND OBJECT_NAME = :object_name) O
+      WHERE  T.INDEX_NAME=O.OBJECT_NAME]]
 }

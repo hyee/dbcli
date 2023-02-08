@@ -233,6 +233,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
     --if not title then print(table.dump(rows)) end
     local verticals=rows and rows.verticals and math.min(#rows,rows.verticals+1)
     rows=rows.data or rows
+    local colinfo=rows.colinfo or {}
     local title = rows[1]
     local maxsize = grid.col_size
     local pivot = math.abs(grid.pivot) + 1
@@ -259,7 +260,8 @@ function grid.show_pivot(rows, col_del,pivotsort)
     end
 
     local function get_value(title,r,c)
-        _, value = grid.format_column(true, type(title) == "table" and title or {column_name = title}, rows[r][c], r-1)
+        if not colinfo[c] then colinfo[c]={column_name = title} end
+        _, value = grid.format_column(true, type(title) == "table" and title or colinfo[c], rows[r][c], r-1)
         len1,len2,nv=tostring(value or null_value):trim():ulen(maxsize)
         if col_wrap > 0 and len2 > col_wrap and not nv:sub(1,1024):find('\n',1,true) then
             value,len1,len2=grid.line_wrap(nv,col_wrap)
@@ -338,13 +340,18 @@ function grid.show_pivot(rows, col_del,pivotsort)
     for k, v in ipairs(title) do
         len1,len2,nv=v:ulen(maxsize)
         local row={("%s%-" .. (maxlen+len1-len2) .. "s %s%s"):format(hor, grid.format_title(nv)..(v:lower()==head and ' =>' or ''), nor, del)}
-        if v:lower()==head then
-            table.insert(r,1, row)
-        else    
-            table.insert(r, row)
-        end
+        
         for i = 2, pivot, 1 do
             row[#row+1]=get_value(v,i,keys[v])
+        end
+        local print_=colinfo[keys[v]] and not colinfo[keys[v]].no_print
+        if pivot==2 and row[#row]=='' and (autohide=='col' or autohide=='all') then
+            print_=false
+        end
+        if v:lower()==head then
+            table.insert(r,1, row)
+        elseif print_ then
+            table.insert(r, row)
         end
     end
     
@@ -398,8 +405,8 @@ local string_format=String.format
 
 function grid.format_column(include_head, colinfo, value, rownum,instance,rowind,row)
     if include_head then
-        local result = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance,rowind,row,is_number=colinfo.is_number})
-        value,colinfo.is_number=result[2],colinfo.is_number or result.is_number
+        local result = event.callback("ON_COLUMN_VALUE", {colinfo.column_name, value, rownum,instance,rowind,row})
+        value,colinfo.is_number,colinfo.no_print=result[2],colinfo.is_number or result.is_number,colinfo.no_print or result.no_print
     end
     
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
