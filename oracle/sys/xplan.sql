@@ -164,7 +164,7 @@ BEGIN
         trace  :='alter session set events ''trace [SQL_'|| CASE trace WHEN 1 THEN 'Optimizer' ELSE 'Compiler' END || '.*] @''';
         fixctl := sys.dbms_sqldiag.get_fix_control(16923858);
         IF fixctl=6 THEN
-            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:5'}';
+            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:4'}';
         END IF;
         EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
         EXECUTE IMMEDIATE replace(trace,'@','disk &lv');

@@ -509,9 +509,8 @@ function dicts.set_dict(typ,scope)
             local exists=dict[name]
             local prefix,suffix=name:match('^(.*)%.(.*)$')
             if not prefix then prefix,suffix=name,'' end
-            if #prefix > 30 or #suffix>30 then
+            if (#prefix > 30 or #suffix>30) and rows[i][6]~='SYS' then
                 dict[name]=nil
-                print(name)
             else
                 dict[name]={
                     inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and exists.inst_col),

@@ -1,0 +1,284 @@
+Parameters
+    _query_execution_cache_max_size:  controls the hash bucket size that used for scalar subquery and pl/sql deterministic
+    _plsql_cache_enable: enables plsql this caching mechanism of deterministic feature
+    _plsql_minimum_cache_hit_percent: responsible for the percentage of unsuccessful attempts which disables caching, 0 to force caching
+    _sqlexec_hash_based_distagg_enabled: improve multiple count(distinct) performance
+    _plsql_nvl_optimize: improve nvl performance by not evaluating the second expression if the first is not null
+    _gc_fast_index_split_wait: 0 to disable 'gc index operation' events (bug#28023081)
+    _index_prefetch_factor – defaults to 100, but when changed smaller, the optimizer will favor index prefetching. (NLJ prefetching)
+    _disable_index_block_prefetching: defaults to false, controls index prefetching (NLJ prefetching)
+    _db_file_noncontig_mblock_read_count – defaults to 11, maximum number of blocks(i.e. db file parallel read) to be prefetched in one batch. If set to 1, prefetching should be disabled. (NLJ prefetching)
+    _table_lookup_prefetch_thresh:  defaults as 2 and lower value makes Oracle use multiblock reads much more aggressively  (NLJ prefetching)
+    _table_lookup_prefetch_size: defaults as 40 and higher value makes Oracle use multiblock reads much more aggressively (NLJ prefetching)
+    _nlj_batching_enabled: defaults as 1, and 0 to turn off NLJ batching
+    _sort_elimination_cost_ratio:  defaults as 0, mainly used in first_rows. If est_cost(index_scan+order_by)*ratio>est_cost(index_full_scan) then use index_range_scan+order_by. 
+    _optimizer_skip_scan_enabled or hint NO_INDEX_SS: disable index skip scan
+    _with_subquery: OPTIMIZER/MATERIALIZE/INLINE, impacts the default behaviour of with subquery
+    _smm_auto_max_io_size: defaults to 256. used to reduce the direct path read/write temp overhead for hash join/sort
+    _lm_drm_disable: defaults to 0.  1(_gc_affinity_locking): disable affinity locking,   2(_gc_undo_affinity):disable undo drm  4(_gc_read_mostly_locking): disable readmostly drm, 5=1+4 7=1+2+4. Refer to MOS 1619155.1 for other gc parameters
+    _db_hot_block_tracking: enables to collect the hot blocks in X$KSLHOT
+    _dlm_stats_collect: defaults to 1 since 12.2 and should be set to 0 (Doc ID 2373451.1)
+    _restrict_pdb_gv: false to disable cross-instance query on gv$ views
+    _parallel_load_balancing: defaults to true, 'false' to allocate PX slaves across all instances in round-robin mode without measuring the workload balance
+    _lm_res_tm_hash_bucket/_lm_res_hash_bucket/_lm_share_lock_opt/_ksi_clientlocks_enabled: d improving the values can reduce "latch: ges resource hash list" events(Bug.27528038/29244263)
+    _enqueue_hash_chain_latches: defaults to cpu_count, improving the values can reduce "latch: enqueue hash chains" events if not pending on some object(Bug.23589928)
+    _px_adaptive_dist_method: Controls how parallel adaptive distribution, values in SQL Monitor: 5=round-robin 6=broadcast 16= hash
+        choose: only handle the over-estimated case
+        force: choose + more hash joins(e.g.: hash join 3 tables)
+        all  : force + under-estimated case
+    _px_adaptive_dist_method_threshold: controls the actual distribution method of adaptive distribution, default as DOP*2
+	cell_offload_parameters="<OPT_ENABLED|OPT_DISABLED>={<func_id_list in v$sqlfn_metadata>} | OPT_ENABLED_ONLY=(<func_id_list in v$sqlfn_metadata>)" 
+    _optimizer_transitivity_retain: defaults to true to pass the input variable to other table's equal-join column(ignored if executed by SYSDBA with opt_param hint)
+    _optimizer_generate_transitive_pred: similar to _optimizer_transitivity_retain
+    _iut_stat_collection_type: relative views: DBA_INDEX_USAGE/V$INDEX_USAGE_INFO, set to 'ALL' to get the most accurate result during the monitor period, it can cause some overhead
+    _disable_directory_link_check: directs the access driver to bypass symbolic link check, allowing you to use files for which the parent directory may be a symbolic link
+    _kcfis_storageidx_disabled: enable/disable storage index
+    _rdbms_internal_fplib_enabled/cell_offload_plan_display: simulate smart scan on non-Exadata db
+    _exadata_feature_on: simulate Exadata features on non-Exadata db
+    _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
+    _sql_plan_management_control: 4 - diagnose issues with SQL plan baselines of why it fails to use / 16 - Allow SPM on the SQLs start with "/* SQL Analyze("
+    _optimizer_squ_bottomup: false to reduce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
+                             Other relative parameters to optimize long parse time: 
+                                  _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
+                                  _fix_control 31360214/17442009:1
+                                  _optimizer_max_permutations =100/200/300
+    _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and :
+        0  to avoid column group creation by dbms_stats
+        1  to monitor column usage
+        2  to monitor all column groups
+        4  to maintain expression tracking(DBA_EXPRESSION_STATISTICS)
+        8  to monitor column usage wait
+        16 to monitor column groups from Sql Plan Directives
+    _optimizer_dsdir_usage_control: 0 to disable the use of existing SQL Plan Directives(SPD). Default value is 126
+    _sql_plan_directive_mgmt_control : 0 to disable the creation of new SQL Plan Directives(SPD). Default is 3
+    _kks_parse_error_warning: controls whether to record the SQL in the alert log when the SQL fails to be parsed over the specific times(default as 100), in <12.2 db, can also set event 10035 level 1 to display the parse error in the alert log
+    _kks_cached_parse_errors: set the value to a specific error number(i.e. 942) to skip the error
+    _small_table_threshold(STT): defaults to the 2% of buffer cache, and Medium Table Threshold(MTT)=10% of buffer cache
+        1) OBJECT_SIZE <= STT: use buffer cache, keep object whose size < keep pool size is also considered as small
+        2) STT < OBJECT_SIZE < MTT: 
+            for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
+                Parameter _parallel_cluster_cache_policy controls the behaviour for parallel read
+            for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
+        3) OBJECT_SIZE>=MTT: dx read
+        4) Patch #31626438 supports any partitions larger than 100 MB will automatically use Direct Read and hence offload on Exadata
+        4) flashback/version-based/scn-based/fragmented table(2132004.1) scan will not use dx read
+        5) SELECT FOR UPDATE/DELETE/UPDATE/MERGE on target table  will not use dx read
+        6) limit the result with rownum will not use dx read
+        Turn on event '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk highest' to trace the behaviours
+    _parallel_cluster_cache_policy: when auto dop is enabled(parallel_degree_policy=auto) its value becomes 'CACHE', change to 'ADAPTIVE' to prevent IMPQ on Exadata, or _px_adaptive_offload_percentage/_px_adaptive_offload_threshold
+    _cell_region_heuristics_read_count_threshold(cell): Number of scan times to trigger CC2 population after a 1M chunk is modified and invalidated
+    _hwm_sync_threshold: defaults to 10, setting to 100(support session level) will keep the HHWM and LHWM in sync during bulk/direct data load(Doc ID 726653.1), to fix low/high water mark not sync issue on  UNIFORM tablespace leading to smart scan not taken plan in parallel query, for existing segment, run DBMS_SPACE_ADMIN.ASSM_SEGMENT_SYNCHWM(...,check_only=1/0) to check/sync HWM.
+    _enable_columnar_cache: refer to 'help exa offload'
+    _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), 
+                    set to 0 can avoid spilling to temp I/O if _pga_max_size is explicitly set (events '10032 trace name context forever')
+    _newsort_type: 1: do not check for ordered data 
+                   2: always use FTS encoding assume no fixed len flds(forces the sort to treat all columns as variable length columns)
+                   4: force use of FTS encoding
+                   8: disable spilling rows before sort finishes
+                   32: disable sync spill for PX servers
+    _smm_max_size: The maximum work area size(in KB) for single process, defaults to 1GB when pga is large. Also impacts the number of hash join/group slots(slots*_smm_auto_max_io_size<=_smm_max_size) 
+    _smm_px_max_size: maximum total work area size(in KB) per parallel query where dop>5, defaults to pga_aggregate_target/2
+    _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1
+    _bloom_filter_ratio: defaults to 35, meaning that if the optimizer estimates BF can reduce 65%+ rows from the probe table, then use BF
+    _bloom_filter_size: defaults to NDV(Est)/128 in KB,change this to ActRows/128 in case of under-estimation
+    _oltp_compress_dbg: controls OLTP compression. 
+        1: disable the ArrayInserts compression, but results in more blocks marked full
+        2: Disable Compression Above-Cache 
+        32:disable OLTP Compression on HCC segments conventional DML
+    _disable_hcc_array_insert: false to disable conventional load compression for HCC table
+    _kdz_hcc_flags: 15 to disables CU alignment checks
+                    16 to disable checksum computation for CUs sent from cell to server for performance benefit
+                    64 to enable HCC array inserts with subsegments
+    _kdz_pcode_flags: 
+        1: disable pcode(Portable code,a framework to evaluate predicates)
+        32: disable just PCODE aggregation
+        256: disable complex predicate push down for PCODE evaluation
+        4096: disable pcode aggregation above a hash join
+        32768: Force aggregation pushdown with HCC
+        262144: disable  PCODE filtering(not impact cc2 codepath)
+        2097152: enable PCODE support for case statements
+        1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
+    _memory_imm_mode_without_autosga: when 0 then stop resize of SGA component
+    _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
+    _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
+    _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
+    _controlfile_cell_flash_caching: 
+        3: (default) Control File reads will be cached in the Cell Flash Cache with a default caching policy
+        2: disable Flash Cache caching of Control File reads.
+        1: enable KEEP caching policy of CF reads (more aggressive than default)
+    _db_writer_coalesce_area_size: defaults to 4M. the dbwr buffer(in v$sgastat) to coalesce adjacent blocks into a single large write, in ODA system it's usually set to 16M, see 'write clones%' sysstat
+    _connect_by_use_union_all: when 'OLD_PLAN_MODE' then works like hint 'CONNECT_BY_COMBINE_SW+NO_CONNECT_BY_FILTERING', mainly used to fix the unexpected plan of a view
+    _gcs_cluster_flash_cache_mode: 1-Enables the cluster flash cache/2-allows a block on the non-master instance to be saved in that instance's flash cache/3-1+2
+    _gcs_flash_cache_mode: 1-allows a local instance to serve the flash block to the remote requester/2-disallow
+    _cr_grant_local_role: controls 3-way CR grants. Auto:depends on cpu load(85%), and latency of 'gc cr grant 2-way + db file sequential read' vs 'gc current block 2-way', and 'gc cr grant 2-way' vs 'gc current block 3-way'
+    sqltune_category: used to change the SQL Profile category and therefor disable the use of some existing SQL Profiles
+    Parameters for Adaptive LGWR:
+        _use_adaptive_log_file_sync
+            TRUE: Enable adaptive log file sync (default)
+            FALSE: Disable adaptive log file sync (i.e., just use post/wait)
+            POLLING_ONLY: Use polling with adaptive polling interval
+        _adaptive_log_file_sync_use_polling_threshold
+            Larger values make it harder to switch to polling
+            Default value is 110%, which means the current redo synch time must exceed the expected poll time
+            by at least 10% for the algorithm to favor polling over post/wait
+            In the pseudocode above, refer to the use_polling_threshold variable
+        _adaptive_log_file_sync_use_postwait_threshold
+            Smaller values make it harder to switch to post/wait
+            Default value is 50%, which means the current scheduling delay needs to drop to half of that when
+            polling was first used for the algorithm to favor post/wait over polling
+            In the pseudocode above, refer to the use_postwait_threshold variable
+        _adaptive_log_file_sync_poll_aggressiveness
+            Larger values result in smaller polling intervals
+            Default value is 0%, which means none of the current scheduling delay is subtracted from the polling interval
+        _adaptive_log_file_sync_sched_delay_window
+            The window over which the current scheduling delay is computed
+            Default value is 60 seconds, and it is unlikely you need to adjust this
+        _adaptive_log_file_sync_high_switch_freq_threshold
+            A warning is printed if adaptive log file sync switches frequently between post/wait and polling
+            If it is an LRG, a soft assert is also signalled
+            Default threshold is 3 switches per minute
+        _fg_sync_sleep_usecs
+            A non-zero value specified will use polling with a fixed interval and disable adaptive log file sync
+        _log_file_sync_timeout
+            How long the foreground waits for LGWR to post it when post/wait is used
+            Default value is 100 msecs
+        _fg_fast_sync_spin_usecs 
+            "Fast sync" is used for log file sync by foregrounds when waiting for redo to be persisted on Exadata whose redo is located on PMEM/DAX storage. 
+            This has three phases: sleep, spin and backoff.the backoff phase relative to "redo synch fast sync all sleep count". 
+            When too low, then it is likely that the spin time is too high (parameter _fg_fast_sync_spin_usecs with default 300 us). 
+            When too high, it is likely that the spin time is too low. 
+        _fg_fast_sync_sleep_target_pct :
+            Adaptive fast sync is used for log file sync (LFS) when the redo log is located on PMEM storage - either fully, or partially (via the Exadata PMEMLog feature).
+            This attempts to adaptively determine the sleep time in the sleep phase. The algorithm attempts to maintain a percentage of undersleeps (as configured by the _fg_fast_sync_sleep_target_pct parameter). 
+            An undersleep is one whether after the sleep (in phase 1), the foregrounds redo is found not to be persisted. 
+            Two phases are executed for undersleeps - the spin phase and backoff phase, the latter being used for outliers. 
+            However, the undersleep target includes foregrounds which enter the backoff phase and should not. 
+            The undersleep target should be maintained only be for those that end their sync in the spin phase.
+            Using the default configured value of 50%, a reasonable outcome in which there are 50% undersleeps is that (for eg), 50% end  in the sleep phase, 
+            10% end in the spin phase and 40% in the backoff phase. 
+            This can only be satisfied by having a very log sleep time, 
+            the outcome of which is that log file sync is unnecessarily long.
+    _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
+    _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
+    _px_reuse_server_groups: reuse existing px server group for CDT
+    _ktb_debug_flags: 2 - disable oustanding read events on SecureFile insertion, but increase the undo header lookups during cleanouts
+    _dbg_scan: default as 0
+        1: Disable LOB predicate pushdown to Smart Scan
+        128: disable HCC read-ahead and disable preventing tiny HCC tiny CU(buffer_size<block_size) creation(bug 32290386)
+        4096: Disable rowset function evaluation in Smart Scan
+        8192: Disable aggregation pushdown to Smart Scan
+        131072: Disable Hybrid IM scan - this is where In-Memory is interleaved with Smart Scan
+    _cursor_reload_failure_threshold: prevents multiple sessions to experience reload failures for the same cursor. reduce library/mutex lock
+    _slave_mapping_enabled: use to disable px "LOCAL" distribution that can lead to skew
+    _cell_cache_thrashing_detection_tolerance(cell): set to 1 to reduce high latency of direct path read/write temp in Exadata, relative cell param: _cell_fc_lw_max_percentage(default 20%)
+    _suppress_identifiers_on_dupkey: true to avoid the performance issue of high frequency of ORA-00001 error
+    _db_block_hash_latches: >=131072 to reduce some CBC latch contention, as well as _cursor_db_buffers_pinned=20    
+    _windowfunc_optimization_settings: 2    to avoid 'WINDOW CHILD PUSHED RANK' in px query(NOSORTSTOPKEY)
+                                       8    to turn off new sort(_newsort_type)
+                                       256  to disable grand total window function(that is no ORDER BY in OVER()) parallelism
+                                       1024 to disable including sys_op_cycle_seq as part of extended TQ keys
+    _db_writer_coalesce_write_limit: max size of dbwrite checkpoint write, which can be used to reduce the IO req overhead. larger value can be treated as large IO, 
+                                     and leads to possible CBC latches(_db_block_hash_latches) because dbwr try to find more adjacent buffers for coalescing(kcbb_coalesce)
+    _db_writer_coalesce_area_size: use together with _db_writer_coalesce_write_limit to reduce IO reqs 
+    _db_flash_cache_max_outstanding_writes/_db_flash_cache_write_limit: used on ODA system where db_flash_cache_size>0, can be used to reduce the high 'free buffer waits' issue
+    _kd_dbg_control: 16 - disable Disable HCC array inserts within updates
+                     64 - Disable HCC array deletes within updates
+                     128 - disable fix on 32290386(During HCC block creation if the inserted data is smaller than the block size,insert the data uncompressed to avoid having tiny CUs) 
+    _smu_debug_mode: 33554432 - TUNED_UNDORETENTION is not calculated based on a percentage of the fixed size undo tablespace.
+                                Instead it is set to the max(MAXQUERYLEN + 300, UNDO_RETENTION).
+                                Use _undo_autotune=false instead when undo datafile's AUTOEXTENSIBLE=YES
+                     134217728 - turn off storage index
+    _direct_read_decision_statistics_driven: 
+        Direct path read decision is done based on the segment header's block count,
+            instead of statistics(TAB$.BLKCNT/TABPART$.BLKCNT/IND$.LEAFCNT/etc)
+        But for partitioned table, the decision relies on each individual segment, not the total size of impacted partitions. 
+            and direct path may not be triggerred unexpectly for small partitions ,and fix control 27268249:1 may not work as well.
+    ignore_session_set_param_errors: all/<parameter_names seperated by comma>
+    _kd_rows_chk (Bug 27940222 : CPU SHARPLY UP WITH DB_BLOCK_CHECKING >= MEDIUM + HCC ROW LEVEL LOCKING FOR DML )
+    _gc_persistent_readmostly:  sys.sys_dba_segs => bitand(segment_flags,power(2,28))>0 , or sys.seg$=> bitand(spare1,power(2,28))>0
+    _parallel_server_resiliency: 1 or gv to fix ORA-12801/12850 issue when query gv$ views
+    _sql_compatibility: 1 to support "group by 1,2,..."
+    _ges_optimizations: 1-KJIGESOPTS_NO_ESM / 2-KJIGESOPTS_FREE_SLOCK / 4-KJIGESOPTS_CLIENT_FREE_SLOCK
+    _kkpogpi_nocpy: enable nocopy(remove shared lock) behaviours on source objects for specific long-running statements:
+        1:  create table  2: alter table  4: truncate table/create view  8: alter index rebuild  16: create index  32: explain plan
+    _px_hybrid_TSM_HWMB_load: false to disbale PDML TSM/HWMB broker and use traditional HWM broker instead, 
+                              together with _force_tmp_segment_loads=true to use "TEMP SEG MERGE" to fix HV contention in some cases
+    _disable_directory_link_check: true with _kolfuseslf to resolve symbol like issue of accessing Oracle directory files. (DBMS_UTILITY.DIRECTORY_HAS_SYMLINK)
+    
+Events:
+    turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
+    enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'
+    reduce high single blocks read for insert in non-ASSM tablespace(bug #18938517): alter session set events '45051 trace name context forever'
+    support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
+    support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
+    merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
+    10055(rowsets): trace: 'trace [SQL_Rowsets_Setup] disk=high'
+                    level 1: disables rowsets for table scan row source
+                    level 16: disables rowsets for sort row source
+                    level 32: disables  table queue IN row source
+                    level 512: disables rowsets for EVA functions
+                    level 20971520: disables “rowset to one row” in hash join probe side
+    65002: enable to free temp LOB spaces when no active temp lob in the session
+ 
+dbms_stats.set_xxx_pref:
+    table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
+    TRACE: set to 1048575 to print the debug message for dbms_stats.gather_xxx_stats with dbms_output.put_line
+    GLOBAL_TEMP_TABLE_STATS: defaults as SESSION, meaning that GTT stats will not be shared across sessions
+    
+Hints:
+    OPT_ESTIMATE:
+        * join:  OPT_ESTIMATE([<QB>,] join, (alias1,alias2), min|max|rows|scale_rows=n)
+        * index: OPT_ESTIMATE([<QB>,] <index_filter|index_scan|index_skip_scan> <table_alias>, <index_name>, min|max|rows|scale_rows=n)
+        * nlj  : OPT_ESTIMATE([<QB>,] nlj_index_scan, <table_alias>(<driving_table_alias>), <index_name>, min|max|rows|scale_rows=n)
+        * table: OPT_ESTIMATE([<QB>,] table,<table_alias>,min|max|rows|scale_rows=n)
+        * group: OPT_ESTIMATE([<QB>,] group_by, min|max|rows|scale_rows=n)
+        * having:OPT_ESTIMATE([<QB>,] having, min|max|rows|scale_rows=n)
+        * Qblock:OPT_ESTIMATE([<QB>,] query_block, min|max|rows|scale_rows=n)
+        * list:
+            SELECT hints,MAX(sql_id) keep(dense_rank last order by child_number) sample_sql_id
+            FROM   TABLE(gv$(CURSOR (SELECT sql_id, child_number,
+                                            regexp_replace(regexp_replace(regexp_replace(hint_text, '=[\.0-9]+', '=<number>'),'@\S+','[<@QB>]'),'"\S+"','<OBJ_NAME>') hints
+                                     FROM   v$sql_reoptimization_hints)))
+            GROUP BY hints;
+    TABLE_STATS(<table> <DEFAULT|SET|SCALE|SAMPLE> {<BLOCKS|ROWS|ROW_LENGTH>=<value>}): 
+       * table_stats(scott.emp set rows=14 blocks=1 row_length=10)
+    INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
+    COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
+	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part, or try "USE_CONCAT(OR_PREDICATES(32767))"
+    PQ_DISTRIBUTE_WINDOW([<@QB>] <method>): used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
+    OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all
+    BUSHY_JOIN([<qb>] (<alias1>,<alias2>,...)): enable bushy join
+    no_transform_distinct_agg/no_place_distinct/no_place_group_by: disable aggregation transformation on inline view
+    _optimizer_group_by_placement/_optimizer_distinct_placement/_optimizer_extend_jppd_view_types: used to fix some execute plan issues
+    VECTOR_TRANSFORM([<qb>] FACT(<fact>) DIMENSION(<dim#1>) ...DIMENSION(<dim#n>)): Use key vector transformation
+    pq_filter(serial/hash/random/none): Random:lef-skew handling; Hash:left-skew handling+caching; none:left,right both clumped,no skew handling; serial:_px_filter_parallelized=false
+    system_stats(mbrc=<num> ioseektim=<num> iotfrspeed=<num>): change system stats for a specific sql, or simply change mbrc via _db_file_optimizer_read_count
+
+    
+Fix Controls:
+    13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
+    16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
+    6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
+    20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time), for example the large inlist
+    25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
+    6708183 :  allow dynamic sampling on table functions
+    8619631 :  Allow hash aggregation for insert select except for plsql calls
+    13905599:  enable(or _optimizer_use_gtt_session_stats=false) to disable sharing execution plan for GTT across sessions which could bypass dynamic sampling on GTT and thus lead to wrong execution plan
+    28345522:  Long Parse Time and excessive memory for Query with Multiple Tables in Join Order
+    8644935 :  disable to fix the skew/wrong result issue when execution plan has either "UNION ALL" and "BROADCASE/HASH LOCAL"
+    30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
+    33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
+    9721439:   Forces bloom filter and bypasses all the statistics based heuristics
+    16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE
+    31626438:  use smart scan on partition table when partition size > 100MB
+    27268249:  0 to disable approximate ndv on gathering (index) stats and possible to reduce IO (bug 33427856)
+    30822446:  enable window pushed rank optimization with partition by keys
+Others:
+   Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
+   NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
+   HCC compression on conventional load(insert select/bulk insert):
+       * compatible=12.2+ 
+       * ASSM tablespace(SEGMENT SPACE MANAGEMENT AUTO)
+       * HCC table on exadata storage 
+       * _force_oltp_compress=false(_disable_hcc_array_insert=true to disable)
+       * enable_goldengate_replication=true if supplemental logging is enabled

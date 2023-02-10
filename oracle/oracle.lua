@@ -349,8 +349,9 @@ function oracle:connect(conn_str)
             $END
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
-                pv := pv||'/'||r.p;
-                exit when length(pv)>32000;
+                IF nvl(length(pv),0)<32000 THEN
+                    pv := pv||'/'||r.p;
+                END IF;
                 IF r.p IN('DBA','PDB_DBA','CDB_DBA','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE') THEN
                     ccflags := ccflags||','||replace(r.p,' ','_')||':true';
                 END IF;
@@ -437,7 +438,7 @@ function oracle:connect(conn_str)
     else
         self.props=props
         local privs={}
-        for _,priv in pairs(props.privs:split("/")) do
+        for _,priv in pairs((props.privs or ''):split("/")) do
             if priv~="" then privs[priv]=true end
         end
         privs[self.props.db_user]=true

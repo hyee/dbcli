@@ -1,9 +1,8 @@
 env.var.define_column('OWNER,ZONEMAP_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {[[
-    SELECT * FROM all_zonemap_measures WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name ORDER BY POSITION_IN_SELECT
+    SELECT QUERY TEXT FROM ALL_ZONEMAPS WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name     
 ]],[[
-    SELECT QUERY TEXT FROM ALL_ZONEMAPS
-    WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name     
+    SELECT * FROM all_zonemap_measures WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name ORDER BY POSITION_IN_SELECT
 ]],[[
     SELECT  /*PIVOT*/
              OWNER,
@@ -22,6 +21,6 @@ return {[[
              STALE,
              UNUSABLE,
              COMPILE_STATE
-    FROM ALL_ZONEMAPS
+    FROM  ALL_ZONEMAPS
     WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name
 ]]}

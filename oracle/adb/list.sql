@@ -32,10 +32,13 @@ DECLARE
     C            SYS_REFCURSOR;
     op           VARCHAR2(10) := :op;
     keyword      VARCHAR2(32767) := COALESCE(:V4, :V3, :V2);
+    cols         VARCHAR2(32767);
+    stmt         VARCHAR2(32767);
     dest         VARCHAR2(1000);
-    target       VARCHAR2(1000) := CASE WHEN :V2=keyword THEN :V1 ELSE NVL(:V2,:V1) END;
+    target       VARCHAR2(1000) := CASE WHEN instr(:V1,'/')>0 OR :V2=keyword THEN :V1 ELSE NVL(:V2,:V1) END;
     credential   VARCHAR2(1000) := CASE WHEN :V1=target THEN :credential ELSE :V1 END;
-    stmt         VARCHAR2(2000);
+    base_owner   VARCHAR(128);
+    base_table   VARCHAR2(256):=upper(CASE WHEN target=:V1 THEN :V2 WHEN keyword=:V3 THEN '' ELSE :V3 END);
     is_url1      BOOLEAN := FALSE;
     is_url2      BOOLEAN := FALSE;
     ctx          CLOB;
@@ -44,7 +47,7 @@ DECLARE
     pos          INT;
     dest_offset  INTEGER := 1;
     src_offset   INTEGER := 1;
-    lob_csid     NUMBER := dbms_lob.default_csid;
+    lob_csid     NUMBER  := dbms_lob.default_csid;
     lang_context INTEGER := dbms_lob.default_lang_ctx;
     warning      INTEGER;
     source_file  BFILE;
@@ -113,6 +116,38 @@ DECLARE
         END IF;
         RETURN d;
     END;
+
+    PROCEDURE describe_cols IS
+    BEGIN
+        cols := '';
+        FOR r IN(
+            SELECT '"'||column_name||'" '||
+                   CASE 
+                       WHEN DATA_TYPE IN('CHAR',
+                                          'VARCHAR',
+                                          'VARCHAR2',
+                                          'NCHAR',
+                                          'NVARCHAR',
+                                          'NVARCHAR2',
+                                          'RAW') --
+                       THEN DATA_TYPE||'(' || DECODE(CHAR_USED, 'C', CHAR_LENGTH,DATA_LENGTH) || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
+                       WHEN DATA_TYPE = 'NUMBER' --
+                       THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
+                                  WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                                  WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
+                                  ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) 
+                       WHEN DATA_TYPE='DATE' THEN
+                            'TIMESTAMP(0)'
+                       ELSE DATA_TYPE 
+                   END c
+            FROM ALL_TAB_COLUMNS
+            WHERE owner=base_owner
+            AND   table_name=base_table
+            ORDER BY column_id) LOOP
+            cols := cols||chr(10)||'        '||r.c||',';
+        END LOOP;
+        cols := trim(',' from cols);
+    END;
 BEGIN
     IF op IN ('copy', 'move') THEN
         IF :V4 IS NOT NULL THEN
@@ -170,16 +205,109 @@ BEGIN
         FROM   USER_LOAD_OPERATIONS
         WHERE  ID = OID;
     ELSIF op = 'view' THEN
+        c := NULL;
         IF is_url1 THEN
-            IF keyword IS NOT NULL THEN
-                target := TRIM('/' FROM target) || '/' || keyword;
-            ELSIF target LIKE '%/' THEN
-                raise_application_error(-20001, 'Target must be a file: ' || target);
+            dest := regexp_substr(lower(target),'(csv|json|xml|avro|orc|parquet)$');
+            IF dest IS NOT NULL AND base_table IS NOT NULL THEN
+                keyword := dest;
             END IF;
-            content := dbms_cloud.get_object(credential_name => credential,
-                                             object_uri      => target,
-                                             startoffset     => 0,
-                                             endoffset       => 1024*1024);
+            IF lower(keyword) IN('csv','json','xml','orc','avro','parquet') THEN
+                IF target LIKE '%/' THEN
+                    raise_application_error(-20001, 'Target must be a file: ' || target);
+                END IF;
+                keyword := lower(keyword);
+                base_owner := nvl(trim('.' from regexp_substr(base_table,'^[^.]+\.')),sys_context('userenv','CURRENT_SCHEMA'));
+                base_table := regexp_substr(base_table,'[^.]+$');
+                IF base_table IS NULL THEN
+                    raise_application_error(-20001,'Please specified the based table name.');
+                END IF;
+                dest := base_owner||'.'||base_table;
+                SELECT MAX(OWNER),MAX(TABLE_NAME)
+                INTO   base_owner,base_table
+                FROM   all_tables
+                WHERE  owner=base_owner AND table_name=base_table;
+
+                IF base_table IS NULL THEN
+                    raise_application_error(-20001,'Cannot find target table: '||dest);
+                END IF;
+                describe_cols;
+
+                stmt :='SELECT A.*'||chr(10)||'FROM EXTERNAL((#COLS#)'||chr(10)||
+                       '     TYPE ORACLE_#TYPE# '||chr(10)||
+                       '     ACCESS PARAMETERS(#PARAM#)'||chr(10)||
+                       '     LOCATION ('''||target||''')'||chr(10)||
+                       '     REJECT LIMIT UNLIMITED)';
+                IF keyword != 'csv' THEN
+                    stmt := replace(replace(replace(stmt,
+                        '#COLS#',CASE WHEN keyword IN('json','xml') THEN 'doc CLOB' ELSE cols END),
+                        '#TYPE#','BIGDATA'),
+                        '#PARAM#','com.oracle.bigdata.credential.name='||credential||'
+                        com.oracle.bigdata.csv.skip.header=1
+                        com.oracle.bigdata.fileformat='||CASE WHEN keyword IN('json','xml') THEN 'textfile' ELSE keyword END||'
+                        com.oracle.bigdata.buffersize=4096
+                        com.oracle.bigdata.compressiontype='||CASE WHEN lower(substr(target,-3)) in('csv','xml','son') THEN 'none' ELSE 'detect' END||'
+                        com.oracle.bigdata.csv.rowformat.fields.terminator='''||CASE WHEN keyword IN('json','xml') THEN '\n' ELSE ',' END||'''
+                        com.oracle.bigdata.dateformat=auto
+                        com.oracle.bigdata.timestampformat=auto
+                        com.oracle.bigdata.timestampltzformat=auto
+                        com.oracle.bigdata.timestamptzformat=auto
+                        com.oracle.bigdata.truncatecol=true
+                        com.oracle.bigdata.removequotes=true
+                        com.oracle.bigdata.ignoremissingcolumns=true
+                        com.oracle.bigdata.ignoreblanklines=true
+                        com.oracle.bigdata.blankasnull=true
+                        com.oracle.bigdata.trimspaces=rtrim');
+                    IF keyword='json' THEN
+                        stmt := stmt || ' p,'||chr(10)||'JSON_TABLE(p.doc,''$'' COLUMNS ('||cols||')) A';
+                    ELSIF keyword='xml' THEN
+                        stmt := stmt || ' p,'||chr(10)||'XMLTABLE(p.doc PASSING ''/*'' COLUMNS '||regexp_replace(cols,'"(.*?)"([^,]+)','"\1"\2 path ''\1''')||') A';
+                    ELSE
+                        stmt := stmt || ' a';
+                    END IF;
+                ELSE
+                    stmt := replace(replace(stmt,'#TYPE#','LOADER'),
+                        '#PARAM#','RECORDS '||CASE WHEN lower(substr(target,-3)) not in('csv','xml','son') THEN 'COMPRESSION DETECT' END
+                        ||' CREDENTIAL '||credential
+                        ||' DELIMITED BY DETECTED NEWLINE NOLOGFILE NOBADFILE NODISCARDFILE READSIZE=10000000 IGNORE_BLANK_LINES
+                         #PARAM#');
+                    IF keyword='csv' THEN
+                        --badfile, byteordermark, characterset, column, cloud_params, compression, credential, 
+                        --credential_name, credential_schema, data, delimited, discardfile, dnfs_enable, 
+                        --dnfs_disable, disable_directory_link_check, escape, field, fields, fixed, 
+                        --io_options, file_uri_list, filename_columns, ignore_blank_lines, ignore_header, 
+                        --load, logfile, language, nodiscardfile, nobadfile, nologfile, date_cache, dnfs_readbuffers, 
+                        --preprocessor, preprocessor_timeout, readsize, string, skip, territory, variable, 
+                        --validate_table_data, xmltag
+                        stmt := replace(replace(stmt,'#COLS#',cols),
+                            '#PARAM#',q'~IGNORE_HEADER=1 FIELDS TERMINATED BY ',' CSV WITH EMBEDDED
+                            DATE_FORMAT DATE MASK 'auto' DATE_FORMAT TIMESTAMP MASK 'auto' DATE_FORMAT TIMESTAMP WITH LOCAL TIME ZONE 'auto' DATE_FORMAT TIMESTAMP WITH TIME ZONE 'auto'
+                            ESCAPE CONVERT_ERROR STORE_NULL TRUNCATE_COLUMNS MISSING FIELD VALUES ARE NULL NULLIF=BLANKS RTRIM~')||' A';
+                    ELSE
+                        stmt := replace(replace(stmt,'#COLS#','doc CLOB'),
+                            '#PARAM#','FIELDS TERMINATED BY ''NEWLINE''  NOTRIM (doc CHAR(10000000))')||' p,'||chr(10);
+                        IF keyword='json' THEN
+                            stmt := stmt || 'JSON_TABLE(p.doc,''$'' COLUMNS ('||cols||')) A';
+                        ELSE
+                            stmt := stmt || 'XMLTABLE(p.doc PASSING ''/*'' COLUMNS '||regexp_replace(cols,'"(.*?)"([^,]+)','"\1"\2 path ''\1''')||') A';
+                        END IF;
+                    END IF;
+                END IF;
+                stmt := stmt||chr(10)||'WHERE ROWNUM<=100';
+                dbms_output.put_line(stmt);
+                OPEN c FOR stmt;
+            ELSE
+                IF keyword IS NOT NULL THEN
+                    target := TRIM('/' FROM target) || '/' || keyword;
+                ELSIF target LIKE '%/' THEN
+                    raise_application_error(-20001, 'Target must be a file: ' || target);
+                END IF;
+                content := dbms_cloud.get_object(credential_name => credential,
+                                                 object_uri      => target,
+                                                 startoffset     => 0,
+                                                 endoffset       => 1024*1024);
+            END IF;
+        ELSIF dest IN('orc','avro','parquet','zip','gzip','gz','z') THEN
+            raise_application_error(-20001, 'Please specify the based table to have the column info of target file.');
         ELSE
             target := TRIM('"' FROM target);
             IF keyword IS NULL THEN
@@ -201,18 +329,22 @@ BEGIN
                                       src_offset);
             dbms_lob.fileclose(source_file);
         END IF;
-        ctx         := blob2clob(content);
-        dest_offset := 1;
-        FOR i IN 1 .. 100 LOOP
-            src_offset := dbms_lob.instr(ctx, chr(10), dest_offset);
-            EXIT WHEN nvl(src_offset, 0) <= 0;
-            tab.extend;
-            tab(i) := TRIM(chr(13) FROM dbms_lob.substr(ctx, least(2000, src_offset - dest_offset), dest_offset));
-            dest_offset := src_offset + 1;
-        END LOOP;
-        dbms_lob.freetemporary(ctx);
-        OPEN c FOR
-            SELECT ROWNUM "#", a.* FROM TABLE(tab) a;
+
+        IF c IS NULL THEN
+            ctx         := blob2clob(content);
+            dest_offset := 1;
+            FOR i IN 1 .. 100 LOOP
+                src_offset := dbms_lob.instr(ctx, chr(10), dest_offset);
+                EXIT WHEN nvl(src_offset, 0) <= 0;
+                tab.extend;
+                tab(i) := TRIM(chr(13) FROM dbms_lob.substr(ctx, least(2000, src_offset - dest_offset), dest_offset));
+                dest_offset := src_offset + 1;
+            END LOOP;
+            dbms_lob.freetemporary(ctx);
+            OPEN c FOR
+                SELECT ROWNUM "#", a.* FROM TABLE(tab) a;
+        END IF;
+        dest := '';
     ELSE
         stmt := replace(replace(q'~
             SELECT JSON_ARRAYAGG(JSON_OBJECT(

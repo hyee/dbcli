@@ -3,7 +3,6 @@
     relative parameter: _kgl_hot_object_copies => hot copies group by mod(sid,_kgl_hot_object_copies)+1, shoud be less than CPU cores
    -u : ummarkhot
     --[[
-        @ARGS: 1
         &mark: default={markhot} u={unmarkhot}
         @check_access_x: sys.x$kglob={1} default={0}
     --]]
@@ -22,7 +21,47 @@ DECLARE
    ns  INT;
    nn  VARCHAR2(128);
 BEGIN
-    IF own IS NULL THEN
+    IF sq IS NULL THEN
+        OPEN :c FOR q'~
+            SELECT *
+            FROM   (SELECT idn,obj#,
+                           SUM(cnt) AAS,
+                           SUM(parses) parses,
+                           owner,name
+                    FROM   TABLE(gv$(CURSOR (
+                          SELECT /*+ordered use_hash(b)*/
+                                  a.*, 
+                                  b.type, 
+                                  b.owner, 
+                                  b.name
+                          FROM   (SELECT userenv('instance') inst_id,p1 idn,
+                                         obj#,loc#,
+                                         sql_id,
+                                         event,
+                                         MAX(sample_time) last_time,
+                                         COUNT(1) cnt,
+                                         COUNT(CASE WHEN IN_PARSE='Y' THEN 1 END) parses
+                                  FROM   (SELECT session_id sid,
+                                                 sample_time,
+                                                 event,
+                                                 sql_id,
+                                                 p1,
+                                                 in_parse,
+                                                 nullif(trunc(p3 / 4294967296),0) obj#,
+                                                 nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
+                                                 nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid
+                                          FROM   v$active_session_history
+                                          WHERE  p1text = 'idn'
+                                          AND    p2text = 'value'
+                                          AND    p3text = 'where'
+                                          AND    sample_time+0>sysdate-3/24)
+                                  GROUP  BY obj#,LOC#, p1, sql_id, event) a,
+                                  v$db_object_cache b
+                          WHERE  a.idn = b.hash_value)))
+                    GROUP BY idn,obj#,owner,name
+                    ORDER  BY AAS DESC)
+            WHERE  rownum <= 50~';
+    ELSIF own IS NULL THEN
         IF hs IS NULL THEN
             SELECT hs INTO hs
             FROM (

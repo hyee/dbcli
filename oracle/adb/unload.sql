@@ -1,12 +1,12 @@
 /*[[
-    Export the data of a query into Cloud Object Storage. Usage: @@NAME [<credential>] <URL> [-csv|-json|-xml] [-gzip] <query>
+    Export the data of a query into Cloud Object Storage. Usage: @@NAME [<credential>] <URL> [-csv|-json|-xml|-dmp] [-gzip] <query>
     Same to 'adb list [<credential>] <query> -unload'
     
     File extentions:
         -csv : export in CSV format
         -json: export in JSON format (default)
         -xml : export in XML format
-        -dump: export in Oracle Data Pump format
+        -dmp : export in Oracle Data Pump format
     Compression:
         -gzip: export the data in specific format and compress as gzip file
 
