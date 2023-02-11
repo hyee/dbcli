@@ -13,6 +13,7 @@ VAR c1 REFCURSOR "gv$resource_limit"
 VAR c2 REFCURSOR "gv$latch_children"
 COL WAIT_TIME FOR USMHD2
 COL GETS,MISSES FOR TMB2
+COL SPINS FOR PCT2
 DECLARE 
     COLS VARCHAR2(32767);
     COL1 VARCHAR2(32767);
@@ -37,7 +38,8 @@ BEGIN
     OPEN :C2 FOR '
         SELECT NAME LATCH_NAME,''|'' "|"
                '||replace(COLS,'#V#','CNT')||',''|'' "|",
-               SUM(GETS) "GETS" '||replace(COL1,'#V#','GETS')||',''|'' "|",
+               SUM(GETS) "GETS" '||replace(COL1,'#V#','GETS')||',
+               ROUND(SUM(SPINS)/NULLIF(SUM(GETS),0),4) SPINS, ''|'' "|",
                SUM(MISSES) "MISSES" '||replace(COL1,'#V#','MISSES')||',''|'' "|",
                SUM(WAIT_TIME) "WAIT_TIME" '||replace(COL1,'#V#','WAIT_TIME')||q'~
         FROM   TABLE(GV$(CURSOR(
@@ -46,13 +48,14 @@ BEGIN
                           COUNT(1) CNT, 
                           SUM(WAIT_TIME) WAIT_TIME,
                           SUM(GETS) GETS,
+                          SUM(SPIN_GETS) SPINS,
                           SUM(MISSES) MISSES
                    FROM   V$LATCH_CHILDREN
                    WHERE  (GETS+MISSES)>0
                    GROUP  BY NAME))) 
-        JOIN   (SELECT NAME FROM (SELECT NAME,SUM(GETS/30+MISSES) C FROM V$LATCH_CHILDREN WHERE (GETS+MISSES)>0 GROUP BY NAME ORDER BY 2 DESC) WHERE ROWNUM<=30)
+        JOIN   (SELECT NAME FROM (SELECT NAME,SUM(SPIN_GETS/10+MISSES) C FROM V$LATCH_CHILDREN WHERE (GETS+MISSES)>0 GROUP BY NAME ORDER BY 2 DESC) WHERE ROWNUM<=30)
         USING  (NAME)
         GROUP  BY NAME
-        ORDER  BY GETS/30+MISSES DESC~';
+        ORDER  BY GETS*SPINS/10+MISSES DESC~';
 END;
 /

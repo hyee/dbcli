@@ -87,6 +87,7 @@ set feed off VERIFY off
 col "Physical|Reads,Logical|Reads,HARD|PARSE,SOFT|PARSE" for tmb
 col "CPU%,Physical|Reads%,Logical|Reads%" for pct
 col "PGA|MEM,LAST SQL|MEM,LAST SQL|TEMP" for kmg
+col "waited" for smhd2
 col "LAST SQL|ACTIVE" for usmhd2
 
 VAR actives refcursor "Active Sessions"
@@ -193,7 +194,7 @@ BEGIN
                plan_hash_value plan_hash,
                sql_child_number child,
                a.event,
-               ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sq_id,last_call_et,0)/60),1) waited,
+               ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sq_id,last_call_et,0)),1) waited,
                &fields,substr(sql_text,1,200) sql_text
         FROM   s4 a
         WHERE  :fil2 IS NOT NULL 
@@ -263,7 +264,7 @@ BEGIN
                    plan_hash_value plan_hash,
                    sql_child_number child,
                    a.event,
-                   ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)/60),1) waited,
+                   ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)),1) waited,
                    &fields,sql_text
             FROM   s4 a,(SELECT spid,inst_id,addr from &CHECK_ACCESS_PRO) d
             WHERE  d.inst_id = a.inst_id

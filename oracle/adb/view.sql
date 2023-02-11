@@ -1,5 +1,5 @@
 /*[[
-    View top lines of file in Object Storage. Usage: @@NAME {[<credential>] <URL>} | {<directory> <file>} {[<based_table>] csv|json|xml|avro|orc|parquet}
+    View top lines of file in Object Storage. Usage: @@NAME {[<credential>] <URL>} | {<directory> <file>} {[<based_table>] [csv|json|xml|avro|orc|parquet]}
     Same to 'adb list [<credential>] <URL> -view [<based_table>]'
     Type 'adb list' for more information of the parameters
 

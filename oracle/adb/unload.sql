@@ -1,5 +1,5 @@
 /*[[
-    Export the data of a query into Cloud Object Storage. Usage: @@NAME [<credential>] <URL> [-csv|-json|-xml|-dmp] [-gzip] <query>
+    Export the data of a query into Cloud Object Storage. Usage: @@NAME [<credential>] <URL> [-csv|-json|-xml|-dmp|-parquet] [-gzip] <query>
     Same to 'adb list [<credential>] <query> -unload'
     
     File extentions:

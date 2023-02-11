@@ -20,10 +20,10 @@ return [[
         v_seq   PLS_INTEGER:=-1;
         v_type  VARCHAR2(300);
         v_pos   VARCHAR2(30);
-        oname   VARCHAR2(128):= nvl(:object_subname, :object_name);
-        own     VARCHAR2(128):= :owner;
-        oid     INT          := :object_id;
-        v_target VARCHAR2(100):=:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.');
+        oname   VARCHAR2(128) := nvl(:object_subname, :object_name);
+        own     VARCHAR2(128) := :owner;
+        oid     INT           := :object_id;
+        v_target VARCHAR2(500):=:owner || NULLIF('.' || :object_name, '.') || NULLIF('.' || :object_subname, '.');
         type t_idx IS TABLE OF PLS_INTEGER INDEX BY PLS_INTEGER;
         v_idx    t_idx;
     BEGIN
