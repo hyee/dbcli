@@ -308,7 +308,7 @@ function db:check_access(obj_name,is_cache,is_set_env)
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;
         BEGIN
-            IF user=:owner THEN
+            IF user IN(:owner,'SYS') or sys_context('userenv','isdba')='TRUE' THEN
                 x:=1;
             ELSE
                 select /*+opt_param('optimizer_dynamic_sampling' 0)*/

@@ -9,7 +9,7 @@
 
     Type 'adb list' for more information of the parameters
     --[[
-        @ARGS: 3
+        @ARGS: 2
     --]]
 ]]*/
 adb list -copy "&V1" "&V2" "&v3" "&v4"

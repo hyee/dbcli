@@ -356,7 +356,7 @@ function oracle:connect(conn_str)
                     ccflags := ccflags||','||replace(r.p,' ','_')||':true';
                 END IF;
             END LOOP;
-            IF USER='SYS' THEN
+            IF sys_context('userenv','isdba')='TRUE' THEN
                 ccflags := ccflags||','||'SYSDBA:TRUE';
             END IF;
 

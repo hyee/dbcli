@@ -15,7 +15,7 @@
         @CHECK_ACCESS_CLOUD: DBMS_CLOUD={}
         &filter: {default={regexp_like(object_name,$KEYWORD$,'i')} f={}}
         &f     : default={0} f={1}
-        &op    : default={list} delete={delete} copy={copy} move={move} unload={unload} view={view}
+        &op    : default={list} delete={delete} copy={copy} move={move} unload={unload} view={view} ddl={ddl}
         &ops   : default={} delete={ deleted} copy={ copied} move={ to be moved} unload={ unloaded}
         &pubs  : default={,"multipart":true,"maxfilesize":104857600}
         &typ   : json={"json"&pubs} parquet={"parquet"} parquet={"parquet"} csv={"csv","header":true,"escape":true&pubs} xml={"xml"&pubs} dmp={"datapump","compression":"medium","version":"compatible"}
@@ -35,7 +35,7 @@ DECLARE
     cols         VARCHAR2(32767);
     stmt         VARCHAR2(32767);
     dest         VARCHAR2(1000);
-    target       VARCHAR2(1000) := CASE WHEN instr(:V1,'/')>0 OR :V2=keyword THEN :V1 ELSE NVL(:V2,:V1) END;
+    target       VARCHAR2(1000) := CASE WHEN instr(nvl(:V2,'x'),'/')=0 THEN :V1 ELSE NVL(:V2,:V1) END;
     credential   VARCHAR2(1000) := CASE WHEN :V1=target THEN :credential ELSE :V1 END;
     ext          VARCHAR2(128);
     base_owner   VARCHAR(128);
@@ -106,7 +106,7 @@ DECLARE
     FUNCTION assert_url(url VARCHAR2) RETURN VARCHAR2 IS
         d VARCHAR2(1000) := url;
     BEGIN
-        IF instr(d, '/') > 0 THEN
+        IF instr(d, '/') > 0 AND instr(d,'https://')=0 THEN
             IF :objbucket IS NULL THEN
                 raise_application_error(-20001, 'Please define the default bucket by "set bucket" when the URL is a relative path.');
             END IF;
@@ -160,12 +160,17 @@ BEGIN
             dest       := :v2;
             target     := :v1;
             credential := :credential;
+        ELSIF :V2 IS NOT NULL AND instr(:V1,'/')>0 THEN
+            keyword    := '.';
+            dest       := :v2;
+            target     := :v1;
+            credential := :credential;
         ELSE
             raise_application_error(-20001, 'Arguments: [<credential>] <source> <destination> <keyword>');
         END IF;
     END IF;
 
-    IF &f = 0 AND op != 'view' THEN
+    IF &f = 0 AND op not in ('view','ddl') THEN
         keyword := REPLACE(REPLACE(keyword, '%', '.*'), '_', '.');
         IF op != 'list' AND keyword IS NULL THEN
             raise_application_error(-20001, 'Please specify the regexp_like string as the file filter.');
@@ -186,8 +191,6 @@ BEGIN
         is_url1 := TRUE;
         target  := assert_url(target);
         assert_credential;
-    ELSIF op in('unload','view') THEN
-        target     := assert_dir(:V1);
     ELSE
         target  := assert_dir(target);
     END IF;
@@ -210,22 +213,23 @@ BEGIN
         INTO   CTX
         FROM   USER_LOAD_OPERATIONS
         WHERE  ID = OID;
-    ELSIF op = 'view' THEN
+    ELSIF op in ('view','ddl') THEN
         c := NULL;
         dest:= lower(CASE WHEN is_url1 then target else :V2 end);
         IF lower(base_table)=dest THEN
             base_table := null;
         END IF;
         ext := regexp_substr(dest,'[^.]+$');
-        
         IF lower(keyword) IN('csv','json','xml','dmp','orc','avro','parquet') THEN
             keyword := lower(keyword);
-        ELSIF base_table IS NULL AND lower(keyword)!=dest THEN
+            dest    := keyword;
+        ELSIF nvl(base_table,upper(keyword))=upper(keyword) AND lower(keyword)!=dest THEN
             base_table := upper(keyword);
             keyword    := null;
         END IF;
+        dest := regexp_substr(dest,'(csv|json|xml|parquet|avro|orc|dmp)(.gz|.gzip|.bz2|.z|.zl|.zip)?$',1,1,'i',1);
         IF base_table IS NOT NULL THEN
-            dest := regexp_substr(dest,'(csv|json|xml|parquet|avro|orc|dmp)(.gz|.gzip|.bz2|.z|.zl|.zip)?$',1,1,'i',1);
+            base_table:=replace(base_table,'"');
             IF keyword IS NULL THEN
                 IF dest IS NOT NULL THEN
                     keyword := dest;
@@ -256,19 +260,59 @@ BEGIN
                 dest := :V2;
             END IF;
 
+            stmt :='
+                BEGIN
+                    DBMS_CLOUD.CREATE_EXTERNAL_TABLE(
+                        table_name      => ''<TABLE_NAME>'',
+                        credential_name => '''||CASE WHEN is_url1 THEN credential END||''',
+                        file_uri_list   => '''||target||CASE WHEN NOT is_url1 THEN ':'||dest END||''',
+                        format          => ''{
+                            "rejectlimit":"unlimited",#FORMAT#
+                            '||case when ext!=keyword then '"compression":"auto",' END||'
+                            "type":"'||case when keyword='dmp' then 'datapump' when keyword in('json','xml') then 'csv' else keyword end||'"}'',
+                        column_list     => '''||CASE WHEN keyword IN('json','xml') THEN 'doc CLOB' ELSE cols END||''',
+                        field_list      => '''||CASE WHEN keyword IN('json','xml') THEN 'doc CHAR(10000000)' END||'''
+                    );
+                END;';
+            IF keyword IN('csv','json','xml') THEN
+                stmt := replace(stmt,'#FORMAT#','
+                            '||CASE WHEN keyword='csv' THEN '"skipheaders":"1",' END||' 
+                            "conversionerrors":"store_null",
+                            "delimiter":"'||CASE WHEN keyword='csv' THEN ',' ELSE 'DETECTED NEWLINE' END||'", 
+                            "dateformat":"auto",
+                            "timestampformat":"auto", 
+                            "timestampltzformat":"auto", 
+                            "timestamptzformat":"auto", 
+                            "truncatecol":"true", 
+                            "ignoreblanklines":"true", 
+                            "ignoremissingcolumns":"true",
+                            "blankasnull":"true",
+                            "removequotes":"false",
+                            "escape":"true",
+                            "trimspaces":"rtrim",');
+            ELSE
+                stmt := replace(stmt,'#FORMAT#');
+            END IF;
+
+            IF op='ddl' THEN
+                OPEN  c FOR
+                    SELECT regexp_replace(stmt,chr(10)||'\s{16}',chr(10)) statement FROM dual;
+            END IF;
+
             stmt :='SELECT A.*'||chr(10)||'FROM EXTERNAL((#COLS#)'||chr(10)||
                    '     TYPE ORACLE_#TYPE# '||chr(10)||
                    '     ACCESS PARAMETERS(#PARAM#)'||chr(10)||
                    '     LOCATION ('||CASE WHEN is_url1 THEN ''''||target||'''' ELSE target||':'''||dest||'''' END||')'||chr(10)||
                    '     REJECT LIMIT UNLIMITED)';
             IF keyword NOT IN('csv','dmp') THEN
+                --https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle_bigdata_access_driver.html
                 stmt := replace(replace(replace(stmt,
                     '#COLS#',CASE WHEN keyword IN('json','xml') THEN 'doc CLOB' ELSE cols END),
                     '#TYPE#','BIGDATA'),
                     '#PARAM#',CASE WHEN is_url1 THEN 'com.oracle.bigdata.credential.name='||credential END||'
                     com.oracle.bigdata.csv.skip.header=1
                     com.oracle.bigdata.fileformat='||CASE WHEN keyword IN('json','xml') THEN 'textfile' when keyword='dmp' THEN 'datapump' ELSE keyword END||'
-                    com.oracle.bigdata.buffersize=4096
+                    com.oracle.bigdata.buffersize=2048
                     com.oracle.bigdata.compressiontype='||CASE WHEN ext in('csv','xml','son') THEN 'none' ELSE 'detect' END||'
                     com.oracle.bigdata.csv.rowformat.fields.terminator='''||CASE WHEN keyword IN('json','xml') THEN '\n' ELSE ',' END||'''
                     com.oracle.bigdata.dateformat=auto
@@ -288,16 +332,18 @@ BEGIN
                 ELSE
                     stmt := stmt || ' a';
                 END IF;
-            ELSIF keyword='dmp' THEN 
+            ELSIF keyword='dmp' THEN
+                --https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle_datapump-access-driver.html
                 stmt := replace(replace(replace(stmt,
                     '#COLS#',cols),
                     '#TYPE#','DATAPUMP'),
-                    '#PARAM#',CASE WHEN is_url1 THEN' CREDENTIAL '||credential END||' NOLOGFILE')||' a';
+                    '#PARAM#',CASE WHEN is_url1 THEN' CREDENTIAL '||credential END||' NOLOGFILE ')||' a';
             ELSE
+                --https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle_loader-access-driver.html
                 stmt := replace(replace(stmt,'#TYPE#','LOADER'),
                     '#PARAM#','RECORDS '||CASE WHEN ext not in('csv','xml','son') THEN 'COMPRESSION DETECT' END
                     ||CASE WHEN is_url1 THEN ' CREDENTIAL '||credential END
-                    ||' DELIMITED BY DETECTED NEWLINE NOLOGFILE NOBADFILE NODISCARDFILE READSIZE=10000000 IGNORE_BLANK_LINES
+                    ||' DELIMITED BY DETECTED NEWLINE NOLOGFILE NOBADFILE NODISCARDFILE READSIZE=10000000 DISABLE_DIRECTORY_LINK_CHECK IGNORE_BLANK_LINES
                      #PARAM#');
                 IF keyword='csv' THEN
                     --badfile, byteordermark, characterset, column, cloud_params, compression, credential, 
@@ -326,8 +372,50 @@ BEGIN
                 END IF;
             END IF;
             stmt := stmt||chr(10)||'WHERE ROWNUM<=100';
-            dbms_output.put_line(stmt);
-            OPEN c FOR stmt;
+
+            IF op='view' THEN
+                dbms_output.put_line(stmt);
+                dbms_output.put_line(rpad('*',80,'*'));
+                OPEN c FOR stmt;
+            END IF;
+        ELSIF op='ddl' AND dest in('json','xml') THEN
+            stmt :='
+                BEGIN
+                    DBMS_CLOUD.CREATE_EXTERNAL_TABLE(
+                        table_name      => ''<TABLE_NAME>'',
+                        credential_name => '''||CASE WHEN is_url1 THEN credential END||''',
+                        file_uri_list   => '''||target||CASE WHEN NOT is_url1 THEN ':'||dest END||''',
+                        format          => ''{
+                            "rejectlimit":"unlimited",
+                            "conversionerrors":"store_null",
+                            "delimiter":"DETECTED NEWLINE", 
+                            "truncatecol":"true", 
+                            "ignoreblanklines":"true", 
+                            "ignoremissingcolumns":"true",
+                            "blankasnull":"true",
+                            "removequotes":"false",
+                            "escape":"true",
+                            "trimspaces":"rtrim",
+                            '||case when ext!=dest then '"compression":"auto",' END||'
+                            "type":"csv"}'',
+                        column_list     => ''doc CLOB'',
+                        field_list      => ''doc CHAR(10000000)''
+                    );
+                END;';
+            OPEN c FOR 
+                SELECT regexp_replace(stmt,chr(10)||'\s{16}',chr(10)) statement FROM DUAL;
+        ELSIF op='ddl' AND dest in('orc','avro','parquet') THEN
+            stmt := '
+                BEGIN
+                    DBMS_CLOUD.CREATE_EXTERNAL_TABLE(
+                        table_name      => ''<TABLE_NAME>'',
+                        credential_name => '''||credential||''',
+                        file_uri_list   => '''||target||''',
+                        format          =>''{"schema":"first","type":"'||dest||'","rejectlimit":"unlimited"}''
+                    );
+                END;';
+            OPEN c FOR 
+                SELECT regexp_replace(stmt,chr(10)||'\s{16}',chr(10)) statement FROM DUAL;
         ELSIF ext IN('orc','avro','parquet','zip','gzip','gz','z','zl','bz2','dmp') THEN
             raise_application_error(-20001, 'Please specify the based table to have the column info of target file.');
         ELSIF is_url1 THEN
@@ -350,13 +438,12 @@ BEGIN
                 dbms_lob.fileopen(source_file);
             EXCEPTION
                 WHEN OTHERS THEN
-                    raise_application_error(-20001,
-                                            SQLERRM || ' (Directory:"' || target || '"  File:"' || keyword || '")');
+                    raise_application_error(-20001,SQLERRM || ' (Directory:"' || target || '"  File:"' || keyword || '")');
             END;
             dbms_lob.createtemporary(content, TRUE);
             dbms_lob.loadblobfromfile(content,
                                       source_file,
-                                      least(4*1024*1024, dbms_lob.getlength(source_file)),
+                                      least(2*1024*1024, dbms_lob.getlength(source_file)),
                                       dest_offset,
                                       src_offset);
             dbms_lob.fileclose(source_file);
@@ -407,6 +494,9 @@ BEGIN
             END IF;
         ELSIF is_url1 THEN
             dest := assert_dir(dest);
+            IF t1.count=0 THEN
+                t1.extend;
+            END IF;
         END IF;
 
         IF is_url1 OR is_url2 THEN
@@ -414,14 +504,9 @@ BEGIN
                 DECLARE
                     t1 SYS.ODCIVARCHAR2LIST:=:t1;
                 BEGIN
-                    IF &f=0 AND t1.COUNT>1 THEN
-                        dbms_cloud.bulk_$OP1$(:credential,:target,:dest,regex_filter=>:keyword,format=>JSON_OBJECT('priority' value 'HIGH'));
-                    ELSE
-                        FOR i IN 1..t1.COUNT LOOP
-                            dbms_cloud.$OP2$_object(:credential,trim('/' from :target)||'/'||t1(i),trim('/' from :dest)$OP3$);
-                            EXIT WHEN &f=0;
-                        END LOOP;
-                    END IF;
+                    FOR i IN 1..t1.COUNT LOOP
+                        dbms_cloud.$OP2$_object(:credential,trim('/' from :target)||CASE WHEN t1(i) IS NOT NULL THEN '/'||t1(i) END,trim('/' from :dest)$OP3$);
+                    END LOOP;
                 END;~',
                 '$OP1$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'download' ELSE 'upload' END),
                 '$OP2$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'get'      ELSE 'put'    END),
@@ -429,12 +514,11 @@ BEGIN
                              WHEN regexp_like(CASE WHEN is_url1 THEN dest   ELSE target END,'\.\w+$') THEN '' 
                              ELSE q'[||'/'||t1(i)]' 
                         END);
-            dbms_output.put_line(credential||'|'||target||'|'||dest||'|'||keyword);
+            --dbms_output.put_line(credential||'|'||target||'|'||dest||'|'||keyword);
             EXECUTE IMMEDIATE stmt USING 
                 t1,credential,
                 CASE WHEN is_url1 THEN target ELSE dest   END,
-                CASE WHEN is_url1 THEN dest   ELSE target END,
-                keyword;
+                CASE WHEN is_url1 THEN dest   ELSE target END;
         ELSE--copy file in directory
             IF assert_dir(dest,false) IS NOT NULL THEN
                 dest    := trim('"' from assert_dir(dest,false));
@@ -455,13 +539,9 @@ BEGIN
     IF op IN ('delete', 'move') THEN
         IF is_url1 THEN
             IF NOT is_url2 THEN
-                IF &f = 0 AND t1.COUNT > 1 THEN
-                    DBMS_CLOUD.BULK_DELETE(credential, target, keyword);
-                ELSE
-                    FOR i IN 1 .. t1.COUNT LOOP
-                        DBMS_CLOUD.DELETE_OBJECT(credential, TRIM('/' FROM target) || '/' || t1(i));
-                    END LOOP;
-                END IF;
+                FOR i IN 1 .. t1.COUNT LOOP
+                    DBMS_CLOUD.DELETE_OBJECT(credential, TRIM('/' FROM target) ||CASE WHEN t1(i) IS NOT NULL THEN '/'||t1(i) END);
+                END LOOP;
             END IF;
         ELSE
             FOR i IN 1 .. t1.COUNT LOOP
