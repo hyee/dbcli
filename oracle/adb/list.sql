@@ -17,8 +17,8 @@
         &f     : default={0} f={1}
         &op    : default={list} delete={delete} copy={copy} move={move} unload={unload} view={view} ddl={ddl}
         &ops   : default={} delete={ deleted} copy={ copied} move={ to be moved} unload={ unloaded}
-        &pubs  : default={,"multipart":true,"maxfilesize":104857600}
-        &typ   : json={"json"&pubs} parquet={"parquet"} parquet={"parquet"} csv={"csv","header":true,"escape":true&pubs} xml={"xml"&pubs} dmp={"datapump","compression":"medium","version":"compatible"}
+        &pubs  : default={,"multipart":true}
+        &typ   : json={"json"&pubs} parquet={"parquet"} csv={"csv","header":true,"escape":true,"quote":"\""&pubs} xml={"xml"&pubs} dmp={"datapump","compression":"medium","version":"compatible"}
         &gzip  : default={} gzip={,"compression":"gzip"}
         &sort  : default={last_modified} object={object_name} created={created}
         &asc   : default={desc} asc={}
@@ -201,6 +201,10 @@ BEGIN
         ELSIF NOT is_url1 THEN
             target := target||':1.dmp';
         END IF;
+        EXECUTE IMMEDIATE q'[alter session set nls_date_format='yyyy-mm-dd hh24:mi:ss' 
+                                               nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' 
+                                               nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']';
+        --Use multipart to parallelize the export
         dbms_cloud.export_data(credential_name => credential,
                                file_uri_list   => target,
                                query           => keyword,
@@ -259,7 +263,7 @@ BEGIN
             ELSE
                 dest := :V2;
             END IF;
-
+            --"compression":"auto" is unsupported for arvo/orc/parquet/datapump files
             stmt :='
                 BEGIN
                     DBMS_CLOUD.CREATE_EXTERNAL_TABLE(
@@ -275,10 +279,14 @@ BEGIN
                     );
                 END;';
             IF keyword IN('csv','json','xml') THEN
+                --Enable_offload to use ORACLE_BIGDATA driver instead of ORACLE_LOADER driver
+                --Seems like when enable_offload=true then Object Storage layer offload can be trigger when filesize>1GB
+                --Statistics: cell XT granule.../...XT smart scan
+                --when enable_offload=false then delimiter should be 'DETECTED NEWLINE' instead of '\n'
                 stmt := replace(stmt,'#FORMAT#','
                             '||CASE WHEN keyword='csv' THEN '"skipheaders":"1",' END||' 
                             "conversionerrors":"store_null",
-                            "delimiter":"'||CASE WHEN keyword='csv' THEN ',' ELSE 'DETECTED NEWLINE' END||'", 
+                            "delimiter":"'||CASE WHEN keyword='csv' THEN ',' ELSE '\n' END||'", 
                             "dateformat":"auto",
                             "timestampformat":"auto", 
                             "timestampltzformat":"auto", 
@@ -289,7 +297,10 @@ BEGIN
                             "blankasnull":"true",
                             "removequotes":"false",
                             "escape":"true",
+                            "enable_offload":"true",
                             "trimspaces":"rtrim",');
+            ELSIF keyword IN('orc','avro','parquet') THEN
+                stmt := replace(stmt,'#FORMAT#','"access_protocol":"delta_sharing",');
             ELSE
                 stmt := replace(stmt,'#FORMAT#');
             END IF;
@@ -304,8 +315,9 @@ BEGIN
                    '     ACCESS PARAMETERS(#PARAM#)'||chr(10)||
                    '     LOCATION ('||CASE WHEN is_url1 THEN ''''||target||'''' ELSE target||':'''||dest||'''' END||')'||chr(10)||
                    '     REJECT LIMIT UNLIMITED)';
-            IF keyword NOT IN('csv','dmp') THEN
+            IF keyword NOT IN('csv','dmp','json') THEN
                 --https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle_bigdata_access_driver.html
+                --https://docs.oracle.com/en/bigdata/big-data-sql/4.1/bdsug/bigsqlref.html
                 stmt := replace(replace(replace(stmt,
                     '#COLS#',CASE WHEN keyword IN('json','xml') THEN 'doc CLOB' ELSE cols END),
                     '#TYPE#','BIGDATA'),
@@ -313,14 +325,17 @@ BEGIN
                     com.oracle.bigdata.csv.skip.header=1
                     com.oracle.bigdata.fileformat='||CASE WHEN keyword IN('json','xml') THEN 'textfile' when keyword='dmp' THEN 'datapump' ELSE keyword END||'
                     com.oracle.bigdata.buffersize=2048
-                    com.oracle.bigdata.compressiontype='||CASE WHEN ext in('csv','xml','son') THEN 'none' ELSE 'detect' END||'
+                    com.oracle.bigdata.compressiontype='||CASE WHEN ext=keyword THEN 'none' ELSE 'detect' END||'
                     com.oracle.bigdata.csv.rowformat.fields.terminator='''||CASE WHEN keyword IN('json','xml') THEN '\n' ELSE ',' END||'''
                     com.oracle.bigdata.dateformat=auto
+                    com.oracle.bigdata.datamode=automatic
+                    com.oracle.bigdata.access_protocol=delta_sharing
                     com.oracle.bigdata.timestampformat=auto
                     com.oracle.bigdata.timestampltzformat=auto
                     com.oracle.bigdata.timestamptzformat=auto
                     com.oracle.bigdata.truncatecol=true
                     com.oracle.bigdata.removequotes=true
+                    '||CASE WHEN keyword = 'csv' THEN q'[com.oracle.bigdata.csv.rowformat.fields.escapedby='\\']' END||'
                     com.oracle.bigdata.ignoremissingcolumns=true
                     com.oracle.bigdata.ignoreblanklines=true
                     com.oracle.bigdata.blankasnull=true
@@ -341,7 +356,7 @@ BEGIN
             ELSE
                 --https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle_loader-access-driver.html
                 stmt := replace(replace(stmt,'#TYPE#','LOADER'),
-                    '#PARAM#','RECORDS '||CASE WHEN ext not in('csv','xml','son') THEN 'COMPRESSION DETECT' END
+                    '#PARAM#','RECORDS '||CASE WHEN ext!=keyword THEN 'COMPRESSION DETECT' END
                     ||CASE WHEN is_url1 THEN ' CREDENTIAL '||credential END
                     ||' DELIMITED BY DETECTED NEWLINE NOLOGFILE NOBADFILE NODISCARDFILE READSIZE=10000000 DISABLE_DIRECTORY_LINK_CHECK IGNORE_BLANK_LINES
                      #PARAM#');
@@ -354,7 +369,7 @@ BEGIN
                     --preprocessor, preprocessor_timeout, readsize, string, skip, territory, variable, 
                     --validate_table_data, xmltag
                     stmt := replace(replace(stmt,'#COLS#',cols),
-                        '#PARAM#',q'~IGNORE_HEADER=1 FIELDS TERMINATED BY ',' CSV WITH EMBEDDED
+                        '#PARAM#',q'~ESCAPE IGNORE_HEADER=1 FIELDS TERMINATED BY ',' CSV WITH EMBEDDED
                         DATE_FORMAT DATE MASK 'auto' 
                         DATE_FORMAT TIMESTAMP MASK 'auto' 
                         DATE_FORMAT TIMESTAMP WITH LOCAL TIME ZONE 'auto' 
@@ -394,10 +409,9 @@ BEGIN
                             "ignoremissingcolumns":"true",
                             "blankasnull":"true",
                             "removequotes":"false",
-                            "escape":"true",
                             "trimspaces":"rtrim",
-                            '||case when ext!=dest then '"compression":"auto",' END||'
-                            "type":"csv"}'',
+                            "type":"csv"'||case when ext!=dest then ',"compression":"auto"' end||'
+                            }'',
                         column_list     => ''doc CLOB'',
                         field_list      => ''doc CHAR(10000000)''
                     );

@@ -322,7 +322,7 @@ function oracle:connect(conn_str)
             :mbrc := mbrc;
                 
             dbms_output.enable(null);
-            set_param(q'[nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']');
+            set_param(q'[nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff3' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM']');
             set_param('statistics_level=all "_rowsource_statistics_sampfreq"=16');
             set_param('parallel_degree_policy=MANUAL');
             set_param('"_query_execution_cache_max_size"=4194304');
