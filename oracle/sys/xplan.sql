@@ -1,7 +1,6 @@
 /*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
     The script will call DBMS_SQLTUNE_INTERNAL.I_PROCESS_SQL_CALLOUT instead of "EXPLAIN PLAN" or "EXECUTE IMMEDIATE" so that the bind variables can be applied.
-    And the actual SQL text will start with the "/* SQL Analyzer(<sid>,0) */ " prefix
-
+   
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
     -exec          : execute SQL instead of explain only
@@ -109,7 +108,7 @@ BEGIN
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT nvl(upper(own),nam),txt,sig,br,phv
+        SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv
         INTO own,sq_text,sig,bw,phv
         FROM (
             SELECT * FROM (
@@ -165,7 +164,7 @@ BEGIN
         trace  :='alter session set events ''trace [SQL_'|| CASE trace WHEN 1 THEN 'Optimizer' ELSE 'Compiler' END || '.*] @''';
         fixctl := sys.dbms_sqldiag.get_fix_control(16923858);
         IF fixctl=6 THEN
-            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:5'}';
+            EXECUTE IMMEDIATE q'{alter session set "_fix_control"='16923858:4'}';
         END IF;
         EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
         EXECUTE IMMEDIATE replace(trace,'@','disk &lv');
@@ -312,7 +311,7 @@ BEGIN
         IF bitand(&opt,3)>0 THEN
             OPEN cur FOR
                 SELECT xplan_cost, a.name,
-                       '$BRED$$HIW$/$NOR$' "/",
+                       '$HEADCOLOR$/$NOR$' "/",
                        exec_cost,b.name
                 FROM (
                     SELECT a.*,row_number() over(order by name) r

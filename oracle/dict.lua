@@ -15,7 +15,7 @@ local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
 local checking_access
-local function rep_instance(prefix,full,obj,suffix)
+local function rep_instance(prefix,full,obj,suffix) 
     obj=obj:upper()
     local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and dicts.dict[obj] and obj:find(cdbstr) then
@@ -23,7 +23,7 @@ local function rep_instance(prefix,full,obj,suffix)
         if cdbmode=='pdb' and (dicts.dict[new_obj] or {}).comm_view and db.props.version<21 then 
             if db.props.select_dict==nil then
                 checking_access=true
-                db.props.select_dict=db.props.isdba or db:check_access('SYS.INT$DBA_SYNONYMS',1) or false
+                db.props.select_dict=db.props.isdba or false
                 checking_access=false
             end
             if db.props.select_dict  then
@@ -33,7 +33,7 @@ local function rep_instance(prefix,full,obj,suffix)
             end
         else
             new_obj=obj:gsub(cdbmode=='cdb' and '^[DA][BL][AL]_' or '^[CD][DB][BA]_HIST_',cdbmode=='cdb' and 'CDB_' or 'AWR_PDB_') 
-            if new_obj~=obj and dicts.dict[new_obj] then
+            if new_obj~=obj and dicts.dict[new_obj] and (db.props.version or 10)>=(dicts.dict[new_obj].ver or 10) then
                 if not full:find(obj) then new_obj=new_obj:lower() end
                 full=full:gsub(obj:escape('*i'),new_obj)
                 obj=new_obj
@@ -120,7 +120,9 @@ local noparallel_sql=[[
         execute immediate 'alter session set events ''10384 trace name context %s''';
     exception
         when others then
-            if sqlcode=-1031 then execute immediate 'alter session %s parallel query';end if;
+            if sqlcode=-1031 then 
+                execute immediate 'alter session %s parallel query';
+            end if;
     end;
 ]]
 function dicts.set_noparallel(name,value)
@@ -202,15 +204,15 @@ function dicts.set_cdbmode(name,value)
             if tonumber(prev_container.dbid) == nil then
                 cfg.force_set('dbid',db.props.container_dbid)
             end
-            pcall(db.internal_call,db,'alter session set container_data=current');
+            --pcall(db.internal_call,db,'alter session set container_data=current');
             --cfg.force_set('container',db.props.container_id)
         end
     elseif cdbmode=='pdb' then
         if prev_container.new_dbid==cfg.get('dbid') and prev_container.new_container==cfg.get('container') then
             cfg.force_set('dbid','default')
-            if db:is_connect() then
-                pcall(db.internal_call,db,'alter session set container_data=all');
-            end;
+            --if db:is_connect() then
+            --    pcall(db.internal_call,db,'alter session set container_data=all');
+            --end;
             --cfg.force_set('container','default')
         end
     end
@@ -273,8 +275,8 @@ function dicts.test_grid()
     merge({rs3,'|',merge{rs1,'-',{rs2,'+',rs5}},'-',rs4},true)
 end
 
-function dicts.set_dict(type,scope)
-    if not type then
+function dicts.set_dict(typ,scope)
+    if not typ then
         local dict=dicts.current_dict
         if not dict then return print('Please run "dict public" to build the global dictionary.') end
         if dict.cache==0 then
@@ -290,11 +292,11 @@ function dicts.set_dict(type,scope)
         print(fmt:format('Level#2 Keywords',dict.subobjects,'(Tab-completion on <L1 Keyword>.<L2 Keyword>)'))
         print(fmt:format(' Cached Objects',dict.cache,"(Caches the current db's online dictionary that used for quick search(i.e.: desc/ora obj))"))
         print(fmt:format('    VPD Objects',dict.vpd,'(Used to auto-rewrite SQL for options "SET instance/container/dbid/schema")'))
-        checkhelp(type)
+        checkhelp(typ)
     end
-    type=type:lower()
-    env.checkerr(type=='public' or type=='init' or type=='param' or type=='obj',"Invalid parameter!")
-    env.checkerr(scope or (type=='public' or type=='init'),"Invalid parameter!")
+    typ=typ:lower()
+    env.checkerr(typ=='public' or typ=='init' or typ=='param' or typ=='obj' or typ=='remap',"Invalid parameter!")
+    env.checkerr(scope or (typ=='public' or typ=='init' or typ=='remap'),"Invalid parameter!")
     scope=(scope or "all"):lower()
     local sql;
     local path=datapath
@@ -302,13 +304,16 @@ function dicts.set_dict(type,scope)
     local dict,keywords,params={},{},{}
     local pattern=scope:gsub('%%','@'):escape():gsub('@','.*')
     local keys={}
-    if type=='param' then
+    if typ=='param' then
         params=dicts.params
         local is_connect=db:is_connect()
         for k,v in pairs(params) do
             if (k..' '..v[1]..' '..v[7]):lower():find(pattern) and (not is_connect or v[1]<=db.props.version) then
                 keys[#keys+1]=k
             end
+        end
+        if is_connect and #keys==0 and pattern:find('^[0-9_a-z]+$') then
+            keys[#keys+1]={pattern:lower(),99,0,0,1,1,'unkown'}
         end
         env.checkerr(#keys<=2000,"Too many matched parameters.")
         table.sort(keys)
@@ -317,6 +322,7 @@ function dicts.set_dict(type,scope)
         if not show_value then table.remove(rows[1],4) end
         for i,k in ipairs(keys) do
             local v,value=params[k],''
+            if type(k)=='table' then v,k=k,k[1] end
             if is_connect and #keys <=50 then
                 local args={name=k..':'..v[2],value='#VARCHAR'}
                 local res=pcall(db.exec_cache,db,[[
@@ -328,7 +334,7 @@ function dicts.set_dict(type,scope)
                         p PLS_INTEGER := instr(n,':');
                     BEGIN
                         t:=sys.dbms_utility.get_parameter_value(substr(n,1,p-1),y,x);
-                        :value := CASE WHEN substr(n,p+1) IN ('1','3','6') THEN ''||y ELSE x END;
+                        :value := NVL(CASE WHEN substr(n,p+1) IN ('1','3','6','99') THEN ''||y END, x);
                     EXCEPTION WHEN OTHERS THEN
                         :value := 'N/A'||CASE WHEN substr(n,p+1) = '6' THEN '(Type 6)' END;
                     END;]],args,'Internal_GetDBParameter')
@@ -338,7 +344,7 @@ function dicts.set_dict(type,scope)
                 i,
                 k,
                 v[2],
-                v[2]==1 and value=='0' and 'FALSE' or v[2]==1 and value=='1' and 'TRUE' or value,
+                v[2]==1 and (value=='0' and 'FALSE' or value=='1' and 'TRUE') or value,
                 v[1],
                 v[3]==1 and 'TRUE' or 'FALSE',
                 v[4]==1 and 'TRUE' or 'FALSE',
@@ -348,7 +354,20 @@ function dicts.set_dict(type,scope)
             if not show_value then table.remove(rows[i+1],4) end
         end
         return env.grid.print(rows)
-    elseif type=='obj' then
+    elseif typ=='remap' then
+        local dict1={dict={},keywords=dicts.keywords,params=dicts.params}
+        for name,obj in pairs(dicts.dict) do
+            dict1.dict[name]={obj.inst_col,
+                    obj.cdb_col,
+                    obj.dbid_col,
+                    obj.usr_col,
+                    obj.owner,
+                    obj.comm_view,
+                    obj.ver}
+        end;
+        env.save_data((path:gsub('dict','dict1')),dict1)
+        return;
+    elseif typ=='obj' then
         dict=dicts.dict
         for k,v in pairs(dict) do
             if (k..' '..(v.comm_view or '')):lower():find(pattern) then
@@ -357,7 +376,7 @@ function dicts.set_dict(type,scope)
         end
         env.checkerr(#keys<=1000,"Too many matched views.")
         table.sort(keys)
-        local rows={{"#","Object|Owner","Object|Name","Object|SubName","Instance|Column","CDB|Column","DBID|Column","User|Column","Comm|View"}}
+        local rows={{"#","Object|Owner","Object|Name","Object|SubName","Instance|Column","CDB|Column","DBID|Column","User|Column","Comm|View","Version|Sinced"}}
         for i,k in ipairs(keys) do
             local v=dict[k]
             rows[i+1]={
@@ -369,10 +388,11 @@ function dicts.set_dict(type,scope)
                 v.cdb_col or '',
                 v.dbid_col or '',
                 v.usr_col or '',
-                v.comm_view or ''}
+                v.comm_view or '',
+                v.ver or ''}
         end
         return env.grid.print(rows)
-    elseif type=='init' then 
+    elseif typ=='init' then 
         path=dicts.db_dict_path
         dicts.dict,dicts.keywords,dicts.params={},{},{}
         sql=[[
@@ -414,10 +434,19 @@ function dicts.set_dict(type,scope)
             with r as(
                     SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
-                    WHERE  user_id IN (SELECT SCHEMA# FROM sys.registry$ UNION ALL SELECT SCHEMA# FROM sys.registry$schemas)
+                    WHERE  username IN (SELECT COMP_ID FROM dba_registry_schemas UNION SELECT COMP_ID FROM dba_registry)
                     AND    username = owner
                     AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE'))  
-                    @XTABLE@)
+                    @XTABLE@),
+            objs AS(select owner,object_name,null,object_type
+                    from   dba_objects
+                    where  owner IN('SYS') 
+                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    and    instr(object_type,' ')=0
+                    union  all
+                    select owner,table_name,null,null 
+                    from   dba_tab_privs a
+                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA','C##CLOUD$SERVICE','PDB_DBA','DWROLE'))
             SELECT  table_name,
                     MAX(CASE WHEN col = 'INST_ID' and substr(table_name,1,3) NOT IN('DBA','PDB','CDB','ALL') OR col='INSTANCE_NUMBER' THEN col END) INST_COL,
                     MAX(CASE WHEN col IN ('CON_ID') THEN col END) CON_COL,
@@ -434,21 +463,13 @@ function dicts.set_dict(type,scope)
                     and    r.owner=s.table_owner
                     and    s.synonym_name!=s.table_name
                     union  all
-                    select owner,object_name,null,object_type
-                    from   dba_objects
-                    where  owner='SYS' 
-                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
-                    and    instr(object_type,' ')=0
+                    SELECT * FROM objs
                     union  all
-                    select distinct owner,object_name||'.'||procedure_name,null,'PROCEDURE'
-                    from   dba_procedures
-                    where  owner='SYS' 
-                    and    regexp_like(object_name,'^(DBMS_|UTL_)')
+                    select distinct a.owner,a.object_name||'.'||b.procedure_name,null,'PROCEDURE'
+                    from   objs a,dba_procedures b
+                    where  a.owner=b.owner
+                    and    a.object_name=b.object_name
                     and    procedure_name is not null
-                    union  all
-                    select owner,table_name,null,null 
-                    from   dba_tab_privs a
-                    where  grantee in('EXECUTE_CATALOG_ROLE','SELECT_CATALOG_ROLE','DBA')
                     union  all
                     SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
                            a.owner, a.name, nvl(b.referenced_name, a.referenced_name) ref_name,'REF'
@@ -484,18 +505,26 @@ function dicts.set_dict(type,scope)
         rows=db.resultset:rows(rs,-1)
         cnt1=#rows
         for i=2,cnt1 do
-            local exists=dict[rows[i][1]]
-            dict[rows[i][1]]={
-                inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and dict[rows[i][1]].inst_col),
-                cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and dict[rows[i][1]].cdb_col),
-                dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and dict[rows[i][1]].dbid_col),
-                usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and dict[rows[i][1]].usr_col),
-                owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and dict[rows[i][1]].owner),
-                comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and dict[rows[i][1]].comm_view)
-            }
-            local prefix,suffix=rows[i][1]:match('(.-$)(.*)')
-            if prefix=='GV_$' or prefix=='V_$' then
-                dict[prefix:gsub('_','')..suffix]=dict[rows[i][1]]
+            local name=rows[i][1]
+            local exists=dict[name]
+            local prefix,suffix=name:match('^(.*)%.(.*)$')
+            if not prefix then prefix,suffix=name,'' end
+            if (#prefix > 30 or #suffix>30) and rows[i][6]~='SYS' then
+                dict[name]=nil
+            else
+                dict[name]={
+                    inst_col=(rows[i][2] or "")~=""  and rows[i][2] or (exists and exists.inst_col),
+                    cdb_col=(rows[i][3] or "")~=""   and rows[i][3] or (exists and exists.cdb_col),
+                    dbid_col=(rows[i][4] or "")~=""  and rows[i][4] or (exists and exists.dbid_col),
+                    usr_col=(rows[i][5] or "")~=""   and rows[i][5] or (exists and exists.usr_col),
+                    owner=(rows[i][6] or "")~=""     and rows[i][6] or (exists and exists.owner),
+                    comm_view=(rows[i][7] or "")~="" and rows[i][7] or (exists and exists.comm_view),
+                    ver=not exists and db.props.version or exists.ver and math.min(exists.ver,db.props.version) or nil
+                }
+                prefix,suffix=name:match('(.-$)(.*)')
+                if prefix=='GV_$' or prefix=='V_$' then
+                    dict[prefix:gsub('_','')..suffix]=dict[name]
+                end
             end
         end
         local done={}
@@ -547,7 +576,7 @@ function dicts.set_dict(type,scope)
         end
     end
 
-    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(type=='init' and dicts.cache_obj) or nil},31*1024*1024)
+    env.save_data(path,{dict=dict,params=params,keywords=keywords,cache=(typ=='init' and dicts.cache_obj) or nil},31*1024*1024)
     dicts.load_dict(path)
     print((cnt1+cnt2+cnt3-2)..' records saved into '..path)
 end
@@ -718,7 +747,7 @@ db.lz_compress=[[
         RETURN t_out;
     END;
 
-    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL) IS
+    PROCEDURE base64encode(p_clob IN OUT NOCOPY CLOB, p_func_name VARCHAR2 := NULL,prefix BOOLEAN := FALSE) IS
         v_blob       BLOB;
         v_raw        RAW(32767);
         v_chars      VARCHAR2(32767);
@@ -753,6 +782,9 @@ db.lz_compress=[[
         dbms_lob.createtemporary(v_blob, TRUE);
         dbms_lob.ConvertToBLOB(v_blob, p_clob, dbms_lob.getLength(p_clob), dest_offset, src_offset, lob_csid, lang_context, warning);
         dbms_lob.createtemporary(p_clob, TRUE);
+        IF prefix THEN
+            dbms_lob.writeappend(p_clob,13,'base64encode:');
+        END IF;
         IF NOT v_impmode THEN
             v_blob := zlib_compress(v_blob);
         ELSE

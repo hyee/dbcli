@@ -1,4 +1,4 @@
-/*[[Gather object/SQL/db/schema statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent|0> ["<method_opt>"] [-async|-trace]
+/*[[Gather object/SQL/db/schema statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent|0>] ["<method_opt>"] [-async|-trace]
     @@NAME <owner>.]<name>[.<partition>]: Gather Statistics for target object
     @@NAME <SQL Id>                     : Gather statistics of all objects relative to target SQL
     @@NAME [<schema>] <options>         : Database/schema operations, if the schema is null(.) then for the whole database.
@@ -16,7 +16,7 @@
     -row                 : If sample percentage < 100%, then random sample by row, instead of block
     -async               : Create scheduler job to gather in background.
     -trace               : Print gather stats traces
-    -noinvalid           : Do not auto-invalidate the relative cursors
+    -invalid             : Invalidate the relative cursors
     -force               : Force gathering stats even the stats is locked
     <method_opt>         : Default as "FOR ALL COLUMNS SIZE AUTO"
          -skew           : Same to "FOR ALL COLUMNS SIZE SKEWONLY"
@@ -42,7 +42,7 @@
     --[[
         &async  : default={0} async={1}
         &trace  : default={0} trace={1}
-        &invalid: default={} noinvalid={,no_invalidate=>true}
+        &invalid: default={} invalid={,no_invalidate=>false}
         &force  : defualt={} force={,force=>true}
         &t      : default={} t={}
         &V4     : default={} skew={FOR ALL COLUMNS SIZE SKEWONLY} repeat={FOR ALL COLUMNS SIZE REPEAT}
@@ -120,10 +120,10 @@ DECLARE
     typ   VARCHAR2(128) := :object_type;
     part  VARCHAR2(128) := :object_subname;
     key   VARCHAR2(128) := trim('%' from upper(:filter));
-    pct   NUMBER        := regexp_substr(:V3,'^[\.0-9]+$');
+    pct   NUMBER        := nvl(0+regexp_substr(:V3,'^[\.0-9]+$'),0);
     dop   INT           := regexp_substr(:V2,'^\d+$');
     opt   VARCHAR2(300) := trim(:V4);
-    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> 0|<percent> -async';
+    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent> -async';
     fmt   VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s%s,degree=>%s&invalid.&force.%s);]';
     pub   VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
     cls   VARCHAR2(300) := q'[dbms_stats.delete_pending_stats('%s','%s');]';
@@ -141,6 +141,7 @@ DECLARE
     fil   DBMS_STATS.ObjectTab:=DBMS_STATS.ObjectTab();
     tabs  SYS.ODCIARGDESCLIST:=SYS.ODCIARGDESCLIST();
     pending VARCHAR2(32767);
+    schema_mode BOOLEAN:=false;
     CURSOR cur IS
         SELECT /*+NO_MERGE(B) NO_MERGE(A) USE_HASH(A B) opt_param('optimizer_dynamic_sampling' 11)*/ *
         FROM   (SELECT OWNER OWN,OBJECT_NAME NAM,OBJECT_TYPE,NULL RNAM
@@ -241,7 +242,10 @@ DECLARE
                 exception when others then null;
                 end; ~'
                 ||CASE WHEN c>0 then ln||q'[    execute immediate 'alter session set "_serial_direct_read"=always';]' END
-                ||stmt||ln||'    end;','            '),'@trace',CASE &trace WHEN 0 THEN 0 ELSE 2+4+8+16+64+1024 END);
+                ||stmt||ln||'    end;','            '),
+                '@trace',CASE &trace WHEN 0 THEN 0 --16: exclude tracing column stats in db/schema level mode
+                            ELSE 2+4+8+64+1024+CASE when schema_mode then 0 else 16 END 
+                         END);
             IF &exec THEN
                 job:=dbms_scheduler.generate_job_name('GATHER_STATS_');
                 dbms_scheduler.create_job(job_name   => job,
@@ -255,7 +259,9 @@ DECLARE
         END IF;
 
         IF c>0 THEN
+        BEGIN
             execute immediate 'alter session set "_serial_direct_read"=always';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         END IF;
 
         stmt := 'DECLARE err VARCHAR2(500);BEGIN'||stmt||'END;';
@@ -279,7 +285,9 @@ DECLARE
             END;
         END IF;
         IF c>0 THEN
+        BEGIN
             execute immediate 'alter session set "_serial_direct_read"=auto';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         END IF;
         IF tim IS NOT NULL THEN
             dbms_output.put_line('==========================');
@@ -290,7 +298,9 @@ DECLARE
         END IF;
     EXCEPTION WHEN OTHERS THEN
         IF c>0 THEN
+        BEGIN
             execute immediate 'alter session set "_serial_direct_read"=auto';
+        EXCEPTION WHEN OTHERS THEN NULL; END;
         END IF;
         RAISE;
     END;
@@ -365,8 +375,9 @@ BEGIN
                 IF lst.exists(hv) THEN
                     IF lst(hv)<=1000 THEN
                         val := tabs(lst(hv)).argtype;
-                        tabs(lst(hv)).argtype:=val-bitand(val,power(2,j-1))+power(2,j-1);
-                        IF (j=1 OR val=1) AND &nopart=1 THEN
+                        val := val-bitand(val,power(2,j-1))+power(2,j-1);
+                        tabs(lst(hv)).argtype:=val;
+                        IF &nopart=1 AND val=bitand(val,power(2,j-1)) THEN
                             tabs(lst(hv)).cardinality:=tabs(lst(hv)).cardinality+1;
                             tabs(lst(hv)).TABLEPARTITIONUPPER:=NULL;
                             tabs(lst(hv)).TABLEPARTITIONLOWER:=NULL;
@@ -419,7 +430,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF (pct IS NULL OR dop IS NULL) and &pending!=2 THEN
+    IF (pct=0 AND :V3 IS NOT NULL OR dop IS NULL) and &pending!=2 THEN
         raise_application_error(-20001,msg);
     ELSIF key IS NOT NULL THEN
         raise_application_error(-20001,'Option -f"<filter>" is only used to list database/schema stale stats');
@@ -465,6 +476,7 @@ BEGIN
         IF &pending>0 THEN
             raise_application_error(-20001,'Option -pending/-publish is not available to gathering database/schema stats');
         END IF;
+        schema_mode:=true;
         fmt:=q'[dbms_stats.gather_%s_stats(%s%s,options=>'GATHER&stale',gather_fixed=>true,block_sample=>&block%s%s,degree=>%s&invalid.&force.);]';
         fmt:=utl_lms.format_message(fmt,
                 CASE WHEN schem IS NOT NULL THEN 'schema' ELSE 'database' END,

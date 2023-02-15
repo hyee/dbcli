@@ -1,7 +1,7 @@
 local ver=os.getenv("OSVERSION")
-local u=luv
 local table,math,type,tonumber,os,pcall=table,math,type,tonumber,os,pcall
 local uv,env={},env
+local u=_G.luv or env.luv or require("luv") 
 local index,pos,found
 local modules={poll=1,loop=1,timer=1,prepare=1,check=1,idle=1,async=1,tcp=1,pipe=1,tty=1,udp=1,fs_event=1,fs_poll=1,fs=1,thread=1,os=1,signal=1}
 local sep=jit.os=='windows' and '\\' or '/'

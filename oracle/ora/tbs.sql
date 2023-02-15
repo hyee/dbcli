@@ -90,7 +90,7 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
             FROM (
                 SELECT /*+no_merge no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) 
                          opt_param('_optimizer_sortmerge_join_enabled','false')
-                         table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=64)*/
+                         table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=1024) */
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
                        max(b.bytes/b.blocks) blocksiz, 
@@ -158,7 +158,7 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
                          &attr11 DECODE(BIGFILE,'YES','BIGFILE,')||
                          &attr11 DECODE(ENCRYPTED,'YES','TDE,')||
                          &attr11 DECODE(PLUGGED_IN,'YES','PLUGIN,')||
-                         &attr11 DECODE(PREDICATE_EVALUATION,NULL,'','PRED('||REPLACE(PREDICATE_EVALUATION,'STORAGE','CELL')||')')||
+                         &attr11 DECODE(PREDICATE_EVALUATION,NULL,'','PRED('||REPLACE(PREDICATE_EVALUATION,'STORAGE','CELL')||'),')||
                          &attr11 COMPRESS_FOR||','||
                          &attr12 DECODE(CHUNK_TABLESPACE,'Y','CHUNK,')||
                          &attr12 DECODE(SHARED,'SHARED','',SHARED||',')||

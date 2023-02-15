@@ -44,9 +44,9 @@ function login.generate_name(url,props)
 end
 
 function login.capture(db,url,props)
-    local typ,url1=env.set.get("database")
+    local typ,url1,privs=env.set.get("database")
     login.load()
-    url,url1=login.generate_name(url,props)
+    url,url1=login.generate_name(url or props.jdbc_alias or props.url,props)
     local d=os.date('*t',os.time())
     props.password,props.lastlogin=env.packer.pack_str(props.password),string.format("%d-%02d-%02d %02d:%02d:%02d",d.year,d.month,d.day,d.hour,d.min,d.sec)
     if not login.list[typ] then login.list[typ]={} end
@@ -60,8 +60,10 @@ function login.capture(db,url,props)
     if url~=url1 and list[url1] then list[url1]=nil end
 
     if type(db)=="string" then props.connect_object=db end
+    privs,props.privs=props.privs,nil
     list[url]=props
     login.save()
+    props.privs=privs
     return url
 end
 
@@ -194,11 +196,11 @@ function login.onload()
     cfg.init("SaveLogin","on",nil,"core","Determine if autosave logins.",'on,off')
     local help_login=[[
         Logon with saved accounts, type 'help login' for more detail. Usage: @@NAME [ -d | -a |<number|account_name>]
-            @@NAME                     : list all saved a/c
-            @@NAME -d <num|name|alias> : delete matched a/c
-            @@NAME -p <num|name|alias> : print the connection information for a specific a/c
-            @@NAME    <num|name|alias> : login a/c
-            @@NAME -a <alias> <id|name>: set alias to an existing account
+            @@NAME                     : List all saved account
+            @@NAME    <num|name|alias> : Login account
+            @@NAME -d <num|name|alias> : Delete matched account
+            @@NAME -p <num|name|alias> : Print the connection information for a specific account
+            @@NAME -a <alias> <id|name>: Set alias to an existing account
         Use 'set savelogin off' to disable the autosave.]]
     env.set_command{obj=nil,cmd={"login","logon"}, 
                     help_func=help_login,

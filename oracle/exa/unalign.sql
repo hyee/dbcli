@@ -20,9 +20,9 @@ If flag includes 8 but extents don't then could cause ORA-8103 error
 
 findobj "&V1" 1 1
 SET FEED OFF VERIFY OFF
-VAR CUR1 REFCURSOR
-VAR CUR2 REFCURSOR
-
+VAR CUR1 REFCURSOR "List of tablespaces that un-aligned to 256K"
+VAR CUR2 REFCURSOR "List of segments that LARGE_EXTENT_ENABLED"
+col ALLOCATED_SPACE,FILE_SIZE,FILE_MAXSIZE for kmg
 DECLARE
     own VARCHAR2(128):=:OBJECT_OWNER;
     nam VARCHAR2(128):=:OBJECT_NAME;
@@ -35,7 +35,7 @@ BEGIN
             WHERE BITAND(B.FLAG,8)!=8
             AND   B.TABLESPACE_ID=A.TS#;
         open :cur2 FOR
-            SELECT /*+table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=32)*/
+            SELECT /*+table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=512)*/
                    s.owner,
                    s.segment_name,
                    s.segment_type,
@@ -53,7 +53,7 @@ BEGIN
             AND    (MOD(e.blocks, 262144 / t.block_size) != 0 or mod(e.block_id, 262144 / t.block_size) != 0);
     ELSE
         open :cur2 FOR
-            SELECT /*+table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=32)*/
+            SELECT /*+table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=512) */
                    b.inst_id,
                    a.name tbs_name,
                    b.flag tbs_flag,

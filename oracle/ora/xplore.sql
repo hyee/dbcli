@@ -1,7 +1,7 @@
 /*[[
     Test the execution plan changes by adjusting the fix controls and session environments. Usage: @@NAME <sql_id>|"<sql_text>" [-ofe|-env|-s"<query>"] [-f"<plan_filter>"|-k"<keyword>]
     -env  : only test the parameters
-    -ofe  : only test the fix controls
+    -ofe  : only test the fix controls, can use -ofe"<filter>" to specify the start OFE
     -s    : customize the source. e.g.: -s"select bugno name,2 type,value,SYS.ODCIVARCHAR2LIST() avails,description from v$system_fix_control"
     -p    : specify plan table name. e.g.: -p"SYSTEM.PLAN_TABLE"
 
@@ -25,6 +25,7 @@
     --[[
         @ARGS  : 1
         &typ   : default={all} ofe={ofe} env={env}
+        &ofe   : default={1=1} ofe={}
         &filter: default={1=2} f={} k={operation||' '||options||' '||object_name like upper('%&0%')}
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
@@ -93,6 +94,7 @@
                 FROM   v$session_fix_control
                 WHERE  session_id = userenv('sid')
                 AND    '&typ' IN('all','ofe')
+                AND    &OFE
             }
 
             s={}
@@ -101,6 +103,7 @@
 ]]*/
 set SQLTIMEOUT 7200 verify off feed off &sep
 var cur refcursor;
+var parse refcursor;
 var msg varchar2
 var plans clob;
 var file varchar2
@@ -109,6 +112,8 @@ DECLARE
     sq_id     VARCHAR2(32767) := '&v1';
     params    SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     descs     SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
+    cpus      SYS.ODCINUMBERLIST   := SYS.ODCINUMBERLIST();
+    elas      SYS.ODCINUMBERLIST   := SYS.ODCINUMBERLIST();
     avails    SYS.ODCIVARCHAR2LIST;
     prefix    VARCHAR2(10);
     NAME      VARCHAR2(128);
@@ -121,6 +126,10 @@ DECLARE
     qry       VARCHAR2(4000);
     buff      CLOB;
     sql_text  CLOB;
+    scpu      PLS_INTEGER;
+    sela      PLS_INTEGER;
+    cpu       INT;
+    ela       INT;
     counter   PLS_INTEGER := 0;
     phase     PLS_INTEGER := 0;
     rindex    PLS_INTEGER;
@@ -133,8 +142,8 @@ DECLARE
         VALUE       VARCHAR2(128),
         avails      SYS.ODCIVARCHAR2LIST,
         description VARCHAR2(4000));
-    TYPE t_list IS TABLE OF t_record;
-    lst       t_list;
+    TYPE     t_list IS TABLE OF t_record;
+    lst      t_list;
     PROCEDURE alter_session(n VARCHAR2, v VARCHAR2, fix VARCHAR2 := NULL) IS
         val VARCHAR2(128) := v;
     BEGIN
@@ -153,10 +162,23 @@ DECLARE
     BEGIN
         dbms_lob.writeappend(sql_text, nvl(length(msg), 0) + 1, msg || chr(10));
     END;
+
+    PROCEDURE parse_time(delta PLS_INTEGER:=0) IS
+        val INT;
+    BEGIN
+        /*
+        SELECT MAX(DECODE(STATISTIC#,scpu,value))-decode(delta,1,cpu,0),
+               MAX(DECODE(STATISTIC#,sela,value))-decode(delta,2,ela,0)
+        INTO   cpu,ela
+        FROM   v$mystat
+        WHERE  STATISTIC# IN(scpu,sela);*/
+        ela := sys.dbms_utility.get_time-CASE WHEN delta=1 THEN ela ELSE 0 END;
+        cpu := sys.dbms_utility.get_cpu_time-CASE WHEN delta=1 THEN cpu ELSE 0 END;
+    END;
 BEGIN
     IF instr(sq_id, ' ') = 0 THEN
         BEGIN
-            SELECT *
+            SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ *
             INTO   to_schema, buff
             FROM   (SELECT parsing_schema_name, sql_fulltext
                     FROM   gv$sqlarea
@@ -204,9 +226,9 @@ BEGIN
         EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     END IF;
     EXECUTE IMMEDIATE q'{
-                SELECT *
-                FROM   ( &SOURCE )
-                ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0), DECODE(name, 'optimizer_features_enable', ' ', name)}' --
+            SELECT *
+            FROM   ( &SOURCE )
+            ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0), DECODE(name, 'optimizer_features_enable', ' ', name)}' --
         BULK COLLECT
         INTO lst;
     EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=' || to_schema;
@@ -216,6 +238,10 @@ BEGIN
     SELECT COUNT(1) INTO plines FROM &ptable;
     phase := 3;
     COMMIT;
+    SELECT MAX(DECODE(name,'parse time cpu',statistic#)),MAX(DECODE(name,'parse time elapsed',statistic#))
+    INTO   scpu,sela
+    FROM   v$statname;
+
     FOR i IN 1 .. lst.count LOOP
         NAME   := lst(i).name;
         fix    := NULL;
@@ -287,18 +313,19 @@ BEGIN
                 BEGIN
                     alter_session(NAME, avails(j), fix);
                     changed := TRUE;
-                    EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', prefix || (counter + 1));
-                    /*
-                    UPDATE &ptable
-                    SET    REMARKS=substr(stmt, 19)
-                    WHERE  STATEMENT_ID LIKE '%\_'||prefix || (counter + 1) escape '\';
-                    */
-                    COMMIT;
+                    counter := counter + 1;
                     params.extend;
                     descs.extend;
-                    counter         := counter + 1;
+                    cpus.extend;
+                    elas.extend;
+                    parse_time(0);
+                    EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', prefix || counter);
+                    parse_time(1);
+                    COMMIT;
                     params(counter) := substr(stmt, 19);
                     descs(counter)  := lst(i).description;
+                    cpus(counter)   := cpu;
+                    elas(counter)   := ela;
                 EXCEPTION
                     WHEN OTHERS THEN
                         NULL; --dbms_output.put_line(SQLERRM||':'||stmt);
@@ -319,9 +346,11 @@ BEGIN
 
     UPDATE &ptable
     SET    REMARKS=(select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(params)) where r=regexp_substr(STATEMENT_ID, '\d+$'))||chr(9)||
-                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(descs)) where r=regexp_substr(STATEMENT_ID, '\d+$'))
+                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(descs)) where r=regexp_substr(STATEMENT_ID, '\d+$'))||chr(9)||
+                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(cpus)) where r=regexp_substr(STATEMENT_ID, '\d+$'))||chr(9)||
+                   (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(elas)) where r=regexp_substr(STATEMENT_ID, '\d+$'))
     WHERE  regexp_like(STATEMENT_ID, '\d+$')
-    AND    nvl(id,0)=0;
+    AND    OTHER_XML IS NOT NULL;
     COMMIT; 
 
     fmt := 'ALL ALLSTATS OUTLINE';
@@ -415,6 +444,20 @@ BEGIN
         FROM   finals a
         WHERE  seq=1
         ORDER  BY grp, matched DESC,plan_hash,plan_hash2,cost,bytes,total_card,id;
+
+    OPEN :parse FOR
+        SELECT STATEMENT_ID,
+               nvl2(other_xml, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1), '') + 0 plan_hash,
+               nvl2(other_xml, regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1), '') + 0 plan_hash2,
+               regexp_substr(remarks, '[^' || CHR(9) || ']+', 1, 3)/100 PARSE_CPU,
+               regexp_substr(remarks, '[^' || CHR(9) || ']+', 1, 4)/100 PARSE_ELA,
+               regexp_substr(remarks, '[^' || CHR(9) || ']+', 1, 1) settings,
+               regexp_substr(remarks, '[^' || CHR(9) || ']+', 1, 2) DESCRIPTION
+        FROM   &ptable
+        WHERE  STATEMENT_ID LIKE 'XPLORE%' AND other_xml IS NOT NULL
+        ORDER BY PARSE_ELA DESC
+        FETCH FIRST 50 ROWS ONLY;
+
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested. Please reconnect to reset all options to the defaults.',
                                    counter);
@@ -433,6 +476,7 @@ SPOOL xplore_&file..txt
 PRO SQL Plan Summary:
 PRO =================
 print cur
+print parse
 SET TERMOUT OFF
 print plans
 SET TERMOUT ON FEED ON

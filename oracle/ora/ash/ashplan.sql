@@ -205,6 +205,7 @@ Sample Ouput:
                         tm_delta_time,
                         tm_delta_db_time,
                         delta_time,
+                        in_parse,
                         DELTA_READ_IO_REQUESTS,DELTA_WRITE_IO_REQUESTS,DELTA_INTERCONNECT_IO_BYTES,
                         IN_PLSQL_EXECUTION,IN_PLSQL_RPC,IN_PLSQL_COMPILATION,IN_JAVA_EXECUTION,DECODE(IS_SQLID_CURRENT,'Y','N','Y') IS_NOT_CURRENT,
                         sample_time,
@@ -241,11 +242,11 @@ Sample Ouput:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH gash as(
-    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)*/
+    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000) */
             a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
-    AND    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)
+    AND    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
     AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
     AND    nvl(0+regexp_substr(:V2,'^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND   '&vw' IN('A','G')
@@ -270,7 +271,7 @@ dash as(
     AND    sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)),
 ash_raw as (
     select /*+MATERIALIZE qb_name(ash_raw) NO_DATA_SECURITY_REWRITE opt_estimate(query_block rows=3000000)*/ h.*,
-            nvl(event,'ON CPU') ev,
+            nvl(event,'ON CPU')||decode(IN_PARSE,'Y',' [PARSE]') ev,
             nvl(wait_class,'ON CPU') wl,
             nvl(nullif(plan_hash_full,'0'),''||phv1) phf,
             max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec,pid) dop,
@@ -281,7 +282,6 @@ ash_raw as (
                       opt_param('cursor_sharing' 'force')
                       opt_param('_optim_peek_user_binds' 'false') 
                       opt_param('_optimizer_connect_by_combine_sw', 'false')
-                      opt_param('optimizer_dynamic_sampling' 11)
                     */ 
                    a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    row_number() OVER(PARTITION BY dbid,stime,inst_id,sid ORDER BY AAS_,lv desc) seq,
@@ -310,7 +310,7 @@ ash_raw as (
     WHERE  seq = 1),
 sql_list as(select /*+MATERIALIZE*/ distinct sql_id,phv1 plan_hash_value,dbid,count(1) over(PARTITION BY dbid,phv1,sql_id) cnt from ash_raw where SQL_ID IS NOT NULL AND (phv1>0 OR SQL_OPNAME='INSERT')),
 ALL_PLANS AS(
-    SELECT  /*+MATERIALIZE opt_estimate(query_block rows=100000)*/
+    SELECT  /*+MATERIALIZE OPT_PARAM('_fix_control' '26552730:0') opt_estimate(query_block rows=100000) no_parallel*/
             h.dbid,
             EXTRACTVALUE(COLUMN_VALUE,'//ID')+0 id,
             EXTRACTVALUE(COLUMN_VALUE,'//PARENT_ID')+0 PARENT_ID,
@@ -338,7 +338,7 @@ ALL_PLANS AS(
     FROM    (select a.*,row_number() over(partition by plan_hash_value,dbid order by cnt desc) plan_seq
              from   sql_list a) h,
             TABLE(XMLSEQUENCE(EXTRACT(DBMS_XMLGEN.GETXMLTYPE(q'!
-                SELECT * 
+                SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ * 
                 FROM (SELECT A.*,DENSE_RANK() OVER(ORDER BY FLAG,inst_id) SEQ
                 FROM (
                     SELECT id,
@@ -370,18 +370,18 @@ ALL_PLANS AS(
                     UNION ALL
                     SELECT  id,
                             decode(parent_id,-1,id-1,parent_id) parent_id,
-                            plan_hash_value,
-                            2,
-                            to_char(TIMESTAMP,'YYYY-MM-DD HH24:MI:SS'),
+                            plan_hash_value ha,
+                            2 flag,
+                            to_char(TIMESTAMP,'YYYY-MM-DD HH24:MI:SS') tm,
                             NULL child_number,
                             sql_id,
-                            nvl(plan_hash_value,0),
-                            &cid,
-                            object#,
+                            nvl(plan_hash_value,0) phv,
+                            &cid inst_id,
+                            object# obj,
                             object_name,
                             object_alias,
                             position pos,
-                            object_node tq,operation||' '||options,
+                            object_node tq,operation||' '||options operation,
                             &phf2 plan_hash_full,
                             instr(other_xml,'adaptive_plan') is_adaptive_,
                             io_cost,access_predicates ap,filter_predicates fp,search_columns sc,
@@ -396,7 +396,6 @@ ALL_PLANS AS(
                     AND    a.dbid='||h.dbid||') a
                 ) WHERE SEQ=1 ORDER BY ID'), '//ROW'))) B
     WHERE PLAN_SEQ<=10),
-plan_objs AS (SELECT DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS),
 sql_plan_data AS
  (SELECT * FROM
      (SELECT a.*,
@@ -582,16 +581,16 @@ ash_agg as(
                                     /greatest(avg(dbtime) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#),5e6),2),0) skew
                     FROM (select /*+ordered use_hash(b)*/ * 
                           from ash_phv_agg natural join (
-                            select b.*,
+                            select  /*+use_hash(b c)*/ b.*,
                                    nvl(trim(case 
                                     when current_obj# < -1 then
                                         'Temp I/O'
                                     when current_obj# > 0 then 
-                                        nvl((select max(object_name) from plan_objs where object#=current_obj#),''||current_obj#) 
+                                        nvl(c.object_name,''||current_obj#) 
                                     when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                                         'Undo'
                                     when p3text like '%namespace' and p3>power(16,8) then 
-                                        nvl((select max(object_name) from plan_objs where object#=trunc(p3/power(16,8))),''||trunc(p3/power(16,8))) 
+                                        nvl(c.object_name,''||trunc(p3/power(16,8))) 
                                     when p3text like '%namespace' then 
                                         'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
                                     when p1text like 'cache id' then 
@@ -632,7 +631,9 @@ ash_agg as(
                                 end),''||current_obj#) curr_obj#,
                                 decode(sec_seq,1,least(coalesce(tm_delta_db_time,delta_time,AAS*1e6),coalesce(tm_delta_time,delta_time,AAS*1e6),AAS*2e6) * 1e-6) secs,
                                 sum(case when is_px_slave=1 and px_flags>65536 then least(tm_delta_db_time,AAS*2e6) end) over(partition by px_flags,dbid,phv1,sql_exec,pid,qc_sid,qc_inst,qc_session_serial#,sid,inst_id) dbtime
-                            from ASH_AAS b)) A
+                            from ASH_AAS b,
+                                 (SELECT /*+no_merge*/ DISTINCT OBJECT#,OBJECT_NAME FROM ALL_PLANS) c
+                            WHERE c.object#(+)=decode(sign(current_obj#),1,current_obj#,trunc(p3/power(16,8))))) A
                     )
                 group by phv,phvs,phvs,phfv,plan_exists,grouping sets((phv1,sql_id),(phv1,sql_id,top1),id,(id,top1),top1,(top1,top2))) A) A
     ) a WHERE g IS NOT NULL

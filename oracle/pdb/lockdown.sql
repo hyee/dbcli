@@ -5,4 +5,6 @@ from v$lockdown_rules
 where :V1 is null or lower(rule_type||','||RULE||','||clause||','||CLAUSE_OPTION||','||STATUS) like lower('%&v1%')
 order by 1,2,3,4,5;
 
+PRO PDB_PLUG_IN_VIOLATIONS
+PRO ======================
 select * from PDB_PLUG_IN_VIOLATIONS;

@@ -30,6 +30,7 @@ DECLARE
     res       CLOB;
     xml       XMLTYPE;
     fixctl    PLS_INTEGER;
+    ctrlOptions VARCHAR2(2000):='<parameters><parameter name="compress">yes</parameter><parameter name="capture">with_runtime_info</parameter><parameter name="diag_event">SQLEXEC_HIGHEST</parameter><parameter name="problem_type">PERFORMANCE</parameter></parameters>';
 BEGIN
     IF instr(sq_id,' ')>0 THEN
         sq_text := sq_id;
@@ -98,7 +99,7 @@ BEGIN
                                              incident_id     => sq_id,
                                              exportData      => false,
                                              &z exportMetadata  => false,
-                                             &z ctrlOptions=> '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                             &z ctrlOptions=> ctrlOptions,
                                              testcase        => res);
         ELSIF phv IS NULL THEN
             IF sq_id IS NOT NULL THEN
@@ -106,7 +107,7 @@ BEGIN
                                                  sql_id          => sq_id,
                                                  exportData      => false,
                                                  &z exportMetadata  => false,
-                                                 &z ctrlOptions  => '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                                 &z ctrlOptions  => ctrlOptions,
                                                  testcase        => res);
             ELSE
                 sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
@@ -114,7 +115,7 @@ BEGIN
                                                  user_name       => sys_context('userenv','current_schema'),
                                                  exportData      => false,
                                                  &z exportMetadata  => false,
-                                                 &z ctrlOptions  => '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                                 &z ctrlOptions  => ctrlOptions,
                                                  testcase        => res);
             END IF;
         ELSE
@@ -123,7 +124,7 @@ BEGIN
                                              plan_hash_value => phv,
                                              exportData      => false,
                                              &z exportMetadata  => false,
-                                             &z ctrlOptions     => '<parameters><parameter name="compress">yes</parameter></parameters>',
+                                             &z ctrlOptions     => ctrlOptions,
                                              testcase        => res);
         END IF;
         sep := regexp_substr(dir, '[\\/]');
@@ -150,7 +151,11 @@ BEGIN
         IF phv IS NULL THEN
             raise_application_error(-20001, 'Please specify a valid SQL ID that exists in v$sql_plan_statistics_all.');
         ELSE
-            EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
+            EXCEPTION WHEN OTHERS THEN NULL;
+                DBMS_SESSION.SET_IDENTIFIER(ROUND(DBMS_RANDOM.VALUE(1,1E6)));
+            END;
             sys.dbms_sqldiag.dump_trace(sq_id, child_num, nam);
         END IF;
         :file := 'default';

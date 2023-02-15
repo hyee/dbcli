@@ -8,7 +8,7 @@
   * cursor: mutex S                  
   * cursor: pin X                    
   * cursor: pin S                    
-  * cursor: pin S wait on X          
+  * cursor: pin S wait on X 
   * library cache: mutex X           
   * library cache: bucket mutex X    
   * library cache: dependency mutex X

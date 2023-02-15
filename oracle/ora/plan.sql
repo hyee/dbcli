@@ -129,17 +129,19 @@ Options:
                          access_predicates ap,filter_predicates fp,search_columns sc,
                          &dop over(partition by PLAN_ID) dop,
                          &g_mbrc mbrc
-                  FROM   sys.sql$text st,sys.sqlobj$plan a
-                  WHERE  st.sql_handle = '&v1'
+                  FROM   sys.sql$text st,sys.sqlobj$plan a,(select plan_id p,signature,name from sys.sqlobj$) o
+                  WHERE  '&v1' in(st.sql_handle,o.name)
                   AND    &SRC = 0
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.signature = st.signature
-                  AND    a.plan_id = coalesce('&V2'+0,(
+                  AND    a.signature = o.signature
+                  AND    a.plan_id   = o.p
+                  AND    ('&v1' = o.name or a.plan_id = coalesce('&V2'+0,(
                         select max(plan_id) keep(dense_rank last order by timestamp) 
                         from   sys.sqlobj$plan b 
                         where  b.signature=a.signature
                         AND    &SRC = 0
-                        AND   '&v1' not in('X','&_sql_id')))
+                        AND   '&v1' not in('X','&_sql_id'))))
            }
            default={}
     }
@@ -162,7 +164,8 @@ DECLARE/*INTERNAL_DBCLI_CMD*/
 BEGIN
     IF :binds = 'PEEKED_BINDS' THEN
         FOR r IN (WITH qry AS
-                       (SELECT a.*, dense_rank() over(ORDER BY decode('&V2',c,0,1),captured, r DESC) seq
+                       (SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 
+                               a.*, dense_rank() over(ORDER BY decode('&V2',c,0,1),captured, r DESC) seq
                        FROM   (SELECT a.*, decode(MAX(was_captured) over(PARTITION BY r), 'YES', 0, 1) captured
                                FROM   (SELECT MAX(LAST_CAPTURED) OVER(PARTITION BY child_number,inst_id) || child_number || ':' || INST_ID r,
                                               ''||child_number c,
@@ -274,7 +277,7 @@ END;
 
 print c
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
- (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) */ *
+ (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ *
   FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT /*+no_expand*/ id,

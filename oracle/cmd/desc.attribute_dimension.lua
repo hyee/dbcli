@@ -1,0 +1,1 @@
+return obj.redirect('analytic_view')

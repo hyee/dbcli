@@ -491,7 +491,7 @@ function scripter:check_ext_file(cmd)
     c=c:upper()
     if not flag then self.last_external_path=dir end
     for k,v in pairs(target_dir) do
-        if c:find(k,1,true) then return target_dir,k end
+        if k:sub(1,1)~='-' and c:find(k,1,true) then return target_dir,k end
     end
     return target_dir,c
 end

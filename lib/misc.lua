@@ -95,6 +95,40 @@ end
 
 local spaces={}
 local s=' \t\n\v\f\r\0'
+local allspace={
+    '\t',   --0x9
+    '\n',   --0xa
+    '\x0b',   --0xb
+    '\x0c',   --0xc
+    '\r',   --0xd
+    ' ',   --0x20
+    '\xa3\xa0',--
+    '\xc2\x85',   --0x85
+    '\xc2\xa0',   --0xa0
+    '\xe1\x9a\x80',   --0x1680
+    '\xe1\xa0\x8e',   --0x180e
+    '\xe2\x80\x80',   --0x2000
+    '\xe2\x80\x81',   --0x2001
+    '\xe2\x80\x82',   --0x2002
+    '\xe2\x80\x83',   --0x2003
+    '\xe2\x80\x84',   --0x2004
+    '\xe2\x80\x85',   --0x2005
+    '\xe2\x80\x86',   --0x2006
+    '\xe2\x80\x87',   --0x2007
+    '\xe2\x80\x88',   --0x2008
+    '\xe2\x80\x89',   --0x2009
+    '\xe2\x80\x8a',   --0x200a
+    '\xe2\x80\x8b',   --0x200b
+    '\xe2\x80\x8c',   --0x200c
+    '\xe2\x80\x8d',   --0x200d
+    '\xe2\x80\xa8',   --0x2028
+    '\xe2\x80\xa9',   --0x2029
+    '\xe2\x80\xaf',   --0x202f
+    '\xe2\x81\x9f',   --0x205f
+    '\xe2\x81\xa0',   --0x2060
+    '\xe3\x80\x80',   --0x3000
+    '\xef\xbb\xbf',   --0xfeff
+}
 for i=1,#s do spaces[s:byte(i)]=true end
 local ext_spaces={}
 local function exp_pattern(sep)
@@ -110,12 +144,16 @@ local function exp_pattern(sep)
 end
 
 local function rtrim(s,sep)
-    local ary=exp_pattern(sep)
+    local ary,f=exp_pattern(sep)
     if type(s)=='string' then
         local len=#s
         for i=len,1,-1 do
             local p=s:byte(i)
-            if not spaces[p] and not (ary and ary[p]) then
+            if f then
+                f=nil
+            elseif p==160 and (s:byte(i-1)==194 or s:byte(i-1)==163) then
+                f=true
+            elseif not spaces[p] and not (ary and ary[p]) then
                 return i==len and s or s:sub(1,i)
             elseif i==1 then
                 return ''
@@ -126,12 +164,16 @@ local function rtrim(s,sep)
 end
 
 local function ltrim(s,sep)
-    local ary=exp_pattern(sep)
+    local ary,f=exp_pattern(sep)
     if type(s)=='string' then
         local len=#s
         for i=1,len do
             local p=s:byte(i)
-            if not spaces[p] and not (ary and ary[p]) then
+            if f then
+                f=nil
+            elseif (p==194 or p==163) and s:byte(i-1)==160 then
+                f=true
+            elseif not spaces[p] and not (ary and ary[p]) then
                 return i==1 and s or s:sub(i)
             elseif i==len then
                 return ''
@@ -190,13 +232,7 @@ if not table.unpack then table.unpack=function(tab) return unpack(tab) end end
 local system=java.system
 local clocker=system.currentTimeMillis
 function os.timer()
-    local uv=env.luv
-    if uv and uv.now then
-        uv.update_time()
-        return uv.now()/1000
-    else
-        return clocker()/1000
-    end
+    return clocker()/1000
 end
 
 function string.from(v)
@@ -258,19 +294,21 @@ function math.round(exact, quantum)
     return (quant + (frac > 0.5 and 1 or 0))/quantum
 end
 
-function table.clone (t,depth) -- deep-copy a table
-    if type(t) ~= "table" or (depth or 1)<=0 then return t end
-    local meta = getmetatable(t)
-    local target = {}
-    for k, v in pairs(t) do
-        if type(v) == "table" then
-            target[k] = table.clone(v,(tonumber(depth) or 99)-1)
-        else
-            target[k] = v
+if not table.clone then
+    table.clone=function(t,depth) -- deep-copy a table
+        if type(t) ~= "table" or (depth or 1)<=0 then return t end
+        local meta = getmetatable(t)
+        local target = {}
+        for k, v in pairs(t) do
+            if type(v) == "table" then
+                target[k] = table.clone(v,(tonumber(depth) or 99)-1)
+            else
+                target[k] = v
+            end
         end
+        setmetatable(target, meta)
+        return target
     end
-    setmetatable(target, meta)
-    return target
 end
 
 function table.week(typ,gc)

@@ -241,7 +241,7 @@ BEGIN
             FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofelist)) A
             JOIN  (SELECT rownum r,trim(chr(10) from column_value) v2 from table(ofedesc)) B
             USING (r)) B
-    ON   (B.r=regexp_substr(STATEMENT_ID, '\d+$') AND nvl(A.ID,0) <2)
+    ON   (B.r=regexp_substr(STATEMENT_ID, '\d+$') AND A.OTHER_XML IS NOT NULL)
     WHEN MATCHED THEN UPDATE SET A.REMARKS=B.MEMO;
     COMMIT;
 

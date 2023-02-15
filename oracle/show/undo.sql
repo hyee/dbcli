@@ -1,30 +1,68 @@
-/*[[Show Undo info]]*/
-col "Current|Undo Size,Exp Undo Size|For Retention" format kmg
-col "Max|Undo Size" format kmg
+/*[[Show Undo info
+    --[[--
+        @insts: 11.2={listagg(b.inst_id) within group(order by b.inst_id)} {default=to_char(wmsys.wm_concat(b.inst_id))}
+    --]]--
+]]*/
+col "Current|Undo Size,Exp Undo Size|For Retention,HWM|Roll Size" format kmg
+col "Max|Undo Size,Current|Roll Size,Avg Active|Roll Size,Avg|Extent Size" format kmg
 col "Necessary|Undo Size" format kmg
 col "Max|Used Size,BYTES,BLOCK_SIZE" format kmg
 col "Undo Size|/ Sec,ActiveS|/ Sec,Expired|/ Sec,Unexpired|/ Sec,Steal-Tries|/ Sec,Steal-Succ|/ Sec,Reused|/Sec" format kmg
+col "Total|Header Gets,Total|Header Waits,Total|Shrinks,Total|Extends" FOR TMB
 SET FEED OFF
-COL OWNER,undo_tbs break
+
 PRO DBA_UNDO_EXTENTS:
 PRO =================
-SELECT OWNER,
-       TABLESPACE_NAME undo_tbs,
-       STATUS,
-       COUNT(DISTINCT SEGMENT_NAME) SEGMENTS,
-       COUNT(1) EXTENTS,
-       SUM(BLOCKS) BLOCKS,
-       SUM(BYTES) BYTES,
-       SUM(BYTES)/SUM(BLOCKS) BLOCK_SIZE
-FROM DBA_UNDO_EXTENTS
-GROUP BY OWNER,
-         TABLESPACE_NAME,
-         STATUS
-ORDER BY 1,2,3;
+SELECT &insts inst,
+       decode(seq, 1, owner) owner,
+       decode(seq, 1, undo_tbs) undo_tbs,
+       status,
+       MAX(segments) segments,
+       MAX(extents) extents,
+       MAX(BLOCKS) BLOCKS,
+       MAX(BYTES) BYTES,
+       MAX(BLOCK_SIZE) BLOCK_SIZE
+FROM   (SELECT OWNER,
+               TABLESPACE_NAME undo_tbs,
+               STATUS,
+               COUNT(DISTINCT SEGMENT_NAME) SEGMENTS,
+               COUNT(1) EXTENTS,
+               SUM(BLOCKS) BLOCKS,
+               SUM(BYTES) BYTES,
+               SUM(BYTES) / SUM(BLOCKS) BLOCK_SIZE,
+               row_number() over(PARTITION BY owner, tablespace_name ORDER BY status) seq
+        FROM   DBA_UNDO_EXTENTS A
+        GROUP  BY OWNER, TABLESPACE_NAME, STATUS) a
+LEFT   JOIN (SELECT INST_ID, VALUE FROM GV$PARAMETER WHERE NAME = 'undo_tablespace') B
+ON     A.undo_tbs = B.VALUE
+AND    A.SEQ = 1
+GROUP  BY a.owner, a.undo_tbs, a.status, seq
+ORDER  BY a.owner, a.undo_tbs, a.status;
+
+PRO GV$ROLLSTAT:
+PRO ============
+
+SELECT decode(row_number() over(partition by INST_ID order by 1),1,INST_ID) inst,
+       DECODE(XACTS,0,STATUS,'ACTIVE') STATUS,
+       COUNT(1) SEGS,
+       SUM(XACTS) "Current|Transactions",
+       SUM(EXTENTS) "Current|Extents",
+       SUM(RSSIZE) "Current|Roll Size",
+       ROUND(SUM(RSSIZE)/nullif(SUM(EXTENTS),0))  "Avg|Extent Size",
+       '|' "|",
+       SUM(RSSIZE) "Avg Active|Roll Size",
+       SUM(HWMSIZE) "HWM|Roll Size",
+       SUM(GETS) "Total|Header Gets",
+       SUM(WAITS) "Total|Header Waits",
+       SUM(SHRINKS) "Total|Shrinks",
+       SUM(EXTENDS) "Total|Extends"
+FROM   GV$ROLLSTAT
+GROUP  BY INST_ID,DECODE(XACTS,0,STATUS,'ACTIVE')
+ORDER BY inst_id,2;
 
 PRO GV$UNDOSTAT:
 PRO ============
-SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
+SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(g) no_merge(d)*/
        d.inst_id INST,
        d.tablespace_name undo_tbs,
        d.MAXBYTES "Max|Undo Size",
@@ -33,6 +71,7 @@ SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
        trim(e.value) "Undo|Retent",
        undo_block_per_sec*block_size*e.value*1.3 "Exp Undo Size|For Retention",
        g.MAXQUERYLEN "Max|Query",
+       g.MAXQUERYID  "Max|SQLId",
        g.TUNED_UNDORETENTION "Tuned|Retent",
        ROUND((to_number(e.value) * to_number(f.value) * g.undo_block_per_sec)) "Necessary|Undo Size",
        g.MAXTXNCOUNT "Max|TXNs",
@@ -72,6 +111,7 @@ FROM   (SELECT a.inst_id, c.tablespace_name,SUM(a.bytes) undo_size, SUM(d.MAXBYT
                MAX(UNDOBLKS) UNDOBLKS,
                MAX(TXNCOUNT) MAXTXNCOUNT,
                MAX(MAXQUERYLEN) MAXQUERYLEN,
+               MAX(MAXQUERYID) KEEP(DENSE_RANK LAST ORDER BY MAXQUERYLEN) MAXQUERYID,
                MAX(MAXCONCURRENCY) MAXCONCURRENCY,
                MAX(TUNED_UNDORETENTION) TUNED_UNDORETENTION
         FROM   gv$undostat a

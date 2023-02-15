@@ -38,6 +38,10 @@ Parameters
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: 4 - diagnose issues with SQL plan baselines of why it fails to use / 16 - Allow SPM on the SQLs start with "/* SQL Analyze("
     _optimizer_squ_bottomup: false to reduce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
+                             Other relative parameters to optimize long parse time: 
+                                  _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
+                                  _fix_control 31360214/17442009:1
+                                  _optimizer_max_permutations =100/200/300
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and :
         0  to avoid column group creation by dbms_stats
         1  to monitor column usage
@@ -184,7 +188,22 @@ Parameters
                                 Instead it is set to the max(MAXQUERYLEN + 300, UNDO_RETENTION).
                                 Use _undo_autotune=false instead when undo datafile's AUTOEXTENSIBLE=YES
                      134217728 - turn off storage index
-    
+    _direct_read_decision_statistics_driven: 
+        Direct path read decision is done based on the segment header's block count,
+            instead of statistics(TAB$.BLKCNT/TABPART$.BLKCNT/IND$.LEAFCNT/etc)
+        But for partitioned table, the decision relies on each individual segment, not the total size of impacted partitions. 
+            and direct path may not be triggerred unexpectly for small partitions ,and fix control 27268249:1 may not work as well.
+    ignore_session_set_param_errors: all/<parameter_names seperated by comma>
+    _kd_rows_chk (Bug 27940222 : CPU SHARPLY UP WITH DB_BLOCK_CHECKING >= MEDIUM + HCC ROW LEVEL LOCKING FOR DML )
+    _gc_persistent_readmostly:  sys.sys_dba_segs => bitand(segment_flags,power(2,28))>0 , or sys.seg$=> bitand(spare1,power(2,28))>0
+    _parallel_server_resiliency: 1 or gv to fix ORA-12801/12850 issue when query gv$ views
+    _sql_compatibility: 1 to support "group by 1,2,..."
+    _ges_optimizations: 1-KJIGESOPTS_NO_ESM / 2-KJIGESOPTS_FREE_SLOCK / 4-KJIGESOPTS_CLIENT_FREE_SLOCK
+    _kkpogpi_nocpy: enable nocopy(remove shared lock) behaviours on source objects for specific long-running statements:
+        1:  create table  2: alter table  4: truncate table/create view  8: alter index rebuild  16: create index  32: explain plan
+    _px_hybrid_TSM_HWMB_load: false to disbale PDML TSM/HWMB broker and use traditional HWM broker instead, 
+                              together with _force_tmp_segment_loads=true to use "TEMP SEG MERGE" to fix HV contention in some cases
+    _disable_directory_link_check: true with _kolfuseslf to resolve symbol like issue of accessing Oracle directory files. (DBMS_UTILITY.DIRECTORY_HAS_SYMLINK)
     
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
@@ -199,7 +218,7 @@ Events:
                     level 32: disables  table queue IN row source
                     level 512: disables rowsets for EVA functions
                     level 20971520: disables “rowset to one row” in hash join probe side
- 
+    65002: enable to free temp LOB spaces when no active temp lob in the session
  
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
@@ -253,6 +272,7 @@ Fix Controls:
     16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE
     31626438:  use smart scan on partition table when partition size > 100MB
     27268249:  0 to disable approximate ndv on gathering (index) stats and possible to reduce IO (bug 33427856)
+    30822446:  enable window pushed rank optimization with partition by keys
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

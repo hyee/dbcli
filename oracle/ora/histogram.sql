@@ -142,9 +142,9 @@ DECLARE
     ustats    VARCHAR2(3);
     flags     PLS_INTEGER;
     dlen      PLS_INTEGER;
-    buckets   PLS_INTEGER;
-    prevb     PLS_INTEGER   := 0;
-    prevv     PLS_INTEGER   := 0;
+    buckets   NUMBER;
+    prevb     NUMBER   := 0;
+    prevv     NUMBER   := 0;
     cnt       PLS_INTEGER   := 0;
     pops      PLS_INTEGER   := 0;
     pop_based NUMBER        := 0;
@@ -1020,13 +1020,13 @@ BEGIN
                 $IF dbms_db_version.version>11 $THEN
                     max_v  := nullif('(' || nullif(srec.rpcnts(i), 0) || ')', '()');
                     
-                    bk_adj := nullif(srec.rpcnts(i), 0) * adjnnull / nullif(samples,0); --sample_size has excluded null values
+                    bk_adj := nullif(srec.rpcnts(i), 0) * adjnnull / nullif(numbcks,0); --sample_size has excluded null values
                     IF srec.rpcnts(i) < pop_based THEN
                         bk_adj := greatest(bk_adj, adjnnull * densityn);
                     END IF;
                     adjcnt := nvl(bk_adj, rpcnt);
 
-                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(samples,0); --sample_size has excluded null values
+                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(numbcks,0); --sample_size has excluded null values
                     IF srec.rpcnts(i) < pop_based THEN
                         bk_adj := greatest(bk_adj, notnulls * densityn);
                     END IF;
@@ -1045,18 +1045,19 @@ BEGIN
                     E[card] = (0.5 * bkt(least_popular_value) / num_rows) * num_rows = 0.5 * bkt(least_popular_value)
                 */
                 IF i != srec.epc THEN
-                    rpcnt := buckets * notnulls / nullif(samples,0);
+                    rpcnt := buckets * notnulls / nullif(numbcks,0);
                 ELSE
-                    rpcnt := (buckets - 0.5) * notnulls / nullif(samples,0);
+                    rpcnt := (buckets - 0.5) * notnulls / nullif(numbcks,0);
                 END IF;
                 adjcnt := rpcnt*adjnnull/notnulls;
                 --rpcnt := buckets;
             ELSE
-                rpcnt := buckets * notnulls / nullif(samples,0);
-                adjcnt:= buckets * adjnnull / nullif(samples,0);
+                rpcnt := buckets * notnulls / nullif(numbcks,0);
+                adjcnt:= buckets * adjnnull / nullif(numbcks,0);
         END CASE;
     
         cep := srec.chvals(i);
+        --dbms_output.put_line(i||':'||srec.novals  (i));
         pr(lpad(i, 5),
            lpad(srec.bkvals(i), 7),
            rpad(pep, dlen),

@@ -101,15 +101,16 @@ SELECT * FROM (
             AND    o.kglhdadr = d.kglrfhdl(+)
             AND    d.kglhdpar = c.kglhdpar(+)
             AND    d.kglnahsh = c.kglnahsh(+)
-            AND    (o.kglnaown IS NOT NULL OR :V1 IS NOT NULL)
             --AND    o.kglhdexc>0
             AND    c.kglhdnsp(+) = 0
+            AND    (o.kglnaown IS NOT NULL OR :V1 IS NOT NULL)
             AND    (c.KGLOBT03 IS NOT NULL OR d.kglrfhsh IS NULL)
             AND    (:object_name IS NULL OR o.kglnaown=:object_owner and o.kglnaobj=:object_name)
             AND    (:object_name IS NOT NULL OR :V1 IS NULL OR :v1 =c.KGLOBT03)
             AND    userenv('instance') = nvl(:V2, userenv('instance'))
         )
-    GROUP BY inst_id,object_name,object_type,nvl2(:V1,sql_id,''),flag
-    HAVING sum(decode(SQL_SEQ,1,execs))>0 ))) a
+        GROUP BY inst_id,object_name,object_type,nvl2(:V1,sql_id,''),flag
+        HAVING sum(decode(SQL_SEQ,1,execs))>0 
+    ))) a
     ORDER BY execs desc,OBJECT_NAME,OBJECT_TYPE)
 WHERE ROWNUM<=50

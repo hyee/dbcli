@@ -1,7 +1,8 @@
 /*[[Diag the RAC System (Doc ID 135714.1)]]*/
 SET FEED OFF
-col "AVG TIME" for usmhd2
-
+col "AVG TIME,GCS CURRENT BLOCK RECEIVE TIME,GCS CR BLOCK RECEIVE TIME" for usmhd2
+col "HIT_RATIO,SLEEPS/MISS" for pct
+col "gets,GCS CR BLOCKS RECEIVED,GCS CURRENT BLOCKS RECEIVED" for tmb
 
 grid {
     {[[q'[ /*grid={topic="LOCAL ENQUEUES"}*/ 
@@ -29,23 +30,27 @@ grid {
         ORDER BY 1,2]']]
     },'-',{[[
       q'[/*grid={topic="LATCH STATS"}*/
-        SELECT inst_id,
-               NAME latch_name,
-               round((gets - misses) / decode(gets, 0, 1, gets), 3) hit_ratio,
-               round(sleeps / decode(misses, 0, 1, misses), 3) "SLEEPS/MISS"
-        FROM   gv$latch
-        WHERE  round((gets - misses) / decode(gets, 0, 1, gets), 3) < .99
-        AND    gets != 0
-        ORDER  BY round((gets - misses) / decode(gets, 0, 1, gets), 3)]']],'|',
+        SELECT * FROM ( 
+            SELECT NAME latch_name,
+                   SUM(gets) gets,
+                   round(SUM(gets - misses) / nullif(SUM(decode(gets, 0, 1, gets)),0), 4) hit_ratio,
+                   round(SUM(sleeps) / nullif(SUM(decode(misses, 0, 1, misses)),0), 4) "SLEEPS/MISS"
+            FROM   gv$latch
+            WHERE  gets>0
+            GROUP  BY name) 
+        WHERE hit_ratio < 0.98
+        ORDER  BY hit_ratio]']],'|',
     [[q'[/*grid={topic="NO WAIT LATCHES"}*/
-        SELECT inst_id,
-               NAME latch_name,
-               round((immediate_gets / nullif(immediate_gets + immediate_misses,0)), 3) hit_ratio,
-               round(sleeps / decode(immediate_misses, 0, 1, immediate_misses), 3) "SLEEPS/MISS"
-        FROM   gv$latch
-        WHERE  round((immediate_gets / nullif(immediate_gets + immediate_misses,0)), 3) < .99
-        AND    immediate_gets + immediate_misses > 0
-        ORDER  BY round((immediate_gets / nullif(immediate_gets + immediate_misses,0)), 3)]']]
+        SELECT * FROM (
+            SELECT NAME latch_name,
+                   sum(immediate_gets) gets,
+                   round(SUM(immediate_gets) / nullif(SUM(immediate_gets + immediate_misses),0), 4) hit_ratio,
+                   round(SUM(sleeps) / nullif(SUM(decode(immediate_misses, 0, 1, immediate_misses)),0), 4) "SLEEPS/MISS"
+            FROM   gv$latch
+            WHERE  immediate_gets+immediate_misses>0
+            GROUP  BY name)
+        WHERE hit_ratio < 0.99
+        ORDER  BY hit_ratio]']]
     },'-',{[[
        q'[/*grid={topic="GLOBAL CACHE CR PERFORMANCE "}*/
        SELECT * FROM TABLE(GV$(CURSOR(
@@ -62,7 +67,7 @@ grid {
        SELECT * FROM TABLE(GV$(CURSOR(
            SELECT userenv('instance') inst_id,
                   b2.value "GCS CURRENT BLOCKS RECEIVED",
-                  b1.value "GCS CURRENT BLOCK RECEIVE TIME",
+                  b1.value * 10000 "GCS CURRENT BLOCK RECEIVE TIME",
                   round((b1.value / nullif(b2.value,0)) * 10000,2) "AVG TIME"
            FROM   v$sysstat b1, v$sysstat b2
            WHERE  b1.name = 'global cache current block receive time'
@@ -74,7 +79,7 @@ grid {
         SELECT * FROM TABLE(GV$(CURSOR(
            SELECT userenv('instance') inst_id,
                   (b1.value + b2.value) "GLOBAL LOCK GETS",
-                  b3.value "GLOBAL LOCK GET TIME",
+                  b3.value * 10000 "GLOBAL LOCK GET TIME",
                   round(b3.value / nullif(b1.value + b2.value,0) * 10000,2) "AVG TIME"
            FROM   v$sysstat b1, v$sysstat b2, v$sysstat b3
            WHERE  b1.name = 'global lock sync gets'
@@ -86,7 +91,7 @@ grid {
     [[/*grid={topic="LOCK ACTIVITY"}*/
     select * from gv$lock_activity]]}
 }
-
+/*
 PRO GES LOCK STATS: 
 PRO ==================
 SELECT * FROM TABLE(GV$(CURSOR(
@@ -139,4 +144,4 @@ SELECT * FROM TABLE(GV$(CURSOR(
     AND    (dl.pid = p.spid)
     AND    (p.addr = s.paddr)
     AND    (s.sid = sw.sid))))
-ORDER  BY sec DESC;
+ORDER  BY sec DESC;*/

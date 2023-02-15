@@ -62,9 +62,18 @@
                 )))
             }
         }
+
+        @&CHECK_ACCESS_SQLSET_STATEMENTS: {
+            ALL_SQLSET_STATEMENTS={
+                UNION
+                SELECT 'ALL_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
+                FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM ALL_SQLSET_STATEMENTS A)
+                WHERE  &vw in('A','D') AND (&filter)
+            }
+        }
     --]]
 ]]*/
-SELECT /*+no_expand PQ_CONCURRENT_UNION*/
+SELECT /*+no_expand PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/
        SOURCE,SQL_ID,
        substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 300) sql_text
 FROM (

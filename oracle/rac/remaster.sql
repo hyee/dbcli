@@ -3,6 +3,7 @@
         @12c: 19={} default={--}
         @CHECK_USER_SYSDBA: SYSDBA={1},default={0}
         @check_access_obj: cdb_objects={cdb_objects} dba_objects={dba_objects} default={all_objects}
+        @check_access_seg: sys.sys_dba_segs={(select SEGMENT_OBJD,segment_flags from sys.sys_dba_segs)} default={(select 0+null SEGMENT_OBJD,0+null segment_flags from dual)}
     --]]
 ]]*/
 
@@ -126,11 +127,13 @@ BEGIN
                              NVL2(b.rd, 'Yes', 'No') curr_read_mostly,
                              NVL(rd_mostly, NVL2(b.rd, 'Yes', 'No')) next_read_mostly,
                              aff_cnt,
+                             aff_prev,
                              rd_cnt
                       FROM   stat a
                       FULL   JOIN (SELECT data_object_id,
                                          MAX(DECODE(GC_MASTERING_POLICY, 'Affinity', CURRENT_MASTER)) aff,
                                          MAX(DECODE(GC_MASTERING_POLICY, 'Affinity', REMASTER_CNT)) aff_cnt,
+                                         MAX(DECODE(GC_MASTERING_POLICY, 'Affinity', PREVIOUS_MASTER)) aff_prev,
                                          MAX(DECODE(GC_MASTERING_POLICY, 'Read mostly', 'Y')) rd,
                                          MAX(DECODE(GC_MASTERING_POLICY, 'Read mostly', NVL(REMASTER_CNT,1))) rd_cnt
                                   FROM   v$gcspfmaster_info b
@@ -140,24 +143,28 @@ BEGIN
               WHERE  ROWNUM <= 50)
             SELECT seq              "#",
                    owner,
-                   object_name,
+                   nvl(object_name,CASE WHEN data_object_id>4294950912 THEN 'USN #'||(data_object_id-4294950912) END) object_name,
                    subobject_name,
                    data_object_id   dobj#,
                    object_type,
                    sopens,
                    xopens,
                    xfers,
-                   buff,
+                   buff buffers,
                    dirty,
+                   nvl2(B.HWMINCR,'Y','N') "Persistent|Read-mostly",
                    rd_cnt           "Count|Read-Mostly",
                    curr_read_mostly "Current|Read-Mostly",
                    next_read_mostly "Next|Read-Mostly",
                    aff_cnt          "Count|Remaster",
+                   aff_prev         "Prev|Master",
                    curr_master      "Current|Master",
                    next_master      "Next|Master"
-            FROM   drm
-            JOIN   &check_access_obj
+            FROM   drm a
+            LEFT  JOIN  &check_access_obj
             USING  (data_object_id)
+            LEFT  JOIN sys.seg$ b 
+            ON  data_object_id=B.HWMINCR AND bitand(B.SPARE1,power(2,28))>0
             ORDER  BY seq;
         $ELSE
         OPEN c FOR
@@ -167,6 +174,7 @@ BEGIN
                    subobject_name,
                    data_object_id   dobj#,
                    object_type,
+                   nvl2(segment_objd,'Y','N') "Persistent|Read-mostly",
                    aff_cnt          "Count|Remaster",
                    aff              "Current|Master",
                    aff_prev         "Prev|Master",
@@ -183,8 +191,10 @@ BEGIN
                           GROUP  BY data_object_id
                           ORDER BY NVL(aff_cnt,0)+NVL(rd_cnt,0) DESC) A
                     WHERE ROWNUM<=50)
-            LEFT    JOIN &check_access_obj
+            LEFT    JOIN &check_access_obj O
             USING  (data_object_id)
+            LEFT    JOIN &check_access_seg c
+            ON      c.segment_objd=data_object_id AND bitand(c.segment_flags,power(2,28))>0
             ORDER  BY seq;
         $END
         :CUR1 := c;

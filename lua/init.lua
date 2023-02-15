@@ -222,7 +222,6 @@ function init.load_modules(list,tab,module_name)
         else
             n=n:sub(1,#n-4)
         end
-        clock=os.timer or os.clock
         timer,load_seq=clock(),load_seq+1
         local file=io.open(v,'r')
         if not file then

@@ -143,7 +143,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
 
         IF l_trace NOT IN('off','statistics','sql_id') THEN
             IF dbms_db_version.version>11 THEN
-                l_fmt := l_fmt||' +METRICS +REPORT +ADAPTIVE';
+                l_fmt := l_fmt||' +METRICS +REPORT -ADAPTIVE';
             ELSIF dbms_db_version.version>10 THEN
                 l_fmt := l_fmt||' +METRICS';
             END IF;
@@ -155,7 +155,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                              FROM sys.V_$OPEN_CURSOR 
                              WHERE sid=:sid
                              AND   cursor_type like '%OPEN%'
-                             AND   instr(sql_text,'dbcli_ignore')=0
+                             AND   (instr(sql_text,'dbcli_ignore')=0 and instr(sql_text,'INTERNAL_DBCLI_CMD')=0)
                              AND   (last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second') or
                                     last_sql_active_time is null and cursor_type='OPEN' and sql_exec_id IS NOT NULL)
                              AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')!';
@@ -316,7 +316,7 @@ function output.getOutput(item)
         end
 
         local args1=args or {}
-        local clock=os.clock()
+        local clock=os.timer()
         args=table.clone(default_args)
         args.sql_id=args1.last_sql_id or sql_id
         args.child=tonumber(args1.last_child) or ''
@@ -331,7 +331,7 @@ function output.getOutput(item)
         
         local result=args.lob or args.buff
         if (enabled == "on" or autotrace~="off") and result and result:match("[^\n%s]+") then
-            result=result:gsub("\r\n","\n"):gsub("%s+$","")
+            result=result:gsub("\r\n","\n"):rtrim()
             if result~="" then
                 if autotrace~="off" and result:find('Plan hash value',1,true) then
                     local rows=env.grid.new()

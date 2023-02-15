@@ -23,6 +23,7 @@ oracle.module_list={
     "dict",
     "oradebug",
     "sqlcl",
+    "pdb",
     "adb",
     "parse10053"
 }
@@ -131,6 +132,7 @@ function oracle:connect(conn_str)
                 else
                     if k:upper()=='TNS_ADMIN' then
                         tns_admin=v:replace('\\','/')
+                        v=tns_admin
                         prompt=conn_desc:match('([^@%? ]+) *%?')
                     end
                     extras[#extras+1]=k:lower()..'='..v
@@ -262,6 +264,7 @@ function oracle:connect(conn_str)
             intval  NUMBER;
             strval  VARCHAR2(300);
             blk_siz PLS_INTEGER:=8192;
+            ccflags VARCHAR2(2000):='VERSION:'||(dbms_db_version.version*100+dbms_db_version.release);
             mbrc    NUMBER:=8;
             PROCEDURE set_param(params VARCHAR2) IS
             BEGIN
@@ -319,7 +322,7 @@ function oracle:connect(conn_str)
             :mbrc := mbrc;
                 
             dbms_output.enable(null);
-            set_param(q'[nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff TZH:TZM']');
+            set_param(q'[nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff3' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM']');
             set_param('statistics_level=all "_rowsource_statistics_sampfreq"=16');
             set_param('parallel_degree_policy=MANUAL');
             set_param('"_query_execution_cache_max_size"=4194304');
@@ -346,10 +349,20 @@ function oracle:connect(conn_str)
             $END
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
-                pv := pv||'/'||r.p;
-                exit when length(pv)>32000;
+                IF nvl(length(pv),0)<32000 THEN
+                    pv := pv||'/'||r.p;
+                END IF;
+                IF r.p IN('DBA','PDB_DBA','CDB_DBA','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE') THEN
+                    ccflags := ccflags||','||replace(r.p,' ','_')||':true';
+                END IF;
             END LOOP;
+            IF sys_context('userenv','isdba')='TRUE' THEN
+                ccflags := ccflags||','||'SYSDBA:TRUE';
+            END IF;
 
+            IF ccflags IS NOT NULL THEN
+                set_param('PLSQL_CCFLAGS='''||ccflags||'''');
+            END IF;
             :privs := pv;
 
             IF sv like 'SYS$%' THEN
@@ -425,7 +438,7 @@ function oracle:connect(conn_str)
     else
         self.props=props
         local privs={}
-        for _,priv in pairs(props.privs:split("/")) do
+        for _,priv in pairs((props.privs or ''):split("/")) do
             if priv~="" then privs[priv]=true end
         end
         privs[self.props.db_user]=true
@@ -665,9 +678,12 @@ function oracle:handle_error(info)
     if ora_code then
         if prefix=='ORA' and tonumber(ora_code)>=20001 and tonumber(ora_code)<20999 then
             info.sql=nil
-            info.error=msg:gsub('\r?\n%s*ORA%-%d+.*$',''):gsub('%s+$','')
+            info.error=msg:gsub('\r?\n%s*ORA%-%d+.*$',''):rtrim()
         else
             info.error=prefix..'-'..ora_code..': '..msg
+            if prefix=='ORA' and (ora_code=='12801' or ora_code=='12850') then
+                info.error=info.error:gsub('\n','\nORA-'..ora_code..': If this error is happened on querying gv$ view, try "set noparallel on" as temp workaround\n',1)
+            end
         end
         if info.cause then
             info.position=tonumber(info.cause:sub(1,255):match('Position%s*:%s*(%d+)'))
@@ -721,7 +737,7 @@ function oracle:onload()
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback','associate','disassociate')
     add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment','call')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
-    set_command(self,{"SELECT","WITH"},   default_desc,        self.query     ,true,1,true)
+    set_command(self,{"SELECT","WITH"},   default_desc,        self.query     ,self.check_completion,1,true)
     set_command(self,{"execute","exec"},default_desc,self.run_proc,false,2,true)
     set_command(self,{"declare","begin"},  default_desc,  self.query  ,self.check_completion,1,true)
     set_command(self,"create",   default_desc,        self.exec      ,self.check_completion,1,true)

@@ -984,6 +984,7 @@ local function extract_jo()
 
         add=function(self,level,lineno)
             local jo=self.curr_jo
+            if not jo then return end
             --each time a line is chosen, also record the range end line for JO/table
             jo.end_line,self.last_indent=lineno,level
             jo.lines[lineno]=level
@@ -1022,7 +1023,12 @@ local function extract_jo()
             if line:find('^Join order%[') then
                 --search join order number
                 local perm=tonumber(line:match('^Join order%[(%d+)%]'))
-                local tables=full_line:rtrim():match(': *(%S.-%S)$'):split('%s+')
+                local tables=full_line:rtrim():match(': *(%S.-%S)$')
+                if not tables then
+                    self:end_parse()
+                    return 
+                end
+                tables=tables:split('%s+')
                 self.stack={}
                 --Build join tree, it's necessary because multiple JOs could share the same part of the tree
                 --For multiple JOs, the join information could appear only once for the same join part 
@@ -1071,6 +1077,7 @@ local function extract_jo()
                 self:add(0,lineno)
             elseif line:find('^Now joining:') then
                 --Handle the joining table
+                if not self.curr_jo then return end
                 self.cost=0
                 self.curr_tab_index=nil
                 self.curr_table=line:match(': *(%S.-%S)$')
@@ -1133,6 +1140,7 @@ local function extract_jo()
                 self:add(3,lineno)
             elseif line:find('^Best:+') then
                 --Handle table level best join
+                if not self.curr_jo then return end
                 self:add(2,lineno)
                 self:add(2,lineno+1)
                 local best=line:match('%S+$')
@@ -1152,6 +1160,7 @@ local function extract_jo()
                 self.is_best=nil
             elseif line:find('^Join order aborted') or line:find('^Best so far') then
                 --Hanle the end of JO level join
+                if not self.curr_jo then return end
                 self.curr_tab_index,self.curr_table,root.current_tb,root.current_alias=nil
                 self:add(0,lineno)
                 if line:find('^Join') then
@@ -1164,6 +1173,7 @@ local function extract_jo()
                 else
                     --handle the complete join(currently best)
                     --extract table sequence/cost/card
+                    if not self.tree_index then return end
                     local seq,cost,card=line:match('Table#: *(%d+).-[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
                     if cost then
                         self.cost,self.card=tonumber(cost),math.round(tonumber(card),3)
@@ -1197,6 +1207,7 @@ local function extract_jo()
                 local best=tonumber(line:match('%d+$'))
                 local qb=self.data[self.qb]
                 local perm=qb.perms[best]
+                if not perm then return end
                 qb.perm_best=best
                 qb.cost,qb.card=math.round(tonumber(perm.cost:match('[%.%d]+'))),math.round(perm.card)
                 qb.perms.perm_best,qb.perms.cost,qb.perms.card=qb.perm_best,qb.cost,qb.card
@@ -1217,6 +1228,7 @@ local function extract_jo()
                 if cost then
                     local qb=self.data[self.qb]
                     local best=qb.perms[qb.perm_best]
+                    if not best then return end
                     qb.perms.cost,qb.perms.card,qb.perms.degree=math.round(tonumber(cost),3),math.round(tonumber(card),3),get_dop(line)
                     best.degree=qb.perms.degree or best.degree
                 end
@@ -1404,11 +1416,13 @@ local function extract_jo()
                                 local f=plan[k:upper()]
                                 --Highlight the QB that can be found in the execution plan
                                 if f then found=f end
-                                rows[#rows+1]={(f and '$HIB$' or '')..k..(cn>1 and ('#'..i) or '')..(f and '$NOR$' or ''),
-                                                j.perm_count,j.perm_best,j.start_line,j.end_line,j.cost,j.card,best.degree or '',
-                                                spd.count>0 and 'EXISTS' or '',
-                                                get_chain(v.trees[i],best),
-                                                root.qbs[k].seq}
+                                if best then
+                                    rows[#rows+1]={(f and '$HIB$' or '')..k..(cn>1 and ('#'..i) or '')..(f and '$NOR$' or ''),
+                                                    j.perm_count,j.perm_best,j.start_line,j.end_line,j.cost,j.card,best.degree or '',
+                                                    spd.count>0 and 'EXISTS' or '',
+                                                    get_chain(v.trees[i],best),
+                                                    root.qbs[k].seq}
+                                end
                             end
                         else
                             for c,piece in pairs(v.perms_all) do

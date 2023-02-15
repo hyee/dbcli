@@ -129,7 +129,7 @@ select INST_ID,POOL,POPULATE_STATUS, ALLOC_BYTES,USED_BYTES,
 from  gv$inmemory_area
 order by 1;
 
-SELECT /*+monitor no_merge(a)*/ inst_id,
+SELECT /*+monitor no_merge(a)*/ b.inst_id,
        a.owner,
        a.segment_name,
        lpad(nvl(sum(b.segs),0),4)  || '|' || MAX(a.segs) segments,
@@ -137,12 +137,7 @@ SELECT /*+monitor no_merge(a)*/ inst_id,
        lpad(trim(dbms_xplan.format_number(nvl(SUM(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(SUM(blocks)) blocks,
        SUM(IMCUSINMEM) "IMCUs",
        round(SUM(BLOCKSINMEM)/nullif(SUM(IMCUSINMEM),0)) "Blk/CU",
-       (SELECT COUNT(1)
-        FROM   gv$im_column_level c
-        WHERE  c.inst_id = b.inst_id
-        AND    c.owner = a.owner
-        AND    c.inmemory_compression!='NO INMEMORY'
-        AND    c.table_name = a.segment_name) im_cols,
+       max(c.im_cols) im_cols,
        SUM(inmemory_size) im_size,
        SUM(bytes) total_size,
        round(SUM(inmemory_size) * 100 / nullif(SUM(bytes), 0), 2) "IM %",
@@ -170,6 +165,7 @@ FROM   (SELECT owner, segment_name, COUNT(1) segs
                 FROM   &check_access_dba.tab_subpartitions
                 WHERE  inmemory = 'ENABLED')
         GROUP  BY owner, segment_name) a
+
 LEFT   JOIN (
     SELECT inst_id,owner,segment_name,
            INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1,
@@ -187,5 +183,11 @@ LEFT   JOIN (
               INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1
 ) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)
-GROUP  BY inst_id, a.owner, a.segment_name
+LEFT   JOIN(
+    SELECT inst_id,owner,table_name,COUNT(1) im_cols
+    FROM   gv$im_column_level c
+    WHERE  c.inmemory_compression!='NO INMEMORY'
+    GROUP  BY inst_id,owner,table_name) c
+ON (c.inst_id = b.inst_id AND c.owner = b.owner AND c.table_name = b.segment_name)
+GROUP  BY b.inst_id, a.owner, a.segment_name
 ORDER  BY a.owner, a.segment_name,inst_id

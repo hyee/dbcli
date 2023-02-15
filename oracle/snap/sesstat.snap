@@ -1,4 +1,4 @@
-/*[[Generate delta values based on gv$sesstat. Usage: @@NAME <options> {[0|<sid>] [<inst_id>] [<key>]}
+/*[[Generate delta values based on gv$sesstat. Usage: @@NAME <options> {[<sid>] [<inst_id>] [<key>]}
 ]]*/
 {
     sql=[[
@@ -8,10 +8,10 @@
                sid,
                NAME,VALUE
         FROM   gv$sesstat
-        JOIN   gv$statname
-        USING  (inst_id, statistic#)
+        JOIN   v$statname
+        USING  (statistic#)
         WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
-        AND    (:V1 IS NULL AND SID=USERENV('SID') or sid=:V1 OR :V1='0') 
+        AND    SID=NVL(0+:V1,USERENV('SID')) 
         AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2+0=INST_ID OR :V2='0') 
         AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
     ORDER BY NAME]],

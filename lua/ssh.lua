@@ -278,7 +278,7 @@ function ssh:load_script(alias,filename,...)
     else
         txt=filename:sub(2)
     end
-    txt=txt:gsub("\r\n","\n"):gsub("^%s+",""):gsub(self.comment,"\n",1)
+    txt=txt:gsub("\r\n","\n"):ltrim():gsub(self.comment,"\n",1)
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     self:getresult(alias.."='"..txt.."'\n")
@@ -296,7 +296,7 @@ function ssh:upload_script(filename)
     local txt,args,_,file,cmd=self:get_script(filename,{},false)
     if not file then return end
     self:check_connection()
-    txt=txt:gsub("\r\n","\n"):gsub("^%s+","")
+    txt=txt:gsub("\r\n","\n"):ltrim()
     local intepreter=txt:match("^#!([^\n])+")
     if not intepreter then intepreter="/bin/bash" end
     cmd=file:match("[^\\/]+$")

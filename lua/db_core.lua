@@ -220,7 +220,7 @@ function ResultSet:close(rs)
         close(rs)
         if self[rs] then self[rs]=nil end
     end
-    local clock=os.clock()
+    local clock=os.timer()
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then
@@ -252,13 +252,14 @@ function ResultSet:rows(rs,count,null_value,is_close)
             for j=1,cols do
                 local info=head.colinfo[j]
                 if rows[i][j]~=nil then
+                    if type(rows[i][j])=="userdata" then rows[i][j]=tostring(rows[i][j]) end
                     if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
                         print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
                     end
                     if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
-                        rows[i][j]=rows[i][j]:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
+                        rows[i][j]=tostring(rows[i][j]):gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     elseif info.data_typeName=="BLOB" then
-                        rows[i][j]=rows[i][j]:sub(1,255)
+                        rows[i][j]=tostring(rows[i][j]):sub(1,255)
                     elseif info.is_number and type(rows[i][j])~="number" then
                         local int=tonumber(rows[i][j])
                         rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
@@ -469,7 +470,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
     local res,obj=pcall(method,...)
     if res==false then
         self:is_connect(nil,true)
-        local info,internal={db=self,sql=sql,error=tostring(obj):gsub('%s+$','')}
+        local info,internal={db=self,sql=sql,error=tostring(obj):rtrim()}
         local code=''
 
         if obj.getErrorCode then
@@ -807,6 +808,7 @@ end
 
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 local vertical_pattern,verticals=env.VERTICAL_PATTERN
+local DDL={CREATE=1,ALTER=1,DROP=1}
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
@@ -840,6 +842,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     end
     
     verticals,env.VERTICALS=env.VERTICALS or self.VERTICALS
+    local tmp_sql
     if is_not_prep then
         sql=sql:sub(1,-128)..sql:sub(-127):gsub(vertical_pattern,
                 function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
@@ -847,8 +850,20 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if type(sql)~="string" then
             return sql
         end
+        
         prep,sql,params=self:parse(sql,params)
-        prep:setEscapeProcessing(false)
+        local param_count = 0
+        for k,v in pairs(params) do
+            param_count=1
+        end
+
+        if param_count==0 then
+            prep:close()
+            prep=self.conn:createStatement()
+            tmp_sql=sql
+        else
+            prep:setEscapeProcessing(false)
+        end
         local str = tostring(prep)
         caches=__stmts[prep] or {}
         caches.verticals=verticals
@@ -868,7 +883,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
     end
 
-    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep)
+    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql)
     exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
@@ -908,6 +923,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     for k,v in pairs(args) do
         if type(v)=="string" and v:sub(1,1)=="#" then
             args[k]=params[tostring(k):upper()]
+            if type(args[k])=='string' and args[k]:sub(1,13)=='base64encode:' then
+                local pieces=args[k]:sub(14,256):match('^[0-9a-zA-Z+/=]+')
+                if pieces and #pieces>=64 then
+                    pieces=args[k]:sub(14):split('\n')
+                    args[k]=loader:Base64ZlibToText(pieces);
+                end
+            end
             outputs[k]=true
         end
     end
@@ -997,6 +1019,28 @@ function db_core:print_result(rs,sql,verticals)
     self.print_feed(sql,rs)
 end
 
+local proxy_type=nil
+function set_proxy(addr,port)
+    if not proxy_type then return end
+    if addr then
+        if proxy_type=='http' then
+            java.system:setProperty('https.proxyHost',addr)
+            java.system:setProperty('https.proxyPort',port)
+        else
+            java.system:setProperty('socksProxyHost',addr)
+            java.system:setProperty('socksProxyPort',port)
+        end
+    else
+        if proxy_type=='http' then
+            java.system:clearProperty('https.proxyHost')
+            java.system:clearProperty('https.proxyPort')
+        else
+            java.system:clearProperty('socksProxyHost')
+            java.system:clearProperty('socksProxyPort')
+        end
+        proxy_type=nil
+    end
+end
 --the connection is a table that contain the connection properties
 local prep_test_connection
 function db_core:connect(attrs,data_source)
@@ -1016,12 +1060,23 @@ function db_core:connect(attrs,data_source)
     local props = java.new("java.util.Properties")
 
     for k,v in pairs(attrs) do
-        props:put(k,v)
+        if type(v)=='string' then props:put(k,v) end
     end
     self.login_alias=env.login.generate_name(attrs.jdbc_alias or url,attrs)
     if event then event("BEFORE_DB_CONNECT",self,attrs.jdbc_alias or url,attrs) end
-    local err,res
+    local err,res,proxy
 
+    proxy=url:match("[?&]proxy=[^& ]+")
+    if proxy then
+        url=url:replace(proxy,'')
+        proxy=proxy:sub(2)
+        local addr,port=proxy:match('^proxy=(.+):(%d+)%s*$')
+        env.checkerr(addr,'Invalid pattern for proxy paramter: '..proxy)
+        proxy_type=addr:lower():find('^http') and 'http' or 'socks'
+        set_proxy(addr,port)
+    elseif proxy_type then
+        set_proxy(nil,nil)
+    end
     if data_source then
         for k,v in pairs{setURL=url,
                          setUser=attrs.user,
@@ -1035,6 +1090,7 @@ function db_core:connect(attrs,data_source)
         --err,res=pcall(loader.asyncCall,loader,self.driver,'getConnection',url,props)
         err,res=pcall(loader.getConnection,loader,url,props)
     end
+    --set_proxy(proxy_type,"","")
 
     env.checkerr(err,tostring(res))
 
@@ -1044,9 +1100,9 @@ function db_core:connect(attrs,data_source)
         self.conn=nil
         env.raise("Unable to connect to database, connection !")
     end
-
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
+    self.last_login_account=attrs
     if event then
         event("TRIGGER_CONNECT",self,attrs.jdbc_alias or url,attrs)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
@@ -1064,7 +1120,7 @@ function db_core:connect(attrs,data_source)
     end
 
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
-    self.last_login_account=attrs
+    
     prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
     return self.conn,attrs
 end
@@ -1393,6 +1449,7 @@ db_core.source_objs={
     DECLARE=1,
     BEGIN=1,
     JAVA=1,
+    AND=1,
     DEFINER=1,
     EVENT=1}
 
@@ -1419,7 +1476,8 @@ function db_core.check_completion(cmd,other_parts)
         end
         return false,other_parts
     end
-    --if action=="WITH" then match=match:gsub('[%s;]+$','') end
+
+    if action=="WITH" and obj=='FUNCTION' then match=match:gsub('[%s;/]+$','') end
     return true,match
 end
 
@@ -1533,6 +1591,7 @@ function db_core:disconnect(feed)
         env.set_prompt(nil,"SQL")
         env.set_title("",nil,self.__class.__className)
         load_titles()
+        set_proxy(nil,nil)
         event("ON_DB_DISCONNECTED",self)
         if feed~=false then print("Database disconnected.") end
     end

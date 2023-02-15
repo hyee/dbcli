@@ -126,7 +126,7 @@
 set feed off verify on
 
 WITH LP AS (
-    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ * 
+    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ * 
     FROM &GV
         SELECT /*+ordered no_merge(h) use_hash(h l d)*/DISTINCT 
                  l.type lock_type,
@@ -141,7 +141,7 @@ WITH LP AS (
                  d.type object_type,
                  h.event,
                  h.sql_id,
-                 h.sid,d.to_name obj, USERENV('instance') inst_id
+                 h.sid, USERENV('instance') inst_id
         FROM    v$session h
         JOIN   (SELECT KGLLKTYPE TYPE,
                        KGLLKUSE  HOLDING_USER_SESSION,
@@ -155,7 +155,7 @@ WITH LP AS (
         ON     l.object_handle = d.to_address
         WHERE  d.to_name IS NOT NULL
         AND    userenv('instance')=nvl(''||:v2,userenv('instance'))
-        AND    nvl(upper(:V1),'0') in(''||h.sid,'0',d.to_name,NULLIF(d.to_owner||'.','.')||d.to_name))
+        AND    nvl(upper(:V1),'0') in(''||h.sid,'0',d.to_name,nullif(d.to_owner || '.', '.')||d.to_name))
         )))
 SELECT /*+no_expand*/distinct
        nvl(h.lock_type,w.lock_type) lock_type,

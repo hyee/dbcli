@@ -87,7 +87,7 @@ function unwrap.unwrap_schema(obj,ext)
 end
 
 local thresholds={
-    skew_rate=0.7,
+    skew_rate=0.8,
     skew_min_diff=100,
     px_process_count=4,
     sqlstat_aas_min=10,
@@ -933,9 +933,17 @@ function unwrap.analyze_sqlmon(text,file,seq)
         pr(string.rep('=',#msg:strip_ansi()+1))
     end
 
+    local insts={}
     --build PX process name <sid>@<inst_id>
     local function insid(sid,inst_id)
-        sid=(sid or session_id)..'@'..(tonumber(inst_id) or instance_id)
+        local inst=tonumber(inst_id)
+        if inst and sid and not tonumber(sid) then
+            insts[inst_id]=insts[inst_id] or {_count=0}
+            if not insts[inst_id][sid] then
+                insts[inst_id][sid],insts[inst_id]._count=1,insts[inst_id]._count+1
+            end
+        end
+        sid=(sid or session_id)..'@'..(inst or instance_id)
         return sid
     end
     sql_id=hd.report_parameters.sql_id or hd.target._attr.sql_id
@@ -1536,8 +1544,10 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 max_stats.childs=#(instances.instance or {})
                 for k,s in pair(instances.instance) do
                     local att=s.activity_sampled and s.activity_sampled._attr or {}
-                    local start_at=get_attr(att,'first_sample_time');
-                    sqlstat[#sqlstat+1]={'Inst #'..s._attr.inst_id,
+                    local start_at=get_attr(att,'first_sample_time') or get_attr(att,'start_time');
+                    local cnt=insts[s._attr.inst_id] and insts[s._attr.inst_id]._count
+                    cnt=cnt and (' ('..cnt..')') or ''
+                    sqlstat[#sqlstat+1]={'Inst #'..s._attr.inst_id..cnt,
                                          get_attr(att,'duration',1e6,max_stats),
                                          start_at and time2num(start_at)-start_clock or nil,
                                          get_attr(att,'count',nil,max_stats),
@@ -1980,7 +1990,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local function load_activity_detail()
         local stats=hd.activity_detail
         if stats then stats=stats.bucket end
-        local cl,ev,rt,as,pct,top,bk=1,2,4,5,6,7,8
+        local cl,ev,rt,bk,as,pct,top=1,2,4,5,6,7,8
         local max_event_len=#('cell single block physical read')
         local total_clock=0
         if not stats then return end
@@ -2027,7 +2037,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                     attr.top_sql_id and ('Top-SQL: ' .. attr.top_sql_id) or
                     attr.step or nil,
                 '|',
-                nil,nil,nil,nil,0, --buckets
+                nil,0,nil,nil,nil, --buckets
                 lines={}
             }
             if attr.step then
@@ -2049,7 +2059,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                 stacks[stack]=#events
             end
             grp=events[stacks[stack]]
-            grp[bk]=grp[bk]+1
+            grp[bk]=grp[bk]+interval
             --rt(response time) and aas
             if not grp.lines[id] then grp.lines[id]={} end
             if not clock[id] then clock[id]={} end
@@ -2074,8 +2084,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
                         clock[id][4]=(clock[id][4] or 0)+v/((attr.px or (attr.step or ''):find('[PX]',1,true)) and dop or 1)
                     elseif default_dop>1 and attr.step and not infos[id].dop and not(infos[id].gs and infos[id].gs.cnt) then
                         clock[id][4]=(clock[id][4] or 0)+v/default_dop
-                    elseif event=='Parallel Skew' and infos[id] and not infos[id].dop then
-                        clock[id][4]=(clock[id][4] or 0)+v/(infos[id].gs and infos[id].gs.cnt or default_dop)
+                    elseif event=='Parallel Skew' and infos[id] then
+                        clock[id][4]=(clock[id][4] or 0)+v/(infos[id].dop or default_dop)
                     else
                         clock[id][i]=(clock[id][i] or 0)+v
                     end
@@ -2153,13 +2163,14 @@ function unwrap.analyze_sqlmon(text,file,seq)
         end
 
         table.sort(events, function(a,b) return (a[as] or 0)>(b[as] or 0) end)
-        table.insert(events,1,{'Class','Event','|','Resp','AAS','Pct','Top Lines','Buckets'})
+        table.insert(events,1,{'Class','Event','|','Resp','Clock','AAS','Pct','Top Lines'})
         local top_lines={}
         for id,v in pairs(ids) do
             v[2],v[1]=get_top_events(v.events,v[4],v[3])
             for e,aas in pairs(v.events) do
                 if e:lower():find('skew') and infos[id] then
                     infos[id].skew=sec2num(math.max(aas[1] or 0,aas[2] or 0))
+                    --if v.clock[2] then v.clock[2]=v.clock[2]+math.max(aas[1] or 0,aas[2] or 0) end
                 end
             end
             for clz,num in pairs(v.class) do
@@ -2362,6 +2373,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
             local percent=tonumber(s.percent_complete)
             if percent and percent<100 then
                 percent='['..percent..'%]'
+            else
+                percent=nil
             end
             lines[#lines+1]={
                 id=id,
@@ -2527,7 +2540,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                     val=math.round((val-c[j])/math.max(1,dop-1),4)
                                 end
                                 if is_compare then
-                                    if math.abs(c[j]-val)<thresholds.skew_min_diff then
+                                    if (math.abs(c[j]-val)<thresholds.skew_min_diff) and s~='starts' then
                                         row[idx],val=nil
                                         counter=counter-1
                                     elseif dop==1 and px_alloc<2 and math.round(val)==0 then
@@ -2535,7 +2548,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
                                         counter=counter-1
                                     elseif val~=0 then
                                         local pct=c[j]/val
-                                        if pct>thresholds.skew_rate and pct<1/thresholds.skew_rate then
+                                        if pct>0 and thresholds.skew_rate<=math.min(pct,1/pct) then
                                             row[idx],val=nil
                                             counter=counter-1
                                         end
@@ -3309,7 +3322,9 @@ function unwrap.unwrap(obj,ext,prefix)
                     end
                 end
             else
-                local piece=line:match("^%s*([%w%+%/%=]+)%s*$")
+                local piece=line:match("^%s*([%w%+/=]+)%s*$")
+                if not piece then piece=line:match("^%s*([%w%+/=]+)%s*</report") end
+                if not piece then piece=line:match("report_?i?d?>%s*([%w%+/=]+)%s*$") end
                 if not found and piece and #piece>=64 then
                     found=true
                     repidx=#org+1

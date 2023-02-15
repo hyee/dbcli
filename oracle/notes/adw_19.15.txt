@@ -1,0 +1,522 @@
+    Env     OPT_PARAM('_fix_control' '20648883:0 26552730:1 30142527:1 30539126:1 30235878:1 29972495:0 30006705:1 30483151:1 30483217:1 30483184:1 28144569:1 30028663:1 30652595:1 29930457:1 30822446:1 30008456:1 30235691:1 30646077:1 30231086:1 27261477:1 31069997:1 31077481:1 30942641:1 30751171:1 29636078:1 30249927:1 31091402:1 29687220:1 30537403:1 31580352:1 30198239:7 31266779:1 31487332:1 31821701:1 30232638:1 29487407:1 31580374:1 32014520:1 31974424:1 31945701:1 31143146:1 32107621:1 32205825:1 32108311:1 32471594:1 33069936:1 31060590:1 32806672:1 33659818:3 32909932:1 31966442:1 33354270:1 34092979:1 33926164:1 34340011:1 31954734:1 34054474:1')
+    Env     OPT_PARAM('container_data' 'CURRENT_DICTIONARY')
+    Env     OPT_PARAM('optimizer_dynamic_sampling' 8)
+    Env     OPT_PARAM: _bigdata_offload_flag = true
+    Env     OPT_PARAM: _cdb_view_no_skip_restricted = true
+    Env     OPT_PARAM: _cell_offload_vector_groupby = false
+    Env     OPT_PARAM: _enable_parallel_dml = enabled
+    Env     OPT_PARAM: _kd_dbg_control = 128
+    Env     OPT_PARAM: _obsolete_result_cache_mode = MANUAL
+    Env     OPT_PARAM: _optimizer_answering_query_using_stats = true
+    Env     OPT_PARAM: _optimizer_gather_stats_on_load_all = true
+    Env     OPT_PARAM: _optimizer_gather_stats_on_load_hist = true
+    Env     OPT_PARAM: _px_back_to_parallel = OFF
+    Env     OPT_PARAM: _smm_px_max_size_static = 15667200 KB
+    Env     OPT_PARAM: active_instance_count = 2
+    Env     OPT_PARAM: is_recur_flags = 0
+    Env     OPT_PARAM: optimizer_features_hinted = 19.1.0
+    Env     OPT_PARAM: optimizer_mode_hinted = true
+    Env     OPT_PARAM: parallel_autodop = 0
+    Env     OPT_PARAM: parallel_ddl_mode = enabled
+    Env     OPT_PARAM: parallel_ddldml = 0
+    Env     OPT_PARAM: parallel_degree = 32
+    Env     OPT_PARAM: parallel_degree_policy = auto
+    Env     OPT_PARAM: parallel_execution_enabled = true
+    Env     OPT_PARAM: parallel_execution_message_size = 32768
+    Env     OPT_PARAM: parallel_hinted = degree
+    Env     OPT_PARAM: parallel_max_degree = 72
+    Env     OPT_PARAM: parallel_query_default_dop = 72
+    Env     OPT_PARAM: parallel_query_mode = enabled
+    Env     OPT_PARAM: pga_aggregate_target = 157779807 KB
+    Env     OPT_PARAM: query_rewrite_integrity = trusted
+    Env     OPT_PARAM: result_cache_mode = FORCE
+
+
+    SQL> select * from v$system_fix_control where IS_DEFAULT=0 order by 1;
+ BUGNO   VALUE            SQL_FEATURE             DESCRIPTION                                                      OPTIMIZER_FEATURE_ENABLE EVENT IS_DEFAULT CON_ID
+    -------- ----- ---------------------------------- ---------------------------------------------------------------- ------------------------ ----- ---------- ------
+    20648883     0 QKSFM_TRANSFORMATION_20648883      Lift restrictions on view merging for the CURSOR expression      18.1.0                       0          0    140
+    26552730     1 QKSFM_PQ_26552730                  double the DOP for plans with single parallelizer and single DFO                              0          0    140
+    27261477     1 QKSFM_DYNAMIC_SAMPLING_27261477    use adaptive dynamic sampling for single table of parallel queri                              0          0    140
+    28144569     1 QKSFM_PQ_28144569                  Allow onepass propagation for views                                                           0          0    140
+    29487407     1 QKSFM_SQL_CODE_GENERATOR_29487407  Streamline traversal of CAST_PSR operator                                                     0          0    140
+    29636078     1 QKSFM_PARTITION_29636078           Skip NL for auto partitioned tables with partition pruning                                    0          0    140
+    29687220     1 QKSFM_CBO_29687220                 improve costing for indexes with empty statistics.                                            0          0    140
+    29930457     1 QKSFM_BITMAP_TREE_29930457         restrict _b_tree_bitmap_plans to single table access paths                                    0          0    140
+    29972495     0 QKSFM_TRANSFORMATION_29972495      group-by subquery removal using WiF                              19.1.0                       0          0    140
+    30006705     1 QKSFM_SQL_CODE_GENERATOR_30006705  enable using hash group by for final stage of parallel full roll                              0          0    140
+    30008456     1 QKSFM_CBO_30008456                 maintain original predicate order during transformations                                      0          0    140
+    30028663     1 QKSFM_EXECUTION_30028663           enable using adaptive PIV for parallel full rollup                                            0          0    140
+    30142527     1 QKSFM_CBO_30142527                 fix subquery filter cost based on the number of values cached                                 0          0    140
+    30198239     7 QKSFM_FIRST_ROWS_30198239          FKR - Use prorated join cardiinality in costing join order                                    0          0    140
+    30231086     1 QKSFM_UNNEST_30231086              Unnest in absence of index on local column in correlated subquer                              0          0    140
+    30232638     1 QKSFM_STATS_FEEDBACK_30232638      Generate MIN estimates for cancelled cursor                                                   0          0    140
+    30235691     1 QKSFM_PLACE_GROUP_BY_30235691      Handle condition operands in aggregates for GBP                                               0          0    140
+    30235878     1 QKSFM_VECTOR_AGG_30235878          add payload aggregation costs                                                                 0          0    140
+    30249927     1 QKSFM_VECTOR_AGG_30249927          use pushed KV selectivity in row estimates                                                    0          0    140
+    30483151     1 QKSFM_TRANSFORMATION_30483151      allow CBQT with simple non temp table transform ROLLUP                                        0          0    140
+    30483184     1 QKSFM_VECTOR_AGG_30483184          allow VT to support SET operations                                                            0          0    140
+    30483217     1 QKSFM_VECTOR_AGG_30483217          prune projection lists of VT join backs to temp tables                                        0          0    140
+    30537403     1 QKSFM_JOIN_ORDER_30537403          use join/filter selectivity based initial join orders                                         0          0    140
+    30539126     1 QKSFM_UNNEST_30539126              Allow scalar subquery unnesting for subqueries with NULL mutator                              0          0    140
+    30646077     1 QKSFM_PLACE_GROUP_BY_30646077      Threshold to consider a grouping column unique for GBP                                        0          0    140
+    30652595     1 QKSFM_COMPILATION_30652595         control sort group by/sort unique pushdown for set operators                                  0          0    140
+    30751171     1 QKSFM_MVIEWS_30751171              Check if table has ONCOMMIT MV on it using sys.tab$ after timeou                              0          0    140
+    30822446     1 QKSFM_EXECUTION_30822446           enable window pushed rank optimization with partition by keys                                 0          0    140
+    30942641     1 QKSFM_SQL_PLAN_MANAGEMENT_30942641 Disable SPM evolve to use Result Cache                                                        0          0    140
+    31060590     1 QKSFM_CBO_31060590                 accounting for subquery filtering cost in OR chain                                            0          0    140
+    31069997     1 QKSFM_DYNAMIC_SAMPLING_31069997    use adaptive dynamic sampling in slaves if using outline                                      0          0    140
+    31077481     1 QKSFM_DYNAMIC_SAMPLING_31077481    prevent updating number of blocks to 0 for analyzed tables                                    0          0    140
+    31091402     1 QKSFM_UNNEST_31091402              Avoid storing unnested disjunctive query cost annotations                                     0          0    140
+    31143146     1 QKSFM_STATS_31143146               reset expression stats for given object_id/snapshot_id                                        0          0    140
+    31266779     1 QKSFM_CARDINALITY_31266779         assume a few rows all join with popular values on the other side                              0          0    140
+    31487332     1 QKSFM_CARDINALITY_31487332         use only the minimum selectivity in cyclic join                                               0          0    140
+    31545400     1 QKSFM_PQ_31545400                  Delay in setting QERTBTEMPCSH when kxttIsIMCDTEnabled is safe to                              0          0    140
+    31580352     1 QKSFM_FILTER_PUSH_PRED_31580352    disallow pushing predicates to HAVING if hampering GBP                                        0          0    140
+    31580374     1 QKSFM_VECTOR_AGG_31580374          selectively push KVs to cell storage                                                          0          0    140
+    31821701     1 QKSFM_CARDINALITY_31821701         fix outer join selectivity of column group stats                                              0          0    140
+    31945701     1 QKSFM_JSON_31945701                JSON update pushdown for BLOB OSON storage                                                    0          0    140
+    31954734     1 QKSFM_VECTOR_AGG_31954734          if multiple partition filters in a key vector cost high                                       0          0    140
+    31966442     1 QKSFM_JPPD_31966442                reject JPPD in set block parent if JPPD is rejected in a branch                               0          0    140
+    31974424     1 QKSFM_CBO_31974424                 count LOB data segment blocks when compute LOB scan cost                                      0          0    140
+    32014520     1 QKSFM_VECTOR_AGG_32014520          push key vectors through filter rowsources                                                    0          0    140
+    32107621     1 QKSFM_CBO_32107621                 fix multi-column semi join/full outer join selectivity                                        0          0    140
+    32108311     1 QKSFM_STATS_32108311               Allow auto stats to skip stats consistency check                                              0          0    140
+    32205825     1 QKSFM_TRANSACTIONS_32205825        Allow PMON to release KQR locks held in the process                                           0          0    140
+    32471594     1 QKSFM_CBO_32471594                 Fix the selectivity of semi join C1 <> C2                                                     0          0    140
+    32806672     1 QKSFM_SQL_CODE_GENERATOR_32806672  use hash gby/unique when the DFO will never be restarted                                      0          0    140
+    32909932     1 QKSFM_ADAPTIVE_PLAN_32909932       fix adaptive plan hash value computation                                                      0          0    140
+    33069936     1 QKSFM_DDL_33069936                 or expansion happens more in first pass and inlist conversion                                 0          0    140
+    33354270     1 QKSFM_STATS_33354270               auto stats check stats consistency                                                            0          0    140
+    33659818     3 QKSFM_PQ_33659818                  disable PKEY/LOCAL distribution if partition sizes are skewed                                 0          0    140 (_slave_mapping_enabled/_partial_pwise_join_enabled=FALSE)
+    33926164     1 QKSFM_PQ_33926164                  make load brokered for PKEY to facilitate randomization of NULLs                              0          0    140
+    34054474     1 QKSFM_SQL_CODE_GENERATOR_34054474  use hash gby/unique for PIV stage vector GBY                                                  0          0    140
+    34092979     1 QKSFM_PQ_34092979                  Let RM queue PQ from scheduler job at any pgadep                                              0          0    140
+    34340011     1 QKSFM_LOBS_34340011                Enables Inline Smart Lobs creation                                                            0          0    140
+   
+    
+    SQL> select con_id,parameter_name,VALUE from awr_pdb_parameter where (snap_id,instance_number)=(select max(snap_id),min(instance_number) keep(dense_rank last order by snap_id) from awr_pdb_parameter) and isdefault='FALSE' order by 2;
+    CON_ID  PARAMETER_NAME                                            VALUE
+    ------ ---------------------------------------------------- ------------------
+         0 _all_sync_restrict_list
+         0 _allow_user$_col_update
+         0 _allowed_pvf_owners
+         0 _apppdb_multi_slave_sync
+         0 _asm_asmb_rcvto
+         0 _asm_write_cancel
+         0 _audit_operator_access
+         0 _auto_start_pdb_services
+       290 _autotbs_management_enabled                          TRUE
+       290 _aux_storage_size                                    0
+         0 _awr_warehouse_enabled
+         0 _backup_interrupt_wait_time
+         0 _bct_health_check_interval
+         0 _bct_public_dba_buffer_dynresize
+         0 _bct_public_dba_buffer_maxsize
+         0 _bct_public_dba_buffer_size
+         0 _bigdata_external_table
+         0 _bigdata_offload_flag
+         0 _block_corruption_track_limit
+         0 _bug29274428_modsvc_call_out_enabled
+         0 _cdb_port
+         0 _cdb_svlt_use_tcps
+         0 _cdb_view_no_skip_restricted
+         0 _cell_offload_vector_groupby
+         0 _cleanup_file_copy
+         0 _cloud_mandatory_profile_setup
+         0 _cloud_operator_user
+         0 _cloud_service_type
+         0 _cloud_trace
+         0 _cloud_trace_temp_table
+       290 _cloudsql_offload_enabled                            TRUE
+         0 _common_load_check_timestamp
+         0 _controlfile_block_corruption_keep_records
+         0 _datapump_gather_stats_on_load
+         0 _datapump_inherit_svcname
+         0 _db_block_check_for_debug
+         0 _db_full_caching
+       290 _db_open_links                                       0
+         0 _default_ini_trans_index
+         0 _default_ini_trans_table
+         0 _default_pdb_filecopy_dop
+         0 _diag_deadlock_detection_enabled
+         0 _diag_hm_rc_enabled
+         0 _disable_foreign_scn_adjust
+         0 _disable_inheritpriv_grant_public
+         0 _disable_mandatory_profile_onclone
+         0 _disable_oradebug_commands
+         0 _edition_enable_oracle_users
+         0 _enable_guid_endpoint_service
+         0 _enable_parallel_dml
+         0 _enable_per_container_acl
+         0 _enable_perpdb_suplog
+         0 _enable_tenant_id_transfer
+         0 _enforce_lockdown_hardening
+         0 _fix_control
+         0 _force_level0_for_local_create_df
+         0 _group_partition_data_for_impdp_ok
+         0 _gwm_disable_ra
+         0 _hang_enable_processstate
+         0 _hang_fast_track_critical_database_processes_enabled
+         0 _hang_fast_track_progressing_sessions
+         0 _honor_maxfsize_autoextend_on
+         0 _host_internal_gateway
+         0 _hybrid_table_hidden_column
+         0 _ignore_svc_name_conv_mismatch
+         0 _increase_lms_process
+         0 _job_notification_handler_owners
+         0 _kd_dbg_control
+         0 _kd_rows_chk
+         0 _kerberos_service_host
+         0 _kgl_kill_final_blocker
+         0 _kill_session_force
+         0 _kpdb_log_errors
+         0 _kra_obsolete_rule
+         0 _ksmg_granule_size
+         0 _ksws_java_patching
+         0 _ksws_perf_control
+         0 _kttext_warning
+         0 _link_ts_name
+         0 _log_client_ip_address_to_alert
+         0 _logminer_parallel_read
+         0 _max_io_size
+         0 _modify_protected_profile_parameters
+         0 _netldp_common_users_as_local
+         0 _no_catalog
+         0 _no_snapshot_root_clone
+         0 _nonfatalprocess_redo_dump_time_limit
+         0 _one-hundred-and-sixtieth_spare_parameter
+         0 _optimize_dvconfig_cloudpdb
+         0 _optimizer_answering_query_using_stats
+         0 _optimizer_autostats_job
+         0 _optimizer_gather_stats_on_load_all
+         0 _optimizer_gather_stats_on_load_hist
+         0 _optimizer_save_stats
+         0 _parallel_cluster_cache_policy
+         0 _pdb_component_violation_restricted
+         0 _pdb_datapatch_violation_restricted
+         0 _pdb_inherit_cfd
+       290 _pdb_ldp_cascade                                     0
+         0 _pdb_lockdown_ddl_clauses
+         0 _pdb_max_audit_size
+         0 _pdb_max_diag_size
+         0 _pdb_oper_trace_threshold_softassert
+         0 _pdb_refresh_apply_master_key_rekey
+         0 _pdb_refresh_use_dblink_to_catalog
+         0 _pdb_skiplist_apply_callout
+         0 _pdb_skiplist_redogen_callout
+         0 _pdb_trigger_user
+         0 _port_internal_gateway
+         0 _preplugin_backup
+         0 _profile_sensitive_users
+         0 _psdclog_enable
+         0 _psdclog_threshold
+         0 _px_diag_dump
+         0 _px_xtgranule_size
+         0 _rce_dns_suffix
+         0 _restrict_pdb_gv
+         0 _rm_exadata_partition_fc
+         0 _rm_exadata_pdb_cpu_cnt
+       290 _rsrc_cpu_count                                      6
+         0 _runtime_index_key_length_check
+         0 _sensitive_common_users
+         0 _skippriv_emailserver_credential
+         0 _spfdc
+         0 _spfoc
+         0 _sqlmon_max_plan
+         0 _suspended_session_timeout
+         0 _table_func_pred_pushdown
+         0 _tablespace_encryption_default_algorithm
+       290 _undo_autotune                                       TRUE
+         0 _xt_table_hidden_column
+         0 aq_tm_processes
+         0 audit_file_dest
+         0 audit_trail
+         0 autotask_max_active_pdbs
+       290 awr_pdb_autoflush_enabled                            TRUE
+         0 cluster_database
+         0 compatible
+       290 container_data                                       CURRENT_DICTIONARY
+         0 control_files
+       290 cpu_count                                            36
+         0 db_block_checking
+         0 db_block_checksum
+         0 db_block_size
+         0 db_create_file_dest
+         0 db_files
+         0 db_flashback_retention_target
+         0 db_lost_write_protect
+         0 db_name
+         0 db_recovery_file_dest
+         0 db_recovery_file_dest_size
+         0 db_securefile
+         0 diagnostic_dest
+         0 dispatchers
+         0 distributed_lock_timeout
+       290 drcp_connection_limit                                1800
+         0 drcp_dedicated_opt
+         0 enable_goldengate_replication
+         0 enable_pluggable_database
+         0 encrypt_new_tablespaces
+         0 external_keystore_credential_location
+       290 fast_start_parallel_rollback                         LOW
+         0 filesystemio_options
+         0 gcs_server_processes
+         0 instance_number
+       290 job_queue_processes                                  180
+         0 large_pool_size
+         0 local_listener
+         0 log_archive_format
+         0 mandatory_user_profile
+         0 max_dump_file_size
+         0 max_idle_blocker_time                                5
+       290 max_idle_time                                        240
+         0 max_string_size
+         0 nls_language
+       290 nls_length_semantics                                 BYTE
+         0 nls_territory
+         0 ofs_threads
+         0 open_cursors
+         0 open_links
+       290 optimizer_ignore_hints                               TRUE
+       290 optimizer_ignore_parallel_hints                      TRUE
+         0 parallel_degree_policy
+         0 parallel_execution_message_size
+       290 parallel_max_servers                                 216
+         0 parallel_min_degree
+         0 parallel_min_servers
+       290 parallel_servers_target                              216
+         0 parallel_threads_per_cpu
+       290 pdb_lockdown                                         DWCS
+       290 pga_aggregate_limit                                  64172851200
+       290 pga_aggregate_target                                 32086425600
+         0 processes
+         0 query_rewrite_integrity
+         0 remote_listener
+         0 remote_login_passwordfile
+         0 resource_manager_plan
+         0 result_cache_max_result
+       290 result_cache_max_size                                62914560
+       290 result_cache_mode                                    FORCE
+         0 sec_protocol_error_trace_action
+       290 sessions                                             1800
+         0 sga_max_size
+       290 sga_target                                           21390950400
+         0 shadow_core_dump
+         0 spatial_vector_acceleration
+         0 thread
+         0 timezone_version_upgrade_online
+       290 undo_retention                                       10800
+       290 undo_tablespace                                      UNDOTBS1
+
+    210 rows returned (1.517s).
+
+-----ATP
+
+select con_id,parameter_name,VALUE from awr_pdb_parameter where snap_id=(select max(snap_id) from awr_pdb_parameter) and isdefault='FALSE' order by 2;
+    CON_ID  PARAMETER_NAME                                      VALUE
+    ------ ---------------------------------------------------- -----
+         0 _all_sync_restrict_list
+         0 _allow_user$_col_update
+         0 _allowed_pvf_owners
+         0 _apppdb_multi_slave_sync
+         0 _asm_asmb_rcvto
+         0 _asm_write_cancel
+         0 _audit_operator_access
+         0 _auto_start_pdb_services
+         0 _autoptn_config
+       140 _aux_storage_size
+         0 _awr_warehouse_enabled
+         0 _backup_interrupt_wait_time
+         0 _bct_ext_min_count
+         0 _bct_health_check_interval
+         0 _bct_public_dba_buffer_dynresize
+         0 _bct_public_dba_buffer_maxsize
+         0 _bct_public_dba_buffer_size
+         0 _bigdata_external_table
+         0 _bigdata_offload_flag
+         0 _block_corruption_track_limit
+         0 _bug29274428_modsvc_call_out_enabled
+         0 _cdb_port
+         0 _cdb_svlt_use_tcps
+         0 _cdb_view_no_skip_restricted
+         0 _cell_offload_vector_groupby
+         0 _cleanup_file_copy
+         0 _cloud_mandatory_profile_setup
+         0 _cloud_operator_user
+         0 _cloud_service_type
+         0 _cloud_trace
+         0 _cloud_trace_temp_table
+         0 _common_load_check_timestamp
+         0 _controlfile_block_corruption_keep_records
+         0 _datapump_gather_stats_on_load
+         0 _datapump_inherit_svcname
+         0 _db_block_check_for_debug
+         0 _db_full_caching
+       140 _db_open_links
+         0 _default_ini_trans_index
+         0 _default_ini_trans_table
+         0 _default_pdb_filecopy_dop
+         0 _diag_deadlock_detection_enabled
+         0 _diag_hm_rc_enabled
+         0 _disable_foreign_scn_adjust
+         0 _disable_inheritpriv_grant_public
+         0 _disable_mandatory_profile_onclone
+         0 _disable_oradebug_commands
+         0 _edition_enable_oracle_users
+         0 _enable_guid_endpoint_service
+         0 _enable_parallel_dml
+         0 _enable_per_container_acl
+         0 _enable_tenant_id_transfer
+         0 _enforce_lockdown_hardening
+         0 _fix_control
+         0 _force_level0_for_local_create_df
+         0 _group_partition_data_for_impdp_ok
+         0 _gwm_disable_ra
+         0 _hang_enable_processstate
+         0 _hang_fast_track_critical_database_processes_enabled
+         0 _hang_fast_track_progressing_sessions
+         0 _honor_maxfsize_autoextend_on
+         0 _host_internal_gateway
+         0 _hybrid_table_hidden_column
+         0 _ignore_svc_name_conv_mismatch
+         0 _job_notification_handler_owners
+         0 _kd_dbg_control
+         0 _kd_rows_chk
+         0 _kerberos_service_host
+         0 _kgl_kill_final_blocker
+         0 _kill_session_force
+         0 _kpdb_log_errors
+         0 _kra_obsolete_rule
+         0 _ksmg_granule_size
+         0 _ksws_java_patching
+         0 _ksws_perf_control
+         0 _kttext_warning
+         0 _link_ts_name
+         0 _log_client_ip_address_to_alert
+         0 _logminer_parallel_read
+         0 _modify_protected_profile_parameters
+         0 _netldp_common_users_as_local
+         0 _no_catalog
+         0 _no_snapshot_root_clone
+         0 _nonfatalprocess_redo_dump_time_limit
+         0 _one-hundred-and-sixtieth_spare_parameter
+         0 _optimize_dvconfig_cloudpdb
+         0 _optimizer_autostats_job
+         0 _optimizer_gather_stats_on_load_all
+         0 _optimizer_gather_stats_on_load_hist
+         0 _optimizer_save_stats
+         0 _parallel_cluster_cache_policy
+         0 _pdb_component_violation_restricted
+         0 _pdb_datapatch_violation_restricted
+         0 _pdb_inherit_cfd
+       140 _pdb_ldp_cascade
+         0 _pdb_lockdown_ddl_clauses
+         0 _pdb_max_audit_size
+         0 _pdb_max_diag_size
+         0 _pdb_max_size_discount
+         0 _pdb_oper_trace_threshold_softassert
+         0 _pdb_refresh_apply_master_key_rekey
+         0 _pdb_refresh_use_dblink_to_catalog
+         0 _pdb_skiplist_apply_callout
+         0 _pdb_skiplist_redogen_callout
+         0 _pdb_trigger_user
+         0 _port_internal_gateway
+         0 _preplugin_backup
+         0 _profile_sensitive_users
+         0 _psdclog_enable
+         0 _psdclog_threshold
+         0 _px_diag_dump
+         0 _px_xtgranule_size
+         0 _rce_dns_suffix
+         0 _restrict_pdb_gv
+         0 _rm_exadata_partition_fc
+         0 _rm_exadata_pdb_cpu_cnt
+       140 _rsrc_cpu_count
+         0 _runtime_index_key_length_check
+         0 _sensitive_common_users
+         0 _skippriv_emailserver_credential
+         0 _spfdc
+         0 _spfoc
+         0 _sqlmon_max_plan
+         0 _suspended_session_timeout
+         0 _table_func_pred_pushdown
+         0 _tablespace_encryption_default_algorithm
+       140 _undo_autotune
+         0 _xt_table_hidden_column
+         0 aq_tm_processes
+         0 audit_file_dest
+         0 audit_trail
+         0 autotask_max_active_pdbs
+       140 awr_pdb_autoflush_enabled
+         0 cluster_database
+         0 compatible
+         0 control_files
+       140 cpu_count
+         0 db_block_checking
+         0 db_block_checksum
+         0 db_block_size
+         0 db_create_file_dest
+         0 db_files
+         0 db_flashback_retention_target
+         0 db_lost_write_protect
+         0 db_name
+         0 db_recovery_file_dest
+         0 db_recovery_file_dest_size
+         0 db_securefile
+         0 diagnostic_dest
+         0 dispatchers
+         0 distributed_lock_timeout
+       140 drcp_connection_limit
+         0 drcp_dedicated_opt
+         0 enable_goldengate_replication
+         0 enable_pluggable_database
+         0 encrypt_new_tablespaces
+         0 external_keystore_credential_location
+       140 fast_start_parallel_rollback
+         0 filesystemio_options
+         0 gcs_server_processes
+         0 instance_number
+       140 job_queue_processes
+         0 large_pool_size
+         0 local_listener
+         0 log_archive_dest_1
+         0 log_archive_dest_state_4
+         0 log_archive_dest_state_5
+         0 log_archive_dest_state_6
+         0 log_archive_format
+         0 mandatory_user_profile
+         0 max_dump_file_size
+         0 max_idle_blocker_time
+         0 max_string_size
+         0 nls_language
+         0 nls_territory
+         0 ofs_threads
+         0 open_cursors
+         0 open_links
+         0 parallel_execution_message_size
+       140 parallel_max_servers
+         0 parallel_min_servers
+       140 parallel_servers_target
+         0 parallel_threads_per_cpu
+       140 pdb_lockdown
+       140 pga_aggregate_limit
+       140 pga_aggregate_target
+         0 processes
+         0 query_rewrite_integrity
+         0 remote_listener
+         0 remote_login_passwordfile
+         0 resource_manager_plan
+       140 result_cache_max_size
+         0 sec_protocol_error_trace_action
+       140 sessions
+         0 sga_max_size
+       140 sga_target
+         0 shadow_core_dump
+         0 spatial_vector_acceleration
+         0 thread
+         0 timezone_version_upgrade_online
+       140 undo_retention
+       140 undo_tablespace
+
+    202 rows returned (0.288s).

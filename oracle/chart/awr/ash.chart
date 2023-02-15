@@ -40,7 +40,7 @@
         @VER1       : 11.2={COUNT(DISTINCT SQL_ID||SQL_EXEC_ID)}, default={NULL}
         @VER2       : 11.2={Running SQLs}, default={HIDDEN_}
         @VER3       : 11.2={delta_time*1e-6}, default={&unit}
-        @VER4       : 11.2={,SUM(DELTA_READ_IO_BYTES) rb,SUM(DELTA_Write_IO_BYTES) wb},default={}
+        @VER4       : 11.2={,round(SUM(DELTA_READ_IO_BYTES)/60) rb,round(SUM(DELTA_Write_IO_BYTES)/60) wb},default={}
         @VER5       : 11.2={,SUM(rb) "IO Read Bytes" ,SUM(wb) "IO Write Bytes" },default={}
         @VER41      : 11.2={,NULL,NULL} default={}
     ]]--

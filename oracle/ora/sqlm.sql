@@ -6,7 +6,7 @@
                 ALTER SYSTEM SET EVENTS 'sql_monitor [sql: <sql_id1>|sql: <sql_id2>] force=true';
 
         Usages:
-             1. @@NAME <sql_id> [<sql_exec_id>]                   : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
+             1. @@NAME <sql_id> [<sql_exec_id>|<report_id>|<phv>] : Extract sql monitor report with specific sql_id, options: -s,-a,-f"<format>"
              2. @@NAME [. <keyword>]                              : List recent sql monitor reports,options: -avg,-u,-f"<filter>" 
              3. @@NAME -snap <sec> <sid>                          : Monitor the specific <sid> for <sec> seconds, and then list the SQL monitor result, options: -avg
              4. @@NAME "<Query>"                                  : Read SQL Monitor report from target query(return CLOB) and print
@@ -29,12 +29,11 @@
              
      --[[
             @ver: 12.2={} 11.2={--}
-            &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))}
-            &option : default={}, l={,sql_exec_id,plan_hash,sql_exec_start}
-            &option1: {default={&uniq execs,round(sum(ela)/&uniq,2) avg_ela,
-                                to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
-                                to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,} 
-                      l={}}
+            &uniq:    default={count(DISTINCT sql_exec_id||','||to_char(sql_exec_start,'YYYYMMDDHH24MISS'))} l={1}
+            &group : default={}, l={,sql_exec_id,plan_hash,sql_exec_start,last_refresh_time}
+            &fields: {default={&uniq execs,GREATEST(max(last_refresh_time - sql_exec_start) keep(dense_rank last order by last_refresh_time) *86400*1e6, 1E6) "LAST",
+                                to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,} 
+                      l={MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) sid,}}
             &filter: default={1=1},f={},l={sql_id=sq_id},snap={DBOP_EXEC_ID=dopeid and dbop_name=dopename},u={username=nvl('&0',sys_context('userenv','current_schema'))}
             &tot : default={1} avg={0}
             &avg : defult={1} avg={&uniq}
@@ -61,9 +60,12 @@ var c2 refcursor;
 var rs CLOB;
 var filename varchar2;
 var plan_hash number;
-col dur,avg_ela,ela,parse,qu,cpu,app,cc,cl,plsql,java,pljava,io,ot,time format usmhd1
+col parse,queue,cpu,app,cc,cl,plsql,java,pljava,io,oth for pct2
+col dur,last,ela,time format usmhd1
 col read,write,iosize,mem,temp,cellio,buffget,offload,offlrtn,calc_kmg,ofl,bytes,OFLOUT format kmg1
-col est_cost,est_rows,act_rows,ioreq,execs,outputs,FETCHES,dxwrite,calc_tmb format TMB1
+col est_cost,est_rows,act_rows,ioreq,outputs,FETCHES,dxwrite,calc_tmb format TMB1
+col execs for tmb0
+set autohide col 
 
 DECLARE /*+no_monitor*/
     plan_hash  INT := regexp_substr(:V2, '^\d+$');
@@ -105,6 +107,7 @@ DECLARE /*+no_monitor*/
         IF dyn_lvl != 5 THEN
             EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling=5';
         END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
     END;
 
     PROCEDURE report_end IS
@@ -112,6 +115,7 @@ DECLARE /*+no_monitor*/
         IF dyn_lvl != 5 THEN
             EXECUTE IMMEDIATE 'alter session set optimizer_dynamic_sampling='||dyn_lvl;
         END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
     END;
 
     PROCEDURE wr(msg VARCHAR2) IS
@@ -248,11 +252,11 @@ BEGIN
             open c2 for 
                 SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ *
                 FROM   (SELECT MAX(DECODE(MOD(rnk, 3), 1, NAME)) stat_name#1,
-                                 MAX(DECODE(MOD(rnk, 3), 1, VALUE)) stat_value#1,
-                                 MAX(DECODE(MOD(rnk, 3), 2, NAME)) stat_name#2,
-                                 MAX(DECODE(MOD(rnk, 3), 2, VALUE)) stat_value#2,
-                                 MAX(DECODE(MOD(rnk, 3), 0, NAME)) stat_name#3,
-                                 MAX(DECODE(MOD(rnk, 3), 0, VALUE)) stat_value#3
+                               MAX(DECODE(MOD(rnk, 3), 1, VALUE)) stat_value#1,
+                               MAX(DECODE(MOD(rnk, 3), 2, NAME)) stat_name#2,
+                               MAX(DECODE(MOD(rnk, 3), 2, VALUE)) stat_value#2,
+                               MAX(DECODE(MOD(rnk, 3), 0, NAME)) stat_name#3,
+                               MAX(DECODE(MOD(rnk, 3), 0, VALUE)) stat_value#3
                         FROM   (SELECT  /*+ordered use_hash(b)*/
                                 substr(NAME, 1, 35) NAME, SUM(VALUE) VALUE, row_number() OVER(ORDER BY SUM(VALUE) DESC) rnk
                                 FROM   gv$sql_monitor
@@ -296,19 +300,19 @@ BEGIN
     END IF;
 
     IF sqlmon IS NOT NULL THEN 
-        sqlmon := regexp_substr(sqlmon,'<report .*</report>',1,1,'n');
+        sqlmon := trim(regexp_substr(sqlmon,'<report .*</report>',1,1,'n'));
         IF sqlmon IS NULL or LENGTH(sqlmon)=0 THEN
-            raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
+            raise_application_error(-20001,'Target is not a valid SQL Monitor Report file or Report Id!');
         END IF;
         xml    := xmltype(sqlmon);
         mon    := xml.extract('//report_parameters[1]');
 
         IF mon IS NULL THEN
-            sqlmon := trim(xml.extract('/report/text()').getClobVal());
-            IF sqlmon IS NULL THEN
-                raise_application_error(-20001,'Target file is not a valid SQL Monitor Report file!');
+            mon := xml.extract('/report/text()');
+            IF mon IS NULL THEN
+                raise_application_error(-20001,'Target is not a valid SQL Monitor Report file or Report Id!');
             END IF;
-            
+            sqlmon := trim(mon.getClobVal());
             IF length(sqlmon)>32767 THEN
                 raise_application_error(-20001,'Unsupported SQL Monitor Report file whose compressed data over 32 KB!');
             END IF;
@@ -334,7 +338,7 @@ BEGIN
         END IF;
     END IF;
     
-    IF sq_id IS NOT NULL AND '&option' IS NULL THEN
+    IF sq_id IS NOT NULL AND '&group' IS NULL THEN
         --EXECUTE IMMEDIATE 'alter session set "_sqlmon_max_planlines"=3000';
         IF xml IS NULL THEN
             BEGIN
@@ -365,7 +369,7 @@ BEGIN
                     into  sq_id,sql_exec,sql_start
                     from  gv$sql_monitor
                     where sql_id=sq_id
-                    AND   sql_exec_id=sql_exec
+                    AND   sql_exec in(sql_exec_id,sql_plan_hash_value)
                     AND   PX_SERVER# IS NULL
                     AND   sql_text IS NOT NULL
                     AND   inst_id=nvl(inst,inst_id);
@@ -382,8 +386,7 @@ BEGIN
                             where (did IS NULL OR did in(dbid,con_dbid))
                             AND   key1=nvl(sq_id,sq_id1)
                             AND   key2>0
-                            AND   (sql_exec  IS NULL OR KEY2=sql_exec)
-                            AND   (plan_hash IS NULL OR key2=plan_hash OR report_id=plan_hash or instr(report_summary,'plan_hash>'||plan_hash||'<')>0)
+                            AND   (sql_exec IS NULL OR sql_exec in(key2,report_id) or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
                             AND   component_name='sqlmonitor'
                             AND   dbid=nvl(did,dbid)
                             AND   instance_number=nvl(inst,instance_number));
@@ -530,23 +533,25 @@ BEGIN
         :c1 := c2; 
     ELSE
         OPEN :c FOR
-            SELECT *
-            FROM   (SELECT   /*+no_expand no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
-                             a.sql_id &OPTION,
-                             &option1 
-                             MAX(sid || ',@' || inst_id) keep(dense_rank LAST ORDER BY last_refresh_time) last_sid,
-                             MAX(status) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
-                             round(sum(last_refresh_time - sql_exec_start +1/86400)/&avg * 86400*1e6, 2) dur,
+            SELECT * --fix control 26552730 causes ORA-12850: Could not allocate slaves on all specified instances: 2 needed, 0 allocated
+            FROM   (SELECT   /*+no_expand no_parallel OPT_PARAM('_fix_control' '26552730:0') no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
+                             a.sql_id &group,
+                             &fields 
+                             MAX(NVL(REGEXP_SUBSTR(status,'\(.*\)'),STATUS)) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,
+                             '|' "|",
+                             greatest(1E6,round(sum(last_refresh_time - sql_exec_start)/&avg*86400*1e6, 2)) dur,
                              round(sum(ela)/&avg , 2) ela,
-                             round(sum(QUEUING_TIME)/&avg , 2) QU,
-                             round(sum(CPU_TIME)/&avg , 2) CPU,
-                             round(sum(APPLICATION_WAIT_TIME)/&avg , 2) app,
-                             round(sum(CONCURRENCY_WAIT_TIME)/&avg , 2) cc,
-                             round(sum(CLUSTER_WAIT_TIME)/&avg , 2) cl,
-                             round(sum(nvl(PLSQL_EXEC_TIME,0)+nvl(JAVA_EXEC_TIME,0))/&avg , 2) pljava,
-                             round(sum(USER_IO_WAIT_TIME)/&avg , 2) io,
-                             round(sum(nvl(PHYSICAL_READ_BYTES,0)+nvl(PHYSICAL_WRITE_BYTES,0) )/&avg, 2) bytes,
-                             &ver round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2) OFL, round(sum(IO_CELL_OFFLOAD_RETURNED_BYTES)/&avg,2) OFLOUT,
+                             nullif(round(sum(QUEUING_TIME)/sum(ela) , 4),0) QUEUE,
+                             nullif(round(sum(CPU_TIME)/sum(ela) , 4),0) CPU,
+                             nullif(round(sum(APPLICATION_WAIT_TIME)/sum(ela) , 4),0) app,
+                             nullif(round(sum(CONCURRENCY_WAIT_TIME)/sum(ela), 4),0) cc,
+                             nullif(round(sum(CLUSTER_WAIT_TIME)/sum(ela), 4),0) cl,
+                             nullif(round(sum(nvl(PLSQL_EXEC_TIME,0)+nvl(JAVA_EXEC_TIME,0))/sum(ela), 4),0) pljava,
+                             nullif(round(sum(USER_IO_WAIT_TIME)/sum(ela), 4),0) io,
+                             nullif(round(sum(nvl(OTHER_TIME,ELA-ELA1))/sum(ela), 4),0) oth,
+                             nullif(round(sum(nvl(PHYSICAL_READ_BYTES,0)+nvl(PHYSICAL_WRITE_BYTES,0) )/&avg, 2),0) bytes,
+                             &ver nullif(round(sum(IO_CELL_OFFLOAD_ELIGIBLE_BYTES)/&avg,2),0) OFL, nullif(round(sum(IO_CELL_OFFLOAD_RETURNED_BYTES)/&avg,2),0) OFLOUT,
+                             nullif(round(avg(px)/&avg),0) PX,
                              substr(regexp_replace(regexp_replace(MAX(sql_text), '^\s+'), '\s+', ' '), 1, 200) sql_text
                     FROM   (select /*+no_expand no_or_expand*/
                                    sql_id,sql_exec_start,''||sql_exec_id sql_exec_id,
@@ -556,9 +561,12 @@ BEGIN
                                    max(NVL2(PX_QCSID,null,inst_id)) inst_id,
                                    max(NVL2(PX_QCSID,null,sql_text)) sql_text,
                                    max(NVL2(PX_QCSID,null,status)) status,
+                                   SUM(nvl2(PX_QCSID,1,PX_SERVERS_ALLOCATED)) PX,
                                    max(last_refresh_time) last_refresh_time,
                                    sum(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME)) ela,
                                    sum(ELAPSED_TIME) ELAPSED_TIME,
+                                   SUM(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME) ela1,
+                                   TO_NUMBER(NULL) OTHER_TIME,
                                    sum(CPU_TIME) cpu_time,
                                    sum(QUEUING_TIME) QUEUING_TIME,
                                    sum(APPLICATION_WAIT_TIME) APPLICATION_WAIT_TIME,
@@ -573,81 +581,86 @@ BEGIN
                             FROM  gv$sql_monitor a
                             WHERE (&filter)
                             GROUP BY sql_id,sql_exec_start,sql_exec_id
-                            $IF &check_access_report=1 AND &pred=1 $THEN
-                            UNION ALL
-                            select key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(HIST)',
-                                   plan_hash,
-                                   plan_hash SQL_PLAN_HASH_VALUE,
-                                   sid,
-                                   inst_id,
-                                   sql_text,
-                                   status,
-                                   last_refresh_time,
-                                   dur ela,
-                                   ELAPSED_TIME,
-                                   cpu_time,
-                                   QUEUING_TIME,
-                                   APPLICATION_WAIT_TIME,
-                                   CONCURRENCY_WAIT_TIME,
-                                   CLUSTER_WAIT_TIME,
-                                   PLSQL_EXEC_TIME,
-                                   JAVA_EXEC_TIME,
-                                   USER_IO_WAIT_TIME,
-                                   PHYSICAL_WRITE_BYTES,
-                                   PHYSICAL_READ_BYTES
-                                   &ver ,IO_CELL_OFFLOAD_ELIGIBLE_BYTES,IO_CELL_OFFLOAD_RETURNED_BYTES
-                            FROM (
-                                SELECT /*+no_expand no_or_expand*/
-                                       a.*,
-                                       period_end_time last_refresh_time,
-                                       session_id sid,
-                                       instance_number inst_id,
-                                       key1 sql_id,
-                                       report_id sql_exec_id,
-                                       xmltype(a.report_summary) summary 
-                                FROM   dba_hist_reports a
-                                WHERE (did IS NULL OR did in(dbid,con_dbid))
-                                AND   (sq_id IS NOT NULL AND key1=sq_id OR 
-                                       keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
-                                AND    COMPONENT_NAME='sqlmonitor'
-                                AND    instance_number=nvl(inst,instance_number)) a,
-                            xmltable('/report_repository_summary/*' PASSING a.summary columns --
-                                    plan_hash NUMBER PATH 'plan_hash',
-                                    username  VARCHAR2(128) PATH 'user',
-                                    CURRENT_USERNAME  VARCHAR2(128) PATH 'current_username',
-                                    DBOP_EXEC_ID NUMBER PATH 'dbop_exec_id',
-                                    DBOP_NAME VARCHAR2(30) PATH 'dbop_name',
-                                    MODULE VARCHAR2(64) PATH 'module',
-                                    ACTION VARCHAR2(64) PATH 'action',
-                                    PROGRAM VARCHAR2(48) PATH 'program',
-                                    dur NUMBER path 'stats/stat[@name="duration"]*1e6', 
-                                    ELAPSED_TIME NUMBER path 'stats/stat[@name="elapsed_time"]', 
-                                    CPU_TIME NUMBER path 'stats/stat[@name="cpu_time"]',
-                                    USER_IO_WAIT_TIME NUMBER path 'stats/stat[@name="user_io_wait_time"]', 
-                                    APPLICATION_WAIT_TIME NUMBER path 'stats/stat[@name="application_wait_time"]',
-                                    CLUSTER_WAIT_TIME NUMBER path 'stats/stat[@name="cluster_wait_time"]', 
-                                    CONCURRENCY_WAIT_TIME NUMBER path 'stats/stat[@name="concurrency_wait_time"]',
-                                    QUEUING_TIME NUMBER path 'stats/stat[@name="queuing_time"]', 
-                                    OTHER_WAIT_TIME NUMBER path 'stats/stat[@name="other_wait_time"]', 
-                                    PLSQL_EXEC_TIME NUMBER path 'stats/stat[@name="plsql_exec_time"]',
-                                    JAVA_EXEC_TIME NUMBER path 'stats/stat[@name="java_exec_time"]',
-                                    PHYSICAL_READ_BYTES NUMBER path 'stats/stat[@name="read_bytes"]',
-                                    PHYSICAL_WRITE_BYTES NUMBER path 'stats/stat[@name="write_bytes"]',
-                                    IO_CELL_OFFLOAD_ELIGIBLE_BYTES NUMBER path 'stats/stat[@name="elig_bytes"]', 
-                                    IO_CELL_OFFLOAD_RETURNED_BYTES NUMBER path 'stats/stat[@name="ret_bytes"]', 
-                                    offlrtn NUMBER path 'stats/stat[@name="ret_bytes"]',
-                                    status VARCHAR2(30) PATH 'status',
-                                    sql_text VARCHAR2(4000) PATH 'sql_text')
-                            WHERE (&filter)
-                            $END
-                            ) a
-                    WHERE  (&SNAP=1 OR (keyw IS NOT NULL AND plan_hash IS NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
-                    AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || keyw || '%'))
-                    GROUP  BY sql_id &OPTION
-                    ORDER  BY 4 DESC)
-            WHERE  ROWNUM <= 100*nvl2(:option1,1,10)
-            ORDER  BY 4, ela;
-        IF sq_id IS NOT NULL AND '&option' IS NOT NULL THEN
+            $IF &check_access_report=1 AND &pred=1 $THEN
+                        UNION ALL
+                        SELECT key1 sql_id,to_date(key3,'MM:DD:YYYY HH24:MI:SS') sql_exec_start,report_id||'(HIST)' sql_exec_id,
+                               plan_hash,
+                               plan_hash SQL_PLAN_HASH_VALUE,
+                               sid,
+                               inst_id,
+                               sql_text,
+                               status,
+                               px_servers_allocated PX,
+                               last_refresh_time,
+                               GREATEST(ELAPSED_TIME,nvl(CPU_TIME,0)+nvl(APPLICATION_WAIT_TIME,0)+nvl(CONCURRENCY_WAIT_TIME,0)+nvl(CLUSTER_WAIT_TIME,0)+nvl(USER_IO_WAIT_TIME,0)+nvl(QUEUING_TIME,0)) ela,
+                               ELAPSED_TIME,
+                               nvl(CPU_TIME,0)+nvl(APPLICATION_WAIT_TIME,0)+nvl(CONCURRENCY_WAIT_TIME,0)+nvl(CLUSTER_WAIT_TIME,0)+nvl(USER_IO_WAIT_TIME,0)+nvl(QUEUING_TIME,0) ela1,
+                               OTHER_WAIT_TIME OTHER_TIME,
+                               cpu_time,
+                               QUEUING_TIME,
+                               APPLICATION_WAIT_TIME,
+                               CONCURRENCY_WAIT_TIME,
+                               CLUSTER_WAIT_TIME,
+                               PLSQL_EXEC_TIME,
+                               JAVA_EXEC_TIME,
+                               USER_IO_WAIT_TIME,
+                               PHYSICAL_WRITE_BYTES,
+                               PHYSICAL_READ_BYTES
+                               &ver ,IO_CELL_OFFLOAD_ELIGIBLE_BYTES,IO_CELL_OFFLOAD_RETURNED_BYTES
+                        FROM (
+                            SELECT /*+no_expand no_or_expand no_merge*/
+                                   a.*,
+                                   period_end_time last_refresh_time,
+                                   session_id sid,
+                                   instance_number inst_id,
+                                   key1 sql_id,
+                                   report_id sql_exec_id,
+                                   xmltype(a.report_summary) summary 
+                            FROM   dba_hist_reports a
+                            WHERE (did IS NULL OR did in(dbid,con_dbid))
+                            AND   (sq_id IS NOT NULL AND key1=sq_id OR 
+                                   keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
+                            AND    COMPONENT_NAME='sqlmonitor'
+                            AND    instance_number=nvl(inst,instance_number)) a,
+                        xmltable('/report_repository_summary/*' PASSING a.summary columns --
+                                plan_hash NUMBER PATH 'plan_hash',
+                                username  VARCHAR2(128) PATH 'user',
+                                CURRENT_USERNAME  VARCHAR2(128) PATH 'current_username',
+                                DBOP_EXEC_ID NUMBER PATH 'dbop_exec_id',
+                                DBOP_NAME VARCHAR2(30) PATH 'dbop_name',
+                                MODULE VARCHAR2(64) PATH 'module',
+                                ACTION VARCHAR2(64) PATH 'action',
+                                PROGRAM VARCHAR2(48) PATH 'program',
+                                dur NUMBER path 'stats/stat[@name="duration"]*1e6', 
+                                ELAPSED_TIME NUMBER path 'stats/stat[@name="elapsed_time"]', 
+                                CPU_TIME NUMBER path 'stats/stat[@name="cpu_time"]',
+                                USER_IO_WAIT_TIME NUMBER path 'stats/stat[@name="user_io_wait_time"]', 
+                                APPLICATION_WAIT_TIME NUMBER path 'stats/stat[@name="application_wait_time"]',
+                                CLUSTER_WAIT_TIME NUMBER path 'stats/stat[@name="cluster_wait_time"]', 
+                                CONCURRENCY_WAIT_TIME NUMBER path 'stats/stat[@name="concurrency_wait_time"]',
+                                QUEUING_TIME NUMBER path 'stats/stat[@name="queuing_time"]', 
+                                OTHER_WAIT_TIME NUMBER path 'stats/stat[@name="other_wait_time"]', 
+                                PLSQL_EXEC_TIME NUMBER path 'stats/stat[@name="plsql_exec_time"]',
+                                JAVA_EXEC_TIME NUMBER path 'stats/stat[@name="java_exec_time"]',
+                                PHYSICAL_READ_BYTES NUMBER path 'stats/stat[@name="read_bytes"]',
+                                PHYSICAL_WRITE_BYTES NUMBER path 'stats/stat[@name="write_bytes"]',
+                                IO_CELL_OFFLOAD_ELIGIBLE_BYTES NUMBER path 'stats/stat[@name="elig_bytes"]', 
+                                IO_CELL_OFFLOAD_RETURNED_BYTES NUMBER path 'stats/stat[@name="ret_bytes"]', 
+                                px_servers_allocated NUMBER path 'px_servers_allocated',
+                                offlrtn NUMBER path 'stats/stat[@name="ret_bytes"]',
+                                status VARCHAR2(30) PATH 'status',
+                                sql_text VARCHAR2(4000) PATH 'sql_text')
+                        WHERE (&filter) 
+            $END
+            ) a
+            WHERE  (&SNAP=1 OR (keyw IS NOT NULL AND plan_hash IS NULL OR NOT regexp_like(upper(TRIM(SQL_TEXT)), '^(BEGIN|DECLARE|CALL)')))
+            AND    (&SNAP=1 OR (keyw IS NULL OR a.sql_id ||'_'|| sql_plan_hash_value||'_'|| sql_exec_id || lower(sql_text) LIKE '%' || keyw || '%'))
+            GROUP  BY sql_id &group
+            ORDER  BY 4 DESC)
+        WHERE  ROWNUM <= 30
+        ORDER  BY 4, ela;
+
+        IF sq_id IS NOT NULL AND '&group' IS NOT NULL THEN
             IF plan_hash IS NOT NULL THEN
                 $IF DBMS_DB_VERSION.VERSION>11 AND &check_access_hub =1 $THEN
                     SELECT MIN(sql_exec_start), MAX(last_refresh_time), &uniq
@@ -671,89 +684,43 @@ BEGIN
                 IF counter = 0 THEN
                     counter := execs;
                 END IF;
-                $IF &check_access_report=1 $THEN
-                    OPEN c0 FOR 
-                        SELECT /*+no_expand opt_param('optimizer_dynamic_sampling' 5)*/  
-                               KEY1 SQL_ID,
-                               KEY2 SQL_EXEC_ID,
-                               REPORT_ID,
-                               SNAP_ID,
-                               PERIOD_START_TIME,
-                               PERIOD_END_TIME,
-                               b.*,
-                               substr(TRIM(regexp_replace(REPLACE(sql_text, chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) SQL_TEXT
-                        FROM   (SELECT a.*, xmltype(a.report_summary) summary 
-                                FROM   dba_hist_reports a
-                                WHERE  (did IS NULL OR did in(dbid,con_dbid))
-                                AND    KEY1=sq_id
-                                AND    COMPONENT_NAME='sqlmonitor'
-                                AND    instance_number=nvl(inst,instance_number)) a,
-                                xmltable('/report_repository_summary/*' PASSING a.summary columns --
-                                        plan_hash NUMBER PATH 'plan_hash',
-                                        username  VARCHAR2(100) PATH 'user',
-                                        dur NUMBER path 'stats/stat[@name="duration"]', 
-                                        ela NUMBER path 'stats/stat[@name="elapsed_time"]*1e-6', 
-                                        CPU NUMBER path 'stats/stat[@name="cpu_time"]*1e-6',
-                                        io NUMBER path 'stats/stat[@name="user_io_wait_time"]*1e-6', 
-                                        app NUMBER path 'stats/stat[@name="application_wait_time"]*1e-6',
-                                        cl NUMBER path 'stats/stat[@name="cluster_wait_time"]*1e-6', 
-                                        cc NUMBER path 'stats/stat[@name="concurrency_wait_time"]*1e-6',
-                                        ot NUMBER path 'stats/stat[@name="other_wait_time"]*1e-6', 
-                                        plsql NUMBER path 'stats/stat[@name="plsql_exec_time"]*1e-6',
-                                        ioreq NUMBER path 'sum(stats/stat[@name=("read_reqs","write_reqs")])',
-                                        iosize NUMBER path 'sum(stats/stat[@name=("read_bytes","write_bytes")])', 
-                                        buffget NUMBER path 'stats/stat[@name="buffer_gets"]*8192',
-                                        offload NUMBER path 'stats/stat[@name="elig_bytes"]', 
-                                        ofleff NUMBER path 'stats/stat[@name="cell_offload_efficiency"]',
-                                        ofleff2 NUMBER path 'stats/stat[@name="cell_offload_efficiency2"]', 
-                                        offlrtn NUMBER path 'stats/stat[@name="ret_bytes"]',
-                                        --,service VARCHAR2(100) PATH 'service', program VARCHAR2(300) PATH 'program'
-                                        sql_text VARCHAR2(4000) PATH 'sql_text'
-                                        --unc_bytes NUMBER path 'stats/stat[@name="unc_bytes"]',
-                                        --fetches NUMBER path 'stats/stat[@name="user_fetch_count"]'
-                                        --
-                                        ) b
-                        ORDER  BY 2;
-                $END
-
-                :c0 := c0;
-            
-                OPEN :c1 FOR
-                    SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
-                            DECODE(phv, plan_hash, '*', ' ') || phv plan_hash,
-                            &uniq execs,
-                            SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
-                            round(SUM(FETCHES), 2) FETCHES,
-                            to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
-                            to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
-                            round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
-                            round(SUM(GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))  /&avg, 2) ela,
-                            round(SUM(QUEUING_TIME)  /&avg, 2) QUEUE,
-                            round(SUM(CPU_TIME)  /&avg, 2) CPU,
-                            round(SUM(APPLICATION_WAIT_TIME)  /&avg, 2) app,
-                            round(SUM(CONCURRENCY_WAIT_TIME)  /&avg, 2) cc,
-                            round(SUM(CLUSTER_WAIT_TIME)  /&avg, 2) cl,
-                            round(SUM(PLSQL_EXEC_TIME)  /&avg, 2) plsql,
-                            round(SUM(JAVA_EXEC_TIME)  /&avg, 2) JAVA,
-                            round(SUM(USER_IO_WAIT_TIME)  /&avg, 2) io,
-                            round(SUM(io_interconnect_bytes) /&avg, 2) cellio,
-                            round(SUM(PHYSICAL_READ_BYTES) /&avg, 2) READ,
-                            round(SUM(PHYSICAL_WRITE_BYTES) /&avg, 2) WRITE,
-                            round(SUM(DIRECT_WRITES) /&avg, 2) dxwrite,
-                            round(SUM(BUFFER_GETS)*8192 /&avg, 2) buffget,
-                            &ver round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) /&avg, 2) offload,
-                            &ver round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES) /&avg, 2) offlrtn,
-                            MAX(PX_MAXDOP) DOP,
-                            MAX(DOPS) SIDS,
-                            regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
-                    FROM   (SELECT a.*,sql_plan_hash_value phv,
-                                     max(nvl((last_refresh_time-sql_exec_start)*86400+1,greatest(ELAPSED_TIME,(CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME))))  over(partition by sql_exec_id,sql_exec_start) dur,
-                                     count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 
-                            FROM gv$sql_monitor a WHERE sql_id = sq_id) b
-                    GROUP  BY phv
-                    ORDER  BY decode(phv, plan_hash, SYSDATE + 1, MAX(last_refresh_time));
-                
             END IF;
+            
+            OPEN :c0 FOR
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                        DECODE(phv, plan_hash, '*', ' ') || phv plan_hash,
+                        &uniq execs,
+                        SUM(nvl2(ERROR_MESSAGE, 1, 0)) errs,
+                        round(SUM(FETCHES), 2) FETCHES,
+                        to_char(MIN(sql_exec_start), 'YYMMDD HH24:MI:SS') first_seen,
+                        to_char(MAX(last_refresh_time), 'YYMMDD HH24:MI:SS') last_seen,
+                        round(SUM(dur*nvl2(px_qcsid,0,1))/&avg, 2) dur,
+                        round(SUM(ELA)  /&avg, 2) ela,
+                        nullif(round(SUM(QUEUING_TIME) /SUM(ELA), 4),0) QUEUE,
+                        nullif(round(SUM(CPU_TIME)  /SUM(ELA), 4),0) CPU,
+                        nullif(round(SUM(APPLICATION_WAIT_TIME)  /SUM(ELA), 4),0) app,
+                        nullif(round(SUM(CONCURRENCY_WAIT_TIME)  /SUM(ELA), 4),0) cc,
+                        nullif(round(SUM(CLUSTER_WAIT_TIME)  /SUM(ELA), 4),0) cl,
+                        nullif(round(SUM(PLSQL_EXEC_TIME)  /SUM(ELA), 4),0) plsql,
+                        nullif(round(SUM(JAVA_EXEC_TIME)  /SUM(ELA), 4),0) JAVA,
+                        nullif(round(SUM(USER_IO_WAIT_TIME)  /SUM(ELA), 4),0) io,
+                        nullif(round(SUM(io_interconnect_bytes) /&avg, 2),0) cellio,
+                        nullif(round(SUM(PHYSICAL_READ_BYTES) /&avg, 2),0) READ,
+                        nullif(round(SUM(PHYSICAL_WRITE_BYTES) /&avg, 2),0) WRITE,
+                        nullif(round(SUM(DIRECT_WRITES) /&avg, 2),0) dxwrite,
+                        nullif(round(SUM(BUFFER_GETS)*8192 /&avg, 2),0) buffget,
+                        &ver nullif(round(SUM(IO_CELL_OFFLOAD_ELIGIBLE_BYTES) /&avg, 2),0) offload,
+                        &ver nullif(round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES) /&avg, 2),0) offlrtn,
+                        nullif(MAX(PX_MAXDOP),0) DOP,
+                        nullif(MAX(DOPS),0) SIDS,
+                        regexp_replace(MAX(ERROR_MESSAGE) keep(dense_rank LAST ORDER BY nvl2(ERROR_MESSAGE, last_refresh_time, NULL) NULLS FIRST),'\s+', ' ') last_error
+                FROM   (SELECT a.*,sql_plan_hash_value phv,
+                                 GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME) ELA,
+                                 greatest((last_refresh_time-sql_exec_start)*86400*1E6,1E6) dur,
+                                 count(distinct inst_id||','||sid) over(partition by sql_exec_id,sql_exec_start) dops 
+                        FROM gv$sql_monitor a WHERE sql_id = sq_id) b
+                GROUP  BY phv
+                ORDER  BY decode(phv, plan_hash, SYSDATE + 1, MAX(last_refresh_time));
         END IF;
     END IF;
     :rs       := content;

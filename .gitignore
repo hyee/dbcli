@@ -1,5 +1,6 @@
 *.dat
 *.db
+*.swp
 .DS_Store
 data/init.cfg
 data/init.conf

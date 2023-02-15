@@ -739,8 +739,6 @@ function var.trigger_column(field)
         if index then
             field[2],var.columns[index:upper()]=index,obj
         end
-        if obj.print==false then field[2]='' end
-        --return
     elseif rownum>0 and grid and not grid.__var_parsed then
         grid.__var_parsed=true
         for col,config in pairs(var.columns) do
@@ -768,7 +766,7 @@ function var.trigger_column(field)
         if obj.print==true then print(string.format("Variable %s == > %s",index,value or 'NULL')) end
     end
 
-    if obj.print==false then field[2]='' end
+    if obj.print==false then field[2],field.no_print='',true end
 end
 
 function var.getBaseLog(x, y)
@@ -788,6 +786,13 @@ function var.expr(expr)
         end
         if math[c] then return 'math.'..c end
         return s 
+    end):gsub('[0-9%.,]+',function(s) --handle thousandths 
+        local s0,s1=s:match('^(%d%d?%d?,)([0-9%.,]+)$')
+        if s1 and s1:gsub('%.%d+$',''):gsub('%d%d%d,',''):match('^%d%d%d$') then
+            return s:gsub(',','')
+        else
+            return s
+        end
     end)
     local err,f=pcall(loadstring,'return '..expr)
     env.checkerr(err,f)

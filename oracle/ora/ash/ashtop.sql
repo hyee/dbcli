@@ -5,14 +5,15 @@
   ========
         -wall: order by wall clock
       Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
-        -e   : group by event
-        -sql : group by event+sql_id (default)
-        -p   : group by event+p1,p2,p3
-        -pr  : group by event+p1raw,p2raw,p3raw
-        -o   : group by event+object_id
-        -plan: group by sql plan line(for 11g)
-        -proc: group by procedure name
-        -op  : group by plan operation + obj
+        -e    : group by event
+        -sql  : group by event+sql_id (default)
+        -p    : group by event+p1,p2,p3
+        -pr   : group by event+p1raw,p2raw,p3raw
+        -o    : group by event+object_id
+        -plan : group by sql plan line(for 11g)
+        -proc : group by procedure name
+        -phase: group by phase(parsing/executing/etc)
+        -op   : group by plan operation + obj
       DataSource:
         -ash : source table is gv$active_session_history(default)
         -dash: source table is dba_hist_active_sess_history
@@ -62,6 +63,7 @@
             none={1},
             op={operation,obj &0}
             proc={"SQL Id",PLSQL_ENTRY_OBJECT_ID &0}
+            phase={phase &0}
         }
       &ev  : default={event_name}  noevent={1}
       &ela : ash={1} dash={7}
@@ -175,7 +177,7 @@ WITH ASH_V AS(
 SELECT * FROM (
     SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand 
                 opt_param('_sqlexec_hash_based_distagg_enabled' 'true')
-                opt_param('optimizer_dynamic_sampling' 11)
+                opt_param('optimizer_dynamic_sampling' 11) cpu_costing
            */
         &wall round(SUM(c)) Secs
       , ROUND(sum(&base)) AAS

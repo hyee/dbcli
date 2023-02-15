@@ -1,25 +1,34 @@
 /*[[
-  Show mutex sleep info. Usage: @@NAME [<sid>|<sql_id>|<event>] [<inst_id>]
+  Show mutex sleep info. Usage: @@NAME [<sid>|<sql_id>|<event>|<idn>] [<inst_id>]
   Refer to Doc ID 1298015.1/1298471.1/1310764.1/2463140.1/31933451
   Possible parameters that impact the event:
     _column_tracking_level
     _optimizer_extended_stats_usage_control
     _optimizer_dsdir_usage_control
     _sql_plan_directive_mgmt_control
+    _fast_cursor_reexecute
+    _kgl_hot_object_copies => hot copies group by mod(sid,_kgl_hot_object_copies)+1
   
   idn: => v$sqlarea.hash_value 
        => v$db_object_cache.hash_value
-       => v$object_dependency.from_hash/to_hash/to_hash
+       => v$object_dependency.from_hash/to_hash
        => x$kglob.knlnahsh
 
   Mainly used to diagnostic below events:
   =======================================
-  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode(anonymous PL/SQL block is executed concurrently at high frequency)            
-  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode(several versions of same the SQL)
+  * cursor: mutex X - A cursor is being parsed and is trying to get the cursor mutex in eXclusive mode.Happens when:
+  *                   1) anonymous PL/SQL block is executed concurrently at high frequency
+  *                   2) build new cursor or capture SQL bind data
+  *                   3) update SQL stats
+  * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode.Happens when:
+  *                   1) high version count
+  *                   2) update cursor ref count
+  *                   3) wait for mutex X holder to release
   * cursor: pin X   - A cursor is being parsed and is trying to get the cursor pin in eXclusive mode               
-  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode(the same SQL operator is executed concurrently)
+  * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode
+  *                   Happens when the same SQL operator is executed concurrently at high frequency
   * cursor: pin S wait on X - A cursor is being parsed and has the cursor pin in Share but another session has it in eXclusive mode
-  * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode
+  * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode, commonly happen on PL/SQL block or sequence
   * library cache: bucket mutex X    
   * library cache: dependency mutex X
   * library cache: mutex S - A library cache operation is being performed and is trying to get the library cache mutex in Share mode         
@@ -40,7 +49,7 @@
   --[[
         &V2: default={&instance}
         @OBJ_CACHE: {
-                  12.1={(select owner to_owner,name to_name,addr to_address,TYPE,hash_value from_hash from v$db_object_cache)} 
+                  11.2={(select owner to_owner,name to_name,TYPE,hash_value from_hash from v$db_object_cache)} 
                   default={(select a.*,
                     decode(to_type,
                           -1,'NONE',
@@ -145,9 +154,9 @@ SELECT DISTINCT *
 FROM   TABLE(gv$(CURSOR( --
           SELECT /*+ordered use_hash(b)*/
                   userenv('instance') inst_id,
+                  P1 idn,
                   sid,
                   a.event,
-                  P1 HASH_VALUE,
                   nullif(trunc(p3 / power(16,8)),0) obj#,
                   nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
                   nullif(decode(trunc(p2 / power(16,8)), 0, trunc(P2 / 65536), trunc(P2 / power(16,8))),0) holder_sid,
@@ -161,7 +170,7 @@ FROM   TABLE(gv$(CURSOR( --
                   END SQL_TEXT
           FROM   v$session a, &OBJ_CACHE b
           WHERE  a.p1 = b.from_hash(+)
-          AND    nvl(:v1,'x') in('x',''||a.sid,a.sql_id,a.event)
+          AND    nvl(:v1,'x') in('x',''||a.sid,a.sql_id,a.event,''||p1)
           AND    a.p1text = 'idn'
           AND    a.p2text = 'value'
           AND    a.p3text = 'where'
@@ -173,12 +182,11 @@ FROM   (SELECT *
         FROM   TABLE(gv$(CURSOR (
                           SELECT /*+ordered use_hash(b)*/
                                   DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
-                          FROM   (SELECT userenv('instance') inst_id,
+                          FROM   (SELECT userenv('instance') inst_id,p1 idn,
                                          obj#,loc#,
                                          sql_id,
                                          event,
                                          MAX(sample_time) last_time,
-                                         p1 idn,
                                          COUNT(1) cnt
                                   FROM   (SELECT session_id sid,
                                                  sample_time,
@@ -192,7 +200,7 @@ FROM   (SELECT *
                                           WHERE  p1text = 'idn'
                                           AND    p2text = 'value'
                                           AND    p3text = 'where'
-                                          AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event,top_level_sql_id)
+                                          AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event,top_level_sql_id,''||p1)
                                           AND    userenv('instance') = nvl(:V2, userenv('instance')))
                                   GROUP  BY obj#,LOC#, p1, sql_id, event) a,
                                   &OBJ_CACHE b
@@ -200,32 +208,37 @@ FROM   (SELECT *
         ORDER  BY last_Time DESC)
 WHERE  rownum <= 50;
 
+col "Location|Wait,Location|Avg Wait" for usmhd2
+
 PRO Mutex Sleep History
 PRO =======================
 SELECT * FROM (
     SELECT *
     FROM   TABLE(gv$(CURSOR(
-                      SELECT  /*+ordered use_hash(b)*/
-                              DISTINCT 
-                              userenv('instance') inst_id,
-                              a.*,
-                              substr(to_name, 1, 100) OBJ
-                      FROM   (
-                          SELECT mutex_identifier HASH_VALUE,
-                                 nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*') "H/W",
-                                 MAX(SLEEP_TIMESTAMP) LAST_TIME,
-                                 SUM(sleeps) sleeps,
-                                 COUNT(1) CNT,
-                                 SUM(gets) gets,
-                                 location,
-                                 mutex_type,
-                                 p1raw
-                          FROM   v$mutex_sleep_history
-                          WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
-                          AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session)
-                          GROUP  BY mutex_identifier,location, mutex_type,p1raw,nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*')
-                      ) A,&OBJ_CACHE b
-                      WHERE a.HASH_VALUE=b.from_hash(+)
-                     )))
+        SELECT  /*+ordered use_hash(b)*/
+                DISTINCT 
+                userenv('instance') inst_id,
+                a.*,
+                c.SLEEPS "Location|Sleeps",
+                c.WAIT_TIME "Location|Wait",
+                round(c.WAIT_TIME/nullif(c.SLEEPS,0),2) "Location|Avg Wait",
+                substr(to_name, 1, 100) OBJ
+        FROM   (
+            SELECT mutex_identifier idn,
+                   nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*') "Holder|Waiter",
+                   MAX(SLEEP_TIMESTAMP) LAST_TIME,
+                   SUM(sleeps) sleeps,
+                   COUNT(1) CNT,
+                   MAX(gets) gets,
+                   p1raw,
+                   mutex_type,
+                   location
+            FROM   v$mutex_sleep_history
+            WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
+            AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session,''||mutex_identifier)
+            GROUP  BY mutex_identifier,location, mutex_type,p1raw,nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*')
+        ) A,&OBJ_CACHE b,v$mutex_sleep c
+        WHERE a.idn=b.from_hash(+) AND a.location=c.location(+) AND a.mutex_type=c.mutex_type(+)
+    )))
     ORDER  BY LAST_TIME DESC)
 WHERE  rownum <= 50;
