@@ -112,24 +112,29 @@ path[#path+1]=os.getenv("PATH")
 luv.os_setenv("PATH",table.concat(path,psep))
 local freem=luv.get_free_memory()
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
-local options ={'-noverify',
+local options ={'-server',
+                '-noverify',
                 '-Xms64m',
                 '-Xmx'..math.max(128,math.min(math.floor((dlldir=='x86' and luv.get_free_memory() or luv.get_total_memory())/1024/1024*0.75),dlldir=='x86' and 512 or 2048))..'m',
                 '-XX:+UseStringDeduplication','-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3','-XX:+UseCompressedOops','-XX:+UseFastAccessorMethods','-XX:+AggressiveOpts','-XX:-BackgroundCompilation',
+                '-javaagent:'..resolve(luv.cwd()..'/lib/dbcli.jar'),
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
                 '-Djava.awt.headless=true',
                 '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
                 '-Djava.security.egd=file:/dev/urandom',
                 '-Djava.class.path='..jars,
-                --'-DsocksProxyHost=localhost', '-DsocksProxyPort=10808',
-                --'-Xcheck:jni',
                 java_ver>52 and '--release=8' or nil,
+                java_ver>52 and '--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED' or nil ,
+                java_ver>52 and '--add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED' or nil ,
+                java_ver>52 and '--add-opens=java.base/java.net=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-opens=java.base/java.lang=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-opens=java.base/java.io=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-opens=java.base/jdk.internal=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/sun.invoke=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-modules=jdk.unsupported' or nil}
 for _,param in ipairs(other_options) do options[#options+1]=param end
 javavm = require("javavm",true)

@@ -60,7 +60,6 @@ BEGIN
         &agg SELECT sql_id, plan_hash,
         &agg        max(report_id) last_rpt, 
         &agg        count(1) seens,
-        &agg        to_char(MIN(PERIOD_START_TIME), 'MMDD HH24:MI:SS') first_seen,
         &agg        to_char(MAX(PERIOD_END_TIME), 'MMDD HH24:MI:SS') last_seen,
         &agg        ROUND(&avg(DUR),2) DUR,
         &agg        ROUND(&avg(ELA),2) ela,

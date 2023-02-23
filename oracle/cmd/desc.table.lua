@@ -1,10 +1,10 @@
 
-if obj.object_type:find('^table') then
+if obj.object_type:find('^TABLE') then
     local result=db:dba_query(db.internal_call,
                               [[select nvl(cluster_name,table_name)
                                from ALL_TABLES
                                WHERE owner = :owner AND table_name = :object_name]],
-                              {owner=rs[1],object_name=rs[2]})
+                              {owner=obj[1],object_name=obj[2]})
     result=db.resultset:rows(result,-1)
     result=result[2] or {}
     obj.table_name=result[1]

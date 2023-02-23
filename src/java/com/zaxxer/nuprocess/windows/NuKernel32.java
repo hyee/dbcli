@@ -36,6 +36,15 @@ public class NuKernel32 {
 
     public static native boolean CloseHandle(HANDLE hObject);
 
+    public static native Pointer GetStdHandle(int nStdHandle);
+    public static native void GetConsoleMode(
+            Pointer in_hConsoleOutput,
+            IntByReference out_lpMode)
+            throws LastErrorException;
+    public static native void SetConsoleMode(
+            Pointer in_hConsoleOutput,
+            int in_dwMode) throws LastErrorException;
+
     public static native HANDLE CreateIoCompletionPort(HANDLE fileHandle, HANDLE existingCompletionPort, ULONG_PTR completionKey, int numberOfThreads);
 
     public static native boolean CreateProcessW(WString lpApplicationName, char[] lpCommandLine, SECURITY_ATTRIBUTES lpProcessAttributes,

@@ -57,7 +57,7 @@ if [[ "$_java" ]]; then
     bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
     ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
 
-    if [[ "$ver" != "52.0" ]] || [[ "$bit" != "64" ]]; then
+    if [[ "$ver" < "52.0" ]] || [[ "$bit" != "64" ]]; then
         found=1
     fi
 fi

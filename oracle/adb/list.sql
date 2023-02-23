@@ -17,7 +17,7 @@
         &f     : default={0} f={1}
         &op    : default={list} delete={delete} copy={copy} move={move} unload={unload} view={view} ddl={ddl}
         &ops   : default={} delete={ deleted} copy={ copied} move={ to be moved} unload={ unloaded}
-        &pubs  : default={,"multipart":true}
+        &pubs  : default={,"maxfilesize":2147483648}
         &typ   : json={"json"&pubs} parquet={"parquet"} csv={"csv","header":true,"escape":true,"quote":"\""&pubs} xml={"xml"&pubs} dmp={"datapump","compression":"medium","version":"compatible"}
         &gzip  : default={} gzip={,"compression":"gzip"}
         &sort  : default={last_modified} object={object_name} created={created}
@@ -27,7 +27,7 @@
 
 var c refcursor "List of recent 100 matched objects&ops"
 col bytes for tmb
-set feed off
+set feed off verify off
 DECLARE
     C            SYS_REFCURSOR;
     op           VARCHAR2(10) := :op;
@@ -82,12 +82,13 @@ DECLARE
     BEGIN
         SELECT MAX('"' || credential_name || '"')
         INTO   cre
-        FROM   user_credentials
+        FROM   all_credentials
         WHERE  upper(credential_name) = upper(credential)
-        AND    enabled = 'TRUE';
+        AND    enabled = 'TRUE'
+        AND    owner=sys_context('userenv','current_schema');
     
         IF cre IS NULL THEN
-            raise_application_error(-20001, 'Credential "' || credential || '" is not enabled/found in user_credentials.');
+            raise_application_error(-20001, 'Credential "'||sys_context('userenv','current_schema')||'"."' || credential || '" is not found or enabled in all_credentials.');
         END IF;
         credential := cre;
     END;
@@ -315,7 +316,7 @@ BEGIN
                    '     ACCESS PARAMETERS(#PARAM#)'||chr(10)||
                    '     LOCATION ('||CASE WHEN is_url1 THEN ''''||target||'''' ELSE target||':'''||dest||'''' END||')'||chr(10)||
                    '     REJECT LIMIT UNLIMITED)';
-            IF keyword NOT IN('csv','dmp','json') THEN
+            IF keyword NOT IN('csv','dmp') THEN
                 --https://docs.oracle.com/en/database/oracle/oracle-database/19/sutil/oracle_bigdata_access_driver.html
                 --https://docs.oracle.com/en/bigdata/big-data-sql/4.1/bdsug/bigsqlref.html
                 stmt := replace(replace(replace(stmt,
@@ -454,6 +455,8 @@ BEGIN
                 WHEN OTHERS THEN
                     raise_application_error(-20001,SQLERRM || ' (Directory:"' || target || '"  File:"' || keyword || '")');
             END;
+            dest_offset := 1;
+            src_offset  := 1;
             dbms_lob.createtemporary(content, TRUE);
             dbms_lob.loadblobfromfile(content,
                                       source_file,
@@ -492,7 +495,8 @@ BEGIN
                     ORDER  BY &sort &asc FETCH FIRST decode(:op, 'list', 100, 1024) ROWS ONLY)~',
             '$OBJ$',CASE WHEN is_url1 THEN 'OBJECTS('''||credential||''',' ELSE 'FILES(' END),
             '$KEYWORD$','q''~'||keyword||'~''');
-        EXECUTE IMMEDIATE stmt INTO ctx USING target,op;
+        EXECUTE IMMEDIATE stmt INTO ctx 
+            USING target,op;
         
         IF op NOT IN ('list') THEN
             SELECT * BULK COLLECT INTO T1 FROM JSON_TABLE(ctx, '$[*]' columns OBJECT_NAME VARCHAR2(1000));
@@ -578,3 +582,6 @@ BEGIN
     :c := c;
 END;
 /
+
+set feed back 
+print c

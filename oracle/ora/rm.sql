@@ -278,6 +278,10 @@ DECLARE
         ON     (a.argument_name = b.column_name)
         WHERE  NVL(b.comments, ' ') NOT LIKE '%deprecated%'
         ORDER  BY position;
+
+        IF fields.count = 0 THEN
+            raise_application_error(-20001,'Wrong result in dba_arguments where object_name=CREATE_PLAN_DIRECTIVE.');
+        END IF;
     
         wr('');
         wr('/* Create RSRC plan directives');

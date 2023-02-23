@@ -938,8 +938,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local params1=nil
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
-
     while true do
+        --2 = Statement.KEEP_CURRENT_RESULT
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
         if result[1]==-1 then table.remove(result,1) end

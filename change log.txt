@@ -1,5 +1,5 @@
 2023-02-05: + oracle: new scripts "adb trace/switch"
-2023-02-04: + oracle: new scripts "show userenv/acl"
+2023-02-04: + oracle: new scripts "show userenv/acl/hwm"
                       new strings "adb list/view/delete/copy/move/unload/patch"
                       new setting "set credential/bucket" for Object Storage bucket
 2023-01-13: + oracle: new scripts "ora markhot"

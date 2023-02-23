@@ -1,5 +1,6 @@
 package org.dbcli;
 
+import com.esotericsoftware.reflectasm.AccessClassLoader;
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.LuaTable;
@@ -188,16 +189,14 @@ public class Loader {
         new File(path).mkdirs();
     }
 
+    URLClassLoader jarLoader;
+
     public void addPath(String file) throws Exception {
-        URLClassLoader classLoader = (URLClassLoader) lua.getClassLoader();
-        Class<URLClassLoader> clazz = URLClassLoader.class;
-        URL url = new URL("file:" + file);
-        // Use reflection
-        Method method = clazz.getDeclaredMethod("addURL", URL.class);
-        method.setAccessible(true);
-        method.invoke(classLoader, url);
+        JavaAgent.JarLoader.addToClassPath(new File(file));
         TreeMap<String, Boolean> map = new TreeMap();
-        for (String s : (System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".")).split(File.pathSeparator))
+        String path=System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".");
+        path=path.replaceAll(File.pathSeparator+"\\s+",File.pathSeparator);
+        for (String s : (path).split(File.pathSeparator+"+"))
             map.put(s, true);
         System.setProperty("java.class.path", String.join(File.pathSeparator, map.keySet().toArray(new String[0])));
     }

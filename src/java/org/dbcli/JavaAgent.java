@@ -3,20 +3,20 @@ package org.dbcli;
 import com.esotericsoftware.reflectasm.ClassAccess;
 import jdk.internal.org.objectweb.asm.ClassReader;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
+import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.security.CodeSource;
 import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,12 +24,12 @@ import java.util.zip.ZipEntry;
 
 public class JavaAgent implements ClassFileTransformer {
     static String destFolder;
-    static Instrumentation in;
+    static Instrumentation inst;
     static Pattern re;
     static String separator = File.separator;
-    static Field classFinder = null;
     static String libPath = null;
     private static final Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
+    private static final int dumpLevel = Integer.valueOf(System.getProperty("dbcli.dumpclass.level", "0")) * (System.getProperty("java.version").startsWith("1.8") ? 1 : 0);
 
     static {
         try {
@@ -37,17 +37,15 @@ public class JavaAgent implements ClassFileTransformer {
             File f = new File(JavaAgent.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             destFolder = f.getParentFile().getParent() + separator + "dump" + separator;
             libPath = f.getParentFile().getPath().replaceAll("([\\\\/])", "/");
-            classFinder = ClassLoader.class.getDeclaredField("classes");
-            classFinder.setAccessible(true);
         } catch (URISyntaxException localURISyntaxException) {
-        } catch (NoSuchFieldException ex) {
-            ex.printStackTrace();
         }
     }
 
     public static void premain(String agentArgs, Instrumentation inst) {
         try {
-            in = inst;
+            JarLoader.loadedViaPreMain = true;
+            if (JavaAgent.inst == null) JavaAgent.inst = inst;
+            if (dumpLevel == 0) return;
             inst.addTransformer(new JavaAgent());
             dumpAllClasses();
             ArrayList<Class<?>> classes = new ArrayList<Class<?>>();
@@ -175,6 +173,7 @@ public class JavaAgent implements ClassFileTransformer {
             FileOutputStream destStream = new FileOutputStream(destFile);
             destStream.write(classFileBuffer, 0, classFileBuffer.length);
             destStream.close();
+            //System.out.println("Folder: " + jar + "     Class: " + className);
             ClassReader cr = new ClassReader(classFileBuffer);
             String superClassName;
             try {
@@ -268,11 +267,11 @@ public class JavaAgent implements ClassFileTransformer {
 
     public static void dumpAllClasses() throws Exception {
         ArrayList<Class> ary = new ArrayList();
-        ary.addAll(Arrays.asList(in.getAllLoadedClasses()));
+        ary.addAll(Arrays.asList(inst.getAllLoadedClasses()));
         ClassLoader[] loaders = new ClassLoader[]{Thread.currentThread().getContextClassLoader(), JavaAgent.class.getClassLoader(), ClassLoader.getSystemClassLoader()};
         for (ClassLoader loader : loaders) {
             while (loader != null) {
-                ary.addAll(Arrays.asList(in.getInitiatedClasses(loader)));
+                ary.addAll(Arrays.asList(inst.getInitiatedClasses(loader)));
                 loader = loader.getParent();
             }
         }
@@ -284,6 +283,7 @@ public class JavaAgent implements ClassFileTransformer {
         }
     }
 
+    @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain domain, byte[] classFileBuffer) {
         try {
             ClassReader cr = new ClassReader(classFileBuffer);
@@ -293,5 +293,118 @@ public class JavaAgent implements ClassFileTransformer {
             Loader.getRootCause(e).printStackTrace();
         }
         return classFileBuffer;
+    }
+
+    /**
+     * Adds JAR files to the class path dynamically. Uses an officially supported
+     * API where possible. To ensure use of the official method and compatibility
+     * with Java 9+, your app must be started with
+     * {@code -javaagent:path/to/jar-loader.jar}.
+     *
+     * @author Chris Jennings <https://cgjennings.ca/contact.html>
+     */
+    static class JarLoader {
+        /**
+         * Adds a JAR file to the list of JAR files searched by the system class
+         * loader. This effectively adds a new JAR to the class path.
+         *
+         * @param jarFile the JAR file to add
+         * @throws IOException if there is an error accessing the JAR file
+         */
+        public static synchronized void addToClassPath(File jarFile) throws IOException {
+            if (jarFile == null) {
+                throw new NullPointerException();
+            }
+            // do our best to ensure consistent behaviour across methods
+            if (!jarFile.exists()) {
+                throw new FileNotFoundException(jarFile.getAbsolutePath());
+            }
+            if (!jarFile.canRead()) {
+                throw new IOException("can't read jar: " + jarFile.getAbsolutePath());
+            }
+            if (jarFile.isDirectory()) {
+                throw new IOException("not a jar: " + jarFile.getAbsolutePath());
+            }
+
+            // add the jar using instrumentation, or fall back to reflection
+            if (inst != null) {
+                inst.appendToSystemClassLoaderSearch(new JarFile(jarFile));
+                return;
+            }
+            try {
+                getAddUrlMethod().invoke(addUrlThis, jarFile.toURI().toURL());
+            } catch (SecurityException iae) {
+                throw new RuntimeException("security model prevents access to method", iae);
+            } catch (Throwable t) {
+                throw new AssertionError("internal error", t);
+            }
+        }
+
+        /**
+         * Returns whether the extending the class path is supported on the host
+         * JRE. If this returns false, the most likely causes are:
+         * <ul>
+         * <li> the manifest is not configured to load the agent or the
+         * {@code -javaagent:jarpath} argument was not specified (Java 9+);
+         * <li> security restrictions are preventing reflective access to the class
+         * loader (Java &le; 8);
+         * <li> the underlying VM neither supports agents nor uses URLClassLoader as
+         * its system class loader (extremely unlikely from Java 1.6+).
+         * </ul>
+         *
+         * @return true if the Jar loader is supported on the Java runtime
+         */
+        public static synchronized boolean isSupported() {
+            try {
+                return inst != null || getAddUrlMethod() != null;
+            } catch (Throwable t) {
+            }
+            return false;
+        }
+
+        /**
+         * Returns a string that describes the strategy being used to add JAR files
+         * to the class path. This is meant mainly to assist with debugging and
+         * diagnosing client issues.
+         *
+         * @return returns {@code "none"} if no strategy was found, otherwise a
+         * short describing the method used; the value {@code "reflection"}
+         * indicates that a fallback not compatible with Java 9+ is being used
+         */
+        public static synchronized String getStrategy() {
+            String strat = "none";
+            if (inst != null) {
+                strat = loadedViaPreMain ? "agent" : "agent (main)";
+            } else {
+                try {
+                    if (isSupported()) {
+                        strat = "reflection";
+                    }
+                } catch (Throwable t) {
+                }
+            }
+            return strat;
+        }
+
+        private static Method getAddUrlMethod() {
+            if (addUrlMethod == null) {
+                addUrlThis = ClassLoader.getSystemClassLoader();
+                if (addUrlThis instanceof URLClassLoader) {
+                    try {
+                        final Method method = URLClassLoader.class.getDeclaredMethod("addURL", URL.class);
+                        method.setAccessible(true);
+                        addUrlMethod = method;
+                    } catch (NoSuchMethodException nsm) {
+                        throw new AssertionError(); // violates URLClassLoader API!
+                    }
+                } else {
+                    throw new UnsupportedOperationException("did you forget -javaagent:<jarpath>?");
+                }
+            }
+            return addUrlMethod;
+        }
+        private static ClassLoader addUrlThis;
+        private static Method addUrlMethod;
+        static boolean loadedViaPreMain = false;
     }
 }

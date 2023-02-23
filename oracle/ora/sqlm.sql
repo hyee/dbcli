@@ -421,6 +421,7 @@ BEGIN
                         report_end;
                         dbms_output.put_line('Extracted report from dba_hist_reports.');
                     $END
+                    NULL;
                 END IF;
                 filename := 'sqlm_' || sq_id ||nullif('_'||keyw,'_')|| '.html';
             ELSE
