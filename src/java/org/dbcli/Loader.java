@@ -192,7 +192,17 @@ public class Loader {
     URLClassLoader jarLoader;
 
     public void addPath(String file) throws Exception {
-        JavaAgent.JarLoader.addToClassPath(new File(file));
+        ClassLoader classLoader = ClassLoader.getSystemClassLoader();
+        try {
+            Method method = classLoader.getClass().getDeclaredMethod("addURL", URL.class);
+            method.setAccessible(true);
+            method.invoke(classLoader, new File(file).toURI().toURL());
+        } catch (NoSuchMethodException e) {
+            Method method = classLoader.getClass()
+                    .getDeclaredMethod("appendToClassPathForInstrumentation", String.class);
+            method.setAccessible(true);
+            method.invoke(classLoader, file);
+        }
         TreeMap<String, Boolean> map = new TreeMap();
         String path=System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".");
         path=path.replaceAll(File.pathSeparator+"\\s+",File.pathSeparator);

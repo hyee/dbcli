@@ -29,7 +29,7 @@ public class JavaAgent implements ClassFileTransformer {
     static String separator = File.separator;
     static String libPath = null;
     private static final Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
-    private static final int dumpLevel = Integer.valueOf(System.getProperty("dbcli.dumpclass.level", "0")) * (System.getProperty("java.version").startsWith("1.8") ? 1 : 0);
+    private static final int dumpLevel =  System.getProperty("java.version").startsWith("1.8") ? 1 : 0;
 
     static {
         try {
