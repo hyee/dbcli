@@ -91,7 +91,6 @@ public class FileDump extends ClassDump {
             try (OutputStream os = new BufferedOutputStream(new FileOutputStream(f))) {
                 ClassWriter cw = new ClassWriter(kls, os);
                 cw.write();
-                os.close();
             } catch (Throwable e) {
                 System.out.println("Failed to dump " + klassName);
             }

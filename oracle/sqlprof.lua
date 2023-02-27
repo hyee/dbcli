@@ -94,12 +94,12 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         AND    ROWNUM<nvl2(l_plan,2,100)
                     $IF DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
-                        SELECT USERNAME,snullif(ql_plan_hash_value,0) phv,LAST_REFRESH_TIME
+                        SELECT USERNAME,nullif(sql_plan_hash_value,0) phv,LAST_REFRESH_TIME
                         FROM   GV$SQL_MONITOR 
                         WHERE  sql_id=p_sqlid and username is not null
                         AND    ROWNUM<nvl2(l_plan,2,100)
                     $END
-                        ORDER BY last_active desc
+                        ORDER BY 3 desc
                     ) WHERE ROWNUM<2;
                 END IF;
             EXCEPTION

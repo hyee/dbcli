@@ -181,11 +181,11 @@ function env.set_subsystem(cmd,prompt)
     if cmd~=nil then
         env._SUBSYSTEM=cmd
         console.isSubSystem=true
-        env.set_prompt(cmd,prompt or cmd,false,9)
+        env.set_prompt(cmd,prompt or cmd,nil,6)
     else
         env._SUBSYSTEM,_G._SUBSYSTEM=nil,nil
         console.isSubSystem=false
-        env.set_prompt(cmd,nil,false,9)
+        env.set_prompt(nil,nil,nil,6)
     end
 end
 
@@ -569,7 +569,6 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if not isMain and not res[1] and (not env.set or env.set.get("OnErrExit")=="on") then error() end
 
     if isMain then
-        --collectgarbage("restart")
         collectgarbage("collect")
         env.set_prompt(nil,env.PRI_PROMPT)
     end
@@ -581,20 +580,39 @@ local curr_stmt,curr_cmd,multi_cmd
 
 local cache_prompt,fix_prompt
 
-local prompt_stack={_base="SQL"}
+local prompt_stack={_base="SQL",default=0}
+--env.prompt_stack=prompt_stack
 function env.set_prompt(class,default,is_default,level)
     if default then
         if not env._SUBSYSTEM  then default=default:upper() end
         if env.ansi then default=env.ansi.convert_ansi(default) end
     end
-    class=class or "default"
-    level=level or (class=="default" or default==prompt_stack._base) and 0 or 3
-    if prompt_stack[class] and prompt_stack[class]>level then prompt_stack[prompt_stack[class]]=nil end
-    prompt_stack[level],prompt_stack[class]=default,level
+
+    local new='manual'
+    if class==nil then
+        class='default'
+    elseif class==new then
+        prompt_stack[new]=prompt_stack[new] or (prompt_stack['default']+1)
+        level=prompt_stack[new]
+    elseif class~=new and prompt_stack[new] and level then
+        prompt_stack[new],prompt_stack[prompt_stack[new]]=nil
+    end
+
+    level=level or prompt_stack[class] or 0
+    if default==nil or is_default then
+        default=nil
+        prompt_stack[level]=level==0 and prompt_stack._base or nil
+        prompt_stack[new]=nil
+    else
+        if class~='default' then
+            prompt_stack[class]=level
+        end
+        prompt_stack[level]=default
+    end
 
     for i=9,0,-1 do
         if prompt_stack[i] then
-            default=prompt_stack[i]
+            default,prompt_stack['default']=prompt_stack[i],i
             break
         end
     end
@@ -1131,7 +1149,7 @@ function env.onload(...)
     
     env.set_prompt(nil,prompt_stack._base,nil,0)
     if env.set and env.set.init then
-        env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) return env.set_prompt(n,v,d,3) end,
+        env.set.init({"Prompt","SQLPROMPT","SQLP"},prompt_stack._base,function(n,v,d) env.set_prompt('manual',v,d) end,
                   "core","Define command's prompt, if value is 'timing' then will record the time cost(in second) for each execution.")
         env.set.init({"sqlterminator","END_MARKERS"},line_terminators,env.set_endmark,
                   "core","Define the symbols to indicate the end input the cross-lines command. ")

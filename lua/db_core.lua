@@ -1100,6 +1100,7 @@ function db_core:connect(attrs,data_source)
         self.conn=nil
         env.raise("Unable to connect to database, connection !")
     end
+    env.set_prompt('db','SQL',nil,2)
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
     self.last_login_account=attrs
@@ -1118,10 +1119,10 @@ function db_core:connect(attrs,data_source)
             self.properties[k]=v
         end
     end
-
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     
     prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
+
     return self.conn,attrs
 end
 
@@ -1588,7 +1589,6 @@ function db_core:disconnect(feed)
         self.conn=nil
         prep_test_connection=nil
         env.set_prompt(nil,nil,nil,2)
-        env.set_prompt(nil,"SQL")
         env.set_title("",nil,self.__class.__className)
         load_titles()
         set_proxy(nil,nil)
