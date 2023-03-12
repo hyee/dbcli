@@ -429,7 +429,7 @@ DECLARE --Better for this script to have the access on gv$sqlarea
     sq_id     VARCHAR2(30):='@sql_id@';
 BEGIN
     BEGIN
-        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION*/ * FROM (
+        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/ * FROM (
                                  SELECT SQL_FULLTEXT FROM gv$sqlarea
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
