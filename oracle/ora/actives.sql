@@ -56,7 +56,7 @@
         &ouj : default={(+)} sql={/**/}  
         &smen : default={0}, m={&CHECK_ACCESS_M}
         &ord  : default={} cpu={"CPU%" desc nulls last,} io={"Physical|Reads" desc nulls last,} log={"Logical|Reads" desc nulls last,}
-        @COST : 11.0={1440*(sysdate-sql_exec_start)},10.0={sql_secs/60}
+        @COST : 11.0={86400*(sysdate-sql_exec_start)},10.0={sql_secs}
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects},all_objects={all_objects}
         @CHECK_ACCESS_PX11: {
             v$px_session={v$px_session},
@@ -194,7 +194,7 @@ BEGIN
                plan_hash_value plan_hash,
                sql_child_number child,
                a.event,
-               ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sq_id,last_call_et,0)),1) waited,
+               ROUND(greatest(nvl(&COST,0),wait_secs,nvl2(sq_id,last_call_et,0)),2) waited,
                &fields,substr(sql_text,1,200) sql_text
         FROM   s4 a
         WHERE  :fil2 IS NOT NULL 
@@ -264,7 +264,7 @@ BEGIN
                    plan_hash_value plan_hash,
                    sql_child_number child,
                    a.event,
-                   ROUND(greatest(nvl(&COST,0),wait_secs/60,nvl2(sql_id,last_call_et,0)),1) waited,
+                   ROUND(greatest(nvl(&COST,0),wait_secs,nvl2(sql_id,last_call_et,0)),2) waited,
                    &fields,sql_text
             FROM   s4 a,(SELECT spid,inst_id,addr from &CHECK_ACCESS_PRO) d
             WHERE  d.inst_id = a.inst_id

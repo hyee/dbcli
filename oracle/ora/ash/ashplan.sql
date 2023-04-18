@@ -587,6 +587,8 @@ ash_agg as(
                                         'Temp I/O'
                                     when current_obj# > 0 then 
                                         nvl(c.object_name,''||current_obj#) 
+                                    when p2text='id1' then
+                                         ''||p2
                                     when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                                         'Undo'
                                     when p3text like '%namespace' and p3>power(16,8) then 

@@ -1115,7 +1115,8 @@ function db_core:connect(attrs,data_source)
     local prop={self.conn['getProperties'],self.conn['getServerSessionInfo']}
 
     for _,p in pairs(prop) do
-        for k,v in pairs(p(self.conn):to_lua()) do
+        local rtn,props=pcall(p,self.conn)
+        for k,v in java.pairs(rtn and props or {}) do
             self.properties[k]=v
         end
     end
@@ -1459,10 +1460,9 @@ function db_core.check_completion(cmd,other_parts)
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     if index==0 then return false,other_parts end
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
-    if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
+    if index==1 and action~="SELECT" and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         local pattern=db_core.source_obj_pattern
         if not pattern then return false,other_parts end
-        typ=type(pattern)
         local patterns={}
         if typ=='table' then 
             patterns=pattern

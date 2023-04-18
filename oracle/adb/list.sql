@@ -225,14 +225,14 @@ BEGIN
             base_table := null;
         END IF;
         ext := regexp_substr(dest,'[^.]+$');
-        IF lower(keyword) IN('csv','json','xml','dmp','orc','avro','parquet') THEN
+        IF lower(keyword) IN('csv','json','xml','dmp','orc','avro','parquet','pq') THEN
             keyword := lower(keyword);
             dest    := keyword;
         ELSIF nvl(base_table,upper(keyword))=upper(keyword) AND lower(keyword)!=dest THEN
             base_table := upper(keyword);
             keyword    := null;
         END IF;
-        dest := regexp_substr(dest,'(csv|json|xml|parquet|avro|orc|dmp)(.gz|.gzip|.bz2|.z|.zl|.zip)?$',1,1,'i',1);
+        dest := regexp_substr(dest,'(csv|json|xml|parquet|pq|avro|orc|dmp)(.gz|.gzip|.bz2|.z|.zl|.zip)?$',1,1,'i',1);
         IF base_table IS NOT NULL THEN
             base_table:=replace(base_table,'"');
             IF keyword IS NULL THEN
@@ -300,7 +300,7 @@ BEGIN
                             "escape":"true",
                             "enable_offload":"true",
                             "trimspaces":"rtrim",');
-            ELSIF keyword IN('orc','avro','parquet') THEN
+            ELSIF keyword IN('orc','avro','parquet','pq') THEN
                 stmt := replace(stmt,'#FORMAT#','"access_protocol":"delta_sharing",');
             ELSE
                 stmt := replace(stmt,'#FORMAT#');
@@ -419,7 +419,7 @@ BEGIN
                 END;';
             OPEN c FOR 
                 SELECT regexp_replace(stmt,chr(10)||'\s{16}',chr(10)) statement FROM DUAL;
-        ELSIF op='ddl' AND dest in('orc','avro','parquet') THEN
+        ELSIF op='ddl' AND dest in('orc','avro','parquet','pq') THEN
             stmt := '
                 BEGIN
                     DBMS_CLOUD.CREATE_EXTERNAL_TABLE(
@@ -431,7 +431,7 @@ BEGIN
                 END;';
             OPEN c FOR 
                 SELECT regexp_replace(stmt,chr(10)||'\s{16}',chr(10)) statement FROM DUAL;
-        ELSIF ext IN('orc','avro','parquet','zip','gzip','gz','z','zl','bz2','dmp') THEN
+        ELSIF ext IN('orc','avro','parquet','pq','zip','gzip','gz','z','zl','bz2','dmp') THEN
             raise_application_error(-20001, 'Please specify the based table to have the column info of target file.');
         ELSIF is_url1 THEN
             IF keyword IS NOT NULL THEN

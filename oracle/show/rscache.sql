@@ -159,7 +159,7 @@ grid {
                 FROM   gv$result_cache_objects a)
         GROUP  BY GROUPING SETS(t, s, n, u)
         ORDER  BY 1 DESC]],
+    '+','/*grid={topic="Local Memory Report"}*/ c2',    
     '+','/*grid={topic="Top 30 Based Objects"}*/ c4',
-    '+','/*grid={topic="Local Memory Report"}*/ c2',
     '-','/*grid={topic="Top 30 Scanned Results ( Keys=Count(ID[Result]) Invalids=Invalidations Scans=Scan+Pin Bytes=Blocks*BlockSize )"}*/ c3'
 }

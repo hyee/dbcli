@@ -200,7 +200,7 @@ function mysql:onload()
 
     env.set.rename_command('ENV')
     add_default_sql_stmt({"SELECT","WITH"},'SET','DO','ALTER','ANALYZE','BINLOG','CACHE','CALL','CHANGE','CHECK','CHECKSUM','DEALLOCATE','DELETE','DROP','EXECUTE','FLUSH','GRANT','HANDLER','INSERT','ISOLATION','KILL','LOCK','OPTIMIZE','PREPARE','PURGE')
-    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRBE"})
+    add_default_sql_stmt('RENAME','REPAIR','REPLACE','RESET','REVOKE','SAVEPOINT','RELEASE','START','STOP','TRUNCATE','UPDATE','XA',"SIGNAL","RESIGNAL",{"DESC","EXPLAIN","DESCRIBE"})
     add_default_sql_stmt('IMPORT','LOAD','TABLE','VALUES','BEGIN','DECLARE','INSTALL','UNINSTALL','RESTART','SHUTDOWN','GET','CLONE')
     local  conn_help = [[
         Connect to mysql database. 

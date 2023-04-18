@@ -55,6 +55,7 @@
       &fields: {
             default={"SQL Id" &V11,sql_opname &0},
             sql={"SQL Id" &V11,sql_opname &0},
+            m={force_matching_signature &V11, sql_opname &0}
             e={wait_class &0}, 
             p={p1,p2,p3,p3text &0},
             pr={p1raw,p2raw,p3raw &0}, 
@@ -126,6 +127,8 @@ WITH ASH_V AS(
                             'Temp I/O'
                         when current_obj# > 0 then 
                              ''||current_obj#
+                        when p2text='id1' then
+                             ''||p2
                         when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                             'Undo'
                         when p3text like '%namespace' and p3>power(16,8) then 
