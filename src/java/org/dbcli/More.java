@@ -1723,7 +1723,7 @@ final public class More {
                 else
                     terminal.puts(Capability.exit_ca_mode);
             }
-            if (!isSuspended) status.restore();
+            if (status != null && !isSuspended) status.restore();
         }
 
         @Override

@@ -32,6 +32,7 @@ else
 end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
+local java_bin,java_ver,java_home=arg[1],tonumber(arg[2]) or 52
 
 luv.set_process_title("DBCli - Initializing")
 local files={}
@@ -50,7 +51,7 @@ local function scan(dir,ext)
         end
         if ftype=="directory" then
             subdirs[#subdirs+1]=name
-        elseif name:find(pattern) then
+        elseif name:find(pattern) and (java_ver>52 or not name:find('jaxb',1,true)) then
             local prefix,version=name:lower():match('[\\/]([^\\/]-)%-?([%-0-9.]*)%.jar$')
             version=version:gsub('%d+',function(d) return string.rep('0',4-#d)..d end)
             local p='.'..fsep..name
@@ -79,9 +80,6 @@ if other_lib then
     files[#files+1]=table.remove(other_options,1)
 end
 local jars=table.concat(files,psep)
-
-
-local java_bin,java_ver,java_home=arg[1],tonumber(arg[2]) or 52
 
 if not java_bin or not luv.fs_stat(resolve(java_bin)) then
     print("Cannot find java executable, exit.")
@@ -124,6 +122,7 @@ local options ={'-server','-XX:CompileThreshold=5',
                 '-Djava.security.egd=file:/dev/urandom',
                 '-Djava.class.path='..jars,
                 java_ver>52 and '--release=8' or nil,
+                --java_ver>52 and '--add-modules=java.xml.bind' or nil,
                 java_ver>52 and '--add-opens=java.sql/java.sql=ALL-UNNAMED' or nil ,
                 java_ver>52 and '--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED' or nil ,
                 java_ver>52 and '--add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED' or nil ,
