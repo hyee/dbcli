@@ -62,7 +62,8 @@ BEGIN
             SELECT CAST(NVL(CELL,'--TOTAL--') AS VARCHAR2(20)) cell,
                    SUM(decode("flashCacheStatus",'normal',"FlashCache")) "FlashCache",
                    SUM(decode("flashCacheStatus",'normal',"FlashLog")) "FlashLog",
-                   SUM(numPmem*regexp_substr(pmemType,'(\d+[\d\.]*)[GT]',1,1,'i',1))||max(regexp_substr(pmemType,'(\d+[\d\.]*)([GT])',1,1,'i',2)) "PMEM",
+                   nvl(dbms_xplan.format_size(nullif(SUM("effectivePmemCacheSize"),0)),SUM(numPmem*regexp_substr(pmemType,'(\d+[\d\.]*)[GT]',1,1,'i',1))||max(regexp_substr(pmemType,'(\d+[\d\.]*)([GT])',1,1,'i',2))) "PMEM",
+                   dbms_xplan.format_size(nullif(SUM("effectivePmemLogSize"),0)) "PMEMLog",
                    SUM("CellDisks") "CellDisks",
                    SUM("GridDisks") "GridDisks",
                    SUM("HardDisks") "HardDisks",
@@ -90,7 +91,10 @@ BEGIN
                                     "oltpHDQL" INT path 'oltpPDQL', "oltpFDQL" INT path 'oltpFDQL', "hardDiskType" VARCHAR2(300) path 'hardDiskType',
                                     "flashDiskType" VARCHAR2(300) path 'flashDiskType', "flashCacheStatus" VARCHAR2(300) path 'flashCacheStatus',
                                     "cellPkg" VARCHAR2(300) path 'cellPkg',
-                                    numPmem int path 'numPmem',pmemType varchar2(100) path 'pmemType',pmemCacheStatus varchar2(100) path 'pmemCacheStatus') b
+                                    "effectivePmemCacheSize" int path 'effectivePmemCacheSize',
+                                    "effectivePmemLogSize" int path 'effectivePmemLogSize',
+                                    numPmem int path 'numPmem',pmemType varchar2(100) path 'pmemType',
+                                    pmemCacheStatus varchar2(100) path 'pmemCacheStatus') b
                     WHERE  conftype = 'AWRXML')
             GROUP  BY ROLLUP(CELL);
 
@@ -126,7 +130,6 @@ BEGIN
                         SUM(DECODE(disktype, 'PMEM', 1,0))  PMEM,
                         SUM(DECODE(disktype, 'HardDisk', siz)) HD_SIZE,
                         SUM(DECODE(disktype, 'FlashDisk', siz)) FD_SIZE,
-                        SUM(DECODE(disktype, 'PMEM', siz))  "PMEM|SIZE",
                         SUM(siz) "TOTAL|SIZE",
                         SUM(freeSpace) "UN-|ALLOC",
                         '|' "|"
@@ -155,17 +158,17 @@ BEGIN
                         'Flash cache bytes allocated' AS "Alloc|FCache",
                         'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",
                         'SCAN' AS "Alloc|Scan",
-                        'Flash cache bytes allocated for unflushed data' AS "OLTP|Dirty",
+                        'Flash cache bytes used - columnar' AS "Used|FCC",
                         'Large Writes' AS "Large|Writes",
+                        '/' "/",
                         'Flash cache bytes used' AS "FCache|Used",
                         'Flash cache bytes used for OLTP data' AS "Used|OLTP",
-                        'Flash cache bytes used - columnar' AS "Used|FCC",
+                        'Flash cache bytes allocated for unflushed data' AS "OLTP|Dirty",
                         'Flash cache bytes used - keep objects' AS "FCache|Keep",
                         'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
                         --'Flash cache bytes used - columnar keep' AS "Keep|FCC",
                         '|' as "|",
                         'PMEM cache bytes allocated' as "Alloc|PMEM",
-                        'PMEM cache bytes used for OLTP data' as "PMEM|OLTP",
                         'RAM cache bytes allocated' as "Alloc|RAM",
                         'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 
             USING(cellhash);

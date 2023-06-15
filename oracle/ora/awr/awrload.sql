@@ -7,6 +7,7 @@
     --[[
         @ARGS: 2
         @CHECK_ACCESS_CDB: SYS.CDB_HIST_REPORTS_DETAILS/SYS.dbms_workload_repository={1}
+        @MODE: default={1} old={2}
     --]]
 ]]*/
 SET SQLTIMEOUT 7200
@@ -160,7 +161,7 @@ BEGIN
                 stage := CASE sys_context('userenv', 'con_name') WHEN 'CDB$ROOT' THEN 'C##' END || stage;
             EXCEPTION WHEN OTHERS NULL;
             END;
-            $IF DBMS_DB_VERSION.VERSION>17 $THEN
+            $IF DBMS_DB_VERSION.VERSION>17 and &MODE=1 $THEN
                 sys.dbms_workload_repository.load(schname => stage, dmpfile => file, dmpdir => dir, new_dbid => did);
             $ELSE
                 sys.dbms_swrf_internal.awr_load(schname  => stage,dmpfile  => file, dmpdir => dir);

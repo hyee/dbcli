@@ -10,8 +10,8 @@ SELECT grouping_id(inst_id,dbwr_num) gid,
        SUM(cnum_set) "Work Set|Blocks",
        SUM(cnum_repl) "REPL Chain|Blocks",
        SUM(anum_repl) "Aux Chain|Blocks",
-       SUM(cnum_write) "All Dirty|Blocks",
-       SUM(anum_write) "Aux Dirty|Blocks"
+       SUM(DBINSP) "Dirty|Blocks",
+       SUM(FBINSP) "Free|Blocks"
 FROM   TABLE(gv$(CURSOR (SELECT * FROM sys.x$kcbwds WHERE cnum_set > 0)))
 GROUP  BY ROLLUP(inst_id, (dbwr_num, addr, SET_ID))
 ORDER  BY 1,2, 3, set_id;
@@ -19,6 +19,9 @@ pro x$kcbbhs
 pro ========
 SELECT * FROM TABLE(gv$(CURSOR(select * from sys.X$KCBBHS where ISSUED > 0))) order by 1,2,3;
 
+PRO x$kvii
+pro ========
+SELECT * FROM TABLE(gv$(CURSOR(select INST_ID,INDX,KVIIVAL,KVIITAG,KVIIDSC from x$kvii))) ORDER BY INDX,INST_ID;
 --From Tanel Poder
 pro x$kcbbes
 pro ========
@@ -90,4 +93,4 @@ SELECT * FROM TABLE(gv$(CURSOR(
               ROUND(NULLIF(RATIO_TO_REPORT(savecode) OVER() * 100, 0), 1) "STATUS%"
        FROM   sys.x$kcbbes
        WHERE  GREATEST(reason, priority, savecode) > 0)))
-ORDER BY inst_id,indx;
+ORDER BY indx,inst_id;

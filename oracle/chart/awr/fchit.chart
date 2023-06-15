@@ -1,0 +1,94 @@
+/*[[
+    Show Exadata Flash Cache Hit ratio. Usage: @@NAME {["<state_name>"] [0|inst_id] [yymmddhh24mi] [yymmddhh24mi]}
+    Impacted by settings: starttime,endtime,instance
+    --[[
+        &V2     : default={&INSTANCE}
+        &V3     : default={&STARTTIME}
+        &V4     : default={&ENDTIME}
+        &GRP    : default={stat_name}, c={class_name}
+    --]]
+]]*/
+{
+    title='Flash Cache Hit Ratio',
+    _sql=[[
+        WITH snap AS
+         (SELECT /*+materialize no_expand*/
+                trunc(end_interval_time + 0, 'mi') end_time, dbid,
+                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
+                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
+          FROM   dba_hist_snapshot
+          WHERE  dbid=nvl(:dbid,(select dbid from v$database))
+          AND    end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) ,
+        data AS (
+            select grp,end_time,n,sum(v/ela) v
+            from  (SELECT 1 grp,end_time,flag,Slot_size ela,stat_name n,
+                          VALUE - nvl(LAG(VALUE) OVER(PARTITION BY part_key,stat_name ORDER BY end_time),0) v
+                   FROM   dba_hist_sysstat 
+                   JOIN   snap using(dbid,instance_number,snap_id)
+                   UNION ALL
+                   SELECT case when metric_name not like '%write%' then 2 else 3 end,
+                          end_time,flag,Slot_size,metric_name,
+                          METRIC_VALUE - nvl(LAG(METRIC_VALUE) OVER(PARTITION BY CELL_HASH,INCARNATION_NUM,METRIC_ID ORDER BY end_time),0) v
+                   FROM   dba_hist_cell_global 
+                   JOIN   snap using(dbid,snap_id)
+                   WHERE  METRIC_ID IN(
+                            200, --'Flash cache read requests hit',
+                            212, --'Flash cache read requests - keep objects',
+                            201, --'Flash cache misses and partial hits',
+                            213, --'Flash cache misses - keep objects',
+                            441, --'Flash cache read requests skipped',
+                            543, --'PMEM cache read requests hit',
+                            390, --'RAM cache read requests hit',
+                            189, --'Flash cache write requests - first writes',
+                            190, --'Flash cache write requests - overwrites',
+                            480, --'Flash cache write requests - large writes rejected',
+                            472, --'Flash cache write requests - large writes rejected based on cg thrashing',
+                            473, --'Flash cache write requests - large writes rejected based on flash wear',
+                            474, --'Flash cache write requests - large writes rejected based on lw thrashing',
+                            475, --'Flash cache write requests - large writes rejected based on max limit',
+                            476, --'Flash cache write requests - large writes rejected based on global max limit',
+                            477, --'Flash cache write requests - large writes rejected based on flash busy',
+                            478, --'Flash cache write requests - large writes rejected based on keep cache lines',
+                            480, --'Flash cache write requests - large writes rejected based on IORM',
+                            443  --'Flash cache write requests skipped'
+                            ))
+            where flag=0
+            group  by grp,end_time,n)
+        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') sample_time,
+               n,
+               nvl(round(iops*100/total,2),0) "Hit Ratio(%)",
+               nvl(round(case when n not like '%Bytes%' then iops end,2),0) "Physical IOPS"
+        FROM   data
+        MODEL  RETURN UPDATED ROWS
+        PARTITION BY(end_time) DIMENSION BY(n,grp) MEASURES(v iops, to_number(null) total)
+        RULES UPSERT ALL SEQUENTIAL ORDER(
+              iops['Flash Cache Read',0]=sum(iops)[n like 'Flash%' and not regexp_like(n,'(misses|skipped)'),2],
+              iops['PMEM Cache Read',0]=sum(iops)[n like '%MEM%' and not regexp_like(n,'(misses|skipped)'),2],
+              iops['Hard Disk Read',0]=sum(iops)[regexp_like(n,'^Flash.*(misses|skipped)'),2],
+              total[n in('Flash Cache Read','PMEM Cache Read','Hard Disk Read'),0]=sum(iops)[ANY,2],
+
+              iops['Flash Cache Write',0]=sum(iops)[n in('Flash cache write requests - first writes','Flash cache write requests - overwrites'),3],
+              total['Flash Cache Write',0]=sum(iops)[ANY,3],
+
+              iops['RDMA Read',0]=iops['cell RDMA reads',1],
+              total['RDMA Read',0]=iops['physical read IO requests',1],
+              iops['RDMA Write',0]=iops['cell RDMA writes',1],
+              total['RDMA Write',0]=iops['physical write IO requests',1],
+
+              iops['Read Bytes Optimized',0]=iops['physical read total bytes optimized',1],
+              total['Read Bytes Optimized',0]=iops['physical read total bytes',1],
+              iops['Write Bytes Optimized',0]=iops['physical write total bytes optimized',1],
+              total['Write Bytes Optimized',0]=iops['physical write total bytes',1],
+
+              iops['Cell Read',0]=total['Flash Cache Read',0],
+              iops['Cell Write',0]=total['Flash Cache Write',0],
+              iops['DB Physical Read',0]=iops['physical read IO requests',1],
+              total['DB Physical Read',0]=round(sum(iops)[n in('session logical reads','physical reads direct'),1]
+                                          *iops['physical read IO requests',1]/nullif(iops['physical reads',1],0)),
+              iops['DB Physical Write',0]=iops['physical write IO requests',1]
+        )
+        ORDER  BY 1,2]],
+    _pivot=mixed,
+    height=400
+}

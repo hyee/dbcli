@@ -217,6 +217,7 @@ function graph:run_sql(sql,args,cmd,file)
         end
     end
 
+    print(#rows.." Records fetched.")
     if pivot=="mixed" then
         local data={}
         for k,v in ipairs(rows) do
@@ -276,7 +277,7 @@ function graph:run_sql(sql,args,cmd,file)
             if type(range_begin)=="number" then x=tonumber(x) end
             range_begin,range_end=range_begin>x and x or range_begin, range_end<x and x or range_end
         end
-        --For pivot, col1=label, col2=Pivot,col3=y-value
+        --For pivot, col1=X-label, col2=Y-labels,col3-n=y-values
         --collist: {label={1:nth-axis,2:count,3:1st-min,4:1st-max,5+:sum(value)-of-each-chart},...}
         if pivot then
             local x,label,y=row[1],row[2]:trim(),{table.unpack(row,3)}
@@ -310,7 +311,7 @@ function graph:run_sql(sql,args,cmd,file)
             local c=math.min(#row,maxaxis+1)
             row={table.unpack(row,1,c)}
             if not values[title] then values[title]=row end
-            csv[#csv+1]=table.concat(row,',')
+            csv[#csv+1]=row
             for i=2,c do
                 if counter==0 then
                     row[i]=row[i]:trim()
@@ -329,7 +330,6 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     env.checkerr(counter>2,"No data found for the given criteria!")
-    print(string.format("%d rows processed.",counter))
 
     --Print summary report
     local labels={table.unpack(values[title],2)}
@@ -371,6 +371,25 @@ function graph:run_sql(sql,args,cmd,file)
     end
     --Generate graph data
     self.dataindex,self.data=0,{}
+    local function build_csv(csv)
+        local sums={}
+        for i=2,#csv do
+            for j=2,#csv[i] do
+                sums[j-1]=(sums[j-1] or 0)+(tonumber(csv[i][j]) or 0)
+            end
+        end
+        for i=1,#csv do
+            for j=#sums,1,-1 do
+                if sums[j]==0 then table.remove(csv[i],j+1) end
+            end
+            csv[i]=table.concat(csv[i],',')
+        end
+        for j=#sums,1,-1 do
+            if sums[j]==0 then table.remove(sums,j) end
+        end
+        env.checkerr(#sums>0,"Cannot generate chart due to all results are zero")
+        return table.concat(csv,'\n')
+    end
     
     if pivot then
         --Sort the columns by sum(value)
@@ -385,10 +404,10 @@ function graph:run_sql(sql,args,cmd,file)
                     row[i+1]=type(cell)=="table" and cell[idx] or cell or 0
                     --if rownum==1 then row[i+1]='"'..row[i+1]:gsub('"','""')..'"' end --The titles
                 end
-                csv[rownum]=table.concat(row,',')
+                csv[rownum]=row
             end
             self.dataindex=self.dataindex+1
-            self.data[self.dataindex]={table.concat(csv,'\n'),avgs}
+            self.data[self.dataindex]={build_csv(csv),avgs}
         end
     else
         local avgs={}
@@ -396,7 +415,7 @@ function graph:run_sql(sql,args,cmd,file)
             avgs[#avgs+1],avgs[k]=k,v[5]/v[2]
         end
         self.dataindex=self.dataindex+1
-        self.data[self.dataindex]={table.concat(csv,'\n'),avgs}
+        self.data[self.dataindex]={build_csv(csv),avgs}
     end
 
     local replaces={

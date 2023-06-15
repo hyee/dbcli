@@ -187,7 +187,7 @@ BEGIN
               AND    LEVEL < 3
           ORDER SIBLINGS BY &V1)
         SELECT /*+cardinality(a 1)*/
-               rownum "#",
+               row_number() over(order by r) "#",
                a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                a.spid,
                a.sq_id,
@@ -257,7 +257,7 @@ BEGIN
                   AND    LEVEL < 3
               ORDER SIBLINGS BY &V1)
             SELECT /*+cardinality(a 1) use_hash(d)*/
-                   rownum "#",
+                   row_number() over(order by r) "#",
                    a.NEW_SID || ',' || a.serial# || ',@' || a.inst_id session#,
                    d.spid || regexp_substr(A.program, '\(\S+\)') spid,
                    a.sql_id,
