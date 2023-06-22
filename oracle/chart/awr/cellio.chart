@@ -11,7 +11,8 @@
         &V1     : default={&STARTTIME}
         &V2     : default={&ENDTIME}
         &filter : default={1=1} f={} fd={disk='FlashDisk'} hd={disk='HardDisk'}
-        &obj    : default={null}, c={cell_name} dn={disk_name}, dt={disk} 
+        &obj    : default={null}, c={cell_name} dn={disk_name}, dt={disk}
+        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     --]]
 ]]*/
 {
@@ -39,7 +40,8 @@
                    round(AVG(large_write_latency_avg) * 1e-3, 3) large_write_ms
           FROM   (SELECT a.*, row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r
                   FROM   Dba_Hist_Snapshot a
-                  WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate+1)) a
+                  WHERE  dbid=nvl(:dbid,&did)
+                  AND    end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate+1)) a
           JOIN   DBA_HIST_CELL_NAME b USING(dbid, snap_id)
           JOIN   DBA_HIST_CELL_DISK_SUMMARY c USING(dbid, snap_id,cell_hash)
           JOIN   DBA_HIST_CELL_DISK_NAME d USING(dbid, snap_id,cell_hash,DISK_ID)

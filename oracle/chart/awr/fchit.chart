@@ -6,6 +6,7 @@
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
         &GRP    : default={stat_name}, c={class_name}
+        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)
     --]]
 ]]*/
 {
@@ -17,7 +18,7 @@
                 ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
-          WHERE  dbid=nvl(:dbid,(select dbid from v$database))
+          WHERE  dbid=nvl(:dbid,&did)
           AND    end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) ,
         data AS (
@@ -63,30 +64,30 @@
         MODEL  RETURN UPDATED ROWS
         PARTITION BY(end_time) DIMENSION BY(n,grp) MEASURES(v iops, to_number(null) total)
         RULES UPSERT ALL SEQUENTIAL ORDER(
-              iops['Flash Cache Read',0]=sum(iops)[n like 'Flash%' and not regexp_like(n,'(misses|skipped)'),2],
-              iops['PMEM Cache Read',0]=sum(iops)[n like '%MEM%' and not regexp_like(n,'(misses|skipped)'),2],
-              iops['Hard Disk Read',0]=sum(iops)[regexp_like(n,'^Flash.*(misses|skipped)'),2],
-              total[n in('Flash Cache Read','PMEM Cache Read','Hard Disk Read'),0]=sum(iops)[ANY,2],
+              iops['Flash Cache Reads',0]=sum(iops)[n like 'Flash%' and not regexp_like(n,'(misses|skipped)'),2],
+              iops['PMEM Cache Reads',0]=sum(iops)[n like '%MEM%' and not regexp_like(n,'(misses|skipped)'),2],
+              iops['Hard Disk Reads',0]=sum(iops)[regexp_like(n,'^Flash.*(misses|skipped)'),2],
+              total[n in('Flash Cache Reads','PMEM Cache Reads','Hard Disk Reads'),0]=sum(iops)[ANY,2],
 
-              iops['Flash Cache Write',0]=sum(iops)[n in('Flash cache write requests - first writes','Flash cache write requests - overwrites'),3],
-              total['Flash Cache Write',0]=sum(iops)[ANY,3],
+              iops['Flash Cache Writes',0]=sum(iops)[n in('Flash cache write requests - first writes','Flash cache write requests - overwrites'),3],
+              total['Flash Cache Writes',0]=sum(iops)[ANY,3],
 
-              iops['RDMA Read',0]=iops['cell RDMA reads',1],
-              total['RDMA Read',0]=iops['physical read IO requests',1],
-              iops['RDMA Write',0]=iops['cell RDMA writes',1],
-              total['RDMA Write',0]=iops['physical write IO requests',1],
+              iops['RDMA Reads',0]=iops['cell RDMA reads',1],
+              total['RDMA Reads',0]=iops['physical read IO requests',1],
+              iops['RDMA Writes',0]=iops['cell RDMA writes',1],
+              total['RDMA Writes',0]=iops['physical write IO requests',1],
 
               iops['Read Bytes Optimized',0]=iops['physical read total bytes optimized',1],
               total['Read Bytes Optimized',0]=iops['physical read total bytes',1],
               iops['Write Bytes Optimized',0]=iops['physical write total bytes optimized',1],
               total['Write Bytes Optimized',0]=iops['physical write total bytes',1],
 
-              iops['Cell Read',0]=total['Flash Cache Read',0],
-              iops['Cell Write',0]=total['Flash Cache Write',0],
-              iops['DB Physical Read',0]=iops['physical read IO requests',1],
-              total['DB Physical Read',0]=round(sum(iops)[n in('session logical reads','physical reads direct'),1]
+              iops['Cell User Reads',0]=sum(iops)[ANY,2],
+              iops['Cell User Writes',0]=sum(iops)[ANY,3],
+              iops['DB Physical Reads',0]=iops['physical read IO requests',1],
+              total['DB Physical Reads',0]=round(sum(iops)[n in('session logical reads','physical reads direct'),1]
                                           *iops['physical read IO requests',1]/nullif(iops['physical reads',1],0)),
-              iops['DB Physical Write',0]=iops['physical write IO requests',1]
+              iops['DB Physical Writes',0]=iops['physical write IO requests',1]
         )
         ORDER  BY 1,2]],
     _pivot=mixed,

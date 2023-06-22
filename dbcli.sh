@@ -38,7 +38,7 @@ if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
 elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
-        _java=`/usr/libexec/java_home -V 2>&1|grep "1\.8"|grep -oh "/Library.*"|head -1`
+        _java=`/usr/libexec/java_home -V 2>&1|grep -oh "/Library.*"|head -1`
         if [[ "$_java" ]]; then
             _java="$_java/bin/java"
         fi
@@ -68,7 +68,7 @@ if [[ $found < 2 ]]; then
         _java=./jre_$os/bin/java
         ver="52"
     else
-        echo "Cannot find java 1.8 64-bit executable, exit."
+        echo "Cannot find java 1.8+ 64-bit executable, exit."
         exit 1
     fi
 fi

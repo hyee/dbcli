@@ -8,6 +8,7 @@
         &V2     : default={&ENDTIME}
         &filter : default={1=1} f={}
         &obj    : default={null}, c={cell_name}
+        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     --]]
 ]]*/
 {
@@ -37,7 +38,8 @@
                               0
                          END flag
                   FROM   Dba_Hist_Snapshot a
-                  WHERE  end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) - 1.2 / 24 AND
+                  WHERE  dbid=nvl(:dbid,&did)
+                  AND    end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) - 1.2 / 24 AND
                          NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE+1)) a
           JOIN   DBA_HIST_CELL_NAME b
           USING  (dbid, snap_id)

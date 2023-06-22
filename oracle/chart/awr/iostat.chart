@@ -14,6 +14,7 @@
         &V4     : default={&ENDTIME}
         &GRP    : default={FUNCTION_NAME}, n={FILETYPE_NAME}
         &filter : default={1=1},f={}
+        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)
     --]]
 ]]*/
 {
@@ -26,7 +27,8 @@
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
                 snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+          WHERE dbid=nvl(:dbid,&did) 
+          AND   end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))    
         SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event,
                Round(SUM(RMB+WMB/Slot_size*1024*1024),2)  "Bytes per Second",

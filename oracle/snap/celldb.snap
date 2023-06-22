@@ -239,7 +239,8 @@
         '-',{[[/*grid={topic="Cell Reason", max_rows=20}*/
             SELECT nvl(reason_name,'--TOTAL--') reason_name &cell, 
                    SUM(decode(metric_type,'bytes',metric_value)) bytes,
-                   SUM(decode(metric_type,'bytes',0,metric_value)) reqs
+                   SUM(decode(metric_type,'bytes',0,metric_value)) reqs,
+                   to_number(null) avg_io
             FROM   (SELECT &cellname,
                            reason_name,
                            metric_type,
@@ -278,6 +279,7 @@
                  ['Hit(%)']='100*[FcHit]/[Hit(%)]',
                  ['Resp(ms)']='[Resp(ms)]/[Calls]',
                  ['OflEff']='100-[OflOut]*100/([OflEff]+[SISave])',
+                 AVG_IO='[bytes]/[reqs]',
                  SR_MS='[SR_MS]/[SR]',
                  SW_MS='[SW_MS]/[SW]',
                  LR_MS='[LR_MS]/[LR]',
@@ -285,7 +287,7 @@
                  TOT_MS='([SR_MS]+[SW_MS]+[LR_MS]+[LW_MS])/([SR]+[SW]+[LR]+[LW])',
                  R_MS='([SR_MS]+[LR_MS])/([SR]+[LR])',
                  W_MS='([SW_MS]+[LW_MS])/([SW]+[LW])',},
-    column_formatter={KMG='TOT_B,R_B,W_B,SR_B,SW_B,LR_B,LW_B,OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,CCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes,PMEM,RAM',
+    column_formatter={KMG='TOT_B,R_B,W_B,SR_B,SW_B,LR_B,LW_B,OflOut,BandWidth,PhyRead,PhyWrite,Redo,Offload,SmartIO,SiSave,CCSave,Net,AllIO,Redo,SmartIO,Offload,OflOut,Passthru,OS_SIZE,TOTAL_SIZE,FREE_SIZE,bytes,hot_bytes,read,write,bytes,fd_bytes,fd_read,fd_write,fd_bytes,PMEM,RAM,AVG_IO',
                       TMB='TOT_IO,R,W,SR,LR,SW,LW,IOPs,fchit,ios,fd_io,lios,fd_lio,total_io,writes,READS,io_errs,reqs,value',
                       smhd2='timeouts',
                       noprint='calls,redos'},

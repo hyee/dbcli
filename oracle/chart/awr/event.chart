@@ -21,6 +21,7 @@
         &f1 : default={:V1 IS NULL OR LOWER(:V1) IN (lower(wait_class),abbr,LOWER(event_id)) OR lower(event_name) LIKE lower('%&V1%')}, f={}
         &grp: default={wait_class}, e={event_name}
         &ADDITIONAL_FILTER: default={1=1}, f1={}
+        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     --]]
 ]]*/
 {
@@ -44,7 +45,8 @@
                 CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
                 snap_id, instance_number, -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key
           FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+          WHERE  dbid=nvl(:dbid,&did)
+          AND    end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
           AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
         SELECT time sample_time,event,round(total_time*1e-6,1) "Seconds per Second",round(count,3) "Requests per Second",
                round(total_time/count/1000,2) "Milliseconds per Request",
