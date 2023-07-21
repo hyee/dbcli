@@ -6,15 +6,6 @@
         text : sql_text
         op   : operation name
 
-   Sample Output:
-   ==============
-       SQL_ID     TOTAL_ELA  AVG_ELA    EXECS                     OP                    MINUTES  OBJECT          OBJECT_NAME          CHILDS TEXT                 
-    ------------- --------- --------- --------- -------------------------------------- --------- ------ ----------------------------- ------ ---------------------
-    6uxga5vnsgugt      36.3       0.0     59985 STORAGE FULL                                 0.0     14 SEG$                               1  select s.file#, s.bl
-    1u8v867f5ys43      14.7       0.0     99975 STORAGE FULL                                 0.0     14 SEG$                               1 select ts#, file#, bl
-    6uxga5vnsgugt      12.1       0.0     19995 UNIQUE SCAN                                         727 I_TABCOMPART$                      1  select s.file#, s.bl
-    9x2prazfz86dz       5.3       0.0     11811 STORAGE FULL                                 0.0     14 SEG$                               1  select s.file#, s.bl
-
     --[[
         @ARGS: 1
         @11G : 11.2={} DEFAULT={--}
@@ -100,7 +91,6 @@ Stats AS (
            SUM(elapsed_time_delta) TOTAL_ELA,
            SUM(executions_delta) execs,
            op,obj,object_name,
-           MAX(TIME) TIME,
            plan_hash_value plan_hash
     FROM   (SELECT /*+use_hash(a) no_merge*/
                    distinct
@@ -111,7 +101,7 @@ Stats AS (
                    qry.object_name,
                    nvl( CASE WHEN options LIKE '%INDEX ROWID%' THEN
                                  (SELECT /*+no_expand*/ 
-                                          MAX(DECODE(options,
+                                          MAX(DECODE(b.options,
                                                     'FULL SCAN',
                                                     'FFS',
                                                     'RANGE SCAN',
@@ -120,7 +110,9 @@ Stats AS (
                                                     'US',
                                                     'RANGE SCAN DESCENDING',
                                                     'RSD',
-                                                    options)||'('||NVL(SEARCH_COLUMNS,0) || '): ' || object_name)
+                                                    'TO ROWIDS',
+                                                    'BITMAP',
+                                                    options)||'('||NVL(b.SEARCH_COLUMNS,0) || '): ' || object_name)
                                   FROM   &check_access_pdb.SQL_PLAN b
                                   WHERE  a.dbid = b.dbid
                                   AND    a.sql_id = b.sql_id
@@ -130,20 +122,8 @@ Stats AS (
                                   AND   (b.parent_id=a.id or b.parent_id!=b.id-1)
                                   AND    b.operation = 'INDEX'
                                   AND    a.object# < b.object#)
-                        ELSE  OPTIONS END,
-                       operation) OP,
-                   TIME + nvl(CASE WHEN options LIKE '%INDEX ROWID%' THEN
-                                     (SELECT /*+no_expand*/ MAX(TIME)
-                                      FROM   &check_access_pdb.SQL_PLAN b
-                                      WHERE  a.dbid = b.dbid
-                                      AND    a.sql_id = b.sql_id
-                                      AND    a.plan_hash_value = b.plan_hash_value
-                                      AND    b.id BETWEEN a.id - 1 AND a.id + 1
-                                      AND    b.depth=a.depth+1
-                                      AND   (b.parent_id=a.id or b.parent_id!=b.id-1)
-                                      AND    b.operation = 'INDEX'
-                                      AND    a.object# < b.object#)
-                              END,0) TIME
+                        ELSE OPTIONS END,
+                       options) OP
             FROM   QRY,&check_access_pdb.SQL_PLAN a
             WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
             AND    A.OBJECT_OWNER LIKE QRY.OWNER
@@ -153,7 +133,7 @@ Stats AS (
     WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
     AND   to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')
     GROUP  BY hs.sql_id, dbid &con,plan_hash_value,obj,object_name,op, sorttype)
-SELECT sql_id top_sql_id,plan_hash,ids,obj,object_name,op,total_ela,avg_ela,time,execs,
+SELECT plan_hash,sql_id top_sql_id,ids,obj,object_name,op operation,total_ela,avg_ela,execs,
        substr(regexp_replace(trim(to_char(SUBSTR(sql_text, 1, 500))),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) text
 FROM (select plan_hash,dbid &con, 
              max(sql_id) keep(dense_rank last order by total_ela) sql_id,
@@ -161,7 +141,7 @@ FROM (select plan_hash,dbid &con,
              obj,object_name,op,
              sum(total_ela) total_ela,
              sum(execs) execs,
-             sorttype,max(time) time,
+             sorttype,
              round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela
       from   stats
       group  by dbid &con,sorttype,plan_hash,obj,object_name,op)

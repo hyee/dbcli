@@ -1,0 +1,18 @@
+/*[[Generate delta values based on v$cell_global. Usage: @@NAME <options> {[<key>]}]]*/
+{
+    sql=[[
+    SELECT A.* FROM(
+        SELECT /*+no_expand*/
+               metric_name name,
+               sum(metric_value) value,
+               metric_type typ
+        FROM   v$cell_global
+        WHERE  (metric_value > 0 OR :V1 IS NOT NULL)
+        AND    (:V1 IS NULL OR lower(metric_name) like lower('%&V1%'))
+        GROUP  BY metric_name,metric_type) A
+    ORDER BY NAME]],
+    delta_by="value",
+    order_by="-value,name",
+    max_rows=200,
+    group_by="NAME"
+}

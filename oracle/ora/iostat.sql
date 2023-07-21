@@ -1,5 +1,7 @@
-/*[[Show IO Stats. Usage: @@NAME [<inst_id>] [-d [YYMMDDHH24MI] [YYMMDDHH24MI]]
-   -d: Show data from dba_hist_* instead of v$* views
+/*[[Show IO Stats. Usage: @@NAME [<inst_id>] [-d [YYMMDDHH24MI] [YYMMDDHH24MI]] [-avg]
+   -d  : Show data from dba_hist_* instead of v$* views
+   -avg: Show average per second instead of total
+
     --[[
     &V1: default={&instance}
     &V2: default={&starttime}
@@ -59,22 +61,43 @@
     }
     &snap: {
         default={WITH snap AS(
-            SELECT /*+materialize*/ dbid, instance_number inst_id, MAX(snap_id) max_snap_id, NULLIF(MIN(snap_id), min_snap_id) min_snap_id
+            SELECT /*+materialize*/ dbid, 
+                    instance_number inst_id, 
+                    round(86400*sum((end_interval_time+0)-case when begin_interval_time+0>=st-5/1440 then begin_interval_time+0 end)) secs,
+                    MAX(snap_id) max_snap_id, 
+                    nullif(min(snap_id),min_snap_id) min_snap_id
             FROM   (SELECT a.*,
-                           CASE
-                               WHEN MIN(begin_interval_time)
-                                OVER(PARTITION BY dbid, instance_number, startup_time) <= startup_time - 5 / 1440 THEN
-                                MIN(snap_id) OVER(PARTITION BY dbid, instance_number, startup_time)
-                           END min_snap_id
+                           NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE - 7) st,
+                           NVL(to_date(:V3, 'yymmddhh24miss'), SYSDATE + 1) ed,
+                           min(snap_id) over(partition by dbid,instance_number,startup_time) min_snap_id
                     FROM   DBA_HIST_SNAPSHOT a)
-            WHERE  end_interval_time + 0 BETWEEN NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE - 7) - 1.2 / 24 AND
-                   NVL(to_date(:V3, 'yymmddhh24miss'), SYSDATE + 1)
-            GROUP BY dbid,instance_number,startup_time,min_snap_id)
+            WHERE  end_interval_time + 0 BETWEEN st - 5/1440 AND ed + 5/1440
+            GROUP BY dbid,instance_number,min_snap_id)
         }
     }
+    &dict: default={1} d={2}
+    &unit: default={0} avg={&dict}
     --]]
 ]]*/
+set verify off feed off
+var c number;
 
+DECLARE
+    c INT := 1;
+BEGIN
+    IF &unit=1 THEN
+        select round(sum(sysdate-startup_time)*86400)
+        INTO c
+        FROM gv$instance;
+    ELSIF &unit=2 THEN
+        &snap 
+        select sum(secs) 
+        into c
+        from snap; 
+    END IF;
+    :c := c;
+END;
+/
 col reqs,total,timeouts,cnt for tmb
 col avg_wait,wait_time for usmhd2
 col waits,reads,<128K,Time%,fg,pct for pct
@@ -85,13 +108,13 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
     &snap
     SELECT Nvl(FUNC,' ** TOTAL **') Func,
            regexp_replace(FILETYPE_NAME,' File$') file_type,
-           SUM(reqs) reqs,
+           ROUND(SUM(reqs)/&c,2) reqs,
            nullif(round(SUM(r*number_of_waits) / SUM(reqs), 4),0) WAITS,
-           nullif(round(SUM(r*small_read_reqs + r*large_read_reqs) / SUM(reqs), 4),0) reads,
+           nullif(round(SUM(r*small_read_reqs + r*large_read_reqs)/ SUM(reqs), 4),0) reads,
            nullif(round(SUM(r*small_write_reqs + r*small_read_reqs) / SUM(reqs), 4),0) "<128K",
-           nullif(SUM(mbs * 1024 * 1024),0) bytes,
-           nullif(ROUND(SUM(mbs) * 1024 / SUM(reqs), 2),0) avg_kb,
-           nullif(SUM(r*wait_time) * 1000,0) wait_time,
+           nullif(SUM(mbs * 1024 * 1024 /&c),0) bytes,
+           nullif(ROUND(SUM(mbs) * 1024 * 1024 / SUM(reqs), 2),0) avg_io,
+           nullif(SUM(r*wait_time) /&c * 1000,0) wait_time,
            nullif(round(SUM(r*wait_time) / NULLIF(SUM(r*number_of_waits), 0) * 1000, 2),0) avg_Wait,
            nullif(round(ratio_to_report(SUM(r*wait_time)) OVER(PARTITION BY GROUPING_ID(FUNC)), 4),0) "Time%"
     FROM   (SELECT A.*,
@@ -104,14 +127,14 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
                     WHERE  inst_id=NVL(0+:V1,inst_id)) A)
     GROUP  BY ROLLUP(FUNC), regexp_replace(FILETYPE_NAME,' File$')
     HAVING SUM(reqs)>0
-    ORDER  BY 1, 2
-]],'|',{[[--grid:{topic='Database I/O Events'}
+    ORDER  BY 1, 3 desc
+]],'|',{[[--grid:{topic='Top Database I/O Events',max_rows=17}
     &snap
     SELECT nvl(event,'* '||wait_class||' *') event_or_class,
-           SUM(r*total_waits) total,
+           SUM(r*total_waits)/&c total,
            nullif(round(SUM(r*total_waits_fg) / SUM(r*total_waits), 4),0) fg,
-           nullif(SUM(r*total_timeouts),0) timeouts,
-           SUM(r*time_waited_micro) wait_time,
+           nullif(SUM(r*total_timeouts)/&c,0) timeouts,
+           SUM(r*time_waited_micro)/&c wait_time,
            round(SUM(r*time_waited_micro) / SUM(r*total_waits), 2) avg_wait,
            round(ratio_to_report(SUM(r*time_waited_micro)) OVER(PARTITION BY GROUPING_ID(EVENT)), 4) "Time%"
     FROM   (&env)
@@ -119,7 +142,7 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
     AND    inst_id=NVL(0+:V1,inst_id)
     GROUP  BY wait_class, ROLLUP(event)
     HAVING SUM(r*total_waits)>0
-    ORDER  BY event NULLS FIRST
+    ORDER  BY grouping_id(event) desc, "Time%" desc
 ]],'-',[[--grid:{topic='System Stats'}
     &snap,
     stat AS(
@@ -155,18 +178,20 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
             r['Spin Disk Read']=nvl(r['DB Physical Read'],0)-nvl(r['DB Physical Read Opt'],0),
             v['Spin Disk Write']=nvl(v['DB Physical Write']*3,0)-nvl(v['DB Physical Write Opt']*3,0),
             r['Spin Disk Write']=nvl(r['DB Physical Write']*3,0)-nvl(r['DB Physical Write Opt']*3,0),
-            r['Flash/RAM/PMEM Read']=sum(v)[n in('cell flash cache read hits','cell ram cache read hits','cell pmem cache read hits')],
-            r['Flash/RAM/PMEM Write']=sum(v)[n in('cell writes to flash cache','cell pmem cache writes')],
-            v['Cell IO Uncompressed']=v['cell IO uncompressed bytes'],
-            r['Cell IO Uncompressed']=v['HCC scan cell CUs decompressed'],
-            v['HCC Read Decomp']=v['HCC scan rdbms bytes decompressed'],
-            r['HCC Read Decomp']=v['HCC scan rdbms CUs decompressed'],
-            v['HCC Read compressed']=v['HCC scan rdbms bytes compressed'],
-            r['HCC Read compressed']=v['HCC scan cell CUs processed for compressed'],
+            r['Flash/RDMA/XRMEM Read']=sum(v)[n in('cell RDMA reads','cell flash cache read hits','cell pmem cache read hits','cell xrmem cache read hits')],
+            r['Flash/RDMA/XRMEM Write']=sum(v)[n in('cell RDMA writes','cell writes to flash cache','cell pmem cache writes','cell xrmem cache writes')],
+            v['Cell HCC Decomp']=v['HCC scan cell bytes decompressed'],
+            r['Cell HCC Decomp']=v['HCC scan cell CUs decompressed'],
+            v['DB HCC Read Decomp']=v['HCC scan rdbms bytes decompressed'],
+            r['DB HCC Read Decomp']=v['HCC scan rdbms CUs decompressed'],
+            v['DB HCC Read Compressed']=v['HCC scan rdbms bytes compressed'],
+            r['DB HCC Read Compressed']=v['HCC scan cell CUs processed for compressed'],
+            v['DB HCC Load Compressed']=sum(v)[n in('HCC load direct bytes compressed','HCC load conventional bytes compressed')],
+            v['DB HCC Load Not-Comp']=sum(v)[n in('HCC load direct bytes uncompressed','HCC load conventional bytes uncompressed')],
             v['Pred Offloadable']=v['cell physical IO bytes eligible for predicate offload'],
             v['Interconnect']=v['cell physical IO interconnect bytes'],
             v['SmartScan Return']=v['cell physical IO interconnect bytes returned by smart scan'],
-            v['SmartScan Passthru']=sum(v)[n in('cell physical IO bytes sent directly to DB node to balance CPU','cell num bytes in passthru due to quarantine','cell num bytes in passthru during predicate offload')],
+            v['SmartScan Passthru']=sum(v)[n ='cell physical IO bytes sent directly to DB node to balance CPU' or n like 'cell % bytes in passthru%'],
             v['No Smart Scan']=sum(v)[n in('Interconnect','SmartScan Passthru')]-v['SmartScan Return'],
             v['Cache Layer']=bs['cell blocks processed by cache layer'],
             v['Data Layer']=bs['cell blocks processed by data layer'],
@@ -188,39 +213,39 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
             v['Cons Block Direct']=bs['consistent gets direct'],
             v['Curr Block GC']=bs['gc current blocks received'],
             v['Cons Block GC']=bs['gc cr blocks received'],
-            v['Net to Client']=v['bytes sent via SQL*Net to client'],
-            v['Net to DB-Link']=v['bytes sent via SQL*Net to dblink'],
-            v['Net fr Client']=v['bytes received via SQL*Net from client'],
-            v['Net fr DB-Link']=v['bytes received via SQL*Net from dblink'],
+            v['Net fr/to Client']=sum(v)[n in('bytes sent via SQL*Net fr/to Client','bytes received via SQL*Net from client')],
+            r['Net fr/to Client']=v['SQL*Net roundtrips to/from client'],
+            v['Net fr/to DB-Link']=sum(v)[n in('bytes sent via SQL*Net to dblink','bytes received via SQL*Net from dblink')],
+            r['Net fr/to DB-Link']=v['SQL*Net roundtrips to/from dblink'],
             r['Continued Rows']=sum(v)[n in('table fetch continued row','cell chained row pieces fetched')],
             r['Skipped Rows']=sum(v)[n in('chained rows skipped by cell','cell chained rows skipped')],
             r['Processed Rows']=sum(v)[n in('chained rows processed by cell','cell chained rows processed')],
             r['Rejected Rows']=sum(v)[n in('chained rows rejected by cell','cell chained rows rejected')],
             p[n in('DB Physical Read','DB Physical Write')]=r[cv()]/nullif(r['DB Physical IO'],0),
             p['DB Physical Read Opt']=r[cv()]/nullif(r['DB Physical Read'],0),
-            p['Flash/RAM/PMEM Read']=r[cv()]/nullif(r['DB Physical Read'],0),
-            p['Flash/RAM/PMEM Write']=r[cv()]/nullif(r['DB Physical Write']*3,0),
             p['DB Physical Write Opt']=r[cv()]/nullif(r['DB Physical Write'],0),
+            p['Flash/RDMA/XRMEM Read']=r[cv()]/nullif(r['DB Physical Read'],0),
+            p['Flash/RDMA/XRMEM Write']=r[cv()]/nullif(r['DB Physical Write']*3,0),
             p['Phys IO - Flash']=v[cv()]/nullif(v['DB Physical IO'],0),
             p['Phys IO - Flash+Disk']=v[cv()]/nullif(v['DB Physical IO'],0),
             p['No Smart Scan']=v[cv()]/nullif(v['Interconnect'],0),
             p['Pred Offloadable']=v[cv()]/nullif(v['DB Physical Read'],0),
-            p[n in('SmartScan Return','Saved by StorageIdx','Saved by Columnar')]=v[cv()]/nullif(v['Pred Offloadable'],0),
+            p[n in('SmartScan Return','SmartScan Passthru','Saved by StorageIdx','Saved by Columnar')]=v[cv()]/nullif(v['Pred Offloadable'],0),
             p[n in('Spin Disk Read','Spin Disk Write')]=2*r[cv()]/nullif(sum(r)[n in('Spin Disk Read','Spin Disk Write')],0),
             p[n in('Cache Layer','Data Layer','Transaction Layer','Index Layer')]=2*v[cv()]/nullif(sum(v)[n in('Cache Layer','Data Layer','Transaction Layer','Index Layer')],0),
             p[n in('Curr Block Cache','Curr Block Direct','Curr Block GC','Cons Block Cache','Cons Block Direct','Cons Block GC')]=2*v[cv()]/nullif(sum(v)[n in('Curr Block Cache','Curr Block Direct','Curr Block GC','Cons Block Cache','Cons Block Direct','Cons Block GC')],0),
-            p[n in('Net to Client','Net to DB-Link','Net fr Client','Net fr DB-Link')]=2*v[cv()]/nullif(sum(v)[n in('Net to Client','Net to DB-Link','Net fr Client','Net fr DB-Link')],0),
+            p[n in('Net fr/to Client','Net fr/to DB-Link')]=2*v[cv()]/nullif(sum(v)[n in('Net fr/to Client','Net fr/to DB-Link')],0),
             c[n in('Curr Block Cache','Curr Block Direct','Curr Block GC','Cons Block Cache','Cons Block Direct','Cons Block GC')]='1 - DB Logical IO',
             c[n in('DB Physical IO','DB Physical Read','DB Physical Write')]='2 - DB Physical IO',
-            c[n in('DB Physical Read Opt','DB Physical Write Opt','Saved by StorageIdx','Saved by Columnar','Flash/RAM/PMEM Read','Flash/RAM/PMEM Write','Phys IO - Flash','Phys IO - Flash+Disk')]='3 - Reduce IO',
+            c[n in('DB Physical Read Opt','DB Physical Write Opt','Saved by StorageIdx','Saved by Columnar','Flash/RDMA/XRMEM Read','Flash/RDMA/XRMEM Write','Phys IO - Flash','Phys IO - Flash+Disk')]='3 - Reduce IO',
             c[n in('Spin Disk Read','Spin Disk Write')]='4 - Real Disk IO',
-            c[n in('Cell IO Uncompressed','HCC Read Decomp','HCC Read compressed')]='5 - Compress',
+            c[n in('Cell HCC Decomp','DB HCC Read Decomp','DB HCC Read Compressed','DB HCC Load Compressed','DB HCC Load Not-Comp')]='5 - Compression',
             c[n in('Interconnect','Pred Offloadable','SmartScan Return','SmartScan Passthru','No Smart Scan')]='6 - InterConnect',
             c[n in('Cache Layer','Data Layer','Transaction Layer','Index Layer')]='7 - Cell Process',
-            c[n in('Net to Client','Net to DB-Link','Net fr Client','Net fr DB-Link')]='8 - SQL*Net IO',
+            c[n in('Net fr/to Client','Net fr/to DB-Link')]='8 - SQL*Net IO',
             c[n in('Continued Rows','Skipped Rows','Processed Rows','Rejected Rows')]='9 - Chained Rows'
         ))
-    SELECT c Category,n name,v bytes,r cnt,round(v/nullif(r,0),2) avg_io,round(p,4) pct
+    SELECT c Category,n name,round(v/&c) bytes,round(r/&c) cnt,round(v/nullif(r,0),2) avg_io,round(p,4) pct
     FROM   stat
     WHERE  nvl(r,0)+nvl(v,0)>0
     order by c,n
