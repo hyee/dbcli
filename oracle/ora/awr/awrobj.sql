@@ -22,7 +22,7 @@ set printsize 100 feed off
 COL "SEG|SCANS,IM|SCANS,BUFF|READS,BUFF|BUSY,PHY_RD|REQS,PHY_OPT|READS,PHY|READS,PHY_WR|REQS,PHY|WRITES" FOR TMB
 COL "BLOCK|CHANGES,BLOCK|IM-CHG,GC-BUF|BUSY,GC-CR|BLKS,GC-CU|BLKS,ITL|WAITS,ROW_LK|WAITS,REMOTE|GRANTS,CHAIN_ROW|EXCESS,EXECS" FOR TMB
 COL "SPACE|USED,SPACE|ALLOC,IM|MEM" FOR KMG
-COL "PHY_OPT|READS,READS|DIRECT,WRITES|DIRECT" FOR PCT2
+COL "PHY_OPT|READS,READS|DIRECT,WRITES|DIRECT,Weight" FOR PCT2
 COL TIME smhd2
 COL TOTAL_ELA,AVG_ELA FOR usmhd2
 WITH objs AS
@@ -34,7 +34,7 @@ WITH objs AS
           WHERE  UPPER(:V1) IN(OBJECT_NAME,OWNER || '.' || OBJECT_NAME ,OWNER || '.' || OBJECT_NAME || '.'||SUBOBJECT_NAME,''||OBJ#,''||DATAOBJ#)
           )
   WHERE  ROWNUM < 100)
-SELECT /*+ordered*/
+SELECT /*+DYNAMIC_SAMPLING(8)*/
        owner,object_name "SEG STATS|OBJECT NAME",
        decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,'All:'||COUNT(DISTINCT dataobj#)) "SEG|NAME",
        '|' "|",
@@ -85,66 +85,81 @@ WITH segs AS
 qry AS(SELECT OWNER,OBJECT_NAME,DBID FROM SEGS 
        UNION ALL 
        SELECT '%',UPPER(:V1),NVL(:DBID+0,&did) FROM DUAL WHERE (SELECT COUNT(1) FROM SEGS)=0),
+plans AS(SELECT /*+use_hash(a) DYNAMIC_SAMPLING(8)*/
+               distinct
+               a.dbid,
+               nvl(lower(:V2),'total') sorttype,
+               decode(plan_hash_value,0,sql_id) sq_id,
+               plan_hash_value,
+               object# obj,
+               qry.object_name,
+               coalesce( CASE WHEN options LIKE '%INDEX ROWID%' THEN
+                             (SELECT /*+no_expand*/ 
+                                      MAX(DECODE(b.options,
+                                                'FULL SCAN',
+                                                'FFS',
+                                                'RANGE SCAN',
+                                                'RS',
+                                                'UNIQUE SCAN',
+                                                'US',
+                                                'RANGE SCAN DESCENDING',
+                                                'RSD',
+                                                'TO ROWIDS',
+                                                'BITMAP',
+                                                options)||'('||NVL(b.SEARCH_COLUMNS,0) || '): ' || object_name)
+                              FROM   &check_access_pdb.SQL_PLAN b
+                              WHERE  a.dbid = b.dbid
+                              AND    a.sql_id = b.sql_id
+                              AND    a.plan_hash_value = b.plan_hash_value
+                              AND    b.id BETWEEN a.id - 1 AND a.id + 1
+                              AND    b.depth=a.depth+1
+                              AND   (b.parent_id=a.id or b.parent_id!=b.id-1)
+                              AND    b.operation = 'INDEX'
+                              AND    a.object# < b.object#)
+                    ELSE OPTIONS END,
+                   options,
+                   operation) OP
+        FROM   QRY,&check_access_pdb.SQL_PLAN a
+        WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
+        AND    A.OBJECT_OWNER LIKE QRY.OWNER
+        AND    QRY.DBID=A.DBID),
 Stats AS (
-    SELECT /*+ordered use_hash(a hs s) opt_param('_optimizer_cartesian_enabled' 'false')  opt_param('_optimizer_mjc_enabled' 'false') */
-           hs.sql_id,dbid &con,sorttype,
-           SUM(elapsed_time_delta) TOTAL_ELA,
-           SUM(executions_delta) execs,
-           op,obj,object_name,
-           plan_hash_value plan_hash
-    FROM   (SELECT /*+use_hash(a) no_merge*/
-                   distinct
-                   a.dbid,
-                   nvl(lower(:V2),'total') sorttype,
-                   plan_hash_value,
-                   object# obj,
-                   qry.object_name,
-                   nvl( CASE WHEN options LIKE '%INDEX ROWID%' THEN
-                                 (SELECT /*+no_expand*/ 
-                                          MAX(DECODE(b.options,
-                                                    'FULL SCAN',
-                                                    'FFS',
-                                                    'RANGE SCAN',
-                                                    'RS',
-                                                    'UNIQUE SCAN',
-                                                    'US',
-                                                    'RANGE SCAN DESCENDING',
-                                                    'RSD',
-                                                    'TO ROWIDS',
-                                                    'BITMAP',
-                                                    options)||'('||NVL(b.SEARCH_COLUMNS,0) || '): ' || object_name)
-                                  FROM   &check_access_pdb.SQL_PLAN b
-                                  WHERE  a.dbid = b.dbid
-                                  AND    a.sql_id = b.sql_id
-                                  AND    a.plan_hash_value = b.plan_hash_value
-                                  AND    b.id BETWEEN a.id - 1 AND a.id + 1
-                                  AND    b.depth=a.depth+1
-                                  AND   (b.parent_id=a.id or b.parent_id!=b.id-1)
-                                  AND    b.operation = 'INDEX'
-                                  AND    a.object# < b.object#)
-                        ELSE OPTIONS END,
-                       options) OP
-            FROM   QRY,&check_access_pdb.SQL_PLAN a
-            WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
-            AND    A.OBJECT_OWNER LIKE QRY.OWNER
-            AND    QRY.DBID=A.DBID) a
-    JOIN &check_access_pdb.Sqlstat hs USING(DBID,plan_hash_value)
-    JOIN &check_access_pdb.snapshot s USING(DBID,snap_id,instance_number)
-    WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
-    AND   to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')
-    GROUP  BY hs.sql_id, dbid &con,plan_hash_value,obj,object_name,op, sorttype)
-SELECT plan_hash,sql_id top_sql_id,ids,obj,object_name,op operation,total_ela,avg_ela,execs,
+    SELECT plan_hash_value,dbid &con, 
+           max(sql_id) keep(dense_rank last order by total_ela) sql_id,
+           count(distinct sql_id) ids,
+           sum(total_ela) total_ela,
+           ratio_to_report(sum(total_ela)) over() weight,
+           sum(execs) execs,
+           round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela
+    FROM (
+        SELECT /*+ordered use_hash(hs s) opt_param('_optimizer_cartesian_enabled' 'false')  opt_param('_optimizer_mjc_enabled' 'false') */
+               hs.sql_id,dbid &con,
+               SUM(elapsed_time_delta) TOTAL_ELA,
+               SUM(executions_delta) execs,
+               plan_hash_value
+        FROM  (
+              SELECT b.*
+              FROM  (select /*+no_merge*/ distinct dbid,plan_hash_value from plans where plan_hash_value>0) a
+              JOIN  &check_access_pdb.Sqlstat b
+              ON     a.dbid=b.dbid
+              AND    a.plan_hash_value=b.plan_hash_value
+              UNION  ALL
+              SELECT b.*
+              FROM  (select /*+no_merge*/ distinct dbid,sq_id from plans where sq_id IS NOT NULL) a
+              JOIN  &check_access_pdb.Sqlstat b
+              ON     a.dbid=b.dbid
+              AND    a.sq_id=b.sql_id
+              AND    b.plan_hash_value=0) hs
+        JOIN &check_access_pdb.snapshot s USING(dbid,snap_id,instance_number)
+        WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
+        AND   to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')
+        GROUP  BY hs.sql_id, dbid &con,plan_hash_value)
+    GROUP BY plan_hash_value,dbid &con,case when plan_hash_value=0 THEN sql_id END)
+SELECT plan_hash_value plan_hash,sql_id top_sql_id,ids "SQLs",obj,object_name,op operation,total_ela,weight,avg_ela,execs,
        substr(regexp_replace(trim(to_char(SUBSTR(sql_text, 1, 500))),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) text
-FROM (select plan_hash,dbid &con, 
-             max(sql_id) keep(dense_rank last order by total_ela) sql_id,
-             count(distinct sql_id) ids,
-             obj,object_name,op,
-             sum(total_ela) total_ela,
-             sum(execs) execs,
-             sorttype,
-             round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela
-      from   stats
-      group  by dbid &con,sorttype,plan_hash,obj,object_name,op)
+FROM  plans a
+JOIN  stats b USING(dbid,plan_hash_value)
 LEFT JOIN &check_access_pdb.sqltext USING(dbid &con,sql_id)
+WHERE sql_id=nvl(a.sq_id,sql_id)
 ORDER  BY 0+decode(sorttype,'total',total_ela,'ela',avg_ela,'exe',execs,0) DESC NULLS LAST,
           decode(sorttype,'sql',sql_id,'text',text);

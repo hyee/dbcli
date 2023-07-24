@@ -21,10 +21,8 @@
         default={select DISTINCT FUNCTION_ID, FUNCTION_NAME FUNC,1 dbid from v$iostat_function A}
         d={
             SELECT DISTINCT FUNCTION_ID, FUNCTION_NAME FUNC,s.dbid
-            FROM   snap s,dba_hist_iostat_function A
+            FROM   snap s,dba_hist_iostat_function_name A
             WHERE  s.dbid=a.dbid
-            AND    s.inst_id=a.instance_number
-            AND    a.snap_id=s.max_snap_id
         }
     }
     &env: {
@@ -99,25 +97,27 @@ BEGIN
 END;
 /
 col reqs,total,timeouts,cnt for tmb
-col avg_wait,wait_time for usmhd2
-col waits,reads,<128K,Time%,fg,pct for pct
+col avg_wait,sync_wait for usmhd2
+col syncs,reads,<128K,Time%,fg,pct for pct
 col bytes,avg_io for kmg2
 col func break skip ~
 col category break
 grid {[[--grid:{topic='IO Stats - Function Detail'}
     &snap
-    SELECT Nvl(FUNC,' ** TOTAL **') Func,
-           regexp_replace(FILETYPE_NAME,' File$') file_type,
+    SELECT decode(grouping_id(typ,filetype),0,typ,1,' ** All Files **',2,' ** All Types **',' **  Total  **') Func,
+           nvl(filetype,typ) file_type,
            ROUND(SUM(reqs)/&c,2) reqs,
-           nullif(round(SUM(r*number_of_waits) / SUM(reqs), 4),0) WAITS,
+           nullif(round(SUM(r*number_of_waits) / SUM(reqs), 4),0) Syncs,
            nullif(round(SUM(r*small_read_reqs + r*large_read_reqs)/ SUM(reqs), 4),0) reads,
            nullif(round(SUM(r*small_write_reqs + r*small_read_reqs) / SUM(reqs), 4),0) "<128K",
            nullif(SUM(mbs * 1024 * 1024 /&c),0) bytes,
            nullif(ROUND(SUM(mbs) * 1024 * 1024 / SUM(reqs), 2),0) avg_io,
-           nullif(SUM(r*wait_time) /&c * 1000,0) wait_time,
+           nullif(SUM(r*wait_time) /&c * 1000,0) sync_wait,
            nullif(round(SUM(r*wait_time) / NULLIF(SUM(r*number_of_waits), 0) * 1000, 2),0) avg_Wait,
-           nullif(round(ratio_to_report(SUM(r*wait_time)) OVER(PARTITION BY GROUPING_ID(FUNC)), 4),0) "Time%"
+           nullif(round(ratio_to_report(SUM(r*wait_time)) OVER(PARTITION BY grouping_id(typ,filetype)), 4),0) "Time%"
     FROM   (SELECT A.*,
+                   replace(FILETYPE_NAME,' File') filetype,
+                   replace(FUNC,'Buffer Cache Reads','Buffer Reads') typ,
                    r*NULLIF(small_read_reqs + small_write_reqs + large_read_reqs + large_write_reqs, 0) REQS,
                    r*(small_read_megabytes + small_write_megabytes + large_read_megabytes + large_write_megabytes) mbs
             FROM   (SELECT *
@@ -125,7 +125,7 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
                     JOIN   (&iof) B
                     USING  (function_id,dbid)
                     WHERE  inst_id=NVL(0+:V1,inst_id)) A)
-    GROUP  BY ROLLUP(FUNC), regexp_replace(FILETYPE_NAME,' File$')
+    GROUP  BY CUBE(typ,filetype)
     HAVING SUM(reqs)>0
     ORDER  BY 1, 3 desc
 ]],'|',{[[--grid:{topic='Top Database I/O Events',max_rows=17}

@@ -8,6 +8,7 @@
     --[[
         @ARGS: 1
         &vw     : default={'A'} g={'G'} d={'D'} AWR={'AWR'}
+        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
         &filter : default={upper(sql_text_) like upper(q'~%&V1%~') or (sql_id=q'~&v1~')} r={regexp_like(sql_text_||SQL_ID,q'~&V1~','in') or (sql_id=q'~&v1~')}
         @CHECK_ACCESS_GV: {
             GV$SQLSTATS_PLAN_HASH={V$SQLSTATS_PLAN_HASH}
@@ -22,6 +23,7 @@
                 SELECT 'DBA_HIST_SQLTEXT',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM DBA_HIST_SQLTEXT A)
                 WHERE  &vw in('A','D','AWR') AND (&filter)
+                AND    dbid=NVL(0+'&dbid',&did)
             }
         }
 
@@ -73,7 +75,7 @@
         }
     --]]
 ]]*/
-SELECT /*+no_expand PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/
+SELECT /*+no_expand PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/
        SOURCE,SQL_ID,
        substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 300) sql_text
 FROM (
@@ -83,10 +85,6 @@ FROM (
                substr(sql_text,1,1000) sql_text
         FROM   (SELECT a.*, a.SQL_FULLTEXT sql_text_ FROM &CHECK_ACCESS_GV a)
         WHERE  &vw in('A','G') AND (&filter)))) a
-    UNION
-    SELECT 'ALL_SQLSET_STATEMENTS',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
-    FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM ALL_SQLSET_STATEMENTS A)
-    WHERE  &vw in('A','D') AND (&filter)
     &CHECK_ACCESS_AWR
     &CHECK_ACCESS_SPM
     &CHECK_ACCESS_SQL_PROFILES

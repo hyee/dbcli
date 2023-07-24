@@ -24,7 +24,7 @@
         @ARGS: 1
         &OPT2: default={}, d={1}
         @check_access_dba: dba_objects={dba_} default={_all}
-        @check_access_segs: sys.sys_dba_segs={(select * from sys.sys_dba_segs where object_type_id>0)} dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
+        @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
         &check_access_exa1: {
           default={(select ' ' owner,' ' object_name,' ' subobject_name,' ' object_type,
                             0 object_id,

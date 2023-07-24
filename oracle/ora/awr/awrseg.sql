@@ -18,7 +18,10 @@
         &unit: default={1} avg={s}
         @opt_reads: 12.1={ROUND(SUM(OPTIMIZED_PHYSICAL_READS_DELTA)/NULLIF(SUM(PHYSICAL_READ_REQUESTS_DELTA),0),4)} default={to_number(null)}
         @imscans: 19.1={SUM(IM_SCANS_DELTA/&unit)} default={to_number(null)}
+        @im_chgs: 19.1={SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit)} default={to_number(null)}
         @gc_grants: 19.1={SUM(GC_REMOTE_GRANTS_DELTA/&unit)} default={to_number(null)}
+        @pop_cus: 19.1={SUM(POPULATE_CUS_DELTA/&unit)} default={to_number(null)}
+        @repop_cus: 19.1={SUM(REPOPULATE_CUS_TOTAL/&unit)} default={to_number(null)}
     ]]--
 ]]*/
 COL "scans,imscans,logi_reads,busy_waits,phy_rreqs,phy_reads,phy_wreqs,phy_writes,value" FOR TMB
@@ -41,17 +44,19 @@ WITH segs AS(
            nullif(ROUND(SUM(PHYSICAL_READS_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_READS_DELTA),0),4),0)  dx_reads,
            nullif(SUM(GC_CR_BLOCKS_RECEIVED_DELTA/&unit),0) cr_blocks,
            nullif(SUM(DB_BLOCK_CHANGES_DELTA/&unit),0) blk_chgs,
-           &12c nullif(SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit),0) im_chgs,
+           nullif(&im_chgs,0) im_chgs,
            nullif(SUM(PHYSICAL_WRITE_REQUESTS_DELTA/&unit),0) phy_wreqs,
            nullif(SUM(PHYSICAL_WRITES_DELTA/&unit),0) phy_writes,
            nullif(ROUND(SUM(PHYSICAL_WRITES_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_WRITES_DELTA),0),4),0) dx_writes,
            nullif(SUM(GC_CU_BLOCKS_RECEIVED_DELTA/&unit),0) cu_blocks,
-           nullif(MAX(decode(r,1,SPACE_USED_TOTAL/&unit)),0) space,
-           &12c nullif(SUM(IM_MEMBYTES/&unit),0) im_mem,
+           nullif(&gc_grants,0) gc_grants,
+           nullif(&pop_cus,0) pop_cus,
+           nullif(&repop_cus,0) repop_cus,
            nullif(SUM(ITL_WAITS_DELTA/&unit),0) itl_waits,
            nullif(SUM(ROW_LOCK_WAITS_DELTA/&unit),0) lock_waits,
-           nullif(&gc_grants,0) gc_grants,
-           nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows
+           nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows,
+           nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space,
+           &12c nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
     from (select a.*, 
                  row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
          from (
@@ -100,17 +105,19 @@ BEGIN
                    nullif(ROUND(SUM(PHYSICAL_READS_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_READS_DELTA),0),4),0)  dx_reads,
                    nullif(SUM(GC_CR_BLOCKS_RECEIVED_DELTA/&unit),0) cr_blocks,
                    nullif(SUM(DB_BLOCK_CHANGES_DELTA/&unit),0) blk_chgs,
-                   &12c nullif(SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit),0) im_chgs,
+                   nullif(&im_chgs,0) im_chgs,
                    nullif(SUM(PHYSICAL_WRITE_REQUESTS_DELTA/&unit),0) phy_wreqs,
                    nullif(SUM(PHYSICAL_WRITES_DELTA/&unit),0) phy_writes,
                    nullif(ROUND(SUM(PHYSICAL_WRITES_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_WRITES_DELTA),0),4),0) dx_writes,
                    nullif(SUM(GC_CU_BLOCKS_RECEIVED_DELTA/&unit),0) cu_blocks,
-                   nullif(MAX(decode(r,1,SPACE_USED_TOTAL/&unit)),0) space,
-                   &12c nullif(SUM(IM_MEMBYTES/&unit),0) im_mem,
+                   nullif(&gc_grants,0) gc_grants,
+                   nullif(&pop_cus,0) pop_cus,
+                   nullif(&repop_cus,0) repop_cus,
                    nullif(SUM(ITL_WAITS_DELTA/&unit),0) itl_waits,
                    nullif(SUM(ROW_LOCK_WAITS_DELTA/&unit),0) lock_waits,
-                   nullif(&gc_grants,0) gc_grants,
-                   nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows
+                   nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows,
+                   nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space,
+                   &12c nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
             from (select a.*, 
                          row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
                  from (
@@ -143,19 +150,22 @@ BEGIN
                               4, 'Direct Path Reads',
                               5, 'Physical Reads Un-Optimized',
                               6, 'Segment Scans',
-                              7, 'Inmemory Scans',
+                              7, 'In-Memory Scans',
                               8, 'DB Block Changes',
-                              9, 'Physical Writes',
-                              10, 'Physical Write Requests',
-                              11, 'Direct Path Writes',
-                              12, 'Buffer Busy Waits',
-                              13, 'GC Buffer Busy Waits',
-                              14, 'GC Remote Grants',
-                              15, 'GC CR Blocks Received',
-                              16, 'GC CU Blocks Received',
-                              17, 'Row Lock Waits',
-                              18, 'ITL Waits',
-                              19, 'Chained Rows') n,
+                              9, 'In-Memory Block Changes',
+                              10, 'Physical Writes',
+                              11, 'Physical Write Requests',
+                              12, 'Direct Path Writes',
+                              13, 'Buffer Busy Waits',
+                              14, 'GC Buffer Busy Waits',
+                              15, 'GC Remote Grants',
+                              16, 'GC CR Blocks Received',
+                              17, 'GC CU Blocks Received',
+                              18, 'Row Lock Waits',
+                              19, 'ITL Waits',
+                              20, 'Chained Rows',
+                              21, 'Populated CUs',
+                              22, 'Repopulated CUs') n,
                         nullif(round(decode(a.r,
                                       1,logi_reads,
                                       2,phy_reads,
@@ -165,19 +175,22 @@ BEGIN
                                       6,scans,
                                       7,imscans,
                                       8,blk_chgs,
-                                      9,phy_writes,
-                                      10,phy_wreqs,
-                                      11,dx_writes,
-                                      12,busy_waits,
-                                      13,gc_busy,
-                                      14,gc_grants,
-                                      15,cr_blocks,
-                                      16,cu_blocks,
-                                      17,lock_waits,
-                                      18,itl_waits,
-                                      19,chain_rows),2),0) v,
+                                      9,im_chgs,
+                                      10,phy_writes,
+                                      11,phy_wreqs,
+                                      12,dx_writes,
+                                      13,busy_waits,
+                                      14,gc_busy,
+                                      15,gc_grants,
+                                      16,cr_blocks,
+                                      17,cu_blocks,
+                                      18,lock_waits,
+                                      19,itl_waits,
+                                      20,chain_rows,
+                                      21,pop_cus,
+                                      22,repop_cus),2),0) v,
                         owner,object_name,segments
-                FROM (select rownum r from dual connect by rownum<=19) a, segs) a
+                FROM (select rownum r from dual connect by rownum<=22) a, segs) a
         WHERE v>0)
     WHERE p>=0.08
     ORDER BY R,p DESC;

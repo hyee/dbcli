@@ -1,4 +1,5 @@
-/*[[Create SQL Patch on specify SQL ID. Usage: @@NAME <SQL Id> "<Hint Text>"
+/*[[
+    Create SQL Patch on specific SQL ID. Usage: @@NAME <SQL Id> "<Hint Text>"
     To patch the SQL in force matching mode, please execute with SYSDBA.
     --[[
         @ALIAS  : SQLPATCH
