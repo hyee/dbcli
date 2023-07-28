@@ -61,9 +61,9 @@
         default={WITH snap AS(
             SELECT /*+materialize*/ dbid, 
                     instance_number inst_id, 
-                    round(86400*sum((end_interval_time+0)-case when begin_interval_time+0>=st-5/1440 then begin_interval_time+0 end)) secs,
+                    round(86400*(max(end_interval_time+0)-min(end_interval_time+0))) secs,
                     MAX(snap_id) max_snap_id, 
-                    nullif(min(snap_id),min_snap_id) min_snap_id
+                    min(snap_id) min_snap_id
             FROM   (SELECT a.*,
                            NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE - 7) st,
                            NVL(to_date(:V3, 'yymmddhh24miss'), SYSDATE + 1) ed,
@@ -97,7 +97,7 @@ BEGIN
 END;
 /
 col reqs,total,timeouts,cnt for tmb
-col avg_wait,sync_wait for usmhd2
+col avg_wait,sync_wait,time for usmhd2
 col syncs,reads,<128K,Time%,fg,pct for pct
 col bytes,avg_io for kmg2
 col func break skip ~
@@ -128,21 +128,23 @@ grid {[[--grid:{topic='IO Stats - Function Detail'}
     GROUP  BY CUBE(typ,filetype)
     HAVING SUM(reqs)>0
     ORDER  BY 1, 3 desc
-]],'|',{[[--grid:{topic='Top Database I/O Events',max_rows=17}
+]],'|',{[[--grid:{topic='Top Database I/O Events'}
     &snap
-    SELECT nvl(event,'* '||wait_class||' *') event_or_class,
-           SUM(r*total_waits)/&c total,
-           nullif(round(SUM(r*total_waits_fg) / SUM(r*total_waits), 4),0) fg,
-           nullif(SUM(r*total_timeouts)/&c,0) timeouts,
-           SUM(r*time_waited_micro)/&c wait_time,
-           round(SUM(r*time_waited_micro) / SUM(r*total_waits), 2) avg_wait,
-           round(ratio_to_report(SUM(r*time_waited_micro)) OVER(PARTITION BY GROUPING_ID(EVENT)), 4) "Time%"
-    FROM   (&env)
-    WHERE  wait_class IN ('User I/O', 'System I/O')
-    AND    inst_id=NVL(0+:V1,inst_id)
-    GROUP  BY wait_class, ROLLUP(event)
-    HAVING SUM(r*total_waits)>0
-    ORDER  BY grouping_id(event) desc, "Time%" desc
+    SELECT * FROM (
+        SELECT nvl(event,'* '||wait_class||' *') event_or_class,
+               SUM(r*total_waits)/&c total,
+               --nullif(round(SUM(r*total_waits_fg) / SUM(r*total_waits), 4),0) fg,
+               nullif(SUM(r*total_timeouts)/&c,0) timeouts,
+               SUM(r*time_waited_micro)/&c time,
+               round(SUM(r*time_waited_micro) / SUM(r*total_waits), 2) avg_wait,
+               round(ratio_to_report(SUM(r*time_waited_micro)) OVER(PARTITION BY GROUPING_ID(EVENT)), 4) "Time%"
+        FROM   (&env)
+        WHERE  wait_class IN ('User I/O', 'System I/O')
+        AND    inst_id=NVL(0+:V1,inst_id)
+        GROUP  BY wait_class, ROLLUP(event)
+        HAVING SUM(r*total_waits)>0
+        ORDER  BY grouping_id(event) desc, "Time%" desc)
+    WHERE ROWNUM<=16
 ]],'-',[[--grid:{topic='System Stats'}
     &snap,
     stat AS(

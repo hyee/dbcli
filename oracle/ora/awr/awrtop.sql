@@ -3,27 +3,6 @@
     -m: group by force_maching_signature instead of sql_id
     -p: group by plan_hash_value instead of sql_id
     -u: only show the records whose parsing_schema_name=sys_context('userenv','current_schema')
-
-    Sample Output:
-    ==============
-       SQL_ID     PHVS  TOP_PHV    EXECS  PARSE  ELA    PCT    AVG  SQL_TEXT                                     
-    ------------- ---- ---------- ------ ------ ------ ------ ----- ---------------------------------------------
-    310wr50c2fjv0    1 3971591178 120971 604862 19.01h 71.94% 0.57s SELECT A.EVENT, DATA , '$' FROM (SELECT /*+no
-    ard6ysp2ufm1n    1 881395945  120972 604863  3.98h 15.06% 0.12s SELECT '[gv$sysstat]' || NAME, SUM(VALUE), ''
-    68gsknzub3950    1 0                      0  1.45h  5.50%       BEGIN :1 := mon_db.startup(interval=>5,server
-    a8zxxqa1hcc7f    1 4063065057 120972 604863 28.02m  1.77% 0.01s SELECT JSON_ARRAYAGG(JSON_OBJECT('event' IS D
-    7v8dacmx3t3td    1 1117094054 120972 604551 22.84m  1.44% 0.01s SELECT COUNT(*) FROM GV$SESSION WHERE USERNAM
-    d3ddjhh624zy9    1 4219360880 120971 604668 21.70m  1.37% 0.01s SELECT EVENT, EVENT || '|' || LISTAGG(NVL(W, 
-    6hnhqahphpk8n    1 486334127   18413  18413 10.51m  0.66% 0.03s select free_mb from v$asm_diskgroup_stat wher
-    d49r7pkbqqpgn    1 1811226007 120972      0  6.54m  0.41%     0 SELECT JSON_ARRAYAGG(JSON_OBJECT('event' IS D
-    6uxga5vnsgugt    2 1018201100   5196   5196  4.07m  0.26% 0.05s select s.file#, s.block#, s.ts#, t.obj#, s.hw
-    1u8v867f5ys43    1 2025954503  25140  25140  3.98m  0.25% 0.01s select ts#, file#, block#, hwmincr from seg$ 
-    892d0vg7gatf5    1 1656552173 120972      0  3.08m  0.19%     0 SELECT MAX(A.VALUE), MIN(A.VALUE) FROM V$SESS
-    3kqrku32p6sfn    1 1774581179     80   1212  3.00m  0.19% 2.25s MERGE /*+ OPT_PARAM('_parallel_syspls_obey_fo
-    1q1spprb9m55h    2 2870263549    114    200  2.13m  0.13% 1.12s WITH MONITOR_DATA AS (SELECT INST_ID, KEY, NV
-    50ycjbhy30sxv    1 670558803  120970      0  1.29m  0.08%     0 SELECT EVENT, EVENT || '|' || NVL(DATA, '|'),
-    c179sut1vgpc8    1 1149183595   2002   2002  1.04m  0.07% 0.03s INSERT /*+ LEADING(@"SEL$F5BB74E1" "H"@"SEL$2
-
     --[[
         &filter: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &BASE : s={sql_id}, m={signature} p={plan_hash_value}
@@ -35,7 +14,48 @@ set feed off
 col &v2,avg format usmhd2
 ORA _sqlstat
 col pct for pct2
+COL MEM_LOW,MEM_HIGH FOR KMG0
+COl OPTIMALS,ONEPASSES,MULTIPASSES,TOTALS,PER_SECOND FOR TMB
 
+PRO SQL WORKAREA HISTOGRAM:
+PRO =======================
+WITH snap AS(
+    SELECT /*+materialize*/ dbid, 
+            instance_number, 
+            round(86400*(max(end_interval_time+0)-min(end_interval_time+0))) secs,
+            MAX(snap_id) max_snap_id, 
+            min(snap_id) min_snap_id
+    FROM   (SELECT a.*,
+                   to_date(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
+                   to_date(coalesce(:V4,:endtime,to_char(sysdate+1,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
+                   min(snap_id) over(partition by dbid,instance_number,startup_time) min_snap_id
+            FROM   DBA_HIST_SNAPSHOT a
+            WHERE  coalesce(upper(:V1),''||:instance,'A') IN('A',''||instance_number))
+    WHERE  end_interval_time + 0 BETWEEN st - 5/1440 AND ed + 5/1440
+    GROUP BY dbid,instance_number,min_snap_id)
+SELECT MEM_LOW,MEM_HIGH,
+       '|' "|",OPTIMALS,OPTIMALS/TOTALS PCT,
+       '|' "|",ONEPASSES,ONEPASSES/TOTALS PCT,
+       '|' "|",MULTIPASSES,MULTIPASSES/TOTALS PCT,
+       '|' "|",TOTALS,PER_SECOND, 2*ratio_to_report(TOTALS) over() PCT
+FROM (
+    SELECT Nvl(''||LOW_OPTIMAL_SIZE,'*') MEM_LOW,
+           Nvl(''||(HIGH_OPTIMAL_SIZE+1),'*') MEM_HIGH,
+           nullif(SUM(OPTIMAL_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)),0) OPTIMALS,
+           nullif(SUM(ONEPASS_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)),0) ONEPASSES,
+           nullif(SUM(MULTIPASSES_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)),0) MULTIPASSES,
+           nullif(SUM(TOTAL_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)),0) TOTALS,
+           nullif(ROUND(SUM(TOTAL_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)/secs),2),0) PER_SECOND
+    FROM   DBA_HIST_SQL_WORKAREA_HSTGRM h
+    JOIN   snap s
+    USING (dbid,instance_number)
+    WHERE  h.snap_id BETWEEN s.min_snap_id and s.max_snap_id
+    GROUP BY ROLLUP((LOW_OPTIMAL_SIZE,HIGH_OPTIMAL_SIZE))
+    ORDER BY LOW_OPTIMAL_SIZE)
+WHERE TOTALS>0;
+
+PRO SQL STATS:
+PRO ==========
 WITH qry as (SELECT coalesce(upper(:V1),''||:instance,'A') inst,
                     lower(nvl(:V2,'ela')) typ,
                     to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
