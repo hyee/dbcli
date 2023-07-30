@@ -11,7 +11,7 @@
        @con : 12.1={con_id,} default={}
        @ver5: {
             12.1={con_id,decode(con_id,1,'CDB$ROOT',(select name from v$pdbs where con_id=a.con_id and rownum<2)) Container,
-                  NAME PLAN,IS_TOP_PLAN IS_TOP, CPU_MANAGED CPU, INSTANCE_CAGING CAGING, PARALLEL_SERVER_LIMIT PX_LIMIT,
+                  NAME PLAN,IS_TOP_PLAN IS_TOP, CPU_MANAGED CPU, INSTANCE_CAGING CAGING, PARALLEL_SERVER_LIMIT/100 PX_LIMIT,
                   PARALLEL_SERVERS_ACTIVE PX_ACTIVE,PARALLEL_SERVERS_TOTAL PX_TOTAL,PARALLEL_EXECUTION_MANAGED PX_CTRL, 
                   DIRECTIVE_TYPE DX,SHARES,UTILIZATION_LIMIT/100 max_ut, MEMORY_MIN/100  MEM_MIN, MEMORY_LIMIT/100 MEM_LIMIT,PROFILE}
             default={*}
@@ -23,7 +23,8 @@
                 CONSUMER_GROUP,
                 ELAPSED_TIME_LIMIT ELAPSED_LIMIT, 
                 IO_MEGABYTES_LIMIT IO_MB_LIMIT, 
-                SHARES,CONCURRENCY_LIMIT CONCURRENCY,
+                SHARES,
+                CONCURRENCY_LIMIT CONCURRENCY,
                 DEGREE_OF_PARALLELISM DOP 
             FROM SYS.CS_RESOURCE_MANAGER.LIST_CURRENT_RULES()]],'|',}
              
@@ -44,7 +45,7 @@
                    DIRECTIVE_TYPE,
                    SHARES,
                    UTILIZATION_LIMIT/100 MAX_UT,
-                   PARALLEL_SERVER_LIMIT max_dop,
+                   PARALLEL_SERVER_LIMIT/100 PX_LIMIT,
                    MEMORY_MIN/100 MEM_MIN,
                    MEMORY_LIMIT/100 MEM_LIMIT,
                    STATUS,MANDATORY,COMMENTS
@@ -63,7 +64,7 @@ col timeout,max_ela,max_idle,max_blkr,CALL_TIME,ALL_TIME for smhd1
 col IO_REQs,LIO_req format tmb
 col IO_MB format kmg
 col CPU_TIME,CPU_WAIT,QUEUED_TM,ACT_TM for usmhd1
-col px_sess,max_ut,MEM_MIN,MEM_LIMIT for pct1
+col PX_LIMIT,max_ut,MEM_MIN,MEM_LIMIT for pct1
 grid {
     [[/*grid={topic="dba_rsrc_plans",autohide='on'}*/ select a.* from dba_rsrc_plans a, (select name from v$rsrc_plan) b where a.plan=b.name(+) order by nvl2(b.name,1,2),a.plan]],
     &check_cdb_plan
@@ -242,29 +243,36 @@ DECLARE
                 END IF;
             END LOOP;
             FOR r IN(select * from dba_cdb_rsrc_plan_directives where upper(plan)=v_plan and nvl(status,' ')!='PENDING') LOOP
-                IF r.mandatory = 'YES' THEN
+                IF r.mandatory = 'YES' AND method != 'update_' THEN
                     wr('/* -- This is an Oracle mandatory plan directive');
                 END IF;
                 
-                IF r.pluggable_database IS NOT NULL THEN
+                IF method = 'update_' AND r.directive_type='AUTOTASK' THEN
+                    v_stmt := 'dbms_resource_manager.update_cdb_autotask_directive('||chr(10);
+                ELSIF method = 'update_' AND r.directive_type='DEFAULT_DIRECTIVE' THEN
+                    v_stmt := 'dbms_resource_manager.update_cdb_default_directive('||chr(10);
+                ELSIF r.pluggable_database IS NOT NULL  THEN
                     v_stmt := 'dbms_resource_manager.&method.cdb_plan_directive('||chr(10);
-                    v_stmt := v_stmt ||'pluggable_database => '''||r.pluggable_database||''','||chr(10);
+                    v_stmt := v_stmt ||'pluggable_database     => '''||r.pluggable_database||''','||chr(10);
                 ELSE
                     v_stmt := 'dbms_resource_manager.&method.cdb_profile_directive('||chr(10);
-                    v_stmt := v_stmt ||'profile            => '''||r.profile||''','||chr(10);
+                    v_stmt := v_stmt ||'profile                => '''||r.profile||''','||chr(10);
                 END IF;
-                v_stmt := v_stmt ||'plan               => v_plan,'||chr(10);
-                v_stmt := v_stmt ||'&place.comment            => q''['||r.comments||']'','||chr(10);
-                v_stmt := v_stmt ||'&place.shares             => '||nvl(''||r.shares,'null')||','||chr(10);
-                v_stmt := v_stmt ||'&place.utilization_limit  => '||nvl(''||r.utilization_limit,'null')||','||chr(10);
-                v_stmt := v_stmt ||'&place.memory_min         => '||nvl(''||r.memory_min,'null')||','||chr(10);
-                v_stmt := v_stmt ||'&place.memory_limit       => '||nvl(''||r.memory_limit,'null')||');';
+                v_stmt := v_stmt ||'plan                   => v_plan,'||chr(10);
+                v_stmt := v_stmt ||'&place.comment                => q''['||r.comments||']'','||chr(10);
+                v_stmt := v_stmt ||'&place.shares                 => '||nvl(''||r.shares,'null')||','||chr(10);
+                v_stmt := v_stmt ||'&place.utilization_limit      => '||nvl(''||r.utilization_limit,'null')||','||chr(10);
+                v_stmt := v_stmt ||'&place.parallel_server_limit  => '||nvl(''||r.parallel_server_limit,'null')||','||chr(10);
+                v_stmt := v_stmt ||'&place.memory_min             => '||nvl(''||r.memory_min,'null')||','||chr(10);
+                v_stmt := v_stmt ||'&place.memory_limit           => '||nvl(''||r.memory_limit,'null')||');';
                 wr(v_stmt);
-                IF r.mandatory = 'YES' THEN
+                IF r.mandatory = 'YES' AND method != 'update_' THEN
                     wr('*/');
                 END IF;
             END LOOP;
             is_cdb := TRUE;
+        $ELSE
+            NULL;
         $END
         ELSE
             IF method != 'update_' THEN

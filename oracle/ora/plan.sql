@@ -278,7 +278,7 @@ END;
 print c
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
  (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ *
-  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
+  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ distinct a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT /*+no_expand*/ id,
                          min(id) over() minid,
@@ -452,7 +452,8 @@ xplan_data AS
                  x.* 
          from   xplan x) x
   LEFT   OUTER JOIN ordered_hierarchy_data o
-  ON     (o.id = x.oid))
+  ON     (o.id = x.oid)
+  ORDER  BY x.oid)
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (r)

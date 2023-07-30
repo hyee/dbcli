@@ -22,7 +22,7 @@ PRO =======================
 WITH snap AS(
     SELECT /*+materialize*/ dbid, 
             instance_number, 
-            round(86400*(max(end_interval_time+0)-min(end_interval_time+0))) secs,
+            1+round(86400*(max(end_interval_time+0)-min(end_interval_time+0))) secs,
             MAX(snap_id) max_snap_id, 
             min(snap_id) min_snap_id
     FROM   (SELECT a.*,

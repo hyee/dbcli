@@ -32,7 +32,7 @@ SET AUTOHIDE COL FEED OFF
 
 WITH segs AS(
     SELECT owner,object_name,
-           decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,'* ('||COUNT(DISTINCT dataobj#)||' segs)') "Partition",
+           decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,'* ('||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))||' segs)') "Partition",
            nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,
            nullif(&imscans,0) imscans,
            nullif(SUM(LOGICAL_READS_DELTA/&unit),0) logi_reads,
@@ -93,7 +93,7 @@ BEGIN
     OPEN :c FOR 
         WITH segs AS(
             SELECT /*+MATERIALIZE*/ owner,object_name,
-                   decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,''||COUNT(DISTINCT dataobj#)) segments,
+                   decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,''||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))) segments,
                    nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,
                    nullif(&imscans,0) imscans,
                    nullif(SUM(LOGICAL_READS_DELTA/&unit),0) logi_reads,
