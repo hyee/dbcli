@@ -38,9 +38,17 @@ if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
 elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
-        _java=`/usr/libexec/java_home -V 2>&1|grep -oh "/Library.*"|head -1`
+        if [ "$os" = "mac" ]; then
+            _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d"|grep -oh "/Library.*"|head -1`
+        else
+            _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d.+arm64"|grep -oh "/Library.*"|head -1`
+        fi
         if [[ "$_java" ]]; then
             _java="$_java/bin/java"
+        elif [ "$os" = "mac-arm" ]; then
+            echo "Cannot find Java 1.8+ executable for ARM-64."
+            popd
+            exit 1
         fi
     else
         _java=$(readlink -f "`type -p java`")

@@ -4,6 +4,8 @@
   -d    : analyze AWR views(DBA_HIST_*) instead of gv$ views
   -pdb  : analyze AWR PDB views(AWR_PDB_*) instead of gv$ views
   
+  Notes: Some stats(i.e. for LGWR) are missing in PDB level
+
   --[[
         &flag: default={1} d={dba_hist_} pdb={awr_pdb_}
         &div: default={1} avg={&V1}
@@ -46,12 +48,12 @@ BEGIN
     IF '&flag'='1' THEN
         IF dbms_db_version.version>11 THEN
             qry:='(SELECT * FROM '||qry||q'!
-                  UNION ALL
-                  SELECT METRIC_NAME,SUM(METRIC_VALUE),NULL,'Cell'
-                  FROM   v$cell_global
-                  WHERE  lower(METRIC_NAME) like '%log %'
-                  AND    METRIC_VALUE>0
-                  GROUP  BY METRIC_NAME)!';
+                      UNION ALL
+                      SELECT METRIC_NAME,SUM(METRIC_VALUE),NULL,'Cell'
+                      FROM   v$cell_global
+                      WHERE  lower(METRIC_NAME) like '%log %'
+                      AND    METRIC_VALUE>0
+                      GROUP  BY METRIC_NAME)!';
         END IF;
         IF regexp_like(:V1,'^\d+$') THEN
             func :='FUNCTION do_sleep(id NUMBER,target DATE) RETURN TIMESTAMP IS
@@ -143,7 +145,7 @@ BEGIN
     qry:=replace(replace(q'!
         WITH @FUNC@
         STATS AS(
-            SELECT /*+inline no_merge*/ *
+            SELECT /*+inline no_merge OPT_PARAM('_fix_control' '26552730:0')*/ *
             FROM   (@QUERY@)
             MODEL DIMENSION BY (NAME)
             MEASURES(typ,round(micro,2) micro,round(cnt,2) cnt,to_number(NULL) avg_time,to_number(NULL) delta_time,to_number(NULL) delta_pct)
@@ -157,7 +159,8 @@ BEGIN
                     micro['redo log space wait time']=micro[cv()]*1e4,
                     micro['user transactions']=sum(micro)[name in('user commits','user rollbacks')],
                     cnt['commit cleanouts successfully completed']=micro['commit cleanouts'],
-                    cnt[NAME LIKE 'redo write % time' OR NAME in('redo write worker delay (usec)','redo writes coalesced','cell pmem log writes','flashback log writes','Redo log write requests','user transactions')]=micro['redo writes'],
+                    cnt['redo write worker delay (usec)']=micro['redo writes adaptive worker'],
+                    cnt[NAME LIKE 'redo write % time' OR NAME in('redo writes coalesced','cell pmem log writes','flashback log writes','Redo log write requests','user transactions')]=micro['redo writes'],
                     cnt[NAME LIKE 'redo synch fast sync % (usec)']=micro[REPLACE(CV(),'(usec)','count')],
                     cnt['avg_redo_synch_polls']=micro['redo synch poll writes'],
                     cnt['redo writes adaptive all']=micro['redo writes'],
@@ -181,6 +184,9 @@ BEGIN
                     micro['Flash log redo write bytes']=SUM(micro)[name like 'Flash log redo bytes%'],
                     typ['Flash log redo write bytes']='Cell',
                     cnt['Flash log redo write bytes']=micro['redo size'],
+                    cnt['redo write broadcast ack time']=sum(micro)[name in('redo write broadcast ack count','broadcast rdma on commit (actual)')],
+                    cnt['redo synch time overhead (usec)']=sum(micro)[name like 'redo synch time overhead count%'],
+                    cnt['redo write worker delay (usec)']=micro['redo write worker delay count'],
                     avg_time[ANY]=round(micro[CV()]/nullif(cnt[CV()],0),2),
                     delta_time[NAME IN('redo write worker delay (usec)','redo write broadcast ack time','redo synch time overhead (usec)')]=avg_time[CV()],
                     delta_time['redo write gather time']=avg_time['redo write gather time']-nvl(avg_time['redo write worker delay (usec)'],0),
@@ -188,19 +194,20 @@ BEGIN
                     delta_time['redo write issue time']=avg_time['redo write issue time']-avg_time['redo write schedule time'],
                     delta_time['redo write finish time']=avg_time['redo write finish time']-nvl(avg_time['redo write issue time'],avg_time['redo write schedule time']),
                     delta_time['redo write time (usec)']=avg_time['redo write time (usec)']-avg_time['redo write finish time'],
-                    delta_time['redo write total time']=round(avg_time['redo write total time']-avg_time['expect_redo_synch_time']/2,2),
-                    delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-avg_time['expect_redo_synch_time']/2*LEAST(micro['redo synch writes'],micro['redo writes']))/micro['redo synch writes'],2),
+                    delta_time['redo write total time']=round((micro['redo write total time']-micro['redo write time (usec)']-nvl(micro['redo write broadcast ack time'],0))/cnt['redo write total time'],4),
+                    delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-micro['redo synch time overhead (usec)'])/cnt['redo synch time (usec)'],4),
                     micro['redo total time']=SUM(delta_time*cnt)[ANY],
                     delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
                     delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN','Redo log write request latency','Redo log write I/O latency')]=round(micro[CV()]/micro['redo total time'],5),
-                    delta_pct[SUBSTR(NAME,1,3) IN('LGW')]=round(micro[CV()]/micro['log file parallel write'],5),
-                    cnt['redo write broadcast ack time']=sum(micro)[name in('redo write broadcast ack count','broadcast rdma on commit (actual)')],
-                    cnt['redo synch time overhead (usec)']=sum(micro)[name like 'redo synch time overhead count%'],
-                    cnt['redo write worker delay (usec)']=micro['redo write worker delay count'],
-                    avg_time[name in ('redo write worker delay (usec)','redo write broadcast ack time','redo synch time overhead (usec)')]=round(micro[CV()]/nullif(cnt[CV()],0),2)
+                    delta_pct[SUBSTR(NAME,1,3) IN('LGW') or name='log file parallel write']=round(micro[CV()]/micro['redo write total time'],5)
             )
         )
-        SELECT NVL(typ,'Stat') TYPE,
+        SELECT CASE 
+                    --WHEN typ='Stat' AND name='redo write broadcast ack time' THEN
+                    --  'CKPT'
+                    WHEN typ='Stat' AND (name like 'redo write%' OR name in('redo wastage')) THEN
+                      'LGWR'
+               ELSE NVL(TYP,'Stat') END TYPE,
                decode(typ,'Event',DECODE(SUBSTR(NAME,1,3),'LGW','  '),
                           'Latch','',
                           'Cell','',
@@ -260,6 +267,7 @@ BEGIN
                              99),
                  NVL2(avg_time,1,2),
                  NAME!','@QUERY@',qry),'@FUNC@',func);
+    --dbms_output.put_line(qry);
     OPEN :cur FOR qry;
 END;
 /
