@@ -181,6 +181,7 @@ Sample Ouput:
             USING  (dbid,service_hash &con,machine)
             WHERE  to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS')=b.stime
             AND    decode(port,0,session_id*instance_number*10,port)=b.port_
+            AND    dbid=nvl(0+'&dbid',&did)
             AND   '&vw' IN('A','D')
         }
     }

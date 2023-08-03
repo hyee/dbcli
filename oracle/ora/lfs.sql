@@ -124,7 +124,7 @@ BEGIN
                         stat_name like '%rdma on commit%' or 
                         stat_name in('user commits','user rollbacks') or
                         stat_name like 'commit%' or
-                        stat_name like '%current block%flush%')
+                        stat_name like 'gc% block% flush%')
                  AND   VALUE > 0
                 GROUP  BY stat_name!';
         IF dbms_db_version.version>11 THEN
@@ -176,11 +176,14 @@ BEGIN
                     cnt['redo synch PMEM prep time']=SUM(micro)[NAME LIKE 'redo synch fast sync % count'],
                     micro['redo write broadcasts']=sum(micro)[name like 'redo write broadcast% count' or name='broadcast rdma on commit (actual)'],
                     cnt['redo write broadcasts']=micro['redo writes'],
+                    cnt['redo write info find fail']=micro['redo write info find'],
                     cnt['flashback log write bytes']=micro['flashback log writes'],
                     cnt['gc current block flush time']=micro['gc current blocks flushed'],
-                    micro[name in('gc current block flush time')]=micro[cv()]*1e4,
+                    cnt['gc cr block flush time']=micro['gc cr blocks flushed'],
+                    micro[name like 'gc % block flush time']=micro[cv()]*1e4,
                     cnt[name in('PMEM log write requests','Redo log write I/O latency','Redo log write request latency')]=micro['Redo log write requests'],
-                    cnt[name like 'Flash log%writ%']=micro['Flash log redo writes serviced'],
+                    cnt['Flash log redo bytes written to disk']=micro['Flash log redo writes first written to disk'],
+                    cnt['Flash log redo bytes written to flash']=micro['Flash log redo writes first written to flash'],
                     micro['Flash log redo write bytes']=SUM(micro)[name like 'Flash log redo bytes%'],
                     typ['Flash log redo write bytes']='Cell',
                     cnt['Flash log redo write bytes']=micro['redo size'],
@@ -189,22 +192,24 @@ BEGIN
                     cnt['redo write worker delay (usec)']=micro['redo write worker delay count'],
                     avg_time[ANY]=round(micro[CV()]/nullif(cnt[CV()],0),2),
                     delta_time[NAME IN('redo write worker delay (usec)','redo write broadcast ack time','redo synch time overhead (usec)')]=avg_time[CV()],
-                    delta_time['redo write gather time']=avg_time['redo write gather time']-nvl(avg_time['redo write worker delay (usec)'],0),
-                    delta_time['redo write schedule time']=avg_time['redo write schedule time']-avg_time['redo write gather time'],
-                    delta_time['redo write issue time']=avg_time['redo write issue time']-avg_time['redo write schedule time'],
-                    delta_time['redo write finish time']=avg_time['redo write finish time']-nvl(avg_time['redo write issue time'],avg_time['redo write schedule time']),
-                    delta_time['redo write time (usec)']=avg_time['redo write time (usec)']-avg_time['redo write finish time'],
-                    delta_time['redo write total time']=round((micro['redo write total time']-micro['redo write time (usec)']-nvl(micro['redo write broadcast ack time'],0))/cnt['redo write total time'],4),
-                    delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-micro['redo synch time overhead (usec)'])/cnt['redo synch time (usec)'],4),
+                    delta_time['redo write gather time']=avg_time[cv()]-nvl(avg_time['redo write worker delay (usec)'],0),
+                    delta_time['redo write schedule time']=avg_time[cv()]-avg_time['redo write gather time'],
+                    delta_time['redo write issue time']=avg_time[cv()]-avg_time['redo write schedule time'],
+                    delta_time['redo write finish time']=avg_time[cv()]-nvl(avg_time['redo write issue time'],avg_time['redo write schedule time']),
+                    delta_time['redo write time (usec)']=avg_time[cv()]-avg_time['redo write finish time'],
+                    delta_time['redo write total time']=round((micro[cv()]-micro['redo write time (usec)']-nvl(micro['redo write broadcast ack time'],0))/cnt[cv()],4),
+                    delta_time['redo synch time (usec)']=round((micro[cv()]-micro['redo synch time overhead (usec)'])/cnt[cv()],4),
                     micro['redo total time']=SUM(delta_time*cnt)[ANY],
                     delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
+                    delta_pct[name like 'gc%' or name like 'commit%']=round(micro[cv()]/micro['redo synch time (usec)'],4),
+                    delta_pct[name like 'Flash log redo bytes%']=round(cnt[cv()]/sum(cnt)[name like 'Flash log redo bytes%'],4),
                     delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN','Redo log write request latency','Redo log write I/O latency')]=round(micro[CV()]/micro['redo total time'],5),
                     delta_pct[SUBSTR(NAME,1,3) IN('LGW') or name='log file parallel write']=round(micro[CV()]/micro['redo write total time'],5)
             )
         )
         SELECT CASE 
-                    --WHEN typ='Stat' AND name='redo write broadcast ack time' THEN
-                    --  'CKPT'
+                    WHEN typ='Stat' AND name='redo write broadcast ack time' THEN
+                      'CKPT'
                     WHEN typ='Stat' AND (name like 'redo write%' OR name in('redo wastage')) THEN
                       'LGWR'
                ELSE NVL(TYP,'Stat') END TYPE,
@@ -246,7 +251,12 @@ BEGIN
                      'commit cleanouts successfully completed','ratio = completed/cleanouts,number of blocks attempted to update the ITL entry and set commit SCN at commit time',
                      'redo write broadcasts','ratio = (redo write broadcast+broadcast rdma on commit)*/redo writes',
                      'redo allocation','The latch to request public redo strands(_log_parallelism_max)',
-                     'redo write worker delay (usec)','time between when LGWR asks the worker to start doing the write and when the worker actually starts running'
+                     'redo write worker delay (usec)','time between when LGWR asks the worker to start doing the write and when the worker actually starts running',
+                     'gc cr block flush time','pct=time/redo synch time',
+                     'gc current block flush time','pct=time/redo synch time',
+                     'gcs log flush sync','pct=time/redo synch time',
+                     'Flash log redo write bytes','ratio=bytes/redo size',
+                     'Redo log write requests','ratio=requests/redo writes'
                ) memo
         FROM   STATS s
         WHERE  (cnt IS NOT NULL AND micro IS NOT NULL)
