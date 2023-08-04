@@ -213,7 +213,7 @@ DECLARE
     bits   PLS_INTEGER;
     phv    int;
     id     int;
-    chd    int;
+    chd    VARCHAR2(10);
     reason VARCHAR2(2000);
     memo   VARCHAR2(32767);
     n      PLS_INTEGER := 0;
@@ -244,13 +244,21 @@ BEGIN
     END IF;
     dbms_output.enable(NULL);
     FOR r IN (SELECT *
-              FROM   (SELECT /*+use_hash(a b)*/
-                              child_number c,
+              FROM   (SELECT /*+use_hash(a b) outline_leaf*/
+                              child_number||decode(count(distinct inst_id) over(),1,'','@'||inst_id) c,
                               plan_hash_value phv,
+                              optimizer_env_hash_value env_hash,
+                              schema,
                               REGEXP_REPLACE(reason, '<(ChildNumber|size)>.*?</\1>') reason,
                               row_number() over(PARTITION BY ora_hash(REGEXP_REPLACE(reason, '<(ChildNumber|size|id)>.*?</\1>'), 2147483646, 1) ORDER BY child_number) seq
-                      FROM   (SELECT * FROM gv$sql_shared_cursor &sql_id)
-                      JOIN   (SELECT * FROM gv$sql &sql_id)
+                      FROM   (SELECT inst_id, sql_id, child_number,reason FROM gv$sql_shared_cursor &sql_id)
+                      LEFT JOIN (SELECT inst_id, 
+                                        sql_id, 
+                                        child_number,
+                                        plan_hash_value,
+                                        optimizer_env_hash_value,
+                                        parsing_schema_name schema
+                                FROM gv$sql &sql_id)
                       USING  (inst_id, sql_id, child_number)
                       WHERE  INSTR(reason, 'ChildNode') > 0
                       AND    inst_id=nvl(&inst1,inst_id))
@@ -264,8 +272,13 @@ BEGIN
         bits:= 0;
         XML := xmltype('<R>' || SUBSTR(r.reason, 1, INSTR(r.reason, '</ChildNode>', -1) + LENGTH('</ChildNode>') - 1) || '</R>');
         FOR r1 IN (SELECT *
-                   FROM   XMLTABLE('/R/ChildNode' PASSING XML COLUMNS n XMLTYPE PATH 'node()') a,
-                          XMLTABLE('/*' PASSING a.n COLUMNS t VARCHAR2(128) PATH 'name()', v VARCHAR2(128) PATH 'text()') b) LOOP
+                   FROM   XMLTABLE('/R/ChildNode' PASSING XML COLUMNS
+                                i for ordinality, 
+                                n XMLTYPE PATH 'node()') a,
+                          XMLTABLE('/*' PASSING a.n COLUMNS 
+                                t VARCHAR2(128) PATH 'name()', 
+                                v VARCHAR2(128) PATH 'text()') b
+                    ORDER BY i,decode(t,'ID',1,'REASON',2,3),lower(t)) LOOP
             v := regexp_replace(trim(r1.v),'\s{3,}',' => ');
             IF upper(r1.t)='ID' THEN
                 IF id IS NOT NULL THEN
@@ -277,6 +290,9 @@ BEGIN
                     flush;
                 END IF;
                 reason := v;
+                IF reason LIKE 'Optimizer mismatch%' AND r.env_hash IS NOT NULL THEN
+                    reason := reason||chr(10)||'OPT_ENV: '||r.env_hash;
+                END IF;
             ELSE
                 memo := memo|| chr(10) || r1.t || ': ' || v;
             END IF;

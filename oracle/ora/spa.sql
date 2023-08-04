@@ -13,6 +13,7 @@
     --[[--
         &filter: default={1=1}, f={}
         @ver   : 18.1={} default={--}
+        @12c   : 12.1={}
         &ord1  : default={"Weight"} diff={greatest(diff,1/nullif(diff,0))} regress={diff} improve={1/nullif(diff,0)}
     --]]--
 ]]*/

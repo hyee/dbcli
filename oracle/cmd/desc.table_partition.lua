@@ -1,6 +1,6 @@
 env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {[[
-         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b c)*/ 
+         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b c) opt_param('container_data' 'current_dictionary')*/ 
                 COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||

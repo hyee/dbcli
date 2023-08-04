@@ -42,7 +42,7 @@ return [[
                    IN_OUT, 
                    defaulted "Default?",
                    CHARSET
-            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all')*/ 
                            overload,
                            SEQUENCE s,
                            DATA_LEVEL l,
@@ -197,7 +197,7 @@ return [[
         END LOOP;
 
         OPEN cur FOR
-            SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) ordered opt_param('optimizer_dynamic_sampling' 5) */ 
+            SELECT /*+no_merge(a) no_merge(b) use_nl(b a) push_pred(a) opt_param('container_data' 'all') ordered opt_param('optimizer_dynamic_sampling' 5) */ 
                      decode(b.pos,'-1','---',decode(b.overload,0,'', b.overload||'.') || b.pos) NO#,
                      lpad(' ',b.lv*2)||decode(0+regexp_substr(b.pos,'\d+$'), 0, '(RETURNS)', Nvl(b.argument_name, '<Collection>')) Argument,
                      nvl(CASE

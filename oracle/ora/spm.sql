@@ -16,6 +16,7 @@
        
         &filter: default={1=1} f={}
         @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+        @org : 23.1={origin} default={'MANUAL'}
     --]]
 ]]*/
 set feed off
@@ -277,7 +278,7 @@ BEGIN
                        nvl(last_modified+0,created+0) updated,
                        schema,
                        substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                FROM   (select a.*,category schema,category parsing_schema_name,'MANUAL' origin from dba_sql_profiles a)
+                FROM   (select a.*,category schema,category parsing_schema_name,type||nvl2(task_id,'(task_id='||task_id||')','') origin from dba_sql_profiles a)
                 WHERE  (&filter)
                 AND    (V1 IS NULL OR upper('SQL Profile'||','||name||','
                                       ||signature||','||category||','
@@ -290,11 +291,11 @@ BEGIN
                        trim(',' FROM status||','
                             ||CASE WHEN force_matching='YES' THEN 'FORCE_MATCHING,' END
                        ) attrs,
-                       origin,
+                       org,
                        nvl(last_modified+0,created+0) updated,
                        schema,
                        substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                FROM   (select a.*,category schema,category parsing_schema_name,'MANUAL' origin from dba_sql_patches a)
+                FROM   (select a.*,category schema,category parsing_schema_name,&org||nvl2(task_id,'(task_id='||task_id||')','') org from dba_sql_patches a)
                 WHERE  (&filter)
                 AND    (V1 IS NULL OR upper('SQL Patch'||','||name||','
                                       ||signature||','||category||','

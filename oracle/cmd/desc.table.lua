@@ -148,8 +148,9 @@ return  obj.object_type=='FIXED TABLE' and [[
         AND   a.col#=c.col#(+)
         ORDER  BY 1,2
     ]] or {[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
-               --+no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c)
+        SELECT /*INTERNAL_DBCLI_CMD*/ 
+             /*+opt_param('container_data' 'current_dictionary') opt_param('optimizer_dynamic_sampling' 5)
+               no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c) */
                a.INTERNAL_COLUMN_ID NO#,
                a.COLUMN_NAME NAME,
                a.DATA_TYPE_OWNER || NVL2(a.DATA_TYPE_OWNER, '.', '') ||
@@ -296,7 +297,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :table_name)
-        SELECT /*+no_parallel leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -340,7 +341,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c) cardinality(a 1)
+        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c) cardinality(a 1) opt_param('container_data' 'current_dictionary')
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
@@ -353,7 +354,8 @@ return  obj.object_type=='FIXED TABLE' and [[
                        c.COLUMN_NAME,
                        ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
                 FROM   (select * from all_constraints where owner=:owner and table_name=:object_name) a,
-                       all_constraints R, ALL_CONS_COLUMNS C
+                       all_constraints R, 
+                       ALL_CONS_COLUMNS C
                 WHERE  A.R_OWNER = R.OWNER(+)
                 AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
                 AND    A.OWNER = C.OWNER(+)

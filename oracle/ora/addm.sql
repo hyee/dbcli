@@ -35,7 +35,7 @@ col USED_SPACE FORMAT kmg
 col RECLAIMABLE_SPACE FORMAT kmg
 var cur refcursor;
 var res CLOB;
-VAR DEST VARCHAR2;
+VAR dest VARCHAR2;
 DECLARE
     c PLS_INTEGER;
     taskname varchar2(50);
@@ -43,19 +43,20 @@ DECLARE
     rs CLOB;
     sq VARCHAR2(2000);
     typ VARCHAR2(5):='.txt';
+    stmt VARCHAR2(300);
 BEGIN
     IF :V1 IS NULL THEN
         OPEN :cur FOR
             WITH r AS(
                 SELECT /*+materialize*/ 
                        A.*,
-                       (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings
-                FROM (
-                        SELECT task_id,advisor_name,owner, task_name, execution_start,execution_end,status
+                       (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id and execution_name=a.last_execution) findings,
+                       (SELECT COUNT(1) FROM dba_advisor_recommendations WHERE task_id = a.task_id and execution_name=a.last_execution) actions
+                FROM   (SELECT task_id,advisor_name,owner, task_name, execution_start,execution_end,status,last_execution
                         FROM   dba_advisor_tasks a
                         WHERE  (&FILTER)
-                        ORDER  BY execution_start DESC NULLS LAST
-                    ) A WHERE ROWNUM<=50),
+                        ORDER  BY execution_start DESC NULLS LAST) A 
+                WHERE ROWNUM<=50),
             r1 as(
                 SELECT task_id,
                        MAX(DECODE(parameter_name, 'START_TIME', parameter_value)) ||MAX(DECODE(parameter_name, 'START_SNAPSHOT', '(' || parameter_value || ')')) awr_start,
@@ -66,7 +67,7 @@ BEGIN
                 FROM   (SELECT TASK_ID FROM R) R 
                 JOIN   DBA_ADVISOR_PARAMETERS USING(TASK_ID)
                 GROUP  BY task_id)
-            SELECT TASK_ID,R.advisor_name,R.OWNER,R.TASK_NAME,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.findings,r.status,r.execution_start,r.execution_end
+            SELECT TASK_ID,R.advisor_name,R.OWNER,R.TASK_NAME,r.status,r.findings,r.actions,R1.AWR_START,R1.AWR_END,R1.DBID,R1.INST,R1.AWR_MODE,r.execution_start,r.execution_end
             FROM   R LEFT JOIN R1 USING(TASK_ID)
             ORDER  BY execution_start DESC NULLS LAST;
     ELSE
@@ -81,11 +82,16 @@ BEGIN
             :res  := rs;
             :dest := replace(taskname,':','_')||'.txt';
         ELSIF advtype like 'SQL%' THEN
-            EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2,level=>''ALL'');END;' using out rs,taskname,sq;
+            stmt := q'~BEGIN :rs :=sys.dbms_sqltune.report_tuning_task(task_name=>:1,owner_name=>:2,section=>'ALL',level=>'ALL',type=>'HTML');END;~';
+            IF advtype='SQL Repair Advisor' THEN
+                stmt := replace(stmt,'dbms_sqltune.report_tuning_task','dbms_sqldiag.report_diagnosis_task');
+            END IF;
+
+            EXECUTE IMMEDIATE replace(stmt,'HTML','TEXT') using out rs,taskname,sq;
             OPEN :cur for select rs result from dual;
             IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN
                 typ:='.html';
-                EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLTUNE.REPORT_TUNING_TASK(task_name=>:1,owner_name=>:2,section=>''ALL'',level=>''ALL'',type=>''HTML'');END;' using out rs,taskname,sq;
+                EXECUTE IMMEDIATE stmt using out rs,taskname,sq;
             END IF;
             :res := rs;
             :dest := replace(taskname,':','_')||typ;
