@@ -41,6 +41,7 @@
             &snap: default={0} snap={1}
             &showhub: default={0} a={1}
             &rpt   : default={0} d={1}
+            &v1    : default={} x={&_sql_id}
             @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
             @check_access_sqlm: SYS.DBMS_SQL_MONITOR/SYS.DBMS_LOCK={1} default={0}
             @check_access_report: SYS.DBA_HIST_REPORTS={1} default={0}

@@ -1,5 +1,5 @@
 /*[[
-    Show SQL Share cursors (gv$sql_shared_cursor). Usage: @@NAME [-s"<sql_id>"] [-i"<inst_id>"]
+    Show SQL Share cursors (gv$sql_shared_cursor). Usage: @@NAME [-i"<inst_id>"] [-s"<sql_id>" [-c"<child_number>"]] 
 
     Sample Outputs:
     ===============
@@ -25,7 +25,8 @@
 
     --[[
         @ALIAS  : nonshare
-        &sql_id : default={} s={WHERE SQL_ID='&0'}
+        &sql_id : default={} s={WHERE SQL_ID='&0' &child}
+        &child  : default={} c={AND child_number='&0'}
         &cnt    : default={AND CNT_>1} s={AND 1=1}
         &sep    : default={' | '} s={chr(10)||' '}
         &inst1  : default={:instance} i={0+'&0'}
@@ -42,8 +43,8 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                SUM(distinct avg_ela) avg_ela,
                SUM(distinct mem) mem,
                '$HEADCOLOR$|$NOR$' "|",
-               ' '||listagg(rpad(c,l)||'='||lpad(val,4),&sep) WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
-               MAX(sql_text) sql_text
+               ' '||listagg(rpad(c,l)||'='||lpad(val,4) ||&sep,'') WITHIN GROUP(ORDER BY val desc,c) " MISMATCH_REASONS",
+               substr(trim(regexp_replace(MAX(sql_text),'\s+ ',' ')),1,200) sql_text
         FROM   (SELECT sql_id,
                        MAX(sql_text) sql_text, c, 
                        SUM(DISTINCT childs) childs,
@@ -58,7 +59,7 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                                   sql_id,
                                   USERENV('instance')*1e6+COUNT(1) childs,
                                   USERENV('instance')*1e6+SUM(loaded_versions) vers,
-                                  substr(TRIM(regexp_replace(replace(MAX(b.sql_text),chr(0)), '[' || chr(1) || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 200) sql_text,
+                                  MAX(substr(b.sql_text,1,300)) sql_text,
                                   SUM(elapsed_time) ela,
                                   SUM(SHARABLE_MEM+TYPECHECK_MEM) mem,
                                   round(SUM(elapsed_time)/greatest(SUM(executions),1),3) avg_ela,
@@ -127,7 +128,7 @@ FROM   (SELECT sql_id, mod(SUM(DISTINCT childs),1e6) childs,mod(SUM(DISTINCT ver
                                   SUM(decode(BIND_LENGTH_UPGRADEABLE, 'Y', 1, 0)) BIND_LENGTH_UPGRADEABLE,
                                   SUM(decode(USE_FEEDBACK_STATS, 'Y', 1, 0)) USE_FEEDBACK_STATS
                            FROM   (SELECT A.*,COUNT(1) OVER(PARTITION BY SQL_ID) CNT_ FROM v$sql_shared_cursor a &sql_id) a
-                           LEFT   JOIN (SELECT /*+merge*/ * FROM v$sql &sql_id) b USING(sql_id,child_number)
+                           JOIN   (SELECT /*+merge*/ * FROM v$sql &sql_id) b USING(sql_id,child_number)
                            WHERE  userenv('instance')=nvl(&inst1,userenv('instance')) &cnt
                            GROUP  BY sql_id))) --
                         UNPIVOT(val FOR c IN(UNBOUND_CURSOR,
@@ -207,118 +208,224 @@ DECLARE
     R      XMLTYPE;
     TYPE   t IS TABLE OF VARCHAR2(32767) INDEX BY VARCHAR2(32767);
     lst    t;
+    cnt    t;
+    ps     t;
+    fl     t;
+    ll     t;
+    pares  PLS_INTEGER;
+    fld    VARCHAR2(30);
+    lld    VARCHAR2(30);
     key    VARCHAR2(32767);
     val    VARCHAR2(32767);
     v      VARCHAR2(32767);
-    bits   PLS_INTEGER;
     phv    int;
-    id     int;
-    chd    VARCHAR2(10);
+    calls  int;
+    chd    VARCHAR2(4000);
     reason VARCHAR2(2000);
     memo   VARCHAR2(32767);
     n      PLS_INTEGER := 0;
     PROCEDURE flush IS
+        key    VARCHAR2(32767);
     BEGIN
         IF reason IS NULL THEN 
             return;
         END IF;
         select xmlelement(R,xmlelement(P,phv)
-                           ,xmlelement(I,id)
                            ,xmlelement(R,reason)
                            ,xmlelement(M,trim(chr(10) from memo))).getstringval()
         into   key from dual;
 
         IF lst.exists(key) THEN
-            lst(key):= substr(lst(key),1,32750)||','||chd;
+            lst(key) := substr(lst(key),1,32750)||','||chd;
+            cnt(key) := cnt(key)+n;
+            ps(key)  := ps(key)+calls;
+            fl(key)  := least(fl(key),fld);
+            ll(key)  := greatest(ll(key),lld);
         ELSE
-            lst(key):= chd;
+            lst(key) := chd;
+            cnt(key) := n;
+            ps(key)  := calls;
+            fl(key)  := fld;
+            ll(key)  := lld;
         END IF;
-
-        id:=null;
         reason:=null;
         memo:=null;
+        val:=null;
     END;
 BEGIN
     IF :sql_id IS NULL THEN
         RETURN;
     END IF;
     dbms_output.enable(NULL);
-    FOR r IN (SELECT *
-              FROM   (SELECT /*+use_hash(a b) outline_leaf*/
-                              child_number||decode(count(distinct inst_id) over(),1,'','@'||inst_id) c,
-                              plan_hash_value phv,
-                              optimizer_env_hash_value env_hash,
-                              schema,
-                              REGEXP_REPLACE(reason, '<(ChildNumber|size)>.*?</\1>') reason,
-                              row_number() over(PARTITION BY ora_hash(REGEXP_REPLACE(reason, '<(ChildNumber|size|id)>.*?</\1>'), 2147483646, 1) ORDER BY child_number) seq
-                      FROM   (SELECT inst_id, sql_id, child_number,reason FROM gv$sql_shared_cursor &sql_id)
-                      LEFT JOIN (SELECT inst_id, 
+    FOR r IN (SELECT * 
+              FROM (
+                  SELECT a.*,
+                         decode(seq,1,listagg(child_number||decode(insts,1,'','@'||inst_id),',')
+                            within group(order by child_number)
+                            over(partition by grp))
+                         AS c
+                  FROM   (SELECT /*+use_hash(a b) outline_leaf*/
+                                  child_number,
+                                  count(distinct inst_id) over() insts,
+                                  inst_id,
+                                  plan_hash_value phv,
+                                  optimizer_env_hash_value env_hash,
+                                  schema,
+                                  reason,
+                                  grp,
+                                  min(first_load_time) over(partition by plan_hash_value,grp) first_load,
+                                  max(last_load_time)  over(partition by plan_hash_value,grp) last_load,
+                                  sum(parse_calls)     over(partition by plan_hash_value,grp) parses,
+                                  count(1)             over(partition by plan_hash_value,grp) cnt,
+                                  row_number()         over(partition by plan_hash_value,grp order by child_number) seq
+                          FROM   (SELECT inst_id, 
+                                         sql_id, 
+                                         child_number,
+                                         rel reason,
+                                         SYS_OP_COMBINED_HASH(regexp_replace(rel, '<(ChildNumber|size|ID)>.*?</\1>')) grp
+                                  FROM (SELECT a.*,
+                                               CASE WHEN instr(reason, 'ChildNode')>0 THEN reason ELSE to_clob('<ChildNode><ID>0</ID><reason>Common</reason>'
+                                                || decode(UNBOUND_CURSOR, 'Y', '<UNBOUND_CURSOR>Yes</UNBOUND_CURSOR>')
+                                                || decode(SQL_TYPE_MISMATCH, 'Y', '<SQL_TYPE_MISMATCH>Yes</SQL_TYPE_MISMATCH>')
+                                                || decode(OPTIMIZER_MISMATCH, 'Y', '<OPTIMIZER_MISMATCH>Yes</OPTIMIZER_MISMATCH>')
+                                                || decode(OUTLINE_MISMATCH, 'Y', '<OUTLINE_MISMATCH>Yes</OUTLINE_MISMATCH>')
+                                                || decode(STATS_ROW_MISMATCH, 'Y', '<STATS_ROW_MISMATCH>Yes</STATS_ROW_MISMATCH>')
+                                                || decode(LITERAL_MISMATCH, 'Y', '<LITERAL_MISMATCH>Yes</LITERAL_MISMATCH>')
+                                                || decode(FORCE_HARD_PARSE, 'Y', '<FORCE_HARD_PARSE>Yes</FORCE_HARD_PARSE>')
+                                                || decode(EXPLAIN_PLAN_CURSOR, 'Y', '<EXPLAIN_PLAN_CURSOR>Yes</EXPLAIN_PLAN_CURSOR>')
+                                                || decode(BUFFERED_DML_MISMATCH, 'Y', '<BUFFERED_DML_MISMATCH>Yes</BUFFERED_DML_MISMATCH>')
+                                                || decode(PDML_ENV_MISMATCH, 'Y', '<PDML_ENV_MISMATCH>Yes</PDML_ENV_MISMATCH>')
+                                                || decode(INST_DRTLD_MISMATCH, 'Y', '<INST_DRTLD_MISMATCH>Yes</INST_DRTLD_MISMATCH>')
+                                                || decode(SLAVE_QC_MISMATCH, 'Y', '<SLAVE_QC_MISMATCH>Yes</SLAVE_QC_MISMATCH>')
+                                                || decode(TYPECHECK_MISMATCH, 'Y', '<TYPECHECK_MISMATCH>Yes</TYPECHECK_MISMATCH>')
+                                                || decode(AUTH_CHECK_MISMATCH, 'Y', '<AUTH_CHECK_MISMATCH>Yes</AUTH_CHECK_MISMATCH>')
+                                                || decode(BIND_MISMATCH, 'Y', '<BIND_MISMATCH>Yes</BIND_MISMATCH>')
+                                                || decode(DESCRIBE_MISMATCH, 'Y', '<DESCRIBE_MISMATCH>Yes</DESCRIBE_MISMATCH>')
+                                                || decode(LANGUAGE_MISMATCH, 'Y', '<LANGUAGE_MISMATCH>Yes</LANGUAGE_MISMATCH>')
+                                                || decode(TRANSLATION_MISMATCH, 'Y', '<TRANSLATION_MISMATCH>Yes</TRANSLATION_MISMATCH>')
+                                                || decode(BIND_EQUIV_FAILURE, 'Y', '<BIND_EQUIV_FAILURE>Yes</BIND_EQUIV_FAILURE>')
+                                                || decode(INSUFF_PRIVS, 'Y', '<INSUFF_PRIVS>Yes</INSUFF_PRIVS>')
+                                                || decode(INSUFF_PRIVS_REM, 'Y', '<INSUFF_PRIVS_REM>Yes</INSUFF_PRIVS_REM>')
+                                                || decode(REMOTE_TRANS_MISMATCH, 'Y', '<REMOTE_TRANS_MISMATCH>Yes</REMOTE_TRANS_MISMATCH>')
+                                                || decode(LOGMINER_SESSION_MISMATCH, 'Y', '<LOGMINER_SESSION_MISMATCH>Yes</LOGMINER_SESSION_MISMATCH>')
+                                                || decode(INCOMP_LTRL_MISMATCH, 'Y', '<INCOMP_LTRL_MISMATCH>Yes</INCOMP_LTRL_MISMATCH>')
+                                                || decode(OVERLAP_TIME_MISMATCH, 'Y', '<OVERLAP_TIME_MISMATCH>Yes</OVERLAP_TIME_MISMATCH>')
+                                                || decode(EDITION_MISMATCH, 'Y', '<EDITION_MISMATCH>Yes</EDITION_MISMATCH>')
+                                                || decode(MV_QUERY_GEN_MISMATCH, 'Y', '<MV_QUERY_GEN_MISMATCH>Yes</MV_QUERY_GEN_MISMATCH>')
+                                                || decode(USER_BIND_PEEK_MISMATCH, 'Y', '<USER_BIND_PEEK_MISMATCH>Yes</USER_BIND_PEEK_MISMATCH>')
+                                                || decode(TYPCHK_DEP_MISMATCH, 'Y', '<TYPCHK_DEP_MISMATCH>Yes</TYPCHK_DEP_MISMATCH>')
+                                                || decode(NO_TRIGGER_MISMATCH, 'Y', '<NO_TRIGGER_MISMATCH>Yes</NO_TRIGGER_MISMATCH>')
+                                                || decode(FLASHBACK_CURSOR, 'Y', '<FLASHBACK_CURSOR>Yes</FLASHBACK_CURSOR>')
+                                                || decode(ANYDATA_TRANSFORMATION, 'Y', '<ANYDATA_TRANSFORMATION>Yes</ANYDATA_TRANSFORMATION>')
+                                                || decode(PDDL_ENV_MISMATCH, 'Y', '<PDDL_ENV_MISMATCH>Yes</PDDL_ENV_MISMATCH>')
+                                                || decode(TOP_LEVEL_RPI_CURSOR, 'Y', '<TOP_LEVEL_RPI_CURSOR>Yes</TOP_LEVEL_RPI_CURSOR>')
+                                                || decode(DIFFERENT_LONG_LENGTH, 'Y', '<DIFFERENT_LONG_LENGTH>Yes</DIFFERENT_LONG_LENGTH>')
+                                                || decode(LOGICAL_STANDBY_APPLY, 'Y', '<LOGICAL_STANDBY_APPLY>Yes</LOGICAL_STANDBY_APPLY>')
+                                                || decode(DIFF_CALL_DURN, 'Y', '<DIFF_CALL_DURN>Yes</DIFF_CALL_DURN>')
+                                                || decode(BIND_UACS_DIFF, 'Y', '<BIND_UACS_DIFF>Yes</BIND_UACS_DIFF>')
+                                                || decode(PLSQL_CMP_SWITCHS_DIFF, 'Y', '<PLSQL_CMP_SWITCHS_DIFF>Yes</PLSQL_CMP_SWITCHS_DIFF>')
+                                                || decode(CURSOR_PARTS_MISMATCH, 'Y', '<CURSOR_PARTS_MISMATCH>Yes</CURSOR_PARTS_MISMATCH>')
+                                                || decode(STB_OBJECT_MISMATCH, 'Y', '<STB_OBJECT_MISMATCH>Yes</STB_OBJECT_MISMATCH>')
+                                                || decode(CROSSEDITION_TRIGGER_MISMATCH, 'Y', '<CROSSEDITION_TRIGGER_MISMATCH>Yes</CROSSEDITION_TRIGGER_MISMATCH>')
+                                                || decode(PQ_SLAVE_MISMATCH, 'Y', '<PQ_SLAVE_MISMATCH>Yes</PQ_SLAVE_MISMATCH>')
+                                                || decode(TOP_LEVEL_DDL_MISMATCH, 'Y', '<TOP_LEVEL_DDL_MISMATCH>Yes</TOP_LEVEL_DDL_MISMATCH>')
+                                                || decode(MULTI_PX_MISMATCH, 'Y', '<MULTI_PX_MISMATCH>Yes</MULTI_PX_MISMATCH>')
+                                                || decode(BIND_PEEKED_PQ_MISMATCH, 'Y', '<BIND_PEEKED_PQ_MISMATCH>Yes</BIND_PEEKED_PQ_MISMATCH>')
+                                                || decode(MV_REWRITE_MISMATCH, 'Y', '<MV_REWRITE_MISMATCH>Yes</MV_REWRITE_MISMATCH>')
+                                                || decode(ROLL_INVALID_MISMATCH, 'Y', '<ROLL_INVALID_MISMATCH>Yes</ROLL_INVALID_MISMATCH>')
+                                                || decode(OPTIMIZER_MODE_MISMATCH, 'Y', '<OPTIMIZER_MODE_MISMATCH>Yes</OPTIMIZER_MODE_MISMATCH>')
+                                                || decode(PX_MISMATCH, 'Y', '<PX_MISMATCH>Yes</PX_MISMATCH>')
+                                                || decode(MV_STALEOBJ_MISMATCH, 'Y', '<MV_STALEOBJ_MISMATCH>Yes</MV_STALEOBJ_MISMATCH>')
+                                                || decode(FLASHBACK_TABLE_MISMATCH, 'Y', '<FLASHBACK_TABLE_MISMATCH>Yes</FLASHBACK_TABLE_MISMATCH>')
+                                                || decode(LITREP_COMP_MISMATCH, 'Y', '<LITREP_COMP_MISMATCH>Yes</LITREP_COMP_MISMATCH>')
+                                                || decode(PLSQL_DEBUG, 'Y', '<PLSQL_DEBUG>Yes</PLSQL_DEBUG>')
+                                                || decode(LOAD_OPTIMIZER_STATS, 'Y', '<LOAD_OPTIMIZER_STATS>Yes</LOAD_OPTIMIZER_STATS>')
+                                                || decode(ACL_MISMATCH, 'Y', '<ACL_MISMATCH>Yes</ACL_MISMATCH>')
+                                                || decode(FLASHBACK_ARCHIVE_MISMATCH, 'Y', '<FLASHBACK_ARCHIVE_MISMATCH>Yes</FLASHBACK_ARCHIVE_MISMATCH>')
+                                                || decode(LOCK_USER_SCHEMA_FAILED, 'Y', '<LOCK_USER_SCHEMA_FAILED>Yes</LOCK_USER_SCHEMA_FAILED>')
+                                                || decode(REMOTE_MAPPING_MISMATCH, 'Y', '<REMOTE_MAPPING_MISMATCH>Yes</REMOTE_MAPPING_MISMATCH>')
+                                                || decode(LOAD_RUNTIME_HEAP_FAILED, 'Y', '<LOAD_RUNTIME_HEAP_FAILED>Yes</LOAD_RUNTIME_HEAP_FAILED>')
+                                                || decode(HASH_MATCH_FAILED, 'Y', '<HASH_MATCH_FAILED>Yes</HASH_MATCH_FAILED>')
+                                                || decode(PURGED_CURSOR, 'Y', '<PURGED_CURSOR>Yes</PURGED_CURSOR>')
+                                                || decode(BIND_LENGTH_UPGRADEABLE, 'Y', '<BIND_LENGTH_UPGRADEABLE>Yes</BIND_LENGTH_UPGRADEABLE>')
+                                                || decode(USE_FEEDBACK_STATS, 'Y', '<USE_FEEDBACK_STATS>Yes</USE_FEEDBACK_STATS>')
+                                                ||'</ChildNode>') END rel
+                                        FROM gv$sql_shared_cursor a &sql_id)) a
+                          JOIN (SELECT  inst_id, 
                                         sql_id, 
                                         child_number,
                                         plan_hash_value,
+                                        loads,
                                         optimizer_env_hash_value,
-                                        parsing_schema_name schema
-                                FROM gv$sql &sql_id)
-                      USING  (inst_id, sql_id, child_number)
-                      WHERE  INSTR(reason, 'ChildNode') > 0
-                      AND    inst_id=nvl(&inst1,inst_id))
-              WHERE  seq = 1
-              ORDER  BY c) LOOP
-        flush;
-        id  := null; 
-        val := '';
-        phv := r.phv;
-        chd := r.c;
-        bits:= 0;
-        XML := xmltype('<R>' || SUBSTR(r.reason, 1, INSTR(r.reason, '</ChildNode>', -1) + LENGTH('</ChildNode>') - 1) || '</R>');
-        FOR r1 IN (SELECT *
+                                        parsing_schema_name schema,
+                                        first_load_time,
+                                        last_load_time,
+                                        parse_calls
+                                FROM    gv$sql &sql_id) b
+                          USING  (inst_id, sql_id, child_number)
+                          WHERE  inst_id=nvl(&inst1,inst_id)) a
+                  WHERE  seq <=100)
+             WHERE seq=1
+             ORDER  BY c) LOOP
+        phv   := r.phv;
+        chd   := r.c;
+        n     := r.cnt;
+        fld   := r.first_load;
+        lld   := r.last_load;
+        calls := r.parses;
+        XML := xmltype('<R>' || regexp_substr(
+                                    regexp_replace(
+                                        regexp_replace(r.reason, '<(ChildNumber|size)>.*?</\1>'),
+                                        '(</?[a-zA-Z0-9_]+)[^<>/]*?(/?>)','\1\2'), 
+                                    '<ChildNode>.+</ChildNode>')
+                       || '</R>');
+
+        FOR r1 IN (SELECT i,id,trim(reason) reason,t,trim(v) v
                    FROM   XMLTABLE('/R/ChildNode' PASSING XML COLUMNS
-                                i for ordinality, 
+                                i for ordinality,
+                                id INT PATH 'ID',
+                                reason VARCHAR2(300) PATH 'reason',
                                 n XMLTYPE PATH 'node()') a,
-                          XMLTABLE('/*' PASSING a.n COLUMNS 
+                          XMLTABLE('/*[not(name()="ID" or name()="reason")]' PASSING a.n COLUMNS 
                                 t VARCHAR2(128) PATH 'name()', 
-                                v VARCHAR2(128) PATH 'text()') b
-                    ORDER BY i,decode(t,'ID',1,'REASON',2,3),lower(t)) LOOP
-            v := regexp_replace(trim(r1.v),'\s{3,}',' => ');
-            IF upper(r1.t)='ID' THEN
-                IF id IS NOT NULL THEN
-                    flush;
-                END IF;
-                id := v;
-            ELSIF upper(r1.t)='REASON' THEN
-                IF reason IS NOT NULL THEN
-                    flush;
-                END IF;
-                reason := v;
-                IF reason LIKE 'Optimizer mismatch%' AND r.env_hash IS NOT NULL THEN
-                    reason := reason||chr(10)||'OPT_ENV: '||r.env_hash;
-                END IF;
-            ELSE
-                memo := memo|| chr(10) || r1.t || ': ' || v;
+                                v VARCHAR2(4000) PATH 'text()') b
+                    ORDER BY i,id,reason,lower(t)) LOOP
+            key := r1.i||','||r1.reason;
+            IF val IS NULL THEN
+                val := key;
+            ELSIF key != val THEN
+                flush;
+                val := key;
             END IF;
+            reason:= r1.reason;
+            
+            memo  := memo||chr(10)||r1.t||': '||regexp_replace(r1.v,'(\s*'||chr(9)||'\s*|\s{3,})',' <= ');
         END LOOP;
+        flush;
     END LOOP;
-    flush;
     key:=lst.first;
     XML := xmltype('<ROWSET/>'); 
     WHILE key IS NOT NULL LOOP
         lst(key) := regexp_replace(lst(key),'(\d+)(,\1)+','\1');
         xml := xml.appendChildXML('/ROWSET',xmltype(key)
-            .appendChildXML('/R',XMLTYPE('<C>'||substr(lst(key),1,4000)||'</C>'))
-            .appendChildXML('/R',XMLTYPE('<CNT>'||(1+length(lst(key))-length(replace(lst(key),',')))||'</CNT>')));
+            .appendChildXML('/R',XMLTYPE('<C>'||substr(regexp_replace(lst(key),'(.{80})','\1'||chr(10)),1,3900)||'</C>'))
+            .appendChildXML('/R',XMLTYPE('<PS>'||ps(key)||'</PS>'))
+            .appendChildXML('/R',XMLTYPE('<L>'||fl(key)||chr(10)||ll(key)||'</L>'))
+            .appendChildXML('/R',XMLTYPE('<CNT>'||cnt(key)||'</CNT>')));
         key := lst.next(key);
     END LOOP;
 
     OPEN :c FOR
         SELECT *
         FROM  XMLTABLE('/ROWSET/R' PASSING xml 
-              COLUMNS CURSORS INT PATH 'CNT',
+              COLUMNS "Count" INT PATH 'CNT',
                       PLAN_HASH INT PATH 'P',
+                      PARSES INT PATH 'PS',
                       Reason  VARCHAR2(2000) PATH 'R',
-                      ID INT PATH 'I',
                       MEMO VARCHAR2(2000) PATH 'M',
-                      CHILD_CURSORS VARCHAR(4000) PATH 'C')
-        ORDER BY CURSORS DESC,REASON;
+                      LOAD_TIME VARCHAR2(80) PATH 'L',
+                      EXAMPLE_CURSORS VARCHAR(4000) PATH 'C')
+        ORDER BY 1 DESC,REASON;
 END;
 /
 

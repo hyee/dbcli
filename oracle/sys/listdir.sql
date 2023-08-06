@@ -1,6 +1,7 @@
 /*[[List files under the specific directory. Usage: @@NAME <directory> [<keyword>] [<tailing_rows>] [-lrt]
     -lrt: order by last modified instead of file name
     --[[
+        @ARGS: 1
         &ord: default={order by lower(fname_krbmsft)} lrt={}
     --]]
 ]]*/
@@ -18,6 +19,16 @@ BEGIN
         INTO   pattern
         FROM   v$parameter
         WHERE  name='db_recovery_file_dest';
+    ELSE
+        BEGIN
+            SELECT trim(trim('/' from directory_path))
+            INTO   pattern
+            FROM   dba_directories
+            WHERE  upper(directory_name)=upper(pattern)
+            AND    trim(directory_path) IS NOT NULL
+            AND    rownum<2;
+        EXCEPTION WHEN NO_DATA_FOUND THEN NULL;
+        END;
     END IF;
     IF pattern NOT LIKE '+%' THEN
         pattern := '/'|| pattern;

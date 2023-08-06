@@ -136,7 +136,7 @@ with time_model as(
 ),
 db_time as(select /*+materialize*/ inst,sum(value*flag) db_time from time_model where stat_name='DB time' group by inst)
 &ver
-SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/
+SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
        inst, '- * ON CPU *' event,null wait_class,max(cpu_count) counts,null timeouts,sum(value*flag)* 1e-6/&avg waited,
        sum(value*flag)/(select db_time from db_time b where b.inst=a.inst) "% DB",
        round(sum(value*flag)/max(secs)/max(cpu_count),6) avg_wait

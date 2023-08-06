@@ -359,7 +359,7 @@ SELECT PLAN_HASH_VALUE PHV,
        &ver NULLIF(round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES)/SUM(EXEC),3),0)  oflout,
        NULLIF(round(sum(ROWS_PROCESSED)/SUM(EXEC),3),0)  rows#,
        NULLIF(round(sum(fetches)/SUM(EXEC),3),0)  fetches
-FROM   (SELECT greatest(EXECUTIONS + users_executing, 1) exec,a.* 
+FROM   (SELECT greatest(executions + users_executing, 1) exec,a.* 
         FROM   gv$SQL a 
         WHERE  SQL_ID=:V1 
         AND    inst_id=nvl(regexp_substr(:V2,'^\d+$')+0,inst_id))
