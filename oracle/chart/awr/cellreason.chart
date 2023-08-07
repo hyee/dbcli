@@ -8,69 +8,74 @@
         &V2     : default={&ENDTIME}
         &filter : default={1=1} f={}
         &obj    : default={null}, c={cell_name}
-        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     --]]
 ]]*/
 {
     title="Exadata Cell IO Reason Chart",
     _sql=[[
-        WITH SNAP AS
+        WITH snap AS(
+            SELECT a.*,
+                   MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+                   round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+            FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('container_data' 'current_dictionary')*/ 
+                           snap_id,
+                           dbid,
+                           instance_number,
+                           instance_number inst_id,
+                           begin_interval_time+0 btime,
+                           end_interval_time+0 etime,
+                           startup_time+0 stime,
+                           (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                           (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                    FROM   dba_hist_snapshot
+                    WHERE  dbid=:dbid
+                     AND   end_interval_time+0 BETWEEN 
+                           NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND 
+                           NVL(to_date(:V1,'yymmddhh24miss'),sysdate+1)
+                    ) a),
+        stats AS
          (SELECT /*+no_expand ordered use_hash(a b) 
                     opt_param('_optimizer_mjc_enabled' ,'false')  
                     opt_param('_optimizer_cartesian_enabled' ,'false')
                    */
-                   to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') snap_time,
+                   to_char(etime, 'YYYY-MM-DD HH24:MI') snap_time,
                    snap_id,
-                   flag,
-                   part_key,
                    nullif('[' || &obj || ']', '[]') || reason_name reason,
                    bytes - lag(bytes) over(PARTITION BY cell_name, dbid,reason_name,INCARNATION_NUM,p ORDER BY snap_id) bytes,
                    requests - lag(requests) over(PARTITION BY cell_name, dbid,reason_name,INCARNATION_NUM,p ORDER BY snap_id) requests,
-                   Slot_size
-          FROM   (SELECT a.*,
-                         row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r,
-                         -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key,
-                         ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY dbid, instance_number, startup_time ORDER BY snap_id DESC)) *
-                         86400 Slot_size,
-                         CASE
-                             WHEN end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) AND
-                                  NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE) THEN
-                              0
-                         END flag
-                  FROM   Dba_Hist_Snapshot a
-                  WHERE  dbid=nvl(:dbid,&did)
-                  AND    end_interval_time + 0 BETWEEN NVL(to_date(:V1, 'yymmddhh24miss'), SYSDATE - 7) - 1.2 / 24 AND
-                         NVL(to_date(:V2, 'yymmddhh24miss'), SYSDATE+1)) a
-          JOIN   DBA_HIST_CELL_NAME b
-          USING  (dbid, snap_id)
+                   secs
+          FROM  (SELECT a.*,row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r FROM SNAP a)
+          JOIN  (SELECT * FROM DBA_HIST_CELL_NAME b WHERE dbid=:dbid)
+          USING (dbid, snap_id)
           JOIN  (SELECT /*+leading(a.s) full(a.s) no_index(a.s)*/ 
                         dbid,snap_id,cell_hash,INCARNATION_NUM,REASON_NAME,REQUESTS,BYTES,1 p
                  FROM  DBA_HIST_CELL_IOREASON a
+                 WHERE dbid=:dbid
                  UNION ALL
                  SELECT dbid,snap_id,cell_hash,INCARNATION_NUM,
                         decode(r,1,'Scrub reads','Internal IO'),
                         decode(r,1,1,-1)*max(decode(m,'Scrub reads',v)),
                         decode(r,1,1,-1)*max(decode(m,'Scrub read bytes',v)),2 p
-                 FROM(
-                   SELECT /*+leading(a.s)*/ 
-                         dbid,snap_id,cell_hash,INCARNATION_NUM,metric_name m,metric_value v
-                   FROM  DBA_HIST_CELL_GLOBAL a
-                   WHERE METRIC_ID IN(360,361)
+                 FROM (
+                       SELECT /*+leading(a.s)*/ 
+                             dbid,snap_id,cell_hash,INCARNATION_NUM,metric_name m,metric_value v
+                       FROM  DBA_HIST_CELL_GLOBAL a
+                       WHERE dbid=:dbid 
+                       AND   METRIC_ID IN(360,361)
                  ),(SELECT 1 R FROM DUAL UNION ALL SELECT 2 FROM DUAL)
                  GROUP BY dbid,snap_id,cell_hash,INCARNATION_NUM,r) c
-          USING  (dbid, snap_id)
+          USING (dbid, snap_id)
           WHERE  r = 1
           AND    (&filter)
           AND    (:V3 IS NULL OR lower(nullif('[' || &obj || ']', '[]') || reason_name) LIKE lower('%&V3%'))
           ORDER  BY 1, 2)
         SELECT snap_time, nvl(reason,'Total IO') reason, 
-               greatest(0,round(SUM(bytes / Slot_size), 2)) "IO Bytes/Sec", 
-               greatest(0,round(SUM(requests / Slot_size), 2)) "IO Reqs/Sec",
+               greatest(0,round(SUM(bytes / secs), 2)) "IO Bytes/Sec", 
+               greatest(0,round(SUM(requests / secs), 2)) "IO Reqs/Sec",
                greatest(0,SUM(bytes)/NULLIF(SUM(requests),0)) "Bytes/IO Req"
-        FROM   snap
-        WHERE  flag = 0
+        FROM   stats
         GROUP  BY snap_time, rollup(reason)
-        HAVING ROUND(SUM(bytes / Slot_size))>0
+        HAVING ROUND(SUM(bytes / secs))>0
     ]],
     _pivot=true,
     labelsKMG2=true,

@@ -14,7 +14,6 @@
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
         &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
         @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     ]]--
 ]]*/
 
@@ -26,7 +25,7 @@ COL "PHY_OPT|READS,READS|DIRECT,WRITES|DIRECT,Weight" FOR PCT2
 COL TIME smhd2
 COL TOTAL_ELA,AVG_ELA FOR usmhd2
 WITH objs AS
- (SELECT /*+materialize*/*
+ (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/*
   FROM   (SELECT to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                  to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed,
                  A.*
@@ -67,24 +66,28 @@ SELECT /*+DYNAMIC_SAMPLING(8)*/
 FROM (SELECT A.*, row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
       FROM (
           SELECT * 
-          FROM objs 
-          JOIN &check_access_pdb.Seg_stat USING (dbid,obj#,dataobj#)
-          JOIN (select dbid,snap_id,instance_number,begin_interval_time from &check_access_pdb.snapshot) s USING(dbid,instance_number,snap_id)
-          WHERE s.begin_interval_time BETWEEN st AND ed) A)
+          FROM   objs 
+          JOIN   &check_access_pdb.Seg_stat USING (dbid,obj#,dataobj#)
+          JOIN  (select dbid,snap_id,instance_number,begin_interval_time from &check_access_pdb.snapshot) s 
+          USING (dbid,instance_number,snap_id)
+          WHERE  dbid=:dbid
+          AND    s.begin_interval_time BETWEEN st AND ed) A)
 GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
 --HAVING(COUNT(DISTINCT SUBOBJECT_NAME)>1 OR grouping_id(SUBOBJECT_NAME)=0)
 ORDER BY grouping_id(SUBOBJECT_NAME) desc,"BUFF|READS"+"PHY|READS"+"PHY|WRITES" DESC;
 
 WITH segs AS
- (SELECT /*+materialize*/ DISTINCT a.*
+ (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/ 
+          DISTINCT a.*
   FROM   (SELECT OWNER,OBJECT_NAME,DBID
           FROM   &check_access_pdb.Seg_stat_obj
           WHERE  UPPER(:V1) IN(OBJECT_NAME,OWNER || '.' || OBJECT_NAME ,OWNER || '.' || OBJECT_NAME || '.'||SUBOBJECT_NAME,''||OBJ#,''||DATAOBJ#)
+          AND    DBID=:DBID
           ORDER  BY 1) A
   WHERE  ROWNUM < 100),
 qry AS(SELECT OWNER,OBJECT_NAME,DBID FROM SEGS 
        UNION ALL 
-       SELECT '%',UPPER(:V1),NVL(:DBID+0,&did) FROM DUAL WHERE (SELECT COUNT(1) FROM SEGS)=0),
+       SELECT '%',UPPER(:V1),0+:dbid FROM DUAL WHERE (SELECT COUNT(1) FROM SEGS)=0),
 plans AS(SELECT /*+use_hash(a) DYNAMIC_SAMPLING(8)*/
                distinct
                a.dbid,
@@ -122,7 +125,8 @@ plans AS(SELECT /*+use_hash(a) DYNAMIC_SAMPLING(8)*/
         FROM   QRY,&check_access_pdb.SQL_PLAN a
         WHERE  A.OBJECT_NAME=QRY.OBJECT_NAME
         AND    A.OBJECT_OWNER LIKE QRY.OWNER
-        AND    QRY.DBID=A.DBID),
+        AND    QRY.DBID=A.DBID
+        AND    A.DBID=:DBID),
 Stats AS (
     SELECT plan_hash_value,dbid &con, 
            max(sql_id) keep(dense_rank last order by total_ela) sql_id,
@@ -143,12 +147,14 @@ Stats AS (
               JOIN  &check_access_pdb.Sqlstat b
               ON     a.dbid=b.dbid
               AND    a.plan_hash_value=b.plan_hash_value
+              AND    b.dbid=:dbid
               UNION  ALL
               SELECT b.*
               FROM  (select /*+no_merge*/ distinct dbid,sq_id from plans where sq_id IS NOT NULL) a
               JOIN  &check_access_pdb.Sqlstat b
               ON     a.dbid=b.dbid
               AND    a.sq_id=b.sql_id
+              AND    b.dbid=:dbid
               AND    b.plan_hash_value=0) hs
         JOIN &check_access_pdb.snapshot s USING(dbid,snap_id,instance_number)
         WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 

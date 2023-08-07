@@ -1,5 +1,5 @@
 /*[[
-    Show chart for AWR SGA Stat. Usage: @@NAME [0|inst_id] [keyword] [yymmddhh24mi] [yymmddhh24mi] [-pool]
+    Show chart for AWR SGA Stat. Usage: @@NAME [keyword] [0|inst_id] [yymmddhh24mi] [yymmddhh24mi] [-pool]
     Impacted by settings: starttime,endtime,instance.
     -pool: group by pool, otherwise group by name
     --[[
@@ -12,27 +12,38 @@
 {
     title="SGA/PGA Memory Chart",
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
-                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
-          AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) 
-        SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event, avg(sga_value) "Bytes"
-        FROM   (SELECT a.*, name||decode(nvl(lower(:V1), 'a'), 'a', '', ' [#' || inst_id||']') event
+        WITH snap AS(
+        SELECT a.*,
+               MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+               round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+        FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('container_data' 'current_dictionary')*/ 
+                       snap_id,
+                       dbid,
+                       instance_number,
+                       instance_number inst_id,
+                       begin_interval_time+0 btime,
+                       end_interval_time+0 etime,
+                       startup_time+0 stime,
+                       (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                       (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                FROM   dba_hist_snapshot
+                WHERE  dbid=:dbid
+                 AND   end_interval_time+0 BETWEEN 
+                       NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
+                       NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+                 AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
+        SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') sample_time, event, avg(sga_value) "Bytes"
+        FROM   (SELECT a.*, name||decode(nvl(lower(:V2), 'a'), 'a', '', ' [#' || inst_id||']') event
                 FROM   (SELECT *
                         FROM   snap NATURAL
                         NATURAL JOIN   (
                         SELECT snap_id, dbid, instance_number,&pool name, SUM(bytes) sga_value 
                         FROM dba_hist_sgastat 
-                        WHERE :V2 IS NULL AND NAME!='free memory'
-                        OR    :V2 IS NOT NULL AND instr(lower(pool|| ' '||name),lower(:v2))>0
+                        WHERE :V1 IS NULL AND NAME!='free memory'
+                        OR    :V1 IS NOT NULL AND instr(lower(pool|| ' '||name),lower(:v1))>0
                         GROUP BY snap_id, dbid, instance_number,&pool) SGA
                         ) a)
-        GROUP BY event, end_time]],
+        GROUP BY event, etime]],
     ylabel="Bytes",
     labelsKMG2=true
 }

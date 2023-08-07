@@ -175,7 +175,7 @@ BEGIN
                 min(end_interval_time)+0 stime,
                 incarnation_num
         FROM   dba_hist_snapshot a JOIN dba_hist_cell_global b USING(snap_id,dbid)
-        WHERE  dbid=NVL(:dbid+0,(select dbid from v$database))
+        WHERE  dbid=:dbid
         AND    end_interval_time+0 between nvl(to_date(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE)
         GROUP  BY dbid,incarnation_num
         ORDER  BY incarnation_num DESC)
@@ -221,7 +221,7 @@ BEGIN
                             (SELECT dbid, cellhash, MAX(CURRENT_SNAP_ID)
                                 FROM   dba_hist_cell_config
                                 WHERE  conftype = 'CELLDISK'
-                                AND    dbid = NVL(0 + :dbid, (select dbid from v$database))
+                                AND    dbid = :dbid
                                 GROUP  BY dbid, cellhash)) a
                 GROUP  BY ROLLUP((cell, cellname, CELLHASH)))
         RIGHT  JOIN (SELECT *

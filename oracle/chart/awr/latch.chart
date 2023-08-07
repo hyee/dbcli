@@ -16,15 +16,26 @@
 {
     title='System Latch State Chart',
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
-                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
-          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))
+        WITH snap AS(
+            SELECT a.*,
+                   MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+                   round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+            FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('container_data' 'current_dictionary')*/ 
+                           snap_id,
+                           dbid,
+                           instance_number,
+                           instance_number inst_id,
+                           begin_interval_time+0 btime,
+                           end_interval_time+0 etime,
+                           startup_time+0 stime,
+                           (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                           (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                    FROM   dba_hist_snapshot
+                    WHERE  dbid=:dbid
+                     AND   end_interval_time+0 BETWEEN 
+                           NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
+                           NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+                     AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
         SELECT time sample_time,event,
                a "Deviation%(Time/Avg)",
                round(v*1e-3,2) "Seconds per Second",
@@ -32,26 +43,26 @@
                round(misses,2) "Misses per Second",
                round(sleeps,2) "Sleeps per Second",
                RNK_
-        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, event,
+        FROM   (SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') TIME, event,
                        sum(v) v,100*avg(v/a)  a,
-                       sum(gets/Slot_size) gets,
-                       sum(misses/slot_size) misses,
-                       sum(sleeps/slot_size) sleeps,
+                       sum(gets/secs) gets,
+                       sum(misses/secs) misses,
+                       sum(sleeps/secs) sleeps,
                        stddev(sum(v/a)) over(partition by event) RNK_
                 FROM  (SELECT /*+merge*/
                                A.*,
                                LATCH_NAME || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
-                               wait_time/Slot_size v,
-                               avg(wait_time/Slot_size) over(partition by inst_id,LATCH_NAME) a
-                       FROM   (SELECT  flag,inst_id, end_time, LATCH_NAME, Slot_size,
-                                       wait_time - nvl(LAG(wait_time) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) wait_time,
-                                       GETS - nvl(LAG(GETS) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) GETS,
-                                       MISSES - nvl(LAG(MISSES) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) MISSES,
-                                       SLEEPS - nvl(LAG(SLEEPS) OVER(PARTITION BY part_key, LATCH_NAME ORDER BY snap_id),0) SLEEPS
+                               wait_time/secs v,
+                               avg(wait_time/secs) over(partition by inst_id,LATCH_NAME) a
+                       FROM   (SELECT  inst_id, etime, LATCH_NAME, secs,
+                                       wait_time - nvl(LAG(wait_time) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) wait_time,
+                                       GETS - nvl(LAG(GETS) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) GETS,
+                                       MISSES - nvl(LAG(MISSES) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) MISSES,
+                                       SLEEPS - nvl(LAG(SLEEPS) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) SLEEPS
                                FROM   DBA_HIST_LATCH NATURAL JOIN snap
                                WHERE  (&filter)) a
-                       where flag=0 AND wait_time>0)
-                 GROUP  BY event, end_time) a
+                       WHERE  wait_time>0)
+                 GROUP  BY event, etime) a
         WHERE  (v>0)
         ORDER  BY 1]],
     _pivot=true,

@@ -38,21 +38,23 @@
                REPLACE(METRIC_NAME, ' Per ', '/') metric_name,
                VALUE metric_value,
                STD RNK_
-        FROM   (SELECT /*+merge no_expand*/
+        FROM   (SELECT /*+merge no_expand OPT_PARAM('_fix_control' '26552730:0')*/
                         A.end_time sample_time, A.METRIC_NAME , A.metric_unit, ROUND(&AGG(VALUE),3) VALUE,STDDEV(&AGG(VALUE)) OVER(PARTITION BY A.METRIC_NAME) std
                 FROM   (SELECT inst_id, end_time, metric_unit,group_id, VALUE,
                               METRIC_NAME||(case when lower(metric_unit)='bytes' and instr(lower(METRIC_NAME),'bytes')=0 then '(bytes)' end)||decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) METRIC_NAME
-                        FROM  (SELECT inst_id, round(END_TIME,'MI') end_time, METRIC_NAME, metric_unit,group_id, VALUE
+                        FROM (SELECT inst_id, round(end_time,'MI') end_time, METRIC_NAME, metric_unit,group_id, VALUE
                               FROM   GV$SYSMETRIC_HISTORY
                               WHERE  'V' = UPPER(:DICT)
                               UNION ALL
-                              SELECT INSTANCE_NUMBER, ROUND(max(END_TIME) OVER(partition by dbid,snap_id),'MI'), METRIC_NAME, metric_unit,group_id,&VAL
+                              SELECT INSTANCE_NUMBER, ROUND(max(end_time) OVER(partition by dbid,snap_id),'MI'), METRIC_NAME, metric_unit,group_id,&VAL
                               FROM   DBA_HIST_SYSMETRIC_SUMMARY
-                              WHERE  'D' = UPPER(:DICT)
+                              WHERE  dbid=:dbid  
+                              AND    'D' = UPPER(:DICT)
                               UNION ALL
-                              SELECT INSTANCE_NUMBER, ROUND(max(END_TIME) OVER(partition by dbid,snap_id),'MI'), METRIC_NAME, metric_unit,group_id,VALUE
+                              SELECT INSTANCE_NUMBER, ROUND(max(end_time) OVER(partition by dbid,snap_id),'MI'), METRIC_NAME, metric_unit,group_id,VALUE
                               FROM   DBA_HIST_SYSMETRIC_HISTORY
-                              WHERE  'H' = UPPER(:DICT)) A 
+                              WHERE  dbid=:dbid
+                              AND    'H' = UPPER(:DICT)) A 
                               JOIN (SELECT distinct group_id,group_name FROM V$METRICNAME) b USING(group_id)
                         WHERE  (:V2 IS NULL  OR lower(:V2) IN ('0', 'a') OR inst_id = :V2)
                         AND    group_id NOT IN(3,5,10)

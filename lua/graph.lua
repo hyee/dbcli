@@ -418,7 +418,7 @@ function graph:run_sql(sql,args,cmd,file)
             
             csv=build_csv(csv)
             if csv then
-                self.data[self.dataindex]={csv,avgs,charts[i]}
+                self.data[self.dataindex]={csv,avgs,charts[self.dataindex]}
             end
         end
     else
@@ -429,7 +429,7 @@ function graph:run_sql(sql,args,cmd,file)
         
         csv=build_csv(csv)
         if csv then
-            self.data[self.dataindex]={csv,avgs,charts[1]}
+            self.data[self.dataindex]={csv,avgs,charts[self.dataindex]}
         end
     end
     env.checkerr(self.dataindex>0,'Cannot generate target chart due to all values are zeros.');

@@ -18,8 +18,10 @@
                                        secs,
                                        metric_value - lag(metric_value) over(PARTITION BY a.dbid, cell_hash, INCARNATION_NUM, metric_name ORDER BY a.snap_id) metric_value,
                                        REPLACE(metric_name, 'bytes', 'megabytes') NAME
-                                FROM  (select * from (&snaps) where instance_number=1) , dba_hist_cell_global a
-                                WHERE  a.snap_id between minid+1 and maxid)
+                                FROM  (select * from (&snaps) where instance_number=1) , 
+                                       dba_hist_cell_global a
+                                WHERE  a.snap_id between minid+1 and maxid
+                                AND    a.dbid=:dbid)
                         GROUP  BY metric_name, NAME)
                 WHERE  round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) > 0
                 ORDER  BY VALUE DESC
@@ -29,7 +31,8 @@
         }
 
         &snaps: {default={
-            SELECT a.*,decode(snap_id,minid,-1,1) flag
+            SELECT /*+opt_param('container_data' 'current_dictionary')*/
+                    a.*,decode(snap_id,minid,-1,1) flag
             FROM   (SELECT dbid,
                         instance_number,
                         startup_time,
@@ -40,7 +43,8 @@
                                 over(PARTITION BY dbid, instance_number, startup_time) - MIN(end_interval_time + 0)
                                 over(PARTITION BY dbid, instance_number, startup_time))) secs
                     FROM   dba_hist_snapshot s
-                    WHERE  ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
+                    WHERE  dbid=:dbid
+                    AND    ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
                     AND    s.end_interval_time BETWEEN nvl(to_date('&1', 'YYMMDDHH24MI') - 1.1 / 24, SYSDATE - 7) AND
                         nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE+1)) a
             WHERE  minid < maxid
@@ -89,7 +93,8 @@ grid {
                                          END),
                                      2) VALUE
                         FROM    (select a.*,row_number() over(partition by stat_name,instance_number order by 1) r 
-                                 from (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a) a
+                                 from (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a
+                                 WHERE dbid=:dbid ) a
                         GROUP  BY stat_name, ROLLUP(service_name)
                         HAVING round(SUM(flag * VALUE / secs), 2) > 0) a)
         PIVOT(MAX(val)
@@ -139,6 +144,7 @@ grid {
                             SUM((SMALL_READ_REQS + LARGE_READ_REQS) * flag / secs) READS,
                             SUM((SMALL_WRITE_REQS + LARGE_WRITE_REQS) * flag / secs) WRITES
                     FROM    (SELECT * FROM dba_hist_iostat_function NATURAL JOIN(&snaps)) a
+                    WHERE  DBID=:DBID
                     GROUP  BY ROLLUP(FUNCTION_NAME))
             WHERE  GREATEST(MBPS, IOPS) > 0
             ORDER  BY IOPS DESC
@@ -148,13 +154,14 @@ grid {
             WITH time_model AS
              (SELECT hs1.*, SUM(p.value) over(PARTITION BY hs1.dbid, hs1.snap_id) cpu_count
               FROM   (select * from dba_hist_sys_time_model NATURAL JOIN(&snaps)) hs1, dba_hist_parameter p
-              WHERE  hs1.snap_id = p.snap_id(+)
+              WHERE  hs1.dbid=:dbid
+              AND    hs1.snap_id = p.snap_id(+)
               AND    hs1.instance_number = p.instance_number(+)
               AND    hs1.dbid = p.dbid(+)
               AND    p.parameter_name(+) = 'cpu_count'
               AND    hs1.stat_name IN ('DB time', 'DB CPU', 'background cpu time')),
             db_time AS
-             (SELECT /*+materialize*/
+             (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/
                       SUM(VALUE * flag) db_time
               FROM   time_model
               WHERE  stat_name = 'DB time')
@@ -188,7 +195,8 @@ grid {
          &cell
         '|',
         [[grid={topic="DBA_HIST_SYSMETRIC_SUMMARY"}
-            SELECT * FROM (
+            SELECT /*+opt_param('container_data' 'current_dictionary')*/ * 
+            FROM (
                 SELECT  METRIC_NAME,
                         ROUND(
                             case when instr(METRIC_UNIT,'%')>0 or metric_name like '%Average%' then 
@@ -200,12 +208,13 @@ grid {
                 FROM (SELECT a.*, 
                              count(distinct begin_time) over(partition by a.instance_number) c,
                              case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
-                      FROM   dba_hist_sysmetric_summary A 
+                      FROM   dba_hist_sysmetric_summary a 
                       JOIN   (&snaps)  b
                       ON     a.snap_id between minid+1 and maxid
                       AND    a.dbid=b.dbid
                       AND    a.instance_number=b.instance_number
                       AND    a.metric_name not like '% Per Txn'
+                      AND    a.dbid=:dbid
                       WHERE  group_id=2)
                 GROUP BY METRIC_NAME,METRIC_UNIT)
             WHERE VALUE>0

@@ -21,8 +21,8 @@
         &V2       : default={&STARTTIME}
         &V3       : default={&ENDTIME}
 
-        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a &did)}
-        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a &did)}
+        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a where dbid=:dbid)}
+        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a where dbid=:dbid)}
         &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate+1)}
         &Time_Filter:{
             default={&TIME_BAND},
@@ -48,7 +48,6 @@
         @VER4       : 11.2={,round(SUM(DELTA_READ_IO_BYTES)/60) rb,round(SUM(DELTA_Write_IO_BYTES)/60) wb},default={}
         @VER5       : 11.2={,SUM(rb) "IO Read Bytes" ,SUM(wb) "IO Write Bytes" },default={}
         @VER41      : 11.2={,NULL,NULL} default={}
-        @did        : 12.2={where dbid=nvl(:dbid,sys_context('userenv','dbid')+0)} default={where dbid=nvl(:dbid,(select dbid from v$database))}
     ]]--
 ]]*/
 
@@ -61,7 +60,7 @@
              SELECT A.*, SUM(CNT1) OVER(partition by group_by) sums,
                      WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1440) bucket_id
              FROM(
-                 SELECT /*+no_expand*/
+                 SELECT /*+no_expand opt_param('container_data' 'current_dictionary')*/
                         trunc(sample_time, 'MI') sample_time,
                         &GROUPS AS group_by,
                         count(1)*&UNIT/60 cnt,
@@ -80,7 +79,7 @@
                          SUM(value/100),
                          NULL &VER41,
                          count(1)
-                  from (select a.*,end_time sample_time,
+                 from (select a.*,end_time sample_time,
                                case when metric_name like 'Host%' then 'Host CPU'
                                     when metric_name like '%CPU%' then 'DB CPU'
                                else 'DB Time' end wait_class

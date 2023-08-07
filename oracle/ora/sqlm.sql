@@ -384,12 +384,11 @@ BEGIN
                             select /*+no_expand no_or_expand*/ 
                                    key1,key2,report_id,period_end_time ptime
                             from  dba_hist_reports
-                            where (did IS NULL OR did in(dbid,con_dbid))
-                            AND   key1=nvl(sq_id,sq_id1)
+                            where key1=nvl(sq_id,sq_id1)
                             AND   key2>0
                             AND   (sql_exec IS NULL OR sql_exec in(key2,report_id) or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
                             AND   component_name='sqlmonitor'
-                            AND   dbid=nvl(did,dbid)
+                            AND   dbid=did
                             AND   instance_number=nvl(inst,instance_number));
                         sq_id := nvl(sq_id1,sq_id);
                     end if;
@@ -619,7 +618,7 @@ BEGIN
                                    report_id sql_exec_id,
                                    xmltype(a.report_summary) summary 
                             FROM   dba_hist_reports a
-                            WHERE (did IS NULL OR did in(dbid,con_dbid))
+                            WHERE  did in(dbid,con_dbid)
                             AND   (sq_id IS NOT NULL AND key1=sq_id OR 
                                    keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
                             AND    COMPONENT_NAME='sqlmonitor'

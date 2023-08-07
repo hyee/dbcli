@@ -103,12 +103,11 @@ Sample Ouput:
     @adp : 12.1={case when instr(other_xml, 'adaptive_plan') > 0 then 'Y' else 'N' end} default={'N'}
     @con : 12.1={,con_dbid} default={}
     @mem : 12.1={DELTA_READ_MEM_BYTES} default={null}
-    @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @cdb2: 12.1={con_dbid} default={1e9}
     &check_access_pdb: hist={dba_hist_} pdb={AWR_PDB_} 
     @check_access_cdb: cdb={use_hash(a)} default={use_nl(a)}
     @check_access_aux: default={(26/8/12)-6}
-    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,&did dbid from all_sqlset_plans a)}
+    &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object#,&dbid dbid from all_sqlset_plans a)}
     &cid  : default={dbid} sqlset={sqlset_id}
     &src1 : default={&check_access_pdb.sql_plan} sqlset={all_sqlset_plans}
     &top1: default={ev}, O={CURR_OBJ#}
@@ -181,7 +180,7 @@ Sample Ouput:
             USING  (dbid,service_hash &con,machine)
             WHERE  to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS')=b.stime
             AND    decode(port,0,session_id*instance_number*10,port)=b.port_
-            AND    dbid=nvl(0+'&dbid',&did)
+            AND    dbid=&dbid
             AND   '&vw' IN('A','D')
         }
     }
@@ -243,15 +242,14 @@ Sample Ouput:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH gash as(
-    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000) */
+    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000) opt_param('container_data' 'current_dictionary')*/
             a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
     AND    sample_time+0 BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE)
     AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
     AND    nvl(0+regexp_substr(:V2,'^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
-    AND   '&vw' IN('A','G')
-    AND   (:dbid is null or '&vw'='G' or &did=:dbid)),
+    AND   '&vw' IN('A','G')),
 dash as(
     select /*+inline 
                MERGE(D)
@@ -266,7 +264,7 @@ dash as(
             to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS') stime
     from   &check_access_pdb.active_sess_history d
     WHERE  '&vw' IN('A','D')
-    AND    dbid=nvl(0+'&dbid',&did)
+    AND    dbid=&dbid
     AND    :V1 IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
     AND    nvl(0+regexp_substr(:V2,'^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND    sample_time BETWEEN nvl(to_date(:V3,'YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date(:V4,'YYMMDDHH24MISS'),SYSDATE+1)),
@@ -296,7 +294,7 @@ ash_raw as (
                 SELECT  &public
                 FROM    (
                     select 
-                            a.*,inst_id instance_number,&did dbid,1 aas_,&mem mem,
+                            a.*,inst_id instance_number,&dbid dbid,1 aas_,&mem mem,
                             0 snap_id,decode(:V1,nvl(sql_id,top_level_sql_id),1,top_level_sql_id,2,3) pred_flag
                     from  (&gash) a
                     ) a
@@ -362,10 +360,9 @@ ALL_PLANS AS(
                            max(nvl2(other_xml,round(regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,4),1)) over(partition by inst_id,child_number) df_dop,
                            &g_mbrc mbrc,
                            1e9 cid,
-                           &did dbid 
+                           &dbid dbid 
                     FROM   gv$sql_plan a 
                     WHERE '&vw' IN('A','G')
-                    AND   ('&dbid' is null or '&vw'='G' or &did='&dbid')
                     AND    a.sql_id='!'|| h.sql_id ||'''
                     AND    a.plan_hash_value='||h.plan_hash_value||q'!
                     UNION ALL

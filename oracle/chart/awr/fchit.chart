@@ -6,34 +6,46 @@
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
         &GRP    : default={stat_name}, c={class_name}
-        @did    : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)
     --]]
 ]]*/
 {
     title='Flash Cache Hit Ratio',
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                trunc(end_interval_time + 0, 'mi') end_time, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  dbid=nvl(:dbid,&did)
-          AND    end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
-          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) ,
+        WITH snap AS(
+            SELECT a.*,
+                   MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+                   round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+            FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('container_data' 'current_dictionary')*/ 
+                           snap_id,
+                           dbid,
+                           instance_number,
+                           instance_number inst_id,
+                           begin_interval_time+0 btime,
+                           end_interval_time+0 etime,
+                           startup_time+0 stime,
+                           (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                           (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                    FROM   dba_hist_snapshot
+                    WHERE  dbid=:dbid
+                     AND   end_interval_time+0 BETWEEN 
+                           NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
+                           NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+                     AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a),
         data AS (
-            select grp,end_time,n,sum(v/ela) v
-            from  (SELECT 1 grp,end_time,flag,Slot_size ela,stat_name n,
-                          VALUE - nvl(LAG(VALUE) OVER(PARTITION BY part_key,stat_name ORDER BY end_time),0) v
+            select grp,etime,n,sum(v/secs) v
+            from  (SELECT 1 grp,etime,secs,stat_name n,
+                          VALUE - nvl(LAG(VALUE) OVER(PARTITION BY pkey,stat_name ORDER BY etime),0) v
                    FROM   dba_hist_sysstat 
                    JOIN   snap using(dbid,instance_number,snap_id)
+                   WHERE  dbid=:dbid
                    UNION ALL
                    SELECT case when metric_name not like '%write%' then 2 else 3 end,
-                          end_time,flag,Slot_size,metric_name,
-                          METRIC_VALUE - nvl(LAG(METRIC_VALUE) OVER(PARTITION BY CELL_HASH,INCARNATION_NUM,METRIC_ID ORDER BY end_time),0) v
+                          etime,secs,metric_name,
+                          METRIC_VALUE - nvl(LAG(METRIC_VALUE) OVER(PARTITION BY CELL_HASH,INCARNATION_NUM,METRIC_ID ORDER BY etime),0) v
                    FROM   dba_hist_cell_global 
                    JOIN   snap using(dbid,snap_id)
-                   WHERE  METRIC_ID IN(
+                   WHERE  dbid=:dbid
+                   AND    METRIC_ID IN(
                             200, --'Flash cache read requests hit',
                             212, --'Flash cache read requests - keep objects',
                             201, --'Flash cache misses and partial hits',
@@ -54,15 +66,14 @@
                             480, --'Flash cache write requests - large writes rejected based on IORM',
                             443  --'Flash cache write requests skipped'
                             ))
-            where flag=0
-            group  by grp,end_time,n)
-        SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') sample_time,
+            group  by grp,etime,n)
+        SELECT to_char(etime, 'YYYY-MM-DD HH24:MI') sample_time,
                n,
-               nvl(round(iops*100/total,2),0) "Hit Ratio(%)",
+               nvl(round(iops*100/nullif(total,0),2),0) "Hit Ratio(%)",
                nvl(round(case when n not like '%Bytes%' then iops end,2),0) "Physical IOPS"
         FROM   data
         MODEL  RETURN UPDATED ROWS
-        PARTITION BY(end_time) DIMENSION BY(n,grp) MEASURES(v iops, to_number(null) total)
+        PARTITION BY(etime) DIMENSION BY(n,grp) MEASURES(v iops, to_number(null) total)
         RULES UPSERT ALL SEQUENTIAL ORDER(
               iops['Flash Cache Reads',0]=sum(iops)[n like 'Flash%' and not regexp_like(n,'(misses|skipped)'),2],
               iops['PMEM Cache Reads',0]=sum(iops)[n like '%MEM%' and not regexp_like(n,'(misses|skipped)'),2],

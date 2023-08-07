@@ -15,6 +15,7 @@ local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
 local checking_access
+local default_dbid
 local function rep_instance(prefix,full,obj,suffix) 
     obj=obj:upper()
     local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
@@ -87,7 +88,7 @@ function dicts.on_before_db_exec(item)
     if instance==0 then instance=tonumber(db.props.instance) end
     for k,v in ipairs{
         {'INSTANCE',instance and instance>0 and instance or ""},
-        {'DBID',dbid and dbid>0 and dbid or ""},
+        {'DBID',dbid and dbid>0 and dbid or default_dbid or ""},
         {'CON_ID',container and container>=0 and container  or ""},
         {'SCHEMA',usr},
         {'_SQL_ID',db.props.last_sql_id or ''},
@@ -253,6 +254,9 @@ function dicts.on_after_db_conn(instance,sql,props)
 
     if not db:is_connect(true) then
         env.set_title("")
+        default_dbid=nil
+    else
+        default_dbid=db:get_value("select /*BYPASS_DBCLI_REWRITE*/ dbid from v$database")
     end
 end
 

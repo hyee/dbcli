@@ -17,35 +17,45 @@
     title="System OS Stats Chart",
     _attrs=[[select case when lower(:V1) like '%time%' then 'Seconds' when lower(:V1) like '%byte%' then 'Bytes' else 'Value' end||' per Second' ylabel from dual]],
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
-                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
-          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2))
+         WITH snap AS(
+            SELECT a.*,
+                   MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+                   round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+            FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('container_data' 'current_dictionary')*/ 
+                           snap_id,
+                           dbid,
+                           instance_number,
+                           instance_number inst_id,
+                           begin_interval_time+0 btime,
+                           end_interval_time+0 etime,
+                           startup_time+0 stime,
+                           (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                           (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                    FROM   dba_hist_snapshot
+                    WHERE  dbid=:dbid
+                     AND   end_interval_time+0 BETWEEN 
+                           NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
+                           NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+                     AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
         SELECT time sample_time,event,v "Value per Second"
-        FROM   (SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') TIME, 
+        FROM   (SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') TIME, 
                        event||case when event||' ' like '% Time %' THEN '(Seconds)' END event,
                        round(sum(v)*case when event||' ' like '%TIME %' THEN 0.01 else 1 end,2) v
                 FROM  (SELECT /*+merge*/
                                A.*,
                                initcap(replace(stat_name,'_',' '))|| decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
-                               value/greatest(1,flag1*Slot_size)/case when stat_name like '%TIME%' THEN 100 ELSE 1 END v
+                               value/greatest(1,flag1*secs)/case when stat_name like '%TIME%' THEN 100 ELSE 1 END v
                        FROM   (SELECT /*+merge no_expand ordered_predicates*/
                                       inst_id,
-                                      end_time,
-                                      flag,
+                                      etime,
                                       stat_name,
-                                      Slot_size,
+                                      secs,
                                       case when stat_id in(1,2,3,4,5,6,14,1009,1010) then 1 else 0 end flag1,
-                                      VALUE - nvl(LAG(case when stat_id in(1,2,3,4,5,6,14,1009,1010) then VALUE else 0 end) OVER(PARTITION BY part_key,stat_name ORDER BY snap_id),0) value
+                                      VALUE - nvl(LAG(case when stat_id in(1,2,3,4,5,6,14,1009,1010) then VALUE else 0 end) OVER(PARTITION BY pkey,stat_name ORDER BY snap_id),0) value
                                FROM   dba_hist_osstat NATURAL JOIN snap
-                               WHERE  (&filter) and (:V1 IS NULL OR lower(stat_name) like lower('%&V1%'))) a
-                       where value>0 and flag=0)
-                 GROUP  BY event, end_time) a
+                               WHERE  dbid=:dbid and (&filter) and (:V1 IS NULL OR lower(stat_name) like lower('%&V1%'))) a
+                       where value>0)
+                 GROUP  BY event, etime) a
         WHERE  (v>0)
         ORDER  BY 1]],
     _pivot=true,

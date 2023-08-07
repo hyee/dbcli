@@ -42,6 +42,7 @@ DECLARE
     stmt    VARCHAR2(30000);
     active  PLS_INTEGER := 0;
     c       SYS_REFCURSOR;
+    dbid    INT;
     TYPE    t IS TABLE OF VARCHAR2(500);
     row     SYS.SQLSET_ROW := SYS.SQLSET_ROW();
     sets    SYS.SQLSET := SYS.SQLSET();
@@ -174,6 +175,7 @@ BEGIN
         IF filter IS NULL THEN
             raise_application_error(-20001,'Please specify the predicates for filtering the matched SQLs');
         END IF;
+
         stmt := 'SELECT %s source,
                         sql_id,
                         plan_hash, 
@@ -183,14 +185,14 @@ BEGIN
                         %s attr1,
                         %s attr2,
                         to_char(substr(sql_text,1,512)) sql_text
-                 FROM  (%s)
+                 FROM  (%s) s
+                 NATURAL LEFT JOIN T
                  WHERE ('||filter||')
                  AND   command_type in (1, 2, 3, 6, 7, 9, 47, 170, 189)
-                 AND   sql_text not like ''%/* OPT_DYN_SAMP */%''
-                 AND   sql_text not like ''%/* DS_SVC */%''
-                 AND   sql_text not like ''/* SQL Analyze%''';
-        stmt := replace('
-        SELECT /*+opt_param(''container_data'' ''current_dictionary'') opt_param(''_fix_control'' ''26552730:0'')*/
+                 AND   NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze)\W'')';
+        stmt := replace(replace('
+        WITH t AS(select /*+materialize opt_estimate(query_block rows=0)*/ 1 from v$sqlarea where 1=2)
+        SELECT /*+monitor opt_param(''container_data'' ''current_dictionary'') opt_param(''_fix_control'' ''26552730:0'')*/
                source,
                sql_id,
                plan_hash,
@@ -199,68 +201,75 @@ BEGIN
                schema,attr1,attr2,
                substr(trim(regexp_replace(sql_text,''\s+'','' '')),1,200) sql_text
         FROM (
-            SELECT a.*,row_number() over(partition by sql_id,plan_hash order by decode(schema,''@schema'',1,2),source) seq
+            SELECT /*+PQ_CONCURRENT_UNION*/a.*,row_number() over(partition by sql_id,plan_hash order by decode(schema,''@schema'',1,2),source) seq
             FROM (
-                 '||utl_lms.format_message(stmt,'1','to_char(snap_id)','to_char(snap_id)',
-                        'select a.*,to_number(null) snap_id,plan_hash_value plan_hash, parsing_schema_name schema from v$sqlarea a')||'
+                 '||utl_lms.format_message(stmt,'1','cast(null as varchar2(128))','cast(null as varchar2(128))',
+                        'select a.*,''SQLAREA'' source,plan_hash_value plan_hash, parsing_schema_name schema from v$sqlarea a')||'
                  UNION ALL
                  SELECT 2,sql_id,plan_hash,schema,sum(elapsed_time),sum(executions),to_char(min(attr1)),to_char(max(attr2)),max(sql_text)
                  FROM (
                  '||utl_lms.format_message(stmt,'2','begin_snap','snap_id',
                        'select  /*+merge*/ a.*,
+                                ''AWR'' source,
+                                a.plan_hash_value plan_hash,
+                                a.parsing_schema_name schema,
                                 b.command_type,b.sql_text,
                                 c.begin_snap,
                                 c.end_interval_time+0 last_active_time,
                                 c.end_interval_time+0 last_load_time,
-                                plan_hash_value plan_hash,
-                                parsing_schema_name schema,
-                                fetches_delta fetches,
-                                end_of_fetch_count_delta end_of_fetch_count,
-                                sorts_delta sorts,
-                                executions_delta executions,
-                                px_servers_execs_delta px_servers_executions,
-                                loads_delta loads,
-                                invalidations_delta invalidations,
-                                parse_calls_delta parse_calls,
-                                disk_reads_delta disk_reads,
-                                buffer_gets_delta buffer_gets,
-                                rows_processed_delta rows_processed,
-                                cpu_time_delta cpu_time,
-                                elapsed_time_delta elapsed_time,
-                                iowait_delta io_wait_time,
-                                clwait_delta cluster_wait_time,
-                                apwait_delta application_wait_time,
-                                ccwait_delta concurrency_wait_time,
-                                direct_writes_delta direct_writes,
-                                plsexec_time_delta plsexec_time,
-                                javexec_time_delta javexec_time,
-                                io_offload_elig_bytes_delta io_offload_eligible_bytes,
-                                io_interconnect_bytes_delta io_interconnect_bytes,
-                                physical_read_requests_delta physical_read_requests,
-                                physical_read_bytes_delta physical_read_bytes,
-                                physical_write_requests_delta physical_write_requests,
-                                physical_write_bytes_delta physical_write_bytes,
-                                optimized_physical_reads_delta optimized_physical_reads,
-                                cell_uncompressed_bytes_delta cell_uncompressed_bytes,
-                                io_offload_return_bytes_delta io_offload_return_bytes
-                        from dba_hist_sqlstat a
-                        join dba_hist_sqltext b
-                        on   a.dbid=b.dbid
-                        and  a.sql_id=b.sql_id
+                                a.fetches_delta fetches,
+                                a.end_of_fetch_count_delta end_of_fetch_count,
+                                a.sorts_delta sorts,
+                                a.executions_delta executions,
+                                a.px_servers_execs_delta px_servers_executions,
+                                a.loads_delta loads,
+                                a.invalidations_delta invalidations,
+                                a.parse_calls_delta parse_calls,
+                                a.disk_reads_delta disk_reads,
+                                a.buffer_gets_delta buffer_gets,
+                                a.rows_processed_delta rows_processed,
+                                a.cpu_time_delta cpu_time,
+                                a.elapsed_time_delta elapsed_time,
+                                a.iowait_delta user_io_wait_time,
+                                a.clwait_delta cluster_wait_time,
+                                a.apwait_delta application_wait_time,
+                                a.ccwait_delta concurrency_wait_time,
+                                a.direct_writes_delta direct_writes,
+                                a.plsexec_time_delta plsql_exec_time,
+                                a.javexec_time_delta java_exec_time,
+                                a.io_offload_elig_bytes_delta io_offload_eligible_bytes,
+                                a.io_interconnect_bytes_delta io_interconnect_bytes,
+                                a.physical_read_requests_delta physical_read_requests,
+                                a.physical_read_bytes_delta physical_read_bytes,
+                                a.physical_write_requests_delta physical_write_requests,
+                                a.physical_write_bytes_delta physical_write_bytes,
+                                a.optimized_physical_reads_delta optimized_physical_reads,
+                                a.cell_uncompressed_bytes_delta cell_uncompressed_bytes,
+                                a.io_offload_return_bytes_delta io_offload_return_bytes
+                        from (select /*+merge*/ * from dba_hist_sqlstat where dbid=&dbid) a
+                        join (select /*+merge*/ * from dba_hist_sqltext where dbid=&dbid) b
+                        on    a.sql_id=b.sql_id
                         join (select c.*,lag(snap_id) over(partition by dbid,instance_number order by snap_id) begin_snap 
                               from   dba_hist_snapshot c
-                              where  dbid=(select /*+PRECOMPUTE_SUBQUERY*/ dbid from v$database)) c
-                        on   a.dbid=b.dbid
-                        and  a.instance_number=c.instance_number
-                        and  a.snap_id=c.snap_id
-                        where a.dbid=(select /*+PRECOMPUTE_SUBQUERY*/ dbid from v$database)
+                              where  dbid=&dbid) c
+                        on    a.instance_number=c.instance_number
+                        and   a.snap_id=c.snap_id
                         and   c.begin_snap is not null')||'
                  ) 
                  GROUP BY sql_id,plan_hash,schema
+                 UNION ALL
+                 '||utl_lms.format_message(stmt,'3','sqlset_owner','sqlset_name',
+                       'select a.*,
+                               ''SQLSET'' source,
+                               a.plan_hash_value plan_hash,
+                               a.parsing_schema_name schema 
+                        from   &check_access_dba.sqlset_statements a
+                        where  sqlset_id != @sid')
+                 ||'                 
             ) a
         ) 
         WHERE seq=1
-        ORDER BY elapsed_time desc nulls last','@schema',usr);
+        ORDER BY elapsed_time desc nulls last','@schema',usr),'@sid',sid);
         --dbms_output.put_line(stmt);
         OPEN c FOR stmt;
         LOOP
@@ -287,13 +296,18 @@ BEGIN
                 SELECT  /*+opt_param(''container_data'' ''current_dictionary'') opt_param(''_fix_control'' ''26552730:0'')*/
                        value(p) val
                 FROM   TABLE(sets) a,
-                       TABLE(sys.dbms_sqltune.select_cursor_cache(to_char(a.other))) p
+                       TABLE(sys.dbms_sqltune.select_cursor_cache(basic_filter=>to_char(a.other))) p
                 WHERE  a.priority=1
                 UNION ALL
                 SELECT value(p) val
                 FROM   TABLE(sets) a,
                        TABLE(sys.dbms_sqltune.select_workload_repository(begin_snap=>a.module,end_snap=>a.action,basic_filter=>to_char(a.other))) p
-                WHERE  a.priority=2;
+                WHERE  a.priority=2
+                UNION ALL
+                SELECT value(p) val
+                FROM   TABLE(sets) a,
+                       TABLE(sys.dbms_sqltune.select_sqlset(sqlset_owner=>a.module,sqlset_name=>a.action,basic_filter=>to_char(a.other))) p
+                WHERE  a.priority=3;
             BEGIN
                 sys.dbms_sqltune.load_sqlset(
                     sqlset_owner=>usr,
@@ -309,7 +323,7 @@ BEGIN
 
         OPEN c FOR
             SELECT rownum "#",
-                   UPPER(decode(priority,1,'V$SQLAREA',2,'DBA_HIST_SQLSTAT',3,'&check_access_dba.sqlset_statements')) source,
+                   UPPER(decode(priority,1,'SQLAREA',2,'AWR',3,'SQLSET')) source,
                    sql_id,
                    plan_hash_value plan_hash,
                    parsing_schema_name schema,

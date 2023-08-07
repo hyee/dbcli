@@ -50,7 +50,8 @@
                             FROM   (SELECT DISTINCT snap_id, dbid, instance_number, inst, flag FROM time_model) s
                             JOIN   dba_hist_event_histogram hs1
                             USING  (snap_id, instance_number, dbid)
-                            WHERE  wait_class != 'Idle')
+                            WHERE  wait_class != 'Idle'
+                            AND    dbid=:dbid)
                      GROUP  BY inst,
                             CASE
                                    WHEN slot_time <= 512 THEN
@@ -117,7 +118,8 @@ with time_model as(
                       MAX(s.snap_id) OVER(PARTITION BY s.dbid,s.instance_number,s.STARTUP_TIME) max_id,
                       decode(LOWER(:V1),'0',to_char(s.instance_number),to_char(s.instance_number),to_char(s.instance_number),'A') inst
                FROM   dba_hist_sys_time_model hs1, dba_hist_snapshot s,dba_hist_parameter p
-               WHERE  s.snap_id = hs1.snap_id
+               WHERE  hs1.dbid=:dbid
+               AND    s.snap_id = hs1.snap_id
                AND    s.instance_number = hs1.instance_number
                AND    s.dbid=hs1.dbid
                AND    s.snap_id = p.snap_id(+)
@@ -160,6 +162,7 @@ SELECT * FROM (
                 join   dba_hist_system_event hs1
                 using  (snap_id,instance_number,dbid)
                 WHERE  wait_class != 'Idle'
+                AND    dbid=:dbid
                 AND    (nvl(LOWER(:V1),'a') in (lower(event_name),lower(wait_class),'a') or regexp_like(:V1,'^\d+$'))) a
         GROUP  BY inst,rollup(wait_class,event_name)
         HAVING SUM(time_waited_micro *flag)>0)

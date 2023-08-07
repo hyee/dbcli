@@ -55,6 +55,7 @@ BEGIN
             did := sys_context('userenv', 'con_dbid');
         $END
     END IF;
+    
     BEGIN
         std := to_date(st,'YYMMDDHH24MI');
         edd := to_date(ed,'YYMMDDHH24MI');

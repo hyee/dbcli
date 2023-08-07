@@ -15,7 +15,7 @@
     --[[
        
         &filter: default={1=1} f={}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
+        @did : 12.2={sys_context('userenv','dbid')+0} default={(select /*+PRECOMPUTE_SUBQUERY*/ dbid from v$database)}
         @org : 23.1={origin} default={'MANUAL'}
     --]]
 ]]*/
@@ -162,12 +162,12 @@ BEGIN
                    plan_hash_value,
                    sql_text,
                    ''||dbid,
-                   ''||(select MAX(snap_id) from dba_hist_sqlstat WHERE sql_id=V2 AND plan_hash_value=a.plan_hash_value AND DBID=nvl(:dbid,&did))
+                   ''||(select MAX(snap_id) from dba_hist_sqlstat WHERE sql_id=V2 AND plan_hash_value=a.plan_hash_value AND DBID=:dbid)
             FROM   dba_hist_sql_plan a
             JOIN   dba_hist_sqltext USING(dbid,sql_id)
             WHERE  sql_id=V2
             AND    plan_hash_value=nvl(phv,plan_hash_value)
-            AND    dbid=nvl(:dbid,&did)
+            AND    dbid=:dbid
             AND    plan_hash_value>0
             UNION  ALL 
             SELECT 'sqlset',

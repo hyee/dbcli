@@ -21,23 +21,24 @@
         from dual]],
     _sql=[[
         SELECT time sample_time,event,value "Memory Size"
-        FROM   (SELECT to_char(end_time,'YYYY-MM-DD HH24:MI') TIME, event,
+        FROM   (SELECT to_char(etime,'YYYY-MM-DD HH24:MI') TIME, event,
                        max(VALUE) VALUE
                 FROM  (SELECT /*+merge*/
                                A.*,
                                COMPONENT || decode(nvl(lower(:V1), 'a'), 'a', NULL, ' #' || inst_id) event
                        FROM   (SELECT /*+merge no_expand ordered_predicates*/
                                       instance_number inst_id,
-                                      trunc(end_interval_time+0,'MI') end_time,
+                                      trunc(end_interval_time+0,'MI') etime,
                                       COMPONENT,
                                       CURRENT_SIZE value
                                FROM   DBA_HIST_MEM_DYNAMIC_COMP
                                NATURAL JOIN DBA_HIST_SNAPSHOT
-                               WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
+                               WHERE  dbid=:dbid
+                               AND    end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
                                AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)
                                AND    (&filter)) a
                        )
-                 GROUP  BY event, end_time) a
+                 GROUP  BY event, etime) a
         ORDER  BY 1]],
     _pivot=true,
     labelsKMG2=true,

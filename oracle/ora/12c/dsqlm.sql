@@ -91,7 +91,7 @@ BEGIN
                             FROM   &dict a
                             WHERE  COMPONENT_NAME='sqlmonitor'
                             AND    (&filt)
-                            AND    (v_did IS NULL OR v_did in(dbid,con_dbid))
+                            AND    v_did in(dbid,con_dbid)
                             AND    PERIOD_START_TIME<=v_end
                             AND    PERIOD_END_TIME>=v_start) a,
                           xmltable('/report_repository_summary/*' PASSING a.summary columns --
@@ -145,7 +145,7 @@ BEGIN
             FROM  (
                 SELECT report
                 FROM   &dict._details
-                WHERE  (v_did IS NULL OR v_did in(dbid,con_dbid))
+                WHERE  v_did in(dbid,con_dbid)
                 AND    report_id=v_report_id
                 ORDER  BY generation_time desc
             ) WHERE rownum<2;

@@ -65,9 +65,6 @@ begin
               OR (:V1 IS NULL and isdefault='FALSE'))
             order by name;
     else
-        if v_dbid is null then
-            select dbid into v_dbid from v$database;
-        end if;
         open :c for
             with params as(
                 select lpad(decode(count(1),1,''||max(inst_id),'*'),4) inst,

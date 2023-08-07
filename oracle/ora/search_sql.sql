@@ -8,7 +8,6 @@
     --[[
         @ARGS: 1
         &vw     : default={'A'} g={'G'} d={'D'} AWR={'AWR'}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
         &filter : default={upper(sql_text_) like upper(q'~%&V1%~') or (sql_id=q'~&v1~')} r={regexp_like(sql_text_||SQL_ID,q'~&V1~','in') or (sql_id=q'~&v1~')}
         @CHECK_ACCESS_GV: {
             GV$SQLSTATS_PLAN_HASH={V$SQLSTATS_PLAN_HASH}
@@ -23,7 +22,7 @@
                 SELECT 'DBA_HIST_SQLTEXT',SQL_ID,TO_CHAR(SUBSTR(SQL_TEXT,1,1000))
                 FROM   (SELECT A.*,SQL_TEXT SQL_TEXT_ FROM DBA_HIST_SQLTEXT A)
                 WHERE  &vw in('A','D','AWR') AND (&filter)
-                AND    dbid=NVL(0+'&dbid',&did)
+                AND    dbid=&dbid
             }
         }
 

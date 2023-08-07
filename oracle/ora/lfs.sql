@@ -10,7 +10,6 @@
         &flag: default={1} d={dba_hist_} pdb={awr_pdb_}
         &div: default={1} avg={&V1}
         @CHECK_ACCESS_SL: SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
-        @did : 12.2={nvl('&dbid'+0,sys_context('userenv','dbid')+0)} default={nvl('&dbid'+0,(select dbid from v$database))}
   --]]
 ]]*/
 
@@ -83,7 +82,7 @@ BEGIN
                          XID,secs, dbid, instance_number
                   FROM   (SELECT MIN(snap_id) mid, MAX(snap_id) XID, dbid, instance_number,SUM((end_interval_time+0)-(begin_interval_time+0))*86400 secs
                           FROM   &flag.snapshot
-                          WHERE  dbid = &did
+                          WHERE  dbid = &dbid
                           AND    end_interval_time+0 between nvl(to_date(nvl('&V1','&starttime'),'yymmddhh24mi'),sysdate-7) 
                                  and nvl(to_date(nvl('&V2','&endtime'),'yymmddhh24mi'),sysdate+1)
                           GROUP  BY dbid, instance_number, startup_time)),!';
@@ -94,7 +93,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.system_event b
                 USING  (dbid, instance_number)
-                WHERE  dbid = &did
+                WHERE  dbid = &dbid
                 AND    time_waited_micro > 0
                 AND    snap_id IN (mid, XID)
                 AND    (event_name IN ('log file sync', 'log file parallel write','gcs log flush sync','remote log force - commit') OR (event_name LIKE 'LGWR%' AND event_name NOT LIKE '%idle'))
@@ -107,7 +106,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.latch b
                 USING  (dbid, instance_number)
-                WHERE  dbid = &did --
+                WHERE  dbid = &dbid --
                  AND   snap_id IN (mid, XID) --
                  AND   wait_time > 0 --
                  AND   (latch_name LIKE 'redo%' OR LOWER(latch_name) LIKE '%lgwr%')
@@ -117,7 +116,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.sysstat b
                 USING  (dbid, instance_number)
-                WHERE  dbid = &did --
+                WHERE  dbid = &dbid --
                  AND   snap_id IN (mid, XID) --
                  AND   (stat_name LIKE 'redo%' or 
                         stat_name like '% log %' or 
@@ -134,7 +133,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.cell_global b
                 USING  (dbid)
-                WHERE  dbid = &did --
+                WHERE  dbid = &dbid --
                  AND   INSTANCE_NUMBER=1
                  AND   snap_id IN (mid, xxid) --
                  AND   lower(METRIC_NAME) like '%log %'

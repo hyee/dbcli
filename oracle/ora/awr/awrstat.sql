@@ -40,6 +40,7 @@ select time,
        plan_hash,
        sum(exec)   exec,
        sum(parse)  parse,
+       sum(invalids) invalid,
        max(vers)  vers,
        count(1)    SEENS,
        sum(ela)    ELA,
@@ -59,7 +60,7 @@ select time,
        nullif(round(sum(write)/&avg,2),0)  write,
        nullif(round(sum(rows#)/&avg,2),0) rows#,
        nullif(round(sum(fetches)/&avg,2),0) fetches,
-       nullif(round(sum(invalids)/&avg,2),0) invalid,
+      
        nullif(max(px_count),0) px
 FROM(
     select /*+no_expand*/

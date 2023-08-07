@@ -9,7 +9,6 @@
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
         &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
         @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
         &filter : default={UPPER('.'||owner||'.'||object_name||'.'||subobject_name||'.') LIKE upper('%&V1%')} f={}
         &flag   : default={nvl2(:V1,0,1)} f={0}
         &V2 : default={nvl(logi_reads,0)/30+nvl(phy_reads,0)+nvl(phy_writes,0)+nvl(cr_blocks,0)+nvl(cu_blocks,0)}
@@ -60,7 +59,7 @@ WITH segs AS(
     from (select a.*, 
                  row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
          from (
-            select /*+DYNAMIC_SAMPLING(8)*/ *
+            select /*+DYNAMIC_SAMPLING(8) opt_param('container_data' 'current_dictionary')*/ *
             FROM &check_access_pdb.Seg_stat_obj b
             JOIN &check_access_pdb.Seg_stat c USING (dbid,obj#,dataobj#)
             JOIN (select dbid,snap_id,instance_number,
@@ -72,7 +71,7 @@ WITH segs AS(
                   where end_interval_time between to_timestamp(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
                   and   to_timestamp(coalesce('&V4', to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
             USING(dbid,instance_number,snap_id)
-            WHERE dbid=nvl(0+'&dbid',&did)
+            WHERE dbid=&dbid
             AND   &filter
             ) a)
     GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
@@ -92,7 +91,8 @@ var c refcursor "Top Segments by Statistics(threshold = 8%)"
 BEGIN
     OPEN :c FOR 
         WITH segs AS(
-            SELECT /*+MATERIALIZE*/ owner,object_name,
+            SELECT /*+MATERIALIZE opt_param('container_data' 'current_dictionary')*/ 
+                   owner,object_name,
                    decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,''||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))) segments,
                    nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,
                    nullif(&imscans,0) imscans,
@@ -133,7 +133,7 @@ BEGIN
                           where end_interval_time between to_timestamp(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
                           and   to_timestamp(coalesce('&V4', to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
                     USING(dbid,instance_number,snap_id)
-                    WHERE dbid=nvl(0+'&dbid',&did)
+                    WHERE dbid=&dbid
                     AND   &filter
                     ) a)
             GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
