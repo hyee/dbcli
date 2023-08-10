@@ -29,7 +29,7 @@ return {[[
                 a.AVG_COL_LEN AVG_LEN,
                 a.num_distinct "NDV",
                 CASE WHEN b.num_rows>=a.num_nulls THEN round(a.num_nulls*100/nullif(b.num_rows,0),2) END "Nulls(%)",
-                round(decode(a.histogram,'HYBRID',NULL,greatest(0,num_rows-a.num_nulls)/nullif(a.num_distinct,0)),2) CARDINALITY,
+                round(greatest(0,b.num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,
                 nullif(a.HISTOGRAM,'NONE') HISTOGRAM，
                 a.NUM_BUCKETS buckets,
                 case when a.low_value is not null then 

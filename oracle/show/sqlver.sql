@@ -232,7 +232,7 @@ DECLARE
         END IF;
         select xmlelement(R,xmlelement(P,phv)
                            ,xmlelement(R,reason)
-                           ,xmlelement(M,trim(chr(10) from memo))).getstringval()
+                           ,xmlelement(M,trim(chr(10) from substr(memo,1,3600)))).getstringval()
         into   key from dual;
 
         IF lst.exists(key) THEN
@@ -380,7 +380,7 @@ BEGIN
                                     '<ChildNode>.+</ChildNode>')
                        || '</R>');
 
-        FOR r1 IN (SELECT i,id,trim(reason) reason,t,trim(v) v
+        FOR r1 IN (SELECT i,id,trim(reason) reason,trim(t) t,trim(v) v
                    FROM   XMLTABLE('/R/ChildNode' PASSING XML COLUMNS
                                 i for ordinality,
                                 id INT PATH 'ID',
@@ -403,6 +403,7 @@ BEGIN
         END LOOP;
         flush;
     END LOOP;
+    
     key:=lst.first;
     XML := xmltype('<ROWSET/>'); 
     WHILE key IS NOT NULL LOOP
@@ -414,7 +415,6 @@ BEGIN
             .appendChildXML('/R',XMLTYPE('<CNT>'||cnt(key)||'</CNT>')));
         key := lst.next(key);
     END LOOP;
-
     OPEN :c FOR
         SELECT *
         FROM  XMLTABLE('/ROWSET/R' PASSING xml 
@@ -422,9 +422,9 @@ BEGIN
                       PLAN_HASH INT PATH 'P',
                       PARSES INT PATH 'PS',
                       Reason  VARCHAR2(2000) PATH 'R',
-                      MEMO VARCHAR2(2000) PATH 'M',
+                      MEMO VARCHAR2(4000) PATH 'M',
                       LOAD_TIME VARCHAR2(80) PATH 'L',
-                      EXAMPLE_CURSORS VARCHAR(4000) PATH 'C')
+                      EXAMPLE_CURSORS VARCHAR(2000) PATH 'C')
         ORDER BY 1 DESC,REASON;
 END;
 /

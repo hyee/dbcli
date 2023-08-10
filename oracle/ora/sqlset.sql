@@ -66,7 +66,7 @@ DECLARE
             FROM   &check_access_dba.sqlset
             WHERE  (id=sid  OR upper(name)=tmp_set) 
             AND    upper(owner)=upper(nvl(tmp_owner,owner))
-            ORDER  BY decode(name,sqlset,1,user,2,3)) a
+            ORDER  BY decode(upper(owner),upper(tmp_owner),1,upper(user),2,3)) a
         WHERE rownum < 2;
         usr     := tmp_owner;
         sqlset  := tmp_set;
@@ -125,8 +125,8 @@ BEGIN
             USING(ID,OWNER,NAME)
             ORDER BY ID,R;
     ELSIF op = 'CREATE' THEN
-        IF sqlset IS NULL THEN
-            raise_application_error(-20001,'Invalid SQL Tuning Set name: '||sid);
+        IF sid IS NOT NULL THEN
+            raise_application_error(-20001,'Invalid new SQL Tuning Set name: '||sid);
         END IF;
         check_sqlset(usr);
         IF sid IS NOT NULL THEN

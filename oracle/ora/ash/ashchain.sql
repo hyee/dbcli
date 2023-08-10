@@ -38,7 +38,7 @@
         &ash   : default={&8} t={&0}
         &v2    : default={&starttime}
         &v3    : default={&endtime}
-        &hint  : ash={inline} dash={materialize}
+        &hint  : ash={inline} dash={materialize opt_param('container_data' 'current_dictionary')}
         &AWR_VIEW        : default={dba_hist_} pdb={AWR_PDB_}
         @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
         &V8: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid )}

@@ -27,6 +27,9 @@ DECLARE
     job  VARCHAR2(128) := 'AWREXTR_'||to_char(SYSDATE,'YYMMDDHH24MISS');
     own  VARCHAR2(128);
     val  VARCHAR2(30);
+    a     INT;
+    b     INT;
+    r     VARCHAR2(300);
 BEGIN
     dbms_output.enable(null);
     SELECT MAX(directory_name), MAX(directory_path)
@@ -39,7 +42,16 @@ BEGIN
 
     $IF dbms_db_version.version>17 $THEN
         IF dbms_utility.directory_has_symlink(dir)=1 THEN
-            raise_application_error(-20001, 'Directory('||root||') has symbolic link, please change to the real path.');
+            FOR i IN 1..2 LOOP
+                r := '0';
+                BEGIN
+                    a:=sys.dbms_utility.get_parameter_value(CASE WHEN i=1 THEN '_kolfuseslf' ELSE '_disable_directory_link_check' END,b,r);
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+                IF r='0' THEN
+                    raise_application_error(-20001, 'Directory('||root||') has symbolic link, please change to the real path or _kolfuseslf/_disable_directory_link_check as TRUE.');
+                END IF;
+            END LOOP;
         END IF;
     $END
 
