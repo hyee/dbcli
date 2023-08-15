@@ -59,7 +59,7 @@ WITH segs AS(
     from (select a.*, 
                  row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
          from (
-            select /*+DYNAMIC_SAMPLING(8) opt_param('container_data' 'current_dictionary')*/ *
+            select /*+DYNAMIC_SAMPLING(8)*/ *
             FROM &check_access_pdb.Seg_stat_obj b
             JOIN &check_access_pdb.Seg_stat c USING (dbid,obj#,dataobj#)
             JOIN (select dbid,snap_id,instance_number,
@@ -91,7 +91,7 @@ var c refcursor "Top Segments by Statistics(threshold = 8%)"
 BEGIN
     OPEN :c FOR 
         WITH segs AS(
-            SELECT /*+MATERIALIZE opt_param('container_data' 'current_dictionary')*/ 
+            SELECT /*+MATERIALIZE*/ 
                    owner,object_name,
                    decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,''||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))) segments,
                    nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,

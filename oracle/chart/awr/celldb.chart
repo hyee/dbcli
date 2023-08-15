@@ -11,8 +11,8 @@
     title="Exadata Cell DB Chart",
     _sql=[[
         WITH STATS AS
-         (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/
-           *
+         (SELECT /*+materialize*/
+                  *
           FROM   (SELECT src_dbname,
                          cell_hash,
                          to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') etime,

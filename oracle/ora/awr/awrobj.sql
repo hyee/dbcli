@@ -25,7 +25,7 @@ COL "PHY_OPT|READS,READS|DIRECT,WRITES|DIRECT,Weight" FOR PCT2
 COL TIME smhd2
 COL TOTAL_ELA,AVG_ELA FOR usmhd2
 WITH objs AS
- (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/*
+ (SELECT /*+materialize*/*
   FROM   (SELECT to_timestamp(coalesce(:V3,:starttime, to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                  to_timestamp(coalesce(:V4,:endtime, to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') ed,
                  A.*
@@ -77,7 +77,7 @@ GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
 ORDER BY grouping_id(SUBOBJECT_NAME) desc,"BUFF|READS"+"PHY|READS"+"PHY|WRITES" DESC;
 
 WITH segs AS
- (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/ 
+ (SELECT /*+materialize*/ 
           DISTINCT a.*
   FROM   (SELECT OWNER,OBJECT_NAME,DBID
           FROM   &check_access_pdb.Seg_stat_obj

@@ -5,7 +5,7 @@ DECLARE
     sq VARCHAR2(8000);
 BEGIN
     sq:=q'[
-       (SELECT --+merge leading(s) use_hash(s h) no_expand opt_param('container_data' 'current_dictionary')
+       (SELECT --+merge leading(s) use_hash(s h) no_expand
                h.*,begin_interval_time,end_interval_time,
                begin_interval_time + 0 begin_time,
                end_interval_time + 0 end_time,

@@ -68,7 +68,7 @@
         }
       &ev  : default={event_name}  noevent={1}
       &ela : ash={1} dash={7}
-      &View: ash={gv$active_session_history}, dash={(select /*+opt_param('container_data' 'current_dictionary')*/ * from &check_access_pdb.Active_Sess_History where dbid=&dbid)}
+      &View: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid)}
       &BASE: ash={1}, dash={10}
       &ASH : default={&view} t={&0}
       &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate+1)}

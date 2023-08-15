@@ -18,7 +18,7 @@
     title="Exadata Cell IO State Chart",
     _sql=[[
         WITH snap AS
-         (SELECT /*+no_expand materialize ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d) opt_param('container_data' 'current_dictionary')*/
+         (SELECT /*+no_expand materialize ordered use_hash(a b) no_merge(a) no_merge(b) no_merge(c) no_merge(d)*/
                    snap_id, nullif('['||&obj||']','[]') obj,
                    to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') etime,
                    round(SUM(APP_IO_REQUESTS_AVG), 3) app_io_requests,

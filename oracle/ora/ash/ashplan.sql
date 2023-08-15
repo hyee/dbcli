@@ -242,7 +242,7 @@ Sample Ouput:
 ]]*/
 set feed off printsize 10000 pipequery off
 WITH gash as(
-    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000) opt_param('container_data' 'current_dictionary')*/
+    select /*+inline merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=1000000)*/
             a.*,sample_time+0 stime
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))

@@ -60,7 +60,7 @@
              SELECT A.*, SUM(CNT1) OVER(partition by group_by) sums,
                      WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1440) bucket_id
              FROM(
-                 SELECT /*+no_expand opt_param('container_data' 'current_dictionary')*/
+                 SELECT /*+no_expand*/
                         trunc(sample_time, 'MI') sample_time,
                         &GROUPS AS group_by,
                         count(1)*&UNIT/60 cnt,

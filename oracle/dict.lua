@@ -18,6 +18,7 @@ local checking_access
 local default_dbid
 local function rep_instance(prefix,full,obj,suffix) 
     obj=obj:upper()
+    if (prefix or ""):lower():find('^table_stats') then return prefix..full..suffix end
     local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and dicts.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
@@ -50,6 +51,7 @@ local function rep_instance(prefix,full,obj,suffix)
             {usr and usr~="",dict.usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
             if v[1] and v[2] and v[3] then
+                --print(prefix,full,suffix)
                 if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) 
                     and dict1 and dict1.inst_col~="INST_ID"
                 then
@@ -644,8 +646,9 @@ function dicts.onload()
     dicts.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]
-        pt      <- [%s,(]
-        owner   <- ('SYS.'/ 'PUBLIC.'/'"SYS".'/'"PUBLIC".')
+        brace   <- 'TABLE_STATS'* %s* '('
+        pt      <- [%s,]/brace
+        owner   <- ('SYS.'/'PUBLIC.'/'"SYS".'/'"PUBLIC".')
         obj     <- full/name
         full    <- '"' name '"'
         name    <- {prefix %a%a [%w$#_]+}

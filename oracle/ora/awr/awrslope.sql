@@ -31,7 +31,7 @@ PRO SQL Statements with "Elapsed Time per Execution" changing over time
 ORA _sqlstat
 COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec" for usmhd2
 WITH per_time AS (
-select /*+materialize opt_param('container_data' 'current_dictionary')*/ * from(
+select /*+materialize*/ * from(
     SELECT max(sql_id) keep(dense_rank last order by snap) sql_id,&SIG
            grouping_id(plan_hash_value) grp,
            SYSDATE+1 - max(end_time) days_ago,

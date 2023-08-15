@@ -59,7 +59,7 @@ chain AS
   CONNECT BY grp=prior grp
          AND seq=prior seq+1
          AND st BETWEEN PRIOR st and PRIOR et)
-SELECT /*+opt_param('container_data' 'current_dictionary')*/ * 
+SELECT * 
 FROM (
     SELECT &con dbid,
            dbname,

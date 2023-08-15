@@ -31,8 +31,7 @@
         }
 
         &snaps: {default={
-            SELECT /*+opt_param('container_data' 'current_dictionary')*/
-                    a.*,decode(snap_id,minid,-1,1) flag
+            SELECT a.*,decode(snap_id,minid,-1,1) flag
             FROM   (SELECT dbid,
                         instance_number,
                         startup_time,
@@ -161,7 +160,7 @@ grid {
               AND    p.parameter_name(+) = 'cpu_count'
               AND    hs1.stat_name IN ('DB time', 'DB CPU', 'background cpu time')),
             db_time AS
-             (SELECT /*+materialize opt_param('container_data' 'current_dictionary')*/
+             (SELECT /*+materialize*/
                       SUM(VALUE * flag) db_time
               FROM   time_model
               WHERE  stat_name = 'DB time')
@@ -195,7 +194,7 @@ grid {
          &cell
         '|',
         [[grid={topic="DBA_HIST_SYSMETRIC_SUMMARY"}
-            SELECT /*+opt_param('container_data' 'current_dictionary')*/ * 
+            SELECT * 
             FROM (
                 SELECT  METRIC_NAME,
                         ROUND(

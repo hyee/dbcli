@@ -59,16 +59,16 @@ WITH snap AS(
     SELECT a.*,
            MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
            round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
-    FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('container_data' 'current_dictionary')*/ 
+    FROM   (SELECT /*+no_merge no_expand no_or_expand*/ 
                    snap_id,
                    dbid,
                    instance_number,
                    instance_number inst_id,
                    begin_interval_time+0 btime,
-                   end_interval_time+0 etime,
+                   MAX(end_interval_time+0) OVER(PARTITION BY snap_id) etime,
                    startup_time+0 stime,
                    (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
-                   (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                   (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY instance_number,startup_time)) diff
             FROM   dba_hist_snapshot
             WHERE  dbid=:dbid
              AND   end_interval_time+0 BETWEEN 
@@ -76,7 +76,7 @@ WITH snap AS(
                    NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
              AND  (:V4 IS NULL OR lower(:V4) IN ('0', 'a') OR instance_number = :V4)) a),
 STATS AS
- (SELECT /*+materialize no_expand opt_param('container_data' 'current_dictionary')*/
+ (SELECT /*+materialize no_expand*/
          source_table, snap_id,etime snap_time,unit, NAME, SUM(VALUE) VALUE
   FROM   (SELECT 'dba_hist_sysstat' source_table,
                  inst_id,
