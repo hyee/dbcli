@@ -2,6 +2,7 @@
     Show AWR Top events for a specific period. Usage: @@NAME [0|a|<inst_id>|cpu|"<event>"|"<wait_class>"] {[yymmddhh24mi] [yymmddhh24mi]} [-avg] [-c]
     -avg: compute as per second, instead of total
     -c:   compute the percentage of histogram with wait_count, instead of wait_count*log(2,slot_time)
+    -d:   when event or wait class is specified, use this option to grouping data by date instead of each snapshot
     
     Sample Output:
     ==============
@@ -32,7 +33,8 @@
          &rd : default={0} avg={2}
          &unit: default={log(2,slot_time*2)} c={1}
          &V2   : default={&STARTTIME}
-         &V3   : default={&ENDTIME}   
+         &V3   : default={&ENDTIME}
+         &fmt  : default={yymmdd hh24:mi} d={yymmdd}
          @histogram: {11={,histogram as(
             SELECT *
             FROM   (SELECT  grouping_id(inst,wait_class,event) grp,
@@ -55,7 +57,7 @@
                                     wait_class, 
                                     wait_time_milli*1024 slot_time, 
                                     (WAIT_COUNT-lag(WAIT_COUNT,1,0) OVER(PARTITION BY pkey,wait_time_milli,event_name ORDER BY etime))/secs c,
-                                    CASE WHEN f=0 THEN ''||inst ELSE to_char(etime,'YYMMDD HH24:MI') END inst
+                                    CASE WHEN f=0 THEN ''||inst ELSE to_char(etime,'&fmt') END inst
                             FROM   time_model s
                             JOIN   dba_hist_event_histogram hs1
                             USING  (snap_id, instance_number, dbid)
@@ -199,7 +201,7 @@ BEGIN
                    round(sum(micro/div)/sum(distinct ela),4) db,
                    round(sum(micro/div)/sum(waits/div),2) avg_wait
             FROM (
-                SELECT event_name event,wait_class,div,decode(f,0,''||inst,to_char(etime,'YYMMDD HH24:MI')) inst,
+                SELECT event_name event,wait_class,div,decode(f,0,''||inst,to_char(etime,'&fmt')) inst,
                        (total_Waits-lag(total_Waits,1,0) over(partition by pkey,event_name order by etime)) waits,
                        (total_timeouts-lag(total_timeouts,1,0) over(partition by pkey,event_name order by etime)) timeouts,
                        (time_waited_micro-lag(time_waited_micro,1,0) over(partition by pkey,event_name order by etime)) micro,
@@ -217,15 +219,18 @@ BEGIN
                 
             )
         &histogram
-        SELECT null grp,
-               decode(f,0,''||inst,to_char(etime,'YYMMDD HH24:MI')) inst, 
-               '- * ON CPU *' event,null wait_class,sum(cpu_count*secs/div) counts,null timeouts,sum(cpu/div) waited,
-               sum(cpu/div)/sum(ela/div) "% DB",
-               round(sum(cpu/adj/cpu_count)/sum(secs/adj),6) avg_wait
-               &ver1,'|' "|" ,null "<1us",null "<2us",null "<4us",null "<8us",null "<16us",null "<32us",null "<64us",null "<128us",null "<256us",null "<512us",null "<1ms",null "<2ms",null "<4ms",null "<8ms",null "<16ms",null "<32ms",null "<64ms",null "<128ms",null "<256ms",null "<512ms",null "<1s",null "<2s",null "<4s",null "<8s",null "<16s",null "<32s",null "<1m",null ">1m"
-        FROM   time_model a
-        WHERE  f<1
-        GROUP  BY decode(f,0,''||inst,to_char(etime,'YYMMDD HH24:MI'))
+        SELECT * FROM (
+            SELECT 1 grp,
+                   decode(f,0,''||inst,to_char(etime,'&fmt')) inst, 
+                   '- * ON CPU *' event,null wait_class,sum(cpu_count*secs/div) counts,null timeouts,sum(cpu/div) waited,
+                   sum(cpu/div)/sum(ela/div) "% DB",
+                   round(sum(cpu/adj/cpu_count)/sum(secs/adj),6) avg_wait
+                   &ver1,'|' "|" ,null "<1us",null "<2us",null "<4us",null "<8us",null "<16us",null "<32us",null "<64us",null "<128us",null "<256us",null "<512us",null "<1ms",null "<2ms",null "<4ms",null "<8ms",null "<16ms",null "<32ms",null "<64ms",null "<128ms",null "<256ms",null "<512ms",null "<1s",null "<2s",null "<4s",null "<8s",null "<16s",null "<32s",null "<1m",null ">1m"
+            FROM   time_model a
+            WHERE  f<1
+            GROUP  BY decode(f,0,''||inst,to_char(etime,'&fmt'))
+            ORDER  BY nullif(inst,'*') desc nulls first
+        )
         UNION ALL
         SELECT * FROM(
             select /*+use_hash(a b) outline_leaf*/ * from event a

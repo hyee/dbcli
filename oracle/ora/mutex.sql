@@ -22,11 +22,13 @@
   *                   3) update SQL stats
   * cursor: mutex S - A cursor is being parsed and is trying to get the cursor mutex in Share mode.Happens when:
   *                   1) high version count
-  *                   2) update cursor ref count
+  *                   2) examing the parent,cursor stats
   *                   3) wait for mutex X holder to release
-  * cursor: pin X   - A cursor is being parsed and is trying to get the cursor pin in eXclusive mode               
+  * cursor: pin X   - A cursor is being parsed and is trying to get the cursor pin in eXclusive mode
+  *                   * reload cursor
   * cursor: pin S   - A cursor is being parsed and is trying to get the cursor pin in Share mode
-  *                   Happens when the same SQL operator is executed concurrently at high frequency
+  *                   * to update cursor ref count
+  *                   * happens when the same SQL operator is executed concurrently at high frequency
   * cursor: pin S wait on X - A cursor is being parsed and has the cursor pin in Share but another session has it in eXclusive mode
   * library cache: mutex X - A library cache operation is being performed and is trying to get the library cache mutex in eXclusive mode, commonly happen on PL/SQL block or sequence
   * library cache: bucket mutex X    
@@ -147,42 +149,48 @@
 
 ]]*/
 
-set feed off
+set feed off AUTOHIDE COL
 PRO Current Mutex Waits
 PRO ======================
 SELECT DISTINCT *
 FROM   TABLE(gv$(CURSOR( --
           SELECT /*+ordered use_hash(b)*/
                   userenv('instance') inst_id,
-                  P1 idn,
+                  P1 idn, --_kgl_bucket_count
                   sid,
                   a.event,
                   nullif(trunc(p3 / power(16,8)),0) obj#,
-                  nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
+                  decode(p1text,'cache id',p2,nullif(bitand(p3,power(2,16)-1),0)) LOC#,
                   nullif(decode(trunc(p2 / power(16,8)), 0, trunc(P2 / 65536), trunc(P2 / power(16,8))),0) holder_sid,
                   mod(p2,64436) refs,
                   a.sql_id,
-                  substr(TRIM(b.to_name), 1, 100) || 
+                  decode(p1text,'idn',trim(regexp_replace(substr(b.to_name, 1, 200),'\s+',' ')) || 
                   CASE
                       WHEN b.to_name LIKE 'table_%' AND
                            regexp_like(regexp_substr(b.to_name, '[^\_]+', 1, 4), '^[0-9A-Fa-f]+$') THEN
                        ' (obj# ' || to_number(regexp_substr(b.to_name, '[^\_]+', 1, 4), 'xxxxxxxxxx') || ')'
-                  END SQL_TEXT
-          FROM   v$session a, &OBJ_CACHE b
-          WHERE  a.p1 = b.from_hash(+)
-          AND    nvl(:v1,'x') in('x',''||a.sid,a.sql_id,a.event,''||p1)
-          AND    a.p1text = 'idn'
-          AND    a.p2text = 'value'
-          AND    a.p3text = 'where'
+                  END,c.parameter) name
+          FROM   v$session a
+          LEFT JOIN &OBJ_CACHE b
+          ON  a.p1text='idn' AND  a.p1 = b.from_hash
+          LEFT JOIN v$rowcache c
+          ON  a.p1text='cache id' AND  a.p1 = c.cache#
+          WHERE  nvl(:v1,'x') in('x',''||a.sid,a.sql_id,a.event,''||p1)
+          AND   (p1text = 'idn' AND p2text = 'value' AND p3text = 'where'
+                 OR  p1text = 'cache id')
           AND    userenv('instance') = nvl(:V2, userenv('instance')))));
+
 PRO ASH Mutex Waits
 PRO ======================
 SELECT *
 FROM   (SELECT *
         FROM   TABLE(gv$(CURSOR (
                           SELECT /*+ordered use_hash(b)*/
-                                  DISTINCT a.*, b.type, b.to_owner owner, b.to_name name
-                          FROM   (SELECT userenv('instance') inst_id,p1 idn,
+                                  DISTINCT a.*, 
+                                  decode(p1text,'idn',b.type,c.type) type, 
+                                  b.to_owner owner, 
+                                  decode(p1text,'idn',trim(regexp_replace(substr(b.to_name, 1, 200),'\s+',' ')),c.parameter) name
+                          FROM   (SELECT userenv('instance') inst_id,p1text,p1,
                                          obj#,loc#,
                                          sql_id,
                                          event,
@@ -192,19 +200,22 @@ FROM   (SELECT *
                                                  sample_time,
                                                  event,
                                                  sql_id,
-                                                 p1,
-                                                 nullif(trunc(p3 / 4294967296),0) obj#,
-                                                 nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) LOC#,
+                                                 p1,p1text,
+                                                 nvl(nullif(current_obj#,-1),
+                                                     nullif(trunc(p3 / 4294967296),0)) obj#,
+                                                 decode(p1text,'cache id',p2,nullif(bitand(p3,power(2,16)-1),0)) LOC#,
                                                  nullif(decode(trunc(p2 / 4294967296), 0, trunc(P2 / 65536), trunc(P2 / 4294967296)),0) holder_sid
                                           FROM   v$active_session_history
-                                          WHERE  p1text = 'idn'
-                                          AND    p2text = 'value'
-                                          AND    p3text = 'where'
+                                          WHERE  (p1text = 'idn' AND p2text = 'value' AND p3text = 'where'
+                                              OR  p1text = 'cache id')
                                           AND    nvl(:v1,'x') in('x',''||session_id,sql_id,event,top_level_sql_id,''||p1)
                                           AND    userenv('instance') = nvl(:V2, userenv('instance')))
-                                  GROUP  BY obj#,LOC#, p1, sql_id, event) a,
-                                  &OBJ_CACHE b
-                          WHERE  a.idn = b.from_hash)))
+                                  GROUP  BY obj#,LOC#, p1,p1text,sql_id, event) a
+                          LEFT JOIN &OBJ_CACHE b
+                          ON  a.p1text='idn' AND  a.p1 = b.from_hash
+                          LEFT JOIN v$rowcache c
+                          ON  a.p1text='cache id' AND  a.p1 = c.cache#
+                          )))
         ORDER  BY last_Time DESC)
 WHERE  rownum <= 50;
 
@@ -222,23 +233,36 @@ SELECT * FROM (
                 c.SLEEPS "Location|Sleeps",
                 c.WAIT_TIME "Location|Wait",
                 round(c.WAIT_TIME/nullif(c.SLEEPS,0),2) "Location|Avg Wait",
-                substr(to_name, 1, 100) OBJ
+                nvl(trim(regexp_replace(substr(to_name, 1, 200),'\s+',' ')),d.parameter) name
         FROM   (
             SELECT mutex_identifier idn,
-                   nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*') "Holder|Waiter",
+                   CASE WHEN regexp_substr(:V1,'^\d+$')+0 IN (blocking_session,requesting_session) THEN
+                        blocking_session||'/'||requesting_session
+                   END "Holder|Waiter",
                    MAX(SLEEP_TIMESTAMP) LAST_TIME,
                    SUM(sleeps) sleeps,
                    COUNT(1) CNT,
                    MAX(gets) gets,
-                   p1raw,
+                   null p1,
                    mutex_type,
-                   location
+                   '|' "|",
+                   location "Location|Name"
             FROM   v$mutex_sleep_history
             WHERE  userenv('instance') = nvl(:V2, userenv('instance'))
-            AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session,''||mutex_identifier)
-            GROUP  BY mutex_identifier,location, mutex_type,p1raw,nvl2(regexp_substr(:V1,'^\d+$'),blocking_session||'/'||requesting_session,'*')
-        ) A,&OBJ_CACHE b,v$mutex_sleep c
-        WHERE a.idn=b.from_hash(+) AND a.location=c.location(+) AND a.mutex_type=c.mutex_type(+)
+            AND    (:V1 IS NULL
+                 OR regexp_substr(:V1,'^\d+$')+0 IN(-1,requesting_session,blocking_session,''||mutex_identifier)
+                 OR instr(lower(:V1),lower(MUTEX_TYPE))>0)
+            GROUP  BY mutex_identifier,location, mutex_type,
+                      CASE WHEN regexp_substr(:V1,'^\d+$')+0 IN (blocking_session,requesting_session) THEN
+                        blocking_session||'/'||requesting_session
+                      END
+        ) A 
+        LEFT JOIN &OBJ_CACHE b
+        ON   a.idn=b.from_hash
+        LEFT JOIN v$rowcache d
+        ON   a.mutex_type='Row Cache' AND a.p1=d.cache#
+        LEFT JOIN v$mutex_sleep c
+        ON a."Location|Name"=c.location AND a.mutex_type=c.mutex_type
     )))
     ORDER  BY LAST_TIME DESC)
 WHERE  rownum <= 50;

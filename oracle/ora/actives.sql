@@ -144,7 +144,7 @@ BEGIN
                                  sq.sql_secs
                         FROM   (select  /*+opt_estimate(query_block rows=1000)*/
                                         userenv('instance') inst_id,
-                                        case when a.p1text='idn' 
+                                        case when a.p1text='idn' --_kgl_bucket_count
                                              and (a.p1>131072 or event not like '%bucket%') then a.p1 end idn,
                                         a.*
                                  from   v$session a

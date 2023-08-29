@@ -18,7 +18,7 @@ local checking_access
 local default_dbid
 local function rep_instance(prefix,full,obj,suffix) 
     obj=obj:upper()
-    if (prefix or ""):lower():find('^table_stats') then return prefix..full..suffix end
+    if (prefix or ""):lower():find('^stats') then return prefix..full..suffix end
     local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and dicts.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
@@ -646,7 +646,7 @@ function dicts.onload()
     dicts.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]
-        brace   <- 'TABLE_STATS'* %s* '('
+        brace   <- 'STATS'* %s* '('
         pt      <- [%s,]/brace
         owner   <- ('SYS.'/'PUBLIC.'/'"SYS".'/'"PUBLIC".')
         obj     <- full/name

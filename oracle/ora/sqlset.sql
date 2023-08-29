@@ -189,6 +189,7 @@ BEGIN
                  NATURAL LEFT JOIN T
                  WHERE ('||filter||')
                  AND   command_type in (1, 2, 3, 6, 7, 9, 47, 170, 189)
+                 AND   substr(sql_text,1,256) NOT LIKE ''%/*+%dbms_stats%''
                  AND   NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze)\W'')';
         stmt := replace(replace('
         WITH t AS(select /*+materialize opt_estimate(query_block rows=0)*/ 1 from v$sqlarea where 1=2)

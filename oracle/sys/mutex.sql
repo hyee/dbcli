@@ -86,7 +86,7 @@ SELECT * FROM (
                           AND    nvl(regexp_substr(:V1,'^\d+$')+0,-1) IN(-1,requesting_session,blocking_session)
                           GROUP  BY mutex_identifier,location_id, location, mutex_type,p1raw
                       ) A,sys.x$kglob b
-                      WHERE a.HASH_VALUE=b.kglnahsh
+                      WHERE a.HASH_VALUE=b.kglnahsh --case when a.hash_value<=131072 then b.kglhdbid else b.kglnahsh end
                      )))
     ORDER  BY LAST_TIME DESC)
 WHERE  rownum <= 50;

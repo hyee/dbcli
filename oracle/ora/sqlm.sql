@@ -386,7 +386,7 @@ BEGIN
                             from  dba_hist_reports
                             where key1=nvl(sq_id,sq_id1)
                             AND   key2>0
-                            AND   (sql_exec IS NULL OR sql_exec in(key2,report_id) or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
+                            AND   (plan_hash IS NULL OR plan_hash in(key2,report_id) or instr(report_summary,'plan_hash>'||plan_hash||'<')>0)
                             AND   component_name='sqlmonitor'
                             AND   dbid=did
                             AND   instance_number=nvl(inst,instance_number));
@@ -416,9 +416,14 @@ BEGIN
                     report_end;
                 ELSE
                     $IF &check_access_report=1 $THEN
-                        report_start;
-                        xml := SYS.DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL_XML(rpt_id);
-                        report_end;
+                        SELECT XMLTYPE(report)
+                        INTO   xml
+                        FROM   dba_hist_reports_details
+                        WHERE  dbid=did
+                        AND    report_id=rpt_id
+                        AND    instr(report,sq_id)>0
+                        AND    rownum<2;
+                        
                         dbms_output.put_line('Extracted report from dba_hist_reports.');
                     $END
                     NULL;

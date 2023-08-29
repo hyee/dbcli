@@ -735,7 +735,7 @@ function oracle:onload()
 
     add_single_line_stmt('commit','rollback','savepoint')
     add_default_sql_stmt('update','delete','insert','merge','truncate','drop','flashback','associate','disassociate')
-    add_default_sql_stmt('explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment','call')
+    add_default_sql_stmt('administer','explain','lock','analyze','grant','revoke','purge','audit','noaudit','comment','call')
     set_command(self,{"connect",'conn'},  self.helper,self.connect,false,2)
     set_command(self,{"SELECT","WITH"},   default_desc,        self.query     ,self.check_completion,1,true)
     set_command(self,{"execute","exec"},default_desc,self.run_proc,false,2,true)
