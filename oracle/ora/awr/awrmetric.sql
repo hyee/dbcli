@@ -21,7 +21,7 @@
                                 FROM  (select * from (&snaps) where instance_number=1) , 
                                        dba_hist_cell_global a
                                 WHERE  a.snap_id between minid+1 and maxid
-                                AND    a.dbid=:dbid)
+                                AND    a.dbid='&dbid')
                         GROUP  BY metric_name, NAME)
                 WHERE  round(metric_value / decode(NAME, metric_name, 1, 1024 * 1024) , 2) > 0
                 ORDER  BY VALUE DESC
@@ -42,7 +42,7 @@
                                 over(PARTITION BY dbid, instance_number, startup_time) - MIN(end_interval_time + 0)
                                 over(PARTITION BY dbid, instance_number, startup_time))) secs
                     FROM   dba_hist_snapshot s
-                    WHERE  dbid=:dbid
+                    WHERE  dbid='&dbid'
                     AND    ('&3' IS NULL OR instr(',&v3,', ',' || instance_number || ',') > 0)
                     AND    s.end_interval_time BETWEEN nvl(to_date('&1', 'YYMMDDHH24MI') - 1.1 / 24, SYSDATE - 7) AND
                         nvl(to_date('&2', 'YYMMDDHH24MI'), SYSDATE+1)) a

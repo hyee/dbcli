@@ -7,10 +7,9 @@
         @12c : 19.1={} DEFAULT={--}
         @CON : 12.1={,CON_DBID} DEFAULT={}
         @phf : 12.1={nvl2(other_xml,to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'')} default={null}
-        &AWR_VIEW        : default={AWR_PDB_} hist={dba_hist_}
-        @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
-        &filter : default={UPPER('.'||owner||'.'||object_name||'.'||subobject_name||'.') LIKE upper('%&V1%')} f={}
-        &flag   : default={nvl2(:V1,0,1)} f={0}
+        @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
+        &filter : default={UPPER('.'||owner||'.'||object_name||'.'||subobject_name||'.'||obj#) LIKE upper('%&V1%')} f={}
+        &flag   : default={CASE WHEN :V1 IS NOT NULL THEN 0 ELSE 1 END} f={0}
         &V2 : default={nvl(logi_reads,0)/30+nvl(phy_reads,0)+nvl(phy_writes,0)+nvl(cr_blocks,0)+nvl(cu_blocks,0)}
         &V3 : default={&starttime}
         &V4 : default={&endtime}
@@ -59,7 +58,7 @@ WITH segs AS(
     from (select a.*, 
                  row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
          from (
-            select /*+DYNAMIC_SAMPLING(8)*/ *
+            select /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
             FROM &check_access_pdb.Seg_stat_obj b
             JOIN &check_access_pdb.Seg_stat c USING (dbid,obj#,dataobj#)
             JOIN (select dbid,snap_id,instance_number,
@@ -121,7 +120,7 @@ BEGIN
             from (select a.*, 
                          row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
                  from (
-                    select /*+DYNAMIC_SAMPLING(8)*/ *
+                    select /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
                     FROM &check_access_pdb.Seg_stat_obj b
                     JOIN &check_access_pdb.Seg_stat c USING (dbid,obj#,dataobj#)
                     JOIN (select dbid,snap_id,instance_number,

@@ -26,7 +26,7 @@
                            (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
                            (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
                     FROM   dba_hist_snapshot
-                    WHERE  dbid=:dbid
+                    WHERE  dbid=&dbid
                      AND   end_interval_time+0 BETWEEN 
                            NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
                            NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)

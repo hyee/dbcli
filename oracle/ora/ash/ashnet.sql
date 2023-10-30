@@ -12,7 +12,8 @@
     Will    SQL*Net more data to client     10  4.27ms    363.64ms   7.95 KB   7.96 KB 74kh4ag109cdv(10)
     
     --[[
-        &ash: ash={gv$active_session_history}, dash={Dba_Hist_Active_Sess_History}
+        @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
+        &ash: ash={gv$active_session_history}, dash={&check_access_pdb.Active_Sess_History}
         &snap: default={NVL(to_date(nvl(:V2,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7)} snap={sysdate-numtodsinterval(&0,'second')}
         @ver:  11={} default={--}
     --]]

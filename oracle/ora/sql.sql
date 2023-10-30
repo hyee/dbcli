@@ -33,7 +33,7 @@
         @check_access_bind: dba_hist_sqlbind={1} default={0} 
         @ARGS: 1
         &V3  : default={} q={Q} l={L}
-        &V2  : default={:instance}
+        &V2  : default={&instance}
     --]]
 ]]*/
 set feed off 
@@ -97,9 +97,8 @@ BEGIN
            and   sql_text is not null
            and   IS_FULL_SQLTEXT='Y'
            and   ROWNUM<2
-           union all select sql_text,'dba_hist_active_sess_history','instance_number' inst from all_sqlset_statements src where sql_id='&v1' and ROWNUM<2
            $end
-           &check_access_hist  union all select sql_text,'dba_hist_active_sess_history','instance_number' inst from dba_hist_sqltext src where sql_id='&v1' and ROWNUM<2
+           &check_access_hist  union all select sql_text,q'[(select * from dba_hist_active_sess_history where dbid='&dbid')]','instance_number' inst from dba_hist_sqltext src where sql_id='&v1' and ROWNUM<2
       ) WHERE ROWNUM<2;
     EXCEPTION WHEN OTHERS THEN
         :src := 'gv$active_session_history';
@@ -152,6 +151,7 @@ BEGIN
                                               'DBA_HIST_SQLBIND' SRC
                                        FROM   dba_hist_sqlbind a
                                        WHERE  sql_id = '&v1'
+                                       AND    dbid = '&dbid'
                                        AND    snap_id=nvl(child,snap_id)
                                        AND    instance_number=nvl(inst,instance_number)
                                        $END
@@ -257,6 +257,7 @@ BEGIN
                         SELECT INSTANCE_NUMBER,SNAP_ID,MAX(LAST_CAPTURED) LAST_CAPTURED,COUNT(NULLIF(WAS_CAPTURED,'NO'))||'/'||COUNT(1) Captures,'DBA_HIST_SQLBIND' SOUCE_VIEW
                         FROM   dba_hist_sqlbind a
                         WHERE  sql_id = '&v1'
+                        AND    dbid = '&dbid'
                         AND    instance_number=nvl(inst,instance_number)
                         GROUP  BY INSTANCE_NUMBER,SNAP_ID
                         $END
@@ -280,7 +281,7 @@ col ACTIVES FOR msmhd2
 col OPTIMALS,ONEPASS,MULTIS FOR TMB2
 
 grid {
-[[/*grid={topic='Result of &src'}*/
+[[/*grid={topic='ASH Result'}*/
   SELECT *
   FROM  (SELECT &VER top_level_sql_id top_sql,
                COUNT(1) aas,
@@ -290,9 +291,9 @@ grid {
                &VER NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME) OPERATION,
                PLSQL_ENTRY_OBJECT_ID program#,PLSQL_OBJECT_ID call#
         FROM   &src
-        WHERE  sql_id = :V1
-        AND    &inst=nvl(regexp_substr(:V2,'^\d+$')+0,&inst)
-        AND    sample_time+0 BETWEEN nvl(to_date(:starttime,'YYMMDDHH24MISS'),sysdate-7) and nvl(to_date(:endtime,'YYMMDDHH24MISS'),sysdate)
+        WHERE  sql_id = '&V1'
+        AND    &inst=nvl(regexp_substr('&V2','^\d+$')+0,&inst)
+        AND    sample_time+0 BETWEEN nvl(to_date('&starttime','YYMMDDHH24MISS'),sysdate-7) and nvl(to_date('&endtime','YYMMDDHH24MISS'),sysdate)
         GROUP  BY sql_plan_hash_value, PLSQL_ENTRY_OBJECT_ID,PLSQL_OBJECT_ID, event
                   &VER ,sql_plan_line_id,top_level_sql_id,NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME)
         ORDER  BY aas DESC)

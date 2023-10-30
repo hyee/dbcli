@@ -55,7 +55,6 @@ Options:
                   FROM   &check_access_pdb.sql_plan a
                   WHERE  a.sql_id = '&v1'
                   AND    &SRC != 1
-                  AND    dbid=&dbid
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce('&v2'+0,(
                      select --+precompute_subquery index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
@@ -63,7 +62,7 @@ Options:
                      from &check_access_pdb.sqlstat c 
                      where sql_id='&v1' 
                      AND   &SRC != 1
-                     AND   dbid=&dbid
+                     AND  dbid=a.dbid
                      AND   '&v1' not in('X','&_sql_id')),(
                      select /*+precompute_subquery*/ 
                             max(plan_hash_value) keep(dense_rank last order by timestamp) 
@@ -71,7 +70,7 @@ Options:
                      where sql_id='&v1'
                      AND   &SRC != 1
                      AND    '&v1' not in('X','&_sql_id')
-                     AND  dbid=&dbid))} 
+                     AND  dbid=a.dbid))} 
            default={0}
           }
     @check_access_advisor: {

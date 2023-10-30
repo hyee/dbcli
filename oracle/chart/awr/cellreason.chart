@@ -28,7 +28,7 @@
                            (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
                            (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
                     FROM   dba_hist_snapshot
-                    WHERE  dbid=:dbid
+                    WHERE  dbid=&dbid
                      AND   end_interval_time+0 BETWEEN 
                            NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND 
                            NVL(to_date(:V1,'yymmddhh24miss'),sysdate+1)
@@ -45,12 +45,12 @@
                    requests - lag(requests) over(PARTITION BY cell_name, dbid,reason_name,INCARNATION_NUM,p ORDER BY snap_id) requests,
                    secs
           FROM  (SELECT a.*,row_number() OVER(PARTITION BY snap_id, dbid ORDER BY instance_number) r FROM SNAP a)
-          JOIN  (SELECT * FROM DBA_HIST_CELL_NAME b WHERE dbid=:dbid)
+          JOIN  (SELECT * FROM DBA_HIST_CELL_NAME b WHERE dbid=&dbid)
           USING (dbid, snap_id)
           JOIN  (SELECT /*+leading(a.s) full(a.s) no_index(a.s)*/ 
                         dbid,snap_id,cell_hash,INCARNATION_NUM,REASON_NAME,REQUESTS,BYTES,1 p
                  FROM  DBA_HIST_CELL_IOREASON a
-                 WHERE dbid=:dbid
+                 WHERE dbid=&dbid
                  UNION ALL
                  SELECT dbid,snap_id,cell_hash,INCARNATION_NUM,
                         decode(r,1,'Scrub reads','Internal IO'),
@@ -60,7 +60,7 @@
                        SELECT /*+leading(a.s)*/ 
                              dbid,snap_id,cell_hash,INCARNATION_NUM,metric_name m,metric_value v
                        FROM  DBA_HIST_CELL_GLOBAL a
-                       WHERE dbid=:dbid 
+                       WHERE dbid=&dbid 
                        AND   METRIC_ID IN(360,361)
                  ),(SELECT 1 R FROM DUAL UNION ALL SELECT 2 FROM DUAL)
                  GROUP BY dbid,snap_id,cell_hash,INCARNATION_NUM,r) c

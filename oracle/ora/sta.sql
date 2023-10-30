@@ -174,8 +174,8 @@ BEGIN
             sq_txt := 'STA is running in async mode with job id as ' || tsk 
                       || ', run sys.&func3(''' || tsk ||''') after its completion.';
         ELSE
-            dbms_sqltune.execute_tuning_task(tsk);
-            sq_txt := dbms_sqltune.report_tuning_task(tsk);
+            sys.&func2(tsk);
+            sq_txt := sys.&func3(tsk);
         END IF;
     ELSIF tid IS NULL THEN
         sq_txt := null;

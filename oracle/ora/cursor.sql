@@ -1,8 +1,9 @@
-/*[[Show data in gv$open_cursor, usage: @@NAME {<sid> [inst]} | {-o <object_name>}
+/*[[Show data in gv$open_cursor, usage: @@NAME {<sid> [inst]} | {-o <object_name> | -f"<filter>"}
     --[[
-        &V2: default={nvl(:instance,userenv('instance'))}
-        &V9: {s={a.sid=nvl(REGEXP_SUBSTR(:V1,'^\d+$'),userenv('sid'))},
+        &V2: default={nvl('&instance'+0,userenv('instance'))}
+        &V9: {s={a.sid=nvl(REGEXP_SUBSTR(:V1,'^\d+$'),userenv('sid')) and inst_id=&V2},
               o={b.to_name=upper(:V1)}
+              f={}
              }
         &V10: s={}, o={(select event from v$session where sid=a.sid) event,}
         @type: 11.2={cursor_type} default={' '}
@@ -13,7 +14,7 @@
 
 SELECT DISTINCT * 
 FROM TABLE(GV$(CURSOR(
-    SELECT USERENV('instance') inst_id,
+    SELECT inst_id,
            a.sid,
            &V10
            a.sql_id,
@@ -23,11 +24,10 @@ FROM TABLE(GV$(CURSOR(
            END SQL_TEXT,
            &type cursor_type,
            &aggs objs
-    FROM   v$open_cursor a, v$object_dependency b
-    WHERE  userenv('instance')=&V2
-    AND    &V9
+    FROM   (select a.*,USERENV('instance') inst_id from v$open_cursor a) a, v$object_dependency b
+    WHERE  (&V9)
     AND    a.address = b.from_address(+)
     AND    a.hash_value = b.from_hash(+)
     AND    b.to_type(+) NOT IN (0, 5, 55)
-    GROUP  BY a.sid, a.sql_id, a.sql_text,&type)))
+    GROUP  BY a.inst_id,a.sid, a.sql_id, a.sql_text,&type)))
 ORDER  BY 1,2,instr(cursor_type,'OPEN') ;

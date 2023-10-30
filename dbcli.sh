@@ -33,7 +33,9 @@ if [[ "$EXT_PATH" ]]; then
 fi
 
 # find executable java program
-if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
+if [[ -n "$JDK_HOME" ]] && [[ -x "$JDK_HOME/bin/java" ]];  then
+    _java="$JDK_HOME/bin/java"
+elif [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"
 elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then

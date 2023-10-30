@@ -71,15 +71,15 @@
       &View: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid)}
       &BASE: ash={1}, dash={10}
       &ASH : default={&view} t={&0}
-      &Range: default={sample_time+0 between nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MISS'),sysdate+1)}
+      &Range: default={sample_time+0 between nvl(to_date(nvl('&V2','&STARTTIME'),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl('&V3','&ENDTIME'),'YYMMDDHH24MISS'),sysdate+1)}
       &filter: {
-            id={(trim('&1') is null or upper(:V1)='A' or :V1 in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU'))) and &range},
-            snap={sample_time+0>=sysdate-NUMTODSINTERVAL(nvl(0+:V1,30),'second') and (:V2 is null or :V2 in(&top_sql sql_id,''||session_id,'event')) &V3},
+            id={(trim('&1') is null or upper('&V1')='A' or '&V1' in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU'))) and &range},
+            snap={sample_time+0>=sysdate-NUMTODSINTERVAL(nvl(0+'&V1',30),'second') and ('&V2' is null or '&V2' in(&top_sql sql_id,''||session_id,'event')) &V3},
             u={user_id=(select user_id from &CHECK_ACCESS_USER where username=nvl('&0',sys_context('userenv','current_schema'))) and &range}
         }
       &more_filter: default={1=1},f={}
       @CHECK_ACCESS_USER: dba_users={dba_users} default={all_users}
-      &check_access_pdb: default={dba_hist_} pdb={AWR_PDB_}
+      @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
       @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
@@ -104,22 +104,7 @@ WITH ASH_V AS(
                 nullif(substr(program,1,instr(program,'@')-1),'oracle')
            END) program#,
            decode(:fields,'wait_class',to_number(null),user_id) u_id
-    FROM (SELECT /*+MERGE PARALLEL(4)
-                  full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
-                  use_hash(a.V_$ACTIVE_SESSION_HISTORY.V$ACTIVE_SESSION_HISTORY.GV$ACTIVE_SESSION_HISTORY.A)
-                  FULL(A.GV$ACTIVE_SESSION_HISTORY.A) leading(A.GV$ACTIVE_SESSION_HISTORY.A) 
-                  use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S) 
-                  swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-
-                  FULL(A.ASH) FULL(A.EVT) swap_join_inputs(A.EVT) PX_JOIN_FILTER(A.ASH)
-                  OPT_ESTIMATE(TABLE A.ASH ROWS=30000000)
-                  full(A.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
-                  full(A.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
-                  swap_join_inputs(A.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
-                  PX_JOIN_FILTER(A.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
-                  OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-                */ 
-                a.*,
+    FROM (SELECT a.*,
                 coalesce(sql_id, &top_sql null) "SQL Id",
                 sql_plan_hash_value plan_hash,
                 nvl(trim(case 

@@ -411,7 +411,7 @@ function var.format_function(fmt,next_fmt)
                 v,s=math.round(s,scale),s/div
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units])
+            return to_fmt(prefix,math.round(s,scale),units[#units])
         end
     elseif f=="AUTO" then
         f=(next_fmt or ""):upper()
@@ -486,7 +486,7 @@ function var.format_function(fmt,next_fmt)
                 v,s=math.round(s,scale),s/(type(div)=='number' and div or div[i])
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units])
+            return to_fmt(prefix,math.round(s,scale),units[#units])
         end
     elseif f:find('^.SMHD$') or f=='SMHD' and fmt:find('%d$') then
         local div,units
@@ -507,7 +507,7 @@ function var.format_function(fmt,next_fmt)
                 if v==0 then return '0 ',1 end
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units])
+            return to_fmt(prefix,math.round(s,scale),units[#units])
         end
     elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
         fmt=fmt=='SMHD' and '%dD %02dH %02dM %02dS' or

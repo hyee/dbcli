@@ -8,6 +8,7 @@
         &BASE : s={sql_id}, m={signature} p={plan_hash_value}
         &grp  : s={sql_id,phvs,top_phv top_plan,} m={signature,sqls,top_sql,phvs,top_phv top_plan,} p={top_phv plan_hash,phvs sqls,top_sql,}
         &v2   : df={ela} default={}
+        @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
     --]]
 ]]*/
 set feed off
@@ -29,7 +30,7 @@ WITH snap AS(
                    to_date(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                    to_date(coalesce(:V4,:endtime,to_char(sysdate+1,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed,
                    min(snap_id) over(partition by dbid,instance_number,startup_time) min_snap_id
-            FROM   DBA_HIST_SNAPSHOT a
+            FROM   &check_access_pdb.SNAPSHOT a
             WHERE  coalesce(upper(:V1),''||:instance,'A') IN('A',''||instance_number))
     WHERE  end_interval_time + 0 BETWEEN st - 5/1440 AND ed + 5/1440
     GROUP BY dbid,instance_number,min_snap_id)
@@ -46,7 +47,7 @@ FROM (
            nullif(SUM(MULTIPASSES_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)),0) MULTIPASSES,
            nullif(SUM(TOTAL_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)),0) TOTALS,
            nullif(ROUND(SUM(TOTAL_EXECUTIONS*decode(snap_id,min_snap_id,-1,1)/secs),2),0) PER_SECOND
-    FROM   DBA_HIST_SQL_WORKAREA_HSTGRM h
+    FROM   &check_access_pdb.SQL_WORKAREA_HSTGRM h
     JOIN   snap s
     USING (dbid,instance_number)
     WHERE  h.snap_id BETWEEN s.min_snap_id and s.max_snap_id
@@ -67,7 +68,7 @@ SELECT /*+ordered use_nl(a b)*/
      val &v2,
      pct,
      round(val/greatest(execs,1),2) "AVG",
-     (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=regexp_substr(a.top_sql,'\w+') and dbid=a.dbid and rownum<2) SQL_TEXT
+     EXTRACTVALUE(DBMS_XMLGEN.GETXMLTYPE(q'~SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM &check_access_pdb.SQLTEXT WHERE SQL_ID='~'||regexp_substr(a.top_sql,'\w+')||''' and dbid='||a.dbid||' and rownum<2'),'//TEXT') SQL_TEXT
 FROM (SELECT rownum r,
              ratio_to_report(val) over() pct,
              a.* 
