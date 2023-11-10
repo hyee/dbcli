@@ -149,6 +149,8 @@ local base_color={
     HIREV   ={"\27[1,7m","High intensity reverse video",0},
     WRAP    ={"\27[?7h","Wrap lines at screen edge",1},
     UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",1}
+
+    --CLIP ={"\27]52;c;%s\7"}
 }
 
 local default_color={

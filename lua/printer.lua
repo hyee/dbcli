@@ -199,7 +199,7 @@ function printer.set_grep(keyword)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,printer.grep_dir=keyword:sub(2),true
     end
-    printer.grep_text=keyword:escape('*i')
+    printer.grep_text=keyword:escape('*i'):gsub('%','.*')
 end
 
 function printer.grep(keyword,stmt)
@@ -212,6 +212,10 @@ function printer.grep_after()
     printer.grep_text,printer.grep_dir=nil,nil
 end
 
+function printer.clip(stmt)
+    printer.tee('>CLIP',stmt)
+end 
+local str_buff=buffer.new()
 function printer.tee(file,stmt)
     env.checkhelp(file)
     local mode='w'
@@ -225,11 +229,26 @@ function printer.tee(file,stmt)
     if file=="" or file=="." then
         file='last_output.txt'
     end
-    if not file:find("[\\/]") then
+    if file~='>CLIP' and not file:find("[\\/]") then
         file=env._CACHE_PATH..file
     end
     printer.tee_file=file
-    printer.tee_hdl=io.open(file,mode)
+    if file~='>CLIP' then 
+        printer.tee_hdl=io.open(file,mode)
+    else
+        
+        printer.tee_hdl={
+            write=function(self,txt)
+                str_buff:put(txt)
+            end,
+            close=function()
+                local str=str_buff:get()
+                str_buff:free()
+                local done=loader:copyToClipboard(str)
+                printer.rawprint(env.space..(done and "Output is copied to clipboard." or "Unable to copy the output to clipboard due to unsupported in current terminal."));
+            end
+        }
+    end
     printer.tee_type=file:lower():match("%.([^%.]+)$")
     if printer.tee_type=='htm' then printer.tee_type='html' end
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
@@ -238,8 +257,9 @@ end
 
 function printer.tee_after()
     if not printer.tee_hdl then return end
-    pcall(printer.tee_hdl.close,printer.tee_hdl)
-    printer.rawprint(env.space.."Output is written to "..printer.tee_file)
+    local res,err=pcall(printer.tee_hdl.close,printer.tee_hdl)
+    if not res then print(err) end
+    if printer.tee_file~='>CLIP' then printer.rawprint(env.space.."Output is written to "..printer.tee_file) end
     printer.tee_file,printer.tee_hdl=nil,nil
 end
 
@@ -452,6 +472,7 @@ function printer.onload()
     ]]
     env.set_command(nil,"grep",grep_help,{printer.grep,printer.grep_after},'__SMART_PARSE__',3,false,false,true)
     env.set_command(nil,"tee",tee_help,{printer.tee,printer.tee_after},'__SMART_PARSE__',3,false,false,true)
+    env.set_command(nil,"clip","Copy output into clipboard.",{printer.clip,printer.tee_after},'__SMART_PARSE__',2,false,false,true)
     env.set_command({nil,{"output","out"},"Use default editor to view the recent output. Usage: @@NAME [<file>|clear]",printer.view_buff,false,2,false,false,false,is_blocknewline=true})
     env.set_command(nil,{"less","more"},more_help,printer.set_more,'__SMART_PARSE__',2,false,false,true)
     env.set_command(nil,{"Prompt","pro",'echo'}, "Prompt messages. Usage: @@NAME <message>",printer.load_text,false,2)

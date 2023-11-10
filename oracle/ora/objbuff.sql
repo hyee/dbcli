@@ -41,8 +41,8 @@ from &obj b,table(gv$(cursor(
      from (
          select a.*,case when :V2='A' then 'A' ELSE to_char(userenv('instance')) end inst 
          from  v$bh a 
-         where nullif(:V2,'0') is null 
-         or userenv('instance')=:V2) 
+         where (nullif(:V2,'0') is null or userenv('instance')=:V2)
+         and   objd=nvl(:object_data_id,objd)) 
      group by inst,status,objd))) a 
 where a.objd=b.data_object_id
 and   b.owner=:object_owner

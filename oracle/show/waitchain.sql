@@ -23,7 +23,12 @@ r1(cid,sess#,lv,blocker#,root) AS (
 r2(cid,sess#,lv,blocker#,root) AS (
     SELECT chain_id,sess#, 0 lv,blocker#,sess# root
     FROM   c
-    WHERE  sess# not in(select sess# from r1)
+    WHERE  sess# in(
+        SELECT MIN(sess#) keep(dense_rank last order by in_wait_secs)
+        FROM   c 
+        WHERE  sess# NOT IN(SELECT SESS# FROM r1)
+        GROUP  BY case when p3_text='name|mode' then p3 else row_wait_obj# end
+        )
     UNION ALL
     SELECT c.chain_id,c.sess#, r1.lv + 1,c.blocker#,r1.root
     FROM   c, r2 r1
@@ -54,6 +59,6 @@ LEFT  JOIN gv$session s2
 ON     s2.inst_id = c.blocker_instance
 AND    s2.sid = c.blocker_sid
 AND    s2.serial# = c.blocker_sess_serial#
-WHERE  (max_lv between 1 and 30 or not exists(select * from v$event_name where wait_class='Idle' and name=wait_event_text) and wait_event_text!='<not in a wait>')
+WHERE  (max_lv between 1 and 30 or nvl(s1.wait_class,'Idle')!='Idle')
 ORDER  BY cid_order
 

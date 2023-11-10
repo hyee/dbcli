@@ -29,6 +29,8 @@ import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
+import java.awt.*;
+import java.awt.datatransfer.*;
 
 public class Loader {
 
@@ -38,6 +40,7 @@ public class Loader {
     public static String originProcessTitle = null;
     static LuaState lua;
     static Console console;
+    static Clipboard clipboard=null;
     private static Loader loader = null;
     KeyMap keyMap;
     KeyListner q = new KeyListner('q');
@@ -63,6 +66,11 @@ public class Loader {
             System.exit(1);
         }
         console = new Console(root + File.separator + "cache" + File.separator + "history.log");
+        try {
+            clipboard= Toolkit.getDefaultToolkit().getSystemClipboard();
+        } catch (Throwable e) {
+
+        }
         lua = LuaState.getMainLuaState();
         if (lua != null) console.setLua(lua);
         //Ctrl+D
@@ -89,6 +97,7 @@ public class Loader {
         while (t != null && t.getCause() != null) t = t.getCause();
         return t == null ? e : new Throwable(t);
     }
+
 
     public static void loadLua(Loader loader, String[] args) throws Exception {
         Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
@@ -249,6 +258,21 @@ public class Loader {
                 writer.setRemap(o[0], o.length < 2 ? null : o[1]);
             }
         }
+    }
+
+    public static boolean copyToClipboard(String string) throws IOException{
+        if(string==null||string.trim().equals("")) return false;
+        if(clipboard==null) {
+            /*
+            String encodedString = Base64.getEncoder().encodeToString(string.getBytes());
+            console.write("\u001b]52;c;"+encodedString+"\u001b7");
+             */
+            return false;
+        } else {
+            StringSelection data = new StringSelection(string);
+            clipboard.setContents(data, data);
+        }
+        return true;
     }
 
     //copy from https://www.perumal.org/computing-oracle-sql_id-and-hash_value/

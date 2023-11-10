@@ -110,7 +110,7 @@ BEGIN
         SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner', '&object_name') report FROM dual;
     $ELSE
     OPEN c1 FOR
-        SELECT /*+ ordered use_nl(o c cu) no_expand opt_param('optimizer_dynamic_sampling' 11)*/
+        SELECT /*+outline_leaf ordered use_nl(o c cu) no_expand opt_param('optimizer_dynamic_sampling' 11)*/
                  c.INTERNAL_COLUMN_ID intcol#,
                  C.column_name COL_NAME,
                  CU.EQUALITY_PREDS EQ_PREDS,

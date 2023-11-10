@@ -775,7 +775,7 @@ function oradebug.load_dict()
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid> [<inst_id>]]',args=2,lib='HELP',func=oradebug.short_stack},
         SETMYPID={desc='Debug current dbcli process',lib='HELP',func=oradebug.setmypid},
-        PMEM={desc="Show process memory detail. Usage: oradebug pmen <sid> [<inst_id>]",args=2,func=oradebug.pmem},
+        PMEM={desc="Show process memory detail. Usage: oradebug pmem <sid> [<inst_id>]",args=2,func=oradebug.pmem},
         PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} | {<file> [server]}',
                 args=4,func=oradebug.profile,
                 usage=[[

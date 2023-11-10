@@ -30,7 +30,7 @@
 ORA _sqlstat
 col ela,ELA(Avg),cost/io format usmhd2
 col iowait,cpuwait,ccwait,clwait,apwait,plsql for pct1
-Col buff,read,write,cellio,oflin,oflout format kmg
+Col buff,read,avg_read,write,cellio,oflin,oflout format kmg
 set autohide col
 select time,
        &BASE,
@@ -69,6 +69,7 @@ FROM(
            sum(ela)    ELA,
            sum(iowait) iowait,
            sum(ioreqs) ioreqs,
+           sum(readreq) readreq,
            sum(cpuwait) cpuwait,
            sum(ccwait) ccwait,
            sum(clwait) clwait,
@@ -109,6 +110,7 @@ FROM(
                buffer_gets buff,
                a.rows_processed rows#,
                a.fetches,
+               readreq,
                invalidations invalids,
                SUM(executions) over(partition by &BASE,plan_hash_value) execs_,
                delta_flag

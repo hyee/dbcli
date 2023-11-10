@@ -2,7 +2,7 @@
 local db,grid=env.getdb(),env.grid
 local findobj,cache_obj,loaded={},{}
 local stmt=[[
-    DECLARE /*INTERNAL_DBCLI_CMD*/
+    DECLARE /*INTERNAL_DBCLI_CMD BYPASS_DBCLI_REWRITE*/
         schem         VARCHAR2(128);
         part1         VARCHAR2(128);
         part2         VARCHAR2(128);
@@ -184,7 +184,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         --env.printer.write("    Loading object dictionary...")
         local args={"#CLOB"}
         local sql=[[
-            DECLARE
+            DECLARE /*BYPASS_DBCLI_REWRITE*/
                 TYPE t IS TABLE OF VARCHAR2(300);
                 t1 t;
                 c  CLOB;
@@ -303,7 +303,7 @@ function db:check_access(obj_name,is_cache,is_set_env)
     obj.count='#NUMBER'
 
     self:exec_cache([[
-        DECLARE /*INTERNAL_DBCLI_CMD*/
+        DECLARE /*INTERNAL_DBCLI_CMD BYPASS_DBCLI_REWRITE*/
             x   PLS_INTEGER := 0;
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;

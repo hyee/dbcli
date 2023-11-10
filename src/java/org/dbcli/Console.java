@@ -348,6 +348,7 @@ public final class Console {
     public void println(String msg) {
         if (writer == null) return;
         writer.println(msg);
+        writer.flush();
     }
 
     public Object invokeMethod(String method, Object... o) {

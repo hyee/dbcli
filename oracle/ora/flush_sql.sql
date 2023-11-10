@@ -46,7 +46,7 @@ BEGIN
     FROM   v$sql
     WHERE  sql_id = sq_id;
     IF cnt >0 THEN
-        NULL;
+    BEGIN
         -- create fake sql patch to invalidate the cursors
         dbms_output.put_line('Creating/dropping fake SQL Patch: '||sq_id);
         $IF DBMS_DB_VERSION.VERSION=11 AND &CHECK_ACCESS_DIAG=1 $THEN
@@ -74,6 +74,7 @@ BEGIN
                  name   => 'purge_'||sq_id, 
                  ignore => TRUE);
         $END
+    EXCEPTION WHEN OTHERS THEN NULL;END;
     END IF;
 END;
 /

@@ -632,7 +632,7 @@ function dicts.onload()
 
     event.snoop('BEFORE_DB_EXEC',dicts.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',dicts.on_after_db_exec)
-    event.snoop('ON_SUBSTITUTION',dicts.on_before_db_exec,nil,60)
+    --event.snoop('ON_SUBSTITUTION',dicts.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',dicts.on_after_db_conn)
     event.snoop('ON_DB_DISCONNECTED',dicts.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',dicts.set_title)

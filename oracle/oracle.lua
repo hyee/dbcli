@@ -131,6 +131,7 @@ function oracle:connect(conn_str)
                     attrs[k]=v
                 else
                     if k:upper()=='TNS_ADMIN' then
+                        k=k:upper()
                         tns_admin=v:replace('\\','/')
                         v=tns_admin
                         prompt=conn_desc:match('([^@%? ]+) *%?')
@@ -389,7 +390,7 @@ function oracle:connect(conn_str)
                    sys_context('userenv', 'db_unique_name') dbname,
                    sys_context('userenv', 'isdba') isdba,
                    nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
-                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PRIMARY',' ','PHYSICAL STANDBY',' (Standby)>')) END,
+                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PHYSICAL STANDBY','(DG)> ')) END,
                    0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re),
                    decode(isADB,0,'FALSE','TRUE')
             INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :version,:isadb
@@ -397,7 +398,7 @@ function oracle:connect(conn_str)
             WHERE  parameter = 'NLS_CHARACTERSET';
             
             IF :db_role IS NULL THEN 
-                :db_role:=get_param(q'[select decode(DATABASE_ROLE,'PRIMARY','',' (Standby)>') from v$database]');
+                :db_role:=get_param(q'[select decode(DATABASE_ROLE,'(DG)> ') from v$database]');
             ELSIF :db_role = ' ' THEN
                 :db_role := trim(:db_role);
             END IF;

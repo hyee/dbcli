@@ -67,6 +67,7 @@
             phase={phase &0}
         }
       &ev  : default={event_name}  noevent={1}
+      &wait: default={,median(wait) wait} noevent={1}
       &ela : ash={1} dash={7}
       &View: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid)}
       &BASE: ash={1}, dash={10}
@@ -93,6 +94,7 @@
 ]]*/
 col reads,writes,AVG_IO format KMG
 COL WALL,SECS,AAS FOR smhd2
+COL wait for usmhd2
 WITH ASH_V AS(
     SELECT a.*,
            decode(:fields,'wait_class',' ',
@@ -140,6 +142,7 @@ WITH ASH_V AS(
               , lpad(sys_op_numtoraw(p1),16,'0') p1raw
               , lpad(sys_op_numtoraw(p2),16,'0') p2raw
               , lpad(sys_op_numtoraw(p3),16,'0') p3raw
+              , greatest(time_waited,wait_time) wait
               , nvl(event,nullif('['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']','[]')) event_name
         &v11  , SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS OPERATION
         &V11  , CASE WHEN IN_CONNECTION_MGMT      = 'Y' THEN 'CONNECTION_MGMT '          END ||
@@ -173,7 +176,7 @@ SELECT * FROM (
       &counter
       &wall1 , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
       &wall1 , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
-      &wall1 , &ev
+      &wall1 , &ev &wait
       , &fields &IOS
       , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
       , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"

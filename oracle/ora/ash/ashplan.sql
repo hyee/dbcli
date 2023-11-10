@@ -251,17 +251,8 @@ WITH gash as(
     AND    nvl(0+regexp_substr('&V2','^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND   '&vw' IN('A','G')),
 dash as(
-    select /*+inline 
-               MERGE(D)
-               FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) OPT_ESTIMATE(TABLE D.ASH ROWS=30000000)
-               OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-               full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH) 
-               OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-               swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT) 
-               full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
-            */ 
-            d.*,
-            to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS') stime
+    select d.*,
+           to_date(floor(to_char(sample_time,'YYMMDDSSSSS')/10)*10,'YYMMDDSSSSS') stime
     from   &check_access_pdb.active_sess_history d
     WHERE  '&vw' IN('A','D')
     AND    dbid=&dbid
@@ -276,13 +267,7 @@ ash_raw as (
             max(case when pred_flag!=2 or is_px_slave=1 then dop_ end)  over(partition by dbid,phv1,sql_exec,pid) dop,
             sum(case when p3text='block cnt' then temp_ end) over(partition by dbid,phv1,sql_exec,pid,stime) temp,
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,stime) pga
-    FROM   (SELECT /*+NO_BIND_AWARE 
-                      no_expand no_or_expand
-                      opt_param('cursor_sharing' 'force')
-                      opt_param('_optim_peek_user_binds' 'false') 
-                      opt_param('_optimizer_connect_by_combine_sw', 'false')
-                    */ 
-                   a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
+    FROM   (SELECT a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    row_number() OVER(PARTITION BY dbid,stime,inst_id,sid ORDER BY AAS_,lv desc) seq,
                    --sec_seq: multiple PX processes at the same second wille be treated as on second 
                    row_number() OVER(PARTITION BY dbid,phv1,sql_plan_line_id,operation,stime,qc_inst,qc_sid ORDER BY AAS_,lv desc,tm_delta_db_time desc) sec_seq,

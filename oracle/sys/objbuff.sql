@@ -3,6 +3,7 @@
 ]]*/
 
 ora _find_object &V1
+
 set feed off
 PRO X$KCBOQH:
 PRO =========
@@ -13,7 +14,9 @@ from dba_objects b,
      table(gv$(cursor(
         select a.*,case when :V2='0' then to_char(inst_id) else 'A' end inst 
         from sys.X$KCBOQH a 
-        where nullif(:V2,'0') is null or inst_id=:V2))) a
+        where (nullif(:V2,'0') is null or inst_id=:V2)
+        AND   obj#=nvl(:object_data_id,obj#)
+        ))) a
 where a.obj#=b.data_object_id
 and   b.owner=:object_owner
 and   b.object_name=:object_name
@@ -60,8 +63,9 @@ from dba_objects b,
                    decode(bitand(flag, 65536), 0, 'N', 'Y') DIRECT,
                    tch,obj objd
             from   sys.x$bh a 
-            where   nullif(:V2,'0') is null 
-            or      inst_id=:V2)
+            where  (nullif(:V2,'0') is null OR inst_id=:V2)
+            AND   obj=nvl(:object_data_id,obj)
+            )
         GROUP  BY inst,objd,status))) a 
 where a.objd=b.data_object_id
 and   b.owner=:object_owner
