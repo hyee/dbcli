@@ -11,8 +11,11 @@ if [[ "$os" =~ Darwin.*ARM ]]; then
     os="mac-arm"
 elif [[ "$os" = *Darwin* ]]; then
     os="mac"
-else
+elif [[ "$os" =~ Linux.*x86 ]]; then
     os="linux"
+    bind 'set enable-bracketed-paste on' &>/dev/null
+elif [[ "$os" =~ Linux.* ]]; then
+    os="linux-arm"
     bind 'set enable-bracketed-paste on' &>/dev/null
 fi
 

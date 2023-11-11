@@ -46,6 +46,7 @@ FROM   TABLE(gv$(CURSOR (
             AND    s.sid = a.sid(+)
             AND    pm.pid = pd.pid(+)
             AND    pm.serial#=pd.serial#(+)
+            AND    pm.category=pd.category(+)
             AND    pd.name(+)!='free memory'
             AND    (:V1 IS NOT NULL AND :V1 IN (s.sid, p.spid) OR :V1 IS NULL AND a.sid is not null))))
 WHERE nvl(pct,1)>0.01

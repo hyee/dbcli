@@ -67,7 +67,7 @@
             phase={phase &0}
         }
       &ev  : default={event_name}  noevent={1}
-      &wait: default={,median(wait) wait} noevent={1}
+      &wait: default={,median(wait) wait} noevent={}
       &ela : ash={1} dash={7}
       &View: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid)}
       &BASE: ash={1}, dash={10}
