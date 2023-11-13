@@ -16,22 +16,32 @@ function system:kill_reader(cmds)
     self.reader=nil
 end
 
-function system:get_last_line(cmd)
+function system:call(func,...)
     if not self.process then return end
-    local done,msg=pcall(self.process.getLastLine,self.process,cmd)
+    local done,msg=pcall(self.process[func],self.process,...)
     if self.process:isClosed() then self:terminate() end
     env.checkerr(done,msg or '')
     return self.process~=nil and msg or nil
 end
 
+function system:getBuff()
+    return self:call('getBuff')
+end
+
+function system:execute(cmd,is_print,is_block)
+    return self:call('execute',cmd,is_print,is_block)
+end
+
+function system:get_last_line(cmd)
+    return self:call('getLastLine',cmd)
+end
+
 function system:get_lines(cmd,interval,count,prep)
-    if not self.process then return end
     interval,count=tonumber(interval),tonumber(count)
-    
     if interval and count then
-        return self.process:getLinesInterval(cmd,math.ceil(interval),math.ceil(count),prep)
+        return self:call('getLinesInterval',cmd,math.ceil(interval),math.ceil(count),prep)
     else
-        return self.process:getLines(cmd)
+        return self:call('getLines',cmd)
     end
 end
 
@@ -40,15 +50,11 @@ function system:run_command(cmd,is_print,interval,count,prep)
     interval,count=tonumber(interval),tonumber(count)
     local done,msg
     if interval and count then
-        done,msg=pcall(self.process.executeInterval,self.process,cmd,math.ceil(interval),math.ceil(count),is_print and true or false,prep)
+        msg=self:call('executeInterval',cmd,math.ceil(interval),math.ceil(count),is_print and true or false,prep)
     else
-        done,msg=pcall(self.process.execute,self.process,cmd,is_print and true or false,self.block_input or false)
+        msg=self:execute(cmd,is_print and true or false,self.block_input or false)
     end
-     if self.process:isClosed() then 
-        self:terminate() 
-    end
-    env.checkerr(done,msg  or '')
-    if self.process==nil then return end
+    if msg==nil then return end
     self.prompt=msg
     if self.enter_flag==true then env.set_subsystem(self.name,self.prompt) end
 end

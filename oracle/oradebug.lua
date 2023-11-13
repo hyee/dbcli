@@ -1134,13 +1134,17 @@ function oradebug.profile(sid,samples,interval,event)
     elseif samples and samples:lower()=="server" then
         tracename,out=oradebug.get_trace(sid)
         file=tracename:gsub('.*[\\/]',''):gsub('%..-$','')
-    elseif sid and sid:find('%s') then
+    elseif type(sid)=='string' and sid:find('%s') then
         local stmt =sid.. '\0'
         sid,inst=oradebug.setmypid()
         file=sid
         local clock=os.timer()
-        local out_={}
+        local out_,counter_={},0
         db.async_coroutine=function(done)
+            counter_=counter_+1
+            if math.fmod(counter_,30) == 0 then
+                print('Executing oradebug short_stack round #'..counter_)
+            end
             out_[#out_+1]=sqlplus:get_last_line('oradebug short_stack')
         end
         local done,err=pcall(env.eval_line,stmt,true,true,true)
@@ -1148,7 +1152,7 @@ function oradebug.profile(sid,samples,interval,event)
         if not done then
             env.warn(err)
         end
-        print("Sampling complete within "..(os.timer()-clock).." secs.")
+        print("Sampling complete within "..math.round(os.timer()-clock,2).." secs.")
         out=table.concat(out_,'\n')
         log=env.write_cache("shortstacks_"..file..".log",out)
     elseif org_sid and not tonumber(sid) then

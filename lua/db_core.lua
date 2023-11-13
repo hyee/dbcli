@@ -809,7 +809,7 @@ end
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 local vertical_pattern,verticals=env.VERTICAL_PATTERN
 local DDL={CREATE=1,ALTER=1,DROP=1}
-db_core.async_coroutine=nil
+
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)

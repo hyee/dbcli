@@ -117,6 +117,12 @@ public class SubSystem {
         }
     }
 
+    String getBuff() {
+        final String result = buff.toString();
+        buff.setLength(0);
+        return result;
+    }
+
     synchronized void write(byte[] b) throws IOException {
         if (process == null) throw new IOException("The process is broken!");
         writer.clear();
@@ -148,9 +154,9 @@ public class SubSystem {
                     ch = Console.input.read(10L);
                 }
                 if (wait < 50L) {
-                    write(buff.toString().getBytes());
-                    print(buff.toString());
-                    buff.setLength(0);
+                    final String buf = getBuff();
+                    write(buf.getBytes());
+                    print(buf);
                     wait = 60L; //Waits 0.05 sec
                 }
             }
@@ -166,15 +172,22 @@ public class SubSystem {
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
-            if (isBlockInput) lock = new CountDownLatch(1);
+            if (isBlockInput != null && isBlockInput) {
+                lock = new CountDownLatch(1);
+                isCache = false;
+            } else if (!isCache) {
+                isCache = true;
+            }
             if (command != null) {
                 lastLine = null;
                 write((command.replaceAll("[\r\n]+$", "") + "\n").getBytes());
             }
-            if (!isBlockInput)
-                waitCompletion();
-            else {
+            if (isBlockInput == null) {
+                return null;
+            } else if (isBlockInput) {
                 lock.await();
+            } else {
+                waitCompletion();
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
@@ -222,21 +235,25 @@ public class SubSystem {
 
                     if (i % 10 == 0)
                         System.out.println("    Executing " + command.substring(0, c.length - 1) + ": round #" + i);
-                    responseLock = new CountDownLatch(1);
+
                     write(c);
-                    if (prep != null) try (ResultSet rs = prep.executeQuery()) {
-                        if (rs.next()) {
-                            if (result == null) {
-                                prep.setFetchSize(1);
-                                cols = rs.getMetaData().getColumnCount();
-                                result = new String[cols];
+                    if (prep != null) {
+                        responseLock = new CountDownLatch(1);
+                        try (ResultSet rs = prep.executeQuery()) {
+                            if (rs.next()) {
+                                if (result == null) {
+                                    prep.setFetchSize(1);
+                                    cols = rs.getMetaData().getColumnCount();
+                                    result = new String[cols];
+                                }
+                                for (int j = 1; j <= cols; j++) result[j - 1] = rs.getString(j);
                             }
-                            for (int j = 1; j <= cols; j++) result[j - 1] = rs.getString(j);
                         }
+                        responseLock.await();
+                        if (result != null) print(String.join("/", result) + '\n');
+                        responseLock = null;
                     }
-                    responseLock.await();
-                    if (result != null) print(String.join("/", result) + '\n');
-                    responseLock = null;
+
                     current -= System.currentTimeMillis();
                     if (current > 0 && i < count) Thread.sleep(current);
                 }
@@ -268,7 +285,7 @@ public class SubSystem {
         try {
             buff.setLength(0);
             execute(command, false, true);
-            return buff.toString();
+            return getBuff();
         } finally {
             isCache = false;
         }
@@ -279,7 +296,7 @@ public class SubSystem {
         try {
             buff.setLength(0);
             executeInterval(command, interval, count, false, prep);
-            return buff.toString();
+            return getBuff();
         } finally {
             isCache = false;
         }
