@@ -31,7 +31,6 @@ function system:get_lines(cmd,interval,count,prep)
     if interval and count then
         return self.process:getLinesInterval(cmd,math.ceil(interval),math.ceil(count),prep)
     else
-        
         return self.process:getLines(cmd)
     end
 end

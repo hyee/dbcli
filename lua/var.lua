@@ -215,7 +215,7 @@ function var.update_text(item,pos,params)
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub(var_pattern,repl)
+        if type(item[pos]=='string') then item[pos]=item[pos]:gsub(var_pattern,repl) end
     end
 
     if org_txt then return item[1] end

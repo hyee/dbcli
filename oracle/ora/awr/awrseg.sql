@@ -14,12 +14,12 @@
         &V3 : default={&starttime}
         &V4 : default={&endtime}
         &unit: default={1} avg={s}
-        @opt_reads: 12.1={ROUND(SUM(OPTIMIZED_PHYSICAL_READS_DELTA)/NULLIF(SUM(PHYSICAL_READ_REQUESTS_DELTA),0),4)} default={to_number(null)}
-        @imscans: 19.1={SUM(IM_SCANS_DELTA/&unit)} default={to_number(null)}
-        @im_chgs: 19.1={SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit)} default={to_number(null)}
-        @gc_grants: 19.1={SUM(GC_REMOTE_GRANTS_DELTA/&unit)} default={to_number(null)}
-        @pop_cus: 19.1={SUM(POPULATE_CUS_DELTA/&unit)} default={to_number(null)}
-        @repop_cus: 19.1={SUM(REPOPULATE_CUS_TOTAL/&unit)} default={to_number(null)}
+        @opt_reads: 12.1={ROUND(SUM(OPTIMIZED_PHYSICAL_READS_DELTA)/NULLIF(SUM(PHYSICAL_READ_REQUESTS_DELTA),0),4)} default={0}
+        @imscans: 19.1={SUM(IM_SCANS_DELTA/&unit)} default={0}
+        @im_chgs: 19.1={SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit)} default={0}
+        @gc_grants: 19.1={SUM(GC_REMOTE_GRANTS_DELTA/&unit)} default={0}
+        @pop_cus: 19.1={SUM(POPULATE_CUS_DELTA/&unit)} default={0}
+        @repop_cus: 19.1={SUM(REPOPULATE_CUS_TOTAL/&unit)} default={0}
     ]]--
 ]]*/
 COL "scans,imscans,logi_reads,busy_waits,phy_rreqs,phy_reads,phy_wreqs,phy_writes,value" FOR TMB
@@ -53,8 +53,8 @@ WITH segs AS(
            nullif(SUM(ITL_WAITS_DELTA/&unit),0) itl_waits,
            nullif(SUM(ROW_LOCK_WAITS_DELTA/&unit),0) lock_waits,
            nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows,
-           nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space,
-           &12c nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
+           nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space
+           &12c ,nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
     from (select a.*, 
                  row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
          from (
@@ -115,8 +115,8 @@ BEGIN
                    nullif(SUM(ITL_WAITS_DELTA/&unit),0) itl_waits,
                    nullif(SUM(ROW_LOCK_WAITS_DELTA/&unit),0) lock_waits,
                    nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows,
-                   nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space,
-                   &12c nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
+                   nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space
+                   &12c ,nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
             from (select a.*, 
                          row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
                  from (

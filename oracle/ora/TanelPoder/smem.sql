@@ -35,7 +35,7 @@ FROM   TABLE(gv$(CURSOR (
                    allocated,
                    used,'|' "|",
                    pd.name,pd.heap_name,pd.bytes heap_bytes,
-                   round(ratio_to_report(pd.bytes) over(partition by pm.category),4) pct
+                   round(ratio_to_report(pd.bytes) over(partition by pm.category,pm.serial#),4) pct
             FROM   v$session s, 
                    v$process p, 
                    v$process_memory pm,

@@ -809,6 +809,7 @@ end
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 local vertical_pattern,verticals=env.VERTICAL_PATTERN
 local DDL={CREATE=1,ALTER=1,DROP=1}
+db_core.async_coroutine=nil
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
@@ -883,7 +884,19 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
     end
 
-    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql)
+    local is_query=nil
+    local typ=type(self.async_coroutine)
+    if self.async_coroutine~=nil then
+        self:call_sql_method('ON_SQL_ERROR',sql,loader.asyncExecuteStatement,loader,prep,tmp_sql)
+        local func=type(self.async_coroutine)=='thread' and coroutine.yield or self.async_coroutine
+        func(false)
+        while is_query==nil do
+            is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.getAsyncExecuteResult,loader)
+            func(is_query~=nil)
+        end
+    else 
+        is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql) 
+    end
     exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3

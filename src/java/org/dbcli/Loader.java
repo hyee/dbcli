@@ -41,6 +41,7 @@ public class Loader {
     static LuaState lua;
     static Console console;
     static Clipboard clipboard=null;
+    static volatile boolean isAsync=false;
     private static Loader loader = null;
     KeyMap keyMap;
     KeyListner q = new KeyListner('q');
@@ -566,6 +567,7 @@ public class Loader {
 
     public Object asyncCall(Callable<Object> c) throws Throwable {
         try {
+            isAsync=true;
             this.sleeper = Console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
@@ -578,8 +580,34 @@ public class Loader {
             if (rs != null && !rs.isClosed()) rs.close();
             sleeper = null;
             rs = null;
+            isAsync=false;
             console.setEvents(null, null);
         }
+    }
+
+    Object tempResult = null;
+    Throwable err =null;
+    public void asyncExecuteStatement(final Statement p, String sql) {
+        isAsync=true;
+        tempResult = null;
+        err = null;
+        Thread t=new Thread(()->{
+            try {
+                tempResult = asyncCall(() -> setStatement(p,sql));
+            } catch (Throwable e) {
+                err = e;
+            } finally {
+                isAsync=false;
+            }
+        });
+        t.setDaemon(true);
+        t.start();
+    }
+
+    public Object getAsyncExecuteResult() throws Throwable {
+        if(isAsync) return null;
+        if(err!=null) throw err;
+        return tempResult;
     }
 
     public synchronized Object asyncCall(final Object o, final String func, final Object... args) throws Throwable {
