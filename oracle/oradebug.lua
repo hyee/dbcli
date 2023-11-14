@@ -789,6 +789,7 @@ function oradebug.load_dict()
                           1) <secs>:  The wait seconds to stop tracing
                     * Analyze relative tracefile:  oradebug <file_path> [server]
                           1) server:  Specify when <file_path> is the path in remote db instead of local PC
+                    * Sampling running SQL in current session
                     
                     Examples:
                     ========= 
@@ -797,6 +798,7 @@ function oradebug.load_dict()
                       * oradebug profile 104 wait
                       * oradebug profile 104 wait 30
                       * oradebug profile 104 wait 20 log file sync
+                      * oradebug profile "<other command>"
                       * oradebug profile D:\dbcli\cache\orclcdb\shortstacks_142308.log
                       * oradebug profile /u01/app/oracle/diag/rdbms/orclcdb/orclcdb/trace/orclcdb_ora_15873_20190923095414.trc server
                 ]]},
@@ -1134,7 +1136,7 @@ function oradebug.profile(sid,samples,interval,event)
     elseif samples and samples:lower()=="server" then
         tracename,out=oradebug.get_trace(sid)
         file=tracename:gsub('.*[\\/]',''):gsub('%..-$','')
-    elseif type(sid)=='string' and sid:find('%s') then
+    elseif type(sid)=='string' and sid:find('%s') and not sid:find('[\\/]') then
         local stmt =sid.. '\0'
         sid,inst=oradebug.setmypid()
         file=sid
@@ -1152,7 +1154,7 @@ function oradebug.profile(sid,samples,interval,event)
         if not done then
             env.warn(err)
         end
-        print("Sampling complete within "..math.round(os.timer()-clock,2).." secs.")
+        print("Sampling completed within "..math.round(os.timer()-clock,2).." secs.")
         out=table.concat(out_,'\n')
         log=env.write_cache("shortstacks_"..file..".log",out)
     elseif org_sid and not tonumber(sid) then
@@ -1186,7 +1188,7 @@ function oradebug.profile(sid,samples,interval,event)
             local prep=db.conn:prepareStatement(stmt,1003,1007)
             local clock=os.timer()
             out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
-            print("Sampling complete within "..(os.timer()-clock).." secs.")
+            print("Sampling completed within "..(os.timer()-clock).." secs.")
             log=env.write_cache("shortstacks_"..org_sid..".log",out)
         end
     end
@@ -1460,7 +1462,7 @@ function oradebug.run(action,args)
                 elseif key~='Library' and not libs[action] then
                     libs1[name][k]={}
                     for n,d in pairs(v) do
-                        if key and (action==n:upper():gsub('[%[%] ]','') or action==(k..'.'..n):upper():gsub('[%[%] ]','')) then
+                        if (action==n:upper():gsub('[%[%] ]','') or action==(k..'.'..n):upper():gsub('[%[%] ]','')) then
                             libs1[name][k][n]=d
                             if d.usage then
                                 local target=(name..'.') 
