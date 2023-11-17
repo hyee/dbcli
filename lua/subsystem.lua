@@ -24,8 +24,8 @@ function system:call(func,...)
     return self.process~=nil and msg or nil
 end
 
-function system:getBuff()
-    return self:call('getBuff')
+function system:getBuff(wait)
+    return self:call('getBuff',wait)
 end
 
 function system:execute(cmd,is_print,is_block)

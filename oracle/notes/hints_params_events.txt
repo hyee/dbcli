@@ -92,6 +92,7 @@ Parameters
         1: disable pcode(Portable code,a framework to evaluate predicates)
         32: disable just PCODE aggregation
         256: disable complex predicate push down for PCODE evaluation
+        512:  disable PCODE projection pushdown
         4096: disable pcode aggregation above a hash join
         32768: Force aggregation pushdown with HCC
         262144: disable  PCODE filtering(not impact cc2 codepath)

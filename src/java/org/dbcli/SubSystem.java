@@ -117,7 +117,8 @@ public class SubSystem {
         }
     }
 
-    String getBuff() {
+    String getBuff(boolean wait) throws Exception {
+        if (wait) waitCompletion(false);
         final String result = buff.toString();
         buff.setLength(0);
         return result;
@@ -131,7 +132,7 @@ public class SubSystem {
         process.writeStdin(writer);
     }
 
-    public void waitCompletion() throws Exception {
+    public void waitCompletion(boolean printBuff) throws Exception {
         //System.out.println(process.GetConsoleMode());
         StringBuilder buff = new StringBuilder();
         long wait = 150L;
@@ -154,9 +155,11 @@ public class SubSystem {
                     ch = Console.input.read(10L);
                 }
                 if (wait < 50L) {
-                    final String buf = getBuff();
-                    write(buf.getBytes());
-                    print(buf);
+                    if (printBuff) {
+                        final String buf = getBuff(false);
+                        write(buf.getBytes());
+                        print(buf);
+                    }
                     wait = 60L; //Waits 0.05 sec
                 }
             }
@@ -172,7 +175,10 @@ public class SubSystem {
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
-            if (isBlockInput != null && isBlockInput) {
+            if (isBlockInput == null) {
+                responseLock = new CountDownLatch(1);
+                isCache = true;
+            } else if (isBlockInput != null && isBlockInput) {
                 lock = new CountDownLatch(1);
                 isCache = false;
             } else if (!isCache) {
@@ -183,11 +189,13 @@ public class SubSystem {
                 write((command.replaceAll("[\r\n]+$", "") + "\n").getBytes());
             }
             if (isBlockInput == null) {
+                responseLock.await();
+                responseLock = null;
                 return null;
             } else if (isBlockInput) {
                 lock.await();
             } else {
-                waitCompletion();
+                waitCompletion(true);
             }
             if (this.prevPrompt == null) this.prevPrompt = this.lastPrompt;
             return lastPrompt;
@@ -195,7 +203,7 @@ public class SubSystem {
             Loader.getRootCause(e).printStackTrace();
             throw e;
         } finally {
-            isWaiting = false;
+            isWaiting = isBlockInput == null;
         }
     }
 
@@ -237,8 +245,8 @@ public class SubSystem {
                         System.out.println("    Executing " + command.substring(0, c.length - 1) + ": round #" + i);
 
                     write(c);
+                    responseLock = new CountDownLatch(1);
                     if (prep != null) {
-                        responseLock = new CountDownLatch(1);
                         try (ResultSet rs = prep.executeQuery()) {
                             if (rs.next()) {
                                 if (result == null) {
@@ -249,10 +257,10 @@ public class SubSystem {
                                 for (int j = 1; j <= cols; j++) result[j - 1] = rs.getString(j);
                             }
                         }
-                        responseLock.await();
-                        if (result != null) print(String.join("/", result) + '\n');
-                        responseLock = null;
                     }
+                    responseLock.await();
+                    responseLock = null;
+                    if (result != null) print(String.join("/", result) + '\n');
 
                     current -= System.currentTimeMillis();
                     if (current > 0 && i < count) Thread.sleep(current);
@@ -285,7 +293,7 @@ public class SubSystem {
         try {
             buff.setLength(0);
             execute(command, false, true);
-            return getBuff();
+            return getBuff(false);
         } finally {
             isCache = false;
         }
@@ -296,7 +304,7 @@ public class SubSystem {
         try {
             buff.setLength(0);
             executeInterval(command, interval, count, false, prep);
-            return getBuff();
+            return getBuff(false);
         } finally {
             isCache = false;
         }

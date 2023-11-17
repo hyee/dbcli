@@ -1147,15 +1147,18 @@ function oradebug.profile(sid,samples,interval,event)
             if math.fmod(counter_,30) == 0 then
                 print('Executing oradebug short_stack round #'..counter_)
             end
-            out_[#out_+1]=sqlplus:get_last_line('oradebug short_stack')
+            --out_[#out_+1]=sqlplus:get_last_line('oradebug short_stack')
+            sqlplus:execute('oradebug short_stack',false,nil)
         end
         local done,err=pcall(env.eval_line,stmt,true,true,true)
         db.async_coroutine=nil
         if not done then
             env.warn(err)
         end
-        print("Sampling completed within "..math.round(os.timer()-clock,2).." secs.")
-        out=table.concat(out_,'\n')
+        print("Sampling completed within "..string.format("%.2f",os.timer()-clock).." secs.")
+        --out=table.concat(out_,'\n')
+        sqlplus:execute('oradebug short_stack',false,false)
+        out=sqlplus:getBuff(false)
         log=env.write_cache("shortstacks_"..file..".log",out)
     elseif org_sid and not tonumber(sid) then
         env.raise('No such file, please input a valid file path or a sid.')

@@ -70,7 +70,7 @@ SELECT &pname,
        FSFI,
        g location,
        attrs
-FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UNION NO_MERGE opt_param('_optimizer_filter_pushdown','false') use_hash(F T)*/
+FROM (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UNION NO_MERGE OUTLINE_LEAF opt_param('_optimizer_filter_pushdown','false') use_hash(F T)*/
               &cname,
               decode(grouping_id(TABLESPACE_NAME,file_id),0,null,3,'TOTAL('||IS_TEMP||')',nvl2(:V1,'','  ')||TABLESPACE_NAME) TABLESPACE_NAME,
               decode(grouping_id(file_id),0,'#'||file_id,''||count(1)) files,
@@ -85,11 +85,10 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
               IS_TEMP,
               decode(grouping_id(file_id),0,max(file_name),&CHECK_ACCESS) g,
               decode(grouping_id(TABLESPACE_NAME,file_id),0,MAX(F.ATTRS),1,MAX(T.ATTRS)) attrs
-        FROM(
-            SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
+      FROM( SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
             FROM (
-                SELECT /*+no_merge no_expand no_merge(b) no_merge(a) no_push_pred(a) use_hash(b a) 
-                         opt_param('_optimizer_sortmerge_join_enabled','false')
+                SELECT /*+no_merge no_expand outline_leaf no_push_pred(a) use_hash(b a c) 
+                         opt_param('_optimizer_sortmerge_join_enabled','false') opt_param('optimizer_index_cost_adj' 1000)
                          table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=1024) */
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
@@ -123,7 +122,7 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
                 WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
                 GROUP  BY TABLESPACE_NAME,FILE_ID,&cname
                 UNION ALL
-                SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand no_merge(h) no_merge(p) no_merge(f) use_hash(h p f)*/
+                SELECT /*+NO_EXPAND_GSET_TO_UNION no_expand outline_leaf use_hash(h p f)*/
                        TABLESPACE_NAME,
                        file_id,&cid2,
                        SUM((h.bytes_free + h.bytes_used) - nvl(p.bytes_used, 0)) FREE_BYTES,
@@ -144,9 +143,8 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
                 JOIN   (select a.*, regexp_substr(file_name, '^.[^\\/]+') loc,1 seq from &CON.temp_files a) f
                 USING  (file_id,&cid,tablespace_name)
                 WHERE  (:V1 IS NULL OR TABLESPACE_NAME=upper(:V1))
-                GROUP  BY tablespace_name,FILE_ID,&cid2
-            ) A) F JOIN (
-                SELECT TABLESPACE_NAME,
+                GROUP  BY tablespace_name,FILE_ID,&cid2 ) A) F 
+        JOIN (SELECT TABLESPACE_NAME,
                      TRIM(',' FROM REGEXP_REPLACE(
                          (SELECT '#'||TS#||',' FROM v$tablespace WHERE name=tablespace_name and rownum<2)||
                          'BLOCK('||TRIM(DBMS_XPLAN.FORMAT_SIZE2(BLOCK_SIZE))||'),'||
@@ -165,7 +163,8 @@ FROM  (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UN
                          &attr12 NVL2(INDEX_COMPRESS_FOR,'INDEX-'||INDEX_COMPRESS_FOR||',','')||
                          &attr12 NVL2(DEF_INMEMORY_COMPRESSION,'DBIM-'||DEF_INMEMORY_COMPRESSION||'-PRIOR('||DEF_INMEMORY_PRIORITY||')-DISTRIB('||DEF_INMEMORY_DUPLICATE||')','')||
                          '',',+',',')) AS ATTRS
-              FROM &CON.tablespaces) T USING(TABLESPACE_NAME)
+              FROM &CON.tablespaces) T 
+        USING(TABLESPACE_NAME)
         GROUP BY  &cname,IS_TEMP,ROLLUP(TABLESPACE_NAME,FILE_ID)
         HAVING (:V1 IS NOT NULL AND grouping_id(TABLESPACE_NAME)<1) OR (:V1 IS NULL AND FILE_ID IS NULL)) a
 ORDER  BY 1,IS_TEMP,USED_SPACE DESC,TABLESPACE_NAME DESC NULLS LAST;

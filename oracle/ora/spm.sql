@@ -19,7 +19,13 @@
         @org : 23.1={origin} default={'MANUAL'}
     --]]
 ]]*/
+
 set feed off
+
+PRO DBA_SQL_MANAGEMENT_CONFIG:
+PRO ==========================
+SELECT * FROM DBA_SQL_MANAGEMENT_CONFIG ORDER BY 1;
+
 col ela,avg_ela for usmhd2
 col execs for tmb2
 VAR c REFCURSOR;
