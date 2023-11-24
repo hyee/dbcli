@@ -31,7 +31,6 @@ Parameters
     _optimizer_transitivity_retain: defaults to true to pass the input variable to other table's equal-join column(ignored if executed by SYSDBA with opt_param hint)
     _optimizer_generate_transitive_pred: similar to _optimizer_transitivity_retain
     _iut_stat_collection_type: relative views: DBA_INDEX_USAGE/V$INDEX_USAGE_INFO, set to 'ALL' to get the most accurate result during the monitor period, it can cause some overhead
-    _disable_directory_link_check: directs the access driver to bypass symbolic link check, allowing you to use files for which the parent directory may be a symbolic link
     _kcfis_storageidx_disabled: enable/disable storage index
     _rdbms_internal_fplib_enabled/cell_offload_plan_display: simulate smart scan on non-Exadata db
     _exadata_feature_on: simulate Exadata features on non-Exadata db
@@ -93,6 +92,7 @@ Parameters
         1: disable pcode(Portable code,a framework to evaluate predicates)
         32: disable just PCODE aggregation
         256: disable complex predicate push down for PCODE evaluation
+        512:  disable PCODE projection pushdown
         4096: disable pcode aggregation above a hash join
         32768: Force aggregation pushdown with HCC
         262144: disable  PCODE filtering(not impact cc2 codepath)
@@ -204,6 +204,7 @@ Parameters
     _px_hybrid_TSM_HWMB_load: false to disbale PDML TSM/HWMB broker and use traditional HWM broker instead, 
                               together with _force_tmp_segment_loads=true to use "TEMP SEG MERGE" to fix HV contention in some cases
     _disable_directory_link_check: true with _kolfuseslf to resolve symbol like issue of accessing Oracle directory files. (DBMS_UTILITY.DIRECTORY_HAS_SYMLINK)
+    _cursor_features_enabled: set as 34 to log sql parse errors into sys.sqlerror$ for non-SYS user
     
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
@@ -219,6 +220,8 @@ Events:
                     level 512: disables rowsets for EVA functions
                     level 20971520: disables “rowset to one row” in hash join probe side
     65002: enable to free temp LOB spaces when no active temp lob in the session
+    44951 TRACE NAME CONTEXT FOREVER, LEVEL 1024 : bug 6376915 causes high water (HW) enqueue contention when the database is busy handling large objects (LOB) and the database is configured to use automatic segments space management (ASSM)
+
  
 dbms_stats.set_xxx_pref:
     table_cached_blocks: defaults as 1(0 as auto), used to control how to compute the CLUSTERING_FACTOR by gather_index_stats, recommend to set as 16*<Rac nodes> by jonathan lewis
@@ -253,6 +256,7 @@ Hints:
     VECTOR_TRANSFORM([<qb>] FACT(<fact>) DIMENSION(<dim#1>) ...DIMENSION(<dim#n>)): Use key vector transformation
     pq_filter(serial/hash/random/none): Random:lef-skew handling; Hash:left-skew handling+caching; none:left,right both clumped,no skew handling; serial:_px_filter_parallelized=false
     system_stats(mbrc=<num> ioseektim=<num> iotfrspeed=<num>): change system stats for a specific sql, or simply change mbrc via _db_file_optimizer_read_count
+    tracing(strip,<plan line id>): elimiates the data output of specific row-source of the execution plan, mainly used for testing SQL performance
 
     
 Fix Controls:
@@ -273,6 +277,7 @@ Fix Controls:
     31626438:  use smart scan on partition table when partition size > 100MB
     27268249:  0 to disable approximate ndv on gathering (index) stats and possible to reduce IO (bug 33427856)
     30822446:  enable window pushed rank optimization with partition by keys
+    22387320:  use HASH UNIQUE with UNION operator when applicable
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

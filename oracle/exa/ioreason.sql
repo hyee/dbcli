@@ -114,7 +114,7 @@ BEGIN
                             JOIN   dba_hist_snapshot
                             USING  (dbid,snap_id)
                             WHERE  end_interval_time+0 between nvl(to_date(:starttime,'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(:endtime,'YYMMDDHH24MI'),SYSDATE)
-                            AND    dbid=NVL(:dbid+0,(select dbid from v$database))
+                            AND    dbid=:dbid
                             GROUP  BY cell_hash, REASON_NAME, INCARNATION_NUM, dbid, con_dbid)
                     GROUP  BY dbid, con_dbid, reason_name) a
             WHERE reqs>0

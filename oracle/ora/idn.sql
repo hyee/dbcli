@@ -3,7 +3,6 @@
     When input value is idn then query all possible views
     --[[
         @ARGS:1 
-        @dbid: 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     --]]
 ]]*/
 set feed off verify off
@@ -41,7 +40,7 @@ DECLARE
                     SELECT dbid,'DBA_HIST_SQLTEXT', sql_id, regexp_replace(to_char(substr(sql_text, 1, 300)), '\s+', ' ') NAME
                     FROM   dba_hist_sqltext
                     WHERE  sql_id like sq_id
-                    AND    dbid = nvl(:dbid, '&dbid')
+                    AND    dbid = :dbid
                     UNION ALL
                     SELECT sqlset_id,'DBA_HIST_SQLTEXT', sql_id, regexp_replace(to_char(substr(sql_text, 1, 300)), '\s+', ' ') NAME
                     FROM   dba_sqlset_statements

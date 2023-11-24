@@ -9,6 +9,7 @@
         -r: Define both begin time and end time in YYMMDDHH24MI format. i.e.: @@NAME . 160412 160413 -r -d
     Filter:    
         -u                     : Filter based on current_schema
+        -cpu                   : Only show cpu chart
         -f"<predicates>"       : Costimized filter
     Grouping:
         -event                 : group by event
@@ -19,8 +20,9 @@
         &V1       : default={&INSTANCE}
         &V2       : default={&STARTTIME}
         &V3       : default={&ENDTIME}
-        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
-        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a)}
+
+        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a where dbid=&dbid)}
+        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a where dbid=&dbid)}
         &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate+1)}
         &Time_Filter:{
             default={&TIME_BAND},
@@ -30,12 +32,15 @@
         &Filter:default={1=1},u={username=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &GROUPS:{
             default={nvl(wait_class, 'ON CPU')},
+            cpu={'ON CPU #'||inst_id},
             event={nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']')},
             schema={username}, sql={sql_id}, g={}
         }
         &GROUP_NAME : default={Wait Class}, event={Event}, schema={Schema Name}, g={}
         &COUNTER    : default={SUM(&VER3)}, sec={count(distinct sample_time+0)}
         &COUNT_NAME : default={Total Seconds}, sec={Distinct Seconds}
+        &cpu        : default={0} cpu={1}
+        &cpu1       : default={true} cpu={false}
         &UNIT       : default={1}, d={10}
         @VER1       : 11.2={COUNT(DISTINCT SQL_ID||SQL_EXEC_ID)}, default={NULL}
         @VER2       : 11.2={Running SQLs}, default={HIDDEN_}
@@ -66,28 +71,32 @@
                  AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
                  AND    (&Filter)
                  AND    (&GROUPS IS NOT NULL)
+                 AND    (&cpu=0 OR event IS NULL)
                  GROUP BY trunc(sample_time, 'MI'),&GROUPS
                  UNION ALL
                  select trunc(sample_time, 'MI') sample_time, 
-                         wait_class,
+                         wait_class||' #'||inst_id,
                          SUM(value/100),
                          NULL &VER41,
                          count(1)
-                  from (select a.*,end_time sample_time,
+                 from (select a.*,end_time sample_time,
                                case when metric_name like 'Host%' then 'Host CPU'
                                     when metric_name like '%CPU%' then 'DB CPU'
                                else 'DB Time' end wait_class
                          from &METRIC_NAME a 
                          where metric_name in('Host CPU Usage Per Sec',
-                                             'Background CPU Usage Per Sec','CPU Usage Per Sec',
-                                             'Database Time Per Sec','Background Time Per Sec')
+                                             'Background CPU Usage Per Sec',
+                                             'CPU Usage Per Sec',
+                                             'Database Time Per Sec',
+                                             'Background Time Per Sec')
                          and   group_id=2)
-                  where (&Time_Filter)
-                  group by wait_class,trunc(sample_time, 'MI')) A
+                  where (&Time_Filter) and &cpu=1
+                  group by wait_class||' #'||inst_id,trunc(sample_time, 'MI')) A
 
         )
         group by bucket_id,group_by,sums
         order by 1,2
     ]],
-    _series=20
+    _series=20,
+    stackedGraph=&cpu1
 }

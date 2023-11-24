@@ -24,18 +24,29 @@
     title='System SQL Stats Chart',
     _attrs=[[select '&LABEL' ylabel from dual]],
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                to_char(end_interval_time, 'yyyy-mm-dd hh24:mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
-                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
-          AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1))
-        SELECT end_time sample_time,inst,&GRP
+        WITH snap AS(
+        SELECT a.*,
+               MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+               round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+        FROM   (SELECT /*+no_merge no_expand no_or_expand*/ 
+                       snap_id,
+                       dbid,
+                       instance_number,
+                       instance_number inst_id,
+                       begin_interval_time+0 btime,
+                       MAX(end_interval_time+0) OVER(PARTITION BY snap_id) etime,
+                       startup_time+0 stime,
+                       (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                       (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                FROM   dba_hist_snapshot
+                WHERE  dbid=:dbid
+                 AND   end_interval_time+0 BETWEEN 
+                       NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND 
+                       NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
+                 AND  (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) a)
+        SELECT etime sample_time,inst,&GRP
         FROM (
-            SELECT end_time,
+            SELECT etime,
                    inst,
                    round(sum(ela),2) ela ,
                    round(sum(cpu),2) cpu,
@@ -57,31 +68,32 @@
                    round(sum(parses),2) parses,
                    round(sum(loads),2) loads
             FROM   (SELECT /*+merge no_expand*/
-                          inst_id,end_time,Slot_size,
+                          inst_id,etime,secs,
                           decode(nvl(lower(:V1), 'a'), 'a', '', ' #' || inst_id) inst,
-                          ELAPSED_TIME_DELTA*1e-6/slot_size ela,
-                          IOWAIT_DELTA*1e-6/slot_size io,
-                          APWAIT_DELTA*1e-6/slot_size ap,
-                          CCWAIT_DELTA*1e-6/slot_size cc,
-                          CLWAIT_DELTA*1e-6/slot_size cl,
-                          PLSEXEC_TIME_DELTA*1e-6/slot_size pl,
-                          JAVEXEC_TIME_DELTA*1e-6/slot_size java,
-                          CPU_TIME_DELTA*1e-6/slot_size cpu,
-                          block_size*(DISK_READS_DELTA)/slot_size phr,
-                          block_size*DIRECT_WRITES_DELTA/slot_size phw,
-                          block_size*BUFFER_GETS_DELTA/slot_size buff,
+                          ELAPSED_TIME_DELTA*1e-6/secs ela,
+                          IOWAIT_DELTA*1e-6/secs io,
+                          APWAIT_DELTA*1e-6/secs ap,
+                          CCWAIT_DELTA*1e-6/secs cc,
+                          CLWAIT_DELTA*1e-6/secs cl,
+                          PLSEXEC_TIME_DELTA*1e-6/secs pl,
+                          JAVEXEC_TIME_DELTA*1e-6/secs java,
+                          CPU_TIME_DELTA*1e-6/secs cpu,
+                          block_size*(DISK_READS_DELTA)/secs phr,
+                          block_size*DIRECT_WRITES_DELTA/secs phw,
+                          block_size*BUFFER_GETS_DELTA/secs buff,
                           &VER  block_size*OPTIMIZED_PHYSICAL_READS_DELTA opr,
-                          &VER IO_INTERCONNECT_BYTES_DELTA/slot_size clr,
-                          &VER CELL_UNCOMPRESSED_BYTES_DELTA/slot_size cuzip,
-                          &VER IO_OFFLOAD_RETURN_BYTES_DELTA/slot_size iooff,
-                          EXECUTIONS_DELTA/slot_size exec,
-                          PX_SERVERS_EXECS_DELTA/slot_size pxe,
-                          PARSE_CALLS_DELTA/slot_size parses,
-                          LOADS_DELTA/slot_size loads
-                   FROM   DBA_HIST_SQLSTAT JOIN snap a USING(snap_id,instance_number),
+                          &VER IO_INTERCONNECT_BYTES_DELTA/secs clr,
+                          &VER CELL_UNCOMPRESSED_BYTES_DELTA/secs cuzip,
+                          &VER IO_OFFLOAD_RETURN_BYTES_DELTA/secs iooff,
+                          EXECUTIONS_DELTA/secs exec,
+                          PX_SERVERS_EXECS_DELTA/secs pxe,
+                          PARSE_CALLS_DELTA/secs parses,
+                          LOADS_DELTA/secs loads
+                   FROM   DBA_HIST_SQLSTAT 
+                   JOIN   snap a USING(snap_id,dbid,instance_number),
                           (select /*+no_merge*/ value block_size from v$parameter where name='db_block_size') c
-                   WHERE  a.FLAG=0 AND (&FILTER)) a
-            group by end_time,inst
+                   WHERE  dbid=:dbid AND (&FILTER)) a
+            group by etime,inst
         )
         ORDER  BY 1]],
     _pivot="mixed",

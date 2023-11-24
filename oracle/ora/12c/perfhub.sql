@@ -60,9 +60,7 @@ BEGIN
                                                                      to_char(v_start,'MM/DD/YYYY HH24:mm:ss'),
                                                                      to_char(v_end,'MM/DD/YYYY HH24:mm:ss'),
                                                                      ''||v_realtime);
-            IF :dbid IS NOT NULL THEN
-                v_param:=replace(v_param||'@dbid='||:dbid,'@','&');
-            END IF;
+            v_param:=replace(v_param||'@dbid='||:dbid,'@','&');
             v_report := dbms_report.get_report(report_reference => v_param,compress_xml=>0);
         ELSIF :V3 IS NULL OR instr(:V3,'+')>0 OR instr(:V3,'-')>0 OR 
               lower(:V3) in('timepicker','summary','rac','ash','workload','monitor','addm','exa') THEN

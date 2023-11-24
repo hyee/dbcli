@@ -809,6 +809,7 @@ end
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
 local vertical_pattern,verticals=env.VERTICAL_PATTERN
 local DDL={CREATE=1,ALTER=1,DROP=1}
+
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_not_prep=type(sql)~="userdata"
     local is_internal=self:is_internal_call(sql)
@@ -883,7 +884,20 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         end
     end
 
-    local is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql)
+    local is_query=nil
+    local typ=type(self.async_coroutine)
+    if self.async_coroutine~=nil then
+        self:call_sql_method('ON_SQL_ERROR',sql,loader.asyncExecuteStatement,loader,prep,tmp_sql)
+        local func=type(self.async_coroutine)=='thread' and coroutine.yield or self.async_coroutine
+        func(false)
+        while is_query==nil do
+            is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.getAsyncExecuteResult,loader)
+            func(is_query~=nil)
+            env.sleep(0.003)
+        end
+    else 
+        is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql) 
+    end
     exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
@@ -938,8 +952,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local params1=nil
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
     local i=0;
-
     while true do
+        --2 = Statement.KEEP_CURRENT_RESULT
         params1,is_query=pcall(prep.getMoreResults,prep,2)
         if not params1 or not is_query then break end
         if result[1]==-1 then table.remove(result,1) end
@@ -1100,6 +1114,7 @@ function db_core:connect(attrs,data_source)
         self.conn=nil
         env.raise("Unable to connect to database, connection !")
     end
+    env.set_prompt('db','SQL',nil,2)
     self.autocommit=cfg.get("AUTOCOMMIT")
     self.conn:setAutoCommit(self.autocommit=="on" and true or false)
     self.last_login_account=attrs
@@ -1114,14 +1129,15 @@ function db_core:connect(attrs,data_source)
     local prop={self.conn['getProperties'],self.conn['getServerSessionInfo']}
 
     for _,p in pairs(prop) do
-        for k,v in pairs(p(self.conn):to_lua()) do
+        local rtn,props=pcall(p,self.conn)
+        for k,v in java.pairs(rtn and props or {}) do
             self.properties[k]=v
         end
     end
-
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     
     prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
+
     return self.conn,attrs
 end
 
@@ -1458,10 +1474,9 @@ function db_core.check_completion(cmd,other_parts)
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     if index==0 then return false,other_parts end
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
-    if index==1 and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
+    if index==1 and action~="SELECT" and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         local pattern=db_core.source_obj_pattern
         if not pattern then return false,other_parts end
-        typ=type(pattern)
         local patterns={}
         if typ=='table' then 
             patterns=pattern
@@ -1588,7 +1603,6 @@ function db_core:disconnect(feed)
         self.conn=nil
         prep_test_connection=nil
         env.set_prompt(nil,nil,nil,2)
-        env.set_prompt(nil,"SQL")
         env.set_title("",nil,self.__class.__className)
         load_titles()
         set_proxy(nil,nil)

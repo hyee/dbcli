@@ -3322,9 +3322,9 @@ function unwrap.unwrap(obj,ext,prefix)
                     end
                 end
             else
-                local piece=line:match("^%s*([%w%+/=]+)%s*$")
-                if not piece then piece=line:match("^%s*([%w%+/=]+)%s*</report") end
-                if not piece then piece=line:match("report_?i?d?>%s*([%w%+/=]+)%s*$") end
+                local prefix,piece,suffix=line:match("^(%s*)([%w%+/=]+)(%s*)$")
+                if not piece then prefix,piece,suffix=line:match("^(%s*)([%w%+/=]+)%s*(</report>)") end
+                if not piece then prefix,piece,suffix=line:match("^(.*report_?i?d?>%s*)([%w%+/=]+)(%s*)$") end
                 if not found and piece and #piece>=64 then
                     found=true
                     repidx=#org+1
@@ -3332,14 +3332,21 @@ function unwrap.unwrap(obj,ext,prefix)
                 if found then 
                     if piece then
                         stack[#stack+1]=piece
-                    else
-                        org[#org+1]=line
+                        if prefix and prefix:trim()~='' then
+                            org[#org+1]=prefix
+                        end
                     end
-                    if not piece or #piece<64 then
+                    if not piece or #piece<64 or suffix:trim()~='' then
                         org[#org+1]=loader:Base64ZlibToText({table.concat(stack,'')})
+                        if suffix and suffix:trim()~='' then
+                            org[#org+1]=suffix
+                        end
                         stack={}
                         found=false
                         is_wrap=true
+                    end
+                    if not piece then
+                        org[#org+1]=line
                     end
                 else
                     if line:match('encode=".-"') and line:match('compress=".-"') then

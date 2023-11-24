@@ -261,7 +261,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
 
     local function get_value(title,r,c)
         if not colinfo[c] then colinfo[c]={column_name = title} end
-        _, value = grid.format_column(true, type(title) == "table" and title or colinfo[c], rows[r][c], r-1)
+        _, value = grid.format_column(true, type(title) == "table" and title or colinfo[c], tonumber(rows[r][c]) or rows[r][c], r-1)
         len1,len2,nv=tostring(value or null_value):trim():ulen(maxsize)
         if col_wrap > 0 and len2 > col_wrap and not nv:sub(1,1024):find('\n',1,true) then
             value,len1,len2=grid.line_wrap(nv,col_wrap)

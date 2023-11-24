@@ -15,8 +15,10 @@ local noparallel='off'
 local gv1=('(%s)table%(%s*gv%$%(%s*cursor%('):case_insensitive_pattern()
 local gv2=('(%s)gv%$%(%s*cursor%('):case_insensitive_pattern()
 local checking_access
+local default_dbid
 local function rep_instance(prefix,full,obj,suffix) 
     obj=obj:upper()
+    if (prefix or ""):lower():find('^stats') then return prefix..full..suffix end
     local dict,dict1,flag,str=dicts.dict[obj],dicts.dict[obj:sub(2)],0
     if not checking_access and cdbmode~='off' and dicts.dict[obj] and obj:find(cdbstr) then
         local new_obj = obj:gsub('^CDB_','DBA_')
@@ -49,6 +51,7 @@ local function rep_instance(prefix,full,obj,suffix)
             {usr and usr~="",dict.usr_col,"(select /*+no_merge*/ username from all_users where user_id="..(uid or '')..")"},
         } do
             if v[1] and v[2] and v[3] then
+                --print(prefix,full,suffix)
                 if k==1 and obj:find('^GV_?%$') and v[3]==tonumber(db.props.instance) 
                     and dict1 and dict1.inst_col~="INST_ID"
                 then
@@ -87,7 +90,7 @@ function dicts.on_before_db_exec(item)
     if instance==0 then instance=tonumber(db.props.instance) end
     for k,v in ipairs{
         {'INSTANCE',instance and instance>0 and instance or ""},
-        {'DBID',dbid and dbid>0 and dbid or ""},
+        {'DBID',dbid and dbid>0 and dbid or default_dbid or ""},
         {'CON_ID',container and container>=0 and container  or ""},
         {'SCHEMA',usr},
         {'_SQL_ID',db.props.last_sql_id or ''},
@@ -253,6 +256,9 @@ function dicts.on_after_db_conn(instance,sql,props)
 
     if not db:is_connect(true) then
         env.set_title("")
+        default_dbid=nil
+    else
+        default_dbid=db:get_value("select /*BYPASS_DBCLI_REWRITE*/ dbid from v$database")
     end
 end
 
@@ -626,7 +632,7 @@ function dicts.onload()
 
     event.snoop('BEFORE_DB_EXEC',dicts.on_before_db_exec,nil,60)
     event.snoop('AFTER_DB_EXEC',dicts.on_after_db_exec)
-    event.snoop('ON_SUBSTITUTION',dicts.on_before_db_exec,nil,60)
+    --event.snoop('ON_SUBSTITUTION',dicts.on_before_db_exec,nil,60)
     event.snoop('AFTER_ORACLE_CONNECT',dicts.on_after_db_conn)
     event.snoop('ON_DB_DISCONNECTED',dicts.on_after_db_conn)
     event.snoop('ON_SETTING_CHANGED',dicts.set_title)
@@ -640,8 +646,9 @@ function dicts.onload()
     dicts.P=re.compile([[
         pattern <- {pt} {owner* obj} {suffix}
         suffix  <- [%s,;)]
-        pt      <- [%s,(]
-        owner   <- ('SYS.'/ 'PUBLIC.'/'"SYS".'/'"PUBLIC".')
+        brace   <- 'STATS'* %s* '('
+        pt      <- [%s,]/brace
+        owner   <- ('SYS.'/'PUBLIC.'/'"SYS".'/'"PUBLIC".')
         obj     <- full/name
         full    <- '"' name '"'
         name    <- {prefix %a%a [%w$#_]+}

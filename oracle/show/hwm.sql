@@ -1,6 +1,5 @@
 /*[[Show database level high water mark
     --[[
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
         @con : 12.1={,con_id} default={}
     --]]
 ]]*/
@@ -8,7 +7,7 @@ SET FEED OFF
 COL HIGHWATER,LAST_VALUE FOR AUTO DESCRIPTION
 PRO dba_high_water_mark_statistics
 PRO ==============================
-SELECT * FROM dba_high_water_mark_statistics WHERE DBID=&did ORDER BY 2;
+SELECT * FROM dba_high_water_mark_statistics WHERE DBID=&dbid ORDER BY 2;
 VAR c1 REFCURSOR "gv$resource_limit"
 VAR c2 REFCURSOR "gv$latch_children"
 COL WAIT_TIME FOR USMHD2

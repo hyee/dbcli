@@ -37,33 +37,46 @@
                             from v$event_name s)
                      WHERE  ROWNUM < 2 and (&F1))) a]],
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
-                snap_id, instance_number, -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
-          AND    (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) 
-        SELECT time sample_time,event,round(total_time*1e-6,1) "Seconds per Second",round(count,3) "Requests per Second",
+        WITH snap AS(
+            SELECT a.*,
+                   MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+                   round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+            FROM   (SELECT /*+no_merge no_expand no_or_expand*/ 
+                           snap_id,
+                           dbid,
+                           instance_number,
+                           instance_number inst_id,
+                           begin_interval_time+0 btime,
+                           MAX(end_interval_time+0) OVER(PARTITION BY snap_id) etime,
+                           startup_time+0 stime,
+                           (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                           (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                    FROM   dba_hist_snapshot
+                    WHERE  dbid=&dbid
+                     AND   end_interval_time+0 BETWEEN 
+                           NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
+                           NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+                     AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
+        SELECT time sample_time,event,
+               round(total_time*1e-6,1) "Seconds per Second",
+               round(count,3) "Requests per Second",
                round(total_time/count/1000,2) "Milliseconds per Request",
                sum(total_time) over(partition by event) RNK_
-        FROM   (SELECT to_char(end_time, 'YYYY-MM-DD HH24:MI') TIME, event,
+        FROM   (SELECT to_char(etime, 'YYYY-MM-DD HH24:MI') TIME, event,
                        SUM(v1) total_time,
                        SUM(v2) count
                 FROM  (SELECT /*+merge*/
                                A.*,
                                &group_by || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
-                               TIME_WAITED/Slot_size v1, TOTAL_WAITS/Slot_size v2
+                               TIME_WAITED/secs v1, TOTAL_WAITS/secs v2
                        FROM   (SELECT /*+merge no_expand ordered_predicates*/
-                                      inst_id,end_time,flag,Slot_size,wait_class,event_name,
-                                      TIME_WAITED_MICRO-nvl(LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name,part_key ORDER BY snap_id),0) TIME_WAITED,
-                                      TOTAL_WAITS-nvl(LAG(TOTAL_WAITS) OVER(PARTITION BY event_name,part_key ORDER BY snap_id),0) TOTAL_WAITS
+                                      inst_id,etime,secs,wait_class,event_name,
+                                      TIME_WAITED_MICRO-nvl(LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name,pkey ORDER BY snap_id),0) TIME_WAITED,
+                                      TOTAL_WAITS-nvl(LAG(TOTAL_WAITS) OVER(PARTITION BY event_name,pkey ORDER BY snap_id),0) TOTAL_WAITS
                                FROM   DBA_HIST_SYSTEM_EVENT NATURAL JOIN snap
-                               WHERE  (&filter) AND (&ADDITIONAL_FILTER)) a)
-                 WHERE nvl(v1,0)>0 and flag=0
-                 GROUP  BY event, end_time
+                               WHERE  DBID=&dbid AND (&filter) AND (&ADDITIONAL_FILTER)) a)
+                 WHERE nvl(v1,0)>0
+                 GROUP  BY event, etime
                  HAVING SUM(v2) > 0)
         ORDER  BY 1]],
     _pivot=true,

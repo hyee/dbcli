@@ -1,9 +1,9 @@
-local env,loader,math=env,loader,math
+local env,loader,math,sleep_=env,loader,math,uv.sleep
 function sleep(second)
-    env.checkhelp(tonumber(second))
     second=tonumber(second)
+    env.checkhelp(second)
     if second <= 0 then return end
-    loader:sleep(math.round(second*1000,0))
+    sleep_(math.round(second*1000,0))
 end
 
 env.set_command(nil,"SLEEP","Usage: sleep <seconds>",sleep,false,2)

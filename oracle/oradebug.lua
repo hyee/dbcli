@@ -775,13 +775,13 @@ function oradebug.load_dict()
         GET_TRACE={desc='Download current trace file. Usage: oradebug get_trace [file] [<size in MB>]',args=2,func=oradebug.get_trace},
         SHORT_STACK={desc='Get abridged OS stack. Usage: oradebug short_stack [<short_stack_string>|<sid> [<inst_id>]]',args=2,lib='HELP',func=oradebug.short_stack},
         SETMYPID={desc='Debug current dbcli process',lib='HELP',func=oradebug.setmypid},
-        PMEM={desc="Show process memory detail. Usage: oradebug pmen <sid> [<inst_id>]",args=2,func=oradebug.pmem},
-        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} | {<file> [server]}',
+        PMEM={desc="Show process memory detail. Usage: oradebug pmem <sid> [<inst_id>]",args=2,func=oradebug.pmem},
+        PROFILE={desc='Sample abridged OS stack. Usage: oradebug profile {<sid>[@inst] [<samples>] [<interval in sec>]} | {<sid>[@inst] wait [<secs>] [<event>]} | {<file> [server]} | "<SQL text>"',
                 args=4,func=oradebug.profile,
                 usage=[[
                     Profile abridged OS stack. The profile efficiency heavily relies on the network latency.
                     
-                    Usage: oradebug profile {<sid> [<samples>] [<interval in sec>]} | {<sid> wait [<secs>] [<event>]} |  {<file> [server]}
+                    Usage: oradebug profile {<sid>[@inst] [<samples>] [<interval in sec>]} | {<sid>[@inst] wait [<secs>] [<event>]} |  {<file> [server]}
                     * Sampling+analyzing the shortstacks of target sid: oradebug profile <sid> [<samples>] [<interval in sec>]
                           1) <samples> : Number of samples to take, defaults as 100
                           2) <interval>: The repeat interval for taking samples in second, defaults as 0.1 sec
@@ -789,14 +789,16 @@ function oradebug.load_dict()
                           1) <secs>:  The wait seconds to stop tracing
                     * Analyze relative tracefile:  oradebug <file_path> [server]
                           1) server:  Specify when <file_path> is the path in remote db instead of local PC
+                    * Sampling running SQL in current session
                     
                     Examples:
                     ========= 
-                      * oradebug profile 104 
+                      * oradebug profile 104@2 
                       * oradebug profile 104 1000 0
                       * oradebug profile 104 wait
                       * oradebug profile 104 wait 30
                       * oradebug profile 104 wait 20 log file sync
+                      * oradebug profile "<other command>"
                       * oradebug profile D:\dbcli\cache\orclcdb\shortstacks_142308.log
                       * oradebug profile /u01/app/oracle/diag/rdbms/orclcdb/orclcdb/trace/orclcdb_ora_15873_20190923095414.trc server
                 ]]},
@@ -1123,16 +1125,41 @@ function oradebug.profile(sid,samples,interval,event)
     local org_sid,out,log,tracename=sid
     local typ,file=os.exists(sid)
     local title,inst
-    if sid then
+    if sid and not sid:find('%s') then
         inst=tonumber(sid:match('@(%d+)$'))
         sid=tonumber(sid:match("^%d+"))
     end
+
     if typ then
         out=env.load_data(file,false)
         file=file:gsub('.*[\\/]',''):gsub('%..-$','')
     elseif samples and samples:lower()=="server" then
         tracename,out=oradebug.get_trace(sid)
         file=tracename:gsub('.*[\\/]',''):gsub('%..-$','')
+    elseif type(sid)=='string' and sid:find('%s') and not sid:find('[\\/]') then
+        local stmt =sid.. '\0'
+        sid,inst=oradebug.setmypid()
+        file=sid
+        local clock=os.timer()
+        local out_,counter_={},0
+        db.async_coroutine=function(done)
+            counter_=counter_+1
+            if math.fmod(counter_,30) == 0 then
+                print('Executing oradebug short_stack round #'..counter_)
+            end
+            --out_[#out_+1]=sqlplus:get_last_line('oradebug short_stack')
+            sqlplus:execute('oradebug short_stack',false,nil)
+        end
+        local done,err=pcall(env.eval_line,stmt,true,true,true)
+        db.async_coroutine=nil
+        if not done then
+            env.warn(err)
+        end
+        print("Sampling completed within "..string.format("%.2f",os.timer()-clock).." secs.")
+        --out=table.concat(out_,'\n')
+        sqlplus:execute('oradebug short_stack',false,false)
+        out=sqlplus:getBuff(false)
+        log=env.write_cache("shortstacks_"..file..".log",out)
     elseif org_sid and not tonumber(sid) then
         env.raise('No such file, please input a valid file path or a sid.')
     else
@@ -1154,13 +1181,17 @@ function oradebug.profile(sid,samples,interval,event)
             get_output('session_event wait_event['..event..'] off',true)
             tracename,out=oradebug.get_trace(tracename)
         else
-            env.checkerr(inst==db.props.instance,'Cannot profile the remote instance: '..inst)
+            --env.checkerr(inst==db.props.instance,'Cannot profile the remote instance: '..inst)
+            local stmt=[[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid
+            if inst~=db.props.instance then
+                stmt = 'select * from table(gv$(cursor('..stmt.." and userenv('instance')="..inst..')))'
+            end
             samples=tonumber(samples) or 500
             interval=tonumber(interval) or samples>=500 and 0.01 or 0.1
-            local prep=db.conn:prepareStatement([[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ 'Wait',event,p1,p2,p3 from v$session_wait where sid=]]..org_sid,1003,1007)
+            local prep=db.conn:prepareStatement(stmt,1003,1007)
             local clock=os.timer()
             out=sqlplus:get_lines("oradebug short_stack",interval*1000,samples,prep)
-            print("Sampling complete within "..(os.timer()-clock).." secs.")
+            print("Sampling completed within "..(os.timer()-clock).." secs.")
             log=env.write_cache("shortstacks_"..org_sid..".log",out)
         end
     end
@@ -1395,8 +1426,11 @@ function oradebug.run(action,args)
         if addons[action] then
             local nargs=addons[action].args or 0
             if nargs<2 then return addons[action].func(args) end
-            args=env.parse_args(nargs,args)
-            addons[action].func(table.unpack(args))
+            local args_=env.parse_args(nargs,args)
+            if action=='PROFILE' and not (args_[1] or '1'):find('^%d') and not (args_[1] or '1'):find('[/\\]') then
+                args_={args}
+            end
+            addons[action].func(table.unpack(args_))
         else
             get_output(cmd,false)
         end
@@ -1431,7 +1465,7 @@ function oradebug.run(action,args)
                 elseif key~='Library' and not libs[action] then
                     libs1[name][k]={}
                     for n,d in pairs(v) do
-                        if key and (action==n:upper():gsub('[%[%] ]','') or action==(k..'.'..n):upper():gsub('[%[%] ]','')) then
+                        if (action==n:upper():gsub('[%[%] ]','') or action==(k..'.'..n):upper():gsub('[%[%] ]','')) then
                             libs1[name][k][n]=d
                             if d.usage then
                                 local target=(name..'.') 

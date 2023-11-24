@@ -17,7 +17,7 @@
 
 SELECT * FROM &GV
         SELECT x.inst_id inst,ksppinm NAME, ksppity TYPE, 
-               case when length(ksppstdvl)>80 then regexp_replace(ksppstdvl,', *',','||chr(10)) else ksppstdvl end SESS_VALUE, 
+               case when length(ksppstdvl)>80 then regexp_replace(ksppstdvl,',\s*',','||chr(10)) else ksppstdvl end SESS_VALUE, 
                decode(upper(ksppstdvl),upper(sysval),'<SAME>',case when length(sysval)>80 then regexp_replace(sysval,', *',','||chr(10))  else sysval end) SYS_VALUE,
                &df,
                &def decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE') "DEFAULT",

@@ -11,8 +11,11 @@ if [[ "$os" =~ Darwin.*ARM ]]; then
     os="mac-arm"
 elif [[ "$os" = *Darwin* ]]; then
     os="mac"
-else
+elif [[ "$os" =~ Linux.*x86 ]]; then
     os="linux"
+    bind 'set enable-bracketed-paste on' &>/dev/null
+elif [[ "$os" =~ Linux.* ]]; then
+    os="linux-arm"
     bind 'set enable-bracketed-paste on' &>/dev/null
 fi
 
@@ -33,14 +36,24 @@ if [[ "$EXT_PATH" ]]; then
 fi
 
 # find executable java program
-if [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
+if [[ -n "$JDK_HOME" ]] && [[ -x "$JDK_HOME/bin/java" ]];  then
+    _java="$JDK_HOME/bin/java"
+elif [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
     _java="$JRE_HOME/bin/java"
 elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
-        _java=`/usr/libexec/java_home -V 2>&1|grep "1\.8"|grep -oh "/Library.*"|head -1`
+        if [ "$os" = "mac" ]; then
+            _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d"|grep -oh "/Library.*"|head -1`
+        else
+            _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d.+arm64"|grep -oh "/Library.*"|head -1`
+        fi
         if [[ "$_java" ]]; then
             _java="$_java/bin/java"
+        elif [ "$os" = "mac-arm" ]; then
+            echo "Cannot find Java 1.8+ executable for ARM-64."
+            popd
+            exit 1
         fi
     else
         _java=$(readlink -f "`type -p java`")
@@ -57,7 +70,7 @@ if [[ "$_java" ]]; then
     bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
     ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
 
-    if [[ "$ver" != "52.0" ]] || [[ "$bit" != "64" ]]; then
+    if [[ "$ver" < "52.0" ]] || [[ "$bit" != "64" ]]; then
         found=1
     fi
 fi
@@ -68,7 +81,7 @@ if [[ $found < 2 ]]; then
         _java=./jre_$os/bin/java
         ver="52"
     else
-        echo "Cannot find java 1.8 64-bit executable, exit."
+        echo "Cannot find java 1.8+ 64-bit executable, exit."
         exit 1
     fi
 fi

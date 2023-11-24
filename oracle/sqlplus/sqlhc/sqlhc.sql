@@ -24380,7 +24380,7 @@ BEGIN
               SELECT PLAN_HASH_VALUE, DBID
               FROM   DBA_HIST_SQL_PLAN
               WHERE  SQL_ID = :L_SQL_ID
-              AND    DBID = (SELECT DBID FROM V$DATABASE)
+              AND    DBID = (select /*+PRECOMPUTE_SUBQUERY*/ dbid from v$database)
               AND    ROWNUM = 1 )
      LOOP
         :L_PLAN_HASH_VALUE := I.PLAN_HASH_VALUE;

@@ -1,18 +1,19 @@
-/*[[Show session memory usage: @@NAME [<sid|spid>]
+/*[[Show session memory usage: @@NAME <sid|spid> [<inst_id>]
 Refer to Tanel Poder's same script
     --[[
-       Templates:
-           @11g : 11.1={, pm.sql_id},10.0={}
+       @11g : 11.1={, pm.sql_id},10.0={}
     ]]--
 ]]*/
 
-set feed off
-col allocated,used,max_allocated,bytes for kmg
-
-SELECT inst_id, SID, NAME,  VALUE bytes
+set feed off printsize 1000
+col allocated,used,max_allocated,bytes,heap_bytes for kmg
+col pct for pct2
+PRO Memory info from session stats
+PRO ==============================
+SELECT inst, SID, NAME,  VALUE bytes
 FROM   TABLE(gv$(CURSOR (
             SELECT /*+no_expand use_hash(a b) no_merge(b) swap_join_inputs(b)*/ 
-                   userenv('instance') inst_id, A.SID, A.VALUE,A.statistic#
+                   userenv('instance') inst, A.SID, A.VALUE,A.statistic#
             FROM   v$sesstat a, (select distinct sid from v$sql_workarea_active) b
             WHERE  a.sid = b.sid(+)
             AND    (:V1 IS NOT NULL AND :V1 = A.SID OR :V1 IS NULL AND b.sid IS NOT NULL)
@@ -20,25 +21,43 @@ FROM   TABLE(gv$(CURSOR (
 JOIN   v$statname
 USING  (statistic#)
 WHERE   NAME LIKE '%memory%'
-ORDER  BY inst_id, sid, NAME;
+ORDER  BY inst, sid, NAME;
 
+--alter session set events 'immediate trace name PGA_DETAIL_GET level &pid' 
+PRO Memory info from v$process_memory(run 'oradebug pmem &v1 &v2' before this script for more detail)
+PRO =================================================================================================
 SELECT *
 FROM   TABLE(gv$(CURSOR (
             SELECT /*+no_expand use_hash(s p pm a)*/
-                   userenv('instance') inst_id,
+                   userenv('instance') inst,
                    s.sid,
                    p.spid,
+                   p.pid,
                    pm.category,
-                   allocated,used,max_allocated
-            FROM   v$session s, v$process p, v$process_memory pm,(select distinct sid from v$sql_workarea_active) a
+                   allocated,
+                   used,'|' "|",
+                   pd.name,pd.heap_name,pd.bytes heap_bytes,
+                   round(ratio_to_report(pd.bytes) over(partition by pm.category,pm.serial#),4) pct
+            FROM   v$session s, 
+                   v$process p, 
+                   v$process_memory pm,
+                   v$process_memory_detail pd,
+                   (select distinct sid from v$sql_workarea_active) a
             WHERE  s.paddr = p.addr
             AND    p.pid = pm.pid
             AND    s.sid = a.sid(+)
+            AND    pm.pid = pd.pid(+)
+            AND    pm.serial#=pd.serial#(+)
+            AND    pm.category=pd.category(+)
+            AND    pd.name(+)!='free memory'
             AND    (:V1 IS NOT NULL AND :V1 IN (s.sid, p.spid) OR :V1 IS NULL AND a.sid is not null))))
-ORDER  BY inst_id, sid, category;
+WHERE nvl(pct,1)>0.01
+ORDER  BY inst, sid, category,pct desc;
 
+PRO Memory info from SQL workarea
+PRO ==============================
 SELECT /*+no_expand use_hash(s p pm)*/
-       s.inst_id,
+       s.inst_id inst,
        s.sid,
        p.spid,
        qcinst_id,

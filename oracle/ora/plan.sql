@@ -17,7 +17,7 @@ Options:
     &V1: default={&_SQL_ID} last={X} x={X}
     &V3: none={} ol={outline alias &hint}
     &LAST: last={LAST} all={OUTLINE ALL} allstats={}
-    &DF: default={ALLSTATS PARALLEL PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
+    &DF: default={ALLSTATS PARALLEL COST PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
     &SRC: {
             default={0}, # Both
             d={2},       # Dictionary only
@@ -33,7 +33,6 @@ Options:
     @check_access_ab : dba_hist_sqlbind={1} default={0}
     &check_access_pdb: default={DBA_HIST_} pdb={AWR_PDB_}
     &dop : default={max(nvl2(other_xml,regexp_substr(regexp_substr(to_char(substr(other_xml,1,512)),'<info type="dop" note="y">\d+</info>'),'\d+')/1.1111,1))}
-    @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
     @check_access_awr: {
            dba_hist_sql_plan={UNION ALL
                   SELECT /*+no_expand*/ id,
@@ -56,7 +55,6 @@ Options:
                   FROM   &check_access_pdb.sql_plan a
                   WHERE  a.sql_id = '&v1'
                   AND    &SRC != 1
-                  AND    dbid=nvl('&dbid',&did)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce('&v2'+0,(
                      select --+precompute_subquery index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
@@ -64,7 +62,7 @@ Options:
                      from &check_access_pdb.sqlstat c 
                      where sql_id='&v1' 
                      AND   &SRC != 1
-                     AND   dbid=nvl('&dbid',&did)
+                     AND  dbid=a.dbid
                      AND   '&v1' not in('X','&_sql_id')),(
                      select /*+precompute_subquery*/ 
                             max(plan_hash_value) keep(dense_rank last order by timestamp) 
@@ -72,7 +70,7 @@ Options:
                      where sql_id='&v1'
                      AND   &SRC != 1
                      AND    '&v1' not in('X','&_sql_id')
-                     AND  dbid=nvl('&dbid',&did)))} 
+                     AND  dbid=a.dbid))} 
            default={0}
           }
     @check_access_advisor: {
@@ -199,7 +197,7 @@ BEGIN
                                        FROM   &check_access_pdb.sqlbind a
                                        WHERE  sql_id = '&v1'
                                        AND    &SRC!=1
-                                       AND    dbid=nvl(0+'&dbid',&did)
+                                       AND    dbid=&dbid
                                        $END
                                        ) a) a)
                       SELECT inst_id inst,
@@ -278,7 +276,7 @@ END;
 print c
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
  (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ *
-  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ a.*,
+  FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ distinct a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT /*+no_expand*/ id,
                          min(id) over() minid,
@@ -452,7 +450,8 @@ xplan_data AS
                  x.* 
          from   xplan x) x
   LEFT   OUTER JOIN ordered_hierarchy_data o
-  ON     (o.id = x.oid))
+  ON     (o.id = x.oid)
+  ORDER  BY x.oid)
 SELECT plan_table_output
 FROM   xplan_data --
 model  dimension by (r)

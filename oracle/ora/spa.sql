@@ -1,19 +1,38 @@
 /*[[
-    Show SQL Performance Analyzer(SPA) info. Usage: @@NAME [-f"<filter>" | {<task_id> [<execution_id> [<keyword>|-improve|R]]}]
-    @@NAME                            : show all SPA tasks
-    @@NAME -f"<filter>"               : filter on dba_advisor_tasks
-    @@NAME <task_id>                  : show details of target task
-    @@NAME <task_id> <execution_id>   : show details of target executions 
-                         <keyword>           plus filtering with possible keyword
-                         -diff               order by abs(diff)
-                         -regress            order by regression
-                         -improve            order by improvement
-    @@NAME <task_id> <execution_id> R : generate report text for target comparison analysis report
-
+    Manage SQL Performance Analyzer(SPA). type 'help @@NAME' for more detail.
+    Usages:
+        @@NAME                                          : show all SPA tasks
+        @@NAME -f"<filter>"                             : filter on dba_advisor_tasks
+        @@NAME <task>                                   : show details of target task
+        @@NAME <task> create <sqlset> [-f"<filter>"]    : create SPA task from sqlset
+        @@NAME <task> alter <param_name> [<param_value>]: alter task parameter
+        @@NAME <task> drop                              : drop SPA task
+        @@NAME <task> stop   <ename>                    : stop  the running SPA execution
+        @@NAME <task> pause  <ename>                    : pause therunning SPA execution
+        @@NAME <task> resume <ename>            [-sync] : resume the paused SPA execution
+        @@NAME <task> test [<ename>] [<degree>] [-sync] : run new execution task with specific concurrenct degree in async mode
+        @@NAME <task> explain|xplan  [<ename>]  [-sync] : run new explain plan task in async mode
+        @@NAME <task> diff <exec1> <exec2> [<ename>]    : run new compare task to compare 2 specific executions in async mode
+                                                          <exec1>/<exec2>: the pre/post execution names or IDs for the comparison
+                                                          <ename>        : the new execution name for the task
+        @@NAME <task> <ename>  [<parameters>]           : show details of target executions, following with below parameters:
+                                                            -diff     : order by abs(diff)
+                                                            -regress  : order by regression
+                                                            -improve  : order by improvement
+                                                            <keyword> : filter with specific keyword
+                                                            htm|html  : generate HTML report for target comparison analysis report
+                                                            txt|text  : generate TEXT report for target comparison analysis report
+                                                            active    : generate ACTIVE report for target comparison analysis report
+    Variables:
+        <task> : can be either task_id or task_name
+        <ename>: can be either execution_id or execution_name
+        -sync  : run in sync mode instead of the DEFAULT async mode for the execute/explain/resume executions
     --[[--
         &filter: default={1=1}, f={}
         @ver   : 18.1={} default={--}
+        @attr17: 12.1={attr17} default={null}
         &ord1  : default={"Weight"} diff={greatest(diff,1/nullif(diff,0))} regress={diff} improve={1/nullif(diff,0)}
+        &sync  : default={0} sync={1}
     --]]--
 ]]*/
 
@@ -28,30 +47,102 @@ var c2 refcursor
 var fn VARCHAR2(30);
 var fc CLOB;
 DECLARE
-    c1     SYS_REFCURSOR;
-    c2     SYS_REFCURSOR;
-    rs     CLOB;
-    tid    INT := regexp_substr(:v1, '^\d+$');
-    eid    INT := regexp_substr(:v2, '^\d+$');
-    fname  VARCHAR2(30) :='spa.txt';
-    frs    CLOB;
-    typ    VARCHAR2(30);
-    ord    VARCHAR2(300);
-    tsk    VARCHAR2(128);
-    own    VARCHAR2(128);
-    nam    VARCHAR2(128);
-    pre    VARCHAR2(128);
-    post   VARCHAR2(128);
-    snam   VARCHAR2(128);
-    sown   VARCHAR2(128);
-    key    VARCHAR2(2000):=upper(:v3);
-    m1     VARCHAR2(300);
-    m2     VARCHAR2(300);
-    fil    VARCHAR2(4000);
-    sq_id  VARCHAR2(30);
-    sq_txt VARCHAR2(400);
-    sq_nid VARCHAR2(30);
+    c1         SYS_REFCURSOR;
+    c2         SYS_REFCURSOR;
+    rs         CLOB;
+    tsk        VARCHAR2(128) := replace(upper(:v1),'"');
+    op         VARCHAR2(128) := upper(:v2);
+    v3         VARCHAR2(128) := replace(upper(:v3),'"');
+    v4         VARCHAR2(128) := replace(upper(:v4),'"');
+    v5         VARCHAR2(128) := :v5;
+    tid        INT := regexp_substr(tsk, '^\d+$');
+    sid        INT;
+    eid        INT := regexp_substr(op, '^\d+$');
+    estatus    VARCHAR2(30);
+    fname      VARCHAR2(128) :='spa.txt';
+    dop        INT := 1;
+    frs        CLOB;
+    typ        VARCHAR2(30);
+    ord        VARCHAR2(300);
+    nam        VARCHAR2(128);
+    pre        VARCHAR2(128);
+    post       VARCHAR2(128);
+    snam       VARCHAR2(128);
+    sown       VARCHAR2(128);
+    key        VARCHAR2(2000):=upper(:v3);
+    m1         VARCHAR2(300);
+    m2         VARCHAR2(300);
+    fil        VARCHAR2(4000);
+    sq_id      VARCHAR2(30);
+    sq_txt     VARCHAR2(400);
+    sq_nid     VARCHAR2(30);
+    usr        VARCHAR2(128):=user;
+    fulltask   VARCHAR2(256);
     dyn_lvl    PLS_INTEGER;
+    tmp_owner  VARCHAR2(128);
+    tmp_name   VARCHAR2(128);
+    stmt       VARCHAR2(30000);
+
+    PROCEDURE parse_name(name VARCHAR2,own VARCHAR2:=NULL) IS
+    BEGIN
+        tmp_owner := nvl(regexp_substr(name,'^([^.]+)\.',1,1,'i',1),own);
+        tmp_name  := regexp_substr(name,'[^.]+$');
+    END;
+
+    PROCEDURE check_task(own VARCHAR2:=NULL) IS
+    BEGIN
+        parse_name(tsk,own);
+        IF tmp_name IS NULL AND tid IS NULL THEN
+            raise_application_error(-20001,'Please specify the SQL Performance Analyzer task name.');
+        END IF;
+
+        SELECT task_id,owner,task_name
+        INTO   tid,tmp_owner,tmp_name
+        FROM (
+            SELECT task_id,owner,task_name
+            FROM   dba_advisor_tasks
+            WHERE  (task_id=tid  OR upper(task_name)=tmp_name)
+            AND    advisor_name='SQL Performance Analyzer'
+            AND    upper(owner)=upper(nvl(tmp_owner,owner))
+            ORDER  BY decode(upper(owner),upper(tmp_owner),1,upper(user),2,3)) a
+        WHERE rownum < 2;
+        usr     := tmp_owner;
+        tsk     := tmp_name;
+        fulltask:= usr||'.'||tsk;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            IF own IS NULL THEN
+                raise_application_error(-20001,'No such SQL Performance Analyzer task: '||nvl(tsk,tid));
+            ELSE
+                usr     := tmp_owner;
+                tsk     := tmp_name;
+                tid     := NULL;
+                fulltask:= usr||'.'||tsk;
+            END IF;
+    END;
+
+    PROCEDURE check_exec(name VARCHAR2,new_name boolean:=false) IS
+    BEGIN
+        IF name IS NULL THEN
+            IF new_name IS NOT NULL THEN
+                raise_application_error(-20001,'Please specify the execution name.');
+            END IF;
+            RETURN;
+        END IF;
+        SELECT execution_id,execution_name,execution_type,status
+        INTO   eid,nam,typ,estatus
+        FROM   dba_advisor_executions
+        WHERE  task_id=tid
+        AND    (execution_id=regexp_substr(name,'^\d+$') or upper(execution_name)=upper(name));
+        IF new_name or new_name IS NULL THEN
+            raise_application_error(-20001,'Invalid new execution "'||nam||'('||eid||')" in task '||fulltask||', target already exists.');
+        END IF;
+    EXCEPTION WHEN no_data_found THEN
+        IF NOT new_name THEN
+            raise_application_error(-20001,'Invalid execution "'||name||'" in task '||fulltask);
+        END IF;
+    END;
+
     PROCEDURE report_start IS
     BEGIN
         IF dyn_lvl IS NULL THEN
@@ -71,15 +162,129 @@ DECLARE
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
 BEGIN
-    SELECT MAX(task_name),max(owner),nvl(max(task_id),tid)
-    INTO   tsk,own,tid
-    FROM   dba_advisor_tasks
-    WHERE  (task_id=tid OR upper(task_name)=upper(:V1))
-    AND    advisor_name LIKE 'SQL Performance%';
-
-    IF tid IS NOT NULL AND tsk IS NULL THEN
-        raise_application_error(-20001,'Target task id is not a valid SPA task!');
-    ELSIF tsk IS NOT NULL THEN
+    tsk := nullif(tsk,''||tid);
+    dbms_output.enable(null);
+    IF tid IS NOT NULL OR tsk IS NOT NULL THEN
+        check_task(CASE WHEN op='CREATE' THEN usr END);
+    END IF;
+    IF op = 'CREATE' THEN
+        IF tid IS NOT NULL THEN
+            raise_application_error(-20001,'Invalid new task name: '||tid);
+        END IF;
+        
+        IF tid IS NOT NULL THEN
+            raise_application_error(-20001,'Target task already exists: '||fulltask);
+        ELSIF v3 IS NULL THEN
+            raise_application_error(-20001,'Please specify the source sqlset name');
+        END IF;
+        parse_name(v3);
+        dbms_output.put_line('SQL Performance Analyzer task is created: '||user||'.'||
+            dbms_sqlpa.create_analysis_task(
+                sqlset_owner=>tmp_owner,
+                sqlset_name =>tmp_name,
+                task_name   =>tsk,
+                basic_filter=>:filter));
+        dbms_sqlpa.execute_analysis_task(
+            task_name      => tsk,
+            execution_type => 'CONVERT SQLSET',
+            execution_name => 'CONVERT_SQLSET');
+        dbms_sqlpa.set_analysis_task_parameter(tsk,'COMPARISON_METRIC','COMPARISON_METRIC');
+        RETURN;
+    ELSIF op = 'DROP' THEN
+        sys.dbms_sqlpa.drop_analysis_task(tsk);
+        dbms_output.put_line('SQL Performance Analyzer task is dropped: '||fulltask);
+        RETURN;
+    ELSIF op = 'ALTER' THEN
+        IF v3 IS NULL THEN
+            dbms_output.put_line('Please specify the parameter name and value.');
+        ELSE
+            dbms_sqlpa.set_analysis_task_parameter(tsk,v3,v4);
+        END IF;
+    ELSIF op in ('COMPARE','DIFF') THEN
+        IF v3 IS NULL OR V4 IS NULL THEN
+            raise_application_error(-20001,'Please specify the pre and post execution name for the comparison.');
+        END IF;
+        op     := 'COMPARE';
+        check_exec(v3);
+        sid    := eid;
+        pre    := nam;
+        check_exec(v4);
+        post   := nam;
+        nam    := 'DIFF_'||sid||'_'||eid;
+        dop    := 1;
+        check_exec(v5,NULL);
+        nam    := sys.dbms_sqlpa.execute_analysis_task(
+            task_name       => tsk,
+            execution_type  => op,
+            execution_name  => v5,
+            execution_params=> sys.dbms_advisor.arglist(
+                'execution_name1', pre, 
+                'execution_name2', post));
+        check_exec(nam);
+        key := 'HTML';
+        dbms_output.put_line('Execution '||nam||'('||eid||') of task '||tsk||' is completed with default COMPARISON_METRIC.');
+    ELSIF op IN ('EXEC','EXECUTE','TEST','XPLAN','EXPLAIN') THEN
+        check_exec(trim('.' from v3),null);
+        dop := regexp_substr(v4,'^\d+$');
+        IF dop IS NOT NULL THEN
+            BEGIN
+                sys.dbms_sqlpa.set_analysis_task_parameter(tsk,'TEST_EXECUTE_DOP',dop);
+            EXCEPTION WHEN OTHERS THEN 
+                dbms_output.put_line('Unsupported TEST_EXECUTE_DOP parameter in this Oracle release.');
+            END;
+        END IF;
+        IF op IN ('EXEC','EXECUTE','TEST') THEN
+            op := 'EXECUTE';
+        ELSIF op IN('XPLAN','EXPLAIN') THEN
+            op := 'EXPLAIN';
+        END IF;
+        stmt := utl_lms.format_message(
+                    q'~BEGIN sys.dbms_sqlpa.execute_analysis_task(task_name=>'%s',execution_type=>'%s',execution_name=>'%s'); END;~',
+                    tsk,op,nam);
+        IF &sync=1 THEN
+            execute immediate stmt;
+            dbms_output.put_line('Execution '||nam||' of task '||tsk||' is completed.');
+        ELSE
+            snam := dbms_scheduler.generate_job_name('SPA_EXEC_');
+            dbms_scheduler.create_job(
+                job_name   => snam,
+                job_type   => 'PLSQL_BLOCK',
+                job_action => stmt,
+                enabled    => true);
+            dbms_output.put_line('Execution '||nam||' of task '||tsk||' is running in background job '||snam);
+        END IF;
+    ELSIF op ='STOP' THEN
+        check_exec(v3);
+        IF estatus NOT IN('INTERRUPTED','EXECUTING') THEN
+            raise_application_error(-20001,'The target execution is not interrupted or executing.');
+        END IF;
+        sys.dbms_sqlpa.cancel_analysis_task(tsk);
+    ELSIF op ='PAUSE' THEN
+        check_exec(v3);
+        IF estatus NOT IN('EXECUTING') THEN
+            raise_application_error(-20001,'The target execution is not executing.');
+        END IF;
+        sys.dbms_sqlpa.interrupt_analysis_task(tsk);
+    ELSIF op='RESUME' THEN
+        check_exec(v3);
+        IF estatus NOT IN('INTERRUPTED') THEN
+            raise_application_error(-20001,'The target execution is not interrupted.');
+        END IF;
+        stmt := 'BEGIN sys.dbms_sqlpa.resume_analysis_task('''||tsk||'''); END;';
+        IF &sync=0 THEN
+            snam := dbms_scheduler.generate_job_name('SPA_EXEC_');
+            dbms_scheduler.create_job(
+                job_name   => snam,
+                job_type   => 'PLSQL_BLOCK',
+                job_action => stmt,
+                enabled    => true);
+            dbms_output.put_line('Execution '||nam||' of task '||tsk||' is running in background job '||snam);
+        ELSE
+            execute immediate stmt;
+        END IF;
+    END IF;
+   
+    IF tsk IS NOT NULL THEN
         SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                MAX(attr3),MAX(attr1),nvl(MAX(fil),'1=1'),max(sq_id)，max(sq_nid),max(sq_txt)
         INTO   sown,snam,fil,sq_id,sq_nid,sq_txt
@@ -88,7 +293,7 @@ BEGIN
                    decode(type,'SQLSET',attr1) attr1,
                    null fil,
                    decode(type,'SQL',attr1) sq_id,
-                   decode(type,'SQL',attr17) sq_nid,
+                   decode(type,'SQL',&attr17) sq_nid,
                    decode(type,'SQL',trim(regexp_replace(to_char(substr(attr4,1,200)),'\s+',' '))) sq_txt
             FROM   dba_advisor_objects 
             WHERE  TASK_ID = tid
@@ -123,21 +328,23 @@ BEGIN
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
                      (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
-                     (SELECT decode(T,'SQL',attr1||' -> '|| nvl(attr17,attr3),nullif(attr3||'.'||attr1,'.')) FROM 
-                         (SELECT TYPE t,attr3,attr1,attr17
-                          FROM   dba_advisor_objects b
-                          WHERE  task_id = a.task_id
-                          AND    EXECUTION_NAME IS NULL
-                          AND    TYPE IN('SQLSET','SQL')
-                          UNION ALL 
-                          SELECT 'SQLSET',
-                                 MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value)),
-                                 MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)),
-                                 ''
-                          FROM   dba_advisor_parameters
-                          WHERE  TASK_ID = a.task_id
-                          AND    parameter_value!='UNUSED')
-                     WHERE ROWNUM<2) SQLSET
+                     (SELECT decode(MAX(y.type),
+                                'SQL'   ,MAX(y.attr1||' -> '|| nvl(sqln,y.attr3)),
+                                'SQLSET',MAX(nullif(y.attr3||'.'||y.attr1,'.')),
+                                nullif(MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value)) ||
+                                  '.'||MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)) ,'.'))
+                      FROM   (
+                             SELECT * 
+                             FROM   dba_advisor_parameters 
+                             WHERE  parameter_name in('SQLSET_OWNER','SQLSET_NAME') 
+                             AND    parameter_value!='UNUSED') x
+                      FULL JOIN (
+                             SELECT y.*,&attr17 sqln 
+                             FROM   dba_advisor_objects y 
+                             WHERE  type in('SQLSET','SQL') 
+                             AND    execution_name IS NULL) y
+                      USING (task_id)
+                      WHERE  task_id = a.task_id) SQLSET
               FROM   (SELECT task_id, advisor_name, owner, task_name, execution_start, execution_end, status,DESCRIPTION
                       FROM   dba_advisor_tasks a
                       WHERE  (&FILTER)
@@ -177,7 +384,7 @@ BEGIN
             USING  (TASK_ID)
             ORDER  BY execution_start DESC NULLS LAST;
     ELSIF eid IS NULL THEN
-        m1 := 'TASK PARAMETERS FOR '||own||'.'||tsk;
+        m1 := 'TASK PARAMETERS FOR '||fulltask;
         OPEN c1 FOR
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                    PARAMETER_NAME,
@@ -203,50 +410,51 @@ BEGIN
             WHERE  TASK_ID = tid
             AND    EXECUTION_NAME IS NULL
             ORDER  BY PARAMETER_NAME;
-
-        m2 := 'EXECUTIONS FOR '||own||'.'||tsk;
-        OPEN c2 FOR
-            SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
-                   EXECUTION_ID EXEC_ID,
-                   EXECUTION_NAME,
-                   EXECUTION_TYPE,
-                   EXECUTION_START,
-                   EXECUTION_END,
-                   STATUS,
-                   &ver  REQUESTED_DOP REQ_DOP, ACTUAL_DOP ACT_DOP,
-                   DECODE(
-                    EXECUTION_TYPE,'CONVERT SQLSET',
-                    EXTRACTVALUE(dbms_xmlgen.getxmltype(
-                         'SELECT COUNT(1) X
-                          FROM   DBA_SQLSET_STATEMENTS
-                          WHERE  sqlset_owner='''||sown||'''
-                          AND    sqlset_name='''||snam||'''
-                          AND    ('||fil||')'),'//X')+0,
-                   (SELECT COUNT(1) 
-                    FROM  DBA_ADVISOR_OBJECTS 
-                    WHERE task_id=tid 
-                    AND   execution_name=a.execution_name)) objs,
-                   (SELECT COUNT(1) 
-                    FROM  DBA_ADVISOR_FINDINGS
-                    WHERE task_id=tid 
-                    AND   execution_name=a.execution_name) finds,
-                   (SELECT CASE WHEN A.EXECUTION_TYPE LIKE 'COMPARE%' THEN
-                               MAX(DECODE(n,'COMPARISON_METRIC',v||': ')) ||
-                               MAX(DECODE(n,'EXECUTION_NAME1',v||'/')) ||
-                               MAX(DECODE(n,'EXECUTION_NAME2',v))
-                           ELSE 
-                               'PLAN_FILTER: '||MAX(DECODE(n,'PLAN_FILTER',v))
-                           END
-                    FROM  (SELECT TASK_ID,execution_name,parameter_name n,parameter_value v from DBA_ADVISOR_EXEC_PARAMETERS) B 
-                    WHERE task_id=tid 
-                    AND   execution_name=a.execution_name
-                    AND   v!='UNUSED') ATTR1,
-                   ERROR_MESSAGE
-            FROM   DBA_ADVISOR_EXECUTIONS A
-            WHERE  task_id = tid
-            ORDER  BY EXECUTION_END DESC;
+        IF nvl(op,'x') !='ALTER' THEN
+            m2 := 'EXECUTIONS FOR '||usr||'.'||tsk;
+            OPEN c2 FOR
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+                       EXECUTION_ID EXEC_ID,
+                       EXECUTION_NAME,
+                       EXECUTION_TYPE,
+                       EXECUTION_START,
+                       EXECUTION_END,
+                       STATUS,
+                       &ver  REQUESTED_DOP REQ_DOP, ACTUAL_DOP ACT_DOP,
+                       DECODE(
+                        EXECUTION_TYPE,'CONVERT SQLSET',
+                        EXTRACTVALUE(dbms_xmlgen.getxmltype(
+                             'SELECT COUNT(1) X
+                              FROM   DBA_SQLSET_STATEMENTS
+                              WHERE  sqlset_owner='''||sown||'''
+                              AND    sqlset_name='''||snam||'''
+                              AND    ('||fil||')'),'//X')+0,
+                       (SELECT COUNT(1) 
+                        FROM  DBA_ADVISOR_OBJECTS 
+                        WHERE task_id=tid 
+                        AND   execution_name=a.execution_name)) objs,
+                       (SELECT COUNT(1) 
+                        FROM  DBA_ADVISOR_FINDINGS
+                        WHERE task_id=tid 
+                        AND   execution_name=a.execution_name) finds,
+                       (SELECT CASE WHEN A.EXECUTION_TYPE LIKE 'COMPARE%' THEN
+                                   MAX(DECODE(n,'COMPARISON_METRIC',v||': ')) ||
+                                   MAX(DECODE(n,'EXECUTION_NAME1',v||'/')) ||
+                                   MAX(DECODE(n,'EXECUTION_NAME2',v))
+                               ELSE 
+                                   'PLAN_FILTER: '||MAX(DECODE(n,'PLAN_FILTER',v))
+                               END
+                        FROM  (SELECT TASK_ID,execution_name,parameter_name n,parameter_value v from DBA_ADVISOR_EXEC_PARAMETERS) B 
+                        WHERE task_id=tid 
+                        AND   execution_name=a.execution_name
+                        AND   v!='UNUSED') ATTR1,
+                       ERROR_MESSAGE
+                FROM   DBA_ADVISOR_EXECUTIONS A
+                WHERE  task_id = tid
+                ORDER  BY EXECUTION_END DESC;
+        END IF;
     ELSE
-        key := CASE WHEN key IS NULL THEN '%' WHEN KEY='R' THEN NULL ELSE '%'||key||'%' END;
+        key := CASE WHEN key IS NULL THEN '%' WHEN KEY IN('HTML','HTM','TEXT','TXT','ACTIVE') THEN KEY ELSE '%'||key||'%' END;
 
         SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                MAX(b.EXECUTION_TYPE),
@@ -261,7 +469,7 @@ BEGIN
         AND    a.EXECUTION_NAME=b.EXECUTION_NAME
         AND    b.EXECUTION_ID=eid;
 
-        m1 := 'PARAMETERS FOR TASK PARAMETER '||own||'.'||tsk|| ' -> '||nam;
+        m1 := 'PARAMETERS FOR TASK PARAMETER '||usr||'.'||tsk|| ' -> '||nam;
         OPEN c1 FOR
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                    PARAMETER_NAME,
@@ -300,9 +508,9 @@ BEGIN
                     AND    EXECUTION_NAME in(pre,post)),
                 F AS(
                     SELECT attr1 org_sql,
-                           coalesce(pre.attr17,sq_nid,attr1) prev_sql,
+                           coalesce(pre.sqln,sq_nid,attr1) prev_sql,
                            nvl(p1.phv,''||f.attr5) prev_phv,
-                           coalesce(post.attr17,sq_nid,attr1) post_sql,
+                           coalesce(post.sqln,sq_nid,attr1) post_sql,
                            nvl(p2.phv,''||f.attr5) post_phv,
                            '|' "|",
                            f.attr10 execs,
@@ -313,24 +521,24 @@ BEGIN
                            '|' "*",
                            nvl(sq_txt,substr(sql_text,1,200)) sql_text
                     FROM (SELECT * FROM R WHERE EXECUTION_NAME=nam) F
-                    LEFT JOIN (SELECT * FROM R WHERE EXECUTION_NAME=pre) PRE USING(ATTR1)
-                    LEFT JOIN (SELECT * FROM R WHERE EXECUTION_NAME=post) POST USING(ATTR1)
-                    LEFT JOIN (SELECT * FROM S WHERE EXECUTION_NAME=pre) p1 USING(ATTR1)
-                    LEFT JOIN (SELECT * FROM S WHERE EXECUTION_NAME=post) p2 USING(ATTR1)
+                    LEFT JOIN (SELECT R.*,&attr17 sqln FROM R WHERE EXECUTION_NAME=pre) PRE USING(ATTR1)
+                    LEFT JOIN (SELECT R.*,&attr17 sqln FROM R WHERE EXECUTION_NAME=post) POST USING(ATTR1)
+                    LEFT JOIN (SELECT S.* FROM S WHERE EXECUTION_NAME=pre) p1 USING(ATTR1)
+                    LEFT JOIN (SELECT S.* FROM S WHERE EXECUTION_NAME=post) p2 USING(ATTR1)
                     LEFT JOIN (SELECT /*+no_merge*/ DISTINCT
                                      sql_id attr1,
                                      trim(regexp_replace(to_char(substr(sql_text,1,2500)),'\s+',' ')) sql_text
                                FROM  DBA_SQLSET_STATEMENTS 
                                WHERE sqlset_owner=sown
                                AND   sqlset_name=snam) s USING(attr1)
-                    WHERE key IS NULL 
-                    OR    upper(attr1||'~'||pre.attr17||'~'||post.attr17||
+                    WHERE substr(key,1,1)!='%' 
+                    OR    upper(attr1||'~'||pre.sqln||'~'||post.sqln||
                                 f.attr5||'~'||p1.phv||'~'||p2.phv||'~'||sql_text)
                     LIKE  key
                     ORDER BY &ord1 DESC NULLS LAST)
                 SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ * FROM F WHERE ROWNUM<=50;
         ELSIF typ like 'CONVERT%' THEN
-            OPEN c2 FOR replace(q'~
+            stmt := replace(q'~
                 SELECT * FROM (
                     SELECT /*+no_expand opt_param('optimizer_dynamic_sampling' 5)*/ 
                          round(ratio_to_report(@ord@) over(),4) "Weight",
@@ -346,10 +554,12 @@ BEGIN
                          trim(regexp_replace(to_char(substr(sql_text,1,200)),'\s+',' ')) sql_text
                     FROM  DBA_SQLSET_STATEMENTS 
                     WHERE sqlset_owner=:sown AND sqlset_name=:snam
-                    AND   (:1 is null OR upper(sql_id||'/'||plan_hash_value) like :1 OR upper(sql_text) like :1)~'
+                    AND   (substr(:1,1,1)!='%' OR upper(sql_id||'/'||plan_hash_value) like :1 OR upper(sql_text) like :1)~'
                     ||' AND ('||fil||')
                     ORDER BY sort_value DESC NULLS LAST
-                ) WHERE ROWNUM<=50','@ord@',ord) USING sown,snam,key,key,key;
+                ) WHERE ROWNUM<=50','@ord@',ord);
+            --dbms_output.put_line(stmt);
+            OPEN c2 FOR stmt USING sown,snam,key,key,key;
         ELSE
             ord := CASE WHEN typ like 'EXPLAIN%' THEN 'ela' ELSE ord end;
             OPEN c2 FOR replace(q'~
@@ -358,7 +568,7 @@ BEGIN
                          round(ratio_to_report(@ord@) over(),4) "Weight",
                          sql_id org_sql_id,
                          phv org_plan,
-                         coalesce(attr17,:sq_id,sql_id) act_sql_id,
+                         coalesce(sqln,:sq_id,sql_id) act_sql_id,
                          plan_hash_value plan_hash,
                          '|' "|",
                          @ord@ sort_value,
@@ -368,7 +578,7 @@ BEGIN
                          round(decode(EXECUTION_TYPE,'EXPLAIN PLAN',cpu/nullif(ela,0),cpu_time/nullif(elapsed_time,0)),4) cpu,
                          '|' "*",
                          nvl(:sq_txt,trim(regexp_replace(to_char(substr(sql_text,1,200)),'\s+',' '))) sql_text
-                    FROM  (select a.*,attr1 sql_id FROM DBA_ADVISOR_OBJECTS A) A
+                    FROM  (select a.*,attr1 sql_id,&attr17 sqln FROM DBA_ADVISOR_OBJECTS A) A
                     RIGHT JOIN  DBA_ADVISOR_SQLSTATS B
                     USING (task_id,execution_name,sql_id)
                     LEFT JOIN (
@@ -386,23 +596,22 @@ BEGIN
                         WHERE seq=1) s USING(sql_id)
                     WHERE task_id=:x
                     AND   EXECUTION_NAME=:y
-                    AND   (:1 is null OR upper(sql_id||'/'||attr17||'/'||phv||'/'||plan_hash_value) like :1 OR upper(sql_text) like :1)
+                    AND   (substr(:1,1,1)!='%' OR upper(sql_id||'/'||sqln||'/'||phv||'/'||plan_hash_value) like :1 OR upper(sql_text) like :1)
                     ORDER BY sort_value DESC NULLS LAST
                 ) WHERE ROWNUM<=50~','@ord@',ord) USING sq_nid,sq_txt,sown,snam,tid,nam,key,key,key;
         END IF;
 
-        IF KEY IS NULL THEN
+        IF KEY IN('HTML','HTM','TEXT','ACTIVE') THEN
             fname := 'spa_'||tid||'_'||eid||'.';
             report_start;
-            IF DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN
-                fname := fname ||'html';
-                EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>:1,task_owner=>:2,section=>''ALL'',level=>''ALL'',type=>''HTML'');END;' 
-                    USING OUT frs,tsk,own;
-            ELSE
+            IF key IN ('TEXT','TXT') or DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE<14 THEN
                 fname := fname ||'txt';
-                EXECUTE IMMEDIATE 'BEGIN :rs :=sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>:1,task_owner=>:2,section=>''ALL'',level=>''ALL'');END;' 
-                    USING OUT frs,tsk,own;
+                key   := 'TEXT';
+            ELSE
+                fname := fname ||'html';
+                key   := regexp_replace(key,'^HTM$','HTML');
             END IF;
+            frs := sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>tsk,task_owner=>usr,section=>'ALL',level=>'ALL',type=>key);
             report_end;
         END IF;
     END IF;

@@ -55,6 +55,7 @@
         }
         &avg: df={total} avg={avg}
         @ver: 11.2={} default={--}
+        @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
     --]]
 ]]*/
 
@@ -84,7 +85,7 @@ SELECT pct,
        reads,writes,buff,
        RWS "ROWS",
        PX,
-       (SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,100)) text FROM DBA_HIST_SQLTEXT WHERE SQL_ID=a.top_sql and dbid=a.dbid and rownum<2) SQL_TEXT
+       EXTRACTVALUE(DBMS_XMLGEN.GETXMLTYPE(q'~SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'['||chr(10)||chr(13)||chr(9)||' ]+',' '),1,200)) text FROM &check_access_pdb.SQLTEXT WHERE SQL_ID='~'||regexp_substr(a.top_sql,'\w+')||''' and dbid='||a.dbid||' and rownum<2'),'//TEXT') SQL_TEXT
 FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                ratio_to_report(val) over() pct
         FROM (
@@ -139,7 +140,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            SUM(PLSEXEC_TIME+JAVEXEC_TIME) PLSQL,
                            SUM(cellio) cellio,
                            SUM(oflin) oflin,
-                           SUM(oflout) oflout,
+                           sign(SUM(oflin))*SUM(oflout) oflout,
                            SUM(greatest(disk_reads,phyread)) READ,
                            SUM(nvl(phywrite,direct_writes)) WRITE,
                            sum(buffer_gets) buff,

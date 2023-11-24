@@ -4,10 +4,12 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     local stmt=[[
     DECLARE
         v_SQL CLOB:=:1;
-        PROCEDURE extract_profile(p_buffer     OUT CLOB,
-                                  p_sqlid      VARCHAR2,
-                                  p_plan       VARCHAR2 := NULL,
-                                  p_forcematch BOOLEAN := true) IS
+        FUNCTION extract_profile(p_buffer     OUT CLOB,
+                                 p_sqlid      VARCHAR2,
+                                 p_plan       VARCHAR2 := NULL,
+                                 p_dbid       INT := NULL,
+                                 p_forcematch BOOLEAN := true) 
+        RETURN VARCHAR2 IS
             /*
             To generate the script to fix the execution plan with SQL profile
             Parameters:
@@ -30,7 +32,10 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             */
             v_signature   INT;
             v_source      VARCHAR2(128);
-            l_plan        VARCHAR2(128);
+            v_flag        PLS_INTEGER := CASE WHEN upper(p_plan) IN('PLAN','PLAN_TABLE') THEN 0 WHEN nullif(p_plan,p_sqlid) IS NULL THEN 1 ELSE 2 END;
+            v_plan        INT;
+            v_dbid        INT := p_dbid;
+            v_sql_id      VARCHAR2(30);
             v_plan_source VARCHAR2(128);
             v_hints       xmltype;
             v_hints2      xmltype;
@@ -42,181 +47,226 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             v_schema      VARCHAR2(60):='<unknown>';
             
             PROCEDURE get_sql(p_sqlid VARCHAR2,pos PLS_INTEGER:=1) IS
+                phv INT := nullif(regexp_substr(p_plan,'^\d+$'),0);
             BEGIN
-                SELECT  /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/ sql_text, src
+                v_sql_id := p_sqlid;
+                SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/ 
+                       sql_text, src
                 INTO   v_sql, v_source
                 FROM   (
                         --awr and sqlset
-                        SELECT SQL_TEXT,  p_sqlid src
+                        SELECT SQL_TEXT,  v_sql_id src
                         FROM   dba_hist_sqltext a
-                        WHERE  sql_id = p_sqlid
+                        WHERE  sql_id = v_sql_id
                         UNION ALL
-                        SELECT SQL_FULLTEXT, p_sqlid
+                        SELECT SQL_FULLTEXT, v_sql_id
                         FROM   gv$sql a
-                        WHERE  sql_id = p_sqlid
+                        WHERE  sql_id = v_sql_id
                         UNION ALL
-                        SELECT SQL_TEXT, p_sqlid
+                        SELECT SQL_TEXT, v_sql_id
                         FROM   all_sqlset_statements a
-                        WHERE  sql_id = p_sqlid
-                    $IF DBMS_DB_VERSION.VERSION>10  $THEN
+                        WHERE  sql_id = v_sql_id
+                    $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                        UNION ALL
+                        SELECT TO_CLOB(SQL_TEXT), v_sql_id
+                        FROM   gv$sql_monitor a
+                        WHERE  IS_FULL_SQLTEXT='Y'
+                        AND    sql_text IS NOT NULL
+                        AND    sql_id = v_sql_id 
+                        AND    rownum<2
+                    $END
+                    $IF 1=1 AND DBMS_DB_VERSION.VERSION>10  $THEN
                         UNION ALL
                         SELECT SQL_TEXT,
-                               decode(b.obj_type, 1, p_sqlid, 2,  substr(p_sqlid, -26)) src
+                               decode(b.obj_type, 1, v_sql_id, 2,  substr(v_sql_id, -26)) src
                         FROM   sys.sqlobj$ b, sys.sql$text a
-                        WHERE  p_sqlid in(b.name,a.sql_handle)
+                        WHERE  v_sql_id in(b.name,a.sql_handle)
                         AND    b.signature = a.signature
                     $ELSE
                         UNION ALL
-                        SELECT SQL_TEXT, p_sqlid src
+                        SELECT SQL_TEXT, v_sql_id src
                         FROM   sys.sqlprof$ b, sys.sql$text a
-                        WHERE  b.sp_name = p_sqlid
+                        WHERE  b.sp_name = v_sql_id
                         AND    b.signature = a.signature
                     $END)
                 WHERE  rownum < 2;
                 
-                IF pos=2 THEN
-                    l_plan := p_sqlid;
-                ELSE
-                    SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 
+                IF pos=1 AND v_plan IS NULL THEN
+                    SELECT /*+OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/ 
                            max(schema_name),
-                           coalesce(''||max(phv),p_sqlid)
-                    INTO v_schema,l_plan
+                           max(nullif(p,0)),
+                           max(src),
+                           nvl(max(dbid),v_dbid)
+                    INTO v_schema,v_plan,v_plan_source,v_dbid
                     FROM (
-                        SELECT PARSING_SCHEMA_NAME schema_name,nullif(plan_hash_value,0) phv,last_active_time last_active
-                        FROM   GV$SQL
-                        WHERE  sql_id=p_sqlid
-                        AND    ROWNUM<nvl2(l_plan,2,100)
-                        UNION ALL
-                        SELECT PARSING_SCHEMA_NAME,nullif(plan_hash_value,0),end_interval_time+0
-                        FROM    DBA_HIST_SQLSTAT
-                        JOIN    DBA_HIST_SNAPSHOT USING(DBID,INSTANCE_NUMBER,SNAP_ID) 
-                        WHERE   SQL_ID=p_sqlid
-                        AND    ROWNUM<nvl2(l_plan,2,100)
-                    $IF DBMS_DB_VERSION.VERSION>10  $THEN
-                        UNION ALL
-                        SELECT USERNAME,snullif(ql_plan_hash_value,0) phv,LAST_REFRESH_TIME
-                        FROM   GV$SQL_MONITOR 
-                        WHERE  sql_id=p_sqlid and username is not null
-                        AND    ROWNUM<nvl2(l_plan,2,100)
-                    $END
-                        ORDER BY last_active desc
+                        SELECT * FROM (
+                            SELECT PARSING_SCHEMA_NAME schema_name,'SQL' src,plan_hash_value p,last_active_time last_active,v_dbid dbid
+                            FROM   GV$SQL
+                            WHERE  sql_id=v_sql_id
+                            AND    plan_hash_value>0
+                            UNION ALL
+                            SELECT MAX(PARSING_SCHEMA_NAME) OVER(),'AWR',plan_hash_value,nvl(c.end_interval_time+0,a.timestamp),dbid
+                            FROM   DBA_HIST_SQL_PLAN A
+                            LEFT   JOIN DBA_HIST_SQLSTAT B USING(DBID,SQL_ID,PLAN_HASH_VALUE)
+                            LEFT   JOIN DBA_HIST_SNAPSHOT C USING(DBID,INSTANCE_NUMBER,SNAP_ID) 
+                            WHERE  SQL_ID=v_sql_id
+                            UNION ALL
+                            SELECT PARSING_SCHEMA_NAME,'SQLSET',plan_hash_value,plan_timestamp,v_dbid
+                            FROM   all_sqlset_statements
+                            WHERE  sql_id=v_sql_id
+                            AND    plan_hash_value>0
+                        $IF DBMS_DB_VERSION.VERSION>11  $THEN
+                            UNION ALL
+                            SELECT USERNAME,'MON',sql_plan_hash_value,LAST_REFRESH_TIME,v_dbid
+                            FROM   GV$SQL_MONITOR 
+                            WHERE  sql_id=v_sql_id
+                            AND    sql_plan_hash_value>0
+                            AND    username is not null
+                        $END
+                        ) 
+                        ORDER BY DECODE(p,phv,1,2),decode(dbid,v_dbid,1,2),last_active desc
                     ) WHERE ROWNUM<2;
+                    
+                    IF v_plan IS NOT NULL AND ''||v_plan=p_plan THEN
+                        v_flag := 1;
+                    END IF;
                 END IF;
             EXCEPTION
                 WHEN no_data_found THEN
                     IF pos=1 THEN
-                        raise_application_error(-20001, 'Cannot find sql text for '||p_sqlid||'!');
+                        raise_application_error(-20001, 'Cannot find SQL text of '||v_sql_id);
                     END IF;
             END;
 
             PROCEDURE get_plan(p_sql_id varchar2) IS
-                v_plan VARCHAR2(50);
-                phv    INT := regexp_substr(l_plan, '^\d+$');
+                qid    VARCHAR2(128):=CASE WHEN v_flag=1 THEN v_sql_id ELSE p_sql_id END;
+                phv    INT := nvl(regexp_substr(qid, '^\d+$'),v_plan);
             BEGIN
-                v_plan := CASE
-                              WHEN l_plan IS NULL THEN '%'
-                              WHEN upper(l_plan) IN('PLAN','PLAN_TABLE') then '-1'
-                              ELSE nvl(''||phv, 'z') || '%'
-                          END;
-                SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/ 
-                       xmltype(other_xml), src
-                INTO   v_hints, v_plan_source
-                FROM   (SELECT  /*+PQ_CONCURRENT_UNION no_expand*/other_xml, src
-                        FROM   (SELECT other_xml, 'memory' src, sql_id, plan_hash_value
-                                FROM   gv$sql_plan a
-                                WHERE  other_xml IS NOT NULL
-                                AND    v_plan!='-1'
-                                AND    (sql_id = l_plan or plan_hash_value=phv)
-                                AND    rownum<2
-                                AND    nvl(p_sql_id,'-')!='_x_'
-                                UNION ALL
-                                SELECT other_xml, 'plan table' src, decode(upper(statement_id),upper(l_plan),l_plan,p_sql_id), -1
-                                FROM   plan_table a
-                                WHERE  other_xml IS NOT NULL 
-                                AND    (p_sql_id='_x_' 
-                                        AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from PLAN_TABLE)
-                                        OR UPPER(statement_id) = UPPER(l_plan)) 
-                                AND    v_plan='-1'
-                                UNION ALL
-                                SELECT other_xml, 'awr' src, sql_id, plan_hash_value
-                                FROM   dba_hist_sql_plan a
-                                WHERE  other_xml IS NOT NULL
-                                AND    v_plan!='-1'
-                                AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = l_plan or plan_hash_value=phv)
-                                AND     rownum<2
-                                UNION ALL
-                                SELECT other_xml, 'sqlset', sql_id, plan_hash_value
-                                FROM   dba_sqlset_plans a
-                                WHERE  other_xml IS NOT NULL
-                                AND    v_plan!='-1'
-                                AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = l_plan or plan_hash_value=phv)
-                                AND     rownum<2
-                                $IF DBMS_DB_VERSION.VERSION>11 $THEN
-                                UNION ALL
-                                SELECT other_xml, 'monitor', sql_id, SQL_PLAN_HASH_VALUE
-                                FROM   gv$sql_plan_monitor a
-                                WHERE  other_xml IS NOT NULL
-                                AND    v_plan!='-1'
-                                AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = l_plan or sql_plan_hash_value=phv)
-                                AND     rownum<2
-                                $END
-                                $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                                UNION ALL
-                                SELECT other_xml, 'advisor', sql_id, plan_hash_value
-                                FROM   dba_advisor_sqlplans a
-                                WHERE  other_xml IS NOT NULL
-                                AND    v_plan!='-1'
-                                AND    nvl(p_sql_id,'-')!='_x_'
-                                AND    (sql_id = l_plan or plan_hash_value=phv)
-                                AND     rownum<2
-                                $END
-                        )
-                        WHERE  rownum < 2
+                --dbms_output.put_line(v_flag||','||v_plan||','||phv||','||qid);
+                SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/ 
+                       xmltype(other_xml), src, p
+                INTO   v_hints, v_plan_source, v_plan
+                FROM   (SELECT other_xml, 'GV$SQL_PLAN' src, plan_hash_value p
+                        FROM   gv$sql_plan a
+                        WHERE  v_flag = 1
+                        AND    v_plan_source='SQL'
+                        AND    sql_id = qid 
+                        AND    plan_hash_value=phv
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'GV$SQL_PLAN' src, plan_hash_value phv
+                        FROM   gv$sql_plan a
+                        WHERE  v_flag = 2
+                        AND    qid IN(sql_id,''||plan_hash_value)
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'PLAN_TABLE' src, -1
+                        FROM   plan_table a
+                        WHERE  (v_flag=0 AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from PLAN_TABLE)
+                                  OR 
+                                v_flag=2 AND UPPER(qid) IN(''||plan_id,upper(statement_id))) 
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'DBA_HIST_SQL_PLAN' src, plan_hash_value
+                        FROM   dba_hist_sql_plan a
+                        WHERE  v_flag = 1
+                        AND    v_plan_source='AWR'
+                        AND    sql_id = qid 
+                        AND    plan_hash_value=phv
+                        AND    dbid=v_dbid
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'DBA_HIST_SQL_PLAN' src, plan_hash_value
+                        FROM   dba_hist_sql_plan a
+                        WHERE  v_flag = 2
+                        AND    qid IN(sql_id,''||plan_hash_value)
+                        AND    dbid=v_dbid
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'ALL_SQLSET_PLANS', plan_hash_value
+                        FROM   all_sqlset_plans a
+                        WHERE  v_flag = 1
+                        AND    v_plan_source='SQLSET'
+                        AND    sql_id = qid 
+                        AND    plan_hash_value=phv
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'ALL_SQLSET_PLANS', plan_hash_value
+                        FROM   all_sqlset_plans a
+                        WHERE  v_flag = 2
+                        AND    qid IN(sql_id,''||plan_hash_value)
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
                     $IF DBMS_DB_VERSION.VERSION>11 $THEN
                         UNION ALL
-                        SELECT other_xml, 'spm' src
-                        FROM   sys.sqlobj$ b, sys.sqlobj$plan a
-                        WHERE  phv IS NULL 
-                        AND    b.name = l_plan
-                        AND    b.signature = a.signature
-                        AND    other_xml is not null
-                        AND    nvl(p_sql_id,'-')!='_x_'
-                        AND    rownum < 2
+                        SELECT other_xml, 'GV$SQL_PLAN_MONITOR', SQL_PLAN_HASH_VALUE
+                        FROM   gv$sql_plan_monitor a
+                        WHERE  v_flag = 1
+                        AND    v_plan_source='MON'
+                        AND    sql_id = qid 
+                        AND    sql_plan_hash_value=phv
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                        UNION ALL
+                        SELECT other_xml, 'GV$SQL_PLAN_MONITOR', SQL_PLAN_HASH_VALUE
+                        FROM   gv$sql_plan_monitor a
+                        WHERE  v_flag = 2
+                        AND    qid IN(sql_id,''||sql_plan_hash_value)
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
                     $END
                     $IF DBMS_DB_VERSION.VERSION>10 $THEN
                         UNION ALL
-                        SELECT comp_data, decode(b.obj_type, 1, 'profile', 'spm') src
+                        SELECT other_xml, 'DBA_ADVISOR_SQLPLANS', plan_hash_value
+                        FROM   dba_advisor_sqlplans a
+                        WHERE  v_flag > 0
+                        AND    qid IN(sql_id,''||plan_hash_value)
+                        AND    other_xml IS NOT NULL
+                        AND    rownum<2
+                    $END
+                    $IF 1=1 AND DBMS_DB_VERSION.VERSION>11 $THEN
+                        UNION ALL
+                        SELECT other_xml, 'SPM' src,null
+                        FROM   sys.sqlobj$ b, sys.sqlobj$plan a
+                        WHERE  v_flag > 0
+                        AND    v_plan_source IS NULL
+                        AND    b.name = qid
+                        AND    b.signature = a.signature
+                        AND    other_xml IS NOT NULL
+                        AND    rownum < 2
+                    $END
+                    $IF 1=1 AND DBMS_DB_VERSION.VERSION>10 $THEN
+                        UNION ALL
+                        SELECT comp_data, decode(b.obj_type, 1, 'SQL Profile', 'SPM') src,null
                         FROM   sys.sqlobj$ b, sys.sqlobj$data a
-                        WHERE  phv IS NULL 
-                        AND    b.name = l_plan
+                        WHERE  v_flag > 0
+                        AND    v_plan_source IS NULL
+                        AND    b.name = qid
                         AND    b.signature = a.signature
                         AND    comp_data is not null
-                        AND    nvl(p_sql_id,'-')!='_x_'
                         AND    rownum < 2
                     $ELSE
                         UNION ALL
                         SELECT Xmlelement("outline_data", xmlagg(Xmlelement("hint", attr_val) ORDER BY attr#)).getclobval() comp_data,
-                               'profile' src
+                               'SQL Profile' src,
+                               null
                         FROM   sys.sqlprof$ b, sys.sqlprof$attr a
-                        WHERE  phv IS NULL 
-                        AND    b.sp_name = l_plan
+                        WHERE  v_flag > 0
+                        AND    v_plan_source IS NULL
+                        AND    b.sp_name = qid
                         AND    b.signature = a.signature
-                        AND    nvl(p_sql_id,'-')!='_x_'
                         AND    rownum < 2
                     $END)
                 WHERE  rownum < 2;
-                
-                IF upper(p_sqlid)='DIFF' THEN
-                    SELECT XMLELEMENT("outline_data", XMLAGG(XMLELEMENT("hint", XMLCDATA(EXTRACTVALUE(VALUE(D), '/hint')))))
-                    INTO   v_hints
-                    FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '/*/outline_data/hint'))) D;
-                END IF;
             EXCEPTION
                 WHEN no_data_found THEN
-                    raise_application_error(-20001, 'Cannot find hints for the execution plan!');
+                    raise_application_error(-20001, 'Cannot find outlines for the execution plan of '||qid);
             END;
 
             PROCEDURE pr(p_text VARCHAR2, flag BOOLEAN DEFAULT TRUE) IS
@@ -264,25 +314,13 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END;
         BEGIN
             dbms_output.enable(NULL);
-            IF upper(p_sqlid)='DIFF' THEN
-                $IF DBMS_DB_VERSION.VERSION>10 $THEN 
-                    IF nvl(instr(p_plan,' '),0)<2 THEN
-                        raise_application_error(-20001,'format: sqlprof <diff> <plan_hash_value_1> <plan_hash_value_1>');
-                    END IF;
-                    get_sql(regexp_substr(p_plan,'[^ ]+',1,1));
-                    get_plan(regexp_substr(p_plan,'[^ ]+',1,3));
-                    v_hints2 := v_hints;
-                    get_plan(regexp_substr(p_plan,'[^ ]+',1,2));
-                    p_buffer:=dbms_xplan.diff_plan_outline(v_sql,v_hints.getclobval,v_hints2.getclobval,nvl(v_schema,sys_context('userenv','current_schema')));
-                $ELSE
-                    raise_application_error(-20001,'Unsupported version!');
-                $END
-                return;
-            END IF;
 
-            IF v_sql IS NULL THEN 
-                get_sql(p_sqlid);
+            IF v_dbid IS NULL THEN
+                SELECT dbid
+                INTO   v_dbid
+                FROM   v$database;
             END IF;
+            get_sql(p_sqlid);
             
             dbms_lob.createtemporary(v_text, TRUE);
             pr('Set define off sqlbl on serveroutput on'||chr(10));
@@ -291,7 +329,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    sql_txt1  CLOB;');
             pr('    sql_prof  SYS.SQLPROF_ATTR;');
             pr('    signature NUMBER;');
-            pr('    sq_id     VARCHAR2(30):='''||p_sqlid||''';');
+            pr('    sq_id     VARCHAR2(30):='''||v_sql_id||''';');
             pr('    prof_name VARCHAR2(30);');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
@@ -303,56 +341,10 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    END IF;');
             pr('    ');
 
-            IF instr(p_plan,' ')>1 THEN
-                pr('    BEGIN');
-                writeSQL(p_plan,'sql_txt1');
-                pr('        --QUERY_REWRITE_INTEGRITY = TRUSTED');
-                pr('        --DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE(sq_id,sql_txt,sql_txt1,false,''GENERAL'');');
-                pr(q'[        dbms_sql_translator.create_profile(prof_name); ]');
-                pr(q'[        execute immediate 'grant all on sql translation profile '||prof_name||' to public';]');
-                pr(q'[    EXCEPTION WHEN OTHERS THEN NULL; END;]');
-                pr(q'[    dbms_sql_translator.register_sql_translation(prof_name,sql_txt,sql_txt1);]');
-                pr(replace(q'[    execute immediate '
-                CREATE OR REPLACE TRIGGER @schema.translate_logon_trigger
-                    AFTER logon ON @schema.schema
-                BEGIN
-                    EXECUTE IMMEDIATE ''alter session set sql_translation_profile = '||user||'.'||prof_name||''';
-                    EXECUTE IMMEDIATE q''{alter session set events = ''10601 trace name context forever, level 32''}'';
-                EXCEPTION WHEN OTHERS THEN NULL;
-                END;';]','@schema',v_schema));
-                pr(q'[    /* or :
-                1. modify existing service:
-                    declare
-                        params dbms_service.svc_parameter_array;
-                    begin
-                        params('SQL_TRANSLATION_PROFILE') := '<OWNER>.SQLPROF';
-                        dbms_service.modify_service(service_name=>'<service_name>',parameter_array=>params);
-                    end;
-                3. create new service:
-                    srvctl add service -db <db_name> -service <service_name> -sql_translation_profile <OWNER>.SQLPROF]');
-                pr('    */');
-                pr('END;');
-                pr('/');
-                p_buffer := v_text;
-                RETURN;
-            END IF;
-
-            get_plan(case when upper(p_plan) IN('PLAN','PLAN_TABLE') or instr(p_plan,' ')>1 then '_x_' end);
+            get_plan(nullif(p_plan,v_sql_id));
 
             v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
-            IF p_plan IS NOT NULL AND NOT regexp_like(p_plan, '^\d+$') AND v_plan_source NOT IN('plan table') THEN
-                v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(regexp_replace(v_sql, '/\*.*?\*/'), TRUE);
-                BEGIN
-                    get_sql(p_plan,2);
-                EXCEPTION WHEN NO_DATA_FOUND THEN
-                    p_buffer:='#Cannot find SQL text for '||p_plan||'!';
-                    return;
-                END;
-                v_sql := regexp_replace(v_sql, '/\*.*?\*/');
-                IF v_signature != dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE) THEN
-                    pr('    --! Warning: Signatures for the 2 SQLs are not matched!');
-                END IF;
-            END IF;
+            
             pr('    sql_prof := SYS.SQLPROF_ATTR(');
             pr('        q''[BEGIN_OUTLINE_DATA]'',');
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
@@ -377,18 +369,19 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             END LOOP;
             
             v_source := substr('PROF_'||nvl(regexp_replace(v_source,'^PROF_'),to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
+            
             IF v_embed IS NOT NULL THEN
                 pr(v_embed);
             END IF;
             pr('        q''[END_OUTLINE_DATA]'');');
             pr('    signature := DBMS_SQLTUNE.SQLTEXT_TO_SIGNATURE(sql_txt,TRUE);');
-            pr('    prof_name := ''' ||replace(v_source,p_sqlid,'''||sq_id||''')||''';');
+            pr('    prof_name := ''' ||replace(v_source,v_sql_id,'''||sq_id||''')||''';');
             pr('    BEGIN DBMS_SQLTUNE.DROP_SQL_PROFILE(prof_name);EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    DBMS_SQLTUNE.IMPORT_SQL_PROFILE (');
             pr('        sql_text    => sql_txt,');
             pr('        profile     => sql_prof,');
             pr('        name        => prof_name,');
-            pr('        description => prof_name || ''_''||signature,');
+            pr('        description => prof_name || ''_'||ltrim(v_plan||'_','_')||'''||signature,');
             pr('        category    => ''DEFAULT'',');
             pr('        replace     => TRUE,');
             pr('        force_match => ' || CASE WHEN p_forcematch THEN 'TRUE' ELSE 'FALSE' END || ');');
@@ -397,28 +390,37 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('/');
             
             p_buffer := v_text;
+            RETURN trim('/' FROM v_plan_source||'/'||v_plan);
         END;
     BEGIN
-        extract_profile(:2,:3,:4, TRUE);
+        :2 := extract_profile(:3,:4,:5,:6, TRUE);
     END;]]
-    env.checkhelp(sql_id or sql_text)
-    if sql_plan and sql_plan:find('[^%w_%$.#"]') then
+    env.checkhelp(sql_id)
+    if (sql_plan or ''):find('[^%w_%$.#"]') then
         return sqlprof.generate_profile_from_outlines(sql_id,sql_plan)
     end
-    if not db:check_access('sys.sql$text',1) then
-        stmt=stmt:gsub("%$IF.-%$END","")
+    if not db:check_access('sys.sql$text',1) and not db:check_access('sys.sqlobj$',1) then
+        stmt=stmt:gsub("%$IF 1=1.-%$END","")
     end
-    local args={sql_text or "",'#CLOB',sql_id or "",sql_plan or ""}
+    local args={sql_text or "",'#VARCHAR','#CLOB',sql_id or "",sql_plan or "",env.set.get("dbid") or ""}
     db:internal_call(stmt,args)
 
     if args[1] and args[1]:sub(1,1)=="#" then
         env.raise(args[1]:sub(2))
     end
 
-    if sql_id and sql_id:lower()=='diff' then
-        return print(args[1] or 'no result.')
+    sql_id=((sql_id or ''):gsub('^PROF_','') or "plan_table");
+
+    if args[2] then
+        local src,phv=args[2]:match('^(.*)/(%d+)$')
+        if phv then
+            print('SQL Profile for plan #'..phv..' is extraced from '..src)
+            sql_id = sql_id .. '_'..phv
+        else
+            print('SQL Profile is extraced from '..args[2])
+        end
     end
-    print("Result written to file "..env.write_cache('prof_'..((sql_id or ''):gsub('^PROF_','') or "plan_table")..".sql",args[2]))
+    print("Result written to file "..env.write_cache('prof_'..sql_id..".sql",args[3]))
 end
 
 local profile_template=[[Set define off sqlbl on
@@ -429,12 +431,13 @@ DECLARE --Better for this script to have the access on gv$sqlarea
     sq_id     VARCHAR2(30):='@sql_id@';
 BEGIN
     BEGIN
-        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION*/ * FROM (
+        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/ * FROM (
                                  SELECT SQL_FULLTEXT FROM gv$sqlarea
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
                                  SELECT SQL_TEXT FROM dba_hist_sqltext
-                                 WHERE SQL_ID=:1 AND ROWNUM<2
+                                 WHERE SQL_ID=:1 
+                                 AND ROWNUM<2
                                  UNION ALL
                                  SELECT SQL_TEXT FROM all_sqlset_statements
                                  WHERE SQL_ID=:1 AND ROWNUM<2
@@ -521,8 +524,7 @@ function sqlprof.onload()
         6). Generate the profile from plan table:
                 xplan select * from dual;
                 @@NAME gjm43un5cy843 plan;
-        7). Diff SQL Plans: @@NAME diff 2443212686 2443212367
-        8). Generate the profile from outlines: @NAME <sql_id> <outlines_text>|<xml>
+        7). Generate the profile from outlines: @NAME <sql_id> <outlines_text>|<xml>
     ]]
     env.set_command(nil,"sqlprof",help,sqlprof.extract_profile,false,3)
 end

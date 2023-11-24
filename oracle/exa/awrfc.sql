@@ -25,79 +25,142 @@ col "Populate|&io,Pop-Keep|&io,Pop-CC|&io,Scan Used|Free Header,Scan|OLTP,Scan|D
 col "Populate|&mb,Pop-Keep|&mb,Pop-CC|&mb,RAM|&mb,RAM|Miss,RAM|Write" FOR kmg;
 
 DECLARE
-     duration NUMBER;
-     did      NUMBER;
-     bid      NUMBER;
-     eid      NUMBER;
-     c_meta clob:=q'[<stats>
-                            <stat id="180" name="fcoior" type="bytes"  cat="01-fc_ureads" sub="fco" in_cat_sum="Y"/>
-                            <stat id="200" name="fcoior" type="reqs"  cat="01-fc_ureads" sub="fco" in_cat_sum="Y"/>
-                            <stat id="206" name="fcsior" type="bytes"  cat="01-fc_ureads" sub="fcs" in_cat_sum="Y"/>
-                            <stat id="204" name="fcsior" type="reqs" cat="01-fc_ureads" sub="fcs" in_cat_sum="Y"/>
-                            <stat id="305" name="fccior" type="bytes"  cat="01-fc_ureads" sub="fcc" in_cat_sum="Y"/>
-                            <stat id="304" name="fccior" type="reqs"  cat="01-fc_ureads" sub="fcc" in_cat_sum="Y"/>
-                            <stat id="214" name="fckpior" type="bytes"  cat="01-fc_ureads" sub="fckp" in_cat_sum="Y"/>
-                            <stat id="212" name="fckpior" type="reqs"  cat="01-fc_ureads" sub="fckp" in_cat_sum="Y"/>
-                            <stat id="201" name="fcoiorqrm" type="reqs" cat="01-fc_ureads" sub="fco"/>
-                            <stat id="205" name="fcsiobyra" type="bytes" cat="01-fc_ureads" sub="fcs"/>
-                            <stat id="302" name="fcciobyelig" type="bytes"  cat="01-fc_ureads" sub="fcc"/>
-                            <stat id="303" name="fcciobysave" type="bytes"  cat="01-fc_ureads" sub="fcc"/>
-                            <stat id="213" name="fckpiorqrm" type="reqs" cat="01-fc_ureads" sub="fckp"/>
-                            <stat id="196" name="fciorash" type="bytes" cat="01-fc_ureads"/>
-                            <stat id="194" name="fciorash" type="reqs" cat="01-fc_ureads"/>
-                            <stat id="197" name="fciorasm" type="bytes" cat="01-fc_ureads"/>
-                            <stat id="195" name="fciorasm" type="reqs" cat="01-fc_ureads"/>
-                            <!-- user writes -->
-                            <stat id="181" name="fciow" type="bytes"  cat="02-fc_uwrites" in_cat_sum="Y"/>
-                            <stat id="188" name="fciow" type="reqs"  cat="02-fc_uwrites" in_cat_sum="Y"/>
-                            <stat id="185" name="fciowf" type="bytes" cat="02-fc_uwrites"/>
-                            <stat id="189" name="fciowf" type="reqs" cat="02-fc_uwrites"/>
-                            <stat id="186" name="fciowow" type="bytes" cat="02-fc_uwrites"/>
-                            <stat id="190" name="fciowow" type="reqs" cat="02-fc_uwrites"/>
-                            <stat id="216" name="fckpiow" type="bytes" cat="02-fc_uwrites"/>
-                            <stat id="215" name="fckpiow" type="reqs" cat="02-fc_uwrites"/>
-                            <stat id="373" name="fclwmrw" type="reqs" cat="02-fc_uwrites"/>
-                            <stat id="374" name="fclwnrw" type="reqs" cat="02-fc_uwrites"/>
-                            <stat id="375" name="fclwrow" type="reqs" cat="02-fc_uwrites"/>
-                            <stat id="376" name="fclwmrw" type="bytes" cat="02-fc_uwrites"/>
-                            <stat id="377" name="fclwnrw" type="bytes" cat="02-fc_uwrites"/>
-                            <stat id="378" name="fclwrow" type="bytes" cat="02-fc_uwrites"/>
-                            <!-- internal reads -->
-                            <stat id="192" name="fciordw" type="bytes"  cat="03-fc_ireads" in_cat_sum="Y"/>
-                            <stat id="193" name="fciordw" type="reqs"  cat="03-fc_ireads" in_cat_sum="Y"/>
-                            <stat id="314" name="fciordkwr" type="reqs" cat="03-fc_ireads"/>
-                            <stat id="315" name="fciordkwr" type="bytes" cat="03-fc_ireads"/>
-                            <stat id="316" name="fciowdkwr" type="reqs" cat="03-fc_ireads"/>
-                            <stat id="317" name="fciowdkwr" type="bytes" cat="03-fc_ireads"/>
-                            <!-- internal writes -->
-                            <stat id="187" name="fciowpop" type="bytes" cat="04-fc_iwrites" in_cat_sum="Y"/>
-                            <stat id="191" name="fciowpop" type="reqs" cat="04-fc_iwrites" in_cat_sum="Y"/>
-                            <stat id="218" name="fckpiowpop" type="bytes" cat="04-fc_iwrites"/>
-                            <stat id="217" name="fckpiowpop" type="reqs" cat="04-fc_iwrites"/>
-                            <stat id="307" name="fcciowpop" type="bytes" cat="04-fc_iwrites"/>
-                            <stat id="306" name="fcciowpop" type="reqs" cat="04-fc_iwrites"/>
-                            <stat id="379" name="fciowtrim" type="reqs" cat="04-fc_iwrites"/>
-                            <stat id="380" name="fciowtrim" type="bytes" cat="04-fc_iwrites"/>
-                            <!-- fc scan -->
-                            <stat id="211" name="fcsfrhdr" type="reqs" cat="05-fcs_pop" in_cat_sum="Y"/>
-                            <stat id="207" name="fcsrepdw" type="reqs" cat="05-fcs_pop" in_cat_sum="Y"/>
-                            <stat id="208" name="fcsrepoltp" type="reqs" cat="05-fcs_pop" in_cat_sum="Y"/>
-                            <stat id="209" name="fcsrepself" type="reqs" cat="05-fcs_pop" in_cat_sum="Y"/>
-                            <stat id="210" name="fcsrepzhit" type="reqs" cat="05-fcs_pop" in_cat_sum="Y"/>
-                            <!-- others -->
-                            <stat id="184" name="fciobykpow" type="bytes" cat="06-others"/>
-                            <stat id="198" name="fciorqspc" type="reqs" cat="06-others"/>
-                            <stat id="199" name="fciorqspcf" type="reqs" cat="06-others"/>
-                             <!-- ram cache -->
-                            <stat id="390" name="rcior" type="reqs"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
-                            <stat id="391" name="rcior" type="bytes"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
-                            <stat id="392" name="rciorm" type="reqs"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
-                            <stat id="393" name="rciorm" type="bytes"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
-                            <stat id="394" name="rciowpop"  type="reqs"  cat="08-rc_iwrites" in_cat_sum="Y"/>
-                            <stat id="395" name="rciowpop" type="bytes"  cat="08-rc_iwrites" in_cat_sum="Y"/>
-                            <stat id="396" name="rcby" type="space"  cat="09-rc_spc" in_cat_sum="Y"/>
-                            <stat id="397" name="rcbyo" type="space" cat="09-rc_spc"/>
-                          </stats>]';
+    duration NUMBER;
+    did      NUMBER;
+    bid      NUMBER;
+    eid      NUMBER;
+    c_meta clob:=q'[
+      <stats>
+        <!-- user reads -->
+        <stat id="180" name="fcoior" type="bytes" cat="01-fc_ureads" sub="fco" in_cat_sum="Y"/>
+        <stat id="200" name="fcoior" type="reqs"  cat="01-fc_ureads" sub="fco" in_cat_sum="Y"/>
+        <stat id="206" name="fcsior" type="bytes"  cat="01-fc_ureads" sub="fcs" in_cat_sum="Y"/>
+        <stat id="204" name="fcsior" type="reqs" cat="01-fc_ureads" sub="fcs" in_cat_sum="Y"/>
+        <stat id="305" name="fccior" type="bytes"  cat="01-fc_ureads" sub="fcc" in_cat_sum="Y"/>
+        <stat id="304" name="fccior" type="reqs"  cat="01-fc_ureads" sub="fcc" in_cat_sum="Y"/>
+        <stat id="214" name="fckpior" type="bytes"  cat="01-fc_ureads" sub="fckp" in_cat_sum="Y"/>
+        <stat id="212" name="fckpior" type="reqs"  cat="01-fc_ureads" sub="fckp" in_cat_sum="Y"/>
+        <stat id="201" name="fcoiorqrm" type="reqs" cat="01-fc_ureads" sub="fco"/>
+        <stat id="205" name="fcsiobyra" type="bytes" cat="01-fc_ureads" sub="fcs"/>
+        <stat id="302" name="fcciobyelig" type="bytes"  cat="01-fc_ureads" sub="fcc"/>
+        <stat id="303" name="fcciobysave" type="bytes"  cat="01-fc_ureads" sub="fcc"/>
+        <stat id="213" name="fckpiorqrm" type="reqs" cat="01-fc_ureads" sub="fckp"/>
+        <stat id="196" name="fciorash" type="bytes" cat="01-fc_ureads"/>
+        <stat id="194" name="fciorash" type="reqs" cat="01-fc_ureads"/>
+        <stat id="197" name="fciorasm" type="bytes" cat="01-fc_ureads"/>
+        <stat id="195" name="fciorasm" type="reqs" cat="01-fc_ureads"/>
+        <!-- user writes -->
+        <stat id="181" name="fciow" type="bytes"  cat="02-fc_uwrites" in_cat_sum="Y"/>
+        <stat id="188" name="fciow" type="reqs"  cat="02-fc_uwrites" in_cat_sum="Y"/>
+        <stat id="185" name="fciowf" type="bytes" cat="02-fc_uwrites"/>
+        <stat id="189" name="fciowf" type="reqs" cat="02-fc_uwrites"/>
+        <stat id="186" name="fciowow" type="bytes" cat="02-fc_uwrites"/>
+        <stat id="190" name="fciowow" type="reqs" cat="02-fc_uwrites"/>
+        <stat id="216" name="fckpiow" type="bytes" cat="02-fc_uwrites"/>
+        <stat id="215" name="fckpiow" type="reqs" cat="02-fc_uwrites"/>
+        <stat id="373" name="fclwmrw" type="reqs" cat="02-fc_uwrites"/>
+        <stat id="374" name="fclwnrw" type="reqs" cat="02-fc_uwrites"/>
+        <stat id="375" name="fclwrow" type="reqs" cat="02-fc_uwrites"/>
+        <stat id="376" name="fclwmrw" type="bytes" cat="02-fc_uwrites"/>
+        <stat id="377" name="fclwnrw" type="bytes" cat="02-fc_uwrites"/>
+        <stat id="378" name="fclwrow" type="bytes" cat="02-fc_uwrites"/>
+        <!-- internal reads -->
+        <stat id="192" name="fciordw" type="bytes"  cat="03-fc_ireads" in_cat_sum="Y"/>
+        <stat id="193" name="fciordw" type="reqs"  cat="03-fc_ireads" in_cat_sum="Y"/>
+        <stat id="314" name="fciordkwr" type="reqs" cat="03-fc_ireads"/>
+        <stat id="315" name="fciordkwr" type="bytes" cat="03-fc_ireads"/>
+        <stat id="316" name="fciowdkwr" type="reqs" cat="03-fc_ireads"/>
+        <stat id="317" name="fciowdkwr" type="bytes" cat="03-fc_ireads"/>
+        <!-- internal writes -->
+        <stat id="187" name="fciowpop" type="bytes"  cat="04-fc_iwrites" in_cat_sum="Y"/>
+        <stat id="191" name="fciowpop" type="reqs" cat="04-fc_iwrites" in_cat_sum="Y"/>
+        <stat id="218" name="fckpiowpop" type="bytes" cat="04-fc_iwrites"/>
+        <stat id="217" name="fckpiowpop" type="reqs" cat="04-fc_iwrites"/>
+        <stat id="307" name="fcciowpop" type="bytes" cat="04-fc_iwrites"/>
+        <stat id="306" name="fcciowpop" type="reqs" cat="04-fc_iwrites"/>
+        <stat id="379" name="fciowtrim" type="reqs"  cat="04-fc_iwrites" in_cat_sum="Y"/>
+        <stat id="380" name="fciowtrim" type="bytes" cat="04-fc_iwrites" in_cat_sum="Y"/>
+        <stat id="318" name="fciowmd"   type="reqs" cat="04-fc_iwrites" in_cat_sum="Y"/>
+        <stat id="319" name="fciowmd"   type="bytes" cat="04-fc_iwrites" in_cat_sum="Y"/>
+        <!-- fc scan -->
+        <stat id="211" name="fcsfrhdr" type="reqs"  cat="05-fcs_pop" in_cat_sum="Y"/>
+        <stat id="207" name="fcsrepdw" type="reqs"  cat="05-fcs_pop" in_cat_sum="Y"/>
+        <stat id="208" name="fcsrepoltp" type="reqs"  cat="05-fcs_pop" in_cat_sum="Y"/>
+        <stat id="209" name="fcsrepself" type="reqs"  cat="05-fcs_pop" in_cat_sum="Y"/>
+        <stat id="210" name="fcsrepzhit" type="reqs"  cat="05-fcs_pop" in_cat_sum="Y"/>
+        <!-- others -->
+        <stat id="184" name="fciobykpow" type="bytes" cat="06-others"/>
+        <stat id="198" name="fciorqspc" type="reqs" cat="06-others"/>
+        <stat id="199" name="fciorqspcf" type="reqs" cat="06-others"/>
+         <!-- ram cache -->
+        <stat id="390" name="rcior" type="reqs"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
+        <stat id="391" name="rcior" type="bytes"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
+        <stat id="392" name="rciorm" type="reqs"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
+        <stat id="393" name="rciorm" type="bytes"  cat="07-rc_ureads" sub="rco" in_cat_sum="Y"/>
+        <stat id="394" name="rciowpop"  type="reqs"  cat="08-rc_iwrites" in_cat_sum="Y"/>
+        <stat id="395" name="rciowpop" type="bytes"  cat="08-rc_iwrites" in_cat_sum="Y"/>
+        <stat id="396" name="rcby" type="space"  cat="09-rc_spc" in_cat_sum="Y"/>
+        <stat id="397" name="rcbyo" type="space" cat="09-rc_spc"/>
+        <!-- FC skips -->
+        <stat id="441" name="fcrsk" type="reqs"  cat="10-fc_rskips" in_cat_sum="Y"/>
+        <stat id="442" name="fcrsk" type="bytes" cat="10-fc_rskips" in_cat_sum="Y"/>
+        <stat id="443" name="fcwsk" type="reqs" cat="11-fc_wskips" in_cat_sum="Y"/>
+        <stat id="444" name="fcwsk" type="bytes" cat="11-fc_wskips" in_cat_sum="Y"/>
+        <stat id="445" name="fcrskstnc" type="reqs" cat="10-fc_rskips"/>
+        <stat id="446" name="fcrskstnc" type="bytes" cat="10-fc_rskips"/>
+        <stat id="447" name="fcwskstnc" type="reqs" cat="11-fc_wskips"/>
+        <stat id="448" name="fcwskstnc" type="bytes" cat="11-fc_wskips"/>
+        <stat id="449" name="fcrskiorsn" type="reqs" cat ="10-fc_rskips"/>
+        <stat id="450" name="fcrskiorsn" type="bytes" cat ="10-fc_rskips"/>
+        <stat id="451" name="fcrskgdnc" type="reqs" cat ="10-fc_rskips"/>
+        <stat id="452" name="fcrskgdnc" type="bytes" cat ="10-fc_rskips"/>
+        <stat id="453" name="fcwskgdnc" type="reqs" cat ="11-fc_wskips"/>
+        <stat id="454" name="fcwskgdnc" type="bytes" cat ="11-fc_wskips"/>
+        <stat id="455" name="fcrsklio" type="reqs" cat ="10-fc_rskips"/>
+        <stat id="456" name="fcrsklio" type="bytes" cat ="10-fc_rskips"/>
+        <stat id="457" name="fcwsklio" type="reqs" cat ="11-fc_wskips"/>
+        <stat id="458" name="fcwsklio" type="bytes" cat ="11-fc_wskips"/>
+        <stat id="459" name="fcrskthio" type="reqs" cat ="10-fc_rskips"/>
+        <stat id="460" name="fcrskthio" type="bytes" cat ="10-fc_rskips"/>
+        <stat id="461" name="fcwskthio" type="reqs" cat ="11-fc_wskips"/>
+        <stat id="462" name="fcwskthio" type="bytes" cat ="11-fc_wskips"/>
+        <stat id="463" name="fcrskliorej" type="reqs" cat ="10-fc_rskips"/>
+        <stat id="464" name="fcrskliorej" type="bytes" cat ="10-fc_rskips"/>
+        <!-- LW rejects -->
+        <!-- bug30441717: use all reasons to get the category sum -->
+        <stat id="470" name="fclwelig" type="reqs" cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="471" name="fclwrej" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="472" name="fclwrejcglwth" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="473" name="fclwrejflwr" type="reqs" cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="474" name="fclwrejlwth" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="475" name="fclwrejmxlm" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="476" name="fclwrejgllm" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="477" name="fclwrejflbs" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <stat id="478" name="fclwrejkpcl" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/>
+        <!-- stat 479 has been deleted; remove from output -->
+        <stat id="480" name="fclwrejiormhd" type="reqs"  cat="12-fc_lwrej" in_cat_sum="Y"/> 
+        <!-- pmem cache -->
+        <stat id="543" name="pcior" type="reqs"  cat="13-pc_ureads" sub="pco" in_cat_sum="Y"/>
+        <stat id="544" name="pciorm" type="reqs" cat="13-pc_ureads" sub="pco" in_cat_sum="Y"/>
+        <stat id="545" name="pcior" type="bytes" cat="13-pc_ureads" sub="pco" in_cat_sum="Y"/>
+        <stat id="546" name="pciow" type="reqs" cat="14-pc_uwrites" in_cat_sum="Y"/>
+        <stat id="547" name="pciowf" type="reqs" cat="14-pc_uwrites"/>
+        <stat id="548" name="pciowow" type="reqs" cat="14-pc_uwrites"/>
+        <stat id="549" name="pciow" type="bytes" cat="14-pc_uwrites" in_cat_sum="Y"/>
+        <stat id="550" name="pciowf" type="bytes" cat="14-pc_uwrites"/>
+        <stat id="551" name="pciowow" type="bytes" cat="14-pc_uwrites"/>
+        <stat id="552" name="pciordw" type="reqs"  cat="15-pc_ireads" in_cat_sum="Y"/>
+        <stat id="553" name="pciordw" type="bytes"  cat="15-pc_ireads" in_cat_sum="Y"/>
+        <stat id="554" name="pciordkwr" type="reqs" cat="15-pc_ireads"/>
+        <stat id="555" name="pciordkwr" type="bytes" cat="15-pc_ireads"/>
+        <stat id="556" name="pciowdkwr" type="reqs" cat="15-pc_ireads"/>
+        <stat id="557" name="pciowdkwr" type="bytes" cat="15-pc_ireads"/>
+        <stat id="558" name="pciowpop" type="reqs" cat="16-pc_iwrites" in_cat_sum="Y"/>
+        <stat id="559" name="pciowpop" type="bytes" cat="16-pc_iwrites" in_cat_sum="Y"/>
+        <stat id="540" name="pcby" type="space"  cat="17-pc_spc" in_cat_sum="Y"/>
+        <stat id="541" name="pcbyo" type="space" cat="17-pc_spc"/>
+        <stat id="542" name="pcbyod" type="space" cat="17-pc_spc"/>
+      </stats>]';
     v_xml xmltype;
 BEGIN
     SELECT max(dbid),max(bid),max(eid),max(&dur),max(stime),max(etime)
@@ -112,7 +175,7 @@ BEGIN
                 min(end_interval_time)+0 stime,
                 incarnation_num
         FROM   dba_hist_snapshot a JOIN dba_hist_cell_global b USING(snap_id,dbid)
-        WHERE  dbid=NVL(:dbid+0,(select dbid from v$database))
+        WHERE  dbid=:dbid
         AND    end_interval_time+0 between nvl(to_date(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE)
         GROUP  BY dbid,incarnation_num
         ORDER  BY incarnation_num DESC)
@@ -158,7 +221,7 @@ BEGIN
                             (SELECT dbid, cellhash, MAX(CURRENT_SNAP_ID)
                                 FROM   dba_hist_cell_config
                                 WHERE  conftype = 'CELLDISK'
-                                AND    dbid = NVL(0 + :dbid, (select dbid from v$database))
+                                AND    dbid = :dbid
                                 GROUP  BY dbid, cellhash)) a
                 GROUP  BY ROLLUP((cell, cellname, CELLHASH)))
         RIGHT  JOIN (SELECT *
@@ -390,29 +453,35 @@ BEGIN
                               SUM(decode(stat_type, 'space', current_value, 0)) spc,
                               -- start columns for deriving partial writes
                               SUM(CASE
-                                      WHEN stat_type = 'reqs' AND stat_name IN ('fciowf', 'fciowow') THEN
+                                      WHEN stat_type = 'reqs' AND stat_name IN ('fciowf','fciowow',
+                                 'fclwrej','fclwrejcglwth','fclwrejflwr',
+                                 'fclwrejlwth','fclwrejmxlm','fclwrejgllm',
+                                 'fclwrejflbs','fclwrejkpcl','fclwrejiormhd') THEN
                                        total_value
                                   END) tmp_rq,
                               SUM(CASE
-                                      WHEN stat_type = 'bytes' AND stat_name IN ('fciowf', 'fciowow') THEN
+                                      WHEN stat_type = 'bytes' AND stat_name IN ('fciowf','fciowow') THEN
                                        total_value
                                   END) tmp_by,
                               SUM(CASE
-                                      WHEN stat_type = 'reqs' AND stat_name IN ('fciowf', 'fciowow') THEN
+                                      WHEN stat_type = 'reqs' AND stat_name IN ('fciowf','fciowow',
+                                 'fclwrej','fclwrejcglwth','fclwrejflwr',
+                                 'fclwrejlwth','fclwrejmxlm','fclwrejgllm',
+                                 'fclwrejflbs','fclwrejkpcl','fclwrejiormhd') THEN
                                        persec_value
                                   END) tmp_rqps,
                               SUM(CASE
-                                      WHEN stat_type = 'bytes' AND stat_name IN ('fciowf', 'fciowow') THEN
+                                      WHEN stat_type = 'bytes' AND stat_name IN ('fciowf','fciowow')THEN
                                        persec_value
                                   END) tmp_byps,
                               -- start columns for denominator for efficiency
                               -- also denominator for space usage to calculate %
                               SUM(CASE
-                                      WHEN stat_type = 'reqs' AND stat_name IN ('fcoior', 'fckpior', 'fcoiorqrm', 'fckpiorqrm', 'rcior', 'rciorm') THEN
+                                      WHEN stat_type = 'reqs' AND stat_name IN ('fcoior', 'fckpior', 'fcoiorqrm', 'fckpiorqrm', 'rcior', 'rciorm','pcior','pciorm') THEN
                                        total_value
                                       WHEN stat_type = 'bytes' AND stat_name IN ('fcsiobyra', 'fcciobyelig') THEN
                                        total_value
-                                      WHEN stat_type = 'space' AND stat_name = 'rcby' THEN
+                                      WHEN stat_type = 'space' AND stat_name IN ('rcby','pcby') THEN
                                        current_value
                                   END) eff_denom,
                               -- start column for additional information for fcc

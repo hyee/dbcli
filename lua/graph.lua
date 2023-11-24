@@ -70,6 +70,7 @@ local template,cr
         _range="<Time range>"    : Used in sub-title, if not specified then auto-caculate the range
         _sorter=<number>         : Choose the top <ChartSeries> based on the nth field of the summary, default as deviation%(12)
         _series=<number>         : Max series to be shown in the chart, default as 20
+        _fillZero=true|false     : true to auto fill zero if value is nil
         deviation=true|false     : False for org value, and true to display the data based on deviation%(value*100/average)
 ]]--
 
@@ -217,6 +218,7 @@ function graph:run_sql(sql,args,cmd,file)
         end
     end
 
+    print(#rows.." Records fetched.")
     if pivot=="mixed" then
         local data={}
         for k,v in ipairs(rows) do
@@ -276,7 +278,7 @@ function graph:run_sql(sql,args,cmd,file)
             if type(range_begin)=="number" then x=tonumber(x) end
             range_begin,range_end=range_begin>x and x or range_begin, range_end<x and x or range_end
         end
-        --For pivot, col1=label, col2=Pivot,col3=y-value
+        --For pivot, col1=X-label, col2=Y-labels,col3-n=y-values
         --collist: {label={1:nth-axis,2:count,3:1st-min,4:1st-max,5+:sum(value)-of-each-chart},...}
         if pivot then
             local x,label,y=row[1],row[2]:trim(),{table.unpack(row,3)}
@@ -310,7 +312,7 @@ function graph:run_sql(sql,args,cmd,file)
             local c=math.min(#row,maxaxis+1)
             row={table.unpack(row,1,c)}
             if not values[title] then values[title]=row end
-            csv[#csv+1]=table.concat(row,',')
+            csv[#csv+1]=row
             for i=2,c do
                 if counter==0 then
                     row[i]=row[i]:trim()
@@ -329,7 +331,6 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     env.checkerr(counter>2,"No data found for the given criteria!")
-    print(string.format("%d rows processed.",counter))
 
     --Print summary report
     local labels={table.unpack(values[title],2)}
@@ -371,6 +372,33 @@ function graph:run_sql(sql,args,cmd,file)
     end
     --Generate graph data
     self.dataindex,self.data=0,{}
+    local function build_csv(csv)
+        local sums={}
+        for i=2,#csv do
+            for j=2,#csv[i] do
+                if default_attrs._fillZero~=false then
+                    csv[i][j]=tonumber(csv[i][j]) or 0
+                end
+                if (sums[j-1] or 0)==0 then
+                    sums[j-1]=(tonumber(csv[i][j]) or 0)~=0 and 1 or 0
+                end
+            end
+        end
+        for i=1,#csv do
+            for j=#sums,1,-1 do
+                if sums[j]==0 then table.remove(csv[i],j+1) end
+            end
+            csv[i]=table.concat(csv[i],',')
+        end
+        for j=#sums,1,-1 do
+            if sums[j]==0 then table.remove(sums,j) end
+        end
+        if #sums==0 then
+            return nil
+        end
+        self.dataindex=self.dataindex+1
+        return table.concat(csv,'\n')
+    end
     
     if pivot then
         --Sort the columns by sum(value)
@@ -385,19 +413,26 @@ function graph:run_sql(sql,args,cmd,file)
                     row[i+1]=type(cell)=="table" and cell[idx] or cell or 0
                     --if rownum==1 then row[i+1]='"'..row[i+1]:gsub('"','""')..'"' end --The titles
                 end
-                csv[rownum]=table.concat(row,',')
+                csv[rownum]=row
             end
-            self.dataindex=self.dataindex+1
-            self.data[self.dataindex]={table.concat(csv,'\n'),avgs}
+            
+            csv=build_csv(csv)
+            if csv then
+                self.data[self.dataindex]={csv,avgs,charts[self.dataindex]}
+            end
         end
     else
         local avgs={}
         for k,v in pairs(collist) do
             avgs[#avgs+1],avgs[k]=k,v[5]/v[2]
         end
-        self.dataindex=self.dataindex+1
-        self.data[self.dataindex]={table.concat(csv,'\n'),avgs}
+        
+        csv=build_csv(csv)
+        if csv then
+            self.data[self.dataindex]={csv,avgs,charts[self.dataindex]}
+        end
     end
+    env.checkerr(self.dataindex>0,'Cannot generate target chart due to all values are zeros.');
 
     local replaces={
         ['@GRAPH_TITLE']=default_attrs.title or "",
@@ -416,7 +451,7 @@ function graph:run_sql(sql,args,cmd,file)
     default_attrs.xlabel=x_name
     for i=1,self.dataindex do
         replaces['@GRAPH_INDEX']=i
-        default_attrs.ylabel=ylabels[i] or default_ylabel or charts[i]
+        default_attrs.ylabel=ylabels[i] or default_ylabel or self.data[i][3]
         if default_attrs.ylabel and default_attrs.ylabel:lower():find('byte') then
             default_attrs.labelsKMB=nil
             default_attrs.labelsKMG2=true

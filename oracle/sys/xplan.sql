@@ -42,6 +42,7 @@ DECLARE
     phv     INT;
     st      DATE;
     ctrl    VARCHAR2(2000);
+    siz     INT;
     PROCESS_CTRL_DTD CONSTANT VARCHAR2(4000) :=  
         '<?xml version="1.0"?>
          <!DOCTYPE process_ctrl [
@@ -177,6 +178,9 @@ BEGIN
     END IF;
     sq_text := NULL;
     st := SYSDATE;
+    --SELECT value into siz
+    --FROM   v$parameter where name='sort_area_size';
+    --execute immediate 'alter session set sort_area_size='||round(65536+1024*1024*512*dbms_random.value);
     I_PROCESS_SQL_CALLOUT(stmt=>stmt,
                           action=>&opt,
                           time_limit=>86400,
@@ -184,6 +188,7 @@ BEGIN
                           extra_result=>sq_text,
                           err_code=>sig,
                           err_mesg=>err);
+    --execute immediate 'alter session set sort_area_size='||siz;
     IF trace IS NOT NULL THEN
         EXECUTE IMMEDIATE replace(trace,'@','off');
         IF fixctl=6 THEN
@@ -206,99 +211,100 @@ BEGIN
 
         xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||fixctl;
 
-        SELECT MAX(sql_id)
+        SELECT MAX(sql_id||' # '||child_number)
         INTO   sq_nid
         FROM (SELECT sql_id,child_number
               FROM   v$sql
               WHERE  plan_hash_value=fixctl
-              AND    sql_text LIKE '/* SQL Analyze('||userenv('sid')||',%'
-              AND    instr(sql_text,substr(stmt.sql_text,1,2000))>0
               AND    parsing_schema_name=stmt.parsing_schema_name
-              ORDER  BY last_active_time desc)
+              AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
+              AND    program_id=0
+              ORDER  BY decode(force_matching_signature,stmt.force_matching_signature,1,2),
+                        sign(instr(sql_fulltext,regexp_replace(to_char(substr(stmt.sql_text,1,512)),'^\s+|\s+$'))) desc,
+                        last_active_time desc nulls last)
         WHERE rownum<2;
-
-        DELETE PLAN_TABLE
-        WHERE  PLAN_ID=sig;
-
-        INSERT INTO PLAN_TABLE
-            (STATEMENT_ID,
-             PLAN_ID,
-             TIMESTAMP,
-             REMARKS,
-             OPERATION,
-             OPTIONS,
-             OBJECT_NODE,
-             OBJECT_OWNER,
-             OBJECT_NAME,
-             OBJECT_ALIAS,
-             OBJECT_INSTANCE,
-             OBJECT_TYPE,
-             OPTIMIZER,
-             SEARCH_COLUMNS,
-             ID,
-             PARENT_ID,
-             DEPTH,
-             POSITION,
-             COST,
-             CARDINALITY,
-             BYTES,
-             OTHER_TAG,
-             PARTITION_START,
-             PARTITION_STOP,
-             PARTITION_ID,
-             DISTRIBUTION,
-             CPU_COST,
-             IO_COST,
-             TEMP_SPACE,
-             ACCESS_PREDICATES,
-             FILTER_PREDICATES,
-             PROJECTION,
-             TIME,
-             QBLOCK_NAME,
-             OTHER_XML)
-        SELECT 'INTERNAL_DBCLI_CMD',
-               SIG,
-               SYSDATE,
-               REMARKS,
-               OPERATION,
-               OPTIONS,
-               OBJECT_NODE,
-               OBJECT_OWNER,
-               OBJECT_NAME,
-               OBJECT_ALIAS,
-               OBJECT_INSTANCE,
-               OBJECT_TYPE,
-               OPTIMIZER,
-               SEARCH_COLUMNS,
-               ID,
-               PARENT_ID,
-               DEPTH,
-               POSITION,
-               COST,
-               CARDINALITY,
-               BYTES,
-               OTHER_TAG,
-               PARTITION_START,
-               PARTITION_STOP,
-               PARTITION_ID,
-               DISTRIBUTION,
-               CPU_COST,
-               IO_COST,
-               TEMP_SPACE,
-               ACCESS_PREDICATES,
-               FILTER_PREDICATES,
-               PROJECTION,
-               TIME,
-               QBLOCK_NAME,
-               OTHER_XML
-        FROM   TABLE(stmt.sql_plan);
 
         IF sq_nid IS NOT NULL THEN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||sq_nid||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||substr(sq_nid,1,13)||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
+            DELETE PLAN_TABLE
+            WHERE  PLAN_ID=sig;
+
+            INSERT INTO PLAN_TABLE
+                (STATEMENT_ID,
+                 PLAN_ID,
+                 TIMESTAMP,
+                 REMARKS,
+                 OPERATION,
+                 OPTIONS,
+                 OBJECT_NODE,
+                 OBJECT_OWNER,
+                 OBJECT_NAME,
+                 OBJECT_ALIAS,
+                 OBJECT_INSTANCE,
+                 OBJECT_TYPE,
+                 OPTIMIZER,
+                 SEARCH_COLUMNS,
+                 ID,
+                 PARENT_ID,
+                 DEPTH,
+                 POSITION,
+                 COST,
+                 CARDINALITY,
+                 BYTES,
+                 OTHER_TAG,
+                 PARTITION_START,
+                 PARTITION_STOP,
+                 PARTITION_ID,
+                 DISTRIBUTION,
+                 CPU_COST,
+                 IO_COST,
+                 TEMP_SPACE,
+                 ACCESS_PREDICATES,
+                 FILTER_PREDICATES,
+                 PROJECTION,
+                 TIME,
+                 QBLOCK_NAME,
+                 OTHER_XML)
+            SELECT 'INTERNAL_DBCLI_CMD',
+                   SIG,
+                   SYSDATE,
+                   REMARKS,
+                   OPERATION,
+                   OPTIONS,
+                   OBJECT_NODE,
+                   OBJECT_OWNER,
+                   OBJECT_NAME,
+                   OBJECT_ALIAS,
+                   OBJECT_INSTANCE,
+                   OBJECT_TYPE,
+                   OPTIMIZER,
+                   SEARCH_COLUMNS,
+                   ID,
+                   PARENT_ID,
+                   DEPTH,
+                   POSITION,
+                   COST,
+                   CARDINALITY,
+                   BYTES,
+                   OTHER_TAG,
+                   PARTITION_START,
+                   PARTITION_STOP,
+                   PARTITION_ID,
+                   DISTRIBUTION,
+                   CPU_COST,
+                   IO_COST,
+                   TEMP_SPACE,
+                   ACCESS_PREDICATES,
+                   FILTER_PREDICATES,
+                   PROJECTION,
+                   TIME,
+                   QBLOCK_NAME,
+                   OTHER_XML
+            FROM   TABLE(stmt.sql_plan);
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
             xplan := 'xplan -'||sq_id||' '||sig;

@@ -41,6 +41,7 @@
             &snap: default={0} snap={1}
             &showhub: default={0} a={1}
             &rpt   : default={0} d={1}
+            &v1    : default={} x={&_sql_id}
             @check_access_hub : SYS.DBMS_PERF={&showhub} default={0}
             @check_access_sqlm: SYS.DBMS_SQL_MONITOR/SYS.DBMS_LOCK={1} default={0}
             @check_access_report: SYS.DBA_HIST_REPORTS={1} default={0}
@@ -383,12 +384,11 @@ BEGIN
                             select /*+no_expand no_or_expand*/ 
                                    key1,key2,report_id,period_end_time ptime
                             from  dba_hist_reports
-                            where (did IS NULL OR did in(dbid,con_dbid))
-                            AND   key1=nvl(sq_id,sq_id1)
+                            where key1=nvl(sq_id,sq_id1)
                             AND   key2>0
-                            AND   (sql_exec IS NULL OR sql_exec in(key2,report_id) or instr(report_summary,'plan_hash>'||sql_exec||'<')>0)
+                            AND   (plan_hash IS NULL OR plan_hash in(key2,report_id) or instr(report_summary,'plan_hash>'||plan_hash||'<')>0)
                             AND   component_name='sqlmonitor'
-                            AND   dbid=nvl(did,dbid)
+                            AND   dbid=did
                             AND   instance_number=nvl(inst,instance_number));
                         sq_id := nvl(sq_id1,sq_id);
                     end if;
@@ -416,11 +416,17 @@ BEGIN
                     report_end;
                 ELSE
                     $IF &check_access_report=1 $THEN
-                        report_start;
-                        xml := SYS.DBMS_AUTO_REPORT.REPORT_REPOSITORY_DETAIL_XML(rpt_id);
-                        report_end;
+                        SELECT XMLTYPE(report)
+                        INTO   xml
+                        FROM   dba_hist_reports_details
+                        WHERE  dbid=did
+                        AND    report_id=rpt_id
+                        AND    instr(report,sq_id)>0
+                        AND    rownum<2;
+                        
                         dbms_output.put_line('Extracted report from dba_hist_reports.');
                     $END
+                    NULL;
                 END IF;
                 filename := 'sqlm_' || sq_id ||nullif('_'||keyw,'_')|| '.html';
             ELSE
@@ -617,7 +623,7 @@ BEGIN
                                    report_id sql_exec_id,
                                    xmltype(a.report_summary) summary 
                             FROM   dba_hist_reports a
-                            WHERE (did IS NULL OR did in(dbid,con_dbid))
+                            WHERE  did in(dbid,con_dbid)
                             AND   (sq_id IS NOT NULL AND key1=sq_id OR 
                                    keyw IS NOT NULL AND (lower(report_parameters) like '%'||keyw||'%' or lower(report_summary) like '%'||keyw||'%'))
                             AND    COMPONENT_NAME='sqlmonitor'

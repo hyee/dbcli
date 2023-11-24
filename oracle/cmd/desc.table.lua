@@ -1,10 +1,10 @@
 
-if obj.object_type:find('^table') then
+if obj.object_type:find('^TABLE') then
     local result=db:dba_query(db.internal_call,
                               [[select nvl(cluster_name,table_name)
                                from ALL_TABLES
                                WHERE owner = :owner AND table_name = :object_name]],
-                              {owner=rs[1],object_name=rs[2]})
+                              {owner=obj[1],object_name=obj[2]})
     result=db.resultset:rows(result,-1)
     result=result[2] or {}
     obj.table_name=result[1]
@@ -148,46 +148,45 @@ return  obj.object_type=='FIXED TABLE' and [[
         AND   a.col#=c.col#(+)
         ORDER  BY 1,2
     ]] or {[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
-               --+no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c)
-               INTERNAL_COLUMN_ID NO#,
-               COLUMN_NAME NAME,
-               DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
-               CASE WHEN DATA_TYPE IN('CHAR',
-                                      'VARCHAR',
-                                      'VARCHAR2',
-                                      'NCHAR',
-                                      'NVARCHAR',
-                                      'NVARCHAR2',
-                                      'RAW') --
-               THEN DATA_TYPE||'(' || DECODE(CHAR_USED, 'C', CHAR_LENGTH,DATA_LENGTH) || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
-               WHEN DATA_TYPE = 'NUMBER' --
-               THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
-                          WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
-                          WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
-                          ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) ELSE DATA_TYPE END
+        SELECT /*INTERNAL_DBCLI_CMD*/ 
+             /*+opt_param('container_data' 'current_dictionary') opt_param('optimizer_dynamic_sampling' 5)
+               no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c) */
+               a.INTERNAL_COLUMN_ID NO#,
+               a.COLUMN_NAME NAME,
+               a.DATA_TYPE_OWNER || NVL2(a.DATA_TYPE_OWNER, '.', '') ||
+               CASE WHEN a.DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
+               THEN a.DATA_TYPE||'(' || DECODE(a.CHAR_USED, 'C', a.CHAR_LENGTH,a.DATA_LENGTH) || DECODE(a.CHAR_USED, 'C', ' CHAR') || ')' --
+               WHEN a.DATA_TYPE = 'NUMBER' --
+               THEN (CASE WHEN nvl(a.DATA_scale, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
+                          WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                          WHEN a.DATA_PRECISION IS NULL AND a.DATA_SCALE=0 THEN 'INTEGER'
+                          ELSE a.DATA_TYPE||'(' || a.DATA_PRECISION ||')' END) ELSE a.DATA_TYPE END
+
+                $IF DBMS_DB_VERSION.VERSION > 22 $THEN
+                ||rtrim(' '||trim('.' from decode(a.domain_owner,a.owner,'',a.domain_owner)||'.'||a.domain_name))
+                $END
+                $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
+                ||CASE WHEN a.COLLATION != nvl(B.DEFAULT_COLLATION,a.COLLATION) THEN ' COLLATE '||a.COLLATION END
+                $END         
                data_type,
-               DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
+               DECODE(a.NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                (CASE
-                   WHEN default_length > 0 THEN
-                    DATA_DEFAULT
+                   WHEN a.default_length > 0 THEN
+                        a.DATA_DEFAULT
                    ELSE
-                    NULL
+                        NULL
                END) "Default",
-               $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
-               CASE WHEN nvl(COLLATION,'USING_NLS_COMP')!='USING_NLS_COMP' THEN REPLACE(COLLATION,'USING_') END COLLATION,
-               $END
-               NVL2(d.cname,''''||INTEGRITY_ALG||''''||decode(SALT,'NO',' NO SALT'),'') ENCRYPTION,
+               NVL2(d.cname,''''||d.INTEGRITY_ALG||''''||decode(d.SALT,'NO',' NO SALT'),'') ENCRYPTION,
                e.redaction,
-               HIDDEN_COLUMN "Hidden?",
-               AVG_COL_LEN AVG_LEN,
-               num_distinct "NDV",
-               CASE WHEN num_rows>=num_nulls THEN round(num_nulls*100/nullif(num_rows,0),2) END "Nulls(%)",
-               round(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-num_nulls)/nullif(num_distinct,0)),2) CARDINALITY,
+               a.HIDDEN_COLUMN "Hidden?",
+               a.AVG_COL_LEN AVG_LEN,
+               a.num_distinct "NDV",
+               CASE WHEN b.num_rows>=a.num_nulls THEN round(a.num_nulls*100/nullif(b.num_rows,0),2) END "Nulls(%)",
+               round(greatest(0,b.num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM,
-               NUM_BUCKETS buckets,
+               a.NUM_BUCKETS buckets,
                c.comments,
-               case when low_value is not null then 
+               case when a.low_value is not null then 
                substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
                   ,'FLOAT'        ,to_char(utl_raw.cast_to_number(low_value))
@@ -224,7 +223,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                           lpad(TO_NUMBER(SUBSTR(low_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                           lpad(TO_NUMBER(SUBSTR(low_value, 13, 2), 'XX')-1,2,0)
                   ,  low_value),1,32) end low_value,
-                case when high_value is not null then 
+                case when a.high_value is not null then 
                 substrb(decode(dtype
                       ,'NUMBER'       ,to_char(utl_raw.cast_to_number(high_value))
                       ,'FLOAT'        ,to_char(utl_raw.cast_to_number(high_value))
@@ -298,7 +297,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :table_name)
-        SELECT /*+no_parallel leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -342,7 +341,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c) cardinality(a 1)
+        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c) cardinality(a 1) opt_param('container_data' 'current_dictionary')
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
@@ -355,7 +354,8 @@ return  obj.object_type=='FIXED TABLE' and [[
                        c.COLUMN_NAME,
                        ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
                 FROM   (select * from all_constraints where owner=:owner and table_name=:object_name) a,
-                       all_constraints R, ALL_CONS_COLUMNS C
+                       all_constraints R, 
+                       ALL_CONS_COLUMNS C
                 WHERE  A.R_OWNER = R.OWNER(+)
                 AND    A.R_CONSTRAINT_NAME = R.CONSTRAINT_NAME(+)
                 AND    A.OWNER = C.OWNER(+)

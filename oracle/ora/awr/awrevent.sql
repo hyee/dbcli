@@ -1,7 +1,8 @@
 /*[[
-    Show AWR Top events for a specific period. Usage: @@NAME {[0|a|<inst_id>|event_name_key|wait_class] [yymmddhh24mi] [yymmddhh24mi] [-avg] [-c]}
+    Show AWR Top events for a specific period. Usage: @@NAME [0|a|<inst_id>|cpu|"<event>"|"<wait_class>"] {[yymmddhh24mi] [yymmddhh24mi]} [-avg] [-c]
     -avg: compute as per second, instead of total
     -c:   compute the percentage of histogram with wait_count, instead of wait_count*log(2,slot_time)
+    -d:   when event or wait class is specified, use this option to grouping data by date instead of each snapshot
     
     Sample Output:
     ==============
@@ -28,11 +29,17 @@
     A    Sync ASM rebalance               Other              569,492    0.00% 35.29m   0.60%   3.72ms              0.04 15.35  5.03  3.25  1.03   2.14   2.49   9.93  2.65        9.34
     ...
     --[[
-         &avg: default={1} avg={max(secs)}
+         &avg: default={adj} avg={secs}
+         &rd : default={0} avg={2}
          &unit: default={log(2,slot_time*2)} c={1}
-         @ver: {11={,histogram as(
-              SELECT *
-              FROM   (SELECT inst,nvl(event, '- Wait Class: ' || nvl(wait_class, 'All')) event,'|' "|",
+         &V2   : default={&STARTTIME}
+         &V3   : default={&ENDTIME}
+         &fmt  : default={yymmdd hh24:mi} d={yymmdd}
+         @histogram: {11={,histogram as(
+            SELECT *
+            FROM   (SELECT  grouping_id(inst,wait_class,event) grp,
+                            nvl(inst,'*') inst,
+                            nvl(event, '- Wait Class: ' || nvl(wait_class, 'All')) event,'|' "|",
                             CASE
                             WHEN slot_time <= 512 THEN
                             '<' || slot_time || 'us'
@@ -45,13 +52,21 @@
                             ELSE
                             '>=1m'
                             END unit,
-                            nullif(round(SUM(c * flag * &unit)/nullif(sum(SUM(c * flag * &unit)) OVER(PARTITION BY inst,wait_class,event),0) * 100, 2), 0) pct
-                     FROM   (SELECT event_name event, wait_class, WAIT_TIME_MILLI * 1024 slot_time, WAIT_COUNT c, flag,inst
-                            FROM   (SELECT DISTINCT snap_id, dbid, instance_number, inst, flag FROM time_model) s
+                            nullif(round(SUM(c * &unit)/nullif(sum(SUM(c * &unit)) OVER(PARTITION BY inst,wait_class,event),0) * 100, 2), 0) pct
+                    FROM   (SELECT event_name event, 
+                                    wait_class, 
+                                    wait_time_milli*1024 slot_time, 
+                                    (WAIT_COUNT-lag(WAIT_COUNT,1,0) OVER(PARTITION BY pkey,wait_time_milli,event_name ORDER BY etime))/secs c,
+                                    CASE WHEN f=0 THEN ''||inst ELSE to_char(etime,'&fmt') END inst
+                            FROM   time_model s
                             JOIN   dba_hist_event_histogram hs1
                             USING  (snap_id, instance_number, dbid)
-                            WHERE  wait_class != 'Idle')
-                     GROUP  BY inst,
+                            WHERE  (f=0 and wait_class!='Idle' OR hs1.wait_class=w AND (f=2 OR event_name=e))
+                            AND    wait_count>0
+                            AND    f>=0
+                            AND    dbid=:dbid)
+                    WHERE  c!=0
+                    GROUP  BY 
                             CASE
                                    WHEN slot_time <= 512 THEN
                                    '<' || slot_time || 'us'
@@ -64,8 +79,13 @@
                                    ELSE
                                    '>=1m'
                             END,
-                            ROLLUP(wait_class,event))
-              PIVOT (MAX(pct) FOR unit IN('<1us' "<1us",
+                            rollup(inst),
+                            rollup(wait_class,event)
+                    HAVING grouping_id(inst,wait_class,event) in(
+                            decode(f,0,7,1,5,4),
+                            decode(f,0,5,1,0,1),
+                            decode(f,0,0,1,-1,5))) 
+            PIVOT (MAX(nvl2(pct,lpad(to_char(pct,'fm990.00'),5)||'%','')) FOR unit IN('<1us' "<1us",
                             '<2us' "<2us",
                             '<4us' "<4us",
                             '<8us' "<8us",
@@ -99,70 +119,124 @@
     --]]
 ]]*/
 
-col waited,fg_waited format smhd2
-col "% DB" for pct2
-col avg_wait for usmhd2
-col fg_timeouts,timeouts for pct2
-set feed off sep4k on COLAUTOSIZE trim
-PRO The percentage of the histogram is based on wait_count*&unit
-PRO ================================================================================
-with time_model as(
-     SELECT DECODE(snap_id, max_id, 1, -1) flag, a.*,
-            86400*((max(end_interval_time) over(partition by inst)+0)-(min(end_interval_time) over(partition by inst)+0)) secs
-      FROM   (SELECT  hs1.*, s.end_interval_time,
-                      s.STARTUP_TIME,
-                      sum(p.value) over(partition by s.dbid,decode(LOWER(:V1),'0',to_char(s.instance_number),'A'),s.snap_id) cpu_count,
-                      max(STARTUP_TIME) over(partition by s.dbid,s.instance_number) stime,
-                      MIN(s.snap_id) OVER(PARTITION BY s.dbid,s.instance_number,s.STARTUP_TIME) min_id,
-                      MAX(s.snap_id) OVER(PARTITION BY s.dbid,s.instance_number,s.STARTUP_TIME) max_id,
-                      decode(LOWER(:V1),'0',to_char(s.instance_number),to_char(s.instance_number),to_char(s.instance_number),'A') inst
-               FROM   dba_hist_sys_time_model hs1, dba_hist_snapshot s,dba_hist_parameter p
-               WHERE  s.snap_id = hs1.snap_id
-               AND    s.instance_number = hs1.instance_number
-               AND    s.dbid=hs1.dbid
-               AND    s.snap_id = p.snap_id(+)
-               AND    s.instance_number = p.instance_number(+)
-               AND    s.dbid=p.dbid(+)
-               AND    p.parameter_name(+)='cpu_count'
-               AND    hs1.stat_name in('DB time','DB CPU','background cpu time')
-               AND    (nvl(LOWER(:V1),'a') in('0','a') 
-                      or to_char(s.instance_number) = :V1
-                      or not regexp_like(:V1,'^\d+$'))
-               AND    s.dbid = hs1.dbid
-               AND    s.end_interval_time BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),SYSDATE - 7) AND nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
-               ) a
-      WHERE  snap_id IN (max_id, min_id)
-      AND    max_id!=min_id
-),
-db_time as(select /*+materialize*/ inst,sum(value*flag) db_time from time_model where stat_name='DB time' group by inst)
-&ver
-SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/
-       inst, '- * ON CPU *' event,null wait_class,max(cpu_count) counts,null timeouts,sum(value*flag)* 1e-6/&avg waited,
-       sum(value*flag)/(select db_time from db_time b where b.inst=a.inst) "% DB",
-       round(sum(value*flag)/max(secs)/max(cpu_count),6) avg_wait
-       &ver1,'|' "|" ,null "<1us",null "<2us",null "<4us",null "<8us",null "<16us",null "<32us",null "<64us",null "<128us",null "<256us",null "<512us",null "<1ms",null "<2ms",null "<4ms",null "<8ms",null "<16ms",null "<32ms",null "<64ms",null "<128ms",null "<256ms",null "<512ms",null "<1s",null "<2s",null "<4s",null "<8s",null "<16s",null "<32s",null "<1m",null ">1m"
-from   time_model a 
-where stat_name!='DB time'
-and   (regexp_like(:V1,'^\d+$') or nvl(LOWER(:V1),'a') in('0','a')) 
-group  by inst
-UNION  ALL
-SELECT * FROM (
-    SELECT * FROM (
-        SELECT  inst,nvl(event_name,'- Wait Class: '||nvl(wait_class,'All')) event, 
-                nvl2(event_name,wait_class,'') w_class,
-                SUM(total_Waits * flag)/&avg counts,
-                SUM(total_timeouts * flag)/nullif(SUM(total_Waits * flag),0) timeouts,
-                round(SUM(time_waited_micro * 1e-6  * flag), 2)/&avg waited,
-                sum(time_waited_micro * flag)/(select db_time from db_time b where b.inst=a.inst) db_time,
-                round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0) , 2) avg_wait
-        FROM   (SELECT  *
-                FROM   (select distinct snap_id,max_id, min_id,secs,dbid,instance_number,inst,flag from time_model) s
-                join   dba_hist_system_event hs1
-                using  (snap_id,instance_number,dbid)
-                WHERE  wait_class != 'Idle'
-                AND    (nvl(LOWER(:V1),'a') in (lower(event_name),lower(wait_class),'a') or regexp_like(:V1,'^\d+$'))) a
-        GROUP  BY inst,rollup(wait_class,event_name)
-        HAVING SUM(time_waited_micro *flag)>0)
-    &ver1 NATURAL JOIN histogram
-    ORDER BY nvl2(w_class,2,1),waited desc
-) WHERE ROWNUM <=64
+col "timeouts,% DB" for pct2
+col waited,avg_wait for usmhd2
+col r,grp noprint
+set feed off verify off sep4k on COLAUTOSIZE trim
+
+var c REFCURSOR "The percentage of the histogram is based on wait_count*&unit"
+
+DECLARE
+    v1 VARCHAR2(128):=:V1;
+    e  VARCHAR2(300);
+    w  VARCHAR2(300);
+    f  PLS_INTEGER;
+BEGIN
+    IF upper(v1) IN('CPU','ON CPU') THEN
+        f:=-1;
+    ELSE
+        SELECT NVL(MAX(CASE upper(v1) WHEN upper(wait_class) THEN 2 WHEN upper(event_name) THEN 1 END),0),
+               NVL(MAX(CASE upper(v1) WHEN upper(event_name) THEN event_name END),V1),
+               NVL(MAX(wait_class),'%')
+        INTO   f,e,w
+        FROM   DBA_HIST_EVENT_NAME
+        WHERE  dbid=dbid
+        AND    length(v1)>2
+        AND    upper(v1) IN(upper(event_name),upper(wait_class))
+        AND    rownum<2;
+    END IF;
+
+    OPEN :c FOR
+        WITH snap AS(
+            SELECT a.*,
+                   MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+                   round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+            FROM   (SELECT /*+no_merge no_expand no_or_expand opt_param('optimizer_dynamic_sampling' 0)*/ 
+                           snap_id,
+                           dbid,
+                           instance_number,
+                           CASE WHEN V1 IN('0',''||instance_number) THEN ''||instance_number ELSE '*' END inst,
+                           MAX(begin_interval_time+0) OVER(PARTITION BY snap_id) btime,
+                           MAX(end_interval_time+0)   OVER(PARTITION BY snap_id) etime,
+                           startup_time+0 stime,
+                           (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                           (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY instance_number,startup_time)) diff
+                    FROM   dba_hist_snapshot
+                    WHERE  dbid=:dbid
+                     AND   end_interval_time+0 BETWEEN 
+                           NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND 
+                           NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
+                     AND  (V1 IS NULL OR f!=0 OR lower(V1) IN ('0', 'a') OR instance_number = regexp_substr(V1,'^\d+$' ))) a),
+        time_model as(
+             SELECT dbid,snap_id,pkey,instance_number,inst,secs,etime,adj,cpu_count,
+                    (ela-lag(ela,1,0) over(partition by pkey order by etime)) ela,
+                    (cpu-lag(cpu,1,0) over(partition by pkey order by etime)) cpu,
+                    &avg div
+             FROM (
+                 SELECT s.*, p.value cpu_count
+                 FROM   dba_hist_parameter p,(
+                     SELECT DISTINCT
+                            s.*,
+                            decode(s.snap_id,s.min_snap,secs/86400/(etime-btime),1) adj,
+                            sum(case when hs.stat_name     in('DB CPU','background cpu time') then hs.value end) over(partition by pkey,s.snap_id) cpu,
+                            sum(case when hs.stat_name not in('DB CPU','background cpu time') then hs.value end) over(partition by pkey,s.snap_id) ela
+                     FROM   snap s,dba_hist_sys_time_model hs
+                     WHERE  s.snap_id=hs.snap_id
+                     AND    s.instance_number=hs.instance_number
+                     AND    s.dbid=hs.dbid
+                     AND    hs.dbid=:dbid
+                     AND    hs.stat_name in('DB time','background elapsed time','DB CPU','background cpu time')) s
+                 WHERE  s.snap_id=p.snap_id(+)
+                 AND    s.instance_number=p.instance_number(+)
+                 AND    s.dbid=p.dbid(+)
+                 AND    p.parameter_name(+)='cpu_count'
+                 AND    p.dbid(+)=:dbid)),
+        event as(
+            SELECT grouping_id(inst,wait_class,event) grp,nvl(inst,'*') inst,
+                   nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
+                   nvl2(event,wait_class,'') wait_class,
+                   round(sum(waits/div),&rd) counts,
+                   nullif(round(sum(timeouts/div)/nullif(sum(waits/div),0),4),0) timeouts,
+                   round(sum(micro/div),&rd) waited,
+                   round(sum(micro/div)/sum(distinct ela),4) db,
+                   round(sum(micro/div)/sum(waits/div),2) avg_wait
+            FROM (
+                SELECT event_name event,wait_class,div,decode(f,0,''||inst,to_char(etime,'&fmt')) inst,
+                       (total_Waits-lag(total_Waits,1,0) over(partition by pkey,event_name order by etime)) waits,
+                       (total_timeouts-lag(total_timeouts,1,0) over(partition by pkey,event_name order by etime)) timeouts,
+                       (time_waited_micro-lag(time_waited_micro,1,0) over(partition by pkey,event_name order by etime)) micro,
+                       sum(distinct ela/div) over(partition by snap_id,inst) ela
+                FROM   time_model 
+                JOIN   dba_hist_system_event e USING(dbid,instance_number,snap_id)
+                WHERE  (f=0 and wait_class!='Idle' OR e.wait_class=w AND (f=2 OR event_name=e))
+                AND    f>=0
+                AND    dbid=:dbid) a
+            GROUP BY rollup(inst),rollup(wait_class,event)
+            HAVING  grouping_id(inst,wait_class,event) in(
+                        decode(f,0,7,1,5,4),
+                        decode(f,0,5,1,0,1),
+                        decode(f,0,0,1,-1,5)) 
+                
+            )
+        &histogram
+        SELECT * FROM (
+            SELECT 1 grp,
+                   decode(f,0,''||inst,to_char(etime,'&fmt')) inst, 
+                   '- * ON CPU *' event,null wait_class,sum(cpu_count*secs/div) counts,null timeouts,sum(cpu/div) waited,
+                   sum(cpu/div)/sum(ela/div) "% DB",
+                   round(sum(cpu/adj/cpu_count)/sum(secs/adj),6) avg_wait
+                   &ver1,'|' "|" ,null "<1us",null "<2us",null "<4us",null "<8us",null "<16us",null "<32us",null "<64us",null "<128us",null "<256us",null "<512us",null "<1ms",null "<2ms",null "<4ms",null "<8ms",null "<16ms",null "<32ms",null "<64ms",null "<128ms",null "<256ms",null "<512ms",null "<1s",null "<2s",null "<4s",null "<8s",null "<16s",null "<32s",null "<1m",null ">1m"
+            FROM   time_model a
+            WHERE  f<1
+            GROUP  BY decode(f,0,''||inst,to_char(etime,'&fmt'))
+            ORDER  BY nullif(inst,'*') desc nulls first
+        )
+        UNION ALL
+        SELECT * FROM(
+            select /*+use_hash(a b) outline_leaf*/ * from event a
+            &ver1 left join histogram b using(grp,inst,event)
+            ORDER BY bitand(grp,1) desc,nullif(inst,'*') desc nulls first,waited desc
+        ) WHERE ROWNUM<decode(f,0,65,4086);
+END;
+/
+print c

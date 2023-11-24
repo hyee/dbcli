@@ -45,7 +45,7 @@ For Windows OS, to avoid the word wrap in the terminal window which affects the 
 Linux must be the `64-bit` version, and make sure `glibc >= v2.4`(use `ldd --version` to verify) are installed. You can use command `<command> | more` to vertically/horizontally scroll the command output, or `more last` or scroll the last command output. 
 
 ### OSX: Pre-Requisitions
-Only tested on OSX 10.12, lower version should be fine. Java 1.8 is required. It's recommended to add entry `<hostname>.local` into `/etc/hosts` to speed up the JVM performance.
+Only tested on OSX 10.12, lower version should be fine. Java 1.8+ is required. It's recommended to add entry `<hostname>.local` into `/etc/hosts` to speed up the JVM performance.
 For Example:
 ```
 127.0.0.1  localhost mac-pc.local

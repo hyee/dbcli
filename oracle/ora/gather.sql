@@ -123,7 +123,7 @@ DECLARE
     pct   NUMBER        := nvl(0+regexp_substr(:V3,'^[\.0-9]+$'),0);
     dop   INT           := regexp_substr(:V2,'^\d+$');
     opt   VARCHAR2(300) := trim(:V4);
-    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> <percent> -async';
+    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent>] [-async]';
     fmt   VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s%s,degree=>%s&invalid.&force.%s);]';
     pub   VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
     cls   VARCHAR2(300) := q'[dbms_stats.delete_pending_stats('%s','%s');]';

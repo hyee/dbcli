@@ -30,6 +30,7 @@ function ora:validate_accessable(name,options,values)
             end
             expect=option
         elseif name:find("CHECK_ACCESS",1,true)==1 then--objects are sep with the / symbol
+            local ispdb=(tonumber(db.props.container_id) or 0)>1
             for obj in option:gmatch("([^/%s]+)") do
                 if obj:upper()=='CDB' then
                     if (db.props.container_id or 2)>1 then
@@ -42,7 +43,21 @@ function ora:validate_accessable(name,options,values)
                         check_container=true
                     end
                 elseif obj:upper()=='PDB' then
-                    if tonumber(db.props.container_id or 0)<2 then
+                    if not ispdb then
+                        check_flag=4
+                        expect_name='non-PDB'
+                        expect='PDB mode'
+                        default=nil
+                        break
+                    else
+                        check_container=true
+                    end
+                elseif obj:upper()=='AWRPDB' then
+                    local rtn,c=nil,0
+                    if ispdb then
+                        rtn,c=pcall(db.get_value,db,'select /*BYPASS_DBCLI_REWRITE*/ /*+INDEX(A)*/ count(1) from awr_pdb_snapshot a where dbid=&dbid rownum<2')
+                    end
+                    if c==0 then
                         check_flag=4
                         expect_name='non-PDB'
                         expect='PDB mode'

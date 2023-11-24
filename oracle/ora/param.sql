@@ -47,7 +47,7 @@ begin
     if :d=1 then
         open :c for
             select inst_id,NAME,
-                   case when length(DISPLAY_VALUE)>80 then regexp_replace(DISPLAY_VALUE,', *',','||chr(10)) else DISPLAY_VALUE end session_value,
+                   case when length(DISPLAY_VALUE)>80 then regexp_replace(DISPLAY_VALUE,',\s*',','||chr(10)) else DISPLAY_VALUE end session_value,
                    &check_access_param
                    isdefault,
                    &check_access_env
@@ -65,29 +65,26 @@ begin
               OR (:V1 IS NULL and isdefault='FALSE'))
             order by name;
     else
-        if v_dbid is null then
-            select dbid into v_dbid from v$database;
-        end if;
         open :c for
             with params as(
                 select lpad(decode(count(1),1,''||max(inst_id),'*'),4) inst,
                        name,
                        max(begin_value) begin_value,
-                       nvl(nullif(value,max(begin_value)),'<SAME>') end_value,
+                       nvl(nullif(nvl(end_value,' '),nvl(max(begin_value),' ')),'<SAME>') end_value,
                        min(isdefault) isdefault,
                        min(ismodified) ismodified
                 from (
                     select instance_number inst_id,
                            parameter_name name,
-                           trim(max(value) keep(dense_rank first order by snap_id)) begin_value,
-                           trim(max(value) keep(dense_rank last order by snap_id)) value,
+                           trim(regexp_replace(max(value) keep(dense_rank first order by snap_id),',\s*',','||chr(10))) begin_value,
+                           trim(regexp_replace(max(value) keep(dense_rank last  order by snap_id),',\s*',','||chr(10))) end_value,
                            max(isdefault)  keep(dense_rank last order by snap_id) isdefault,
                            max(ismodified) keep(dense_rank last order by snap_id) ismodified
                     from   dba_hist_parameter
                     where  dbid=v_dbid
                     and    instance_number=nvl(regexp_substr(:V2,'^\d+$'),instance_number)
                     group  by instance_number,parameter_name)
-                group by name,value)
+                group by name,end_value)
             select a.inst,
                    name,
                    begin_value,

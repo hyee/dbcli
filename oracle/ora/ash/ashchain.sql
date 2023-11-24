@@ -39,10 +39,8 @@
         &v2    : default={&starttime}
         &v3    : default={&endtime}
         &hint  : ash={inline} dash={materialize}
-        &AWR_VIEW        : default={dba_hist_} pdb={AWR_PDB_}
-        @check_access_pdb: pdb/awr_pdb_snapshot={&AWR_VIEW.} default={DBA_HIST_}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select dbid from v$database)}
-        &V8: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=nvl(0+'&dbid',&did) )}
+        @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
+        &V8: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid )}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,&top_sql SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
         &range : default={sample_time BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE+1)}, snap={sample_time>=sysdate - nvl(:V1,60)/86400}, f1={}
@@ -114,6 +112,8 @@ BEGIN
                                 'Temp I/O'
                             when current_obj# > 0 then 
                                  ''||current_obj#
+                            when p2text='id1' then
+                                 ''||p2
                             when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                                 'Undo'
                             when p3text like '%namespace' and p3>power(16,8) then 

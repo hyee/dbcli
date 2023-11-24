@@ -95,37 +95,41 @@ BEGIN
         $END
         
         IF regexp_like(sq_id,'^\d+$') THEN
-            sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
-                                             incident_id     => sq_id,
-                                             exportData      => false,
-                                             &z exportMetadata  => false,
-                                             &z ctrlOptions=> ctrlOptions,
-                                             testcase        => res);
+            sys.dbms_sqldiag.export_sql_testcase(
+                directory          => nam,
+                incident_id        => sq_id,
+                exportData         => false,
+                &z exportMetadata  => false,
+                &z ctrlOptions     => ctrlOptions,
+                testcase           => res);
         ELSIF phv IS NULL THEN
             IF sq_id IS NOT NULL THEN
-                sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
-                                                 sql_id          => sq_id,
-                                                 exportData      => false,
-                                                 &z exportMetadata  => false,
-                                                 &z ctrlOptions  => ctrlOptions,
-                                                 testcase        => res);
+                sys.dbms_sqldiag.export_sql_testcase(
+                    directory          => nam,
+                    sql_id             => sq_id,
+                    exportData         => false,
+                    &z exportMetadata  => false,
+                    &z ctrlOptions     => ctrlOptions,
+                    testcase           => res);
             ELSE
-                sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
-                                                 sql_text        => sq_text,
-                                                 user_name       => sys_context('userenv','current_schema'),
-                                                 exportData      => false,
-                                                 &z exportMetadata  => false,
-                                                 &z ctrlOptions  => ctrlOptions,
-                                                 testcase        => res);
+                sys.dbms_sqldiag.export_sql_testcase(
+                    directory          => nam,
+                    sql_text           => sq_text,
+                    user_name          => sys_context('userenv','current_schema'),
+                    exportData         => false,
+                    &z exportMetadata  => false,
+                    &z ctrlOptions     => ctrlOptions,
+                    testcase           => res);
             END IF;
         ELSE
-            sys.dbms_sqldiag.export_sql_testcase(directory       => nam,
-                                             sql_id          => sq_id,
-                                             plan_hash_value => phv,
-                                             exportData      => false,
-                                             &z exportMetadata  => false,
-                                             &z ctrlOptions     => ctrlOptions,
-                                             testcase        => res);
+            sys.dbms_sqldiag.export_sql_testcase(
+                directory          => nam,
+                sql_id             => sq_id,
+                plan_hash_value    => phv,
+                exportData         => false,
+                &z exportMetadata  => false,
+                &z ctrlOptions     => ctrlOptions,
+                testcase           => res);
         END IF;
         sep := regexp_substr(dir, '[\\/]');
 

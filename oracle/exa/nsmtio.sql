@@ -34,6 +34,7 @@ COL "SUM|BYTES" FOR KMG2
 DECLARE
     c          SYS_REFCURSOR;
     block_size INT;
+    smtio      INT;
     caches     INT;
     chains     INT;
     scn        INT;
@@ -82,8 +83,9 @@ DECLARE
         xml := xml || utl_lms.format_message(fmt, NAME, v, r);
     END;
 BEGIN
-    IF &mon=1 THEN
-        OPEN :c FOR
+    $IF &mon=1 $THEN
+        block_size := param('db_block_size') * param('_small_table_threshold');
+        OPEN c FOR
             WITH r AS
              (SELECT ROWNUM r, a.*
               FROM   (SELECT MAX(sql_id) keep(dense_rank LAST ORDER BY dur, sql_exec_id) sq_id,
@@ -109,7 +111,8 @@ BEGIN
                                         MAX(PLAN_OBJECT_OWNER) OWNER,
                                         MAX(PLAN_OBJECT_NAME) OBJECT_NAME
                                 FROM   gv$sql_plan_monitor
-                                WHERE  REPLACE(PLAN_OPERATION,'BITMAP ')||' '|| PLAN_OPTIONS IN (
+                                WHERE  PHYSICAL_READ_BYTES > block_size
+                                AND    REPLACE(PLAN_OPERATION,'BITMAP ')||' '|| PLAN_OPTIONS IN (
                                           'TABLE ACCESS STORAGE FULL',
                                           'INDEX STORAGE FAST FULL SCAN',
                                           'INDEX STORAGE FAST FULL SCAN FIRST ROWS',
@@ -153,8 +156,12 @@ BEGIN
                 GROUP  BY owner,object_name
                 ORDER  BY reqs DESC
             ) WHERE ROWNUM<=10;
-        RETURN;
-    END IF; 
+    $END
+    IF &mon=1 THEN 
+       :c := c; 
+       RETURN;
+    END IF;
+
     IF :object_name IS NOT NULL THEN
         SELECT SUM(blocks)
         INTO   block_size
@@ -220,19 +227,14 @@ BEGIN
             push('Index Buffer Pool', keep, 'DEFAULT');
         END IF;
     END IF;
-    /*
-    FOR R IN(SELECT 'Tablespace '||TABLESPACE_NAME TBS,ALLOCATION_TYPE||','||DECODE(SEGMENT_SPACE_MANAGEMENT,'AUTO','ASSM','LMT') MGMT 
+    
+    FOR R IN(SELECT 'Tablespace '||TABLESPACE_NAME TBS,PREDICATE_EVALUATION PRED
              FROM    dba_tablespaces 
-             WHERE (ALLOCATION_TYPE='UNIFORM' or SEGMENT_SPACE_MANAGEMENT='MANUAL') AND CONTENTS='PERMANENT'
-             AND   (:object_name IS NULL AND TABLESPACE_NAME!='SYSTEM' OR 
-                    TABLESPACE_NAME IN(SELECT TABLESPACE_NAME 
-                                       FROM   DBA_SEGMENTS
-                                       WHERE  owner = :object_owner
-                                       AND    segment_name = :object_name
-                                       AND    nvl(partition_name, '_') = coalesce(:object_subname, partition_name, '_'))) 
-    ) LOOP
-        push(r.tbs,r.mgmt,'AUTOALLOCATE,ASSM: Uniform tbs can lead to inconsistent Level 1 BMB High/low HWM for direct load(bug 25773041)');
-    END LOOP;*/
+             WHERE   CONTENTS='PERMANENT'
+             AND     NVL(PREDICATE_EVALUATION,'HOST')!='STORAGE') 
+    LOOP
+        push(r.tbs||' - PREDICATE_EVALUATION',r.pred,'STORAGE');
+    END LOOP;
 
     FOR R IN(SELECT Distinct b.dg,upper(b.value) val,b.misses,b.disks
              FROM    dba_data_files a, 
@@ -288,6 +290,7 @@ BEGIN
     push('Param _kcfis_storageidx_set_membership_disabled', param('_kcfis_storageidx_set_membership_disabled'), 'false');
     push('Param _kcfis_cell_passthru_fromcpu_enabled', param('_kcfis_cell_passthru_fromcpu_enabled'), 'true');
     push('Param _kdz_pcode_flags', param('_kdz_pcode_flags'), '0');
+    push('Param _dbg_scan', param('_dbg_scan'), '0');
     push('Param _enable_columnar_cache', param('_enable_columnar_cache'), '1');
     push('Param _key_vector_offload', param('_key_vector_offload'), 'predicate');
     push('Param _rowsets_enabled', param('_rowsets_enabled'), 'true');
@@ -308,12 +311,13 @@ BEGIN
     SELECT property_value INTO tmp FROM sys.database_properties WHERE property_name = 'DST_UPGRADE_STATE';
     push('DST_UPGRADE_STATE', tmp, 'NONE');
     xml := xml || '</ROWSET>';
-    OPEN :c FOR
+    OPEN c FOR
         SELECT *
         FROM   XMLTABLE('/ROWSET/ROW' PASSING XMLTYPE(XML) COLUMNS NAME VARCHAR2(50) PATH 'NAME',
                         VALUE VARCHAR2(15) PATH 'VALUE',
                         REFERENCE VARCHAR2(300) PATH 'REF_VALUE')
         ORDER  BY 1;
+    :c := c;
 END;
 /
 

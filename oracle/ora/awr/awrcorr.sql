@@ -44,7 +44,7 @@
                     ORDER  BY r1},
             d={res AS (
                    select --+ no_merge(st1) no_merge(st2)
-                          snap_time, name, unit, st1.value value, st2.value target_value, 
+                          snap_time , name, unit, st1.value value, st2.value target_value, 
                           CORR(NVL(st1.value,0),nvl(st2.value,0)) over(order by snap_time) * 100 "CORR(%)"
                    FROM   st2 full join (select * from stats where LOWER(NAME) = LOWER('&0') or LOWER(NAME) like '%] &0') st1 USING (snap_id, snap_time)
                ) select * from res
@@ -55,93 +55,117 @@
 ]]*/
 PRO Target: &V1
 SET FEED OFF
-WITH snap AS
- (SELECT /*+materialize*/'A' inst, dbid, instance_number, -8640000 * (startup_time + 0 - SYSDATE) + instance_number part_key, snap_id,to_char(end_interval_time,'YYYY-MM-DD HH24:MI') snap_time
-  FROM   DBA_hist_snapshot
-  WHERE  end_interval_time+0 BETWEEN nvl(to_date(nvl(:V2,:starttime),'YYMMDDHH24MI'),sysdate-1) AND  nvl(to_date(nvl(:V3,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
-  AND   (nvl(:V4,'0') IN ('0','A','a') OR instance_number=:V4)),
+WITH snap AS(
+    SELECT a.*,
+           MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+           round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+    FROM   (SELECT /*+no_merge no_expand no_or_expand*/ 
+                   snap_id,
+                   dbid,
+                   instance_number,
+                   instance_number inst_id,
+                   begin_interval_time+0 btime,
+                   MAX(end_interval_time+0) OVER(PARTITION BY snap_id) etime,
+                   startup_time+0 stime,
+                   (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                   (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY instance_number,startup_time)) diff
+            FROM   dba_hist_snapshot
+            WHERE  dbid=:dbid
+             AND   end_interval_time+0 BETWEEN 
+                   NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND 
+                   NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
+             AND  (:V4 IS NULL OR lower(:V4) IN ('0', 'a') OR instance_number = :V4)) a),
 STATS AS
- (SELECT /*+materialize no_expand*/source_table, snap_id,snap_time,unit, NAME, SUM(VALUE) VALUE
+ (SELECT /*+materialize no_expand*/
+         source_table, snap_id,etime snap_time,unit, NAME, SUM(VALUE) VALUE
   FROM   (SELECT 'dba_hist_sysstat' source_table,
-                 inst,
-                 snap_id,snap_time,
+                 inst_id,
+                 snap_id,etime,
                  STAT_NAME NAME,
                  'count' unit,
-                 VALUE - LAG(VALUE) OVER(PARTITION BY STAT_NAME, part_key ORDER BY snap_id) VALUE
+                 VALUE - LAG(VALUE) OVER(PARTITION BY STAT_NAME, pkey ORDER BY snap_id) VALUE
           FROM   snap
           JOIN   dba_hist_sysstat
           USING  (dbid, instance_number, snap_id)
           WHERE  VALUE > 0
+          AND    dbid = :dbid
           UNION ALL
           SELECT 'dba_hist_dlm_misc' source_table,
-                 inst,
-                 snap_id,snap_time,
+                 inst_id,
+                 snap_id,etime,
                  NAME,
                  'count' unit,
-                 VALUE - LAG(VALUE) OVER(PARTITION BY NAME, part_key ORDER BY snap_id) VALUE
+                 VALUE - LAG(VALUE) OVER(PARTITION BY NAME, pkey ORDER BY snap_id) VALUE
           FROM   snap
           JOIN   dba_hist_dlm_misc
           USING  (dbid, instance_number, snap_id)
           WHERE  VALUE > 0
+          AND    dbid = :dbid
           UNION ALL
-          SELECT 'dba_hist_sysmetric_summary' source_table, inst, snap_id,snap_time, metric_name NAME, metric_unit, AVERAGE
+          SELECT 'dba_hist_sysmetric_summary' source_table, inst_id, snap_id,etime, metric_name NAME, metric_unit, AVERAGE
           FROM   snap
           JOIN   dba_hist_sysmetric_summary
           USING  (dbid, instance_number, snap_id)
+          WHERE  dbid = :dbid
           UNION ALL
           SELECT 'dba_hist_system_event' source_table,
-                 inst,
-                 snap_id,snap_time,
+                 inst_id,
+                 snap_id,etime,
                  '['||wait_class||'] '||event_name,
                  'us',
-                 TIME_WAITED_MICRO - LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name, part_key ORDER BY snap_id)
+                 TIME_WAITED_MICRO - LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name, pkey ORDER BY snap_id)
           FROM   snap
           JOIN   dba_hist_system_event
           USING  (dbid, instance_number, snap_id)
           WHERE  TIME_WAITED_MICRO > 0
           AND    wait_class!='Idle'
+          AND    dbid = :dbid
           UNION ALL
           SELECT 'dba_hist_sys_time_model' source_table,
-                 inst,
-                 snap_id,snap_time,
+                 inst_id,
+                 snap_id,etime,
                  STAT_NAME,
                  'us',
-                 value - LAG(value) OVER(PARTITION BY STAT_NAME, part_key ORDER BY snap_id)
+                 value - LAG(value) OVER(PARTITION BY STAT_NAME, pkey ORDER BY snap_id)
           FROM   snap
           JOIN   dba_hist_sys_time_model
           USING  (dbid, instance_number, snap_id)
           WHERE  value > 0
+          AND    dbid = :dbid
           UNION ALL
           SELECT 'dba_hist_latch' source_table,
-                 inst,
-                 snap_id,snap_time,
+                 inst_id,
+                 snap_id,etime,
                  latch_name,
                  'gets',
-                 gets + immediate_gets - LAG(gets + immediate_gets) OVER(PARTITION BY latch_name, part_key ORDER BY snap_id)
+                 gets + immediate_gets - LAG(gets + immediate_gets) OVER(PARTITION BY latch_name, pkey ORDER BY snap_id)
           FROM   snap
           JOIN   dba_hist_latch
           USING  (dbid, instance_number, snap_id)
           WHERE  gets + immediate_gets > 0
+          AND    dbid = :dbid
           UNION ALL
           SELECT 'dba_hist_mutex_sleep' source_table,
-                 inst,
-                 snap_id,snap_time,
+                 inst_id,
+                 snap_id,etime,
                  '['||MUTEX_TYPE || '] ' || TRIM(REPLACE(LOCATION, CHR(10))),
                  'us',
-                 wait_time -LAG(wait_time) OVER(PARTITION BY '['||MUTEX_TYPE || '] ' || TRIM(REPLACE(LOCATION, CHR(10))), part_key ORDER BY snap_id)
+                 wait_time -LAG(wait_time) OVER(PARTITION BY '['||MUTEX_TYPE || '] ' || TRIM(REPLACE(LOCATION, CHR(10))), pkey ORDER BY snap_id)
           FROM   snap
           JOIN   dba_hist_mutex_sleep
           USING  (dbid, instance_number, snap_id)
           WHERE  wait_time > 0
+          AND    dbid = :dbid
           UNION ALL
           SELECT 'dba_hist_sgastat' source_table, 
-                 inst, 
-                 snap_id,snap_time, 
-                 nullif('['||pool || '] ', '[] ') || TRIM(REPLACE(NAME, CHR(10))), 'bytes', bytes-LAG(bytes) OVER(PARTITION BY NAME, part_key ORDER BY snap_id)
+                 inst_id, 
+                 snap_id,etime, 
+                 nullif('['||pool || '] ', '[] ') || TRIM(REPLACE(NAME, CHR(10))), 'bytes', bytes-LAG(bytes) OVER(PARTITION BY NAME, pkey ORDER BY snap_id)
           FROM   snap
           JOIN   dba_hist_sgastat
-          USING  (dbid, instance_number, snap_id))
-  GROUP  BY source_table, snap_id, snap_time,unit, NAME
+          USING  (dbid, instance_number, snap_id)
+          WHERE  dbid = :dbid)
+  GROUP  BY source_table, snap_id, etime,unit, NAME
   HAVING SUM(VALUE)>0),
 st2 as (SELECT /*+no_merge no_expand*/ snap_id, snap_time, VALUE FROM STATS WHERE LOWER(NAME) =LOWER(:V1) or LOWER(NAME) like '%] '||LOWER(:V1)),
 &co 

@@ -7,6 +7,7 @@
     --[[
         @ARGS: 2
         @CHECK_ACCESS_CDB: SYS.CDB_HIST_REPORTS_DETAILS/SYS.dbms_workload_repository={1}
+        @MODE: default={1} old={2}
     --]]
 ]]*/
 SET SQLTIMEOUT 7200
@@ -18,6 +19,7 @@ DECLARE
     tab   VARCHAR2(512) := upper(regexp_substr(:V3,'^\D.*$'));
     root  VARCHAR2(2000);
     dump  BFILE;
+    log   UTL_FILE.FILE_TYPE;
     len   NUMBER;
     stage VARCHAR2(30) := 'DBCLI_AWR';
     hdl   NUMBER;
@@ -26,6 +28,9 @@ DECLARE
     own   VARCHAR2(128);
     own1  VARCHAR2(128);
     tab1  VARCHAR2(128);
+    a     INT;
+    b     INT;
+    r     VARCHAR2(300);
 BEGIN
     SELECT MAX(directory_name), MAX(directory_path)
     INTO   dir, root
@@ -37,7 +42,16 @@ BEGIN
 
     $IF dbms_db_version.version>17 $THEN
         IF dbms_utility.directory_has_symlink(dir)=1 THEN
-            raise_application_error(-20001, 'Directory('||root||') has symbolic link, please change to the real path.');
+            FOR i IN 1..2 LOOP
+                r := '0';
+                BEGIN
+                    a:=sys.dbms_utility.get_parameter_value(CASE WHEN i=1 THEN '_kolfuseslf' ELSE '_disable_directory_link_check' END,b,r);
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+                IF r='0' THEN
+                    raise_application_error(-20001, 'Directory('||root||') has symbolic link, please change to the real path or _kolfuseslf/_disable_directory_link_check as TRUE.');
+                END IF;
+            END LOOP;
         END IF;
     $END
 
@@ -60,6 +74,13 @@ BEGIN
         ELSE
             raise_application_error(-20001, 'Cannot access file: ' || root || file || '.dmp');
         END IF;
+    END;
+
+    BEGIN
+        log:=sys.utl_file.fopen(dir,file||'.log','w');
+        sys.utl_file.fclose(log);
+    EXCEPTION WHEN OTHERS THEN
+        raise_application_error(-20001, 'No read & write access to directory '||dir);
     END;
     
     IF instr(file,'sqlmon')>0 THEN
@@ -160,7 +181,7 @@ BEGIN
                 stage := CASE sys_context('userenv', 'con_name') WHEN 'CDB$ROOT' THEN 'C##' END || stage;
             EXCEPTION WHEN OTHERS NULL;
             END;
-            $IF DBMS_DB_VERSION.VERSION>17 $THEN
+            $IF DBMS_DB_VERSION.VERSION>17 and &MODE=1 $THEN
                 sys.dbms_workload_repository.load(schname => stage, dmpfile => file, dmpdir => dir, new_dbid => did);
             $ELSE
                 sys.dbms_swrf_internal.awr_load(schname  => stage,dmpfile  => file, dmpdir => dir);

@@ -37,7 +37,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
         )
         if "!n!" equ "os.arch" if "!v!" equ "x86" (set bit_=x86) else (set bit_=x64)
         if "!n!" equ "java.class.version" (
-            if "52.0" NEQ "!v!" (set "JAVA_EXE_=") else (
+            if "52.0" GTR "!v!" (set "JAVA_EXE_=") else (
                 SET found=1
                 SET "JAVA_VER_=!v!"
             )

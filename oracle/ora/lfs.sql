@@ -4,11 +4,12 @@
   -d    : analyze AWR views(DBA_HIST_*) instead of gv$ views
   -pdb  : analyze AWR PDB views(AWR_PDB_*) instead of gv$ views
   
+  Notes: Some stats(i.e. for LGWR) are missing in PDB level
+
   --[[
         &flag: default={1} d={dba_hist_} pdb={awr_pdb_}
         &div: default={1} avg={&V1}
         @CHECK_ACCESS_SL: SYS.DBMS_LOCK={SYS.DBMS_LOCK} DEFAULT={DBMS_SESSION}
-        @did : 12.2={nvl('&dbid'+0,sys_context('userenv','dbid')+0)} default={nvl('&dbid'+0,(select dbid from v$database))}
   --]]
 ]]*/
 
@@ -46,12 +47,12 @@ BEGIN
     IF '&flag'='1' THEN
         IF dbms_db_version.version>11 THEN
             qry:='(SELECT * FROM '||qry||q'!
-                  UNION ALL
-                  SELECT METRIC_NAME,SUM(METRIC_VALUE),NULL,'Cell'
-                  FROM   v$cell_global
-                  WHERE  lower(METRIC_NAME) like '%log %'
-                  AND    METRIC_VALUE>0
-                  GROUP  BY METRIC_NAME)!';
+                      UNION ALL
+                      SELECT METRIC_NAME,SUM(METRIC_VALUE),NULL,'Cell'
+                      FROM   v$cell_global
+                      WHERE  lower(METRIC_NAME) like '%log %'
+                      AND    METRIC_VALUE>0
+                      GROUP  BY METRIC_NAME)!';
         END IF;
         IF regexp_like(:V1,'^\d+$') THEN
             func :='FUNCTION do_sleep(id NUMBER,target DATE) RETURN TIMESTAMP IS
@@ -81,7 +82,7 @@ BEGIN
                          XID,secs, dbid, instance_number
                   FROM   (SELECT MIN(snap_id) mid, MAX(snap_id) XID, dbid, instance_number,SUM((end_interval_time+0)-(begin_interval_time+0))*86400 secs
                           FROM   &flag.snapshot
-                          WHERE  dbid = &did
+                          WHERE  dbid = &dbid
                           AND    end_interval_time+0 between nvl(to_date(nvl('&V1','&starttime'),'yymmddhh24mi'),sysdate-7) 
                                  and nvl(to_date(nvl('&V2','&endtime'),'yymmddhh24mi'),sysdate+1)
                           GROUP  BY dbid, instance_number, startup_time)),!';
@@ -92,7 +93,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.system_event b
                 USING  (dbid, instance_number)
-                WHERE  dbid = &did
+                WHERE  dbid = &dbid
                 AND    time_waited_micro > 0
                 AND    snap_id IN (mid, XID)
                 AND    (event_name IN ('log file sync', 'log file parallel write','gcs log flush sync','remote log force - commit') OR (event_name LIKE 'LGWR%' AND event_name NOT LIKE '%idle'))
@@ -105,7 +106,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.latch b
                 USING  (dbid, instance_number)
-                WHERE  dbid = &did --
+                WHERE  dbid = &dbid --
                  AND   snap_id IN (mid, XID) --
                  AND   wait_time > 0 --
                  AND   (latch_name LIKE 'redo%' OR LOWER(latch_name) LIKE '%lgwr%')
@@ -115,14 +116,14 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.sysstat b
                 USING  (dbid, instance_number)
-                WHERE  dbid = &did --
+                WHERE  dbid = &dbid --
                  AND   snap_id IN (mid, XID) --
                  AND   (stat_name LIKE 'redo%' or 
                         stat_name like '% log %' or 
                         stat_name like '%rdma on commit%' or 
                         stat_name in('user commits','user rollbacks') or
                         stat_name like 'commit%' or
-                        stat_name like '%current block%flush%')
+                        stat_name like 'gc% block% flush%')
                  AND   VALUE > 0
                 GROUP  BY stat_name!';
         IF dbms_db_version.version>11 THEN
@@ -132,7 +133,7 @@ BEGIN
                 FROM   snap a
                 JOIN   &flag.cell_global b
                 USING  (dbid)
-                WHERE  dbid = &did --
+                WHERE  dbid = &dbid --
                  AND   INSTANCE_NUMBER=1
                  AND   snap_id IN (mid, xxid) --
                  AND   lower(METRIC_NAME) like '%log %'
@@ -143,7 +144,7 @@ BEGIN
     qry:=replace(replace(q'!
         WITH @FUNC@
         STATS AS(
-            SELECT /*+inline no_merge*/ *
+            SELECT /*+inline no_merge OPT_PARAM('_fix_control' '26552730:0')*/ *
             FROM   (@QUERY@)
             MODEL DIMENSION BY (NAME)
             MEASURES(typ,round(micro,2) micro,round(cnt,2) cnt,to_number(NULL) avg_time,to_number(NULL) delta_time,to_number(NULL) delta_pct)
@@ -157,7 +158,8 @@ BEGIN
                     micro['redo log space wait time']=micro[cv()]*1e4,
                     micro['user transactions']=sum(micro)[name in('user commits','user rollbacks')],
                     cnt['commit cleanouts successfully completed']=micro['commit cleanouts'],
-                    cnt[NAME LIKE 'redo write % time' OR NAME in('redo write worker delay (usec)','redo writes coalesced','cell pmem log writes','flashback log writes','Redo log write requests','user transactions')]=micro['redo writes'],
+                    cnt['redo write worker delay (usec)']=micro['redo writes adaptive worker'],
+                    cnt[NAME LIKE 'redo write % time' OR NAME in('redo writes coalesced','cell pmem log writes','flashback log writes','Redo log write requests','user transactions')]=micro['redo writes'],
                     cnt[NAME LIKE 'redo synch fast sync % (usec)']=micro[REPLACE(CV(),'(usec)','count')],
                     cnt['avg_redo_synch_polls']=micro['redo synch poll writes'],
                     cnt['redo writes adaptive all']=micro['redo writes'],
@@ -173,34 +175,43 @@ BEGIN
                     cnt['redo synch PMEM prep time']=SUM(micro)[NAME LIKE 'redo synch fast sync % count'],
                     micro['redo write broadcasts']=sum(micro)[name like 'redo write broadcast% count' or name='broadcast rdma on commit (actual)'],
                     cnt['redo write broadcasts']=micro['redo writes'],
+                    cnt['redo write info find fail']=micro['redo write info find'],
                     cnt['flashback log write bytes']=micro['flashback log writes'],
                     cnt['gc current block flush time']=micro['gc current blocks flushed'],
-                    micro[name in('gc current block flush time')]=micro[cv()]*1e4,
+                    cnt['gc cr block flush time']=micro['gc cr blocks flushed'],
+                    micro[name like 'gc % block flush time']=micro[cv()]*1e4,
                     cnt[name in('PMEM log write requests','Redo log write I/O latency','Redo log write request latency')]=micro['Redo log write requests'],
-                    cnt[name like 'Flash log%writ%']=micro['Flash log redo writes serviced'],
+                    cnt['Flash log redo bytes written to disk']=micro['Flash log redo writes first written to disk'],
+                    cnt['Flash log redo bytes written to flash']=micro['Flash log redo writes first written to flash'],
                     micro['Flash log redo write bytes']=SUM(micro)[name like 'Flash log redo bytes%'],
                     typ['Flash log redo write bytes']='Cell',
                     cnt['Flash log redo write bytes']=micro['redo size'],
-                    avg_time[ANY]=round(micro[CV()]/nullif(cnt[CV()],0),2),
-                    delta_time[NAME IN('redo write worker delay (usec)','redo write broadcast ack time','redo synch time overhead (usec)')]=avg_time[CV()],
-                    delta_time['redo write gather time']=avg_time['redo write gather time']-nvl(avg_time['redo write worker delay (usec)'],0),
-                    delta_time['redo write schedule time']=avg_time['redo write schedule time']-avg_time['redo write gather time'],
-                    delta_time['redo write issue time']=avg_time['redo write issue time']-avg_time['redo write schedule time'],
-                    delta_time['redo write finish time']=avg_time['redo write finish time']-nvl(avg_time['redo write issue time'],avg_time['redo write schedule time']),
-                    delta_time['redo write time (usec)']=avg_time['redo write time (usec)']-avg_time['redo write finish time'],
-                    delta_time['redo write total time']=round(avg_time['redo write total time']-avg_time['expect_redo_synch_time']/2,2),
-                    delta_time['redo synch time (usec)']=round((micro['redo synch time (usec)']-avg_time['expect_redo_synch_time']/2*LEAST(micro['redo synch writes'],micro['redo writes']))/micro['redo synch writes'],2),
-                    micro['redo total time']=SUM(delta_time*cnt)[ANY],
-                    delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
-                    delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN','Redo log write request latency','Redo log write I/O latency')]=round(micro[CV()]/micro['redo total time'],5),
-                    delta_pct[SUBSTR(NAME,1,3) IN('LGW')]=round(micro[CV()]/micro['log file parallel write'],5),
                     cnt['redo write broadcast ack time']=sum(micro)[name in('redo write broadcast ack count','broadcast rdma on commit (actual)')],
                     cnt['redo synch time overhead (usec)']=sum(micro)[name like 'redo synch time overhead count%'],
                     cnt['redo write worker delay (usec)']=micro['redo write worker delay count'],
-                    avg_time[name in ('redo write worker delay (usec)','redo write broadcast ack time','redo synch time overhead (usec)')]=round(micro[CV()]/nullif(cnt[CV()],0),2)
+                    avg_time[ANY]=round(micro[CV()]/nullif(cnt[CV()],0),2),
+                    delta_time[NAME IN('redo write worker delay (usec)','redo write broadcast ack time','redo synch time overhead (usec)')]=avg_time[CV()],
+                    delta_time['redo write gather time']=avg_time[cv()]-nvl(avg_time['redo write worker delay (usec)'],0),
+                    delta_time['redo write schedule time']=avg_time[cv()]-avg_time['redo write gather time'],
+                    delta_time['redo write issue time']=avg_time[cv()]-avg_time['redo write schedule time'],
+                    delta_time['redo write finish time']=avg_time[cv()]-nvl(avg_time['redo write issue time'],avg_time['redo write schedule time']),
+                    delta_time['redo write time (usec)']=avg_time[cv()]-avg_time['redo write finish time'],
+                    delta_time['redo write total time']=round((micro[cv()]-micro['redo write time (usec)']-nvl(micro['redo write broadcast ack time'],0))/cnt[cv()],4),
+                    delta_time['redo synch time (usec)']=round((micro[cv()]-micro['redo synch time overhead (usec)'])/cnt[cv()],4),
+                    micro['redo total time']=SUM(delta_time*cnt)[ANY],
+                    delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
+                    delta_pct[name like 'gc%' or name like 'commit%']=round(micro[cv()]/micro['redo synch time (usec)'],4),
+                    delta_pct[name like 'Flash log redo bytes%']=round(cnt[cv()]/sum(cnt)[name like 'Flash log redo bytes%'],4),
+                    delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN','Redo log write request latency','Redo log write I/O latency')]=round(micro[CV()]/micro['redo total time'],5),
+                    delta_pct[SUBSTR(NAME,1,3) IN('LGW') or name='log file parallel write']=round(micro[CV()]/micro['redo write total time'],5)
             )
         )
-        SELECT NVL(typ,'Stat') TYPE,
+        SELECT CASE 
+                    WHEN typ='Stat' AND name='redo write broadcast ack time' THEN
+                      'CKPT'
+                    WHEN typ='Stat' AND (name like 'redo write%' OR name in('redo wastage')) THEN
+                      'LGWR'
+               ELSE NVL(TYP,'Stat') END TYPE,
                decode(typ,'Event',DECODE(SUBSTR(NAME,1,3),'LGW','  '),
                           'Latch','',
                           'Cell','',
@@ -239,7 +250,12 @@ BEGIN
                      'commit cleanouts successfully completed','ratio = completed/cleanouts,number of blocks attempted to update the ITL entry and set commit SCN at commit time',
                      'redo write broadcasts','ratio = (redo write broadcast+broadcast rdma on commit)*/redo writes',
                      'redo allocation','The latch to request public redo strands(_log_parallelism_max)',
-                     'redo write worker delay (usec)','time between when LGWR asks the worker to start doing the write and when the worker actually starts running'
+                     'redo write worker delay (usec)','time between when LGWR asks the worker to start doing the write and when the worker actually starts running',
+                     'gc cr block flush time','pct=time/redo synch time',
+                     'gc current block flush time','pct=time/redo synch time',
+                     'gcs log flush sync','pct=time/redo synch time',
+                     'Flash log redo write bytes','ratio=bytes/redo size',
+                     'Redo log write requests','ratio=requests/redo writes'
                ) memo
         FROM   STATS s
         WHERE  (cnt IS NOT NULL AND micro IS NOT NULL)
@@ -260,6 +276,7 @@ BEGIN
                              99),
                  NVL2(avg_time,1,2),
                  NAME!','@QUERY@',qry),'@FUNC@',func);
+    --dbms_output.put_line(qry);
     OPEN :cur FOR qry;
 END;
 /

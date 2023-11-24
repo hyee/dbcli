@@ -9,14 +9,15 @@
        --[[
        @ARGS: 1
        @adaptive : 12.1={adaptive} 11.1={}
+       @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
        &ash : {
-          ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and :V1 in(sql_id,top_level_sql_id)))))}, 
-          dash={Dba_Hist_Active_Sess_History},
-          sqlset={Dba_Hist_Active_Sess_History} ,
+          ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and '&V1' in(sql_id,top_level_sql_id)))))}, 
+          dash={&check_access_pdb.Active_Sess_History},
+          sqlset={&check_access_pdb.Active_Sess_History} ,
           t={&0}
        }
-       &dplan: default={dba_hist_sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
-       &src1 : default={dba_hist_sql_plan} sqlset={dba_sqlset_plans}
+       &dplan: default={&check_access_pdb.sql_plan} sqlset={(select a.*,0+null object# from dba_sqlset_plans a)}
+       &src1 : default={&check_access_pdb.sql_plan} sqlset={dba_sqlset_plans}
        &cid  : default={dbid} sqlset={con_dbid}
        &unit: default={1} ash={1}, dash={10}
        &OBJ : default={ev}, O={CURR_OBJ#}
@@ -48,8 +49,8 @@ WITH sql_plan_data AS
                              object#,OBJECT_NAME
                       FROM   v$sql_plan_statistics_all a
                       WHERE  userenv('instance')=nvl(:instance,userenv('instance'))
-                      AND    a.sql_id = :V1
-                      AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end)))
+                      AND    a.sql_id = '&V1'
+                      AND    a.plan_hash_value = case when nvl(lengthb('&V2'),0) >6 then '&V2'+0 else plan_hash_value end)))
                   UNION ALL
                   SELECT id,position pos,
                          decode(parent_id,-1,id-1,parent_id) parent_id,
@@ -62,8 +63,8 @@ WITH sql_plan_data AS
                          &cid dbid,
                          object#,OBJECT_NAME
                   FROM   &dplan a
-                  WHERE  a.sql_id = :V1
-                  AND    a.plan_hash_value = case when nvl(lengthb(:V2),0) >6 then :V2+0 else plan_hash_value end
+                  WHERE  a.sql_id = '&V1'
+                  AND    a.plan_hash_value = case when nvl(lengthb('&V2'),0) >6 then '&V2'+0 else plan_hash_value end
                   ) a)
   WHERE  seq = 1),
 hierarchy_data AS
@@ -100,6 +101,8 @@ ash_detail as (
                             'Temp I/O'
                         when current_obj# > 0 then 
                              ''||current_obj#
+                        when p2text='id1' then
+                             ''||p2
                         when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                             'Undo'
                         when p3text like '%namespace' and p3>power(16,8) then 
@@ -144,16 +147,16 @@ ash_detail as (
                    least(coalesce(tm_delta_db_time,DELTA_TIME,&unit*1e6),coalesce(tm_delta_time,DELTA_TIME,&unit*1e6),&unit*2e6) * 1e-6 costs,
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec
             from   &ASH h
-            WHERE  :V1 in(sql_id,top_level_sql_id)
-            AND    sample_time BETWEEN NVL(to_date(nvl(:V3,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                   AND NVL(to_date(nvl(:V4,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)) H) H) ,
+            WHERE  '&V1' in(sql_id,top_level_sql_id)
+            AND    sample_time BETWEEN NVL(to_date(nvl('&V3',:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
+                                   AND NVL(to_date(nvl('&V4',:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)) H) H) ,
 ash as(SELECT b.*,
               ROUND(SUM(AAS) OVER(PARTITION BY SQL_ID,SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv
        FROM (select /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
              FROM   qry a,ash_detail b 
              WHERE  a.phv = nvl(nullif(b.sql_plan_hash_value,0),a.phv)
              AND    a.sq=b.sql_id_
-             AND    (:V2 is null or nvl(lengthb(:V2),0) >6 or not regexp_like(:V2,'^\d+$') or :V2+0 in(QC_SESSION_ID,SESSION_ID))
+             AND    ('&V2' is null or nvl(lengthb('&V2'),0) >6 or not regexp_like('&V2','^\d+$') or '&V2'+0 in(QC_SESSION_ID,SESSION_ID))
        ) b),
 ash_base AS(
    SELECT /*+materialize no_expand*/ 
@@ -221,7 +224,7 @@ ash_width AS
   FROM ash_agg),
 plan_agg as(
   SELECT /*+materialize*/ 
-         sql_id_,decode(sql_id_,:V1,''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_) PLAN_HASH,
+         sql_id_,decode(sql_id_,'&V1',''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_) PLAN_HASH,
          COUNT(DISTINCT SQL_EXEC) EXECS,
          nvl(trim(dbms_xplan.format_time_s(SUM(SECS))),' ') secs,
          SUM(AAS) AAS,
@@ -243,7 +246,7 @@ plan_agg as(
                     ROUND(100*SUM(AAS) OVER(PARTITION BY sql_id_,SQL_PLAN_HASH_VALUE,&OBJ)/SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE),1) tenv
              FROM   ash_detail s) s
         ) 
-  GROUP  BY sql_id_,decode(sql_id_,:V1,''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_)
+  GROUP  BY sql_id_,decode(sql_id_,'&V1',''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_)
 ),
 
 plan_width as (
@@ -276,7 +279,7 @@ xplan AS
 xplan_data AS
  (SELECT CASE
             WHEN output like 'Plan hash value%' THEN
-                 output ||'   from '||COALESCE(:V3,:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||COALESCE(:V4,:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
+                 output ||'   from '||COALESCE('&V3',:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||COALESCE('&V4',:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
             WHEN output like '---%' THEN
                  output || rpad('-', decode(:simple,0,0,sevent)+csize+spx_hit+ssec+sexe+31, '-')
             WHEN id1=-2 THEN

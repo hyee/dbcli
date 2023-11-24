@@ -281,7 +281,7 @@ BEGIN
         SELECT MAX(dbid), MIN(snap_id), MAX(snap_id), 86400 * (MAX(end_interval_time + 0) - MIN(end_interval_time + 0))
         INTO   did, bid, eid, tim1
         FROM   &vw.snapshot
-        WHERE dbid = nvl(:dbid, (SELECT dbid FROM v$database))
+        WHERE dbid = :dbid
         AND    end_interval_time BETWEEN
                to_timestamp(coalesce(:V1, to_char(SYSDATE - 7, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') AND
                to_timestamp(coalesce(:V2, to_char(SYSDATE + 1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI');

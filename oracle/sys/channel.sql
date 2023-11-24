@@ -34,15 +34,17 @@
        4 0000002B29387B50         490044 obj broadcast channel                                  bqb09swgjaf30 reliable message     1
     --[[
         &V2: default={&instance}
+        &src1: default={table(gv$(cursor(} d={(((}
+        &src2: default={(select userenv('instance') instance_number, a.* from v$active_session_history a)} d={dba_hist_active_sess_history}
     --]]
 ]]*/
 PRO data from ASH
 PRO =============
 SELECT *
 FROM   (SELECT *
-        FROM   TABLE(gv$(CURSOR( --
+        FROM   &src1 --
                 SELECT /*+ordered use_nl(b)*/
-                       a.inst_id inst, b.addr "Channel context",
+                       instance_number inst, b.addr "Channel context",
                        b.totpub_ksrcctx, 
                        a.name_ksrcdes, 
                        sql_id, event, 
@@ -53,22 +55,23 @@ FROM   (SELECT *
                        a.id_ksrcdes,
                        h.ctxp_ksrchdl,
                        c.program
-                FROM   (SELECT  sql_id,
+                FROM   (SELECT  instance_number,sql_id,
                                 event,
                                 program,
                                 TO_CHAR(p1, 'fm0XXXXXXXXXXXXXXX') p1raw,
                                 COUNT(1) aas,
                                 MAX(sample_time) last_seen
-                         FROM   v$active_session_history a
+                         FROM   &src2 a
                          WHERE  p1text = 'channel context'
+                         AND    sample_time+0 between nvl(to_date(:starttime,'yymmddhh24mi'),sysdate-7) and nvl(to_date(:endtime,'yymmddhh24mi'),sysdate+1)
                          AND    nvl(:v1,'x') in('x',''||a.session_id,a.sql_id,a.event,''||p1)
-                         GROUP  BY sql_id, event,program, p1) c,
+                         GROUP  BY sql_id, event,program, p1,instance_number) c,
                         sys.X$KSRCCTX b,
                         sys.X$KSRCDES a,
                         sys.x$ksrchdl h
                 WHERE  b.name_ksrcctx = a.indx
                 AND    h.ctxp_ksrchdl = b.addr
-                AND    userenv('instance') = nvl(:V2, userenv('instance'))
+                AND    instance_number = nvl(:V2, instance_number)
                 AND    b.addr = p1raw)))
         ORDER  BY aas DESC, inst)
 WHERE  ROWNUM <= 50;

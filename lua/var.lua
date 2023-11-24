@@ -4,28 +4,9 @@ local var=env.class()
 local rawset,rawget=rawset,rawget
 local cast,ip,op=java.cast,{},{}
 local type,pairs,ipairs=type,pairs,ipairs
+local global_outputs=table.strong{}
 var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{}
-var.inputs=setmetatable({},{
-    __index=function(self,k)
-        return rawget(ip,k)
-    end,
-    __pairs=function(self)
-        return pairs(ip)
-    end,
-    __newindex=function(self,k,v)
-        rawset(ip,k,v)
-    end})
-
-var.outputs=setmetatable({},{
-    __index=function(self,k)
-        return rawget(op,k)
-    end,
-    __pairs=function(self)
-        return pairs(op)
-    end,
-    __newindex=function(self,k,v)
-        rawset(op,k,v)
-    end})
+var.inputs,var.outputs,var.global_outputs=table.strong{},table.strong{},global_outputs
 
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
@@ -97,7 +78,7 @@ end
 function var.backup_context()
     local global,input,output,cols=table.strong{},table.strong{},table.strong{},table.strong{}
     for k,v in pairs(var.global_context) do global[k]=v end
-    for k,v in pairs(var.inputs) do input[k]=v end
+    for k,v in pairs(var.inputs) do input[k]=v end 
     for k,v in pairs(var.outputs) do output[k]=v end
     for k,v in pairs(var.columns) do cols[k]=v end
     return global,input,output,cols
@@ -110,7 +91,10 @@ function var.setOutput(name,datatype,desc)
 
     name=name:upper()
     if not datatype then
-        if var.outputs[name] then var.outputs[name]=nil end
+        var.outputs[name]=nil
+        if #env.RUNNING_THREADS==2 then
+            global_outputs[name]=nil
+        end
         return
     end
 
@@ -120,6 +104,9 @@ function var.setOutput(name,datatype,desc)
     env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
     var.inputs[name],var.outputs[name],var.desc[name]=nil,'#'..var.types[datatype],desc
+    if #env.RUNNING_THREADS==2 then
+        global_outputs[name]=var.outputs[name]
+    end
 end
 
 function var.setInput(name,desc)
@@ -228,7 +215,7 @@ function var.update_text(item,pos,params)
     count=1
     while count>0 do
         count=0
-        item[pos]=item[pos]:gsub(var_pattern,repl)
+        if type(item[pos]=='string') then item[pos]=item[pos]:gsub(var_pattern,repl) end
     end
 
     if org_txt then return item[1] end
@@ -381,6 +368,11 @@ function var.capture_after_cmd(cmd)
     if #env.RUNNING_THREADS>1 then return end
     if var._backup and not var._prevent_restore then
         env.log_debug("var","Reset variables")
+        for k,v in pairs(global_outputs) do
+            if var.inputs[k] then
+                var._inputs_backup[k]=var.inputs[k]
+            end
+        end
         var.import_context(var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup)
         var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil
     end
@@ -419,7 +411,7 @@ function var.format_function(fmt,next_fmt)
                 v,s=math.round(s,scale),s/div
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units])
+            return to_fmt(prefix,math.round(s,scale),units[#units])
         end
     elseif f=="AUTO" then
         f=(next_fmt or ""):upper()
@@ -494,7 +486,7 @@ function var.format_function(fmt,next_fmt)
                 v,s=math.round(s,scale),s/(type(div)=='number' and div or div[i])
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units])
+            return to_fmt(prefix,math.round(s,scale),units[#units])
         end
     elseif f:find('^.SMHD$') or f=='SMHD' and fmt:find('%d$') then
         local div,units
@@ -515,7 +507,7 @@ function var.format_function(fmt,next_fmt)
                 if v==0 then return '0 ',1 end
                 if s<1 then return to_fmt(prefix,v,units[i]) end
             end
-            return to_fmt(prefix,v,units[#units])
+            return to_fmt(prefix,math.round(s,scale),units[#units])
         end
     elseif f=="SMHD" or f=="ITV" or f=="INTERVAL" then
         fmt=fmt=='SMHD' and '%dD %02dH %02dM %02dS' or

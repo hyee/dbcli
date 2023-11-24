@@ -12,10 +12,10 @@
     _sql=[[
         WITH STATS AS
          (SELECT /*+materialize*/
-           *
+                  *
           FROM   (SELECT src_dbname,
                          cell_hash,
-                         to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') end_time,
+                         to_char(end_interval_time, 'YYYY-MM-DD HH24:MI') etime,
                          secs,
                          DISK_REQUESTS - lag(DISK_REQUESTS) OVER(PARTITION BY p ORDER BY snap_id) disk_requests,
                          DISK_BYTES - lag(DISK_BYTES) OVER(PARTITION BY p ORDER BY snap_id) DISK_BYTES,
@@ -33,16 +33,18 @@
                          FLASH_SMALL_IO_QUEUE_TIME - lag(FLASH_SMALL_IO_QUEUE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_SMALL_IO_QUEUE_TIME,
                          FLASH_LARGE_IO_SERVICE_TIME - lag(FLASH_LARGE_IO_SERVICE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_LARGE_IO_SERVICE_TIME,
                          FLASH_LARGE_IO_QUEUE_TIME - lag(FLASH_LARGE_IO_QUEUE_TIME) OVER(PARTITION BY p ORDER BY snap_id) FLASH_LARGE_IO_QUEUE_TIME
-                  FROM   (select /*+no_merge*/ a.*,src_dbname||','||INCARNATION_NUM||','||cell_hash||','||dbid p from dba_hist_cell_db a) a
+                  FROM   (select /*+no_merge*/ a.*,src_dbname||','||INCARNATION_NUM||','||cell_hash||','||dbid p 
+                          from dba_hist_cell_db a where dbid=&dbid) a
                   JOIN   (SELECT a.*,
                                 86400 * ((end_interval_time + 0) - (begin_interval_time + 0)) secs,
                                 row_number() OVER(PARTITION BY dbid, snap_id ORDER BY 1) r
                          FROM   dba_hist_snapshot a
-                         WHERE  end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate+1))
+                         WHERE  dbid=&dbid
+                         AND    end_interval_time+0 between NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V2,'yymmddhh24miss'),sysdate+1))
                   USING  (snap_id, dbid)
                   WHERE  r = 1)
           WHERE  nvl(FLASH_REQUESTS, -1) >= 0 and nvl(FLASH_LARGE_IO_SERVICE_TIME,-1)>=0)
-        SELECT end_time snap_time,
+        SELECT etime snap_time,
                'Total' item,
                round(SUM(DISK_BYTES + FLASH_BYTES) / secs) "IO Bytes/sec",
                round(SUM(DISK_REQUESTS + FLASH_REQUESTS) / secs) "IO Reqs / Sec",
@@ -54,9 +56,9 @@
                round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_LARGE_IO_SERVICE_TIME + FLASH_SMALL_IO_SERVICE_TIME + FLASH_LARGE_IO_SERVICE_TIME) /
                      nullif(SUM(DISK_REQUESTS + FLASH_REQUESTS), 0)/1000,3) "IO Service Latency (ms)"
         FROM   STATS
-        GROUP  BY end_time, secs
+        GROUP  BY etime, secs
         UNION ALL
-        SELECT end_time snap_time,
+        SELECT etime snap_time,
                'Disk IO' item,
                round(SUM(DISK_BYTES) / secs) "IO Bytes/sec",
                round(SUM(DISK_REQUESTS) / secs) "IO Reqs / Sec",
@@ -65,9 +67,9 @@
                round(SUM(DISK_SMALL_IO_QUEUE_TIME + DISK_LARGE_IO_QUEUE_TIME) / nullif(SUM(DISK_REQUESTS), 0)/1000,3) "IO Queue Latency (ms)",
                round(SUM(DISK_SMALL_IO_SERVICE_TIME + DISK_LARGE_IO_SERVICE_TIME) / nullif(SUM(DISK_REQUESTS), 0)/1000,3) "IO Service Latency (ms)"
         FROM   STATS
-        GROUP  BY end_time, secs
+        GROUP  BY etime, secs
         UNION ALL
-        SELECT end_time snap_time,
+        SELECT etime snap_time,
                'Flash IO' item,
                round(SUM(FLASH_BYTES) / secs) "IO Bytes/sec",
                round(SUM(FLASH_REQUESTS) / secs) "IO Reqs / Sec",
@@ -76,9 +78,9 @@
                round(SUM(FLASH_SMALL_IO_QUEUE_TIME + FLASH_LARGE_IO_QUEUE_TIME) / nullif(SUM(FLASH_REQUESTS), 0)/1000,3) "IO Queue Latency (ms)",
                round(SUM(FLASH_SMALL_IO_SERVICE_TIME + FLASH_LARGE_IO_SERVICE_TIME) / nullif(SUM(FLASH_REQUESTS), 0)/1000,3) "IO Service Latency (ms)"
         FROM   STATS
-        GROUP  BY end_time, secs
+        GROUP  BY etime, secs
         UNION ALL
-        SELECT end_time snap_time,
+        SELECT etime snap_time,
                'Small IO' item,
                NULL "IO Bytes/sec",
                round(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS) / secs) "IO Reqs / Sec",
@@ -87,9 +89,9 @@
                round(SUM(DISK_SMALL_IO_QUEUE_TIME + FLASH_SMALL_IO_QUEUE_TIME) / nullif(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS), 0)/1000,3) "IO Queue Latency (ms)",
                round(SUM(DISK_SMALL_IO_SERVICE_TIME + FLASH_SMALL_IO_SERVICE_TIME) / nullif(SUM(DISK_SMALL_IO_REQS + FLASH_SMALL_IO_REQS), 0)/1000,3) "IO Service Latency (ms)"
         FROM   STATS
-        GROUP  BY end_time, secs
+        GROUP  BY etime, secs
         UNION ALL
-        SELECT end_time snap_time,
+        SELECT etime snap_time,
                'Large IO' item,
                NULL "IO Bytes/sec",
                round(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS) / secs) "IO Reqs / Sec",
@@ -98,7 +100,7 @@
                round(SUM(DISK_LARGE_IO_QUEUE_TIME + FLASH_LARGE_IO_QUEUE_TIME) / nullif(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS), 0)/1000,3) "IO Queue Latency (ms)",
                round(SUM(DISK_LARGE_IO_SERVICE_TIME + FLASH_LARGE_IO_SERVICE_TIME) / nullif(SUM(DISK_LARGE_IO_REQS + FLASH_LARGE_IO_REQS), 0)/1000,3) "IO Service Latency (ms)"
         FROM   STATS
-        GROUP  BY end_time, secs
+        GROUP  BY etime, secs
         ]],  
     height=400,
 }

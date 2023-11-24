@@ -54,6 +54,7 @@ DECLARE
     CURSOR l_CursorSegs(p_owner     VARCHAR2,
                         p_segname   VARCHAR2,
                         p_partition VARCHAR2,
+                        P_type      VARCHAR2 :=null,
                         p_Top       PLS_INTEGER := NULL) IS
             WITH objs AS(SELECT /*+ordered use_hash(objs lobs parts subs)*/
                     objs.segment_owner,
@@ -64,10 +65,12 @@ DECLARE
                     objs.lob_column_name,
                     lobs.index_name index_name,
                     nvl(subs.lob_indsubpart_name,parts.lob_indpart_name) index_part
-            FROM    TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(p_owner, --objowner
+            FROM    (
+                    SELECT * 
+                    FROM   TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(p_owner, --objowner
                                         p_segname, --objname
-                                        NULL, --partname
-                                        CASE (select regexp_substr(max(x.object_type),'[^ ]+') from dba_objects x WHERE x.owner = p_owner AND x.OBJECT_name = p_segname and subobject_name is null)
+                                        p_partition, --partname
+                                        CASE nvl(p_type,(select regexp_substr(max(x.object_type),'[^ ]+') from dba_objects x WHERE x.owner = p_owner AND x.OBJECT_name = p_segname and subobject_name is null))
                                             WHEN 'TABLE' THEN 1
                                             WHEN 'TABLE PARTITION' THEN 7
                                             WHEN 'TABLE SUBPARTITION' THEN 9
@@ -82,7 +85,15 @@ DECLARE
                                             WHEN 'LOB' THEN 21
                                             WHEN 'LOB PARTITION' THEN 40
                                             WHEN 'LOB SUBPARTITION' THEN 41
-                                        END)) objs,
+                                        END))
+                    WHERE nvl(p_type,'x') NOT LIKE 'LOB%'
+                    UNION ALL
+                    SELECT p_owner,p_segname,p_type,tablespace_name,p_partition,null
+                    FROM   &check_access_segs
+                    WHERE  p_type LIKE 'LOB%'
+                    AND    owner=p_owner
+                    AND    segment_name=p_segname
+                    AND    nvl(p_partition,' ') in(' ',coalesce(partition_name,' ')))  objs,
                    &check_access_dba.lobs lobs,
                    &check_access_dba.lob_partitions parts,
                    &check_access_dba.lob_subpartitions subs
@@ -129,6 +140,7 @@ DECLARE
     FUNCTION show_space(p_segname    IN VARCHAR2,
                         p_owner      IN VARCHAR2 DEFAULT sys_context('USERENV','CURRENT_SCHEMA'),
                         p_partition  IN VARCHAR2 DEFAULT NULL,
+                        p_type       IN VARCHAR2 DEFAULT NULL,
                         p_ignoreCase IN BOOLEAN := TRUE) RETURN l_grp AS
         v_free_blks          INT;
         v_total_blocks       INT;
@@ -204,7 +216,7 @@ DECLARE
         st('@type', 'UNKNOWN', '@all');
         st('@level', 0, '@all');
         --read segment list
-        OPEN l_CursorSegs(p_owner, p_segname, p_partition);
+        OPEN l_CursorSegs(p_owner, p_segname, p_partition, p_type);
         FETCH l_CursorSegs BULK COLLECT
             INTO v_group;
         CLOSE l_CursorSegs;
@@ -270,10 +282,11 @@ DECLARE
                                                expired_bytes      => v_expired_bytes,
                                                unexpired_blocks   => v_unexpired_blocks,
                                                unexpired_bytes    => v_unexpired_bytes);
+                        v_unformatted_blocks := -1;
                         calc('LOB: Expired Blocks', v_expired_blocks);
                         calc('LOB: Expired MBytes', round(v_expired_bytes/1024/1024,2));
-                        calc('LOB: Unexpired Blocks', v_unexpired_blocks);
-                        calc('LOB: Unexpired MBytes', round(v_unexpired_bytes/1024/1024,2));
+                        calc('LOB: Versioned Blocks', v_unexpired_blocks);
+                        calc('LOB: Versioned MBytes', round(v_unexpired_bytes/1024/1024,2));
                         calc('LOB: Used Blocks', v_unused_blocks);
                         calc('LOB: Used MBytes', round(v_unused_bytes/1024/1024,2));
                     $ELSE
@@ -311,7 +324,7 @@ DECLARE
                 calc('HWM: Last Used Blocks',v_last_used_block);
                 calc('HWM: * Total Blocks *', v_total_blocks - v_unused_blocks);
                 calc('HWM: * Total MBytes *', Round((v_total_blocks - v_unused_blocks)*v_group(i).block_size/1024/1024,2));
-                calc('HWM: Unformatted Blocks', greatest(nvl(v_unformatted_blocks,0),v_total_blocks - v_unused_blocks - v_free_blks - v_full_blocks));
+                calc(CASE WHEN v_unformatted_blocks=-1 THEN 'LOB: Chunks' ELSE 'HWM: Unformatted Blocks' END, greatest(nvl(v_unformatted_blocks,0),v_total_blocks - v_unused_blocks - v_free_blks - v_full_blocks));
             EXCEPTION WHEN OTHERS THEN
                 IF SQLCODE=-1031 THEN
                     RAISE;
@@ -393,9 +406,11 @@ DECLARE
         v_target('owner'):=:object_owner;
         v_target('segment'):=:object_name;
         v_target('partition'):=:object_subname;
+        v_target('type'):=:object_type;
         v_ary := show_space(p_segname    => v_target('segment'),
                             p_owner      => v_target('owner'),
                             p_partition  => v_target('partition'),
+                            p_type       => v_target('type'),
                             p_ignoreCase => p_ignoreCase);
 
         IF v_ary('@all') ('@msg') != 'done' THEN

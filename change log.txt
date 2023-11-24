@@ -1,5 +1,12 @@
+2023-11-14: + oracle: new script 'ora xplan'
+2023-11-03: + public: new command 'clip' to copy output into clipboard (unsupported in ssh terminal)
+2023-10-30: + oracle: new script 'show features'
+2023-08-07: + oracle: new script 'ora sqlset'
+2023-08-03: + oracle: new script 'sys listdir'
+2023-08-02: + oracle: new script 'ora spm/awrio'
+2023-02-23: * public: support JDK 9+ 
 2023-02-05: + oracle: new scripts "adb trace/switch"
-2023-02-04: + oracle: new scripts "show userenv/acl"
+2023-02-04: + oracle: new scripts "show userenv/acl/hwm"
                       new strings "adb list/view/delete/copy/move/unload/patch"
                       new setting "set credential/bucket" for Object Storage bucket
 2023-01-13: + oracle: new scripts "ora markhot"

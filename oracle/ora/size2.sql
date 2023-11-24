@@ -24,7 +24,7 @@
         @ARGS: 1
         &OPT2: default={}, d={1}
         @check_access_dba: dba_objects={dba_} default={_all}
-        @check_access_segs: sys.sys_dba_segs={(select * from sys.sys_dba_segs where object_type_id>0)} dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
+        @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
         &check_access_exa1: {
           default={(select ' ' owner,' ' object_name,' ' subobject_name,' ' object_type,
                             0 object_id,
@@ -77,10 +77,10 @@ WITH objs AS(
             lobs.index_name index_name,
             nvl(subs.lob_indsubpart_name,parts.lob_indpart_name) index_part
     FROM    TABLE(DBMS_SPACE.OBJECT_DEPENDENT_SEGMENTS(
-                :object_owner, --objowner
-                :object_name, --objname
+                '&object_owner', --objowner
+                '&object_name', --objname
                 NULL, --partname
-                CASE regexp_substr(:object_type, '[^ ]+')
+                CASE regexp_substr('&object_type', '[^ ]+')
                     WHEN 'TABLE' THEN 1
                     WHEN 'TABLE PARTITION' THEN 7
                     WHEN 'TABLE SUBPARTITION' THEN 9
@@ -99,15 +99,15 @@ WITH objs AS(
            &check_access_dba.lobs lobs,
            &check_access_dba.lob_partitions parts,
            &check_access_dba.lob_subpartitions subs
-    WHERE  :object_owner = lobs.owner(+)
-    AND    :object_name = lobs.table_name(+)
+    WHERE  '&object_owner' = lobs.owner(+)
+    AND    '&object_name' = lobs.table_name(+)
     AND    objs.lob_column_name = lobs.column_name(+)
-    AND    :object_owner = parts.table_owner(+)
-    AND    :object_name = parts.table_name(+)
+    AND    '&object_owner' = parts.table_owner(+)
+    AND    '&object_name' = parts.table_name(+)
     AND    objs.lob_column_name = parts.column_name(+)
     AND    objs.partition_name=parts.partition_name(+)
-    AND    :object_owner = subs.table_owner(+)
-    AND    :object_name = subs.table_name(+)
+    AND    '&object_owner' = subs.table_owner(+)
+    AND    '&object_name' = subs.table_name(+)
     AND    objs.lob_column_name = subs.column_name(+)
     AND    objs.partition_name=subs.subpartition_name(+)
     AND    nvl(objs.partition_name, ' ') LIKE :object_subname || '%')
@@ -123,7 +123,7 @@ SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name,'--TOTAL--') object_n
        MAX(NEXT_EXT) NEXT_EXT
        &check_access_exa2 max(cells) fc_cells,sum(pieces) fc_segs,sum(hits+misses) fc_reqs,sum(hits)/nullif(sum(hits+misses),0) "FC_HIT%",sum(cachedsize) fc_cached,sum(columnarcache)/nullif(sum(cachedsize),0) "FC_CC%",sum(cachedwrite) fc_write,sum(cachedkeep) FC_KEEP,sum(columnarkeep) FC_CCKEEP
 FROM   (SELECT /*+ordered use_hash(segs objs) use_hash(exa) no_merge(objs) NO_EXPAND_GSET_TO_UNION*/
-        DISTINCT decode(:object_name||:OPT2, objs.segment_name, 1, 2) lv,
+        DISTINCT decode('&object_name'||:OPT2, objs.segment_name, 1, 2) lv,
                  NVL2(objs.lob_column_name,'['||objs.lob_column_name||'] ','')||objs.segment_owner || '.' || objs.segment_name || 
                  decode(:object_subname||:OPT2, '', '', nvl2(objs.partition_name, '.' || objs.partition_name, '')) object_name,
                  trim('%' from decode(:object_subname||:OPT2, '', regexp_substr(nvl(segs.segment_type,objs.segment_type), '^\S+'), nvl(segs.segment_type,objs.segment_type))) object_type,

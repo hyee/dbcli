@@ -30,6 +30,7 @@ DEF max_num_rows='50';
 PRO SQL Statements with "Elapsed Time per Execution" changing over time
 ORA _sqlstat
 COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec" for usmhd2
+col "Weight%" for pct2
 WITH per_time AS (
 select /*+materialize*/ * from(
     SELECT max(sql_id) keep(dense_rank last order by snap) sql_id,&SIG
@@ -41,20 +42,23 @@ select /*+materialize*/ * from(
            SUM(executions) execs,
            count(distinct trunc(end_time)) over() total_days,
            count(distinct snap_id) over() total_slots,
-           SUM(elapsed_time)/ greatest(SUM(executions),1) time_per_exec
+           SUM(elapsed_time)/ greatest(SUM(executions),1) time_per_exec,
+           SUM(elapsed_time) ela
     FROM (SELECT s.*,
                  nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
                  MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap
           FROM  &awr$sqlstat s
           WHERE end_time BETWEEN NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
           AND   (:instance is null or instance_number=:instance)
-          AND   &filter)
+          AND   s.dbid=:dbid
+          AND   (&filter))
     GROUP BY grouping sets((&BASE,snap),(&BASE,snap,plan_hash_value,snap_id,trunc(end_time)))
     ) where grp=1
 ),
 avg_time AS (
 SELECT sql_id,&SIG
        sum(execs) execs,
+       SUM(ela) ela,
        min(min_seen) min_seen,
        max(max_seen) max_seen,
        max(plans) plans,
@@ -90,13 +94,15 @@ SELECT RANK () OVER (ORDER BY ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ag
        max(execs) execs,
        max(plans) plans,
        max(ratio) ratio,
+       SUM(ELA) ela,
        TO_CHAR(min(min_seen) ,'MM-DD"|"HH24:MI') min_seen,
        TO_CHAR(max(max_seen) ,'MM-DD"|"HH24:MI') max_seen
   FROM time_over_median t
  GROUP BY &SIG t.sql_id
  HAVING ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) > &&min_slope_threshold
 )
-SELECT r.sql_id,&SIG
+SELECT ratio_to_report(ela) over() "Weight%",
+       r.sql_id,&SIG
        r.change,
        TO_CHAR(r.slope, '990.000MI') slope,
        execs, round(ratio,2) "Slots|(%)",
@@ -110,4 +116,4 @@ SELECT r.sql_id,&SIG
        REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150) FROM dba_hist_sqltext s WHERE s.sql_id = r.sql_id and rownum<2), CHR(10)) sql_text
   FROM ranked r
  WHERE r.rank_num <= &&max_num_rows
- ORDER BY r.rank_num;
+ ORDER BY 1 desc;

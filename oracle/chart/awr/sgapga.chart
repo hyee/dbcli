@@ -10,24 +10,49 @@
 {
     title="SGA/PGA Memory Chart",
     _sql=[[
-        WITH snap AS
-         (SELECT /*+materialize no_expand*/
-                trunc(end_interval_time + 0, 'mi') end_time, instance_number inst_id, dbid,
-                ((end_interval_time + 0) - lead(end_interval_time + 0) OVER(PARTITION BY instance_number, startup_time ORDER BY snap_id desc)) * 86400 Slot_size,
-                CASE WHEN end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1) THEN 0 END flag, 
-                snap_id, instance_number, -9e8 * (startup_time + 0 - SYSDATE) + instance_number part_key
-          FROM   dba_hist_snapshot
-          WHERE  end_interval_time+0 between NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7)-1.2/24 AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
-          AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) 
-        SELECT to_char(MAX(end_time), 'YYYY-MM-DD HH24:MI') sample_time, event, avg(sga_value) "SGA Used Bytes", avg(buff_value) "Buffer Cache Bytes",avg(pga_value) "PGA Used Bytes"
+        WITH snap AS(
+        SELECT a.*,
+               MAX(snap_id) over(PARTITION BY pkey ORDER BY etime RANGE BETWEEN UNBOUNDED PRECEDING AND diff PRECEDING) min_snap,
+               round(86400*(etime-LAG(etime,1,stime) OVER(PARTITION BY pkey ORDER BY snap_id))) secs
+        FROM   (SELECT /*+no_merge no_expand no_or_expand*/ 
+                       snap_id,
+                       dbid,
+                       instance_number,
+                       instance_number inst_id,
+                       begin_interval_time+0 btime,
+                       MAX(end_interval_time+0) OVER(PARTITION BY snap_id) etime,
+                       startup_time+0 stime,
+                       (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
+                       (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
+                FROM   dba_hist_snapshot
+                WHERE  dbid=:dbid
+                 AND   end_interval_time+0 BETWEEN 
+                       NVL(to_date(:V2,'yymmddhh24miss'),sysdate-7) AND 
+                       NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
+                 AND  (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) a)
+        SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') sample_time, event, avg(sga_value) "SGA Used Bytes", avg(buff_value) "Buffer Cache Bytes",avg(pga_value) "PGA Used Bytes"
         FROM   (SELECT a.*, decode(nvl(lower(:V1), 'a'), 'a', '', ' #' || inst_id) event
                 FROM   (SELECT *
                         FROM   snap NATURAL
-                        NATURAL JOIN   (SELECT snap_id, dbid, instance_number, SUM(bytes) sga_value FROM dba_hist_sgastat WHERE NAME!='free memory' GROUP BY snap_id, dbid, instance_number) SGA
-                        NATURAL JOIN   (SELECT snap_id, dbid, instance_number, SUM(bytes) buff_value FROM dba_hist_sgastat WHERE NAME='buffer_cache' GROUP BY snap_id, dbid, instance_number) BUFF
-                        NATURAL JOIN   (SELECT snap_id, dbid, instance_number, VALUE pga_value FROM dba_hist_pgastat WHERE NAME = 'total PGA inuse') pga 
+                        NATURAL JOIN (
+                            SELECT snap_id, dbid, instance_number, SUM(bytes) sga_value 
+                            FROM dba_hist_sgastat 
+                            WHERE NAME!='free memory'
+                            AND   DBID=:DBID
+                            GROUP BY snap_id, dbid, instance_number) SGA
+                        NATURAL JOIN (
+                            SELECT snap_id, dbid, instance_number, SUM(bytes) buff_value 
+                            FROM dba_hist_sgastat 
+                            WHERE NAME='buffer_cache'
+                            AND   DBID=:DBID
+                            GROUP BY snap_id, dbid, instance_number) BUFF
+                        NATURAL JOIN (
+                            SELECT snap_id, dbid, instance_number, VALUE pga_value 
+                            FROM dba_hist_pgastat 
+                            WHERE NAME = 'total PGA inuse'
+                            AND   DBID=:DBID) pga 
                         ) a)
-        GROUP BY event, end_time]],
+        GROUP BY event, etime]],
     ylabel="Bytes",
     labelsKMG2=true,
     _pivot="mixed"
