@@ -16,6 +16,7 @@ DECLARE
     root VARCHAR2(512);
     expr VARCHAR2(512);
     dump BFILE;
+    log  UTL_FILE.FILE_TYPE;
     len  NUMBER;
     std  DATE;
     edd  DATE;
@@ -27,9 +28,9 @@ DECLARE
     job  VARCHAR2(128) := 'AWREXTR_'||to_char(SYSDATE,'YYMMDDHH24MISS');
     own  VARCHAR2(128);
     val  VARCHAR2(30);
-    a     INT;
-    b     INT;
-    r     VARCHAR2(300);
+    a    INT;
+    b    INT;
+    r    VARCHAR2(300);
 BEGIN
     dbms_output.enable(null);
     SELECT MAX(directory_name), MAX(directory_path)
@@ -39,6 +40,13 @@ BEGIN
     IF dir IS NULL THEN
         raise_application_error(-20001, 'Cannot access directory: ' || :V1);
     END IF;
+
+    BEGIN
+        log:=sys.utl_file.fopen(dir,file||'.log','w');
+        sys.utl_file.fclose(log);
+    EXCEPTION WHEN OTHERS THEN
+        raise_application_error(-20001, 'No read & write access to directory '||dir);
+    END;
 
     $IF dbms_db_version.version>17 $THEN
         IF dbms_utility.directory_has_symlink(dir)=1 THEN

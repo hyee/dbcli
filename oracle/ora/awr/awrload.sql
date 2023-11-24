@@ -19,6 +19,7 @@ DECLARE
     tab   VARCHAR2(512) := upper(regexp_substr(:V3,'^\D.*$'));
     root  VARCHAR2(2000);
     dump  BFILE;
+    log   UTL_FILE.FILE_TYPE;
     len   NUMBER;
     stage VARCHAR2(30) := 'DBCLI_AWR';
     hdl   NUMBER;
@@ -73,6 +74,13 @@ BEGIN
         ELSE
             raise_application_error(-20001, 'Cannot access file: ' || root || file || '.dmp');
         END IF;
+    END;
+
+    BEGIN
+        log:=sys.utl_file.fopen(dir,file||'.log','w');
+        sys.utl_file.fclose(log);
+    EXCEPTION WHEN OTHERS THEN
+        raise_application_error(-20001, 'No read & write access to directory '||dir);
     END;
     
     IF instr(file,'sqlmon')>0 THEN

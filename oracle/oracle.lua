@@ -753,7 +753,7 @@ function oracle:onload()
          PROXY_USER_NAME=proxy_user,
          bigStringTryClob="true",
          processEscapes='false',
-         ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="true",
+         ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="false",
          ['oracle.jdbc.useThreadLocalBufferCache']="false",
          ['v$session.program']='SQL Developer',
          ['oracle.jdbc.defaultLobPrefetchSize']="2097152",

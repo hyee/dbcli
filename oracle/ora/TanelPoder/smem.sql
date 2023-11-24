@@ -23,6 +23,7 @@ USING  (statistic#)
 WHERE   NAME LIKE '%memory%'
 ORDER  BY inst, sid, NAME;
 
+--alter session set events 'immediate trace name PGA_DETAIL_GET level &pid' 
 PRO Memory info from v$process_memory(run 'oradebug pmem &v1 &v2' before this script for more detail)
 PRO =================================================================================================
 SELECT *
@@ -31,6 +32,7 @@ FROM   TABLE(gv$(CURSOR (
                    userenv('instance') inst,
                    s.sid,
                    p.spid,
+                   p.pid,
                    pm.category,
                    allocated,
                    used,'|' "|",
