@@ -25,6 +25,10 @@ BEGIN
         FROM   v$cell_config a
         WHERE  conftype = 'CELL');
 
+    IF cells IS NULL THEN
+        raise_application_error(-20001,'No data found in v$cell_config');
+    END IF;
+    
     OPEN :c0 FOR REPLACE(q'{
         SELECT tag,@cells
         FROM (

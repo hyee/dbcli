@@ -893,7 +893,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         while is_query==nil do
             is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.getAsyncExecuteResult,loader)
             func(is_query~=nil)
-            env.sleep(0.003)
+            env.sleep(0.003,true)
         end
     else 
         is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql) 

@@ -61,7 +61,8 @@ BEGIN
                   ' Avg Waits='||rpad(round(Waits/BUCKET#,3),6)||' Free(%)='|| ROUND(100*(BUCKET#-BUSYS)/BUCKET#,2),
                   ' oradebug lkdebug -B ' || lmdid || ' ' || groupid || ' ' || BUCKET#) memo
             FROM   (
-                SELECT decode(grouping_id(lmdid),1,'$REV$$UDL$')||lpad(inst_id,4) inst,
+                SELECT /*+outline_leaf ordered use_nl(timer stat)*/ 
+                       decode(grouping_id(lmdid),1,'$REV$$UDL$')||lpad(inst_id,4) inst,
                        NVL(''||RHT,'|') RHT,
                        ''||LATCH# LATCH#,
                        Nvl(''||LMDID,'*') LMDID,
@@ -80,10 +81,10 @@ BEGIN
                        ROUND(SUM(DECODE(r, 1, -1, 1)*wait_time)/&adj,2)  wait_time,
                        ROUND(SUM(DECODE(r, 1, -1, 1)*WAITCNT)/&adj,2)    Waits,
                        to_char(100*ratio_to_Report(SUM(DECODE(r, 1, -1, 1)*WAITCNT)) over(PARTITION BY grouping_id(LMDID,RHT)),'990.00')||'%' "Waits(%)"
-                FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
+                FROM   (SELECT  ROWNUM r, 
                                 sysdate+numtodsinterval(&secs,'second') mr FROM XMLTABLE('1 to 2')) dummy,
-                        LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
-                        LATERAL (SELECT /*+no_merge*/ * 
+                        LATERAL (SELECT do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
+                        LATERAL (SELECT  * 
                                  FROM TABLE(gv$(cursor(
                                      SELECT /*+ordered use_hash(a b)*/ 
                                             a.*,b.addr latch#,b.sleeps,b.spin_gets spins,b.wait_time

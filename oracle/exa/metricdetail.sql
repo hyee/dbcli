@@ -44,20 +44,21 @@ BEGIN
                 END;
             SELECT /*+use_hash(a b) opt_param('parallel_force_local' 'true')*/ a.*,b.description FROM (
                 SELECT * FROM ( 
-                    SELECT /*+ordered use_nl(timer stat)*/
+                    SELECT 
                            OBJECTTYPE,
                            NAME,
                            UNIT,
                            nvl(CELLNODE, 'TOTAL') c,
                            round(DECODE(IS_AVG, 1, AVG(v), SUM(v)/DECODE(MAX(METRICTYPE),'Cumulative',&AVG,1)), 2) v
                     FROM (
-                        SELECT CELLNODE,OBJECTTYPE,NAME,METRICTYPE,UNIT,METRICOBJECTNAME,
+                        SELECT /*+ordered use_nl(timer stat) outline_leaf*/ 
+                               CELLNODE,OBJECTTYPE,NAME,METRICTYPE,UNIT,METRICOBJECTNAME,
                                CASE WHEN trim(UNIT) IN ('us/request', '%', 'C') THEN 1 ELSE 0 END IS_AVG,
                                DECODE(trim(METRICTYPE),'Cumulative', SUM(METRICVALUE*DECODE(r, 1, -1, 1)),MAX(METRICVALUE) KEEP(DENSE_RANK LAST ORDER BY r)) v
-                        FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
+                        FROM   (SELECT /*+ordered use_nl(timer stat)*/ROWNUM r, 
                                         sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
-                                LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
-                                LATERAL (SELECT /*+no_merge*/ * from EXA$METRIC a WHERE timer.stime IS NOT NULL) stat
+                                LATERAL (SELECT do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
+                                LATERAL (SELECT * from EXA$METRIC a WHERE timer.stime IS NOT NULL) stat
                         GROUP  BY CELLNODE,OBJECTTYPE,NAME,METRICTYPE,UNIT,METRICOBJECTNAME
                     ) a
                     WHERE v!=0

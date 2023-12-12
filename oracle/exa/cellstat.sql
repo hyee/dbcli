@@ -32,11 +32,11 @@ BEGIN
                 RETURN SYSTIMESTAMP;
             END;
         SELECT * FROM(
-            SELECT /*+ordered use_nl(timer stat)*/
+            SELECT /*+ordered use_nl(timer stat) outline_leaf*/
                     nvl(cell, '--TOTAL--') cell, stype,NAME, round(SUM(VALUE * DECODE(r, 1, -1, 1))/&adj,2) VALUE
-            FROM   (SELECT /*+no_merge*/ROWNUM r, sysdate+numtodsinterval(&V1,'second') mr FROM XMLTABLE('1 to 2')) dummy,
-                    LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
-                    LATERAL (SELECT /*+no_merge pq_concurrent_union*/ cell, stype, NAME, SUM(VALUE) VALUE
+            FROM   (SELECT ROWNUM r, sysdate+numtodsinterval(&V1,'second') mr FROM XMLTABLE('1 to 2')) dummy,
+                    LATERAL (SELECT do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
+                    LATERAL (SELECT /*+pq_concurrent_union*/ cell, stype, NAME, SUM(VALUE) VALUE
                             FROM   (SELECT cell_name cell,'CELL GLOBAL' stype,METRIC_NAME NAME,metric_value VALUE 
                                     FROM   v$cell_global
                                     UNION ALL

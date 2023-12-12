@@ -111,6 +111,51 @@ return {[[
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
          ORDER BY NO#]],
     [[
+        WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
+                           I.*,I.INDEX_OWNER OWNER,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
+                           nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
+                                    SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
+                                    FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i1.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                    START  WITH column_position = 1
+                                    CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
+                    FROM   ALL_IND_PARTITIONS I,ALL_PART_INDEXES C,
+                          (SELECT OWNER,INDEX_NAME FROM ALL_INDEXES WHERE TABLE_OWNER = :owner AND TABLE_NAME=:object_name) I1
+                    WHERE  C.OWNER(+) = I.INDEX_OWNER
+                    AND    C.INDEX_NAME(+) = I.INDEX_NAME
+                    AND    I.PARTITION_NAME=:object_subname
+                    AND    I.INDEX_OWNER = I1.OWNER
+                    AND    I.INDEX_NAME = I1.INDEX_NAME)
+        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+                DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
+                DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
+                DECODE(C.COLUMN_POSITION, 1, SUBPART_BY, '') "SUBPARTITIONED",
+                DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
+                --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
+                DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
+                DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
+                DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF(%)/Rows",
+                DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
+                DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
+                DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
+                DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
+                DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
+                DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
+                C.COLUMN_POSITION NO#,
+                C.COLUMN_NAME,
+                E.COLUMN_EXPRESSION COLUMN_EXPR,
+                C.DESCEND
+        FROM   I,  ALL_IND_COLUMNS C,  all_ind_expressions e
+        WHERE  C.INDEX_OWNER = I.OWNER
+        AND    C.INDEX_NAME = I.INDEX_NAME
+        AND    C.INDEX_NAME = e.INDEX_NAME(+)
+        AND    C.INDEX_OWNER = e.INDEX_OWNER(+)
+        AND    C.column_position = e.column_position(+)
+        AND    :owner = c.table_owner
+        AND    :object_name =c.table_name
+        AND    :owner = E.table_owner(+)
+        AND    :object_name =e.table_name(+)
+        ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],     
+    [[
         SELECT /*INTERNAL_DBCLI_CMD*/ /*PIVOT*/ /*NO_HIDE*/ /*+OUTLINE_LEAF*/ *
         FROM   (SELECT * FROM ALL_TAB_PARTITIONS   WHERE TABLE_OWNER = :owner AND TABLE_NAME = :object_name AND PARTITION_NAME=:object_subname) T,
                (SELECT * FROM ALL_OBJECTS  WHERE OWNER = :owner AND OBJECT_NAME = :object_name AND subobject_name=:object_subname) O

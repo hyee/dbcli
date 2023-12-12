@@ -49,7 +49,7 @@ BEGIN
                        DECODE(IS_LAST,1,'NO','YES') "DELTA",
                        round(DECODE(IS_AVG, 1, AVG(v), SUM(v)/DECODE(IS_LAST,1,1,&AVG)), 2) v
                 FROM (
-                    SELECT /*+ordered use_nl(timer stat)*/
+                    SELECT /*+ordered use_nl(timer stat) outline_leaf*/
                            CELLNODE,CATEGORY,
                            REPLACE(NAME,'(KB)','(MB)') NAME,
                            OFFLOAD_GROUP,ITEM,IS_LAST,
@@ -60,10 +60,10 @@ BEGIN
                               0
                             END IS_AVG,
                             DECODE(IS_LAST,0,SUM(VALUE*DECODE(r, 1, -1, 1)),MAX(VALUE) KEEP(DENSE_RANK LAST ORDER BY r))/decode(instr(NAME,'(KB)'),0,1,1024) v
-                    FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, 
+                    FROM   (SELECT /*+ordered use_nl(timer stat)*/ROWNUM r, 
                                     sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
-                            LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
-                            LATERAL (SELECT /*+no_merge*/ A.*,CASE WHEN REGEXP_LIKE(name,'^(Number of|# of|num|Size of|CC IOs|Total|Flash disk|Hard disk|SI|Allocations|Write-Heavy CC|CC Regions) ','i') THEN 0 ELSE 1 END IS_LAST from EXA$CELLSRVSTAT a WHERE timer.stime IS NOT NULL) stat
+                            LATERAL (SELECT do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
+                            LATERAL (SELECT A.*,CASE WHEN REGEXP_LIKE(name,'^(Number of|# of|num|Size of|CC IOs|Total|Flash disk|Hard disk|SI|Allocations|Write-Heavy CC|CC Regions) ','i') THEN 0 ELSE 1 END IS_LAST from EXA$CELLSRVSTAT a WHERE timer.stime IS NOT NULL) stat
                     GROUP  BY CELLNODE,CATEGORY,NAME,OFFLOAD_GROUP,ITEM,IS_LAST
                 )
                 WHERE V!=0 AND (&FILTER)

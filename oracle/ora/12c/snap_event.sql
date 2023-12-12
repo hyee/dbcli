@@ -75,7 +75,7 @@ WITH FUNCTION do_sleep(id NUMBER,target DATE) RETURN TIMESTAMP IS
         RETURN SYSTIMESTAMP;
     END;
 SELECT *
-FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/
+FROM   (SELECT /*+ordered use_nl(timer stat) no_expand outline_leaf*/
                nullif(inst,0) inst,nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
                grouping_id(wait_class,event) g,
                CASE
@@ -95,12 +95,11 @@ FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/
                max(ROUND(SUM(micro * r) / NULLIF(SUM(total_waits * r), 0), 2)) over(partition by inst,wait_class,event) avg_time,
                '|' "|",
                nullif(round(&calc, 2), 0) pct
-        FROM   (SELECT /*+no_merge*/ 
-                       greatest(&V1,1) sec,
+        FROM   (SELECT greatest(&V1,1) sec,
                        DECODE(ROWNUM, 1, decode(&v1,0,1,-1), decode(&v1,0,0,1)) r, 
                        SYSDATE + numtodsinterval(&v1, 'second') mr 
                 FROM XMLTABLE('1 to 2')) dummy,
-               LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual where dummy.r!=0) timer,
+               LATERAL (SELECT do_sleep(dummy.r, dummy.mr) stime FROM dual where dummy.r!=0) timer,
                LATERAL (SELECT * FROM TABLE(GV$(CURSOR(
                             SELECT /*+ordered use_hash(a b)*/
                                     decode(lower(nvl('&v2','a')),'a',0,userenv('instance'))  inst,

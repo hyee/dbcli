@@ -40,12 +40,12 @@ BEGIN
                        round(bytes / nullif(reqs,0), 2) avg_bytes,
                        CASE WHEN bytes / nullif(reqs,0) >= 128 * 1024 THEN 'YES' ELSE 'NO' END large_io
                 FROM (
-                    SELECT /*+ordered use_nl(timer stat) no_expand*/
+                    SELECT /*+ordered use_nl(timer stat) no_expand outline_leaf*/
                            reason_name,n,
                            SUM(v*DECODE(r, 1, -1, 1))/&AVG v
-                    FROM   (SELECT /*+no_merge ordered use_nl(timer stat)*/ROWNUM r, sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
-                            LATERAL (SELECT /*+no_merge*/ do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
-                            LATERAL (SELECT /*+no_merge */ reason_name, metric_name n, metric_value v FROM v$cell_ioreason a WHERE timer.stime IS NOT NULL) stat
+                    FROM   (SELECT /*+ ordered use_nl(timer stat)*/ROWNUM r, sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
+                            LATERAL (SELECT  do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
+                            LATERAL (SELECT  reason_name, metric_name n, metric_value v FROM v$cell_ioreason a WHERE timer.stime IS NOT NULL) stat
                     GROUP  BY reason_name,n
                 ) PIVOT(MAX(v) FOR n IN('Per Reason Bytes of IO' bytes, 'Per Reason Number of IOs' reqs))
                 WHERE  (:v IS NULL AND bytes > 0 OR :v IS NOT NULL AND (&FILTER)) 

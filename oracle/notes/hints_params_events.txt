@@ -221,6 +221,8 @@ Events:
                     level 20971520: disables “rowset to one row” in hash join probe side
     65002: enable to free temp LOB spaces when no active temp lob in the session
     44951 TRACE NAME CONTEXT FOREVER, LEVEL 1024 : bug 6376915 causes high water (HW) enqueue contention when the database is busy handling large objects (LOB) and the database is configured to use automatic segments space management (ASSM)
+    10503: enables users to specify a character bind buffer length to avoid BIND_LENGTH_UPGRADEABLE.
+           Depending on the length used, the character binds in the child cursor can all be created using the same bind length
 
  
 dbms_stats.set_xxx_pref:
