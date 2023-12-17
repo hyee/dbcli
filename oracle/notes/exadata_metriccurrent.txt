@@ -494,15 +494,15 @@ cat > setparams.sh<<'EOF'
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance', 1)\""
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_disable_lw_flash_wear_heuristic', 'TRUE')\""
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_lw_max_percentage', 80)\""
-cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 10)\""
-cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_max_iops', 150)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_hd_idle_wait_us', 50000)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_flashcache_dsync_jobs', 8)\""
 v=`date +'%Y%m%d%H%M'`
 cp /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora.$v
 echo "_cell_cache_thrashing_detection_tolerance=1">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_fc_disable_lw_flash_wear_heuristic=TRUE">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_fc_lw_max_percentage=80">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
-echo "_cell_fc_datasync_min_iops=10">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
-echo "_cell_fc_datasync_max_iops=150">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_datasync_hd_idle_wait_us=50000">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_flashcache_dsync_jobs=8">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 EOF
 dcli -g cells -l root -f setparams.sh
 dcli -g cells -l root sh setparams.sh
@@ -524,7 +524,9 @@ FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcach
             alter cell events = "cellsrv.cellsrv_iorm_ctl[WL_MODE] opval=1" --_cell_iorm_wl_mode
             alter cell events = "cellsrv.cellsrv_iorm_ctl[PERF_STATS] opval=1" --Collect IORM performance stats, set it back to 0 after several minutes
             cellcli -e $'alter cell events = "immediate cellsrv.cellsrv_setparam(\'_cell_oflsrv_fplib_passthru_timeout_msec\', 20000)"';
-            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_toresilver_limit_chdrs', 780000)"; -Datasync starts at the condition of numElems>target to flush dirty data into hard disk
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_toresilver_limit_chdrs', 390000)"; -Datasync starts at the condition of numElems>target to flush dirty data into hard disk
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_hd_idle_wait_us', 50000)";
+            alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_flashcache_dsync_jobs', 8)";
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_max_iops', 120)";
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_min_iops', 30)";
             alter cell events = "immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance', 1)"; --95 to 1 to reduce temp io/large io latency due to spill to disk

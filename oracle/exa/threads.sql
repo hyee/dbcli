@@ -104,7 +104,10 @@ BEGIN
         OPEN c1 for 
             SELECT /*+opt_param('parallel_force_local' 'true')*/ 
                    DBNAME,
-                   SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER SID,
+                   DECODE(
+                       COUNT(DISTINCT SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER),
+                       1,MAX(SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER),
+                       ''||COUNT(DISTINCT SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER)) "SID(s)",
                    sqlid sql_id,
                    objectnumber data_obj_id,
                    IOTYPE IO_TYPE,
@@ -119,7 +122,6 @@ BEGIN
             FROM   exa$active_requests
             WHERE  upper(DBNAME||','||SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER||','||sqlid||','||objectnumber||','||IOTYPE||','||REQUESTSTATE||','||IOREASON||','||CELLNODE) like upper('%&V2%')
             GROUP  BY DBNAME,
-                      SESSIONID || ',' || SESSIONSERNUMBER || '@' || INSTANCENUMBER,
                       sqlid,
                       objectnumber,
                       IOTYPE,

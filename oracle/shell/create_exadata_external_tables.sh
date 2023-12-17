@@ -53,7 +53,7 @@ cd $dir
 echo "">EXA_NULL
 
 cat >get_cell_group.sql<<!
-    set feed off pages 0 head off echo off TRIMSPOOL ON
+    set feed off pages 0 head off echo off TRIMSPOOL ON TIMING OFF
     PRO List of cell nodes:
     PRO ===================
     spool cell_group
@@ -274,7 +274,7 @@ local fmt='"%s" | "%s" | "%s" | "%s" | "%s" | "%s"'
 
 local escapes={
     ['&amp;']='&',
-	['&apos;']="'",
+    ['&apos;']="'",
     ['&lt;']='<',
     ['&gt;']='>',
     ['&quot;']=''
@@ -969,7 +969,7 @@ sqlplus -s "$db_account" <<'EOF'
                     pr;
                 END IF;
                 NAME := r.objecttype;
-                stmt := 'CREATE OR REPLACE FORCE VIEW EXA$' || NAME || ' AS SELECT /*+opt_param(''parallel_force_local'' ''true'')*/ CELLNODE,NAME';
+                stmt := 'CREATE OR REPLACE FORCE VIEW "EXA$' || NAME || '" AS SELECT /*+opt_param(''parallel_force_local'' ''true'')*/ CELLNODE,NAME';
             END IF;
             stmt := stmt || ',MAX(DECODE(FIELDNAME,''' || r.name || ''',' || CASE r.datatype
                         WHEN 'NUMBER' THEN
@@ -987,8 +987,8 @@ sqlplus -s "$db_account" <<'EOF'
     PRO ==========================
     begin
         for r in(select * from user_objects where object_name like 'EXA$%' and object_type in('TABLE','VIEW')) loop
-            execute immediate 'create or replace public synonym '||r.object_name||' for '||r.object_name;
-            execute immediate 'grant select on '||r.object_name||' to select_catalog_role';
+            execute immediate 'create or replace public synonym "'||r.object_name||'" for "'||r.object_name||'"';
+            execute immediate 'grant select on "'||r.object_name||'" to select_catalog_role';
         end loop;
     end;
 /

@@ -44,6 +44,7 @@ DECLARE
     fixctl  INT;
     PX      INT;
     phv     INT;
+    phv1    INT;
     phv2    INT;
     st      DATE;
     ctrl    VARCHAR2(2000);
@@ -150,6 +151,7 @@ BEGIN
     --SELECT value into siz
     --FROM   v$parameter where name='sort_area_size';
     --execute immediate 'alter session set sort_area_size='||round(65536+1024*1024*512*dbms_random.value);
+    phv1 := phv;
     dbms_sqlpa.remote_process_sql(
             sql_text => sq_text,
             parsing_schema => own,
@@ -157,7 +159,7 @@ BEGIN
             bind_list => null,
             action => action,
             time_limit => 3600,
-            plan_hash1 => phv,
+            plan_hash1 => phv1,
             buffer_gets => stats.buffer_gets,
             cpu_time => stats.cpu_time,
             elapsed_time => stats.elapsed_time,
@@ -184,7 +186,7 @@ BEGIN
             &O122 ,param_xml=>null
             &O181 ,result_data_checksum=>rdata,result_type_checksum=>rtype);
     dbms_output.put_line('===================================================');
-    pr('plan_hash1',phv);
+    pr('plan_hash1',phv1);
     pr('plan_hash2',phv2);
     pr('optimizer_cost',stats.optimizer_cost);
     pr('buffer_gets',stats.buffer_gets);
@@ -220,13 +222,13 @@ BEGIN
         raise_application_error(-20001,err);
     END IF;
 
-    IF phv is not null THEN
-        xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||fixctl;
+    IF phv2 is not null THEN
+        xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||phv2;
         SELECT MAX(sql_id||' # '||child_number)
         INTO   sq_nid
         FROM (SELECT sql_id,child_number
               FROM   v$sql
-              WHERE  plan_hash_value=phv
+              WHERE  plan_hash_value=phv2
               AND    parsing_schema_name=own
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
               AND    program_id=0
@@ -239,13 +241,13 @@ BEGIN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||substr(sq_nid,1,13)||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||substr(sq_nid,1,13)||' '||phv2||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
             DELETE PLAN_TABLE
-            WHERE  PLAN_ID=phv;
+            WHERE  PLAN_ID=phv2;
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'xplan -'||sq_id||' '||phv;
+            xplan := 'xplan -'||sq_id||' '||phv2;
         END IF;
     ELSE 
         sig := -1;

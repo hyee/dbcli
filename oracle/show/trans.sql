@@ -24,7 +24,7 @@ SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(p) no_merge(undo)*/
        decode(bitand(t.flag, 4096),0,'Private','Shared') strand,
        decode(bitand(t.flag, 2),0,'N','Y') IMU,
        TRIM(',' FROM DECODE(t.space,'YES','SPACE,')||DECODE(t.recursive, 'YES', 'RECURSIVE,')
-       ||DECODE(t.noundo, 'YES', 'NO UNDO,')||DECODE(t.PTX, 'YES', 'PARALLEL,'))||t.STATUS status,
+       ||DECODE(t.noundo, 'YES', 'NO UNDO,')||DECODE(t.PTX, 'YES', 'PARALLEL,')||t.STATUS) status,
        t.used_urec "Undo|Records",
        t.used_ublk "Undo|Blks",
        t.used_ublk * nvl(p.blocksize,8192) "Undo|Bytes",
@@ -41,7 +41,6 @@ SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(p) no_merge(undo)*/
                     / nullIF(nvl(undo_bytes,rssize) - t.used_ublk * nvl(p.blocksize,8192), 0))
            ELSE 0
        END "Est|Complete",
-       trim('/' from decode(t.space,'YES','SPACE')||decode(t.recursive,'YES','/RECURSIVE')||decode(t.NOUNDO,'YES','/NOUNDO')||decode(t.PTX,'YES','/PX')) FLAG,
        t.start_date "START|DATE",
        round((SYSDATE - t.start_date) * 86400) "Dura|tion",
        t.log_io "LOGI|IO",
@@ -80,7 +79,7 @@ SELECT /*+no_merge(b)*/
        undoblockstotal - undoblocksdone "Undo|ToDo",
        undoblocksdone/undoblockstotal "Rollback|Progress",
        cputime "CPU|Spent",
-       decode(cputime,0,'unknown',(undoblockstotal - undoblocksdone) / (undoblocksdone / cputime)) "Est|Complete"
+       decode(cputime,0,'unknown',(undoblockstotal - undoblocksdone) / nullif(undoblocksdone / cputime,0)) "Est|Complete"
 FROM   gv$fast_start_transactions
 LEFT  JOIN (
     SELECT inst_id,COUNT(1) "PIDs",XID 
@@ -89,3 +88,4 @@ LEFT  JOIN (
 USING(inst_id,xid)
 LEFT  JOIN v$rollname r
 USING (usn)
+WHERE undoblockstotal - undoblocksdone>0
