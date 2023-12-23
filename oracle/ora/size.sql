@@ -20,7 +20,7 @@
     --[[
         @CHECK_ACCESS_OBJ: SYS.OBJ$/SYS.TAB$={}
         &OPT2: default={}, d={partition_name,}
-        &OPT3: default={null}, d={partition_name}
+        &OPT3: default={null}, d={&object_subname}
         &OPT4: default={OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')}, a={1=1}
     --]]
 ]]*/
@@ -77,19 +77,24 @@ BEGIN
             FROM lobs t,sys.obj$ o,dba_users u,
                 TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
                    q'[SELECT * FROM (
-                        SELECT /*+opt_param('optimizer_index_cost_adj',1) ordered use_nl(a b) no_merge(b) push_pred(b)*/
+                        SELECT /*+opt_param('optimizer_index_cost_adj',1) outline_leaf use_nl(a b) push_pred(b)*/
                                decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P,
-                               SUM(bytes) C1, SUM(EXTENTS) C2,
-                               COUNT(1) C3, AVG(initial_extent) C4, AVG(nvl(next_extent, 0)) C5,
-                               MAX(tablespace_name) KEEP(dense_rank LAST ORDER BY blocks) C6,
-                               MAX(segment_subtype) KEEP(dense_rank LAST ORDER BY blocks) C8,
-                               sum(blocks) c7
-                        FROM   dba_objects a, dba_segments b
+                               SUM(b.bytes) C1, SUM(b.EXTENTS) C2,
+                               COUNT(1) C3, AVG(b.initial_extent) C4, AVG(nvl(b.next_extent, 0)) C5,
+                               MAX(b.tablespace_name) KEEP(dense_rank LAST ORDER BY b.blocks) C6,
+                               MAX(b.segment_subtype) KEEP(dense_rank LAST ORDER BY b.blocks) C8,
+                               sum(b.blocks) c7
+                        FROM   dba_objects a, 
+                               dba_segments b,
+                               dba_tab_subpartitions c
                         WHERE  b.segment_type not in('ROLLBACK','TYPE2 UNDO','DEFERRED ROLLBACK','TEMPORARY','CACHE','SPACE HEADER','UNDEFINED')
                         AND    b.owner = ']' || u.username || '''
                         AND    b.segment_name = ''' || o.name || '''
-                        AND    nvl(b.partition_name, '' '') LIKE ''' || t.subname || '''
+                        AND   (nvl(b.partition_name, '' '') LIKE ''' || t.subname || ''' or c.partition_name LIKE ''' || t.subname || ''')
                         AND    a.object_id = ' || t.obj# || '
+                        AND    c.table_owner(+) = ''' || u.username || '''
+                        AND    c.table_name(+) = ''' || o.name || '''
+                        AND    c.subpartition_name(+) = b.partition_name
                         AND    a.owner = ''' || u.username || '''
                         AND    a.object_name = ''' || o.name || '''
                         GROUP  BY a.object_type, &OPT3,b.segment_type

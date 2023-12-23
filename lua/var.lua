@@ -767,6 +767,7 @@ function var.getBaseLog(x, y)
 end
 
 function var.expr(expr)
+    env.checkhelp(expr)
     expr=expr:gsub('%a+%d*',function(s)
         local c=s:lower()
         if c=='mod' then 

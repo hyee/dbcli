@@ -136,18 +136,20 @@ BEGIN
         WHERE  rownum < 2;
     END IF;
 
-    EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=SYS';
-    EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || low_ofe || '''';
-    low_env := dbms_xmlgen.getxmltype(qry);
-    EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
-    EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_LOW');
-    COMMIT;
+
 
     EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || high_ofe || '''';
     high_env := dbms_xmlgen.getxmltype(qry);
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_HIGH');
+    COMMIT;
+
+    EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=SYS';
+    EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || low_ofe || '''';
+    low_env := dbms_xmlgen.getxmltype(qry);
+    EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
+    EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_LOW');
     COMMIT;
 
     OPEN c;
@@ -163,8 +165,8 @@ BEGIN
         old_ofe := NULL;
         FOR i IN 1 .. changes.count LOOP
             IF changes(i).typ = 'ofe' THEN
-                new_ofe := '"_fix_control"=''' || changes(i).name || ':' || changes(i).value_low || '''';
-                old_ofe := '"_fix_control"=''' || changes(i).name || ':' || changes(i).value_high || '''';
+                old_ofe := '"_fix_control"=''' || changes(i).name || ':' || changes(i).value_low || '''';
+                new_ofe := '"_fix_control"=''' || changes(i).name || ':' || changes(i).value_high || '''';
                 ofe_cnt := ofe_cnt + 1;
             ELSE
                 IF changes(i).vtype = 2 THEN
@@ -174,8 +176,8 @@ BEGIN
                 IF substr(changes(i).name,1,1)='_' THEN
                     changes(i).name := '"'||changes(i).name||'"';
                 END IF;
-                new_ofe := changes(i).name||'='||changes(i).value_low;
-                old_ofe := changes(i).name||'='||changes(i).value_high;
+                old_ofe := changes(i).name||'='||changes(i).value_low;
+                new_ofe := changes(i).name||'='||changes(i).value_high;
                 env_cnt := env_cnt + 1;
             END IF;
 
@@ -238,7 +240,7 @@ BEGIN
 
     MERGE INTO PLAN_TABLE A
     USING ( SELECT r,v1||chr(9)||v2 MEMO
-            FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofelist)) A
+            FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofeold)) A
             JOIN  (SELECT rownum r,trim(chr(10) from column_value) v2 from table(ofedesc)) B
             USING (r)) B
     ON   (B.r=regexp_substr(STATEMENT_ID, '\d+$') AND A.OTHER_XML IS NOT NULL)
