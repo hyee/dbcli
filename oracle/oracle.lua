@@ -778,10 +778,12 @@ function oracle:onunload()
 end
 
 function oracle:get_library()
+    local v=tonumber(java.system:getProperty("java.class.version"))
+    local files={}
     if home then
-        local ver=8+tonumber(java.system:getProperty("java.class.version"))-52
+        local ver=8+v-52
         local files={}
-        for i=ver,6,-1 do
+        for i=ver,v>64 and 11 or 6,-1 do
             local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
             if os.exists(jar) then 
                 files[#files+1]=jar
@@ -794,20 +796,23 @@ function oracle:get_library()
                 end
             end
         end
-        if #files>0 then
-            for _,file in pairs(os.list_dir(self.root_dir,"jar",1)) do
-                if type(file)=="table" and not file.name:find('^ojdbc') then
-                    files[#files+1]=file.fullname
-                end
+    end
+    if #files==0 and v>64 then
+        files[1]=env.join_path(self.root_dir..'/jar/ojdbc11.jar')
+    end
+    if #files>0 then
+        for _,file in pairs(os.list_dir(self.root_dir,"jar",1)) do
+            if type(file)=="table" and not file.name:find('^ojdbc') then
+                files[#files+1]=file.fullname
             end
-            loader:addLibrary(env.join_path(home..'/lib'),false)
-            local lib=os.getenv('LD_LIBRARY_PATH') or ''
-            if lib~='' then
-                lib=env.CPATH_DEL..lib
-            end
-            env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path")..lib)
-            return files
         end
+        if home then loader:addLibrary(env.join_path(home..'/lib'),false) end
+        local lib=os.getenv('LD_LIBRARY_PATH') or ''
+        if lib~='' then
+            lib=env.CPATH_DEL..lib
+        end
+        env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path")..lib)
+        return files
     end
     return nil
 end

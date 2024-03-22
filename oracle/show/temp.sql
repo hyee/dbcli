@@ -56,7 +56,8 @@ WITH tmps AS (
                &sq_id SQL_ID
         FROM   v$tempseg_usage A, V$SESSION B, v$PROCESS P
         WHERE  A.SESSION_ADDR = B.SADDR
-        AND    B.PADDR = P.ADDR))))
+        AND    B.PADDR = P.ADDR
+        AND    A.blocks>128))))
 SELECT A.*,trim(substr(b.sql_text,1,200)) sql_text
 FROM   tmps a
 LEFT JOIN (

@@ -67,7 +67,7 @@ COL BYTES,INI_EXT,NEXT_EXT,FC_CACHED,FC_CCCACHED,FC_WRITE,FC_KEEP,FC_CCKEEP FOR 
 COL BLOCKS,EXTENTS,fc_reqs FOR TMB
 COL "fc_hit%,fc_cc%" for pct
 WITH objs AS(
-    SELECT /*+ordered use_hash(objs lobs parts subs) opt_param('optimizer_dynamic_sampling' 11)*/
+    SELECT /*+outline_leaf use_hash(objs lobs parts subs subt) opt_param('optimizer_dynamic_sampling' 11)*/
             objs.segment_owner,
             coalesce(subs.lob_name,parts.lob_name,lobs.segment_name,objs.segment_name) segment_name,
             coalesce(subs.lob_subpartition_name,parts.lob_partition_name,objs.partition_name) partition_name,
@@ -99,7 +99,19 @@ WITH objs AS(
            &check_access_dba.lobs lobs,
            &check_access_dba.lob_partitions parts,
            &check_access_dba.lob_subpartitions subs,
-           &check_access_dba.tab_subpartitions subt
+           (SELECT subpartition_name
+            FROM &check_access_dba.tab_subpartitions
+            WHERE '&object_type' LIKE 'TABLE PAR%'
+            AND   partition_name='&&object_subname'
+            AND   '&object_owner' = table_owner
+            AND   '&object_name' = table_name
+            UNION ALL
+            SELECT subpartition_name
+            FROM &check_access_dba.ind_subpartitions
+            WHERE '&object_type' LIKE 'INDEX PAR%'
+            AND   partition_name='&&object_subname'
+            AND   '&object_owner' = index_owner
+            AND   '&object_name' = index_name) subt
     WHERE  '&object_owner' = lobs.owner(+)
     AND    '&object_name' = lobs.table_name(+)
     AND    objs.lob_column_name = lobs.column_name(+)
@@ -110,11 +122,9 @@ WITH objs AS(
     AND    '&object_owner' = subs.table_owner(+)
     AND    '&object_name' = subs.table_name(+)
     AND    objs.partition_name=subt.subpartition_name(+)
-    AND    '&object_owner' = subt.table_owner(+)
-    AND    '&object_name' = subt.table_name(+)
     AND    objs.lob_column_name = subs.column_name(+)
     AND    objs.partition_name=subs.subpartition_name(+)
-    AND    (nvl(objs.partition_name, ' ') LIKE '&object_subname%' or nvl(subt.partition_name, ' ') LIKE '&object_subname%'))
+    AND    (nvl(objs.partition_name, ' ') LIKE '&object_subname%' or subt.subpartition_name IS NOT NULL))
 SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name||nvl2(partition_name,'.'||partition_name,''),'--TOTAL--') object_name,
        object_type,
        max(TABLESPACE) keep(dense_rank last order by bytes) TABLESPACE,

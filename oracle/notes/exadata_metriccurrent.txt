@@ -492,15 +492,19 @@ DW setttings;
 cat > setparams.sh<<'EOF'
 #cellcli -e 'alter iormplan objective=balanced'
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_cache_thrashing_detection_tolerance', 1)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_lw_max_percentage', 70)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_oltp_nonprio_resv_pcntg', 10)\""
+cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_iorm_lw_flash_busy_threshold', 40)\""
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_disable_lw_flash_wear_heuristic', 'TRUE')\""
-cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_lw_max_percentage', 80)\""
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_hd_idle_wait_us', 50000)\""
 cellcli -e $"alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_flashcache_dsync_jobs', 8)\""
 v=`date +'%Y%m%d%H%M'`
 cp /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora.$v
 echo "_cell_cache_thrashing_detection_tolerance=1">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_oltp_nonprio_resv_pcntg=10">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_lw_max_percentage=70">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_iorm_lw_flash_busy_threshold=40">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_fc_disable_lw_flash_wear_heuristic=TRUE">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
-echo "_cell_fc_lw_max_percentage=80">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_fc_datasync_hd_idle_wait_us=50000">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_flashcache_dsync_jobs=8">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 EOF
@@ -536,6 +540,7 @@ FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcach
                                                                      _cell_fc_disable_lw_flash_wear_heuristic=TRUE --those 3 are to disable large write rejections due to max limit
                                                                      _cell_fc_lw_max_percentage=100  --0 to disable large write(tempsort) on FC
                                                                      _cell_fc_disable_lw_background_flush=TRUE --to disable datasync job
+                                                                     _cell_fc_target_fraction_lw_to_replenish_per_scan
             cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(dumpctdstats,0,0,0)"'; 
 Storage Indexe:   cellcli -e 'alter cell events="immediate cellsrv.cellsrv_storidx('dumpridx','all',0, 0,0)"'
                   cellcli -e 'alter cell offloadgroupEvents = "immediate cellsrv.cellsrv_storidx(dumpridx,all, 0, 0, 0)"'

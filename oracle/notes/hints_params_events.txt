@@ -204,6 +204,7 @@ Parameters
     _px_hybrid_TSM_HWMB_load: false to disbale PDML TSM/HWMB broker and use traditional HWM broker instead, 
                               together with _force_tmp_segment_loads=true to use "TEMP SEG MERGE" to fix HV contention in some cases
     _disable_directory_link_check: true with _kolfuseslf to resolve symbol like issue of accessing Oracle directory files. (DBMS_UTILITY.DIRECTORY_HAS_SYMLINK)
+    main_workload_type : [ OLTP | ANALYTICS ] set as ANALYTICS to increase temp io in Exadata since 19.21
     _cursor_features_enabled: set as 34 to log sql parse errors into sys.sqlerror$ for non-SYS user
     
 Events:

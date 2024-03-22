@@ -30,15 +30,15 @@
              
             default={}
         }
-        @check_cdb_rsrc: dba_cdb_rsrc_plans={1} default={0}
-        @check_cdb_plan: {
+        @check_access_cdb_rsrc: dba_cdb_rsrc_plans={1} default={0}
+        @check_access_cdb_plan: {
             dba_cdb_rsrc_plans={'-',[[/*grid={topic="dba_cdb_rsrc_plans",autohide='on'}*/
             select a.* 
             from dba_cdb_rsrc_plans a, (select name from v$rsrc_plan) b 
             where a.plan=b.name(+) order by nvl2(b.name,1,2),a.plan]],}  
             default={}
         }
-        @check_cdb_dir: {
+        @check_access_cdb_dir: {
             dba_cdb_rsrc_plans={,'-',[[/*grid={topic="dba_cdb_rsrc_plan_directives",autohide='on'}*/
             select nvl2(a.name,'$GREPCOLOR$','')||PLAN plan,
                    NVL(PLUGGABLE_DATABASE,PROFILE) PDB_OR_PROFILE,
@@ -67,7 +67,7 @@ col CPU_TIME,CPU_WAIT,QUEUED_TM,ACT_TM for usmhd1
 col PX_LIMIT,max_ut,MEM_MIN,MEM_LIMIT for pct1
 grid {
     [[/*grid={topic="dba_rsrc_plans",autohide='on'}*/ select a.* from dba_rsrc_plans a, (select name from v$rsrc_plan) b where a.plan=b.name(+) order by nvl2(b.name,1,2),a.plan]],
-    &check_cdb_plan
+    &check_access_cdb_plan
     '-',
     {
         [[/*grid={topic="dba_rsrc_group_mappings"}*/ select * from dba_rsrc_group_mappings]],
@@ -94,7 +94,7 @@ grid {
       FROM   (select name from v$rsrc_plan) a,dba_rsrc_plan_directives b
       where  b.plan=a.name(+)
       ORDER  by nvl2(a.name,1,2),1,2]]
-    &check_cdb_dir
+    &check_access_cdb_dir
 };
 
 
@@ -206,7 +206,7 @@ DECLARE
             END LOOP;
         END LOOP;
         IF cons_grp_list.count=0 THEN
-            $IF &check_cdb_rsrc=1 $THEN
+            $IF &check_access_cdb_rsrc=1 $THEN
                 SELECT COUNT(1) 
                 INTO   v_ver
                 FROM   dba_cdb_rsrc_plans
@@ -229,7 +229,7 @@ DECLARE
         wr('v_plan :=''' || v_plan || ''';');
 
         IF is_cdb THEN   
-        $IF &check_cdb_rsrc=1 $THEN
+        $IF &check_access_cdb_rsrc=1 $THEN
             FOR r IN(select * from dba_cdb_rsrc_plans where upper(plan)=v_plan and nvl(status,' ')!='PENDING') LOOP
                 IF r.mandatory = 'YES' THEN
                     wr('/* -- This is an Oracle mandatory plan');

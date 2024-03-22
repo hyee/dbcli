@@ -25,95 +25,75 @@
 ]]*/
 
 DEF min_slope_threshold='0.1';
-DEF max_num_rows='50';
-
-PRO SQL Statements with "Elapsed Time per Execution" changing over time
+SET PRINTSIZE 50
 ORA _sqlstat
-COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec" for usmhd2
+COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec,AVG ELA" for usmhd2
 col "Weight%" for pct2
-WITH per_time AS (
-select /*+materialize*/ * from(
-    SELECT max(sql_id) keep(dense_rank last order by snap) sql_id,&SIG
-           grouping_id(plan_hash_value) grp,
-           SYSDATE+1 - max(end_time) days_ago,
-           count(distinct nullif(plan_hash_value,0)) over(partition by &BASE) plans,
-           min(begin_time) min_seen,
-           max(end_time) max_seen,
-           SUM(executions) execs,
-           count(distinct trunc(end_time)) over() total_days,
-           count(distinct snap_id) over() total_slots,
-           SUM(elapsed_time)/ greatest(SUM(executions),1) time_per_exec,
-           SUM(elapsed_time) ela
-    FROM (SELECT s.*,
-                 nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
-                 MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap
-          FROM  &awr$sqlstat s
-          WHERE end_time BETWEEN NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
-          AND   (:instance is null or instance_number=:instance)
-          AND   s.dbid=:dbid
-          AND   (&filter))
-    GROUP BY grouping sets((&BASE,snap),(&BASE,snap,plan_hash_value,snap_id,trunc(end_time)))
-    ) where grp=1
-),
-avg_time AS (
-SELECT sql_id,&SIG
-       sum(execs) execs,
-       SUM(ela) ela,
-       min(min_seen) min_seen,
-       max(max_seen) max_seen,
-       max(plans) plans,
-       100*count(1)/max(total_slots) ratio,
-       MEDIAN(time_per_exec) med_time_per_exec,
-       STDDEV(time_per_exec) std_time_per_exec,
-       AVG(time_per_exec)    avg_time_per_exec,
-       MIN(time_per_exec)    min_time_per_exec,
-       MAX(time_per_exec)    max_time_per_exec
-  FROM per_time
- GROUP BY sql_id,&SIG total_days
-HAVING COUNT(*) >= greatest(2,total_days)
-   AND MAX(days_ago) - MIN(days_ago) >= total_days/4
-   AND MEDIAN(time_per_exec) > 0.01
-),
-time_over_median AS (
-SELECT h.days_ago,
-       (h.time_per_exec / a.med_time_per_exec) time_per_exec_over_med,
-       a.*
-  FROM per_time h, avg_time a
- WHERE a.sql_id = h.sql_id
-),
-ranked AS (
-SELECT RANK () OVER (ORDER BY ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) DESC) rank_num,
-       t.sql_id,&SIG
-       CASE WHEN REGR_SLOPE(t.time_per_exec_over_med, t.days_ago) > 0 THEN 'IMPROVING' ELSE 'REGRESSING' END change,
-       ROUND(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago), 3) slope,
-       ROUND(AVG(t.med_time_per_exec), 3) med_secs_per_exec,
-       ROUND(AVG(t.std_time_per_exec), 3) std_secs_per_exec,
-       ROUND(AVG(t.avg_time_per_exec), 3) avg_secs_per_exec,
-       ROUND(MIN(t.min_time_per_exec), 3) min_secs_per_exec,
-       ROUND(MAX(t.max_time_per_exec), 3) max_secs_per_exec,
-       max(execs) execs,
-       max(plans) plans,
-       max(ratio) ratio,
-       SUM(ELA) ela,
-       TO_CHAR(min(min_seen) ,'MM-DD"|"HH24:MI') min_seen,
-       TO_CHAR(max(max_seen) ,'MM-DD"|"HH24:MI') max_seen
-  FROM time_over_median t
- GROUP BY &SIG t.sql_id
- HAVING ABS(REGR_SLOPE(t.time_per_exec_over_med, t.days_ago)) > &&min_slope_threshold
-)
-SELECT ratio_to_report(ela) over() "Weight%",
-       r.sql_id,&SIG
-       r.change,
-       TO_CHAR(r.slope, '990.000MI') slope,
-       execs, round(ratio,2) "Slots|(%)",
-       plans "Num|Plans",
-       r.med_secs_per_exec "Median|Per Exec",
-       r.std_secs_per_exec "Std Dev|Per Exec",
-       r.avg_secs_per_exec "Avg|Per Exec",
-       r.min_secs_per_exec "Min|Per Exec",
-       r.max_secs_per_exec "Max|Per Exec",
-       min_seen "First_Seen",max_seen "Last_Seen",
-       REPLACE((SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' '),1,150) FROM dba_hist_sqltext s WHERE s.sql_id = r.sql_id and rownum<2), CHR(10)) sql_text
-  FROM ranked r
- WHERE r.rank_num <= &&max_num_rows
- ORDER BY 1 desc;
+COL "Total SQL ms" NOPRINT
+col "execs,buff gets" for tmb2
+col sql_id break
+
+WITH src AS
+(SELECT a.*,COUNT(DISTINCT phf) OVER(PARTITION BY dbid,sql_id) phfs
+ FROM(SELECT coalesce(
+                 extractvalue(dbms_xmlgen.getxmltype(q'~
+                               select nullif(to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0') phf
+                               from  dba_hist_sql_plan b
+                               where b.sql_id='~'||a.sql_id||'''
+                               and   b.dbid=' || a.dbid || '
+                               and   b.plan_hash_value=' || a.plan_hash || '
+                               and   b.other_xml is not null
+                               and   rownum<2'),
+                              '/ROWSET/ROW/PHF') + 0,
+                 a.plan_hash) phf,
+             a.*
+      FROM   (SELECT dbid,
+                     MAX(SQL_id) keep(dense_rank last order by elapsed_time) sql_id,
+                     plan_hash_value plan_hash,
+                     to_char(MIN(begin_interval_time), 'YYMMDD HH24:MI') first_seen,
+                     to_char(MAX(end_interval_time), 'YYMMDD HH24:MI') last_seen,
+                     SUM(elapsed_time) ela,
+                     GREATEST(SUM(executions),1) exe,
+                     SUM(cpu_time) CPU,
+                     SUM(iowait) iowait,
+                     SUM(clwait) clwait,
+                     SUM(apwait) apwait,
+                     SUM(ccwait) ccwait,
+                     SUM(plsexec_time) plsexec_time,
+                     SUM(javexec_time) javexec_time,
+                     SUM(buffer_gets) buffer_gets
+              FROM   &awr$sqlstat
+              WHERE  plan_hash_value > 0
+              AND    end_time BETWEEN NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-31) AND NVL(TO_DATE(nvl(:V2,:endtime),'YYMMDDHH24MI'),SYSDATE+1)
+              AND   (:instance is null or instance_number=:instance)
+              AND   dbid=:dbid
+              AND   (&filter)
+              GROUP  BY dbid, force_matching_signature, plan_hash_value
+              HAVING SUM(elapsed_time)>0
+              ) a) a)
+SELECT * FROM (
+    SELECT sql_id,
+           MAX(plan_hash) KEEP(dense_rank LAST ORDER BY ela) plan_hash,
+           MIN(first_seen) first_seen,
+           MAX(last_seen) last_seen,
+           ratio_to_report(SUM(ela)) OVER() "Weight%",
+           SUM(exe) "Execs",
+           '|' "|",
+           ROUND(SUM(ela)/SUM(exe)) "Avg ELA",
+           ROUND(100*SUM(CPU)/SUM(ela),2) "CPU%",
+           ROUND(100*SUM(iowait)/SUM(ela),2) "IO%",
+           ROUND(100*SUM(clwait)/SUM(ela),2) "Cl%",
+           ROUND(100*SUM(ccwait)/SUM(ela),2) "CC%",
+           ROUND(100*SUM(apwait)/SUM(ela),2) "APP%",
+           ROUND(100*SUM(plsexec_time)/SUM(ela),2) "PLSQL%",
+           ROUND(100*SUM(javexec_time)/SUM(ela),2) "JAVA%",
+           ROUND(SUM(buffer_gets)/SUM(exe),2) "Buff Gets",
+           SUM(SUM(ela)) OVER(PARTITION BY dbid,sql_id)*1e3 "Total SQL ms",
+           substr(trim(regexp_replace(MAX(to_char(SUBSTR(sql_text,1,1000))),'\s+',' ')),1,200) sql_text
+    FROM src 
+    LEFT JOIN dba_hist_sqltext USING(dbid,sql_id)
+    WHERE phfs>1
+    GROUP BY sql_id,dbid,phf
+) 
+ORDER BY "Total SQL ms" DESC,sql_id, first_seen,last_seen,"Weight%";
+

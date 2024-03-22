@@ -9,6 +9,7 @@
     -compile           : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix compile error
     -error             : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix runtime error/bad plan/bug
     -alt               : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to look for alternative plans
+    -report            : use DBMS_SQLDIAG.REPORT_SQL to generate the HTML report of target SQL (23c+) 
     --[[
         &exe_mode: async={0}, sync={1}
         &filter: default={1=1}, f={}
@@ -21,6 +22,7 @@
             compile={SRA_}
             error={SRA_}
             alt={SRA_}
+            report={SQLHC_}
         }
         &func1: {
             default={dbms_sqltune.create_tuning_task(}
@@ -76,6 +78,12 @@ BEGIN
     sq_id := REPLACE(sq_id, tid);
     IF tid IS NULL AND sq_txt IS NOT NULL THEN 
         IF sq_id IS NOT NULL THEN
+            IF '&tsk' ='SQLHC_' AND dbms_db_version.version>22 THEN
+                execute immediate 'begin :1:=sys.dbms_sqldiag.report_sql(:2,:3);end;' using out sq_txt, sq_id, :v2;
+                :txt := sq_txt;
+                :fn  := 'SQLHC_'||sq_id||'.html';
+                return;
+            END IF;
             BEGIN
                 SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                        nvl(upper(own), nam), txt, br

@@ -83,7 +83,7 @@ BEGIN
             INTO   hv,ns,nn
             FROM   TABLE(GV$(CURSOR(
                 SELECT KGLNAHSV full_hash,kglhdnsp namespace#,KGLHDNSD namespace
-                FROM   x$kglob
+                FROM   sys.x$kglob
                 WHERE  KGLNAHSH=hs
                 AND    ROWNUM<2
             ))) WHERE ROWNUM<2;

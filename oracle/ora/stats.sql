@@ -381,7 +381,7 @@ BEGIN
         raise_application_error(-20001,'Invalid parameter: '||:V2);
     ELSIF typ='TABLE' THEN
         OPEN c1 FOR 
-            select 
+            select /*+outline_leaf*/
                 TABLE_NAME,
                 NUM_ROWS,
                 SAMPLE_SIZE SAMPLES,
@@ -406,7 +406,8 @@ BEGIN
             where owner = own
             and   table_name = nam;
         OPEN c2 FOR
-            SELECT t1.COLUMN_NAME,
+            SELECT /*+outline_leaf*/
+                   t1.COLUMN_NAME,
                    decode(t1.DATA_TYPE,
                           'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
                           'DATE',t1.DATA_TYPE,
@@ -431,7 +432,8 @@ BEGIN
                    (select /*+cardinality(1)*/ table_name,num_rows
                     from  &check_access_dba.tab_statistics t
                     where owner = own 
-                    and   table_name = nam) t2
+                    and   table_name = nam
+                    and   partition_name is null) t2
             WHERE  t2.table_name=t1.table_name
             AND    t1.table_name = nam
             AND    t1.owner = own
@@ -440,7 +442,7 @@ BEGIN
             AND    t1.column_name=t.column_name;
 
         OPEN C3 FOR
-            WITH I AS (SELECT /*+no_merge*/ 
+            WITH I AS (SELECT /*+outline_leaf*/
                                I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                                PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                         SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -457,7 +459,7 @@ BEGIN
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME
                         AND    I.TABLE_OWNER = own
                         AND    I.TABLE_NAME = nam)
-            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('optimizer_dynamic_sampling' 11)
+            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('optimizer_dynamic_sampling' 11) outline_leaf
                  DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -488,7 +490,8 @@ BEGIN
 
         OPEN C4 FOR
             SELECT * FROM (
-                SELECT PARTITION_NAME,
+                SELECT /*+outline_leaf*/
+                       PARTITION_NAME,
                        PARTITION_POSITION POSITION,
                        t.NUM_ROWS,
                        t.SAMPLE_SIZE,
@@ -530,7 +533,7 @@ BEGIN
             AND    partition_name =nvl(sub,partition_name)
             ORDER  BY partition_position;
         OPEN C2 FOR
-            SELECT /*+opt_param('optimizer_dynamic_sampling' 5) no_merge(t1)*/ PARTITION_NAME,
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5) outline_leaf*/ PARTITION_NAME,
                    COLUMN_NAME,
                    HISTOGRAM,
                    ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,

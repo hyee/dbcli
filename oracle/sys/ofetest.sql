@@ -278,7 +278,7 @@ BEGIN
               FROM   PLANS
               GROUP  BY plan_hash, plan_hash2
               ORDER  BY seq) LOOP
-        qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_FULL: ' || r.plan_hash2;
+        qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_2: ' || r.plan_hash2;
         wr(qry);
         wr(lpad('=', length(qry), '='));
         FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', r.id, fmt))) LOOP
@@ -335,7 +335,7 @@ BEGIN
                  description "Top 10 Descriptions"
         FROM   finals a
         WHERE  seq=1
-        ORDER  BY grp,decode(:accu,1,id,0),matched DESC,plan_hash,plan_hash2,cost,bytes,total_card,id;
+        ORDER  BY grp,decode(:accu,1,id,0),regexp_substr(statement_id,'\d+')+0,plan_hash,plan_hash2,cost,bytes,total_card,id;
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested, including %d fix controls and %d parameters. Please reconnect to reset all options to the defaults.',
                                    ofe_cnt + env_cnt,

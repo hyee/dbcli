@@ -1,7 +1,16 @@
 /*[[Show database IO info]]*/
 set feed off
-SELECT inst_id,event, total_Waits,round(1e-3*time_Waited_micro/total_Waits,2) avg_milli_secs
-from gv$system_event WHERE  event LIKE 'db file%' or  event LIKE 'log file%' or event LIKE '%direct path%';
+SELECT *
+FROM   (SELECT inst_id,
+               row_number() over(PARTITION BY inst_id ORDER BY time_Waited_micro DESC) "#",
+               event,
+               total_Waits,
+               round(1e-3 * time_Waited_micro / total_Waits, 2) avg_milli_secs
+        FROM   gv$system_event
+        WHERE  wait_class IN ('User I/O', 'System I/O'))
+WHERE  "#" <= 10
+ORDER  BY 1, 2;
+
 col value format kmg
 select * from gv$sysmetric where METRIC_NAME like 'Physical%Total%';
 /*

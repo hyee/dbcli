@@ -48,7 +48,7 @@ xcopy /E /Y .\jre_linux "%target%\jre_linux"
 echo Packing Jar library files ..
 echo =========================
 cd /d "%target%"
-for /f %%i in ('dir /b/s/a:-H .\*.jar') do (pack200 -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
+rem for /f %%i in ('dir /b/s/a:-H .\*.jar') do (pack200 -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 
 echo Packing dbcli zip files ..
 echo =========================
@@ -66,7 +66,7 @@ zip -r -9 -q ..\dbcli_linux.zip dbcli -x "dbcli\jre\*" "dbcli\bin\*"
 zip -r -9 -q ..\dbcli_nojre.zip dbcli -x "dbcli\jre\*" "dbcli\jre_linux\*"
 del /F /Q .\dbcli\oracle\orai18n.*
 del /F /Q .\dbcli\lib\x86\luv_winxp.dll
-copy /Y "%dump%\*.jar.pack.gz" .\dbcli\oracle
+copy /Y "%dump%\*.jar" .\dbcli\oracle
 del /F /Q .\dbcli\oracle\mysql*
 rem move /Y .\dbcli\oracle\mysql* .\dbcli\mysql
 zip -r -9 -q ..\dbcli_oracle_lite.zip dbcli -x "dbcli\help.gif" "dbcli\jre\*" "dbcli\docs\*" "dbcli\jre_linux\*" "dbcli\mysql\*" "dbcli\pgsql\*" "dbcli\db2\*" "dbcli\bin\*"
