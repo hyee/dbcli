@@ -25,7 +25,6 @@
     --[[
         @ARGS  : 1
         &typ   : default={all} ofe={ofe} env={env}
-        &ofe   : default={1=1} ofe={}
         &filter: default={1=2} f={} k={operation||' '||options||' '||object_name like upper('%&0%')}
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
@@ -94,7 +93,6 @@
                 FROM   v$session_fix_control
                 WHERE  session_id = userenv('sid')
                 AND    '&typ' IN('all','ofe')
-                AND    &OFE
             }
 
             s={}

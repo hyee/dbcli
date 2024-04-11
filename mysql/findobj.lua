@@ -21,7 +21,7 @@ local stmt=([[
         WHERE   matches>0
         UNION ALL
         SELECT DISTINCT 
-               index_schema, index_name COLLATE @@collation_connection, 'INDEX',NULL
+               index_schema, index_name COLLATE &DEFAULT_COLLATION, 'INDEX',NULL
         FROM   information_schema.statistics
         WHERE  index_name!='PRIMARY'
         AND    lower(concat(index_schema, '.', index_name)) LIKE :obj
@@ -43,7 +43,6 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('`','')
     env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")
     if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
-    local collation=db:get_value([[select @@collation_connection]])
     if not cache_obj then
         cache_obj=setmetatable({},{
             __index=function(self,name)
@@ -61,7 +60,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 WHERE  LOWER(table_schema) IN @schemas@
                 UNION ALL
                 SELECT DISTINCT 
-                       index_schema, index_name COLLATE @@collation_connection, 'INDEX'
+                       index_schema, index_name COLLATE &DEFAULT_COLLATION, 'INDEX'
                 FROM   information_schema.statistics
                 WHERE  index_name!='PRIMARY'
                 AND    LOWER(index_schema) IN @schemas@
@@ -70,10 +69,10 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 FROM   information_schema.routines
                 WHERE  LOWER(routine_schema) IN @schemas@
                 UNION ALL
-                SELECT trigger_schema, trigger_name COLLATE @@collation_connection, 'TRIGGER'
+                SELECT trigger_schema, trigger_name COLLATE &DEFAULT_COLLATION, 'TRIGGER'
                 FROM   information_schema.triggers
                 WHERE  LOWER(trigger_schema) IN @schemas@
-            ) M]]):gsub('@schemas@',sys_schemas):gsub('@@collation_connection',collation)
+            ) M]]):gsub('@schemas@',sys_schemas)
         local rows=db:get_rows(sql)
         for _,obj in ipairs(rows) do
             local item={object_owner=obj[1],object_name=obj[2],object_type=obj[3]}
@@ -86,7 +85,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     local item=cache_obj[name]
     if not item and obj~="" then
         if not name:find('.',1,true) then name='%.'..name end
-        local result=self:exec_cache((stmt:gsub('@@collation_connection',collation)),{obj=name},'Internal_FindObject')
+        local result=self:exec_cache(stmt,{obj=name},'Internal_FindObject')
         local obj=db.resultset:rows(result,-1,'')[2]
         if obj then
             item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],object_subname=obj[4]}

@@ -99,7 +99,8 @@ function mysql:connect(conn_str)
                                        @@hostname,
                                        @@global.sql_mode,
                                        @@port,
-                                       @@character_set_client]])
+                                       @@character_set_client,
+                                       COLLATION(USER())]])
     table.clear(self.props)
     local props=self.props
     props.privs={}
@@ -118,6 +119,7 @@ function mysql:connect(conn_str)
         props.database=info[1] or ""
         props.sql_mode=info[6]
         props.charset=info[8]
+        props.collation=info[9]
         args.database=info[1] or ""
         args.hostname=props.db_server
         args.port=info[7]

@@ -21,7 +21,7 @@ SELECT * FROM (
     UNION ALL
     SELECT DISTINCT 
            index_schema,
-           index_name COLLATE utf8_general_ci,
+           index_name COLLATE &DEFAULT_COLLATION,
            NULL,
            'INDEX',
            NULL,
@@ -44,7 +44,7 @@ SELECT * FROM (
     UNION ALL
     SELECT trigger_schema,
            event_object_table,
-           trigger_name COLLATE utf8_general_ci,
+           trigger_name COLLATE &DEFAULT_COLLATION,
            'TRIGGER',
            created,
            NULL

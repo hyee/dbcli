@@ -57,7 +57,7 @@ FROM   (SELECT table_schema `Schema`,
         UNION
         SELECT trigger_schema,
                event_object_table,
-               trigger_name COLLATE utf8_general_ci,
+               trigger_name COLLATE &DEFAULT_COLLATION,
                'TRIGGER',
                created,
                NULL,

@@ -1,2 +1,2 @@
 /*[[Show last SQL ID]]*/
-pro SQL Id: &_SQL_ID
+select '&_SQL_ID' sql_id from dual;

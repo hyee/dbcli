@@ -12,7 +12,6 @@ if !ANSICOLOR!==off set ANSICON_CMD=
 If not exist "%TNS_ADMIN%\tnsnames.ora" if defined ORACLE_HOME (set "TNS_ADMIN=%ORACLE_HOME%\network\admin" )
 
 rem read config file
-SET JRE_HOME=
 If exist "data\init.cfg" (for /f "eol=# delims=" %%i in (data\init.cfg) do (%%i))
 
 rem search java 1.8+ executable
@@ -55,7 +54,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
 If not exist "!JAVA_EXE!" (
     ver|findstr -r " 5.[0-9]*\.[0-9]" > NUL && (SET "BASE=!JRE_HOME!" && if not exist "!BASE!\bin\java.exe" SET "BASE=jre") || (SET "BASE=jre")
     if not exist "jre\bin\java.exe" (
-        echo Cannot find Java 8 - Java 20 executable, exit.
+        echo Cannot find Java 8 - Java 20 executable, please manually set JRE_HOME for available Java program.
         pause
         popd
         exit /b 1

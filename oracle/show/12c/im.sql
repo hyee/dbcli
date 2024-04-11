@@ -4,6 +4,7 @@
         @check_access_dba: dba_tab_partitions={dba_} default={all_}
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
         @VER1: 12.2={,INMEMORY_SERVICE} default={}
+        @VECTOR: 23.4={} default={--}
         @check_access_x: {
             sys.x$imcsegments={SELECT INST_ID,
                        NVL(UNAME, 'SYS') OWNER,
@@ -124,10 +125,13 @@ col UN_POP format kmg
 col "Used %" format %.2f%%
 col "IM %" format %.2f%%
 
-select INST_ID,POOL,POPULATE_STATUS, ALLOC_BYTES,USED_BYTES,
+select TYPE,INST_ID,POOL,POPULATE_STATUS, ALLOC_BYTES,USED_BYTES,
        round(USED_BYTES*100/nullif(ALLOC_BYTES,0),2) "Used %",ALLOC_BYTES-USED_BYTES remaining_bytes  
-from  gv$inmemory_area
-order by 1;
+from  (
+    select 'DBIM' TYPE,a.* from gv$inmemory_area a
+    &vector union all select 'VECTOR',a.* from gv$VECTOR_MEMORY_POOL a
+)
+order by 1,2;
 
 SELECT /*+monitor no_merge(a)*/ b.inst_id,
        a.owner,

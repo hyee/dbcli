@@ -22,9 +22,15 @@
 
 set feed off
 
-PRO DBA_SQL_MANAGEMENT_CONFIG:
-PRO ==========================
-SELECT * FROM DBA_SQL_MANAGEMENT_CONFIG ORDER BY 1;
+
+grid {[[SELECT /*grid={topic='DBA_SQL_MANAGEMENT_CONFIG'}*/  PARAMETER_NAME,PARAMETER_VALUE FROM DBA_SQL_MANAGEMENT_CONFIG ORDER BY 1]],
+      '|',
+      [[SELECT /*grid={topic='SYS_AUTO_SPM_EVOLVE_TASK Parameters'}*/  
+              PARAMETER_NAME,PARAMETER_VALUE,PARAMETER_TYPE type,DESCRIPTION
+        FROM dba_advisor_parameters 
+        WHERE task_name='SYS_AUTO_SPM_EVOLVE_TASK' AND PARAMETER_VALUE!='UNUSED'
+        ORDER BY 1]]
+};
 
 col ela,avg_ela for usmhd2
 col execs for tmb2

@@ -31,7 +31,7 @@ output.trace_sql_after=([[
         open :stats for q'[@GET_STATS@]';
         l_sid :=sys_context('userenv','sid');
         begin
-            execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+            execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
             into l_sql_id,l_child using l_sid;
 
             if l_sql_id is null then
@@ -97,7 +97,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
     BEGIN
         IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
-                execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+                execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
                 into l_sql_id,l_child USING l_sid;
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
