@@ -106,7 +106,6 @@ function pgsql:exec(sql,...)
         self.print_feed(sql,result)
     end
     return result
-    
 end
 
 function pgsql:command_call(sql,...)
@@ -117,6 +116,22 @@ function pgsql:command_call(sql,...)
     local result=self.super.exec(self,sql,{args})
     if not bypass then event("BEFORE_PGSQL_EXEC",self,sql,args,result) end
     self:print_result(result,sql)
+end
+
+function pgsql:after_db_exec()
+    if self.current_statement and not self.current_statement:isClosed() then
+        local warnings=self.current_statement:getWarnings()
+        local flag
+        while warnings ~= nil do
+            flag=true
+            local warn=tostring(warnings)
+            if warn then 
+                print((warn:gsub('org.postgresql%S+: (.*)','%1',1)))
+            end
+            warnings=warnings:getNextWarning()
+        end
+        if flag then self.current_statement:clearWarnings() end
+    end
 end
 
 function pgsql:onload()
@@ -140,13 +155,14 @@ function pgsql:onload()
                   @@NAME <database>                                --switch to another database with current account
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    --env.set.change_default("null","NULL")
+    env.set.change_default("null","(null)")
     env.set.change_default("autocommit","on")
-    env.event.snoop('ON_SQL_PARSE_ERROR',self.handle_error,self,1)
+    env.event.snoop('AFTER_DB_EXEC',self.after_db_exec,self,1)
+    env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     self.source_objs.DO=1
     self.source_objs.DECLARE=nil
     self.source_objs.BEGIN=nil
-    env.db_core.source_obj_pattern={"$$%s+%w+%s+%w+%s*$","$$%s*$"}
+    env.db_core.source_obj_pattern={"$$%s*%w+%s+%w+","$$"}
 end
 
 function pgsql:handle_error(info)

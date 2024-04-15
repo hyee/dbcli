@@ -473,6 +473,9 @@ function db_core:call_sql_method(event_name,sql,method,...)
 
     local res,obj=pcall(method,...)
     if res==false then
+        if event_name=='ON_SQL_ERROR' then
+            env.log_debug("db","SQL:",sql)
+        end
         self:is_connect(nil,true)
         local info,internal={db=self,sql=sql,error=tostring(obj):rtrim()}
         local code=''
@@ -487,7 +490,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
             end
         end
 
-        if event_name=='ON_SQL_ERROR' and obj.getCause then
+        if (event_name=='ON_SQL_ERROR' or event_name=='ON_SQL_ERROR') and obj.getCause then
             info.cause=tostring(obj:getCause():toString()):gsub("(Exception: )",'%1'..code,1)
         end
         env.log_debug('error',info.error)
@@ -575,7 +578,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
 end
 
 function db_core:check_params(sql,prep,bind_info,params)
-    local meta=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
+    local meta=self:call_sql_method('ON_SQL_ERROR',sql,prep.getParameterMetaData,prep)
     local sql_type=self.get_command_type(sql)
     if sql_type=='EXPLAIN' or sql_type=='DESC' or sql_type=='DESCRIBE' then return end
     local param_count=meta:getParameterCount()
@@ -654,7 +657,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
             end
         end)
     --if sql:find('%%%-%.%d+s') then print(sql) end
-    if not prep then prep=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
+    if not prep then prep=self:call_sql_method('ON_SQL_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
     self:check_params(sql,prep,bind_info,params)
 
@@ -822,7 +825,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if is_not_prep and sql:sub(1,512):find('/*DBCLI_EXEC_CACHE*/',1,true) then
         return self:exec_cache(sql,args,prep_params)
     end
-
+    self.current_statement=nil
     local clock,ela,exe,caches=os.timer()
 
     if is_not_prep and not is_internal then
@@ -856,7 +859,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if type(sql)~="string" then
             return sql
         end
-        env.log_debug("db","PARSING:",sql)
+
         prep,sql,params=self:parse(sql,params)
         local param_count = 0
         for k,v in pairs(params) do
@@ -877,8 +880,8 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         self.current_stmt=prep
-        env.log_debug("db","SQL:",sql)
         self.log_param(params)
+        env.log_debug("db","SQL:",sql)
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}
@@ -890,7 +893,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     end
 
     local is_query=nil
-    local typ=type(self.async_coroutine)
     if self.async_coroutine~=nil then
         self:call_sql_method('ON_SQL_ERROR',sql,loader.asyncExecuteStatement,loader,prep,tmp_sql)
         local func=type(self.async_coroutine)=='thread' and coroutine.yield or self.async_coroutine
@@ -964,6 +966,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if result[1]==-1 then table.remove(result,1) end
         result[#result+1]=process_result(prep:getResultSet())
     end
+    self.current_statement=prep
 
     if event then event("AFTER_DB_EXEC",{self,sql,args,result,params}) end
 
@@ -1480,17 +1483,19 @@ function db_core.check_completion(cmd,other_parts)
     if index==0 then return false,other_parts end
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
     if index==1 and action~="SELECT" and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
+        if action=="WITH" and obj=='FUNCTION' then 
+            if match:match('%s+[eE][nN][dD]%s*;%s*[sS][Ee][Ll][eE][cC][tT]%s+') then
+                return true,match
+            else
+                return false,other_parts
+            end
+        end
         local pattern=db_core.source_obj_pattern
         if not pattern then return false,other_parts end
-        local patterns={}
-        if typ=='table' then 
-            patterns=pattern
-        elseif typ=="string" then
-            patterns[1]=pattern
-        end
+        local patterns=type(pattern)=='table' and pattern or {pattern}
+        
         for _,pattern in ipairs(patterns) do
-            if match:match(pattern) then
-                if action=="WITH" then match=match:gsub('[%s;]+$','') end
+            if match:sub(-128):match(pattern..'$') then
                 return true,match
             end
         end

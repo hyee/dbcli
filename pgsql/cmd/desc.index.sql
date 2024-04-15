@@ -38,8 +38,7 @@ SELECT i.indexrelid oid,
          CASE WHEN indisreplident THEN 'REPLI,' END,
          CASE WHEN NOT indimmediate THEN 'DEFER,' END,
          CASE WHEN NOT indisvalid THEN 'INVALID,' END,
-         CASE WHEN NOT indisready THEN 'UNREADY,' END,
-         CASE WHEN NOT indislive THEN 'DEAD' END),',') ATTRS,
+         CASE WHEN NOT indisready THEN 'UNREADY,' END),',') ATTRS,
        (SELECT string_agg(a.attname, CHR(10))
         FROM   (SELECT UNNEST(i.indkey) AS attnum ORDER BY attnum) AS key_with_order
         JOIN   pg_attribute a
@@ -57,6 +56,6 @@ WHERE  nsp.nspname = :object_owner
 AND    tbl.relname = :object_name
 ORDER BY index_name;
 
-SELECT conname constraint_name,pg_get_constraintdef(c.oid) AS constraint_def
+SELECT conname "constraint_name",pg_get_constraintdef(c.oid) AS constraint_def
 FROM pg_constraint c
 WHERE conrelid = '&&object_fullname'::regclass;

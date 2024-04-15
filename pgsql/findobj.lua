@@ -63,7 +63,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                        relname "NAME",
                        CASE TRIM(tbl.relkind)
                            WHEN 'r' THEN
-                            'ORDINARY TABLE'
+                            'TABLE'
                            WHEN 'p' THEN
                             'PARTITIONED TABLE'
                            WHEN 'f' THEN

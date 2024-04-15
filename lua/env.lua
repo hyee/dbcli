@@ -1033,7 +1033,7 @@ function env.set_endmark(name,value)
                 end
             end
         end
-        return s1..s2,r,idx
+        return (s1..s2):rtrim(),r,idx
     end
     return value
 end

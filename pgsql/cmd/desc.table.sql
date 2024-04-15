@@ -1,6 +1,6 @@
 /*[[Show table info
     --[[
-        @CHECK_USER_TIDB: tidb={LEFT JOIN information_schema.table_storage_stats USING(table_schema,table_name)} default={}
+        
     --]]
 ]]*/
 

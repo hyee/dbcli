@@ -18,8 +18,8 @@ function help.help_topic(...)
     env.set.set("feed","off")
     local doc
     local help_table=" from mysql.help_topic as a right join mysql.help_category as b using(help_category_id) "
-    local done=not offline and db:is_connect() and pcall(db.internal_call,db,'select 1'..help_table..' limit 1',{})
-    if done then
+    local _,done=db:is_connect() and pcall(db.get_value,db,'select count(1)'..help_table..' limit 1',{})
+    if done==1 then
         if keyword=="C" or keyword=="CONTENTS" then
             db:query([[select help_category_id as `Category#`,parent_category_id as `Parent#`,b.name as `Category`,
                               group_concat(distinct coalesce(nullif(substring(a.name,1,instr(a.name,' ')-1),''),a.name) order by a.name) as `Keywords`]]
@@ -96,7 +96,7 @@ function help.help_topic(...)
                 grid.print(rows)
             else
                 local match=doc[keyword]
-                if not match then return help.help_topic('\1','F',keyword) end
+                if not match then return help.help_offline('F',keyword) end
                 env.checkerr(match,"No such topic: "..keyword)
                 local rows={}
                 rows[1]={'Name:  '..match[3].." / "..keyword}
@@ -121,7 +121,7 @@ function help:onload()
                               "help ...      : Query offline help documents"},"\n")
     self.helpdict=helpdict
     set_command(nil,{"?","\\?"},"#Synonym for `help`",self.help_topic,false,9)
-    env.event.snoop("ON_HELP_NOTFOUND",function(...) self.help_offline('\1',...) end)
+    env.event.snoop("ON_HELP_NOTFOUND",function(...) self.help_offline(...) end)
 end
 
 return help.new()
