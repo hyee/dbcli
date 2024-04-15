@@ -22,12 +22,12 @@ local meta={
 
 function cfg.show_cfg(name)
     local rows={{'Name','Value','Default','Class','Available Values','Description'}}
-    print([[Usage: set      <name>                                  : Get specific parmeter value
-       set -a                                           : Show abbrs and source.
-       set      <name1> <value1> [<name2> <value2> ...] : Change settings in current window
-       set -p   <name1> <value1> [<name2> <value2> ...] : Change settings permanently
-       set [-p] <name1> default  [<name2> back     ...] : Change settings back to the default/previous values
-    ]])
+    print((([[Usage: @@NAME      <name>                                  : Get specific parmeter value
+       @@NAME -a                                           : Show abbrs and source.
+       @@NAME      <name1> <value1> [<name2> <value2> ...] : Change settings in current window
+       @@NAME -p   <name1> <value1> [<name2> <value2> ...] : Change settings permanently
+       @@NAME [-p] <name1> default  [<name2> back     ...] : Change settings back to the default/previous values
+    ]]):gsub("@@NAME",type(cfg.name)=="table" and cfg.name[1] or cfg.name)))
     if name and name~='-a' and name~='-A' then
         for k,v in pairs(cfg) do
             if type(v)=="table" and k==k:upper() and v.src and (k:find(name,1,true) or v.class and v.class:upper():find(name,1,true)) then

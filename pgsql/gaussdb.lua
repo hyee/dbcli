@@ -9,7 +9,7 @@ function tdsql:ctor()
 end
 
 function tdsql:run_sql(sql,args,cmds,files)
-    --env.checkerr(db.props.tdsql,"Command 'gs' is used on GaussDB only!")
+    env.checkerr(db.props.gaussdb,"Command 'gs' is used on GaussDB only!")
     return self.super.run_sql(self,sql,args,cmds,files)
 end
 

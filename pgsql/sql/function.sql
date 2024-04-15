@@ -1,7 +1,8 @@
-/*[[Find SQL functions with the specific keyword. Usage: @@NAME <keyword>
+/*[[Find SQL functions with the specific keyword. Usage: @@NAME <keyword>|f"<filter>"
     --[[
         @ARGS: 1
         @ALIAS: fn
+        &filter: default={lower(concat(p.proname,'|',d.description)) like lower('%&V1%')} f={}
     --]]
 ]]*/
 
@@ -35,5 +36,5 @@ FROM   pg_proc p
 JOIN   pg_namespace n ON n.oid = p.pronamespace
 LEFT   JOIN pg_description d ON d.objoid = p.oid
 AND    d.objsubid = 0
-WHERE  lower(concat(p.proname,'|',d.description)) like lower('%&V1%')
+WHERE  &filter
 ORDER  BY 2,3;

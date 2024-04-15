@@ -10,9 +10,11 @@ function show.run(arg)
     local flag=arg:lower()=="all" and true or false
     env.set.set("printsize",10000)
     env.set.set("feed","off")
-    if not flag then env.printer.set_grep(arg) end
+    env.set.set("AUTOHIDE","col")
+    if not flag then 
+        cmd="select * from pg_settings where lower(concat('|',name,'|',setting,'|',category,'|',short_desc)) like lower('%"..arg.."%')"
+    end
     db:query(cmd)
-    if not flag then env.printer.grep_after() end
 end
 
 

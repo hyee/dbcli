@@ -62,15 +62,23 @@ function pgsql:connect(conn_str)
     self.conn=java.cast(self.conn,"org.postgresql.jdbc.PgConnection")
     prev_conn={user=usr,password=pwd,url=args.url}
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    local info=self:get_value([[select current_database(),substring(version() from '[0-9\.]+'),current_user,inet_server_addr(),inet_server_port(),pg_backend_pid()]])
+    local info=self:get_value([[
+        select current_database(),
+               substring(version() from '[0-9\.]+'),
+               current_user,
+               inet_server_addr(),
+               inet_server_port(),
+               pg_backend_pid(),
+               (select count(1) cnt from pg_proc where proname like '%gauss_version') gaussdb]])
     table.clear(self.props)
     self.props.privs={}
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
+    self.props.gaussdb=info[7]>0 and true or nil 
     self.props.database=info[1] or ""
     self.connection_info=args
     if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
-    if tonumber(self.props.db_version:match("^%d+%.%d"))<5.5 then
+    if tonumber(self.props.db_version:match("^%d+%.%d"))<5 then
         env.warn("You are connecting to a lower-vesion pgsql sever, some features may not support.")
     end
     env.set_title(('%s - User: %s   PID: %s   Version: %s   Database: %s'):format(self.props.server,self.props.db_user,self.props.pid,self.props.db_version,self.props.database))
@@ -126,14 +134,14 @@ function pgsql:onload()
     set_command(self,"create", default_desc, self.exec,self.check_completion,1,true)
     set_command(self,"do", default_desc, self.exec,self.check_completion,1,true)
     local  conn_help = [[
-        Connect to pgsql database. Usage: @@NAME <user>/<password>@<host>[:<port>][/<database>][?<properties>]
-        Example:  @@NAME postgres/@localhost/postgres     --if not specify the port, then it is 5432
+        Connect to pgsql database. Usage: @@NAME {<user>/<password>@<host>[:<port>][/<database>][?<properties>] | <database> }
+        Example:  @@NAME postgres/@localhost/postgres              --if not specify the port, then it is 5432
                   @@NAME postgres/newpwd@localhost:5432/postgres
+                  @@NAME <database>                                --switch to another database with current account
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     --env.set.change_default("null","NULL")
     env.set.change_default("autocommit","on")
-    env.event.snoop("ON_SET_NOTFOUND",self.set,self)
     env.event.snoop('ON_SQL_PARSE_ERROR',self.handle_error,self,1)
     self.source_objs.DO=1
     self.source_objs.DECLARE=nil
@@ -157,12 +165,6 @@ function pgsql:set_session(name,value)
     return self:exec(table.concat({"SET",name,value}," "))
 end
 
-function pgsql:set(item)
-    if not self:is_connect() then return end
-    local cmd="SET "..table.concat(item," ")
-    item[1]=true
-    self:exec(cmd)
-end
 
 function pgsql:onunload()    
     env.set_title("")
