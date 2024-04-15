@@ -3,16 +3,17 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local pgsql=env.class(env.db_core)
 pgsql.module_list={
-   "sql","chart","ssh","snap",
+   "dict","findobj","desc","sql","list","gaussdb","chart","ssh","snap",
    "show","psql_exe",
 }
 
 function pgsql:ctor(isdefault)
     self.type="pgsql"
-    self.C,self.props={},{}
+    self.props={}
     self.JDBC_ADDRESS='https://jdbc.postgresql.org/download.html'
 end
 
+local prev_conn=nil
 function pgsql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
@@ -23,7 +24,13 @@ function pgsql:connect(conn_str)
         conn_str=string.format("%s/%s@%s",usr,pwd,url)
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
-        if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+        if conn_desc == nil then
+            if prev_conn==nil or not (conn_str or ""):find("^[a-zA-Z][a-zA-Z0-9$_]+$") then
+                return exec_command("HELP",{"CONNECT"})
+            end
+            usr,pwd,conn_desc=prev_conn.user,prev_conn.password,prev_conn.url:match("//(.*)$"):gsub('/.-$','/'..conn_str)
+            print('Trying to connecte to database "'..conn_str..'" with account "'..usr..'" ...')
+        end
         args={user=usr,password=pwd}
         if conn_desc:match("%?.*=.*") then
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
@@ -47,15 +54,17 @@ function pgsql:connect(conn_str)
         },args)
     --print(table.dump(args))   
     
-    if event then event("BEFORE_PGSQL_CONNECT",self,sql,args,result) end
+    if event then event("BEFORE_PGSQL_CONNECT",self,args) end
     env.set_title("")
 
     for k,v in pairs(args) do args[k]=tostring(v) end
     self.super.connect(self,args)
     self.conn=java.cast(self.conn,"org.postgresql.jdbc.PgConnection")
+    prev_conn={user=usr,password=pwd,url=args.url}
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local info=self:get_value([[select current_database(),substring(version() from '[0-9\.]+'),current_user,inet_server_addr(),inet_server_port(),pg_backend_pid()]])
     table.clear(self.props)
+    self.props.privs={}
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.database=info[1] or ""
@@ -67,7 +76,7 @@ function pgsql:connect(conn_str)
     env.set_title(('%s - User: %s   PID: %s   Version: %s   Database: %s'):format(self.props.server,self.props.db_user,self.props.pid,self.props.db_version,self.props.database))
     local prompt=self.props.database..'> '
     env.set_prompt(nil,prompt,nil,2)
-    if event then event("AFTER_PGSQL_CONNECT",self,sql,args,result) end
+    if event then event("AFTER_PGSQL_CONNECT",self,args,self.props) end
     print("Database connected.")
 end
 
@@ -98,11 +107,12 @@ function pgsql:command_call(sql,...)
     sql=event("BEFORE_PGSQL_EXEC",{self,sql,args}) [2]
     env.checkhelp(#env.parse_args(2,sql)>1)
     local result=self.super.exec(self,sql,{args})
-    if not bypass then event("BEFORE_MYSQL_EXEC",self,sql,args,result) end
+    if not bypass then event("BEFORE_PGSQL_EXEC",self,sql,args,result) end
     self:print_result(result,sql)
 end
 
 function pgsql:onload()
+    env.set.rename_command('ENV')
     local default_desc={"#PgSQL database SQL command",self.help_topic}
     local function add_default_sql_stmt(...)
         for i=1,select('#',...) do
@@ -112,7 +122,7 @@ function pgsql:onload()
 
     add_default_sql_stmt('ABORT','ALTER','ANALYZE','BEGIN','CHECKPOINT','CLOSE','CLUSTER','COMMENT','COPY','DEALLOCATE','DECLARE')
     add_default_sql_stmt('DELETE','DISCARD','DROP','END','EXECUTE','EXPLAIN','FETCH','GRANT','IMPORT','INSERT','LISTEN','LOAD','LOCK','MOVE','NOTIFY','PREPARE')
-    add_default_sql_stmt('REASSIGN','REFRESH','REINDEX','RELEASE','RESET','REVOKE','SECURITY','SELECT','START','TRUNCATE','UNLISTEN','UPDATE','VACUUM','WITH')
+    add_default_sql_stmt('SET','REASSIGN','REFRESH','REINDEX','RELEASE','RESET','REVOKE','SECURITY','SELECT','START','TRUNCATE','UNLISTEN','UPDATE','VACUUM','WITH')
     set_command(self,"create", default_desc, self.exec,self.check_completion,1,true)
     set_command(self,"do", default_desc, self.exec,self.check_completion,1,true)
     local  conn_help = [[
@@ -121,11 +131,10 @@ function pgsql:onload()
                   @@NAME postgres/newpwd@localhost:5432/postgres
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    env.set.change_default("null","NULL")
+    --env.set.change_default("null","NULL")
     env.set.change_default("autocommit","on")
     env.event.snoop("ON_SET_NOTFOUND",self.set,self)
     env.event.snoop('ON_SQL_PARSE_ERROR',self.handle_error,self,1)
-    self.C={}
     self.source_objs.DO=1
     self.source_objs.DECLARE=nil
     self.source_objs.BEGIN=nil
@@ -133,6 +142,7 @@ function pgsql:onload()
 end
 
 function pgsql:handle_error(info)
+    info.position=tonumber(info.error:match("%s+Position: (%d+)"))
     --print(self:is_connect(),cfg.get("AUTOCOMMIT"))
     if self:is_connect() and cfg.get("AUTOCOMMIT")=="off" then
         cfg.set('feed','off')
@@ -160,6 +170,7 @@ end
 
 function pgsql:finalize()
     env.set.change_default("SQLTERMINATOR",";,\\n%s*/,\\g")
+
 end
 
 return pgsql.new()

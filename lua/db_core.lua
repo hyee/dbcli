@@ -330,7 +330,10 @@ db_core.feed_list={
     REVOKE  ="Revoked",
     TRUNCATE="Truncated",
     SET     ="Variable set",
-    USE     ="Database changed"
+    USE     ="Database changed",
+    DESC    ='',
+    DESCRIBE='',
+    EXPLAIN =''
 }
 
 db_core.readonly_list={
@@ -398,6 +401,7 @@ function db_core.get_feed(sql,result)
     local cmd,obj=db_core.get_command_type(sql)
     local feed=db_core.feed_list[cmd] 
     if feed then
+        if feed=='' then return end
         feed=feed..secs
         if feed:find('%d',1,true) then
             if type(result)=="number" then return feed:format(result) end
@@ -566,13 +570,14 @@ function db_core:call_sql_method(event_name,sql,method,...)
             end
             env.raise_error(info.error)
         end
-        env.raise("000-00000: ")
     end
     return obj
 end
 
 function db_core:check_params(sql,prep,bind_info,params)
     local meta=self:call_sql_method('ON_SQL_PARSE_ERROR',sql,prep.getParameterMetaData,prep)
+    local sql_type=self.get_command_type(sql)
+    if sql_type=='EXPLAIN' or sql_type=='DESC' or sql_type=='DESCRIBE' then return end
     local param_count=meta:getParameterCount()
     if param_count~=#bind_info then
         local errmsg="Parameters are unexpected, below are the detail:\nSQL:"..string.rep('-',80).."\n"..sql
@@ -851,7 +856,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if type(sql)~="string" then
             return sql
         end
-        
+        env.log_debug("db","PARSING:",sql)
         prep,sql,params=self:parse(sql,params)
         local param_count = 0
         for k,v in pairs(params) do

@@ -1374,7 +1374,7 @@ function env.set_title(title,value,callee)
         end
 
         if not titles or titles=="" then 
-            titles="DBCLI - Disconnected"
+            titles=(env.set.PLATFORM and env.set.get("platform"):initcap() or 'DBCLI').." - Disconnected"
         end
 
         if (CURRENT_TITLE~=titles and (enabled or env.set.STATUS and env.set.get("STATUS"))=="on") or enabled=='on' then

@@ -1,0 +1,1 @@
+SELECT pg_get_viewdef('&object_fullname'::regclass, true) as "DDL";

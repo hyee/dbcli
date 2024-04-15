@@ -14,6 +14,7 @@ mysql.module_list={
     "list",
     "ps",
     "tidb",
+    "tdsql",
     "chart",
     "ssh",
     "dict",
@@ -100,7 +101,8 @@ function mysql:connect(conn_str)
                                        @@global.sql_mode,
                                        @@port,
                                        @@character_set_client,
-                                       COLLATION(USER())]])
+                                       COLLATION(USER()),
+                                       @@AUTOCOMMIT]])
     table.clear(self.props)
     local props=self.props
     props.privs={}

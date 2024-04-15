@@ -2,29 +2,39 @@ local env=env
 local db=env.getdb()
 local findobj,cache_obj,loaded={},{}
 local json = require("json")
-local sys_schemas="('information_schema','sys','mysql','performance_schema','metrics_schema','ndbinfo')"
+local sys_schemas="('information_schema','pg_catalog')"
 local default_args={target='v1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",object_subname="#VARCHAR",object_fullname='#VARCHAR'}
 
 local stmt=[[
     SELECT * FROM (
-        SELECT table_schema `Schema`,
-               table_name,
-               ELT(matches,'TABLE','PARTITION','SUBPARTITION') object_type,
-               ELT(matches,'',partition_name,subpartition_name) sub_name
-        FROM   (SELECT table_schema,table_name,partition_name,subpartition_name,
-                       CASE WHEN lower(concat(table_schema, '.', table_name)) LIKE :obj THEN 1
-                            WHEN lower(concat_ws('.',table_schema,table_name,partition_name)) LIKE concat('%',trim('%' FROM :obj)) THEN 2
-                            WHEN lower(concat_ws('.',table_schema,table_name,subpartition_name)) LIKE concat('%',trim('%' FROM :obj)) THEN 3
-                            ELSE 0
-                       END matches
-                FROM   information_schema.partitions) A
-        WHERE   matches>0
-        UNION ALL
-        SELECT DISTINCT 
-               index_schema, index_name COLLATE &DEFAULT_COLLATION, 'INDEX',NULL
-        FROM   information_schema.statistics
-        WHERE  index_name!='PRIMARY'
-        AND    lower(concat(index_schema, '.', index_name)) LIKE :obj
+        SELECT nspname "SCHEMA",
+               relname "NAME",
+               CASE TRIM(tbl.relkind)
+                   WHEN 'r' THEN
+                    'TABLE'
+                   WHEN 'p' THEN
+                    'PARTITIONED TABLE'
+                   WHEN 'f' THEN
+                    'FOREIGN TABLE'
+                   WHEN 't' THEN
+                    'TOAST TABLE'
+                   WHEN 'm' THEN
+                    'MATERIALZED VIEW'
+                   WHEN 'v' THEN
+                    'VIEW'
+                   WHEN 'i' THEN
+                    'INDEX'
+                   WHEN 'I' THEN
+                    'PARTITIONED INDEX'
+                   WHEN 'S' THEN
+                    'SEQUENCE'
+                   WHEN 'c' THEN
+                     'COMPOSITE TYPE'
+               END "TYPE",
+               cast('' as varchar(255)) "PARTITION"
+        FROM   pg_class tbl
+        JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
+        WHERE  lower(concat(nspname, '.', relname)) LIKE :obj
         UNION ALL
         SELECT routine_schema, routine_name, routine_type,NULL
         FROM   information_schema.routines
@@ -33,14 +43,10 @@ local stmt=[[
         SELECT trigger_schema, trigger_name, 'TRIGGER',NULL
         FROM   information_schema.triggers
         WHERE  lower(concat(trigger_schema, '.', trigger_name)) LIKE :obj
-        UNION ALL
-        SELECT event_schema, event_name, 'EVENT',NULL
-        FROM   information_schema.events
-        WHERE  lower(concat(event_schema, '.', event_name)) LIKE :obj
     ) M
-    ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END LIMIT 1]]
+    ORDER BY CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END LIMIT 1]]
 function db:check_obj(obj_name,bypass_error,is_set_env)
-    local name=obj_name:lower():gsub('`','')
+    local name=obj_name:lower():gsub('"','')
     env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")
     if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
     if not cache_obj then
@@ -53,23 +59,39 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         local sql=([[
             SELECT *
             FROM (
-                SELECT table_schema `SCHEMA`, 
-                       table_name `NAME`, 
-                       SUBSTRING_INDEX(REPLACE(table_type,'SYSTEM VIEW','TABLE'), ' ', -1) AS `TYPE`
-                FROM   information_schema.tables
-                WHERE  LOWER(table_schema) IN @schemas@
-                UNION ALL
-                SELECT DISTINCT 
-                       index_schema, index_name COLLATE &DEFAULT_COLLATION, 'INDEX'
-                FROM   information_schema.statistics
-                WHERE  index_name!='PRIMARY'
-                AND    LOWER(index_schema) IN @schemas@
+                SELECT nspname "SCHEMA",
+                       relname "NAME",
+                       CASE TRIM(tbl.relkind)
+                           WHEN 'r' THEN
+                            'ORDINARY TABLE'
+                           WHEN 'p' THEN
+                            'PARTITIONED TABLE'
+                           WHEN 'f' THEN
+                            'FOREIGN TABLE'
+                           WHEN 't' THEN
+                            'TOAST TABLE'
+                           WHEN 'm' THEN
+                            'MATERIALZED VIEW'
+                           WHEN 'v' THEN
+                            'VIEW'
+                           WHEN 'i' THEN
+                            'INDEX'
+                           WHEN 'I' THEN
+                            'PARTITIONED INDEX'
+                           WHEN 'S' THEN
+                            'SEQUENCE'
+                           WHEN 'c' THEN
+                             'COMPOSITE TYPE'
+                       END "TYPE"
+                FROM   pg_class tbl
+                JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
+                WHERE  nspname IN @schemas@
                 UNION ALL
                 SELECT routine_schema, routine_name, routine_type
                 FROM   information_schema.routines
                 WHERE  LOWER(routine_schema) IN @schemas@
                 UNION ALL
-                SELECT trigger_schema, trigger_name COLLATE &DEFAULT_COLLATION, 'TRIGGER'
+                SELECT trigger_schema, trigger_name, 'TRIGGER'
                 FROM   information_schema.triggers
                 WHERE  LOWER(trigger_schema) IN @schemas@
             ) M]]):gsub('@schemas@',sys_schemas)
@@ -95,7 +117,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     if item then 
         item.target=obj_name
         item.full_name=table.concat({item.object_owner,item.object_name,item.object_subname~='' and item.object_subname or nil},'.')
-        item.object_fullname='`'..item.object_owner..'`.`'..item.object_name..'`'
+        item.object_fullname='"'..item.object_owner..'"."'..item.object_name..'"'
         if item.object_subname~='' then
             cache_obj[table.concat({item.object_name,item.object_subname},'.'):lower()]=item
         end
@@ -158,7 +180,7 @@ end
 
 function findobj.onload()
     env.set_command(db,"FINDOBJ","#internal",db.check_obj,false,4)
-    env.event.snoop("AFTER_MYSQL_CONNECT",findobj.onreset)
+    env.event.snoop("AFTER_PGSQL_CONNECT",findobj.onreset)
 end
 
 return findobj

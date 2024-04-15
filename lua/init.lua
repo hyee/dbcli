@@ -191,7 +191,9 @@ function init.load_database()
         init.load_modules(list,env[name].C,name)
     end
     timer=clock()
+    local c=env[name].C
     exec(type(env[name])=="table" and env[name].onload,env[name],name)
+    env[name].C=c
     m.onload=clock()-timer
     if env.event then env.event.callback('ON_DB_ENV_LOADED',env.CURRENT_DB) end
 end
