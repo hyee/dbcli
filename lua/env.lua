@@ -584,7 +584,9 @@ local prompt_stack={_base="SQL",default=0}
 --env.prompt_stack=prompt_stack
 function env.set_prompt(class,default,is_default,level)
     if default then
-        if not env._SUBSYSTEM  then default=default:upper() end
+        if not env._SUBSYSTEM  then 
+            default=(default==default:lower() or default==default:upper()) and default:upper() or default
+        end
         if env.ansi then default=env.ansi.convert_ansi(default) end
     end
 
@@ -1175,7 +1177,19 @@ function env.onload(...)
         env.event.snoop("ON_KEY_EVENT",env.modify_command)
         env.event.callback("ON_ENV_LOADED")
     end
-
+    env.set_command(nil,{"delimiter"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
+        function(sep) 
+            if not sep then return end
+            if sep:lower()=='default' or sep:lower()=='back' then
+                return sep
+            end
+            sep=sep..',\\n%s*/,\\g'
+            if #env.RUNNING_THREADS <= 3 then
+                env.set.force_set("SQLTERMINATOR",sep)
+            else
+                env.set.doset("SQLTERMINATOR",sep)
+            end
+        end,false,2)
     env.set_command(nil,"/*"    ,   '#Comment',        nil   ,env.check_comment,2)
     env.set_command(nil,"--"    ,   '#Comment',        nil   ,false,2)
     env.set_command(nil,"REM"   ,   '#Comment',        nil   ,false,2)

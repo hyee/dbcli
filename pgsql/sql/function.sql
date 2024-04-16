@@ -9,6 +9,7 @@
 SELECT p.oid,
        n.nspname AS schema_name,
        p.proname AS function_name,
+       l.lanname AS "language",
        CASE
            WHEN p.proretset THEN
             'SET OF '
@@ -34,7 +35,7 @@ SELECT p.oid,
        d.description AS function_description
 FROM   pg_proc p
 JOIN   pg_namespace n ON n.oid = p.pronamespace
-LEFT   JOIN pg_description d ON d.objoid = p.oid
-AND    d.objsubid = 0
+LEFT   JOIN pg_description d ON d.objoid = p.oid AND d.objsubid = 0
+LEFT   JOIN pg_language l ON l.oid = p.prolang
 WHERE  &filter
 ORDER  BY 2,3;

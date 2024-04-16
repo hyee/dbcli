@@ -18,7 +18,8 @@ SELECT ordinal_position "#",
            END)  "Type",
        column_default "Default",
        collation_name "Collation",
-       is_nullable "Null"
+       CASE WHEN is_nullable='YES' then '' ELSE is_nullable END "Null",
+       pg_catalog.col_description(format('%s.%s',table_schema,table_name)::regclass::oid,ordinal_position) as "description"
 FROM   information_schema.columns a
 WHERE  table_schema=:object_owner
 AND    table_name=:object_name

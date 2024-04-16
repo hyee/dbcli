@@ -231,8 +231,6 @@ function mysql:onload()
     env.rename_command("HELP",{"HELP","\\h"})
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self)
     env.event.snoop('ON_SETTING_CHANGED',self.check_readonly,self)
-    set_command(nil,{"delimiter","\\d"},"Set statement delimiter. Usage: @@NAME {<text>|default|back}",
-         function(sep) if sep then env.set.doset("SQLTERMINATOR",';,'..sep..',\\g') end end,false,2)
 
     set_command(nil,{"PROMPT","\\R"},"Change your mysql prompt. Usage: @@NAME {<text>|default|back}",
         function(sep) env.set.doset("PROMPT",sep) end,false,2)
@@ -287,7 +285,7 @@ end
 function mysql:finalize()
     env.set.change_default("NULL","NULL")
     env.set.change_default("AUTOCOMMIT","on")
-    env.set.change_default("SQLTERMINATOR",";,$$,\\g")
+    env.set.change_default("SQLTERMINATOR",";,\\g")
 end
 
 return mysql.new()

@@ -5,7 +5,7 @@
 ]]*/
 col size for kmg2
 SELECT p.datid "dbid",
-       p.datname "database_name",
+       case when current_database()=p.datname then '* ' else '  ' end||p.datname "database_name",
        pg_database_size(d.oid) "size",
        o.rolname "owner",
        t.spcname "tablespace",

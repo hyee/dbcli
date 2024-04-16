@@ -49,7 +49,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('"','')
     env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")
     if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
-    if not cache_obj then
+    if not loaded and not cache_obj then
         cache_obj=setmetatable({},{
             __index=function(self,name)
                 return rawget(self,name:lower())
@@ -103,6 +103,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
             end
         end
         db.C.dict.cache_obj=cache_obj
+        loaded=true
     end
     local item=cache_obj[name]
     if not item and obj~="" then
@@ -174,7 +175,7 @@ local url,usr
 function findobj.onreset(instance,sql,props)
     if props and (props.url~=url or props.user~=usr)  then
         url,usr=props.url,props.user
-        cache_obj,privs,loaded={},{}
+        cache_obj,privs,loaded=nil,{}
     end
 end
 

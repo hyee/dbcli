@@ -155,14 +155,14 @@ function pgsql:onload()
                   @@NAME <database>                                --switch to another database with current account
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    env.set.change_default("null","(null)")
+    env.set.change_default("null","nil")
     env.set.change_default("autocommit","on")
     env.event.snoop('AFTER_DB_EXEC',self.after_db_exec,self,1)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
     self.source_objs.DO=1
     self.source_objs.DECLARE=nil
     self.source_objs.BEGIN=nil
-    env.db_core.source_obj_pattern={"$$%s*%w+%s+%w+","$$"}
+    env.db_core.source_obj_pattern={"$%w*$%s*%w+%s+%w+","$%w*$"}
 end
 
 function pgsql:handle_error(info)

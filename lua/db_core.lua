@@ -490,7 +490,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
             end
         end
 
-        if (event_name=='ON_SQL_ERROR' or event_name=='ON_SQL_ERROR') and obj.getCause then
+        if event_name=='ON_SQL_ERROR' and obj.getCause then
             info.cause=tostring(obj:getCause():toString()):gsub("(Exception: )",'%1'..code,1)
         end
         env.log_debug('error',info.error)
@@ -1474,6 +1474,7 @@ db_core.source_objs={
     BEGIN=1,
     JAVA=1,
     AND=1,
+    DO=1,
     DEFINER=1,
     EVENT=1}
 
@@ -1481,14 +1482,18 @@ function db_core.check_completion(cmd,other_parts)
     --alter package xxx compile ...
     local match,typ,index=env.COMMAND_SEPS.match(other_parts)
     if index==0 then return false,other_parts end
+    if index==1 and typ~=';' then return true,match end
     local action,obj=db_core.get_command_type(cmd..' '..other_parts)
+    local inline=action=="WITH" and (obj=='FUNCTION' or obj=='PROCEDURE')
     if index==1 and action~="SELECT" and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
-        if action=="WITH" and obj=='FUNCTION' then 
+        if inline then 
             if match:match('%s+[eE][nN][dD]%s*;%s*[sS][Ee][Ll][eE][cC][tT]%s+') then
                 return true,match
             else
                 return false,other_parts
             end
+        elseif action=='WITH' then
+            return true,match
         end
         local pattern=db_core.source_obj_pattern
         if not pattern then return false,other_parts end
@@ -1502,7 +1507,7 @@ function db_core.check_completion(cmd,other_parts)
         return false,other_parts
     end
 
-    if action=="WITH" and obj=='FUNCTION' then match=match:gsub('[%s;/]+$','') end
+    if inline then match=match:gsub('[%s;/]+$','') end
     return true,match
 end
 
