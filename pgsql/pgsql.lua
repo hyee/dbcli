@@ -170,7 +170,8 @@ function pgsql:onload()
     self.source_objs.DO=1
     self.source_objs.DECLARE=nil
     self.source_objs.BEGIN=nil
-    env.db_core.source_obj_pattern={"$%w*$%s*%w+%s+%w+","$%w*$"}
+    local end_='[eE][nN][dD];?%s*'
+    env.db_core.source_obj_pattern={end_.."$%w*$%s*%w+%s+%w+","$%w*$"}
 end
 
 function pgsql:handle_error(info)

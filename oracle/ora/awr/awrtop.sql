@@ -103,7 +103,7 @@ FROM (SELECT rownum r,
             FROM (SELECT s.*, SUM(executions) over(partition by &base, qry.typ) execs_,qry.typ
                   FROM   qry,&&awr$sqlstat s
                   WHERE  (&filter)
-                  AND    s.begin_interval_time between qry.st and ed
+                  AND    s.end_interval_time between qry.st and ed
                   AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number)) s
             WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
             GROUP  BY &base,typ

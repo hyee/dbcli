@@ -2,13 +2,13 @@
     --[[
         @ARGS: 1
         @ALIAS: fn
-        &filter: default={lower(concat(p.proname,'|',p.probin,'|',d.description)) like lower('%&V1%')} f={}
+        &filter: default={lower(concat(n.nspname,'.',p.proname,'|',p.probin,'|',d.description)) like lower('%&V1%')} f={}
     --]]
 ]]*/
 
 SELECT p.oid,
-       n.nspname AS schema_name,
        au.rolname AS "owner",
+       n.nspname AS schema_name,
        p.proname AS function_name,
        l.lanname AS "lang",
        CASE

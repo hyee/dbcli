@@ -346,13 +346,10 @@ function scripter:run_sql(sql,args,cmds)
     end
     --self.db:assert_connect()
     local current_thead,_,level=env.register_thread()
-    local sq="",cmd,params,pre_cmd,pre_params
-    local cmds=env._CMDS
 
     local ary=env.var.backup_context()
     var.import_context(args)
     
-    local echo=cfg.get("echo"):lower()=="on"
     if #env.RUNNING_THREADS == 2 then
         cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT","ONERREXIT","ON")
     end

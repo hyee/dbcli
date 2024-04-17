@@ -191,8 +191,8 @@ function var.update_text(item,pos,params)
     pos,params=pos or 1,params or {}
     local count=1
     local function repl(s,s2,s3)
-        local v,s=s2:upper(),s..s2..s3
-        v=params[v] or var.inputs[v] or var.global_context[v]
+        local k,s,v=s2:upper(),s..s2..s3
+        v=params[k] or var.inputs[k] or var.global_context[k]
         if (v==nil or type(v)=='table') and tonumber(s2) then
             v="V"..s2
             v=params[v] or var.inputs[v] or var.global_context[v]

@@ -31,20 +31,32 @@ local stmt=[[
                    WHEN 'c' THEN
                      'COMPOSITE TYPE'
                END "TYPE",
-               cast('' as varchar(255)) "PARTITION"
+               cast('' as varchar(255)) "PARTITION",
+               CASE WHEN tbl.relkind in ('m') THEN 0
+                    WHEN tbl.relkind in ('r','p','f') THEN 1
+                    WHEN tbl.relkind in ('v','c') THEN 2
+                    WHEN tbl.relkind in ('i','I') THEN 5
+                    ELSE 6 
+                END seq_
         FROM   pg_class tbl
         JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
         WHERE  lower(concat(nspname, '.', relname)) LIKE :obj
         UNION ALL
-        SELECT routine_schema, routine_name, routine_type,NULL
+        SELECT nspname,conname,'CONSTRAINT',NULL,3
+        FROM   pg_constraint con
+        JOIN   pg_namespace nsp ON nsp.oid = con.connamespace
+        WHERE  lower(concat(nspname, '.', conname)) LIKE :obj
+        UNION ALL
+        SELECT routine_schema, routine_name, routine_type,NULL,4
         FROM   information_schema.routines
         WHERE  lower(concat(routine_schema, '.', routine_name)) LIKE :obj
         UNION ALL
-        SELECT trigger_schema, trigger_name, 'TRIGGER',NULL
+        SELECT trigger_schema, trigger_name, 'TRIGGER',NULL,6
         FROM   information_schema.triggers
         WHERE  lower(concat(trigger_schema, '.', trigger_name)) LIKE :obj
     ) M
-    ORDER BY CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END LIMIT 1]]
+    ORDER BY CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END,seq_
+    LIMIT 1]]
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('"','')
     env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")

@@ -32,7 +32,6 @@ JOIN   pg_index i               ON i.indrelid = tbl.oid
 JOIN   pg_class idx             ON idx.oid = i.indexrelid
 JOIN   pg_am am                 ON am.oid = idx.relam
 JOIN   pg_namespace isp         ON isp.oid = idx.relnamespace
-LEFT JOIN pg_constraint con     ON idx.oid=con.conindid
 LEFT JOIN pg_stat_all_indexes S ON s.indexrelid=i.indexrelid
 WHERE  isp.nspname= :object_owner
 AND    idx.relname= :object_name

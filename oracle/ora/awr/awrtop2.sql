@@ -155,7 +155,7 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                           FROM   qry,&&awr$sqlstat s
                           WHERE  (qry.sqid = &grp or qry.sqid is null)
                           AND    (&filter)
-                          AND    s.begin_interval_time between qry.st and ed
+                          AND    s.end_interval_time between qry.st and ed
                           AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number))
                    WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
                     GROUP  BY &grp, plan_hash_value)) a)a
