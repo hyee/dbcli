@@ -42,7 +42,7 @@ function info.desc(name,option)
                 end
                 env.set.set("COLWRAP",120)
                 env.set.set("PIVOT",sql:sub(1,256):find("/*PIVOT*/",1,true) and 1 or 0)
-                db:query(sql,rs)
+                db:internal_call(sql,rs,nil,nil,true)
                 env.set.set("PIVOT",0)
                 env.set.set("COLWRAP",'default')
             end

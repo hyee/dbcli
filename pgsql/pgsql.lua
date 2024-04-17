@@ -28,10 +28,13 @@ function pgsql:connect(conn_str)
             if prev_conn==nil or not (conn_str or ""):find("^[a-zA-Z][a-zA-Z0-9$_]+$") then
                 return exec_command("HELP",{"CONNECT"})
             end
-            usr,pwd,conn_desc=prev_conn.user,prev_conn.password,prev_conn.url:match("//(.*)$"):gsub('/.-$','/'..conn_str)
+            args=prev_conn
+            usr,pwd,conn_desc=args.user,args.password,args.url:match("//(.*)$"):gsub('/.-$','/'..conn_str)
             print('Trying to connecte to database "'..conn_str..'" with account "'..usr..'" ...')
+        else
+            args={user=usr,password=pwd}
         end
-        args={user=usr,password=pwd}
+        
         if conn_desc:match("%?.*=.*") then
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
                 args[k]=v
@@ -60,7 +63,8 @@ function pgsql:connect(conn_str)
     for k,v in pairs(args) do args[k]=tostring(v) end
     self.super.connect(self,args)
     self.conn=java.cast(self.conn,"org.postgresql.jdbc.PgConnection")
-    prev_conn={user=usr,password=pwd,url=args.url}
+    prev_conn=table.clone(args)
+    prev_conn.password=pwd
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
     local info=self:get_value([[
         select current_database(),
@@ -69,20 +73,24 @@ function pgsql:connect(conn_str)
                inet_server_addr(),
                inet_server_port(),
                pg_backend_pid(),
-               (select count(1) cnt from pg_proc where proname like '%gauss_version') gaussdb]])
+               (select count(1) cnt from pg_proc where proname like '%gauss_version') gaussdb,
+               (select setting from pg_settings where name='plan_cache_mode')]])
     table.clear(self.props)
     self.props.privs={}
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.gaussdb=info[7]>0 and true or nil 
+    self.props.plan_cache_mode=info[8]~='' and info[8] or nil
     self.props.database=info[1] or ""
     self.connection_info=args
     if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
     if tonumber(self.props.db_version:match("^%d+%.%d"))<5 then
         env.warn("You are connecting to a lower-vesion pgsql sever, some features may not support.")
     end
+    env._CACHE_PATH=env.join_path(env._CACHE_BASE,self.props.database:lower():trim(),'')
+    loader:mkdir(env._CACHE_PATH)
     env.set_title(('%s - User: %s   PID: %s   Version: %s   Database: %s'):format(self.props.server,self.props.db_user,self.props.pid,self.props.db_version,self.props.database))
-    local prompt=self.props.database..'> '
+    local prompt=self.props.database=="" and "SQL" or self.props.database
     env.set_prompt(nil,prompt,nil,2)
     if event then event("AFTER_PGSQL_CONNECT",self,args,self.props) end
     print("Database connected.")
@@ -155,7 +163,7 @@ function pgsql:onload()
                   @@NAME <database>                                --switch to another database with current account
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
-    env.set.change_default("null","nil")
+    --env.set.change_default("null","nil")
     env.set.change_default("autocommit","on")
     env.event.snoop('AFTER_DB_EXEC',self.after_db_exec,self,1)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
@@ -167,7 +175,6 @@ end
 
 function pgsql:handle_error(info)
     info.position=tonumber(info.error:match("%s+Position: (%d+)"))
-    --print(self:is_connect(),cfg.get("AUTOCOMMIT"))
     if self:is_connect() and cfg.get("AUTOCOMMIT")=="off" then
         cfg.set('feed','off')
         self:rollback()

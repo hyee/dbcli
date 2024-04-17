@@ -4,6 +4,13 @@
     --]]
 ]]*/
 col size for kmg2
+env feed off
+select pg_control_version,
+       catalog_version_no,
+       to_timestamp(system_identifier >> 32) cluster_init,  
+       pg_control_last_modified
+from   pg_control_system();
+
 SELECT p.datid "dbid",
        case when current_database()=p.datname then '* ' else '  ' end||p.datname "database_name",
        pg_database_size(d.oid) "size",

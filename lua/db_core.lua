@@ -881,7 +881,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
         self.current_stmt=prep
         self.log_param(params)
-        env.log_debug("db","SQL:",sql)
     else
         local desc ="PreparedStatement"..(args._description or "")
         prep,sql,params=sql,src_sql or desc,prep_params or {}
@@ -905,12 +904,15 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     else 
         is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql) 
     end
+    if is_not_prep then
+        env.log_debug("db","SQL:",sql)
+    end
     exe=os.timer()-clock
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
     local cleans={}
     local function process_result(rs,is_print)
-        if print_result and is_print~=false then
+        if print_result==true and is_print~=false then
             cleans[#cleans+1]=rs
             self.resultset:print(rs,self.conn,nil,verticals,false)
         elseif caches then
@@ -988,12 +990,15 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     return #result==1 and result[1] or result
 end
 
+local prep_test_connection
 function db_core:is_connect(recursive,test_sql)
     local is_conn=type(self.conn)=='userdata'
     local is_closed=not is_conn or not self.conn.isClosed or self.conn:isClosed()
     if not is_closed and is_conn and test_sql==true and prep_test_connection then
-        local result,err=pcall(prep_test_connection.execute,prep_test_connection)
-        if err then is_closed=true end
+        local done,err=pcall(prep_test_connection.execute,prep_test_connection)
+        if not done then
+            is_closed=true 
+        end
     end
     if is_closed then
         table.clear(__stmts)
@@ -1010,10 +1015,10 @@ function db_core:assert_connect()
     env.checkerr(self:is_connect(),2,"%s database is not connected!",env.set.get("database"):initcap())
 end
 
-function db_core:internal_call(sql,args,prep_params,print_result)
+function db_core:internal_call(sql,args,prep_params,org_sql,print_result)
     self.internal_exec=true
     --local exec=self.super.exec or self.exec
-    local succ,result=pcall(self.exec,self,sql,args,prep_params,print_result)
+    local succ,result=pcall(self.exec,self,sql,args,prep_params,org_sql,print_result)
     self.internal_exec=false
     if not succ then error(result) end
     return result
@@ -1064,7 +1069,7 @@ function set_proxy(addr,port)
     end
 end
 --the connection is a table that contain the connection properties
-local prep_test_connection
+
 function db_core:connect(attrs,data_source)
     env.log_debug("connect",table.dump(attrs))
     if not self.driver then

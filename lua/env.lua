@@ -26,6 +26,7 @@ local function set_env(self, key, value, fixed)
     if key=='_CACHE_PATH' then
         --if not fixed and is_fixed then return end
         local prev=cache_path
+        value=value:gsub("%$",'_')
         cache_path,is_fixed=value,fixed
         if value and self.uv and self.uv.chdir then
             local done=pcall(self.uv.chdir,value)
@@ -1087,6 +1088,7 @@ function set_debug(name,value)
 end
 
 local function set_cache_path(name,path)
+    path=path:gsub("%$",'_')
     path=env.join_path(path,"")
     env.checkerr(os.exists(path)=='directory',"No such path: "..path)
     set_env(env,"_CACHE_PATH",path,true)
