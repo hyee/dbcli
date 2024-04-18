@@ -74,13 +74,15 @@ function pgsql:connect(conn_str)
                inet_server_port(),
                pg_backend_pid(),
                (select count(1) cnt from pg_proc where proname like '%gauss_version') gaussdb,
-               (select setting from pg_settings where name='plan_cache_mode')]])
+               (select setting from pg_settings where name='plan_cache_mode'),
+               (select 1 from pg_views where viewname='pg_stat_statements')]])
     table.clear(self.props)
     self.props.privs={}
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.gaussdb=info[7]>0 and true or nil 
     self.props.plan_cache_mode=info[8]~='' and info[8] or nil
+    self.props.pg_stmts=info[9]==1 and true or nil
     self.props.database=info[1] or ""
     self.connection_info=args
     if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end

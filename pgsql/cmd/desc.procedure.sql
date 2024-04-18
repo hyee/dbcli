@@ -1,3 +1,6 @@
+col Owner,Schema_Name,Function_Name noprint
+echo attributes:
+echo ==========
 sql fn "&object_owner..&object_name"
 
 echo information_schema.routines:

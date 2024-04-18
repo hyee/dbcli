@@ -17,7 +17,7 @@ function sql:validate_accessable(name,options,values)
     for i=1,#options do
         option=options[i]
         default=option
-        if name:find("CHECK_USER",1,true)==1 then--check user
+        if name:upper():find("CHECK_USER",1,true)==1 then--check user
             check_flag=3
             expect_name="user"
             default=nil
@@ -28,9 +28,9 @@ function sql:validate_accessable(name,options,values)
                 end
             end
             expect=option
-        elseif name:find("CHECK_ACCESS",1,true)==1 or name:find("CHECK_FUNC",1,true)==1 then--objects are sep with the / symbol
-            local func=name:find("CHECK_ACCESS",1,true)==1 and 'check_access' or 'check_function'
-            local info=name:find("CHECK_ACCESS",1,true)==1 and 'the accesses to: ' or 'the function'
+        elseif name:upper():find("CHECK_ACCESS",1,true)==1 or name:upper():find("CHECK_FUNC",1,true)==1 then--objects are sep with the / symbol
+            local func=name:upper():find("CHECK_ACCESS",1,true)==1 and 'check_access' or 'check_function'
+            local info=name:upper():find("CHECK_ACCESS",1,true)==1 and 'the accesses to: ' or 'the function'
             for obj in option:gmatch("([^/%s]+)") do
                 if obj:upper()~="DEFAULT" then
                     local is_accessed=db[func](db,obj)

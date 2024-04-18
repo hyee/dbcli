@@ -47,6 +47,16 @@ SELECT * FROM (
          pg_class c,
          pg_trigger t,
          pg_authid au
-    WHERE n.oid = c.relnamespace AND c.oid = t.tgrelid AND au.oid=c.relowner) a
+    WHERE n.oid = c.relnamespace AND c.oid = t.tgrelid AND au.oid=c.relowner
+    UNION ALL
+    SELECT r.oid,n.nspname AS schemaname,
+           r.rulename,'RULE',
+           au.rolname,
+           NULL,NULL
+    FROM pg_rewrite r
+    JOIN pg_class c ON c.oid = r.ev_class
+    JOIN pg_authid au ON c.relowner=au.oid
+    LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE r.rulename <> '_RETURN'::name) a
 WHERE lower(concat("SCHEMA",'.',"NAME",'|',"TYPE")) LIKE lower('%&V1%')
 ORDER BY 2,3

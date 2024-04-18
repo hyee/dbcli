@@ -4,7 +4,7 @@
         @CHECK_USER_GAUSS: gaussdb={waiting,unique_sql_id sql_id,} default={pg_blocking_pids(pid) AS blocked_by,}
     --]]
 ]]*/
-col query_time for usmhd2
+col query_time,txn_time for usmhd2
 SELECT pid,
        usename          AS "username",
        application_name,
@@ -12,7 +12,8 @@ SELECT pid,
        datname          AS database_name,
        state,
        &CHECK_USER_GAUSS
-       EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - query_start))*1e6 query_time ,
+       EXTRACT(EPOCH FROM (now() - query_start))*1e6 query_time ,
+       EXTRACT(EPOCH FROM (now()-xact_start))*1e6 txn_time ,
        substr(regexp_replace(a.query,'\s+',' ','g'),1,200) short_sql_text
 FROM   pg_stat_activity a
 WHERE  &filter

@@ -8,7 +8,7 @@
 findobj "&V1" 1 1
 env feed off
 col bloat for pct2
-col pages,rows,b-pages for tmb2
+col pages,rows,b-pages,live_rows,dead_rows for tmb2
 col size,b-bytes for kmg2 
 echo Bloat information:
 echo ==================
@@ -57,16 +57,16 @@ WITH bloats as(
                 FROM (SELECT version() AS v) AS foo
             ) AS constants
             WHERE att.attnum > 0 AND tbl.relkind='r'
-            AND   (coalesce(:object_name,'')='' or tbl.relname=:object_name and ns.nspname=:object_owner)
+            AND   ('&object_name'='' or '&object_type' LIKE '%TABLE' tbl.relname='&object_name' and ns.nspname='&object_owner')
             GROUP BY 1,2,3,4,5
             ) AS foo
         ) AS rs
     ON cc.relname = rs.relname AND nn.nspname = rs.nspname
     LEFT JOIN pg_index i ON indrelid = cc.oid
     LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid
-    WHERE (coalesce(:object_name,'')='' or CC.relname=:object_name and nn.nspname=:object_owner)
+    WHERE ('&object_name'='' or CC.relname='&object_name' and nn.nspname='&object_owner')
 )
-SELECT * 
+SELECT a.*,'|' "|", b.n_live_tup live_rows,n_dead_tup dead_rows
 FROM (
     SELECT DISTINCT
            schema_name, 
@@ -92,6 +92,7 @@ FROM (
            CASE WHEN ipages < iotta THEN 0 ELSE ipages::bigint - iotta END AS "b-pages",
            CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS "b-bytes"
     FROM bloats) AS A
-WHERE coalesce(:object_name,'') !='' OR "b-bytes">(coalesce(regexp_replace(:V1::text,'[^\.\d]+'::text,'','g'),'1')::numeric * 1024 * 1024)
+LEFT JOIN pg_stat_all_tables B ON a.schema_name=b.schemaname and a.object_name=b.relname
+WHERE '&object_name' !='' OR "b-bytes">(coalesce(regexp_replace(:V1::text,'[^\.\d]+'::text,'','g'),'1')::numeric * 1024 * 1024)
 ORDER BY "b-bytes" desc,"bloat" desc
 LIMIT 50;

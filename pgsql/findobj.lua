@@ -54,6 +54,10 @@ local stmt=[[
         SELECT trigger_schema, trigger_name, 'TRIGGER',NULL,6
         FROM   information_schema.triggers
         WHERE  lower(concat(trigger_schema, '.', trigger_name)) LIKE :obj
+        UNION ALL
+        SELECT schemaname, rulename, 'RULE',NULL,6
+        FROM   pg_rules 
+        WHERE  lower(concat(schemaname, '.', rulename)) LIKE :obj
     ) M
     ORDER BY CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END,seq_
     LIMIT 1]]
@@ -102,10 +106,6 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                 SELECT routine_schema, routine_name, routine_type
                 FROM   information_schema.routines
                 WHERE  LOWER(routine_schema) IN @schemas@
-                UNION ALL
-                SELECT trigger_schema, trigger_name, 'TRIGGER'
-                FROM   information_schema.triggers
-                WHERE  LOWER(trigger_schema) IN @schemas@
             ) M]]):gsub('@schemas@',sys_schemas)
         local rows=db:get_rows(sql)
         for _,obj in ipairs(rows) do
