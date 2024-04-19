@@ -697,7 +697,7 @@ function db_core:exec_cache(sql,args,description)
     end
     
     if sql~='close' then
-        sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+        sql=event("BEFORE_DB_EXEC",{self,sql,args or {},params or {},true}) [2]
         if type(sql)~="string" then
             return sql
         end
@@ -857,14 +857,14 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if is_not_prep then
         sql=sql:sub(1,-128)..sql:sub(-127):gsub(vertical_pattern,
                 function(s) verticals=tonumber(s) or cfg.get("printsize");return '' end)
-        sql=event("BEFORE_DB_EXEC",{self,sql,args,params}) [2]
+        sql=event("BEFORE_DB_EXEC",{self,sql,args or {},params or {},is_internal}) [2]
         if type(sql)~="string" then
             return sql
         end
 
         prep,sql,params=self:parse(sql,params)
         local param_count = 0
-        for k,v in pairs(params) do
+        for _,_ in pairs(params) do
             param_count=1
         end
 

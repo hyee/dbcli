@@ -725,6 +725,7 @@ function var.trigger_column(field)
     col=col:upper()
     if not var.columns[col] then return end
     local obj=var.columns[col]
+    rowind=rowind or rownum
 
     if rownum==0 then
         index=obj.heading
@@ -751,7 +752,6 @@ function var.trigger_column(field)
     end
     
     index=obj.new_value
-
     if index and rowind>0 and current_outputs then
         current_outputs[index]=value or db_core.NOT_ASSIGNED
         var.setInputs(index,current_outputs[index])

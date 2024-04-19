@@ -317,6 +317,7 @@ function cfg.backup()
 end
 
 function cfg.capture_before_cmd(command)
+
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
     if not cmds[command[1]] and not cmds[cmd.ALIAS_TO] and command[1]~='HELP' then

@@ -1,16 +1,33 @@
 /*[[
-    Show top SQLs based on pg_stat_statements. Usage: @@NAME [<keyword> | -f"<filter>" | -reset]
+    Show top SQLs based on pg_stat_statements. Usage: @@NAME [<keyword> | -f"<filter>" ]  [-reset|-iotime|-io|-buff|-mean|-call]
     
     <keyword>   : search queryid/user/db/query to find the matched records
     -reset      : run `pg_stat_statements_reset()`
     -f"<filter>": valid `WHRER` clause to filter the data
     
+    Sort options: default order by total_time
+        -cpu   : order by non-io time
+        -iotime: order by io time
+        -io    : order by io requests
+        -buff  : order by buffer hits
+        -mean  : order by mean time
+        -call : order by calls
 
     --[[--
         @check_access_stmt: pg_stat_statements={1}
         &filter: default={lower(concat(queryid,'|',"user",'|',"db",'|',"query")) like lower('%&v1%')} f={}
         &reset:  default={} reset={select pg_stat_statements_reset();}
         @time: 13={exec_} default={}
+        &ord:  {
+                default={time}
+                call={calls},
+                mean={"mean"},
+                iotime={blk_read_time+blk_write_time}
+                io={shared_blks_read+local_blks_read+shared_blks_written+local_blks_written+temp_blks_read+temp_blks_written}
+                buff={shared_blks_hit+local_blks_hit+shared_blks_dirtied+local_blks_dirtied}
+                cpu={total_&time.time-(blk_read_time+blk_write_time)}
+            }
+
     --]]--
 ]]*/
 env autohide col
@@ -44,4 +61,4 @@ FROM   pg_stat_statements a
 LEFT JOIN (select rolname "user",oid from pg_authid) au on a.userid=au.oid
 LEFT JOIN (select datname "db",oid from pg_database) db on a.dbid=db.oid
 WHERE &filter
-ORDER  BY "time" desc limit 50;
+ORDER  BY &ord desc nulls last limit 50;

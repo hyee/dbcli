@@ -4,7 +4,7 @@
         @ALIAS: fn
         &filter: default={lower(concat(n.nspname,'.',p.proname,'|',p.probin,'|',d.description)) like lower('%&V1%')} f={}
         @attr: {
-            11={CASE prokind WHEN 'p' THEN 'PROCEDURE,' WHEN 'a' THEN 'AGG,' when 'w' THEN 'WINDOW,' END,} 
+            11={CASE p.prokind WHEN 'p' THEN 'PROCEDURE,' WHEN 'a' THEN 'AGG,' when 'w' THEN 'WINDOW,' END,} 
             default={CASE WHEN p.proisagg THEN 'AGG,' WHEN p.proiswindow THEN 'WINDOW,' END,}
         }
     --]]
