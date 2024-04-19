@@ -3,7 +3,7 @@ local event,packer,cfg,init=env.event.callback,env.packer,env.set,env.init
 local set_command,exec_command=env.set_command,env.exec_command
 local pgsql=env.class(env.db_core)
 pgsql.module_list={
-   "dict","findobj","desc","sql","list","gaussdb","chart","ssh","snap",
+   "dict","findobj","desc","xplan","sql","list","gaussdb","chart","ssh","snap",
    "show","psql_exe",
 }
 
@@ -53,7 +53,8 @@ function pgsql:connect(conn_str)
          charSet="UTF8",
          allowEncodingChanges="true",
          preparedStatementCacheQueries=tostring(cfg.get("SQLCACHESIZE")),
-         loadBalanceHosts="true"
+         loadBalanceHosts="true",
+         escapeSyntaxCallMode="callIfNoReturn"
         },args)
     --print(table.dump(args))   
     

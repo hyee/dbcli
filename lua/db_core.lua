@@ -19,6 +19,7 @@ end
 
 function db_Types:set(typeName,value,conn)
     local typ=self[typeName]
+    if not typ and typeName=='NUMBER' then typ=self['NUMERIC'] end
     if value==nil or value==db_core.NOT_ASSIGNED then
         return 'setNull',typ.id
     else
@@ -618,7 +619,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
     prefix=(prefix or ':')
 
     local func,typeid,value,varname,typename=1,2,2,3,4
-    sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
+    sql,c=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
             local v= params[k]
             if not v then return s end
@@ -656,6 +657,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
                 return '?'
             end
         end)
+   
     --if sql:find('%%%-%.%d+s') then print(sql) end
     if not prep then prep=self:call_sql_method('ON_SQL_ERROR',sql,self.conn.prepareCall,self.conn,sql,1003,1007,1) end
 
@@ -960,13 +962,13 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     --close statments
     local params1=nil
     local result={is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()}
-    local i=0;
     while true do
         --2 = Statement.KEEP_CURRENT_RESULT
         params1,is_query=pcall(prep.getMoreResults,prep,2)
-        if not params1 or not is_query then break end
+        if not params1 then break end
         if result[1]==-1 then table.remove(result,1) end
-        result[#result+1]=process_result(prep:getResultSet())
+        result[#result+1]=is_query and process_result(prep:getResultSet()) or prep:getUpdateCount()
+        if result[#result]==-1 then result[#result]=nil;break end
     end
     self.current_statement=prep
 

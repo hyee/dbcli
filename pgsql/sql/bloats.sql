@@ -57,7 +57,7 @@ WITH bloats as(
                 FROM (SELECT version() AS v) AS foo
             ) AS constants
             WHERE att.attnum > 0 AND tbl.relkind='r'
-            AND   ('&object_name'='' or '&object_type' LIKE '%TABLE' tbl.relname='&object_name' and ns.nspname='&object_owner')
+            AND   ('&object_name'='' or '&object_type' LIKE '%TABLE' and tbl.relname='&object_name' and ns.nspname='&object_owner')
             GROUP BY 1,2,3,4,5
             ) AS foo
         ) AS rs

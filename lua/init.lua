@@ -41,7 +41,9 @@ local init={
         "lua/subsystem",
         "lua/ilua",
         "lua/delta",
-        "lua/lexer"}
+        "lua/lexer",
+        "lua/json_plan"
+    }
 }
 local plugins={}
 local M={JVM_INIT={load_seq=0,onload=0,load=_G.__jvmclock},
