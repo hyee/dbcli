@@ -176,14 +176,6 @@ function dicts.on_after_db_conn(instance,sql,props)
     end
 end
 
-function dicts.on_before_db_exec(item)
-    for k,v in ipairs{
-        {'DEFAULT_COLLATION',db.props.collation}
-    } do
-        if var.outputs[v[1]]==nil and v[2]~=nil then var.setInputs(v[1],''..v[2]) end
-    end
-end
-
 function dicts.onload()
     env.set_command(nil,'DICT',[[
         Show or create dictionary for auto completion. Usage: @@NAME {<init|public [all|dict|param]>} | {<obj|param> <keyword>}
@@ -191,7 +183,6 @@ function dicts.onload()
         public: Create a public offline dictionary(file pgsql/dict.pack)
         param : Fuzzy search the parameters that stored in offline dictionary]],dicts.build_dict,false,3)
     event.snoop('AFTER_PGSQL_CONNECT',dicts.on_after_db_conn)
-    event.snoop('AFTER_PGSQL_CONNECT',dicts.on_before_db_exec,nil,60)
     dicts.load_dict(datapath)
 end
 

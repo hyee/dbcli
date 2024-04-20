@@ -14,6 +14,7 @@ SELECT p.oid,
        au.rolname AS "owner",
        n.nspname AS schema_name,
        p.proname AS function_name,
+       pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text) "granted",
        l.lanname AS "lang",
        CASE WHEN 'o'=ANY(proargmodes) THEN
            (SELECT string_agg(CASE WHEN a NOT LIKE 'OUT%' THEN substr(a,5) END,',') x

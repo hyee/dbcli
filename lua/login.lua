@@ -40,7 +40,7 @@ function login.generate_name(url,props)
         end
     end)
 
-    return (props.user..'@'..url):lower(),(props.user..'@'..url:gsub(':%d+(%W)','%1'))
+    return ((props.user or "")..'@'..url):lower(),((props.user or "")..'@'..url:gsub(':%d+(%W)','%1'))
 end
 
 function login.capture(db,url,props)

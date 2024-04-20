@@ -68,8 +68,8 @@ SELECT r.rolname AS role_name,
              ',') attrs,
        r.rolconnlimit AS max_connections,
        r.rolvaliduntil AS expiration_date,
-       ARRAY (SELECT b.rolname FROM pg_auth_members m JOIN pg_roles b ON (m.member = b.oid) WHERE m.roleid = r.oid) AS member_of,
-       ARRAY (SELECT b.rolname FROM pg_auth_members m JOIN pg_roles b ON (m.roleid = b.oid) WHERE m.member = r.oid) AS has_members,
+      (SELECT string_agg(b.rolname,',') FROM pg_auth_members m JOIN pg_roles b ON (m.member = b.oid) WHERE m.roleid = r.oid) AS member_of,
+      (SELECT string_agg(b.rolname,',') FROM pg_auth_members m JOIN pg_roles b ON (m.roleid = b.oid) WHERE m.member = r.oid) AS has_members,
        pg_catalog.shobj_description(r.oid, 'pg_authid') AS description
 FROM   pg_roles r
 ORDER  BY rolcanlogin, r.rolname

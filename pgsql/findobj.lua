@@ -3,7 +3,7 @@ local db=env.getdb()
 local findobj,cache_obj,loaded={},{}
 local json = require("json")
 local sys_schemas="('information_schema','pg_catalog')"
-local default_args={target='v1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",object_subname="#VARCHAR",object_fullname='#VARCHAR'}
+local default_args={target='v1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",granted="#VARCHAR",object_fullname='#VARCHAR'}
 
 local stmt=[[
     SELECT * FROM (
@@ -31,7 +31,7 @@ local stmt=[[
                    WHEN 'c' THEN
                      'COMPOSITE TYPE'
                END "TYPE",
-               cast('' as varchar(255)) "PARTITION",
+               pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED",
                CASE WHEN tbl.relkind in ('m') THEN 0
                     WHEN tbl.relkind in ('r','p','f') THEN 1
                     WHEN tbl.relkind in ('v','c') THEN 2
@@ -42,20 +42,33 @@ local stmt=[[
         JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
         WHERE  lower(concat(nspname, '.', relname)) LIKE :obj
         UNION ALL
-        SELECT nspname,conname,'CONSTRAINT',NULL,3
+        SELECT nspname,conname,'CONSTRAINT',false,3
         FROM   pg_constraint con
         JOIN   pg_namespace nsp ON nsp.oid = con.connamespace
         WHERE  lower(concat(nspname, '.', conname)) LIKE :obj
         UNION ALL
-        SELECT routine_schema, routine_name, routine_type,NULL,4
-        FROM   information_schema.routines
-        WHERE  lower(concat(routine_schema, '.', routine_name)) LIKE :obj
+        SELECT nspname,proname,'FUNCTION',
+               pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text),
+               4
+        FROM   pg_proc p
+        JOIN   pg_namespace n ON n.oid = p.pronamespace
+        WHERE  lower(concat(nspname, '.', proname)) LIKE :obj
         UNION ALL
-        SELECT trigger_schema, trigger_name, 'TRIGGER',NULL,6
-        FROM   information_schema.triggers
-        WHERE  lower(concat(trigger_schema, '.', trigger_name)) LIKE :obj
+        SELECT nspname,t.tgname,'TRIGGER',
+               pg_has_role(c.relowner, 'USAGE'::text) OR 
+               has_table_privilege(c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'::text) OR 
+               has_any_column_privilege(c.oid, 'INSERT, UPDATE, REFERENCES'::text),
+               7
+        FROM   pg_namespace n,
+               pg_class c,
+               pg_trigger t
+        WHERE  n.oid = c.relnamespace 
+        AND    c.oid = t.tgrelid 
+        AND    lower(concat(nspname, '.', tgname)) LIKE :obj
         UNION ALL
-        SELECT schemaname, rulename, 'RULE',NULL,6
+        SELECT schemaname, rulename, 'RULE',
+               false,
+               6
         FROM   pg_rules 
         WHERE  lower(concat(schemaname, '.', rulename)) LIKE :obj
     ) M
@@ -98,18 +111,21 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                             'SEQUENCE'
                            WHEN 'c' THEN
                              'COMPOSITE TYPE'
-                       END "TYPE"
+                       END "TYPE",
+                       pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED"
                 FROM   pg_class tbl
                 JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
                 WHERE  nspname IN @schemas@
                 UNION ALL
-                SELECT routine_schema, routine_name, routine_type
-                FROM   information_schema.routines
-                WHERE  LOWER(routine_schema) IN @schemas@
+                SELECT nspname,proname,'FUNCTION',
+                       pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text)
+                FROM   pg_proc p
+                JOIN   pg_namespace n ON n.oid = p.pronamespace
+                WHERE  LOWER(nspname) IN @schemas@
             ) M]]):gsub('@schemas@',sys_schemas)
         local rows=db:get_rows(sql)
         for _,obj in ipairs(rows) do
-            local item={object_owner=obj[1],object_name=obj[2],object_type=obj[3]}
+            local item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4]}
             for _,n in ipairs{obj[2]:lower(),(obj[1]..'.'..obj[2]):lower()} do
                 if not cache_obj[n] then cache_obj[n]=item end
             end
@@ -123,17 +139,14 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         local result=self:exec_cache(stmt,{obj=name},'Internal_FindObject')
         local obj=db.resultset:rows(result,-1,'')[2]
         if obj then
-            item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],object_subname=obj[4]}
+            item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4]}
         end
     end
 
     if item then 
         item.target=obj_name
-        item.full_name=table.concat({item.object_owner,item.object_name,item.object_subname~='' and item.object_subname or nil},'.')
+        item.full_name=table.concat({item.object_owner,item.object_name},'.')
         item.object_fullname='"'..item.object_owner..'"."'..item.object_name..'"'
-        if item.object_subname~='' then
-            cache_obj[table.concat({item.object_name,item.object_subname},'.'):lower()]=item
-        end
         cache_obj[obj_name],cache_obj[item.full_name:lower()]=item,item 
     end
 
@@ -163,12 +176,8 @@ function db:check_access(obj_name,is_set_env,is_cache)
         if is_cache==true then privs[obj_name]=0 end
         return false 
     end
-
-    local o=obj.target
-    if cache_obj[o] and cache_obj[o].accessible then return cache_obj[o].accessible==1 end
-    local err,msg=pcall(db.internal_call,db,'select 1 from '..obj.full_name..' where 1=2')
-    cache_obj[o].accessible=err and 1 or 0
-    return err
+    
+    return obj.granted
 end
 
 function db:check_function(func_name)

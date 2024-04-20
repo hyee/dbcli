@@ -31,7 +31,7 @@ SELECT * FROM (
             END "TYPE",
             au.rolname "owner",
             pg_has_role(au.oid, 'USAGE'::text) "Usage",
-            null::boolean "Priv"
+            has_table_privilege(tbl.oid, 'SELECT'::text) "Priv"
     FROM   pg_class tbl
     JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
     JOIN   pg_authid au on au.oid=tbl.relowner

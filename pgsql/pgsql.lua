@@ -17,6 +17,7 @@ local prev_conn=nil
 function pgsql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
+    env.checkhelp(conn_str)
     if type(conn_str)=="table" then
         args=conn_str
         usr,pwd,url=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url:match("//(.*)$")
@@ -25,12 +26,18 @@ function pgsql:connect(conn_str)
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
         if conn_desc == nil then
-            if prev_conn==nil or not (conn_str or ""):find("^[a-zA-Z][a-zA-Z0-9$_]+$") then
-                return exec_command("HELP",{"CONNECT"})
+            if (conn_str or "")==nil then
+                return env.checkhelp(nil)
+            elseif prev_conn==nil or not (conn_str or ""):find("^[a-zA-Z][a-zA-Z0-9$_]+$") then
+                --URL of local server connection doesn't need //
+                args={url="jdbc:postgresql:"..conn_str}
+                conn_desc=conn_str
+            else
+                prev_conn.user = conn_str
+                args=prev_conn
+                print('Trying to connecte to database "'..conn_str..'" with account "'..(prev_conn.user or "")..'" ...')
             end
-            args=prev_conn
-            usr,pwd,conn_desc=args.user,args.password,args.url:match("//(.*)$"):gsub('/.-$','/'..conn_str)
-            print('Trying to connecte to database "'..conn_str..'" with account "'..usr..'" ...')
+            usr,pwd,conn_desc=args.user,args.password,conn_desc or args.url:match("//(.*)$"):gsub('/.-$','/'..conn_str)
         else
             args={user=usr,password=pwd}
         end
@@ -41,7 +48,7 @@ function pgsql:connect(conn_str)
             end
             conn_desc=conn_desc:gsub("%?.*","")
         end
-        usr,pwd,url,args.url=args.user,args.password,conn_desc,"jdbc:postgresql://"..conn_desc
+        usr,pwd,url,args.url=args.user,args.password,conn_desc,args.url or ("jdbc:postgresql://"..conn_desc)
     end
     
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -74,16 +81,14 @@ function pgsql:connect(conn_str)
                inet_server_addr(),
                inet_server_port(),
                pg_backend_pid(),
-               (select count(1) cnt from pg_proc where proname like '%gauss_version') gaussdb,
-               (select max(setting) from pg_settings where name='plan_cache_mode'),
-               (select 1 from pg_views where viewname='pg_stat_statements')]])
+               (select count(1) cnt from pg_proc where proname = 'opengauss_version') gaussdb,
+               (select max(setting) from pg_settings where name='plan_cache_mode')]])
     table.clear(self.props)
     self.props.privs={}
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
     self.props.db_user,self.props.pid,self.props.port=info[3],info[6],info[5]
     self.props.gaussdb=info[7]>0 and true or nil 
     self.props.plan_cache_mode=(info[8] or '')~='' and info[8] or nil
-    self.props.pg_stmts=info[9]==1 and true or nil
     self.props.database=info[1] or ""
     self.connection_info=args
     if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
@@ -145,6 +150,14 @@ function pgsql:after_db_exec()
     end
 end
 
+function pgsql:check_readonly(name,value)
+    if name=='READONLY' then
+        self:assert_connect()
+        self.conn:setReadOnly(value=='on' and true or false)
+    end
+    return value
+end
+
 function pgsql:onload()
     env.set.rename_command('ENV')
     local default_desc={"#PgSQL database SQL command",self.help_topic}
@@ -170,6 +183,7 @@ function pgsql:onload()
     env.set.change_default("autocommit","on")
     env.event.snoop('AFTER_DB_EXEC',self.after_db_exec,self,1)
     env.event.snoop('ON_SQL_ERROR',self.handle_error,self,1)
+    env.event.snoop('ON_SETTING_CHANGED',self.check_readonly,self)
     self.source_objs.DO=1
     self.source_objs.DECLARE=nil
     self.source_objs.BEGIN=nil
