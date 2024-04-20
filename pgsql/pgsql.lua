@@ -18,26 +18,37 @@ function pgsql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
     env.checkhelp(conn_str)
+    local driver='jdbc:postgresql:'
     if type(conn_str)=="table" then
         args=conn_str
-        usr,pwd,url=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url:match("//(.*)$")
+        usr,pwd,url=args.user,args.password and packer.unpack_str(args.password),args.url:match("//(.*)$") or args.url
         args.password=pwd
-        conn_str=string.format("%s/%s@%s",usr,pwd,url)
+        conn_str=usr and string.format("%s/%s@%s",usr,pwd,url) or url
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
+        local name_pattern='[a-zA-Z][a-zA-Z0-9$_]+'
         if conn_desc == nil then
             if (conn_str or "")==nil then
                 return env.checkhelp(nil)
-            elseif prev_conn==nil or not (conn_str or ""):find("^[a-zA-Z][a-zA-Z0-9$_]+$") then
+            elseif prev_conn==nil or not (conn_str or ""):find("^"..name_pattern.."$") then
                 --URL of local server connection doesn't need //
-                args={url="jdbc:postgresql:"..conn_str}
+                conn_str=conn_str:gsub(driver,'')
+                args={url=driver..conn_str}
                 conn_desc=conn_str
             else
-                prev_conn.user = conn_str
                 args=prev_conn
                 print('Trying to connecte to database "'..conn_str..'" with account "'..(prev_conn.user or "")..'" ...')
+                local dbname=args.url:match("//(.*)$")
+                if dbname then
+                    --remote connection
+                    conn_desc=dbname:gsub('/'..name_pattern,'/'..conn_str,1)
+                else
+                    --local connection
+                    conn_desc=conn_str
+                    args.url=args.url:gsub(name_pattern..'$',conn_str,1)
+                end
             end
-            usr,pwd,conn_desc=args.user,args.password,conn_desc or args.url:match("//(.*)$"):gsub('/.-$','/'..conn_str)
+            usr,pwd=args.user,args.password
         else
             args={user=usr,password=pwd}
         end
@@ -48,7 +59,7 @@ function pgsql:connect(conn_str)
             end
             conn_desc=conn_desc:gsub("%?.*","")
         end
-        usr,pwd,url,args.url=args.user,args.password,conn_desc,args.url or ("jdbc:postgresql://"..conn_desc)
+        usr,pwd,url,args.url=args.user,args.password,conn_desc,args.url or (driver.."//"..conn_desc)
     end
     
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -176,7 +187,7 @@ function pgsql:onload()
         Connect to pgsql database. Usage: @@NAME {<user>/<password>@<host>[:<port>][/<database>][?<properties>] | <database> }
         Example:  @@NAME postgres/@localhost/postgres              --if not specify the port, then it is 5432
                   @@NAME postgres/newpwd@localhost:5432/postgres
-                  @@NAME <database>                                --switch to another database with current account
+                  @@NAME <database>                                --login to local database, or switch to another database with current account
     ]]
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     --env.set.change_default("null","nil")

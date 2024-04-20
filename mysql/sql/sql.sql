@@ -30,6 +30,6 @@ WHERE  digest like concat(:V1,'%')
 LIMIT  1;
 save digest_text &V1..sql
 
-col plan new_value plan noprint
+--col plan new_value plan noprint
 &CHECK_ACCESS_PLAN;
-tiplan plan
+--tiplan plan

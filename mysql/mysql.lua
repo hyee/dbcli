@@ -31,15 +31,27 @@ local native_cmds={}
 function mysql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
+    local driver="jdbc:mysql://"
     if type(conn_str)=="table" then
         args=conn_str
-        usr,pwd,url=conn_str.user,packer.unpack_str(conn_str.password),conn_str.url:match("//(.*)$")
+        usr,pwd,url=args.user,args.password and packer.unpack_str(args.password),args.url:match("//(.*)$") or args.url
         args.password=pwd
-        conn_str=string.format("%s/%s@%s",usr,pwd,url)
+        conn_str=usr and string.format("%s/%s@%s",usr,pwd,url) or url
     else
         usr,pwd,conn_desc = string.match(conn_str or "","(.*)[/:](.*)@(.+)")
-        if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
-        args={user=usr,password=pwd}
+        if conn_desc == nil then
+            if (conn_str or "")==nil then
+                return env.checkhelp(nil)
+            else
+                --URL of local server connection doesn't need //
+                conn_str=conn_str:gsub(driver,'')
+                args={url=driver..conn_str}
+                conn_desc=conn_str
+            end
+            usr,pwd=args.user,args.password
+        else
+            args={user=usr,password=pwd}
+        end
         if conn_desc:match("%?.*=.*") then
             local use_ssl=0
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do
@@ -62,7 +74,7 @@ function mysql:connect(conn_str)
             end
             conn_desc=conn_desc:gsub("%?.*","")
         end
-        usr,pwd,url,args.url=args.user,args.password,conn_desc,"jdbc:mysql://"..conn_desc
+        usr,pwd,url,args.url=args.user,args.password,conn_desc,args.url or (driver..conn_desc)
     end
     
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')

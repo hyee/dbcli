@@ -115,7 +115,7 @@ end
 
 local privs={}
 function db:check_access(obj_name,is_set_env,is_cache)
-    local obj=cache_obj[obj_name] or privs[obj_name]
+    local obj=(cache_obj or {})[obj_name] or privs[obj_name]
     if obj~=nil then
         if type(obj)=="table" and obj.accessible then 
             return obj.accessible==1

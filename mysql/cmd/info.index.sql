@@ -20,6 +20,8 @@
 
         &src1: default={index_} t={table_}
         &src2: default={constraint_} t={table_}
+        @check_user_tidb: tidb={} default={--}
+        @ver: 8={} default={&check_user_tidb}
     }
     --]]
  ]]*/
@@ -31,14 +33,14 @@ SELECT CASE WHEN seq_in_index=1 THEN table_name ELSE '' END `Table`,
        CASE WHEN seq_in_index=1 THEN index_name ELSE '' END `Index`,
        CASE WHEN seq_in_index=1 THEN ELT(2-non_unique,'No','Yes') ELSE '' END `Unique`,
        CASE WHEN seq_in_index=1 THEN index_type ELSE '' END `Index Type`,
-       is_visible 'Visible', 
+       &ver.is_visible 'Visible', 
        &check_access_size
        seq_in_index `#`,
        column_name `Field`,
        nullable    `Null`,
        cardinality `Card`,
        packed      `Packed`,
-       expression  `Expr`,
+       &ver.expression  `Expr`,
        sub_part    `Sub Part`,
        collation   `Collation`,
        index_comment `Comment` 
