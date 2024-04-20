@@ -65,7 +65,7 @@ function tidb:parse_plan(plan)
         end
         rows[#rows+1]=row
     end
-    env.set.doset('colsep','|','rowsep','-')
+    --env.set.doset('colsep','|','rowsep','-')
     grid.print(rows)
 end
 

@@ -1,5 +1,5 @@
 local db,cfg=env.getdb(),env.set
-local xplan={autotrace='off'}
+local xplan={autotrace='off',autotrace_format='xplan'}
 local auto_generic=nil
 local config={
     root='Plan',
@@ -199,8 +199,12 @@ function xplan.explain(fmt,sql)
     env.json_plan.parse_json_plan(json,config)
 end
 
-function xplan.autotrace(_,value)
-    xplan.autotrace=value
+function xplan.autotrace(name,value)
+    if name=='AUTOTRACEFORMAT' then
+        xplan.autotrace_format=value
+    elseif name=='AUTOTRACE' then 
+        xplan.autotrace=value
+    end
     return value
 end
 
@@ -211,7 +215,14 @@ function xplan.before_db_exec(obj)
     local action,_=env.db_core.get_command_type(sql)
     
     if not tracable[action] then return end
-    local rows=db.resultset:rows(db:exec('EXPLAIN ('..(xplan.autotrace=='xplan' and '' or 'ANALYZE,TIMING,BUFFERS,')..'COSTS,FORMAT JSON)\n'..sql,args1,params1),-1)
+    local args1,params1=table.clone(args),table.clone(params)
+    local stmt=string.format('EXPLAIN (%sCOSTS,FORMAT %s)\n%s',
+        xplan.autotrace=='xplan' and '' or 'ANALYZE,TIMING,BUFFERS,',
+        xplan.autotrace_format=='xplan' and 'JSON' or 'TEXT',
+        sql)
+    if xplan.autotrace_format=='perf' then
+        stmt='EXPLAIN PERFORMANCE\n'..sql
+    end
     if xplan.autotrace=='analyze' then
         if #env.RUNNING_THREADS>2 then
             print('----------------------------------SQL Statement-------------------------------------')
@@ -219,6 +230,12 @@ function xplan.before_db_exec(obj)
         end
         obj[2]=nil
     end
+
+    if xplan.autotrace_format~='xplan' then
+        return db:query(stmt,args1,params1)
+    end
+
+    local rows=db.resultset:rows(db:exec(stmt,args1,params1),-1)
     env.json_plan.parse_json_plan(rows[2][1],config)
 end
 
@@ -237,6 +254,7 @@ function xplan.onload()
     ]]
     env.set_command(nil,{"XPLAIN","XPLAN"},help,xplan.explain,'__SMART_PARSE__',3,true)
     env.set.init("AUTOTRACE","off",xplan.autotrace,"explain","Controls generating execution plan of the input SQLs",'xplan,analyze,exec,off')
+    env.set.init("AUTOTRACEFORMAT","xplan",xplan.autotrace,"explain","Controls the output execution plan type when AUTOTRACE=on",'xplan,pgsql,perf')
     env.event.snoop('BEFORE_DB_EXEC',xplan.before_db_exec)
     env.event.snoop('BEFORE_DB_CONNECT',function() auto_generic=nil;env.set.force_set("AUTOTRACE",'off') end)
 end
