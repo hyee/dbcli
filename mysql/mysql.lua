@@ -18,6 +18,7 @@ mysql.module_list={
     "chart",
     "ssh",
     "dict",
+    "xplan",
     "autotrace",
     "mysqluc"
 }
@@ -236,8 +237,8 @@ function mysql:onload()
     set_command(self,{"connect",'conn'},  conn_help,self.connect,false,2)
     set_command(self,"create",   default_desc, self.command_call,self.check_completion,1,true)
     env.rename_command("HOST",{"SYSTEM","\\!","!"})
-    env.rename_command("TEE",{"WRITE"})
-    env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
+    --env.rename_command("TEE",{"WRITE"})
+    --env.rename_command("SPOOL",{"TEE","\\t","SPOOL"})
     env.rename_command("PRINT",{"PRINTVAR","PRI"})
     env.rename_command("PROMPT",{"PRINT","ECHO","\\p"})
     env.rename_command("HELP",{"HELP","\\h"})

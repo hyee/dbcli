@@ -2,7 +2,7 @@ env.var.define_column("Size,DATA_LENGTH,DATA_FREE,INDEX_LENGTH","for","KMG2")
 env.var.define_column("reads,scans,fetchs","for","TMB1")
 return [[
 SELECT i.indexrelid oid,
-       --CONCAT(nsp.nspname,'.',tbl.relname) table_name,
+       CONCAT(nsp.nspname,'.',tbl.relname) "table_name",
        CONCAT(CASE WHEN isp.nspname != nsp.nspname THEN CONCAT(isp.nspname,'.') END,idx.relname) AS index_name,
        am.amname AS type,
        RTRIM(CONCAT(
@@ -35,4 +35,4 @@ JOIN   pg_namespace isp         ON isp.oid = idx.relnamespace
 LEFT JOIN pg_stat_all_indexes S ON s.indexrelid=i.indexrelid
 WHERE  isp.nspname= :object_owner
 AND    idx.relname= :object_name
-ORDER BY index_name;]]
+ORDER BY index_name]]

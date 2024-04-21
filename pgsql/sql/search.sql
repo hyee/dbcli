@@ -1,4 +1,4 @@
-/*[[Search objects with the specific keywork. Usage: @@NAME <keyword>
+/*[[Search top 100 objects with the specific keywork. Usage: @@NAME <keyword>
     --[[--
 
     --]]--
@@ -59,4 +59,4 @@ SELECT * FROM (
     LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE r.rulename <> '_RETURN'::name) a
 WHERE lower(concat("SCHEMA",'.',"NAME",'|',"TYPE")) LIKE lower('%&V1%')
-ORDER BY 2,3
+ORDER BY 2,3 LIMIT 100

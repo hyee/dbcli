@@ -33,9 +33,9 @@ local stmt=[[
                END "TYPE",
                pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED",
                CASE WHEN tbl.relkind in ('m') THEN 0
-                    WHEN tbl.relkind in ('r','p','f') THEN 1
+                    WHEN tbl.relkind in ('r','p') THEN 1
                     WHEN tbl.relkind in ('v','c') THEN 2
-                    WHEN tbl.relkind in ('i','I') THEN 5
+                    WHEN tbl.relkind in ('i','I','f') THEN 9
                     ELSE 6 
                 END seq_
         FROM   pg_class tbl
@@ -72,7 +72,9 @@ local stmt=[[
         FROM   pg_rules 
         WHERE  lower(concat(schemaname, '.', rulename)) LIKE :obj
     ) M
-    ORDER BY CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END,seq_
+    ORDER BY "GRANTED" DESC NULLS LAST,
+              CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END,
+              seq_
     LIMIT 1]]
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('"','')

@@ -4,6 +4,6 @@
     --]]--
 ]]*/
 col time for smhd2
-select id,user,db,time,state,regexp_replace(substring(info,1,200),'\\s+',' ') as short_sql 
+select id,user,db,time,state,replace(replace(substring(info,1,200),'\n',' '),'\r','') as short_sql 
 from `performance_schema`.`processlist`
 WHERE &V1

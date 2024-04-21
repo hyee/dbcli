@@ -13,19 +13,18 @@ col size,b-bytes for kmg2
 echo Bloat information:
 echo ==================
 WITH bloats as(
-    SELECT
-          nn.nspname AS schema_name,
-          cc.relname AS table_name,
-          COALESCE(cc.reltuples,0) AS reltuples,
-          COALESCE(cc.relpages,0) AS relpages,
-          COALESCE(bs,0) AS bs,
-          COALESCE(CEIL((cc.reltuples*((datahdr+ma-(CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta,
-          COALESCE(c2.relname,'?') AS index_name, 
-          COALESCE(c2.reltuples,0) AS ituples, 
-          COALESCE(c2.relpages,0) AS ipages,
-          COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta -- very rough approximation, assumes all cols
-    FROM pg_class cc
-    JOIN pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> 'information_schema'
+    SELECT nn.nspname AS schema_name,
+           cc.relname AS table_name,
+           COALESCE(cc.reltuples,0) AS reltuples,
+           COALESCE(cc.relpages,0) AS relpages,
+           COALESCE(bs,0) AS bs,
+           COALESCE(CEIL((cc.reltuples*((datahdr+ma-(CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta,
+           COALESCE(c2.relname,'?') AS index_name, 
+           COALESCE(c2.reltuples,0) AS ituples, 
+           COALESCE(c2.relpages,0) AS ipages,
+           COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta -- very rough approximation, assumes all cols
+    FROM   pg_class cc
+    JOIN   pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> 'information_schema'
     LEFT JOIN
     (
         SELECT ma,bs,foo.nspname,foo.relname,
@@ -37,9 +36,9 @@ WITH bloats as(
                 SUM((1-coalesce(null_frac,0))*coalesce(avg_width, 2048)) AS datawidth,
                 MAX(coalesce(null_frac,0)) AS maxfracsum,
                 hdr+(
-                SELECT 1+count(*)/8
-                FROM pg_stats s2
-                WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname
+                    SELECT 1+count(*)/8
+                    FROM pg_stats s2
+                    WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname
                 ) AS nullhdr
             FROM pg_attribute att 
             JOIN pg_class tbl ON att.attrelid = tbl.oid
@@ -60,14 +59,15 @@ WITH bloats as(
             AND   ('&object_name'='' or '&object_type' LIKE '%TABLE' and tbl.relname='&object_name' and ns.nspname='&object_owner')
             GROUP BY 1,2,3,4,5
             ) AS foo
-        ) AS rs
+    ) AS rs
     ON cc.relname = rs.relname AND nn.nspname = rs.nspname
     LEFT JOIN pg_index i ON indrelid = cc.oid
     LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid
     WHERE ('&object_name'='' or CC.relname='&object_name' and nn.nspname='&object_owner')
 )
 SELECT a.*,'|' "|", b.n_live_tup live_rows,n_dead_tup dead_rows
-FROM (
+FROM 
+(
     SELECT DISTINCT
            schema_name, 
            table_name object_name,
@@ -91,7 +91,8 @@ FROM (
            ROUND(greatest(0,CASE WHEN iotta=0 OR ipages=0 OR ipages=iotta THEN 0.0 ELSE ipages/iotta::numeric END-1),4) AS ibloat,
            CASE WHEN ipages < iotta THEN 0 ELSE ipages::bigint - iotta END AS "b-pages",
            CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS "b-bytes"
-    FROM bloats) AS A
+    FROM bloats
+) AS A
 LEFT JOIN pg_stat_all_tables B ON a.schema_name=b.schemaname and a.object_name=b.relname
 WHERE '&object_name' !='' OR "b-bytes">(coalesce(regexp_replace(:V1::text,'[^\.\d]+'::text,'','g'),'1')::numeric * 1024 * 1024)
 ORDER BY "b-bytes" desc,"bloat" desc

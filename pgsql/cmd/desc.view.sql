@@ -1,5 +1,6 @@
 COL VIEW_DEFINITION NOPRINT
 COL "Null%" for pct
+COL table_name noprint
 
 SELECT obj_description(:object_fullname::regclass);
 

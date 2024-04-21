@@ -21,7 +21,7 @@ function plan.parse_json_plan(json,options)
     
     json=env.json.decode(json)
     json=#json>0 and json[1] or json
-    local processor=options.processor or function(name,value) return value end
+    local processor=options.processor or function(name,value,row,node) return value end
     local pcts={}
     for _,v in ipairs(options.percents or {}) do
         pcts[v:upper()]={val=0,width=0};
@@ -29,7 +29,8 @@ function plan.parse_json_plan(json,options)
 
     --parse JSON data
     local n,id,rows,ord=0,1,{},0
-    local maps={}
+    local maps,projection={},{{'Id','Projection'}}
+    local proj=(options.projection or ""):upper()
     local parse_tree=function(parse,tree,depth)
         local row={__=depth,__childs={sig=''}}
 
@@ -39,7 +40,10 @@ function plan.parse_json_plan(json,options)
                 if not fields[name] then
                     n=n+1
                     fields[name],fields.__[n]=n,org_name
-                end
+                elseif name==proj then
+                    value=value:trim()
+                    projection[#projection+1]={id,value:match('^%b[]$') and value:sub(2,-2) or value}
+                end 
             end
             row[name]=value
             if pcts[name] then
@@ -155,7 +159,7 @@ function plan.parse_json_plan(json,options)
     local seq,col,title,indexes=1,nil,nil,{}
     local sep_pattern='^%W+$'
     local miss=table.clone(fields)
-    miss.__=nil
+    miss.__,miss[proj]=nil
     for _,n in ipairs(options.excludes or {}) do
         miss[n:upper()]=nil
     end
@@ -165,15 +169,11 @@ function plan.parse_json_plan(json,options)
     local nor_color_fmt='%s%s$NOR$'
     while seq <= #options.columns do
         col=options.columns[seq]
-        local prev=indexes[col_seq] or '|'
-        local next=tostring(options.columns[seq+1]) or ''
-        local is_sep=next:find(sep_pattern) and not type(prev)=='string'
         if type(col)~='table' then
             title=tostring(col)
             local idx=fields[title:upper()]
             miss[title:upper()]=nil
             if not idx then
-                if is_sep then seq=seq+1 end
                 if title:match(sep_pattern) then
                     col_seq=col_seq+1
                     header[col_seq]=title
@@ -211,12 +211,17 @@ function plan.parse_json_plan(json,options)
             end
             if not indexes[col_seq] then
                 header[col_seq],col_seq=nil,col_seq-1
-                if is_sep then seq=seq+1 end
             elseif col.format and not func then
                 env.var.define_column(title,'FOR',col.format)
             end
         end
         seq=seq+1
+    end
+    for col=#header,ids+1,-1 do
+        if header[col]:match(sep_pattern) and header[col-1]:match(sep_pattern) then
+            table.remove(header,col)
+            table.remove(indexes,col)
+        end
     end
 
     --build grid results bases on column list and sorts
@@ -238,7 +243,7 @@ function plan.parse_json_plan(json,options)
         local found,info=false,{}
         for n,_ in pairs(miss) do
             local val=org[n]
-            if val and (tonumber(val) or 1)>0 then
+            if val~=nil and val~='' and (tonumber(val) or 1)>0 then
                 found,info[#info+1]=true,{n=fields.__[fields[n]],v=tostring(val)}
             end
         end
@@ -320,7 +325,8 @@ function plan.parse_json_plan(json,options)
         env.grid.print(summary,true,'|','-')
         print('')
     end
-
+    local colwidth=env.set.get("COLWRAP")
+    env.set.set("COLWRAP",'default')
     result[#result+1]={'-'}
     local title='| '..(options.title or "Plan Tree")..' |'
     print(string.rep("=",#title))
@@ -331,19 +337,19 @@ function plan.parse_json_plan(json,options)
 
     table.clear(result)
     result[1]={'Id','Name','Information'}
-    env.set.set("COLWRAP",150)
+    
     for seq,info in ipairs(additions) do
         if type(info)=='table' then
             for i,r in ipairs(info) do
-                if type(r.v)=='string' then
-                    local v=r.v:trim():match('^%b()$')
-                    if v then r.v=v:sub(2,-2) end
+                if type(r.v)~='string' or not r.v:match('^%W.*%W$') then
+                    r.v=' '..tostring(r.v)
                 end
                 result[#result+1] = {i==1 and seq or '',r.n,r.v}
             end
         end
     end
 
+    env.set.set("COLWRAP",200)
     if #result>1 then
         print("=====================")
         print("| Other Information |")
@@ -351,6 +357,16 @@ function plan.parse_json_plan(json,options)
         env.grid.print(result,true)
         print('')
     end
+
+    if #projection>1 then
+        env.set.set("COLWRAP",240)
+        print("=====================")
+        print("|    Projections    |")
+        print("=====================")
+        env.grid.print(projection,true)
+        print('')
+    end
+    env.set.set("COLWRAP",colwidth)
 end
 
 return plan
