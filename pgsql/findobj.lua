@@ -78,7 +78,7 @@ local stmt=[[
     LIMIT 1]]
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('"','')
-    env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")
+    env.checkerr(bypass_error=='1' or bypass_error:lower()=='true' or name~="","Please input the object name/id!")
     if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
     if not loaded and not cache_obj then
         cache_obj=setmetatable({},{

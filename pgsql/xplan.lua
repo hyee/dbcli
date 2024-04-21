@@ -24,6 +24,16 @@ local config={
                 node["Peak Memory Usage"]=node["Sort Space Used"]
             end
 
+            local join_type=node["Join Type"]
+            if join_type and (join_type=='Inner' or join_type=='Left' or join_type=='Right' or join_type=='Full') then
+                node["Join Type"]=nil
+                local c
+                if join_type~='Inner' then
+                    node['Node Type'],c=node['Node Type']:gsub(' [Jj]oin',' '..join_type..'%1',1)
+                    if c==0 then node['Node Type']=node['Node Type']..' '..join_type..' Join' end
+                end
+            end
+
             local removed=0
             for n,v in pairs(node) do
                 if n:find("Rows Removed",1,true) then
@@ -34,9 +44,10 @@ local config={
 
             local base,schema="Index Name",node["Schema"]
             if node['Relation Name'] and schema then
+                if node['Alias']==node['Relation Name'] then node['Alias']=nil end
                 node['Relation Name'],node["Schema"]=schema..'.'..node['Relation Name'],nil
             end
-            for _,n in ipairs{'Relation Name','Function Name','CTE Name','Subplan Name'} do
+            for _,n in ipairs{'Relation Name','Function Name','CTE Name','Subplan Name','Alias'} do
                 local name=node[n]
                 if name then
                     if not node[base] then
@@ -46,9 +57,12 @@ local config={
                             node[base]=name..'()'
                         elseif n=='CTE Name' then
                             node[base]='['..name..']'
+                        elseif n=='Alias' then
+                            node[base]='> '..name
                         else
                             node[base]='<'..name..'>'
                         end
+                        if node['Alias']==name then node['Alias']=nil end
                         node[n]=''
                         break
                     end
@@ -56,19 +70,22 @@ local config={
             end
         end
         if name=='Parent Relationship' then
-            return value=='Outer'   and '<'  or 
-                   value=='Inner'   and '>' or 
-                   value=='SubPlan' and '*' or 
+            return value=='Outer'    and '<'  or 
+                   value=='Inner'    and '>' or 
+                   value=='SubPlan'  and '^' or
+                   value=='InitPlan' and 'K' or
+                   value=='Member'   and 'C' or
+                   value=='Subquery' and 'H' or 
                    value:sub(1,1);
-        elseif name=='Join Type' then
-            if value=='Inner' then return '' end
+        elseif name=='Node Type' then
             local childs=node and node['Plans']
-            if childs and #childs>1 then
-                if value=='Left' or value=='Full' then
-                    childs[2]["Node Type"]=(childs[2]["Node Type"] or "")..' (+)'
+            local join_type=value:match(' (%S+) [jJ]oin')
+            if join_type and childs  and #childs>1 then
+                if (join_type=='Right' or join_type=='Full') then
+                    childs[#childs-1]["Node Type"]=childs[#childs-1]["Node Type"]..'(+)'
                 end
-                if value=='Right' or value=='Full' then
-                    childs[1]["Node Type"]=(childs[1]["Node Type"] or "")..' (+)'
+                if (join_type=='Left' or join_type=='Full') then
+                    childs[#childs]["Node Type"]=childs[#childs]["Node Type"]..'(+)'
                 end
             end
         elseif name=='Peak Memory Usage' then
@@ -104,7 +121,7 @@ local config={
     --sorts={"Actual Startup Time","Actual Total Time"},
     excludes={"Parent Relationship"},
     percents={"Actual Time"},
-    title='Plan Tree | (+): Outer-Joined   >: Data-In   <: Data-Out   *: Sub-Plan   S: Sub-Query   I: Int-Plan   M: Member',
+    title='Plan Tree | (+): Outer-Joined   >: Data-In   <: Data-Out   ^: SubPlan   H: Subquery   K: IntPlan   C: Member',
     projection="Output"
 }
 function xplan.explain(fmt,sql)
@@ -207,7 +224,7 @@ function xplan.explain(fmt,sql)
                 auto_generic and '' or 'set plan_cache_mode=force_generic_plan;\n',
                 fmt,
                 string.rep('null,',c):rtrim(','),
-                auto_generic and '' or ';\nset plan_cache_mode=auto')
+                auto_generic and '' or ';\nset plan_cache_mode to default')
         else
             sql='explain '..fmt..'\n'..sql
         end
@@ -241,13 +258,13 @@ function  xplan.autoplan(name,value)
     return value
 end
 
-local tracable={SELECT=1,WITH=1,INSERT=1,UPDATE=1,DELETE=1,MERGE=1,CREATE=1}
+local tracable={SELECT=1,WITH=1,INSERT=1,UPDATE=1,DELETE=1,MERGE=1,CREATE={TABLE=1,INDEX=1}}
 function xplan.before_db_exec(obj)
     local db,sql,args,params,is_internal=table.unpack(obj)
     if autoplan=='off' or is_internal or not sql then return end
-    local action,_=env.db_core.get_command_type(sql)
-    
-    if not tracable[action] then return end
+    local action,item=env.db_core.get_command_type(sql)
+    local found=tracable[action]
+    if not found or type(found)=='table' and item and not found[item] then return end
     local args1,params1=table.clone(args),table.clone(params)
     local stmt=string.format('EXPLAIN (%sCOSTS,FORMAT %s)\n%s',
         autoplan=='xplan' and '' or 'ANALYZE,TIMING,BUFFERS,',

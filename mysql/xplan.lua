@@ -32,7 +32,8 @@ function xplan.explain(fmt,sql)
         fmt=''
     else
         sql=fmt
-        fmt="FORMAT=JSON"
+        local version=tonumber(db.props.db_version:match("^%d+%.%d"))
+        fmt=version>=8 and 'FORMAT=TREE' or ''
     end
     
     env.set.set('feed','off')
@@ -102,13 +103,13 @@ function xplan.autoplan(name,value)
     return value
 end
 
-local tracable={SELECT=1,WITH=1,INSERT=1,UPDATE=1,DELETE=1,MERGE=1,CREATE=1}
+local tracable={SELECT=1,WITH=1,INSERT=1,UPDATE=1,DELETE=1,MERGE=1,CREATE={TABLE=1,INDEX=1}}
 function xplan.before_db_exec(obj)
     local db,sql,args,params,is_internal=table.unpack(obj)
     if autoplan=='off' or is_internal or not sql then return end
-    local action,_=env.db_core.get_command_type(sql)
-    
-    if not tracable[action] then return end
+    local action,item=env.db_core.get_command_type(sql)
+    local found=tracable[action]
+    if not found or type(found)=='table' and item and not found[item] then return end
     local args1,params1=table.clone(args),table.clone(params)
     local version=tonumber(db.props.db_version:match("^%d+%.%d"))
     local is_analyze=autoplan~='xplan' and (version>=8 or db.props.tidb)
