@@ -115,9 +115,10 @@ function xplan.before_db_exec(obj)
     local is_analyze=autoplan~='xplan' and (version>=8 or db.props.tidb)
     local stmt=string.format('EXPLAIN %s %s \n%s',
         is_analyze and 'ANALYZE' or '',
-        (is_analyze or db.props.tidb) and '' or 
-        ((autoplan_format=='oracle' or autoplan_format=='json') and 'FORMAT=JSON' or
-        (autoplan_format=='table' or version<8) and 'FORMAT=TRADITIONAL') or 'FORMAT=TREE',
+        (is_analyze or db.props.tidb) and '' or
+       ((autoplan_format=='oracle' or autoplan_format=='json') and 'FORMAT=JSON' or
+        (autoplan_format=='table' or version<8) and 'FORMAT=TRADITIONAL') or
+        'FORMAT=TREE',
         sql)
     if is_analyze and autoplan=='analyze' then
         if #env.RUNNING_THREADS>2 then

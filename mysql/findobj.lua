@@ -41,8 +41,8 @@ local stmt=[[
     ORDER BY CASE WHEN `Schema`=database() THEN 0 ELSE 1 END LIMIT 1]]
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('`','')
-    env.checkerr(bypass_error=='1' or name~="","Please input the object name/id!")
-    if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
+    bypass_error=tostring(bypass_error):lower()
+    env.checkerr(bypass_error=='1' or bypass_error=='true' or name~="","Please input the object name/id!")
     if not loaded and not cache_obj then
         cache_obj=setmetatable({},{
             __index=function(self,name)
@@ -109,7 +109,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         end
     end
 
-    env.checkerr(bypass_error=='1' or item~=nil,'Cannot find target object: '..obj_name)
+    env.checkerr(bypass_error=='1'  or bypass_error=='true' or item~=nil,'Cannot find target object: '..obj_name)
     return item
 end
 

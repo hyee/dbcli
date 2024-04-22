@@ -1,7 +1,10 @@
 /*[[Show active sessions. Usage: @@NAME [-f"<filter>"]
     --[[
         &filter: default={state <> 'idle' and pid <> pg_backend_pid()} f={}
-        @CHECK_USER_GAUSS: gaussdb={waiting,unique_sql_id sql_id,} default={pg_blocking_pids(pid) AS blocked_by,}
+        @CHECK_USER_GAUSS: {
+            gaussdb={waiting,unique_sql_id sql_id,} 
+            default={pg_blocking_pids(pid) AS blocked_by,
+        }
     --]]
 ]]*/
 col query_time,txn_time for usmhd2

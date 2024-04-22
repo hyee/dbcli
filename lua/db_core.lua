@@ -484,7 +484,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
         if obj.getErrorCode then
             local code,sqlstate=obj:getErrorCode(),obj:getSQLState()
             if code and not info.error:gsub("\n%s+at%s+.*$",""):find(code,1,true) then
-                code="ERROR "..code.. '('..sqlstate..')'..": "
+                code="ERROR "..code.. '('..(sqlstate or 'nil')..')'..": "
                 info.error=info.error:gsub("(Exception: )",'%1'..code,1)
             else
                 code=''
@@ -1151,7 +1151,7 @@ function db_core:connect(attrs,data_source)
     end
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     
-    prep_test_connection = self.conn:prepareCall(self.test_connection_sql)
+    prep_test_connection = self.conn:prepareStatement(self.test_connection_sql)
 
     return self.conn,attrs
 end

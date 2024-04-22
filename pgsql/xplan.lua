@@ -20,7 +20,7 @@ local config={
                     end
                 end
             end
-            if node["Sort Space Used"] and node["Sort Space Type"]=='Memory' and not node["Peak Memory Usage"] then
+            if node["Sort Space Used"] and node["Sort Space Type"]~='Disk' and not node["Peak Memory Usage"] then
                 node["Peak Memory Usage"]=node["Sort Space Used"]
             end
 
@@ -318,6 +318,7 @@ function xplan.parse_plan_tree(text)
             for i=#maps,indent+1,-1 do
                 maps[i]=nil
             end
+
             node={[config.child]={}}
             maps[indent]=node
             if maps[indent-1] then
@@ -325,9 +326,10 @@ function xplan.parse_plan_tree(text)
             else
                 print("Missing parent node at line #"..num..": ",indent,#space,line)
             end
+            indent=nil
         end
-        
-        line=line:trim()
+
+        space,line,_=line:match('^(%s*)(%S.-%S)(%s*)$')
 
         seq=seq+1
         if seq==1 then
@@ -355,7 +357,7 @@ function xplan.parse_plan_tree(text)
                         node_type=name
                         node["Index Name"]=tab
                     end
-                end             
+                end
                 node["Node Type"]=node_type
 
                 local rows,width
@@ -373,12 +375,17 @@ function xplan.parse_plan_tree(text)
                 apply(node,nil,costs:trim():sub(2,-2))
             end
         else
-            local item,value
+            local item,value=line:match("^(%w[^%):]+):%s*(.-)$")
             local _,c=line:gsub('%S%s*:[^:]%S','')
-            if not line:find('[%{%(%[]') and c>1 then
+            if init_space and #space<init_space then
+                --print(math.floor((#space-init_space)/6)+2,space,line)
+                if not item then
+                    break
+                end
+                func.apply(tree,item,value)
+            elseif not line:find('[%{%(%[]') and c>1 then
                 apply(node,nil,line:gsub(':','='))
-            else 
-                item,value=line:match("^(%w[^%):]+):%s*(.-)$")
+            else
                 if item=="Buffers" then
                     apply(node,item,value)
                 elseif item then
@@ -396,7 +403,6 @@ function xplan.parse_plan_tree(text)
             end
         end
     end
-    --print(table.dump(tree))
     return env.json.encode(tree)
 end
 
@@ -416,8 +422,8 @@ xplan.tree_maps={
     ['Buffers/shared read']='Shared Read Blocks',
     ['Buckets']='Hash Buckets',
     ['Batches']='Hash Batches',
-    ['Memory']=function(node,s) node['Sort Space Used']=xplan.tree_maps.convert_size(s) end,
-    ['Memory Usage']=function(node,s) node['Peak Memory Usage']=xplan.tree_maps.convert_size(s) end,
+    ['Memory']=function(node,s) node['Sort Space Used']=xplan.tree_maps.convert_size(s)/1024 end,
+    ['Memory Usage']=function(node,s) node['Peak Memory Usage']=xplan.tree_maps.convert_size(s)/1024 end,
     apply=function(node,name,value)
         local func=xplan.tree_maps[name]
         if type(func) =='function' then

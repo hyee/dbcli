@@ -20,10 +20,11 @@ SELECT p.oid,
            (SELECT string_agg(CASE WHEN a NOT LIKE 'OUT%' THEN substr(a,5) END,',') x
             FROM   unnest(string_to_array(pg_get_function_identity_arguments(p.oid),', ')) as a)
        ELSE pg_get_function_identity_arguments(p.oid) END AS "args",
+       --pronargdefaults "defaults",
        concat(
-            CASE WHEN p.proretset THEN 'SET of ' END,
+            CASE WHEN p.proretset THEN CASE WHEN 'o'=ANY(proargmodes) THEN 'TABLE' ELSE 'SET of ' END END,
             CASE WHEN 'o'=ANY(proargmodes) THEN 
-                    (SELECT concat(e'[ ',string_agg(CASE WHEN a LIKE 'OUT%' THEN substr(a,5) END,e',\n  '),']') x
+                    (SELECT concat(e'(\n  ',string_agg(CASE WHEN a LIKE 'OUT%' THEN substr(a,5) END,e',\n  '),')') x
                     FROM   unnest(string_to_array(pg_get_function_identity_arguments(p.oid),', ')) as a)
             ELSE  pg_typeof(p.prorettype)::text END
         ) AS "returns",
@@ -41,6 +42,8 @@ SELECT p.oid,
            CASE WHEN p.prosecdef THEN 'SEC-DEF,' END,
            CASE WHEN p.proretset THEN 'RET-SET,' END),',') AS attrs,
         probin "Binary",
+        procost est_cost,
+        prorows est_rows,
         d.description AS function_description
 FROM   pg_proc p
 JOIN   pg_namespace n ON n.oid = p.pronamespace

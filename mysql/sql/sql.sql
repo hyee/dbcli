@@ -8,7 +8,7 @@
 
         @CHECK_ACCESS_PLAN: {
             information_schema.cluster_statements_summary_history={
-                SELECT PLAN
+                SELECT PLAN --BINARY_PLAN PLAN
                 FROM   information_schema.cluster_statements_summary_history
                 WHERE  digest=:did
                 ORDER  BY summary_end_time DESC LIMIT  1

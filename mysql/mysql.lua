@@ -29,6 +29,8 @@ function mysql:ctor(isdefault)
     self.JDBC_ADDRESS='https://mvnrepository.com/artifact/mysql/mysql-connector-java'
 end
 local native_cmds={}
+--local jdbc_prefix='com.mysql.cj'
+local jdbc_prefix='com.mysql.cj'
 function mysql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
@@ -81,7 +83,7 @@ function mysql:connect(conn_str)
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
 
     self:merge_props(--https://docs.pingcap.com/tidb/stable/java-app-best-practices
-        {driverClassName="com.mysql.cj.jdbc.Driver",
+        {driverClassName=jdbc_prefix..".jdbc.Driver",
          allowPublicKeyRetrieval='true',
          rewriteBatchedStatements='true',
          useCachedCursor=self.MAX_CACHE_SIZE,
@@ -102,7 +104,7 @@ function mysql:connect(conn_str)
     if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
     env.set_title("")
     for k,v in pairs(args) do args[k]=tostring(v) end
-    local data_source=java.new('com.mysql.cj.jdbc.MysqlDataSource')
+    local data_source=java.new(jdbc_prefix..'.jdbc.MysqlDataSource')
     self.super.connect(self,args)
     --self.conn=java.cast(self.conn,"com.mysql.jdbc.JDBC4MySQLConnection")
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
@@ -206,7 +208,7 @@ function mysql:command_call(sql,...)
 end
 
 function mysql:onload()
-    self.db_types:load_sql_types('com.mysql.cj.MysqlType')
+    self.db_types:load_sql_types(jdbc_prefix..'.MysqlType')
     local default_desc={"#MYSQL database SQL command",self.C.help.help_offline}
     local function add_default_sql_stmt(...)
         for _,cmd in ipairs({...}) do

@@ -10,7 +10,7 @@ local init={
         "lib/misc",
         "lib/class",
         "lib/re",
-        
+        "lib/protobuf",
         "lib/flamegraph",
 
         --"locale",

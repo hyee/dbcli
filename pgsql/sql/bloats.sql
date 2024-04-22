@@ -1,4 +1,4 @@
-/*[[Show bloat information for table/index. Usage: @@NAME {[<table_name>] | [<bloat_mb>]} 
+/*[[Show bloat information for table/index. Usage: @@NAME {[[schema.]<table>] | [<bloat_mb>]} 
     Refs: https://github.com/francs/PostgreSQL-healthcheck-script/blob/master/pg_healthcheck_v1.2.sh
     --[[
         &table: default={'&object_name'='' or } table={}

@@ -8,7 +8,7 @@
 findobj "&V1" 0 1
 env feed off
 col nulls,ndv,rows for tmb2
-col nulls%,ndv%,common_freq,correlation for pct3
+col nulls%,ndv%,common_freq,elem_freqs,correlation for pct3
 
 SELECT row_number() over() "#",
        h.*
