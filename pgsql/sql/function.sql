@@ -4,8 +4,15 @@
         @ALIAS: fn
         &filter: default={lower(concat(n.nspname,'.',p.proname,'|',p.probin,'|',d.description)) like lower('%&V1%')} f={}
         @attr: {
-            11={CASE p.prokind WHEN 'p' THEN 'PROCEDURE,' WHEN 'a' THEN 'AGG,' when 'w' THEN 'WINDOW,' END,} 
+            11={CASE p.prokind WHEN 'p' THEN 'PROCEDURE,' WHEN 'a' THEN 'AGG,' when 'w' THEN 'WINDOW,' END ,} 
             default={CASE WHEN p.proisagg THEN 'AGG,' WHEN p.proiswindow THEN 'WINDOW,' END,}
+        }
+        @check_user_gs: {
+            gaussdb={
+                CASE WHEN p.proisagg     THEN 'FENCED,' END,
+                CASE WHEN p.propackage   THEN 'PACKAGE,' END,
+                CASE WHEN p.proshippable THEN 'PUSHDOWN,'END,}
+            default={CASE p.proparallel  WHEN 's' THEN 'PARALLEL,'  WHEN 'r' THEN 'PARALLEL-LEADER,' END,}
         }
     --]]
 ]]*/
@@ -39,6 +46,7 @@ SELECT p.oid,
         RTRIM(CONCAT(
            CASE WHEN p.proisstrict THEN 'STRICT,' END,
            &attr
+           &check_user_gs
            CASE WHEN p.prosecdef THEN 'SEC-DEF,' END,
            CASE WHEN p.proretset THEN 'RET-SET,' END),',') AS attrs,
         probin "Binary",

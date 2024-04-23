@@ -3,7 +3,7 @@
   
   Options:
   ========
-        -wall: order by wall clock
+        -wall : show & order by wall clock
       Groupings : The grouping option can be followed by other custimized field, i.e.: '@@NAME -p,p1raw ...'
         -e    : group by event
         -sql  : group by event+sql_id (default)
@@ -19,11 +19,11 @@
         -dash: source table is dba_hist_active_sess_history
         -t   : source table is <ash_dump_table>
       Filters   :
-        -id  : show data for specific sql_id/sid. Usage: [-id] [sql_id|sid] [starttime] [endtime]
-        -u   : only show the data related to current schema. Usage: -u <seconds> [starttime] [endtime]
-        -snap: only show the data within specific seconds. Usage: -snap <seconds> [sql_id|sid]
+        -id  : show data for specific sql_id/sid. Usage: @@NAME [-id] [sql_id|sid] [starttime] [endtime]
+        -u   : only show the data related to current schema. Usage: @@NAME -u <seconds> [starttime] [endtime]
+        -snap: only show the data within specific seconds. Usage: @@NAME -snap <seconds> [sql_id|sid]
       Addition filter:
-        -f   : additional fileter. Usage: -f"<filter>"
+        -f   : additional fileter. Usage: @@NAME -f"<filter>"
         
   Usage Examples:
   ===============

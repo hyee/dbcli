@@ -107,6 +107,6 @@ FROM
     LEFT JOIN pg_tablespace  t ON b.iid=t.oid
 ) AS A
 LEFT JOIN pg_stat_all_tables B ON a.schema_name=b.schemaname and a.object_name=b.relname
-WHERE '&object_name' !='' OR "b-bytes">(coalesce(regexp_replace(:V1::text,'[^\.\d]+'::text,'','g'),'1')::numeric * 1024 * 1024)
+WHERE '&object_name' !='' OR "b-bytes">(coalesce(nullif(regexp_replace('&V1'::text,'[^\.\d]+'::text,'','g'),''),'1')::numeric * 1024 * 1024)
 ORDER BY "b-bytes" desc,"bloat" desc
 LIMIT 50;

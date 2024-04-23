@@ -3,7 +3,7 @@ local db=env.getdb()
 local findobj,cache_obj,loaded={},{}
 local json = require("json")
 local sys_schemas="('information_schema','pg_catalog')"
-local default_args={target='v1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",granted="#VARCHAR",object_fullname='#VARCHAR'}
+local default_args={target='v1',object_owner="#VARCHAR",object_type="#VARCHAR",object_name="#VARCHAR",granted="#VARCHAR",object_fullname='#VARCHAR',object_id='INTEGER',object_class='#VARCHAR'}
 
 local stmt=[[
     SELECT * FROM (
@@ -32,6 +32,7 @@ local stmt=[[
                      'COMPOSITE TYPE'
                END "TYPE",
                pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED",
+               tbl.oid,'pg_class' clz,
                CASE WHEN tbl.relkind in ('m') THEN 0
                     WHEN tbl.relkind in ('r','p') THEN 1
                     WHEN tbl.relkind in ('v','c') THEN 2
@@ -42,13 +43,14 @@ local stmt=[[
         JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
         WHERE  lower(concat(nspname, '.', relname)) LIKE :obj
         UNION ALL
-        SELECT nspname,conname,'CONSTRAINT',false,3
+        SELECT nspname,conname,'CONSTRAINT',false,con.oid,'pg_constraint',3
         FROM   pg_constraint con
         JOIN   pg_namespace nsp ON nsp.oid = con.connamespace
         WHERE  lower(concat(nspname, '.', conname)) LIKE :obj
         UNION ALL
         SELECT nspname,proname,'FUNCTION',
                pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text),
+               p.oid,'pg_proc',
                4
         FROM   pg_proc p
         JOIN   pg_namespace n ON n.oid = p.pronamespace
@@ -58,19 +60,25 @@ local stmt=[[
                pg_has_role(c.relowner, 'USAGE'::text) OR 
                has_table_privilege(c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'::text) OR 
                has_any_column_privilege(c.oid, 'INSERT, UPDATE, REFERENCES'::text),
+               t.oid,'pg_trigger',
                7
         FROM   pg_namespace n,
                pg_class c,
                pg_trigger t
         WHERE  n.oid = c.relnamespace 
-        AND    c.oid = t.tgrelid 
+        AND    c.oid = t.tgrelid
+        AND    not t.tgisinternal
         AND    lower(concat(nspname, '.', tgname)) LIKE :obj
         UNION ALL
-        SELECT schemaname, rulename, 'RULE',
+        SELECT n.nspname, rulename, 'RULE',
                false,
+               r.oid,'pg_rewrite',
                6
-        FROM   pg_rules 
-        WHERE  lower(concat(schemaname, '.', rulename)) LIKE :obj
+        FROM  pg_rewrite r
+        JOIN  pg_class c ON c.oid = r.ev_class
+        LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE  r.rulename <> '_RETURN'::name
+        AND   lower(concat(n.nspname, '.', r.rulename)) LIKE :obj
     ) M
     ORDER BY "GRANTED" DESC NULLS LAST,
               CASE WHEN "SCHEMA"=CURRENT_USER THEN 0 ELSE 1 END,
@@ -115,20 +123,22 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                            WHEN 'c' THEN
                              'COMPOSITE TYPE'
                        END "TYPE",
-                       pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED"
+                       pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED",
+                       tbl.oid,'pg_class' clz
                 FROM   pg_class tbl
                 JOIN   pg_namespace nsp ON nsp.oid = tbl.relnamespace
                 WHERE  nspname IN @schemas@
                 UNION ALL
                 SELECT nspname,proname,'FUNCTION',
-                       pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text)
+                       pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text),
+                       p.oid,'pg_proc'
                 FROM   pg_proc p
                 JOIN   pg_namespace n ON n.oid = p.pronamespace
                 WHERE  LOWER(nspname) IN @schemas@
             ) M]]):gsub('@schemas@',sys_schemas)
         local rows=db:get_rows(sql)
         for _,obj in ipairs(rows) do
-            local item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4]}
+            local item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4],object_id=obj[5],object_class=obj[6]}
             for _,n in ipairs{obj[2]:lower(),(obj[1]..'.'..obj[2]):lower()} do
                 if not cache_obj[n] then cache_obj[n]=item end
             end
@@ -142,7 +152,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         local result=self:exec_cache(stmt,{obj=name},'Internal_FindObject')
         local obj=db.resultset:rows(result,-1,'')[2]
         if obj then
-            item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4]}
+            item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4],object_id=obj[5],object_class=obj[6]}
         end
     end
 

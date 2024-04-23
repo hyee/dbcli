@@ -8,7 +8,7 @@
 
         @CHECK_ACCESS_PLAN: {
             information_schema.cluster_statements_summary_history={
-                SELECT PLAN --BINARY_PLAN PLAN
+                SELECT PLAN
                 FROM   information_schema.cluster_statements_summary_history
                 WHERE  digest=:did
                 ORDER  BY summary_end_time DESC LIMIT  1
@@ -32,6 +32,5 @@ save digest_text &V1..sql
 
 col plan new_value plan noprint
 &CHECK_ACCESS_PLAN;
-
 PRINTVAR plan
 --tiplan plan

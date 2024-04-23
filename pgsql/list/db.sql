@@ -9,7 +9,7 @@ col reads,hits,temps,commits,rollbacks for tmb2
 env feed off
 select pg_control_version,
        catalog_version_no,
-       &CHECK_USER_GAUSS2 cluster_init,
+       to_timestamp(system_identifier::text::bigint / power(2,32)) --&CHECK_USER_GAUSS2 cluster_init,
        pg_control_last_modified
 from   pg_control_system();
 
