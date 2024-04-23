@@ -28,12 +28,11 @@ function plan.parse_json_plan(json,options)
     end
 
     --parse JSON data
-    local n,id,rows,ord=0,1,{},0
+    local n,id,rows,ord,counter=0,1,{},0,0
     local maps,projection={},{{'Id','Projection'}}
     local proj=(options.projection or ""):upper()
     local parse_tree=function(parse,tree,depth)
         local row={__=depth,__childs={sig=''}}
-
         local child={}
         local function push_field(name,org_name,value)
             if value~='' and value and (tonumber(value) or 1) >0 then
@@ -51,6 +50,7 @@ function plan.parse_json_plan(json,options)
             end
         end
         processor(nil,nil,nil,tree)
+        counter=0
         for name,value in pairs(tree) do
             if name~=options.child then
                 local org_name=name
@@ -66,10 +66,12 @@ function plan.parse_json_plan(json,options)
                 else
                     push_field(name,org_name,value)
                 end
+                counter=1
             else
                 child=value
             end
         end
+        
         rows[id],maps[depth]=row,row
 
         for i=#maps,depth+1,-1 do maps[i]=nil end
@@ -78,10 +80,10 @@ function plan.parse_json_plan(json,options)
         end
 
         for _,node in ipairs(child) do
-            id=id+1
-            parse(parse,node,depth+1)
+            id=id+counter
+            parse(parse,node,depth+counter)
         end
-        ord=ord+1
+        ord=ord+counter
         row._=ord
     end
     
@@ -144,6 +146,9 @@ function plan.parse_json_plan(json,options)
     --calculate the execution orders
     local header={'|','Id','|','Ord','|'}
     local sorts,caches=type(options.sorts)=='table' and options.sorts or {options.sorts},{}
+    if options.sorts==false then
+        header,sorts={'|','Id','|'},{}
+    end
     for i=#sorts,1,-1 do
         local col=sorts[i]:upper()
         if not fields[col] then 
@@ -228,7 +233,7 @@ function plan.parse_json_plan(json,options)
     local result,additions={header},{}
     local id_fmt='%s %'..#tostring(#rows)..'d'
     for seq,org in ipairs(rows) do
-        local row={'|',seq,'|',org._,'|'}
+        local row=options.sorts==false and {'|',seq,'|'} or {'|',seq,'|',org._,'|'}
         --caculate the value of sort columns
         if #sorts>0 then
             local cache={seq=seq+1,val=0}
@@ -280,7 +285,7 @@ function plan.parse_json_plan(json,options)
                 end
                 row[i]=table.concat(col,' ')
                 if type(row[i])=='string' and not pcts[index[1]] then 
-                    row[i]=row[i]:trim():gsub('%s+',' ')
+                    if not options.keep_indent then row[i]=row[i]:trim():gsub('%s+',' ') end
                     row[i]=tonumber(row[i]) or row[i]
                 end
             else

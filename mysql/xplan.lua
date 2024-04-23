@@ -24,15 +24,17 @@ function xplan.explain(fmt,sql)
         fmt=fmt:upper()
         if fmt:upper()=='ANALYZE' or fmt=='EXEC' or fmt=='-EXEC' then
             fmt='ANALYZE'
+        elseif db.props.tidb then
+            fmt=db.C.tidb.parse_explain_option(fmt)
         else
             fmt='FORMAT='..fmt:gsub('.*=','')
         end
         is_oracle=false
     elseif db.props and db.props.tidb then
-        fmt=''
+        sql,fmt=fmt,''
     else
         sql=fmt
-        local version=tonumber(db.props.db_version:match("^%d+%.%d"))
+        local version=tonumber((db.props.db_version or '5.7'):match("^%d+%.%d"))
         fmt=version>=8 and 'FORMAT=TREE' or ''
     end
     
@@ -42,7 +44,7 @@ function xplan.explain(fmt,sql)
         typ,file=env.os.exists(sql)
     end
     if file then
-        env.checkerr(typ=='file','Target locate is not a file: '..file)
+        env.checkerr(typ=='file','Target location is not a file: '..file)
         local succ,data=pcall(loader.readFile,loader,file,10485760)
         env.checkerr(succ,tostring(data))
         local json1=data:match('%b{}')
@@ -52,6 +54,11 @@ function xplan.explain(fmt,sql)
         else
             json=#json1>#json2 and json1 or json2
         end
+
+        if db.C.tidb:parse_plan(data)~=false then
+            return
+        end
+
         json=xplan.parse_plan_tree(data) or json
         env.checkerr(json,"Cannot find valid JSON data from file "..file)
         env.checkerr(json:find(config.root,1,true) and json:find(config.root,1,true),"Invalid execution plan in JSON format.")
@@ -72,23 +79,20 @@ function xplan.explain(fmt,sql)
         env.checkerr(c==0,"Explaining SQL with bind varaibles is unsupported.")
         sql='EXPLAIN '..fmt..'\n'..sql
         
-        if not is_oracle then
-            return db:query(sql)
-        else
-            local res=db:exec(sql)
-            if type(res)=='table' then
-                for _,row in ipairs(res) do
-                    if type(row)=='userdata' then
-                        res=row
-                        break
-                    end
+        local res=db:exec(sql)
+        if type(res)=='table' then
+            for _,row in ipairs(res) do
+                if type(row)=='userdata' then
+                    res=row
+                    break
                 end
             end
-            local rows=db.resultset:rows(res,-1)
-            json=rows[2][1]
-            print(json)
-            return;
         end
+        local rows=db.resultset:rows(res,-1)
+        if db.props.tidb then
+            return db.C.tidb:parse_plan(rows)
+        end
+        return env.grid.print(rows)
     end
     
     env.json_plan.parse_json_plan(json,config)
@@ -106,16 +110,18 @@ end
 local tracable={SELECT=1,WITH=1,INSERT=1,UPDATE=1,DELETE=1,MERGE=1,CREATE={TABLE=1,INDEX=1}}
 function xplan.before_db_exec(obj)
     local db,sql,args,params,is_internal=table.unpack(obj)
+    local tidb=db.props.tidb and db.C.tidb or nil
     if autoplan=='off' or is_internal or not sql then return end
     local action,item=env.db_core.get_command_type(sql)
     local found=tracable[action]
     if not found or type(found)=='table' and item and not found[item] then return end
     local args1,params1=table.clone(args),table.clone(params)
     local version=tonumber(db.props.db_version:match("^%d+%.%d"))
-    local is_analyze=autoplan~='xplan' and (version>=8 or db.props.tidb)
+    local is_analyze=autoplan~='xplan' and 'ANALYZE' or ''
     local stmt=string.format('EXPLAIN %s %s \n%s',
-        is_analyze and 'ANALYZE' or '',
-        (is_analyze or db.props.tidb) and '' or
+        tidb and tidb.parse_explain_option(is_analyze) or version>=8 and is_analyze  or '',
+        tidb and tidb.parse_explain_option(nil,autoplan_format) or
+        version>=8 and is_analyze or
        ((autoplan_format=='oracle' or autoplan_format=='json') and 'FORMAT=JSON' or
         (autoplan_format=='table' or version<8) and 'FORMAT=TRADITIONAL') or
         'FORMAT=TREE',
@@ -128,7 +134,13 @@ function xplan.before_db_exec(obj)
         obj[2]=nil
     end
     
-    return db:query(stmt,args1,params1)
+    local res=db:exec(stmt,args1,params1)
+
+    local rows=db.resultset:rows(res,-1)
+    if db.props.tidb and autoplan_format=='oracle' then
+        return db.C.tidb:parse_plan(rows)
+    end
+    return env.grid.print(rows)
 --[[--
     if autoplan_format~='oracle' then
         return db:query(stmt,args1,params1)

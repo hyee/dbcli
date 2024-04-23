@@ -29,8 +29,8 @@ FROM   &CHECK_ACCESS_TABLE
 WHERE  digest like concat(:V1,'%')
 LIMIT  1;
 save digest_text &V1..sql
-
+ENV COLWRAP 4096
 col plan new_value plan noprint
 &CHECK_ACCESS_PLAN;
-PRINTVAR plan
---tiplan plan
+--PRINTVAR plan
+tiplan plan
