@@ -18,19 +18,20 @@ local config={
 }
 
 function xplan.explain(fmt,sql)
+    local tidb=db.props.tidb and db.C.tidb
     env.checkhelp(fmt)
     local options,is_oracle={},true
     if sql then
         fmt=fmt:upper()
         if fmt:upper()=='ANALYZE' or fmt=='EXEC' or fmt=='-EXEC' then
             fmt='ANALYZE'
-        elseif db.props.tidb then
-            fmt=db.C.tidb.parse_explain_option(fmt)
+        elseif tidb then
+            fmt=tidb.parse_explain_option(fmt)
         else
             fmt='FORMAT='..fmt:gsub('.*=','')
         end
         is_oracle=false
-    elseif db.props and db.props.tidb then
+    elseif tidb then
         sql,fmt=fmt,''
     else
         sql=fmt
@@ -89,8 +90,8 @@ function xplan.explain(fmt,sql)
             end
         end
         local rows=db.resultset:rows(res,-1)
-        if db.props.tidb then
-            return db.C.tidb:parse_plan(rows)
+        if tidb then
+            return tidb:parse_plan(rows)
         end
         return env.grid.print(rows)
     end
@@ -157,7 +158,7 @@ end
 
 function xplan.onload()
     local help=[[
-    Explain SQL execution plan, type 'help @@NAME' for more details. Usage: @@NAME [<format>] [<Id>|<SQL Id>|<SQL Text>|<File>]
+    Explain SQL execution plan, type 'help @@NAME' for more details. Usage: @@NAME [<options>] [for schema <schema>] [<Id>|<SQL Id>|<SQL Text>|<File>]
 
     Options:
         <format>   : TRADITIONAL / JSON / TREE
@@ -168,7 +169,7 @@ function xplan.onload()
         <SQL ID>   : The SQL ID from pg_stat_statements
         <File>     : The file path that is the execution plan in JSON format
     ]]
-    env.set_command(nil,{"XPLAIN","XPLAN"},help,xplan.explain,'__SMART_PARSE__',3,true)
+    env.set_command(nil,{"XPLAIN","XPLAN"},help,xplan.explain,'__SMART_PARSE__',6,true)
     env.set.init("AUTOPLAN","off",xplan.autoplan,"explain","Controls generating execution plan of the input SQLs",'xplan,analyze,exec,off')
     env.set.init("AUTOPLANFORMAT","tree",xplan.autoplan,"explain","Controls the output execution plan type when autoplan=on",'oracle,tree,table,json')
     env.event.snoop('BEFORE_DB_EXEC',xplan.before_db_exec)

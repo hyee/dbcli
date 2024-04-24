@@ -2,16 +2,17 @@
     --[[
         @ARGS: 1
         @CHECK_ACCESS_TABLE: {
-            information_schema.cluster_statements_summary_history={information_schema.cluster_statements_summary_history}
+            information_schema.statements_summary={information_schema.statements_summary}
             performance_schema.events_statements_summary_by_digest={performance_schema.events_statements_summary_by_digest}
         }
 
         @CHECK_ACCESS_PLAN: {
-            information_schema.cluster_statements_summary_history={
-                SELECT PLAN
+            information_schema.STATEMENTS_SUMMARY={
+                SELECT *
                 FROM   information_schema.cluster_statements_summary_history
                 WHERE  digest=:did
-                ORDER  BY summary_end_time DESC LIMIT  1
+                ORDER  BY summary_end_time DESC 
+                LIMIT  1\G
             }
 
             default={}
@@ -19,7 +20,7 @@
     --]]--
 ]]*/
 
-ENV COLWRAP 150 FEED OFF
+ENV COLWRAP 150 AUTOHIDE COL FEED OFF
 
 col did new_value did noprint
 col "SQL Text with Line Wrap" new_value digest_text noproint
@@ -31,6 +32,7 @@ LIMIT  1;
 save digest_text &V1..sql
 ENV COLWRAP 4096
 col plan new_value plan noprint
-&CHECK_ACCESS_PLAN;
+col QUERY_SAMPLE_TEXT,DIGEST_TEXT,BINARY_PLAN noprint
+&CHECK_ACCESS_PLAN
 --PRINTVAR plan
 tiplan plan

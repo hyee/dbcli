@@ -120,27 +120,29 @@ function plan.parse_json_plan(json,options)
         obj._=obj._+1
         return obj[(obj._%#obj)+1]
     end
-    for id,row in ipairs(rows) do
-        local depth,childs=row.__,row.__childs
-        for i=#maps,depth+1,-1 do maps[i]=nil end
-        local color=get_seq(colors)
-        childs.color=color
-        if #childs<2 or childs[#childs]-childs[1]<=#childs+1 then
-            maps[depth+1]=space:rep(width)
-        else
-            childs.has_child=true
-            local line=get_seq(lines)
-            maps[depth+1]=color_fmt:format(color,line,space:rep(width-1))
-            for seq,child_id in ipairs(childs) do
-                local node=rows[child_id].__childs
-                node.sig=color_fmt:format(color,line..'=',space:rep(width-2))
-                if seq==#childs then node.last=true end
+    if options.keep_indent~=true then
+        for id,row in ipairs(rows) do
+            local depth,childs=row.__,row.__childs
+            for i=#maps,depth+1,-1 do maps[i]=nil end
+            local color=get_seq(colors)
+            childs.color=color
+            if #childs<2 or childs[#childs]-childs[1]<=#childs+1 then
+                maps[depth+1]=space:rep(width)
+            else
+                childs.has_child=true
+                local line=get_seq(lines)
+                maps[depth+1]=color_fmt:format(color,line,space:rep(width-1))
+                for seq,child_id in ipairs(childs) do
+                    local node=rows[child_id].__childs
+                    node.sig=color_fmt:format(color,line..'=',space:rep(width-2))
+                    if seq==#childs then node.last=true end
+                end
             end
+            if childs.last then
+                maps[depth]=space:rep(width)
+            end
+            childs.indent=table.concat(maps,'',1,depth - (childs.sig=='' and 0 or 1))..childs.sig
         end
-        if childs.last then
-            maps[depth]=space:rep(width)
-        end
-        childs.indent=table.concat(maps,'',1,depth - (childs.sig=='' and 0 or 1))..childs.sig
     end
 
     --calculate the execution orders
@@ -259,9 +261,10 @@ function plan.parse_json_plan(json,options)
         for n,v in pairs(pcts) do
             local val=tonumber(org[n])
             if val and val>0 and v.val>0 then
-                local pct=tostring(math.round(val/v.val*100,3)):sub(1,4)
+                local pct=math.round(val/v.val*100,3)
+                local pct=pct<0.03 and '     ' or (tostring(pct):sub(1,4):lpad(4,' ')..'%')
                 if v.func then val=v.func(val) end
-                val=tostring(val):trim():gsub('%.0+(%D)','%1')..' | '..pct:lpad(4,' ')..'%'
+                val=tostring(val):trim():gsub('%.0+(%D)','%1')..' | '..pct
                 v.width=math.max(v.width,#val)
                 org[n]=val
             elseif v.val>0 then
@@ -284,15 +287,16 @@ function plan.parse_json_plan(json,options)
                     end
                 end
                 row[i]=table.concat(col,' ')
-                if type(row[i])=='string' and not pcts[index[1]] then 
-                    if not options.keep_indent then row[i]=row[i]:trim():gsub('%s+',' ') end
+                
+                if type(row[i])=='string' and not pcts[index[1]] then
+                    if options.keep_indent~=true then row[i]=row[i]:trim():gsub('%s+',' ') end
                     row[i]=tonumber(row[i]) or row[i]
                 end
             else
                 row[i]=index or ''
             end
-
-            if i==ids+1 then
+            
+            if i==ids+1 and options.keep_indent~=true then
                 local sig,text=tostring(row[i]):match('^(%S) (.*)$')
                 local indent,color=org.__childs.indent,org.__childs.color
                 if sig then
@@ -305,6 +309,7 @@ function plan.parse_json_plan(json,options)
             else
                 row[i]=tonumber(row[i]) or row[i] or ''
             end
+            
         end
         result[seq+1]=row
     end

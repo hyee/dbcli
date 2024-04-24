@@ -11,17 +11,32 @@ col nulls,ndv,rows for tmb2
 col nulls%,ndv%,common_freq,elem_freqs,correlation for pct3
 
 SELECT row_number() over() "#",
-       unnest(most_common_vals::text::text[]) common_val, 
-       unnest(most_common_freqs) common_freq, 
-       unnest(histogram_bounds::text::text[]) "histogram",
-       unnest(most_common_elems ::text::text[]) common_elem, 
-       unnest(most_common_elem_freqs) elem_freq, 
-       unnest(elem_count_histogram) elem_histogram
-FROM   pg_stats s
+       h.*
+FROM   pg_stats s, 
+       rows FROM   
+           (unnest(most_common_vals::text::text[]), 
+            unnest(most_common_freqs), 
+            unnest(histogram_bounds::text::text[]),
+            unnest(most_common_elems ::text::text[]), 
+            unnest(most_common_elem_freqs), 
+            unnest(elem_count_histogram)) h(common_val, common_freq,"histogram",common_elems,elem_freqs,elem_histogram)
 WHERE  s.attname = :v2
 AND    s.schemaname=:object_owner
 AND    s.tablename =:object_name;
 
+SELECT row_number() over() "#",
+       h.*
+FROM   pg_stats s, 
+       rows FROM   
+           (unnest(most_common_vals::text::text[]), 
+            unnest(most_common_freqs), 
+            unnest(histogram_bounds::text::text[]),
+            unnest(most_common_elems ::text::text[]), 
+            unnest(most_common_elem_freqs), 
+            unnest(elem_count_histogram)) h(common_val, common_freq,"histogram",common_elems,elem_freqs,elem_histogram)
+WHERE  s.attname = :v2
+AND    s.schemaname=:object_owner
+AND    s.tablename =:object_name;
 
 SELECT s.avg_width, 
        t.reltuples "rows",

@@ -9,20 +9,22 @@ local config={
         --if not name and node then end
         return value
     end,
-    keep_indent=1,
+    keep_indent=true,
     columns={
             {'id','Operation'},'|',
             {access,'Access Info'},'|',
             {'task',"Task|Name"},'|',
+            {'estCost',"Est|Cost",format='TMB2'},'|',
             {'estRows',"Est|Rows",format='TMB2'},{'actRows',"Act|Rows",format='TMB2'},'|',
-            {'time',"Act|Time",format='msmhd2'},'|',
+            {'leaf',"Leaf|Time",format='usmhd2'},'|',
+            {'time',"Act|Time",format='usmhd2'},'|',
             {'loops',"Act|Loops",format='TMB2'},'|',
             {'concurrency',"Act|Conc",format='TMB2'},'|',
             {'memory','Memory',format='KMG2'},{'disk','Disk',format='KMG2'},'|',
             {'operator info',"Operator Info",format='TMB2'},'|'
             },
-    sorts=false,        
-    --percents={"time"},
+    --sorts=false,        
+    percents={"leaf"},
     title='Plan Tree | Conc: Concurrency',
     --projection="operator info"
 }
@@ -39,10 +41,10 @@ function tidb:run_sql(sql,args,cmds,files)
 end
 
 function tidb:build_json(plan)
-    local nodes={}
-    local json={[config.root]={[config.child]=nodes}}
+    local tree={[config.root]={[config.child]={}}}
+    local maps={tree[config.root]}
     local headers=plan[1]
-    local units={
+    local units={{
         KB=1024,
         MB=1024^2,
         GB=1024^3,
@@ -51,16 +53,35 @@ function tidb:build_json(plan)
         BYTE=1,
         K=1000,
         M=1000^2,
-        T=1000^3
-    }
-    local function extract_num(val)
+        B=1000^3,
+        T=1000^4
+    },{
+        MS=1000,
+        ['µs']=1,
+        US=1,
+        S=1000000,
+        SECS=1000000,
+        SEC=1000000,
+        M=60*1000000,
+        MIN=60*1000000,
+        MINUTE=60*1000000,
+        MINUTES=60*1000000,
+        H=3600*1000000,
+        HOUR=3600*1000000,
+        HOURS=3600*1000000,
+        D=24*3600*1000000,
+        DAY=24*3600*1000000,
+        DAYS=24*3600*1000000
+    }}
+    local function extract_num(val,idx)
         if not val then return nil end
         if tostring(val):upper()=='N/A' then return 0 end
         local num,unit=tostring(val):match("^%s*(%-?[%.0-9]+)%s*(%S+)$")
-        if not num then return val end
-        unit=unit:upper()
-        if not units[unit] then return val end
-        return tonumber(num)*units[unit]
+        if not num then return tonumber(val) or val end
+        idx=idx or 1
+        unit=units[idx][unit:upper()] or units[idx][unit]
+        if not unit then return val end
+        return tonumber(num)*unit
     end
 
     --find access object field id
@@ -73,43 +94,71 @@ function tidb:build_json(plan)
     end
 
     local patterns1={'^(%s*(%S[^:]+):%s*(%b{}),?)','^(%s*(%S[^:{}]+):%s*([^,:{}]+),?)'}
-    local patterns2={'^(%s*([a-zA-Z0-9 ]+%s*:%s*%S[^,]+)%s*,)','^(%s*([%.a-zA-Z0-9_ ]+)%s*,)'}
+    local patterns2={'^(%s*([a-zA-Z0-9 ]+%s*:%s*%S[^,]*)%s*,)','^(%s*([%.a-zA-Z0-9_ ]+)%s*,)'}
+    local node,depth=maps[1],1
     for i=2,#plan do
-        local row={}
         for j,col in ipairs(plan[i]) do
             local name=headers[j]
-            if name=='execution info' then
+            local lname=name:lower()
+            if lname=='id' then
+                local spaces,id=col:rtrim():match('^(.-)(%w%w%w.*)')
+                if spaces then
+                    local _,len=spaces:ulen()
+                    depth=len/2+1
+                    for n=#maps,depth+1,-1 do maps[n]=nil end
+
+                    node={[config.child]={}}
+                    if depth>1 then
+                        maps[depth]=node
+                    else
+                        node=maps[1]
+                    end
+                    if maps[depth-1] then
+                        table.insert(maps[depth-1][config.child],node)
+                    end
+                    --col=id
+                end
+            elseif lname:find('time',1,true) then
+                col=extract_num(col,2)
+            elseif lname=='execution info' then
                 while true do
                     local piece,k,v=col:match(patterns1[1])
                     if not piece then piece,k,v=col:match(patterns1[2]) end
                     if not piece then break end
                     col=col:sub(#piece+1)
-                    row[k]=extract_num(v)
+                    node[k]=extract_num(v,k:find('time') and 2 or 1)
+                    if k:lower()=='concurrency' then 
+                        node[k]=tonumber(node[k]) --set as nil in case of non-numeric
+                    elseif k:lower()=='time' and type(node[k])=='number' then
+                        node['leaf']=node[k]
+                        if depth>1 and maps[depth-1].leaf then
+                            maps[depth-1].leaf=math.max(0,maps[depth-1].leaf-node[k])
+                        end
+                    end
                 end
                 col=nil
-            elseif name=='operator info' then
+            elseif lname=='operator info' then
                 if col:find('^Column#') then
                     col=nil
                 else
                     col=col:gsub(',%s*start_time:.*','')
                     if (plan[i][access_index or -1] or '')=='' then
                         local piece,v=(col..','):match(patterns2[1])
-                        if not piece or v:find('Column#',1,true) then
+                        if not piece or v:find('group by') then
                             piece,v=(col..','):match(patterns2[2])
                         end
                         if piece then
                             col=col:sub(#piece+1):ltrim()
-                            row[access]=v
+                            node[access]=v
                         end
                     end
                 end
             end
-            row[name]=extract_num(col)
+            node[name]=extract_num(col)
         end
-        nodes[i-1]=row
     end
-    --print(table.dump(json))
-    env.json_plan.parse_json_plan(env.json.encode(json),config)
+    --print(table.dump(tree))
+    env.json_plan.parse_json_plan(env.json.encode(tree),config)
 end
 
 function tidb:parse_cursor(plan)
@@ -153,24 +202,26 @@ function tidb:parse_plan(plan)
     elseif env.var.outputs[plan:upper()] then
         return
     end
-    local start_=plan:sub(1,4096):find('%s*id%s[^\n\r]*task%s[^\n\r]*estRows%s')
+    local sub=plan:sub(1,4096):gsub('\r',''):gsub('\t','    ')
+    local start_=sub:find(' *|? *id[ |][^\n\r]*[^\n\r]*estRows[ |]')
     if not start_ then return false end
     plan=plan:sub(start_)
     plan=plan:gsub('\r',''):gsub('\t','    '):split('\n')
+    if plan[1]:trim()=='' then 
+        table.remove(plan,1)
+    end
     local header={}
     local curr,prev=nil
     local infos,ped={}
+    
     for n,s,c,st,ed in (plan[1]:rtrim()..' '):gsplit('%s+') do
         if not ped then ped=ed end
-        if n:lower():find('^info') then
+        if n:lower():find('^info') or n:lower():find('^object') then
             prev.name=prev.name..' '..n
             prev.stop=ed
-            
-            --if prev.name~='operator info' then
-                infos[#infos+1]=#header
-            --else
-            --    header[#header]=nil
-            --end
+            infos[#infos+1]=#header
+        elseif n:trim()=="|" then
+            --skip
         elseif n:trim()~="" then
             header[#header+1]={name=n,start=st-#n,stop=ed}
             curr=header[#header]
@@ -189,11 +240,11 @@ function tidb:parse_plan(plan)
     for i=2,#plan do
         local row={}
         local line=plan[i]
-        local bytes,chars,prefix=0
+        local bytes,chars
         for j,n in ipairs(header) do
             if i==2 then rows[1][j]=n.name end
             if j==1 then
-                bytes,chars,prefix=line:match('^.- %d+'):ulen()
+                bytes,chars=line:match('^.- %d+'):ulen()
                 bytes=bytes-chars
                 row[j]=line:sub(n.start,n.stop+bytes)
             else
@@ -203,6 +254,9 @@ function tidb:parse_plan(plan)
             row[j]=tonumber(row[j]) or row[j]
             if type(row[j])=='string' and not n.name:lower():find(' info',1,true) then
                 row[j]=row[j]:gsub('%s*N/A%s*',''):gsub('^B$','')
+            end
+            if row[j]=='|' then
+                row[j]=''
             end
         end
         rows[#rows+1]=row

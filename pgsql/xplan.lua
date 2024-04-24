@@ -172,7 +172,7 @@ function xplan.explain(fmt,sql)
         typ,file=env.os.exists(sql)
     end
     if file then
-        env.checkerr(typ=='file','Target location is not a file: '..file)
+        env.checkerr(typ=='file','Target locate is not a file: '..file)
         local succ,data=pcall(loader.readFile,loader,file,10485760)
         env.checkerr(succ,tostring(data))
         local json1=data:match('%b{}')
