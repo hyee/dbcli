@@ -308,13 +308,17 @@ function db:check_access(obj_name,is_cache,is_set_env)
             e   VARCHAR2(500);
             obj VARCHAR2(61) := :owner||'.'||:object_name;
         BEGIN
-            select /*+opt_param('optimizer_dynamic_sampling' 0)*/
-                   count(1) into x
-            from   table_privileges
-            where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
-            AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
-            AND    SELECT_PRIV!='G'
-            AND    rownum<2;
+            IF user IN(:owner,'SYS') or sys_context('userenv','isdba')='TRUE' THEN
+                x:=1;
+            ELSE
+                select /*+opt_param('optimizer_dynamic_sampling' 0)*/
+                    count(1) into x
+                from   table_privileges
+                where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
+                AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
+                AND    SELECT_PRIV!='G'
+                AND    rownum<2;
+            END IF;
 
             IF x=0 THEN
                 IF instr(obj,'PUBLIC.')=1 THEN

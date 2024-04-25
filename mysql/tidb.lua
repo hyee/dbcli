@@ -40,50 +40,51 @@ function tidb:run_sql(sql,args,cmds,files)
     return self.super.run_sql(self,sql,args,cmds,files)
 end
 
+local units={{
+    KB=1024,
+    MB=1024^2,
+    GB=1024^3,
+    TB=1024^4,
+    BYTES=1,
+    BYTE=1,
+    K=1000,
+    M=1000^2,
+    B=1000^3,
+    T=1000^4
+},{
+    MS=1000,
+    ['µs']=1,
+    US=1,
+    S=1000000,
+    SECS=1000000,
+    SEC=1000000,
+    M=60*1000000,
+    MIN=60*1000000,
+    MINUTE=60*1000000,
+    MINUTES=60*1000000,
+    H=3600*1000000,
+    HOUR=3600*1000000,
+    HOURS=3600*1000000,
+    D=24*3600*1000000,
+    DAY=24*3600*1000000,
+    DAYS=24*3600*1000000
+}}
+local function extract_num(val,idx)
+    if not val then return nil end
+    if tostring(val):upper()=='N/A' then return 0 end
+    local num,unit=tostring(val):match("^%s*(%-?[%.0-9]+)%s*(%S+)$")
+    if not num then return tonumber(val) or val end
+    idx=idx or 1
+    unit=units[idx][unit:upper()] or units[idx][unit]
+    if not unit then return val end
+    return tonumber(num)*unit
+end
+
 function tidb:build_json(plan)
     local tree={[config.root]={[config.child]={}}}
     local maps={tree[config.root]}
     local headers=plan[1]
-    local units={{
-        KB=1024,
-        MB=1024^2,
-        GB=1024^3,
-        TB=1024^4,
-        BYTES=1,
-        BYTE=1,
-        K=1000,
-        M=1000^2,
-        B=1000^3,
-        T=1000^4
-    },{
-        MS=1000,
-        ['µs']=1,
-        US=1,
-        S=1000000,
-        SECS=1000000,
-        SEC=1000000,
-        M=60*1000000,
-        MIN=60*1000000,
-        MINUTE=60*1000000,
-        MINUTES=60*1000000,
-        H=3600*1000000,
-        HOUR=3600*1000000,
-        HOURS=3600*1000000,
-        D=24*3600*1000000,
-        DAY=24*3600*1000000,
-        DAYS=24*3600*1000000
-    }}
-    local function extract_num(val,idx)
-        if not val then return nil end
-        if tostring(val):upper()=='N/A' then return 0 end
-        local num,unit=tostring(val):match("^%s*(%-?[%.0-9]+)%s*(%S+)$")
-        if not num then return tonumber(val) or val end
-        idx=idx or 1
-        unit=units[idx][unit:upper()] or units[idx][unit]
-        if not unit then return val end
-        return tonumber(num)*unit
-    end
-
+    
     --find access object field id
     local access_index
     for c,n in ipairs(headers) do
@@ -95,7 +96,7 @@ function tidb:build_json(plan)
 
     local patterns1={'^(%s*(%S[^:]+):%s*(%b{}),?)','^(%s*(%S[^:{}]+):%s*([^,:{}]+),?)'}
     local patterns2={'^(%s*([a-zA-Z0-9 ]+%s*:%s*%S[^,]*)%s*,)','^(%s*([%.a-zA-Z0-9_ ]+)%s*,)'}
-    local node,depth=maps[1],1
+    local node,depth,is_cte=maps[1],1,false
     for i=2,#plan do
         for j,col in ipairs(plan[i]) do
             local name=headers[j]
@@ -104,19 +105,29 @@ function tidb:build_json(plan)
                 local spaces,id=col:rtrim():match('^(.-)(%w%w%w.*)')
                 if spaces then
                     local _,len=spaces:ulen()
-                    depth=len/2+1
-                    for n=#maps,depth+1,-1 do maps[n]=nil end
-
+                    depth=len/2+2
+                    if spaces=='' and i>2 then
+                        is_cte=id:rtrim():find('^CTE%_%d+$') and true or false
+                    end
                     node={[config.child]={}}
+                    if is_cte then
+                        depth=depth+1
+                    end
                     if depth>1 then
                         maps[depth]=node
                     else
                         node=maps[1]
                     end
+                    for n=#maps,depth+1,-1 do maps[n]=nil end
                     if maps[depth-1] then
-                        table.insert(maps[depth-1][config.child],node)
+                        local childs=maps[depth-1][config.child]
+                        table.insert(childs,#childs+(is_cte and depth==3 and 0 or 1),node)
                     end
-                    --col=id
+                    if config.keep_indent~=true then 
+                        col=id
+                    elseif is_cte then
+                        col=(depth==3 and '├─' or '│ ')..col
+                    end
                 end
             elseif lname:find('time',1,true) then
                 col=extract_num(col,2)
@@ -137,7 +148,7 @@ function tidb:build_json(plan)
                     end
                 end
                 col=nil
-            elseif lname=='operator info' then
+            elseif lname=='operator info' and type(col)=='string' then
                 if col:find('^Column#') then
                     col=nil
                 else
@@ -148,6 +159,10 @@ function tidb:build_json(plan)
                             piece,v=(col..','):match(patterns2[2])
                         end
                         if piece then
+                            local piece1,v1=piece:match('^((.-) %s+)%S.*$')
+                            if piece1 then
+                                piece,v=piece1,v1
+                            end
                             col=col:sub(#piece+1):ltrim()
                             node[access]=v
                         end
@@ -203,66 +218,78 @@ function tidb:parse_plan(plan)
         return
     end
     local sub=plan:sub(1,4096):gsub('\r',''):gsub('\t','    ')
+    local pattern,header=nil,{}
     local start_=sub:find(' *|? *id[ |][^\n\r]*[^\n\r]*estRows[ |]')
+    if not start_ then
+        pattern='^([^\n]-)%s+([0-9%.]+)%s+(%S+)%s+(%S*[^\n]*)'
+        header={'id','estRows','task','operator info'}
+        start_=sub:find('%w%w%w[^\n]+\n *└─'..pattern:sub(2))
+    end
     if not start_ then return false end
     plan=plan:sub(start_)
-    plan=plan:gsub('\r',''):gsub('\t','    '):split('\n')
+    plan=plan:gsub('\r',''):gsub('\t','    '):gsub('\n[%- ]*\n','\n'):rtrim():split('\n')
     if plan[1]:trim()=='' then 
         table.remove(plan,1)
     end
-    local header={}
-    local curr,prev=nil
-    local infos,ped={}
     
-    for n,s,c,st,ed in (plan[1]:rtrim()..' '):gsplit('%s+') do
-        if not ped then ped=ed end
-        if n:lower():find('^info') or n:lower():find('^object') then
-            prev.name=prev.name..' '..n
-            prev.stop=ed
-            infos[#infos+1]=#header
-        elseif n:trim()=="|" then
-            --skip
-        elseif n:trim()~="" then
-            header[#header+1]={name=n,start=st-#n,stop=ed}
-            curr=header[#header]
-            prev=curr
+    if not pattern then
+        local curr,prev=nil
+        local infos,ped={}
+        for n,s,c,st,ed in (plan[1]:rtrim()..' '):gsplit('%s+') do
+            if not ped then ped=ed end
+            if n:lower():find('^info') or n:lower():find('^object') then
+                prev.name=prev.name..' '..n
+                prev.stop=ed
+                infos[#infos+1]=#header
+            elseif n:trim()=="|" then
+                --skip
+            elseif n:trim()~="" then
+                header[#header+1]={name=n,start=st-#n,stop=ed}
+                curr=header[#header]
+                prev=curr
+            end
         end
+        if #header==0 then return end
+        for i=#infos,1,-1 do 
+            infos[i]=table.remove(header,infos[i])
+            header[#header+1]=infos[i]
+        end
+        prev.stop=-1
     end
-    if #header==0 then return end
-
-    for i=#infos,1,-1 do 
-        infos[i]=table.remove(header,infos[i])
-        header[#header+1]=infos[i]
-    end
-
-    prev.stop=-1
-    local rows={{}}
-    for i=2,#plan do
+    local rows={pattern and header or {}}
+    for i=pattern and 1 or 2,#plan do
         local row={}
         local line=plan[i]
         local bytes,chars
-        for j,n in ipairs(header) do
-            if i==2 then rows[1][j]=n.name end
-            if j==1 then
-                bytes,chars=line:match('^.- %d+'):ulen()
-                bytes=bytes-chars
-                row[j]=line:sub(n.start,n.stop+bytes)
-            else
-                row[j]=line:sub(n.start+bytes,n.stop+bytes)
-            end
-            row[j]=j==1 and row[j]:rtrim() or row[j]:trim()
-            row[j]=tonumber(row[j]) or row[j]
-            if type(row[j])=='string' and not n.name:lower():find(' info',1,true) then
-                row[j]=row[j]:gsub('%s*N/A%s*',''):gsub('^B$','')
-            end
-            if row[j]=='|' then
-                row[j]=''
+        if pattern then
+            row={line:match(pattern)}
+            --the time field
+            --row[2]=tonumber(row[2]) and tonumber(row[2])*1000 or row[2]
+        else
+            for j,n in ipairs(header) do
+                if i==2 then rows[1][j]=n.name end
+                if j==1 then
+                    bytes,chars=line:match('^.- %d+'):ulen()
+                    bytes=bytes-chars
+                    row[j]=line:sub(n.start,n.stop+bytes)
+                else
+                    row[j]=line:sub(n.start+bytes,n.stop+bytes)
+                end
+                row[j]=j==1 and row[j]:rtrim() or row[j]:trim()
+                row[j]=tonumber(row[j]) or row[j]
+                if type(row[j])=='string' and not n.name:lower():find(' info',1,true) then
+                    row[j]=row[j]:gsub('%s*N/A%s*',''):gsub('^B$','')
+                end
+                if row[j]=='|' then
+                    row[j]=''
+                end
             end
         end
         rows[#rows+1]=row
     end
     --env.set.doset('colsep','|','rowsep','-')
     --grid.print(rows)
+    --print(table.dump(rows))
     self:build_json(rows)
     return true
 end

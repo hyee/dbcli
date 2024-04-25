@@ -46,7 +46,7 @@ DECLARE
     c        SYS_REFCURSOR;
     cnt      PLS_INTEGER := 0;
     tmp      PLS_INTEGER := 0;
-    type     T_PHV IS TABLE OF VARCHAR2(1) INDEX BY VARCHAR2(30);
+    type     T_PHV IS TABLE OF VARCHAR2(30) INDEX BY VARCHAR2(30);
     phvs     T_PHV;
     names    DBMS_SPM.NAME_LIST := DBMS_SPM.NAME_LIST();
     CURSOR finder(V2 VARCHAR2,V3 VARCHAR2) IS
@@ -173,7 +173,7 @@ BEGIN
                    sql_id,
                    plan_hash_value,
                    sql_text,
-                   ''||dbid,
+                   ''||:dbid,
                    ''||(select MAX(snap_id) from dba_hist_sqlstat WHERE sql_id=V2 AND plan_hash_value=a.plan_hash_value AND DBID=:dbid)
             FROM   dba_hist_sql_plan a
             JOIN   dba_hist_sqltext USING(dbid,sql_id)

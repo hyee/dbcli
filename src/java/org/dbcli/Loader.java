@@ -1,6 +1,5 @@
 package org.dbcli;
 
-import com.esotericsoftware.reflectasm.AccessClassLoader;
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.LuaTable;
@@ -11,6 +10,9 @@ import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
 
 import javax.sql.DataSource;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
@@ -29,8 +31,6 @@ import java.util.concurrent.*;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
-import java.awt.*;
-import java.awt.datatransfer.*;
 
 public class Loader {
 
@@ -553,7 +553,7 @@ public class Loader {
             console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
             if (p == null) return false;
             boolean result;
-            if (sql == null) result = ((CallableStatement) p).execute();
+            if (sql == null) result = ((PreparedStatement) p).execute();
             else result = p.execute(sql);
             if (p.isClosed()) throw CancelError;
             return result;

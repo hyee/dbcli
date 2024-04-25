@@ -17,27 +17,40 @@ local config={
     others={}
 }
 
-function xplan.explain(fmt,sql)
+function xplan.explain(...)
+    local args={}
+    for i=1,select('#',...) do
+        local v=select(i,...)
+        if v then
+            args[#args+1]=v=='.' and '' or v
+        end
+    end
+    local sql=args[#args]
+    local fmt=#args>1 and args[1] or ''
+    local schema=#args>2  and args[2] or ''
     local tidb=db.props.tidb and db.C.tidb
-    env.checkhelp(fmt)
-    local options,is_oracle={},true
-    if sql then
-        fmt=fmt:upper()
+    env.checkhelp(sql)
+
+    fmt=fmt:upper()
+    if tidb then
+        fmt=tidb.parse_explain_option(fmt,nil,schema)
+    else
+        fmt=fmt:gsub('.*=','')
         if fmt:upper()=='ANALYZE' or fmt=='EXEC' or fmt=='-EXEC' then
             fmt='ANALYZE'
-        elseif tidb then
-            fmt=tidb.parse_explain_option(fmt)
+            if schema:upper()=='JSON' or schema:upper()=='ROW' or schema:upper()=='TREE' then
+                fmt=fmt..' FORMAT='..(schema:upper()=='ROW' and 'TRADITIONAL' or schema)
+                schema=''
+            end
         else
-            fmt='FORMAT='..fmt:gsub('.*=','')
+            fmt='FORMAT='..(fmt:upper()=='ROW' and 'TRADITIONAL' or fmt)
         end
-        is_oracle=false
-    elseif tidb then
-        sql,fmt=fmt,''
-    else
-        sql=fmt
-        local version=tonumber((db.props.db_version or '5.7'):match("^%d+%.%d"))
-        fmt=version>=8 and 'FORMAT=TREE' or ''
+
+        if schema~='' then
+            fmt=fmt..' FOR SCHEMA '..schema
+        end
     end
+    
     
     env.set.set('feed','off')
     local json,file,typ
@@ -158,10 +171,10 @@ end
 
 function xplan.onload()
     local help=[[
-    Explain SQL execution plan, type 'help @@NAME' for more details. Usage: @@NAME [<options>] [for schema <schema>] [<Id>|<SQL Id>|<SQL Text>|<File>]
+    Explain SQL execution plan, type 'help @@NAME' for more details. Usage: @@NAME [<options>] [<schema>] [<Id>|<SQL Id>|<SQL Text>|<File>]
 
     Options:
-        <format>   : TRADITIONAL / JSON / TREE
+        <format>   : TRADITIONAL/ ROW / JSON / TREE
         ANALYZE    : analyze the execution plan
     Parameters:
         <id>       : connection id from `performance_schema`.`processlist`
@@ -171,7 +184,7 @@ function xplan.onload()
     ]]
     env.set_command(nil,{"XPLAIN","XPLAN"},help,xplan.explain,'__SMART_PARSE__',6,true)
     env.set.init("AUTOPLAN","off",xplan.autoplan,"explain","Controls generating execution plan of the input SQLs",'xplan,analyze,exec,off')
-    env.set.init("AUTOPLANFORMAT","tree",xplan.autoplan,"explain","Controls the output execution plan type when autoplan=on",'oracle,tree,table,json')
+    env.set.init("AUTOPLANFORMAT","tree",xplan.autoplan,"explain","Controls the output execution plan type when autoplan=on",'oracle,tree,row,json')
     env.event.snoop('BEFORE_DB_EXEC',xplan.before_db_exec)
     env.event.snoop('BEFORE_DB_CONNECT',function() auto_generic=nil;env.set.force_set("autoplan",'off') end)
 end

@@ -430,7 +430,7 @@ BEGIN
                 END IF;
                 filename := 'sqlm_' || sq_id ||nullif('_'||keyw,'_')|| '.html';
             ELSE
-                sql_start := nvl(to_char(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
+                sql_start := nvl(to_date(nvl(:V3,:starttime),'yymmddhh24mi'),sysdate-7);
                 report_start;
                 xml := xmltype(DBMS_SQLTUNE.REPORT_SQL_DETAIL(report_level => 'ALL',
                                                       sql_id => sq_id,
