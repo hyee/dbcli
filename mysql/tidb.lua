@@ -26,7 +26,7 @@ local config={
     --sorts=false,        
     percents={"leaf"},
     title='Plan Tree | Conc: Concurrency',
-    --projection="operator info"
+    projection='[Projection]'
 }
 function tidb:ctor()
     self.db=env.getdb()
@@ -96,13 +96,13 @@ function tidb:build_json(plan)
 
     local patterns1={'^(%s*(%S[^:]+):%s*(%b{}),?)','^(%s*(%S[^:{}]+):%s*([^,:{}]+),?)'}
     local patterns2={'^(%s*([a-zA-Z0-9 ]+%s*:%s*%S[^,]*)%s*,)','^(%s*([%.a-zA-Z0-9_ ]+)%s*,)'}
-    local node,depth,is_cte=maps[1],1,false
+    local node,depth,is_cte,spaces,id=maps[1],1,false
     for i=2,#plan do
         for j,col in ipairs(plan[i]) do
             local name=headers[j]
             local lname=name:lower()
             if lname=='id' then
-                local spaces,id=col:rtrim():match('^(.-)(%w%w%w.*)')
+                spaces,id=col:rtrim():match('^(.-)(%w%w%w.*)')
                 if spaces then
                     local _,len=spaces:ulen()
                     depth=len/2+2
@@ -149,8 +149,8 @@ function tidb:build_json(plan)
                 end
                 col=nil
             elseif lname=='operator info' and type(col)=='string' then
-                if col:find('^Column#') then
-                    col=nil
+                if id:find('^Projection_%d+') or id:find('^Sort_%d+')  or id:find('^[SH][oa][rs][th]Agg_%d+') then
+                    node['[Projection]'],col=col,nil
                 else
                     col=col:gsub(',%s*start_time:.*','')
                     if (plan[i][access_index or -1] or '')=='' then

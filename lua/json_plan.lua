@@ -359,7 +359,7 @@ function plan.parse_json_plan(json,options)
         end
     end
 
-    env.set.set("COLWRAP",200)
+    env.set.set("COLWRAP",180)
     if #result>1 then
         print("=====================")
         print("| Other Information |")
@@ -369,7 +369,7 @@ function plan.parse_json_plan(json,options)
     end
 
     if #projection>1 then
-        env.set.set("COLWRAP",240)
+        env.set.set("COLWRAP",200)
         print("=====================")
         print("|    Projections    |")
         print("=====================")

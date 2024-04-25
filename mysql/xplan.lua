@@ -8,6 +8,14 @@ local config={
     indent_width=2,
     processor=function(name,value,row,node)
         if not name and node then
+            local removed=0
+            for n,v in pairs(node) do
+                if n:find(" Removed ",1,true) then
+                    removed=removed+v
+                end
+            end
+            if removed>0 then node["Rows Removed"]=removed end
+
             local base,schema="Index Name",node["Schema"]
             if node['Relation Name'] and schema then
                 if node['Alias']==node['Relation Name'] then node['Alias']=nil end
@@ -42,6 +50,7 @@ local config={
         {"Index Name","Object|Name"},'|',
         {"Alias","Obj|Alias"},'|',
         {"Plan Rows","Est|Rows",format='TMB1'},{"Actual Rows","Act|Rows",format='TMB1'},
+        {"Rows Removed","Removed|Rows",format='TMB1'}, '|',
         {"Actual Loops","Act|Loops",format='TMB1'},'|',
         {"Actual Time","Leaf|Time",format='usmhd1'} ,'|',
         {"Actual Startup Time","Start|Time",format='usmhd1'},{"Actual Total Time","Total|Time",format='usmhd1'},'|',
@@ -133,20 +142,28 @@ function xplan.explain(...)
             end
         end
         local rows=db.resultset:rows(res,-1)
-        if tidb then
-            return tidb:parse_plan(rows)
-        end
-        
-        if version<8 then return env.grid.print(rows) end
-        json=xplan.parse_plan_tree(rows[2][1])
-        if not json or
-           not json:find(config.root,1,true) or 
-           not json:find(config.child,1,true)
-        then return print(rows[2][1]) end
+        return xplan.print_stmt(tidb,sql,rows)
     end
     
     env.json_plan.parse_json_plan(json,config)
 end
+
+function xplan.print_stmt(tidb,stmt,rows)
+    if tidb then
+        return tidb:parse_plan(rows)
+    end
+    if not stmt:find('FORMAT=TREE',1,true) then
+        return env.grid.print(rows)
+    end
+    rows=rows[2][1]
+    local json=xplan.parse_plan_tree(rows)
+    if not json or
+       not json:find(config.root,1,true) or 
+       not json:find(config.child,1,true)
+    then return print(rows) end
+    env.json_plan.parse_json_plan(json,config)
+end
+
 
 function xplan.autoplan(name,value)
     if name=='AUTOPLANFORMAT' then
@@ -184,26 +201,13 @@ function xplan.before_db_exec(obj)
     end
     
     local res=db:exec(stmt,args1,params1)
-
     local rows=db.resultset:rows(res,-1)
-    if db.props.tidb and autoplan_format=='oracle' then
-        return db.C.tidb:parse_plan(rows)
+    if autoplan_format~='oracle' then
+        return env.grid.print(rows)
     end
-    
-    local rows=db.resultset:rows(db:exec(stmt,args1,params1),-1)[2][1]
-
-    if autoplan_format~='oracle' or version<8 then
-        print(rows)
-    end
-
-    local json=xplan.parse_plan_tree(rows)
-    if not json or
-       not json:find(config.root,1,true) or 
-       not json:find(config.child,1,true)
-    then return print(rows) end
-
-    env.json_plan.parse_json_plan(json,config)
+    xplan.print_stmt(tidb,stmt,rows)
 end
+
 
 function xplan.parse_plan_tree(text)
     local pos=text:find('[^\n\r]+%=%d+[^\n\r]+ rows=%d+')
@@ -321,8 +325,10 @@ function xplan.parse_plan_tree(text)
         local childs=node[config.child]
         if node["Node Type"]=='Filter' and #childs==1 then
             for k,v in pairs(childs[1]) do
-                if not node[k]  or replace_list[k] then
+                if not node[k] or replace_list[k] then
                     node[k]=v
+                elseif k=="Actual Rows" then
+                    node['[Filter Removed Rows]']=tonumber(v)-tonumber(node[k])
                 end
             end
         end
