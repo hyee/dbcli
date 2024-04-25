@@ -7,10 +7,46 @@ local config={
     child='Plans',
     indent_width=2,
     processor=function(name,value,row,node)
-        
+        if not name and node then
+            local base,schema="Index Name",node["Schema"]
+            if node['Relation Name'] and schema then
+                if node['Alias']==node['Relation Name'] then node['Alias']=nil end
+                node['Relation Name'],node["Schema"]=schema..'.'..node['Relation Name'],nil
+            end
+            for _,n in ipairs{'Relation Name','Function Name','CTE Name','Subplan Name','Alias'} do
+                local name=node[n]
+                if name then
+                    if not node[base] then
+                        if n=="Relation Name" then
+                            node[base]=name
+                        elseif n=='Function Name' then
+                            node[base]=name..'()'
+                        elseif n=='CTE Name' then
+                            node[base]='['..name..']'
+                        elseif n=='Alias' then
+                            node[base]='> '..name
+                        else
+                            node[base]='<'..name..'>'
+                        end
+                        if node['Alias']==name then node['Alias']=nil end
+                        node[n]=''
+                        break
+                    end
+                end
+            end
+        end
+        return value
     end,
     columns={
-            },
+        {"Node Type","Plan|Operation"},'|',
+        {"Index Name","Object|Name"},'|',
+        {"Alias","Obj|Alias"},'|',
+        {"Plan Rows","Est|Rows",format='TMB1'},{"Actual Rows","Act|Rows",format='TMB1'},
+        {"Actual Loops","Act|Loops",format='TMB1'},'|',
+        {"Actual Time","Leaf|Time",format='usmhd1'} ,'|',
+        {"Actual Startup Time","Start|Time",format='usmhd1'},{"Actual Total Time","Total|Time",format='usmhd1'},'|',
+        {"Costs","Leaf|Cost",format='TMB2'},{"Startup Cost","Start|Cost",format='TMB2'},{"Total Cost","Total|Cost",format='TMB2'},'|',
+    },
     excludes={},
     percents={},
     title='Plan Tree',
@@ -61,21 +97,14 @@ function xplan.explain(...)
         env.checkerr(typ=='file','Target location is not a file: '..file)
         local succ,data=pcall(loader.readFile,loader,file,10485760)
         env.checkerr(succ,tostring(data))
-        local json1=data:match('%b{}')
-        local json2=data:match('%b[]')
-        if not json1 or not json2 then
-            json=json1 or json2
-        else
-            json=#json1>#json2 and json1 or json2
-        end
 
         if db.C.tidb:parse_plan(data)~=false then
             return
         end
 
         json=xplan.parse_plan_tree(data) or json
-        env.checkerr(json,"Cannot find valid JSON data from file "..file)
-        env.checkerr(json:find(config.root,1,true) and json:find(config.root,1,true),"Invalid execution plan in JSON format.")
+        env.checkerr(json,"Cannot find valid plan data from file "..file)
+        env.checkerr(json:find(config.root,1,true) and json:find(config.child,1,true),"Invalid execution plan.")
     else
         if tonumber(sql) then
             sql='FOR CONNECTION '..sql
@@ -135,9 +164,8 @@ function xplan.before_db_exec(obj)
     local stmt=string.format('EXPLAIN %s %s \n%s',
         tidb and tidb.parse_explain_option(is_analyze) or version>=8 and is_analyze  or '',
         tidb and tidb.parse_explain_option(nil,autoplan_format) or
-        version>=8 and is_analyze or
-       ((autoplan_format=='oracle' or autoplan_format=='json') and 'FORMAT=JSON' or
-        (autoplan_format=='table' or version<8) and 'FORMAT=TRADITIONAL') or
+       --((autoplan_format=='oracle' or autoplan_format=='json') and 'FORMAT=JSON' or
+        ((autoplan_format=='table' or version<8) and 'FORMAT=TRADITIONAL') or
         'FORMAT=TREE',
         sql)
     if is_analyze and autoplan=='analyze' then
@@ -154,19 +182,144 @@ function xplan.before_db_exec(obj)
     if db.props.tidb and autoplan_format=='oracle' then
         return db.C.tidb:parse_plan(rows)
     end
-    return env.grid.print(rows)
---[[--
+    
+    local rows=db.resultset:rows(db:exec(stmt,args1,params1),-1)[2][1]
+
     if autoplan_format~='oracle' then
-        return db:query(stmt,args1,params1)
+        print(rows)
     end
 
-    local rows=db.resultset:rows(db:exec(stmt,args1,params1),-1)
-    env.json_plan.parse_json_plan(rows[2][1],config)
---]]--
+    local json=xplan.parse_plan_tree(rows)
+    if not json or
+       not json:find(config.root,1,true) or 
+       not json:find(config.child,1,true)
+    then return print(rows) end
+
+    env.json_plan.parse_json_plan(json,config)
 end
 
 function xplan.parse_plan_tree(text)
-    
+    local pos=text:find('[^\n\r]+%=%d+[^\n\r]+ rows=%d+')
+    if not pos then return nil end
+    text=text:sub(pos)
+    local tree={[config.root]={[config.child]={}}}
+    local maps={tree[config.root]}
+    local indent,node=0,maps[1]
+    local init_space=nil
+    for line,_,num in text:gsplit("[\n\r]+") do
+        if line:trim()=='' then break end
+        local space,suffix=line:match('^(%s*)%->%s*(.-)%s*$')
+        if not space then 
+            print('Unexpected line #'..num..': '..line) 
+            return
+        end
+
+        line=suffix
+        if init_space==nil then
+            init_space=#space
+            indent=2
+        else
+            indent=math.max(2,math.floor((#space-init_space)/4)+2)
+        end
+        for i=#maps,indent+1,-1 do
+            maps[i]=nil
+        end
+
+        node={[config.child]={}}
+        maps[indent]=node
+        if maps[indent-1] then
+            table.insert(maps[indent-1][config.child],node)
+        else
+            print("Missing parent node at line #"..num..": ",indent,#space,line)
+        end
+        
+        local node_type,costs=line:match('^(.-)%s+(%(.-)%)$')
+        if not node_type then 
+            node_type=line:match('^(%S+)%s*$')
+        end
+        if not node_type then
+            print("Cannot find cost info in line #"..num..': '..line)
+        else
+            local name,schema,tab=node_type:match('^(.*)%s+on%s+(.-)$')
+            if name then
+                node_type=name
+                name,tab=schema:match('^(%S+)%.(.+)$')
+                if tab then
+                    schema=tab
+                    node["Schema"]=name
+                end
+                name,tab=schema:match("^(.*)%s+using%s+(.-)$")
+                if name then
+                    if tab=='PRIMARY' then
+                        schema=name..'(PK)'
+                    elseif tab~=name then
+                        schema=name..'('..tab..')'
+                    else
+                        schema=name
+                    end
+                end
+
+                tab,name=schema:match('^(%S+)%s+(%S-)$')
+                if tab and not schema:find('^".*"$') then
+                    node["Relation Name"],node["Alias"]=tab,name
+                else
+                    node["Relation Name"]=schema
+                end
+                
+            end
+            local comma
+            node["Node Type"],comma=node_type:match('^(.-)%s*(:?)%s*$')
+            if costs then
+                local rows,width
+                costs=costs:gsub('%(never executed.*','')
+                local cost,actual_cost=costs:match('^(.*)(%([aA]ctual time.*)$')
+                if actual_cost then
+                    costs=cost
+                    cost,rows,width=actual_cost:match("[aA]ctual time=(%S+)%s+rows=(%S+)%s+loops=(%S+)")
+                    if cost then
+                        node["Actual Startup Time"],node["Actual Total Time"]=cost:match("^(.*)%.%.(.*)$")
+                        node["Actual Rows"],node["Actual Loops"]=rows,width
+                    end
+                end
+                
+                width,actual_cost=costs:match("^(.*)(%s*%(.-)$")
+                if actual_cost then
+                    cost,rows=actual_cost:match("%(cost=(%S+).*%s+rows=(%d+)")
+                    if cost then
+                        costs=width
+                        if cost:find('..',1,true) then
+                            node["Startup Cost"],node["Total Cost"]=cost:match("^(.*)%.%.(.*)$")
+                        else
+                            node["Total Cost"]=cost
+                        end
+                        node["Plan Rows"]=rows
+                    else
+                        costs=width..actual_cost
+                    end
+                end
+                if costs:trim()~='' then
+                    node[comma~=':' and 'Access' or node["Node Type"]]=costs
+                end
+            end
+        end
+    end
+
+    local replace_list={["Node Type"]=1,[config.child]=1,['Actual Startup Time']=1,['Startup Cost']=1}
+    local remove_filter=function(node,func)
+        local childs=node[config.child]
+        if node["Node Type"]=='Filter' and #childs==1 then
+            for k,v in pairs(childs[1]) do
+                if not node[k]  or replace_list[k] then
+                    node[k]=v
+                end
+            end
+        end
+        for _,child in ipairs(childs) do
+            func(child,func)
+        end
+    end
+    remove_filter(maps[1],remove_filter)
+    return env.json.encode(tree)
 end
 
 function xplan.onload()

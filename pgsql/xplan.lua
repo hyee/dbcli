@@ -184,7 +184,7 @@ function xplan.explain(fmt,sql)
         end
         json=xplan.parse_plan_tree(data) or json
         env.checkerr(json,"Cannot find valid JSON data from file "..file)
-        env.checkerr(json:find(config.root,1,true) and json:find(config.root,1,true),"Invalid execution plan in JSON format.")
+        env.checkerr(json:find(config.root,1,true) and json:find(config.child,1,true),"Invalid execution plan in JSON format.")
     else
         fmt='('..table.concat(options,',')..')'
         if tonumber(sql) then
@@ -290,7 +290,7 @@ function xplan.before_db_exec(obj)
 end
 
 function xplan.parse_plan_tree(text)
-    local pos=text:find('[^\n\r]+%(cost=[^\n\r]+ rows=[^\n\r]+ width=')
+    local pos=text:find('[^\n\r]+%(cost=[^\n\r]+ rows=%d+ [^\n\r]+width=')
     if not pos then return nil end
     text=text:sub(pos)
     local tree={[config.root]={[config.child]={}}}
@@ -370,8 +370,7 @@ function xplan.parse_plan_tree(text)
                         node["Actual Rows"],node["Actual Loops"]=rows,width
                     end
                 end
-                costs=costs:gsub('%b[]',function(s)
-                    return s:gsub('%s+','') end)
+                costs=costs:gsub('%b[]',function(s) return s:gsub('%s+','') end)
                 apply(node,nil,costs:trim():sub(2,-2))
             end
         else
