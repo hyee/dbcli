@@ -347,7 +347,7 @@ function xplan.parse_plan_tree(text)
                         node["Schema"]=name
                     end
                     tab,name=schema:match('^(%S+)%s+(%S-)$')
-                    if tab and not schema:find('^".*"$') then
+                    if tab and not schema:find('^%W.*%W$') then
                         node["Relation Name"],node["Alias"]=tab,name
                     else
                         node["Relation Name"]=schema

@@ -65,6 +65,7 @@ function xplan.explain(...)
     local fmt=#args>1 and args[1] or ''
     local schema=#args>2  and args[2] or ''
     local tidb=db.props.tidb and db.C.tidb
+    local version=tonumber((db.props.db_version or '5.0'):match("^%d+%.%d"))
     env.checkhelp(sql)
 
     fmt=fmt:upper()
@@ -79,7 +80,7 @@ function xplan.explain(...)
                 schema=''
             end
         else
-            fmt='FORMAT='..(fmt:upper()=='ROW' and 'TRADITIONAL' or fmt)
+            fmt='FORMAT='..((fmt:upper()=='ROW' or version<8) and 'TRADITIONAL' or (fmt=='' and 'TREE') or fmt)
         end
 
         if schema~='' then
@@ -135,7 +136,13 @@ function xplan.explain(...)
         if tidb then
             return tidb:parse_plan(rows)
         end
-        return env.grid.print(rows)
+        
+        if version<8 then return env.grid.print(rows) end
+        json=xplan.parse_plan_tree(rows[2][1])
+        if not json or
+           not json:find(config.root,1,true) or 
+           not json:find(config.child,1,true)
+        then return print(rows[2][1]) end
     end
     
     env.json_plan.parse_json_plan(json,config)
@@ -185,7 +192,7 @@ function xplan.before_db_exec(obj)
     
     local rows=db.resultset:rows(db:exec(stmt,args1,params1),-1)[2][1]
 
-    if autoplan_format~='oracle' then
+    if autoplan_format~='oracle' or version<8 then
         print(rows)
     end
 
@@ -260,7 +267,7 @@ function xplan.parse_plan_tree(text)
                 end
 
                 tab,name=schema:match('^(%S+)%s+(%S-)$')
-                if tab and not schema:find('^".*"$') then
+                if tab and not schema:find('^%W.*%W$') then
                     node["Relation Name"],node["Alias"]=tab,name
                 else
                     node["Relation Name"]=schema
@@ -268,7 +275,12 @@ function xplan.parse_plan_tree(text)
                 
             end
             local comma
-            node["Node Type"],comma=node_type:match('^(.-)%s*(:?)%s*$')
+            node["Node Type"],comma,suffix=node_type:match('^(.-)%s*(:)(.*)$')
+            if not comma then
+                node["Node Type"],comma=node_type,''
+            elseif suffix~='' then 
+                node['['..node["Node Type"]..']']=suffix:trim()
+            end
             if costs then
                 local rows,width
                 costs=costs:gsub('%(never executed.*','')
@@ -297,8 +309,8 @@ function xplan.parse_plan_tree(text)
                         costs=width..actual_cost
                     end
                 end
-                if costs:trim()~='' then
-                    node[comma~=':' and 'Access' or node["Node Type"]]=costs
+                if costs:trim()~='' and costs:trim()~='(no condition)' then
+                    node[comma~=':' and '[Access]' or ('['..node["Node Type"]..']')]=costs
                 end
             end
         end
