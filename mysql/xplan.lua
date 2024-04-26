@@ -1,5 +1,6 @@
 local db,cfg=env.getdb(),env.set
 local autoplan,autoplan_format='off','oracle'
+local event=env.event.callback
 local auto_generic=nil
 local xplan={}
 local config={
@@ -108,9 +109,8 @@ function xplan.explain(...)
         local succ,data=pcall(loader.readFile,loader,file,10485760)
         env.checkerr(succ,tostring(data))
 
-        if db.C.tidb:parse_plan(data)~=false then
-            return
-        end
+        data=event("ON_PARSE_PLAN",{data}) [1]
+        if not data then return end
 
         json=xplan.parse_plan_tree(data) or json
         env.checkerr(json,"Cannot find valid plan data from file "..file)
@@ -142,20 +142,19 @@ function xplan.explain(...)
             end
         end
         local rows=db.resultset:rows(res,-1)
-        return xplan.print_stmt(tidb,sql,rows)
+        return xplan.print_stmt(sql,rows)
     end
     
     env.json_plan.parse_json_plan(json,config)
 end
 
-function xplan.print_stmt(tidb,stmt,rows)
-    if tidb then
-        return tidb:parse_plan(rows)
-    end
+function xplan.print_stmt(stmt,rows)
+    rows=event("ON_PARSE_PLAN",{rows,stmt}) [1]
+    if not rows then return end
     if not stmt:find('FORMAT=TREE',1,true) then
         return env.grid.print(rows)
     end
-    rows=rows[2][1]
+    rows=rows[2][#rows[2]]
     local json=xplan.parse_plan_tree(rows)
     if not json or
        not json:find(config.root,1,true) or 
@@ -205,7 +204,7 @@ function xplan.before_db_exec(obj)
     if autoplan_format~='oracle' then
         return env.grid.print(rows)
     end
-    xplan.print_stmt(tidb,stmt,rows)
+    xplan.print_stmt(stmt,rows)
 end
 
 

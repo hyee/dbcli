@@ -21,12 +21,12 @@ local config={
             {'loops',"Act|Loops",format='TMB2'},'|',
             {'concurrency',"Act|Conc",format='TMB2'},'|',
             {'memory','Memory',format='KMG2'},{'disk','Disk',format='KMG2'},'|',
-            {'operator info',"Operator Info",format='TMB2'},'|'
+            {'operator info',"Operator Info"},'|'
             },
     --sorts=false,        
     percents={"leaf"},
     title='Plan Tree | Conc: Concurrency',
-    projection='[Projection]'
+    projection='[PROJ]'
 }
 function tidb:ctor()
     self.db=env.getdb()
@@ -150,7 +150,7 @@ function tidb:build_json(plan)
                 col=nil
             elseif lname=='operator info' and type(col)=='string' then
                 if id:find('^Projection_%d+') or id:find('^Sort_%d+')  or id:find('^[SH][oa][rs][th]Agg_%d+') then
-                    node['[Projection]'],col=col,nil
+                    node['[PROJ]'],col=col,nil
                 else
                     col=col:gsub(',%s*start_time:.*','')
                     if (plan[i][access_index or -1] or '')=='' then
@@ -178,6 +178,7 @@ end
 
 function tidb:parse_cursor(plan)
     local header=plan[1]
+    if #header==1 and #plan==2 then return false end
     local adjust,adjust_list=false,{}
     local cols=#header
     for i=1,cols do
@@ -307,6 +308,15 @@ function tidb.parse_explain_option(analyze,format)
     else
         return ''
     end
+end
+
+function tidb:onload()
+    env.event.snoop('ON_PARSE_PLAN',function(self,data)
+        if  type(data[2])=='string' and (data[2]:find('FORMAT=TREE',1,1) or data[2]:find('FORMAT=TRADITIONAL')) then
+            return
+        end
+        if data[1] and self:parse_plan(data[1])~=false then data[1]=nil end 
+    end,self)
 end
 
 function tidb:finalize()

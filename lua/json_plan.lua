@@ -228,9 +228,9 @@ function plan.parse_json_plan(json,options)
         if header[col]:match(sep_pattern) and header[col-1]:match(sep_pattern) then
             table.remove(header,col)
             table.remove(indexes,col)
+            col_seq=col_seq-1
         end
     end
-
     --build grid results bases on column list and sorts
     local result,additions={header},{}
     local id_fmt='%s %'..#tostring(#rows)..'d'
@@ -271,7 +271,6 @@ function plan.parse_json_plan(json,options)
                 org[n]='|      '
             end
         end
-        
         for i=#row+1,col_seq do
             local index=indexes[i]
             if type(index)=='table' then

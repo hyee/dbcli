@@ -4,6 +4,8 @@
     Install DBMS_PROFILER : @?/rdbms/admin/profload.sql  --as sysdba
     Install record tables : @?/rdbms/admin/proftab.sql   --on target schema to run the profile
 
+    Also refer to dbcli/sqlplus/profrep.sql to generate more report details.
+    
     Example:
         @@NAME "dbms_lock.sleep(10);dbms_session.sleep(10)"
     --[[
@@ -14,6 +16,7 @@
     --]]
 ]]*/
 set feed off
+COL total_time,MIN_TIME,MAX_TIME for usmhd2
 VAR cur REFCURSOR
 DECLARE
     run_id INT;
@@ -31,6 +34,7 @@ BEGIN
             run_id := SYS.DBMS_PROFILER.start_profiler(c);
             BEGIN
                 EXECUTE IMMEDIATE 'BEGIN '||regexp_replace(:V1,';\s*$')||';END;';
+                SYS.DBMS_PROFILER.FLUSH_DATA;
                 run_id := SYS.DBMS_PROFILER.stop_profiler;
             EXCEPTION WHEN OTHERS THEN
                 run_id := SYS.DBMS_PROFILER.stop_profiler;
@@ -42,7 +46,7 @@ BEGIN
 
         OPEN :cur FOR
             WITH SRC AS
-             (SELECT /*+MATERIALIZE no_merge(u) opt_param('cursor_sharing' 'force')*/
+             (SELECT /*+MATERIALIZE no_merge(u)*/
                     U.*, EXTRACTVALUE(b.COLUMN_VALUE,'//TEXT') text,EXTRACTVALUE(b.COLUMN_VALUE,'//LINE')+0 line#,EXTRACTVALUE(b.COLUMN_VALUE,'//SUB_NAME') subname
               FROM  (SELECT * FROM PLSQL_PROFILER_UNITS WHERE RUNID = run_id) u,
                      TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
@@ -56,24 +60,26 @@ BEGIN
                 SELECT /*+ORDERED use_hash(dat src) MATERIALIZE*/
                          src.unit_owner, src.unit_name, dat.line#, dat.TOTAL_OCCUR,unit_number,
                          rownum r,
-                         LTRIM(RTRIM(to_char(NUMTODSINTERVAL(round(dat.TOTAL_TIME * 1E-9,3), 'SECOND')), ':0.'), '0+') TOTAL_TIME,
-                         LTRIM(RTRIM(to_char(NUMTODSINTERVAL(round(dat.MIN_TIME * 1E-9,3), 'SECOND')), ':0.'), '0+') MIN_TIME,
-                         LTRIM(RTRIM(to_char(NUMTODSINTERVAL(round(dat.MAX_TIME * 1E-9,3), 'SECOND')), ':0.'), '0+') MAX_TIME,
+                         dat.TOTAL_TIME * 1E-3 TOTAL_TIME,
+                         dat.MIN_TIME * 1E-3 MIN_TIME,
+                         dat.MAX_TIME * 1E-3 MAX_TIME,
                          regexp_substr(src.text,'[^'||chr(10)||']+') text
                 FROM   PLSQL_PROFILER_DATA dat
                 JOIN   src
                 USING  (RUNID, UNIT_NUMBER)
                 WHERE  RUNID = run_id AND dat.line#=nvl(src.line#,dat.line#))
-            SELECT unit_number unit#,unit_owner,unit_name,subname,line#,total_occur,total_time,min_time ,max_time,text
-            FROM(
-                SELECT /*+ordered use_hash(rs src)*/
-                      rs.*,row_number() over(partition by rs.r order by src.line# desc) seq, src.subname
-                FROM rs, src
-                WHERE rs.unit_number=src.unit_number(+)
-                AND   rs.line#>=src.line#(+)
-                AND   src.subname(+) IS NOT NULL
-            ) WHERE SEQ=1
-            ORDER BY &V2 DESC NULLS LAST;
+            SELECT * FROM (
+                SELECT unit_number unit#,unit_owner,unit_name,subname,line#,total_occur,total_time,min_time ,max_time,text
+                FROM(
+                    SELECT /*+ordered use_hash(rs src)*/
+                        rs.*,row_number() over(partition by rs.r order by src.line# desc) seq, src.subname
+                    FROM  rs, src
+                    WHERE rs.unit_number=src.unit_number(+)
+                    AND   rs.line#>=src.line#(+)
+                    AND   src.subname(+) IS NOT NULL
+                ) WHERE SEQ=1
+                ORDER BY &V2 DESC NULLS LAST
+            ) WHERE ROWNUM<=100;
     END IF;
 END;
 /

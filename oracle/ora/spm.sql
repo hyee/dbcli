@@ -253,7 +253,7 @@ BEGIN
             v3 := null;
         END IF;
         OPEN c FOR
-            SELECT * FROM (
+            SELECT /*+opt_param('DYNAMIC_SAMPLING' 7)*/ * FROM (
                 SELECT regexp_replace(plan_name,'PLAN_(.{13})','PLAN_$PROMPTCOLOR$\1$NOR$') "PLAN_NAME (SQL_Id:13,PHV:8)",
                        ''||to_number(regexp_substr(plan_name,'(.{8})$'),'fmxxxxxxxx') plan_hash_2,
                        signature,

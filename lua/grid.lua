@@ -681,10 +681,19 @@ function grid:add(row)
                         rs[k][1] = v
                         v = rs[k]
                     end
-                    local siz = lines - #v
+                    local siz=lines-#v
                     for j = 1, siz do
                         if headind == 0 then
-                            table.insert(v, 1, colsize[k][3] or '')
+                            local org=v[1]
+                            if #org>0 and org==colsize[k][3] then
+                                if (k==1 or rs[k-1][siz-j+1]:trim()=='') and (type(rs[k+1])~='table' or rs[k+1][siz-j+1]:trim()=='') then
+                                    table.insert(v, 1,'')
+                                else
+                                    table.insert(v, 1, colsize[k][3] or '')
+                                end
+                            else
+                                table.insert(v, 1, colsize[k][3] or '')
+                            end
                         else
                             v[#v + 1] = ""
                         end
@@ -849,7 +858,7 @@ function grid:wellform(col_del, row_del)
         prev=v
         max_siz = max_siz < siz and siz or max_siz
     end
-    if prev_none_zero<=prev_sep then 
+    if prev_none_zero<=prev_sep and prev_sep<#colsize then 
         for k,v in pairs(seps) do
             if k>=prev_none_zero and #v>0 then 
                 seps[k],title_dels[k]='',''
@@ -891,7 +900,6 @@ function grid:wellform(col_del, row_del)
     for k, v in ipairs(result) do
         local filter_flag, match_flag = 1, 0
         while #v < #colsize do v[#v+1]='' end
-
         local is_row_sep
         if v.sep then
             is_row_sep=v.sep
@@ -907,11 +915,6 @@ function grid:wellform(col_del, row_del)
             end
         end
         --adjust the title style(middle)
-        for k1,v1 in pairs(seps) do
-            if not (k1==1 and is_row_sep) then
-                v[k1]=is_row_sep or v1
-            end
-        end
         local fmt1
         if v[0] == 0 then
             for col, value in ipairs(v) do
@@ -925,6 +928,11 @@ function grid:wellform(col_del, row_del)
                 end
             end
         elseif is_row_sep then
+            for k1,v1 in pairs(seps) do
+                if not (k1==1 and is_row_sep) then
+                    v[k1]=is_row_sep or v1
+                end
+            end
             fmt1=calc_col_sep(fmt,is_row_sep)
             local c=is_row_sep
             for k1,v1 in ipairs(title_dels) do
