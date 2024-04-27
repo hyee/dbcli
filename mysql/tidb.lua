@@ -1,6 +1,6 @@
 local db=env.getdb()
 local tidb=env.class(db.C.sql)
-
+local parser=env.json_plan
 local access='access object'
 local config={
     root='Plan',
@@ -16,15 +16,16 @@ local config={
             {'task',"Task|Name"},'|',
             {'estCost',"Est|Cost",format='TMB2'},'|',
             {'estRows',"Est|Rows",format='TMB2'},{'actRows',"Act|Rows",format='TMB2'},'|',
-            {'leaf',"Leaf|Time",format='usmhd2'},'|',
+            {parser.leaf,"Leaf|Time",format='usmhd2'},'|',
             {'time',"Act|Time",format='usmhd2'},'|',
             {'loops',"Act|Loops",format='TMB2'},'|',
             {'concurrency',"Act|Conc",format='TMB2'},'|',
             {'memory','Memory',format='KMG2'},{'disk','Disk',format='KMG2'},'|',
             {'operator info',"Operator Info"},'|'
             },
-    --sorts=false,        
-    percents={"leaf"},
+    --sorts=false,
+    leaf_time_based="time",
+    percents={parser.leaf},
     title='Plan Tree | Conc: Concurrency',
     projection='[PROJ]'
 }
@@ -140,11 +141,6 @@ function tidb:build_json(plan)
                     node[k]=extract_num(v,k:find('time') and 2 or 1)
                     if k:lower()=='concurrency' then 
                         node[k]=tonumber(node[k]) --set as nil in case of non-numeric
-                    elseif k:lower()=='time' and type(node[k])=='number' then
-                        node['leaf']=node[k]
-                        if depth>1 and maps[depth-1].leaf then
-                            maps[depth-1].leaf=math.max(0,maps[depth-1].leaf-node[k])
-                        end
                     end
                 end
                 col=nil
@@ -173,7 +169,7 @@ function tidb:build_json(plan)
         end
     end
     --print(table.dump(tree))
-    env.json_plan.parse_json_plan(env.json.encode(tree),config)
+    parser.parse_json_plan(env.json.encode(tree),config)
 end
 
 function tidb:parse_cursor(plan)
@@ -290,7 +286,6 @@ function tidb:parse_plan(plan)
     end
     --env.set.doset('colsep','|','rowsep','-')
     --grid.print(rows)
-    --print(table.dump(rows))
     self:build_json(rows)
     return true
 end

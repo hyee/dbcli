@@ -1,8 +1,8 @@
 local db,cfg=env.getdb(),env.set
 local autoplan,autoplan_format='off','oracle'
 local event=env.event.callback
-local auto_generic=nil
 local xplan={}
+local parser=env.json_plan
 local config={
     root='Plan',
     child='Plans',
@@ -53,12 +53,13 @@ local config={
         {"Plan Rows","Est|Rows",format='TMB1'},{"Actual Rows","Act|Rows",format='TMB1'},
         {"Rows Removed","Removed|Rows",format='TMB1'}, '|',
         {"Actual Loops","Act|Loops",format='TMB1'},'|',
-        {"Actual Time","Leaf|Time",format='usmhd1'} ,'|',
+        {parser.leaf,"Leaf|Time",format='usmhd1'} ,'|',
         {"Actual Startup Time","Start|Time",format='usmhd1'},{"Actual Total Time","Total|Time",format='usmhd1'},'|',
         {"Costs","Leaf|Cost",format='TMB2'},{"Startup Cost","Start|Cost",format='TMB2'},{"Total Cost","Total|Cost",format='TMB2'},'|',
     },
+    leaf_time_based={"Actual Startup Time","Actual Total Time"},
     excludes={},
-    percents={},
+    percents={parser.leaf},
     title='Plan Tree',
     others={}
 }
@@ -145,7 +146,7 @@ function xplan.explain(...)
         return xplan.print_stmt(sql,rows)
     end
     
-    env.json_plan.parse_json_plan(json,config)
+    parser.parse_json_plan(json,config)
 end
 
 function xplan.print_stmt(stmt,rows)
@@ -160,7 +161,7 @@ function xplan.print_stmt(stmt,rows)
        not json:find(config.root,1,true) or 
        not json:find(config.child,1,true)
     then return print(rows) end
-    env.json_plan.parse_json_plan(json,config)
+    parser.parse_json_plan(json,config)
 end
 
 
@@ -292,7 +293,9 @@ function xplan.parse_plan_tree(text)
                     costs=cost
                     cost,rows,width=actual_cost:match("[aA]ctual time=(%S+)%s+rows=(%S+)%s+loops=(%S+)")
                     if cost then
-                        node["Actual Startup Time"],node["Actual Total Time"]=cost:match("^(.*)%.%.(.*)$")
+                        local start_,end_=cost:match("^(.*)%.%.(.*)$")
+                        node["Actual Startup Time"],node["Actual Total Time"]=tonumber(start_)*1000,tonumber(end_)*1000
+                        
                         node["Actual Rows"],node["Actual Loops"]=rows,width
                     end
                 end
@@ -320,9 +323,10 @@ function xplan.parse_plan_tree(text)
     end
 
     local replace_list={["Node Type"]=1,[config.child]=1,['Actual Startup Time']=1,['Startup Cost']=1}
+    local replace_nodes={Filter=1,Hash=1}
     local remove_filter=function(node,func)
         local childs=node[config.child]
-        if node["Node Type"]=='Filter' and #childs==1 then
+        if replace_nodes[node["Node Type"]] and #childs==1 then
             for k,v in pairs(childs[1]) do
                 if not node[k] or replace_list[k] then
                     node[k]=v

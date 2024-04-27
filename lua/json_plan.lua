@@ -1,5 +1,5 @@
 local env=env
-local plan={}
+local plan={leaf='LEAF TIME'}
 --[[--
     JSON structure:
     {
@@ -31,6 +31,8 @@ function plan.parse_json_plan(json,options)
     local n,id,rows,ord,counter=0,1,{},0,0
     local maps,projection={},{{'Id','Projection'}}
     local proj=(options.projection or ""):upper()
+    local leaf_based=type(options.leaf_time_based)=='table' and options.leaf_time_based or {options.leaf_time_based}
+    local last_end_time
     local parse_tree=function(parse,tree,depth)
         local row={__=depth,__childs={sig=''}}
         local child={}
@@ -51,6 +53,7 @@ function plan.parse_json_plan(json,options)
         end
         processor(nil,nil,nil,tree)
         counter=0
+        local branch_end_time
         for name,value in pairs(tree) do
             if name~=options.child then
                 local org_name=name
@@ -65,6 +68,41 @@ function plan.parse_json_plan(json,options)
                     end
                 else
                     push_field(name,org_name,value)
+                end
+                --caculate leaf time
+                value=tonumber(value)
+                if name==(leaf_based[#leaf_based] or ''):upper() and value and value>0 then
+                    local end_=value
+                    if not tree[options.child] or #tree[options.child]==0 then
+                        --last_end_time is the last time of neighbor branch
+                        if last_end_time and end_>=last_end_time then
+                            end_=end_ - last_end_time
+                        elseif #leaf_based>1 then
+                            local start_=tonumber(tree[leaf_based[1]])
+                            if start_ then
+                                end_=end_ - start_
+                            end
+                        end
+                    end
+                    branch_end_time=value
+                    push_field(plan.leaf,plan.leaf,end_)
+                    for d=depth-1,1,-1 do
+                        if maps[d] then
+                            local pleaf=maps[d][plan.leaf] or 0
+                            if pcts[plan.leaf] then
+                                pcts[plan.leaf].val=pcts[plan.leaf].val-math.min(value,pleaf)
+                            end
+                            if pleaf>value then
+                                maps[d][plan.leaf]=pleaf-value
+                                break
+                            else
+                                maps[d][plan.leaf]=0
+                                value=value-pleaf
+                            end
+                        else
+                            break
+                        end
+                    end
                 end
                 counter=1
             else
@@ -82,6 +120,9 @@ function plan.parse_json_plan(json,options)
         for _,node in ipairs(child) do
             id=id+counter
             parse(parse,node,depth+counter)
+        end
+        if branch_end_time and branch_end_time>(last_end_time or 0) then
+            last_end_time=branch_end_time 
         end
         ord=ord+counter
         row._=ord
@@ -126,7 +167,7 @@ function plan.parse_json_plan(json,options)
             for i=#maps,depth+1,-1 do maps[i]=nil end
             local color=get_seq(colors)
             childs.color=color
-            if #childs<2 or childs[#childs]-childs[1]<=#childs+1 then
+            if #childs<2 or childs[#childs]-childs[1]<#childs+1 then
                 maps[depth+1]=space:rep(width)
             else
                 childs.has_child=true

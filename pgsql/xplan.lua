@@ -2,15 +2,13 @@ local db,cfg=env.getdb(),env.set
 local autoplan,autoplan_format='off','oracle'
 local auto_generic=nil
 local xplan={}
+local parser=env.json_plan
 local config={
     root='Plan',
     child='Plans',
     indent_width=2,
     processor=function(name,value,row,node)
         if not name and node then
-            if node["Actual Startup Time"] then
-                node["Actual Time"]=node["Actual Total Time"]-node["Actual Startup Time"]
-            end
             if node["Startup Cost"] then
                 node["Costs"]=node["Total Cost"]-node["Startup Cost"]
                 if node["Actual Startup Time"] then
@@ -20,6 +18,7 @@ local config={
                     end
                 end
             end
+
             if node["Sort Space Used"] and node["Sort Space Type"]~='Disk' and not node["Peak Memory Usage"] then
                 node["Peak Memory Usage"]=node["Sort Space Used"]
             end
@@ -38,6 +37,9 @@ local config={
             for n,v in pairs(node) do
                 if n:find("Rows Removed",1,true) then
                     removed=removed+v
+                elseif n:find(' Time',1,true) then
+                    local ms=tonumber(node[n])
+                    if ms then node[n]=ms*1000 end
                 end
             end
             if removed>0 then node["Rows Removed"]=removed end
@@ -91,9 +93,7 @@ local config={
         elseif name=='Peak Memory Usage' then
             return (tonumber(value) or 0)*1024
         elseif name=='Execution Time' or name=='Planning Time' or name=='Total Runtime' then
-            return env.var.format_function("usmhd2")(value*1000)
-        elseif name and name:find(' Time',1,true) then
-            return value*1000
+            return env.var.format_function("usmhd2")(value)
         end
         return value
     end,
@@ -103,7 +103,7 @@ local config={
               {"Plan Rows","Est|Rows",format='TMB1'},{"Actual Rows","Act|Rows",format='TMB1'},
               {"Rows Removed","Removed|Rows",format='TMB1'}, '|',
               {"Actual Loops","Act|Loops",format='TMB1'},'|',
-              {"Actual Time","Leaf|Time",format='usmhd1'} ,'|',
+              {parser.leaf,"Leaf|Time",format='usmhd1'} ,'|',
               {"Actual Startup Time","Start|Time",format='usmhd1'},{"Actual Total Time","Total|Time",format='usmhd1'},'|',
               {"IO Read Time","I/O|Read",format='usmhd1'},{"IO Write Time","I/O|Write",format='usmhd1'},'|',
               {"Temp IO Read Time","Temp|Read",format='usmhd1'},{"Temp IO Write Time","Temp|Write",format='usmhd1'},'|',
@@ -120,7 +120,8 @@ local config={
             },
     --sorts={"Actual Startup Time","Actual Total Time"},
     excludes={"Parent Relationship"},
-    percents={"Actual Time"},
+    leaf_time_based={"Actual Startup Time","Actual Total Time"},
+    percents={parser.leaf},
     title='Plan Tree | (+): Outer-Joined   >: Data-In   <: Data-Out   ^: SubPlan   H: Subquery   K: IntPlan   C: Member',
     projection="Output"
 }
@@ -246,7 +247,7 @@ function xplan.explain(fmt,sql)
         end
     end
     
-    env.json_plan.parse_json_plan(json,config)
+    parser.parse_json_plan(json,config)
 end
 
 function  xplan.autoplan(name,value)
@@ -286,11 +287,11 @@ function xplan.before_db_exec(obj)
     end
 
     local rows=db.resultset:rows(db:exec(stmt,args1,params1),-1)
-    env.json_plan.parse_json_plan(rows[2][1],config)
+    parser.parse_json_plan(rows[2][1],config)
 end
 
 function xplan.parse_plan_tree(text)
-    local pos=text:find('[^\n\r]+%(cost=[^\n\r]+ rows=%d+ [^\n\r]+width=')
+    local pos=text:find('[^\n\r]+%(cost=[^\n\r]+ rows=%d+[^\n\r]+width=')
     if not pos then return nil end
     text=text:sub(pos)
     local tree={[config.root]={[config.child]={}}}
