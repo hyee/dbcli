@@ -914,6 +914,14 @@ function grid:wellform(col_del, row_del)
                 is_row_sep=v1
             end
         end
+
+        for k1,v1 in pairs(seps) do
+            if not (k1==1 and is_row_sep) then
+                if v[0]>0 or not(v[k1]=='' and (v[k1+1] or '')=='' and (k1==1 or v[k1-1]=='')) then
+                    v[k1]=is_row_sep or v1
+                end
+            end
+        end
         --adjust the title style(middle)
         local fmt1
         if v[0] == 0 then
@@ -928,11 +936,6 @@ function grid:wellform(col_del, row_del)
                 end
             end
         elseif is_row_sep then
-            for k1,v1 in pairs(seps) do
-                if not (k1==1 and is_row_sep) then
-                    v[k1]=is_row_sep or v1
-                end
-            end
             fmt1=calc_col_sep(fmt,is_row_sep)
             local c=is_row_sep
             for k1,v1 in ipairs(title_dels) do

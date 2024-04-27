@@ -42,6 +42,7 @@ function pgsql:connect(conn_str)
                 if dbname then
                     --remote connection
                     conn_desc=dbname:gsub('/'..name_pattern,'/'..conn_str,1)
+                    args.url=nil
                 else
                     --local connection
                     conn_desc=conn_str

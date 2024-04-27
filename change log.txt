@@ -1,3 +1,5 @@
+2024-04-27: + pgsql : many enhancements including desc, xplan, env autoplan/autoplanformat, misc scripts
+            + mysql : many enhancements including info, xplan, env autoplan/autoplanformat, misc scripts
 2023-11-14: + oracle: new script 'ora xplan'
 2023-11-03: + public: new command 'clip' to copy output into clipboard (unsupported in ssh terminal)
 2023-10-30: + oracle: new script 'show features'
