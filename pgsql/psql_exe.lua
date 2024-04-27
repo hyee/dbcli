@@ -8,7 +8,7 @@ function psql_exe:ctor()
     self.command={'file','-f'}
     self.support_redirect=false
     self.name="psql"
-    self.executable="psql"
+    self.executable={"psql","gsql"}
     self.description="Switch to psql.exe with same login, the default working folder is 'psql/psql'. Usage: @@NAME [-n|-d<work_path>] [other args]"
     self.help_title='Run psql script under the "psql" directory. '
     self.script_dir,self.extend_dirs=self.db.ROOT_PATH.."psql",nil
@@ -48,8 +48,16 @@ end
 function psql_exe:get_startup_cmd(args,is_native)
     db:assert_connect()
     local conn=db.connection_info
-    local props={'-w','-U',db.props.db_user,'-p',db.props.port,'-h',db.props.server,'-d',db.props.database}
-    self.env['PGPASSWORD']=packer.unpack_str(conn.password)
+    --user db host/port to avoid proxy
+    local props={'--pset=pager=off'}
+    for name,value in pairs{username=db.props.db_user,password=packer.unpack_str(conn.password),host=conn.db_host,port=conn.db_port,dbname=db.props.database} do
+        if name~='password' or not env.IS_WINDOWS then
+            table.insert(props,1,'--'..name..'='..(env.IS_WINDOWS and value or value:gsub('%$','\\$')))
+        else
+            table.insert(props,1,'-w')
+            self.env['PGPASSWORD']=value
+        end
+    end
     if self.work_dir==self.script_dir or self.work_dir==self.extend_dirs then
         self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     end

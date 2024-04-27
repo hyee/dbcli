@@ -1,1 +1,1 @@
-SELECT pg_get_functiondef('&object_fullname'::regproc);
+SELECT pg_get_indexdef(:object_id::bigint);

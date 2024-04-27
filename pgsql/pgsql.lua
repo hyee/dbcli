@@ -17,6 +17,7 @@ local prev_conn=nil
 function pgsql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
+    local host,port
     env.checkhelp(conn_str)
     local driver='jdbc:postgresql:'
     if type(conn_str)=="table" then
@@ -53,6 +54,8 @@ function pgsql:connect(conn_str)
         else
             args={user=usr,password=pwd}
         end
+
+        args.db_host,args.db_port=conn_desc:match('([^:/]+):(%d+)')
         
         if conn_desc:match("%?.*=.*") then
             for k,v in conn_desc:gmatch("([^=%?&]+)%s*=%s*([^&]+)") do

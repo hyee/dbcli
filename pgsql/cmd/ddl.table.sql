@@ -4,8 +4,7 @@
     ]]--
 ]]*/
 VAR C VARCHAR2
-DO
-$$
+DO $$
 DECLARE
     in_schema_name VARCHAR(64) := '&object_owner';
     in_table_name VARCHAR(64)  := '&object_name';

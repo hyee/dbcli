@@ -1,34 +1,24 @@
-/*[[Search top 100 objects with the specific keywork. Usage: @@NAME <keyword>
+/*[[Search top 100 objects with the specific keywork. Usage: @@NAME [<keyword>|-f"<filter>"]
     --[[--
-
+        &filter: default={lower(concat(schemaname,'.',objectname,'|',objecttype)) LIKE lower('%&V1%')} f={}
     --]]--
 ]]*/
 SELECT * FROM (
     SELECT  tbl.oid,
-            nspname "SCHEMA",
-            relname "NAME",
+            nspname schemaname,
+            relname objectname,
             CASE TRIM(tbl.relkind)
-                WHEN 'r' THEN
-                'TABLE'
-                WHEN 'p' THEN
-                'PARTITIONED TABLE'
-                WHEN 'f' THEN
-                'FOREIGN TABLE'
-                WHEN 't' THEN
-                'TOAST TABLE'
-                WHEN 'm' THEN
-                'MATERIALZED VIEW'
-                WHEN 'v' THEN
-                'VIEW'
-                WHEN 'i' THEN
-                'INDEX'
-                WHEN 'I' THEN
-                'PARTITIONED INDEX'
-                WHEN 'S' THEN
-                'SEQUENCE'
-                WHEN 'c' THEN
-                    'COMPOSITE TYPE'
-            END "TYPE",
+                WHEN 'r' THEN 'TABLE'
+                WHEN 'c' THEN 'TYPE'  
+                WHEN 'p' THEN 'PARTITIONED TABLE'
+                WHEN 'f' THEN 'FOREIGN TABLE'
+                WHEN 't' THEN 'TOAST TABLE'
+                WHEN 'm' THEN 'MATERIALZED VIEW'
+                WHEN 'v' THEN 'VIEW'
+                WHEN 'i' THEN 'INDEX'
+                WHEN 'I' THEN 'PARTITIONED INDEX'
+                WHEN 'S' THEN 'SEQUENCE'
+            END objecttype,
             au.rolname "owner",
             pg_has_role(au.oid, 'USAGE'::text) "Usage",
             has_table_privilege(tbl.oid, 'SELECT'::text) "Priv"
@@ -58,5 +48,5 @@ SELECT * FROM (
     JOIN pg_authid au ON c.relowner=au.oid
     LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE r.rulename <> '_RETURN'::name) a
-WHERE lower(concat("SCHEMA",'.',"NAME",'|',"TYPE")) LIKE lower('%&V1%')
+WHERE &filter
 ORDER BY 2,3 LIMIT 100

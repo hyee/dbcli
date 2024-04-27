@@ -1,0 +1,1 @@
+db.C.sql:run_script('@'..file:gsub('partitioned_table.lua$','table'))

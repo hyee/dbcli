@@ -48,13 +48,13 @@ end
 function mysql_exe:get_startup_cmd(args,is_native)
     db:assert_connect()
     local conn=db.connection_info
-    local props={'-u',conn.user,'-P',conn.port,'-h',conn.hostname}
+    local props={'-U',conn.user,'-p',conn.db_port or conn.port,'-h',conn.db_host or conn.hostname}
     if db.props.database~="" then
         props[#props+1]="--database="..db.props.database
     end
     local pwd=packer.unpack_str(conn.password)
     if (pwd or "")~="" then
-        props[#props+1]="--password="..pwd
+        props[#props+1]="--password="..(env.IS_WINDOWS and pwd or pwd:gsub('%$','\\$'))
     end
 
     if self.boot_cmd:find("mysqlsh") then

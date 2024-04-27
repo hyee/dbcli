@@ -14,6 +14,8 @@ local stmt=[[
                     'TABLE'
                    WHEN 'p' THEN
                     'PARTITIONED TABLE'
+                   WHEN 'c' THEN
+                    'TYPE'  
                    WHEN 'f' THEN
                     'FOREIGN TABLE'
                    WHEN 't' THEN
@@ -26,10 +28,10 @@ local stmt=[[
                     'INDEX'
                    WHEN 'I' THEN
                     'PARTITIONED INDEX'
+                    WHEN 'L' THEN
+                    'SEQUENCE' 
                    WHEN 'S' THEN
                     'SEQUENCE'
-                   WHEN 'c' THEN
-                     'COMPOSITE TYPE'
                END "TYPE",
                pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED",
                tbl.oid,'pg_class' clz,
@@ -114,14 +116,16 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
                             'MATERIALZED VIEW'
                            WHEN 'v' THEN
                             'VIEW'
+                           WHEN 'c' THEN
+                             'TYPE' 
                            WHEN 'i' THEN
                             'INDEX'
                            WHEN 'I' THEN
                             'PARTITIONED INDEX'
+                           WHEN 'L' THEN
+                            'SEQUENCE' 
                            WHEN 'S' THEN
                             'SEQUENCE'
-                           WHEN 'c' THEN
-                             'COMPOSITE TYPE'
                        END "TYPE",
                        pg_has_role(tbl.relowner, 'USAGE'::text) OR has_table_privilege(tbl.oid, 'SELECT'::text) "GRANTED",
                        tbl.oid,'pg_class' clz

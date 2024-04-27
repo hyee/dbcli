@@ -33,11 +33,12 @@ local native_cmds={}
 local jdbc_prefix='com.mysql.cj'
 function mysql:connect(conn_str)
     local args
-    local usr,pwd,conn_desc,url
+    local usr,pwd,conn_desc,url,host,port
     local driver="jdbc:mysql://"
     if type(conn_str)=="table" then
         args=conn_str
         usr,pwd,url=args.user,args.password and packer.unpack_str(args.password),args.url:match("//(.*)$") or args.url
+        host,port=args.db_host,args.db_port
         args.password=pwd
         conn_str=usr and string.format("%s/%s@%s",usr,pwd,url) or url
     else
@@ -78,6 +79,10 @@ function mysql:connect(conn_str)
             conn_desc=conn_desc:gsub("%?.*","")
         end
         usr,pwd,url,args.url=args.user,args.password,conn_desc,args.url or (driver..conn_desc)
+        if not host then
+            host,port=(conn_desc..':3306'):match('([^:/]+):(%d+)')
+        end
+        args.db_host,args.db_port=host,port
     end
     
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
