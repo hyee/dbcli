@@ -94,5 +94,5 @@ END;
 ORA PLAN X -OL
 
 PRO SQL Patch "&name" is created.
-PRO Please Use "ora flush_sql &V1" to flush the target SQL.
+PRO Please Use "ora flush_sql &V1" to flush the target SQL if the new plan is not taken place.
 PRO To rollback execute SYS.DBMS_SQLDIAG.DROP_SQL_PATCH('&name',true)

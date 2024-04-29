@@ -37,7 +37,7 @@ function db_Types:get(position,typeName,res,conn)
     --if value==nil then return nil end
     local getter=self[typeName].getter
     local rtn,value=pcall(res[getter],res,position)
-    if not rtn and typeName=='CURSOR' and tostring(value):find('handle',1,true) then return nil end
+    if not rtn and typeName=='CURSOR' then return nil end
     env.checkerr(rtn,value)
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end

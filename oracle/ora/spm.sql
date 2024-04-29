@@ -194,14 +194,12 @@ BEGIN
             AND    plan_hash_value>0) 
         LOOP
             IF new_sql IS NOT NULL THEN
-                IF cnt=0 THEN
-                    tmp := dbms_spm.load_plans_from_cursor_cache(sql_id=>new_sql,
-                                                                 plan_hash_value=>new_phv,
-                                                                 sql_text=>r.sql_text,
-                                                                 fixed=>'YES',
-                                                                 enabled=>'YES');
-                END IF;
-                cnt := 1;
+                cnt := dbms_spm.load_plans_from_cursor_cache(sql_id=>new_sql,
+                                                             plan_hash_value=>new_phv,
+                                                             sql_text=>r.sql_text,
+                                                             fixed=>'YES',
+                                                             enabled=>'YES');
+                EXIT;
             ELSIF NOT phvs.exists(''||r.phv) THEN
                 IF r.grp = 'cursor' THEN
                     tmp := dbms_spm.load_plans_from_cursor_cache(sql_id=>r.sql_id,

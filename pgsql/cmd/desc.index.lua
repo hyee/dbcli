@@ -52,4 +52,4 @@ db.props.gaussdb and [[
    FROM pg_partition
    WHERE parttype='x'
    GROUP BY parentid
-]] or 'SELECT null:integer parentid,null::text part_by,null::int "partitions"'))
+]] or 'SELECT null::integer parentid,null::text part_by,null::int "partitions"'))

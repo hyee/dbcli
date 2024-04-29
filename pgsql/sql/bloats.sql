@@ -1,112 +1,181 @@
 /*[[Show bloat information for table/index. Usage: @@NAME {[[schema.]<table>] | [<bloat_mb>]} 
-    Refs: https://github.com/francs/PostgreSQL-healthcheck-script/blob/master/pg_healthcheck_v1.2.sh
+    Refs: https://github.com/ioguix/pgsql-bloat-estimation
     --[[
-        &table: default={'&object_name'='' or } table={}
+        &table  : default={'&object_id'='' or } table={}
+        &ixname : default={tblname}  table={tblname}
+        &v1: default={0}
     ]]--
 ]]*/
 
 findobj "&V1" 1 1
 env feed off
-col bloat for pct2
-col pages,rows,b-pages,live_rows,dead_rows for tmb2
-col size,b-bytes for kmg2 
+col dead%,extra%,bloat% for pct2
+col pages,rows,live_rows,dead_rows for tmb2
+col real,extra,bloat for kmg2 
 echo Bloat information:
 echo ==================
-WITH bloats as(
-    SELECT tid,toid,c2.reltablespace iid,c2.oid ioid,
-           nn.nspname AS schema_name,
-           cc.relname AS table_name,
-           COALESCE(cc.reltuples,0) AS reltuples,
-           COALESCE(cc.relpages,0) AS relpages,
-           bs,
-           COALESCE(CEIL((cc.reltuples*((datahdr+ma-(CASE WHEN datahdr%ma=0 THEN ma ELSE datahdr%ma END))+nullhdr2+4))/(bs-20::float)),0) AS otta,
-           COALESCE(c2.relname,'?') AS index_name, 
-           COALESCE(c2.reltuples,0) AS ituples, 
-           COALESCE(c2.relpages,0) AS ipages,
-           COALESCE(CEIL((c2.reltuples*(datahdr-12))/(bs-20::float)),0) AS iotta -- very rough approximation, assumes all cols
-    FROM   pg_class cc
-    JOIN   pg_namespace nn ON cc.relnamespace = nn.oid AND nn.nspname <> 'information_schema'
-    LEFT JOIN
-    (
-        SELECT tid,toid,
-               ma,foo.nspname,foo.relname,bs,
-               (datawidth+(hdr+ma-(case when hdr%ma=0 THEN ma ELSE hdr%ma END)))::numeric AS datahdr,
-               (maxfracsum*(nullhdr+ma-(case when nullhdr%ma=0 THEN ma ELSE nullhdr%ma END))) AS nullhdr2
-        FROM (
-            SELECT tbl.reltablespace  tid,tbl.oid toid,
-                ns.nspname, tbl.relname, hdr, ma,
-                COALESCE(pg_table_size(tbl.oid) /nullif(tbl.relpages,0),current_setting('block_size')::bigint) bs,
-                SUM((1-coalesce(null_frac,0))*coalesce(avg_width, 2048)) AS datawidth,
-                MAX(coalesce(null_frac,0)) AS maxfracsum,
-                hdr+(
-                    SELECT 1+count(*)/8
-                    FROM pg_stats s2
-                    WHERE null_frac<>0 AND s2.schemaname = ns.nspname AND s2.tablename = tbl.relname
-                ) AS nullhdr
-            FROM pg_attribute att 
-            JOIN pg_class tbl ON att.attrelid = tbl.oid
-            JOIN pg_namespace ns ON ns.oid = tbl.relnamespace 
-            LEFT JOIN pg_stats s ON s.schemaname=ns.nspname
-            AND s.tablename = tbl.relname
-            AND s.inherited=false
-            AND s.attname=att.attname,
-            (
-                SELECT CASE WHEN SUBSTRING(SPLIT_PART(v, ' ', 2) FROM '#"[0-9]+.[0-9]+#"%' for '#')
-                         IN ('8.0','8.1','8.2') THEN 27 ELSE 23 END AS hdr,
-                       CASE WHEN v ~ 'mingw32' OR v ~ '64-bit' THEN 8 ELSE 4 END AS ma
-                FROM (SELECT version() AS v) AS foo
-            ) AS constants
-            WHERE att.attnum > 0 AND tbl.relkind='r'
-            AND   (&table '&object_type' LIKE '%TABLE' and tbl.relname='&object_name' and ns.nspname='&object_owner')
-            GROUP BY 1,2,3,4,5,6,7
-            ) AS foo
-    ) AS rs
-    ON cc.relname = rs.relname AND nn.nspname = rs.nspname
-    LEFT JOIN pg_index i ON indrelid = cc.oid
-    LEFT JOIN pg_class c2 ON c2.oid = i.indexrelid
-    WHERE (&table CC.relname='&object_name' and nn.nspname='&object_owner')
+WITH base_ AS(
+    SELECT clz.oid tid,ns.nspname,clz.*
+    FROM   pg_class      AS clz
+    JOIN   pg_namespace  AS ns  ON ns.oid = clz.relnamespace
+    WHERE  relkind IN('r','m','p','i','I')
+    AND   (&table clz.oid=:object_id::bigint) 
 ),
-default_tbs as(
-    SELECT t.spcname
-    FROM   pg_database d, pg_tablespace t
-    WHERE  d.dattablespace = t.oid
-    AND    d.datname = current_database()
-)
-SELECT a.*,'|' "|", b.n_live_tup live_rows,n_dead_tup dead_rows
-FROM 
-(
-    SELECT DISTINCT
-           toid oid,
-           schema_name, 
-           table_name object_name,
-           'TABLE' "type",
-           coalesce(t.spcname,(select spcname from default_tbs)) "tablespace", 
-           reltuples::bigint AS "rows", 
-           relpages::bigint AS "pages", 
-           bs*relpages "size",
-           '|' "|",
-           ROUND(CASE WHEN otta=0 OR relpages=0 OR relpages=otta THEN 0.0 ELSE relpages/otta::numeric END-1,4) AS "bloat",
-           CASE WHEN relpages < otta THEN 0 ELSE relpages::bigint - otta END AS "b-pages",
-           CASE WHEN relpages < otta THEN 0 ELSE bs*(relpages-otta)::bigint END AS "b-bytes"
-    FROM bloats b
-    LEFT JOIN pg_tablespace  t ON b.tid=t.oid
+tbls_ AS (
+    SELECT base_.*, 
+           CASE relkind WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'PARTITIONED TABLE' WHEN 'm' THEN 'MATERIALIZED VIEW' WHEN 'i' THEN 'INDEX' WHEN 'I' THEN 'PARTITIONED INDEX' END object_type
+    FROM   base_
+    UNION  ALL
+    SELECT clz.oid,ns.nspname,clz.*, 'INHERIT TABLE'
+    FROM   base_        
+    JOIN   pg_inherits   AS i   ON i.inhparent = base_.tid
+    JOIN   pg_class      AS clz ON i.inhrelid = clz.oid
+    JOIN   pg_namespace  AS ns  ON ns.oid = clz.relnamespace
+    WHERE  base_.relkind IN('r')
+    AND    :V1 != '0'
+),
+ix_ AS (
+    SELECT tbls_.*,ns.nspname parent_owner,clz.relname parent_name,clz.oid parent_oid,i.indnatts,i.indkey
+    FROM   tbls_
+    JOIN   pg_index      AS i   ON i.indexrelid = tbls_.tid
+    JOIN   pg_class      AS clz ON i.indrelid = clz.oid
+    JOIN   pg_namespace  AS ns  ON ns.oid = clz.relnamespace
+    WHERE  tbls_.relkind IN('i','I')
     UNION ALL
-    SELECT ioid,
-           schema_name , 
-           index_name ,
-           'INDEX' object_type,
-           coalesce(t.spcname,(select spcname from default_tbs)), 
-           ituples::bigint AS itups,
-           ipages::bigint AS ipages,
-           bs*ipages "size",
-           '|' "|",
-           ROUND(greatest(0,CASE WHEN iotta=0 OR ipages=0 OR ipages=iotta THEN 0.0 ELSE ipages/iotta::numeric END-1),4) AS ibloat,
-           CASE WHEN ipages < iotta THEN 0 ELSE ipages::bigint - iotta END AS "b-pages",
-           CASE WHEN ipages < iotta THEN 0 ELSE bs*(ipages-iotta) END AS "b-bytes"
-    FROM bloats b
-    LEFT JOIN pg_tablespace  t ON b.iid=t.oid
-) AS A
-LEFT JOIN pg_stat_all_tables B ON a.schema_name=b.schemaname and a.object_name=b.relname
-WHERE '&object_name' !='' OR "b-bytes">(coalesce(nullif(regexp_replace('&V1'::text,'[^\.\d]+'::text,'','g'),''),'1')::numeric * 1024 * 1024)
-ORDER BY "b-bytes" desc,"bloat" desc
-LIMIT 50;
+    SELECT clz.oid, ns.nspname,clz.*,'INDEX', tbls_.nspname as parent_owner,tbls_.relname as parent_name,tbls_.tid parent_oid,i.indnatts,i.indkey
+    FROM   tbls_        
+    JOIN   pg_index      AS i   ON i.indrelid = tbls_.tid  
+    JOIN   pg_class      AS clz ON i.indexrelid = clz.oid  
+    JOIN   pg_namespace  AS ns  ON ns.oid = clz.relnamespace
+    WHERE  tbls_.relkind NOT IN('i','I')
+    AND    :V1 != '0'
+)
+
+SELECT a.*
+FROM (
+    SELECT tblid oid,
+        schemaname,
+        tblname "object_name",
+        object_type,
+        reltuples "rows",
+        nullif(pg_stat_get_dead_tuples(tblid)/nullif(reltuples,0),0) "dead%",
+        tblpages "pages",
+        bs * tblpages AS "real",
+        nullif(greatest(0,(tblpages - est_tblpages) * bs),0) AS "extra",
+        nullif(greatest(0,(tblpages - est_tblpages) / nullif(tblpages,0)),0) "extra%",
+        fillfactor,
+        nullif(greatest(0,(tblpages - est_tblpages_ff) * bs),0) "bloat",
+        nullif(greatest(0,(tblpages - est_tblpages_ff) / nullif(tblpages,0)),0) "bloat%",
+        is_na
+    FROM   (SELECT ceil(reltuples / ((bs - page_hdr) / tpl_size)) + ceil(toasttuples / 4) AS est_tblpages,
+                ceil(reltuples / ((bs - page_hdr) * fillfactor / (tpl_size * 100))) + ceil(toasttuples / 4) AS est_tblpages_ff,
+                s2.*
+            FROM   (SELECT (4 + tpl_hdr_size + tpl_data_size + (2 * ma) 
+                        - CASE WHEN tpl_hdr_size%ma = 0 THEN ma ELSE tpl_hdr_size%ma END 
+                        - CASE WHEN ceil(tpl_data_size)::INT%ma = 0 THEN ma ELSE ceil(tpl_data_size)::INT %ma END
+                        ) AS tpl_size,
+                        bs - page_hdr AS size_per_block,
+                        (heappages + toastpages) AS tblpages,
+                        s.*
+                    FROM   (SELECT tbl.tid AS tblid,
+                                tbl.nspname AS schemaname,
+                                tbl.relname AS tblname,
+                                tbl.reltuples,
+                                tbl.relpages AS heappages,
+                                tbl.object_type,
+                                coalesce(toast.relpages, 0) AS toastpages,
+                                coalesce(toast.reltuples, 0) AS toasttuples,
+                                coalesce(substring(array_to_string(tbl.reloptions, ' ') FROM 'fillfactor=([0-9]+)')::SMALLINT,100) AS fillfactor,
+                                current_setting('block_size')::NUMERIC AS bs,
+                                CASE WHEN version()~'mingw32' OR version()~'64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS ma,
+                                24 AS page_hdr,
+                                23 + CASE WHEN MAX(coalesce(s.null_frac, 0)) > 0 THEN (7 + COUNT(s.attname)) / 8 ELSE 0::INT END 
+                                    + CASE WHEN bool_or(att.attname = 'oid' AND att.attnum < 0) THEN 4 ELSE 0 END AS tpl_hdr_size,
+                                SUM((1 - coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 0)) AS tpl_data_size,
+                                bool_or(att.atttypid = 'pg_catalog.name'::regtype) OR SUM(CASE WHEN att.attnum > 0 THEN 1 ELSE 0 END) <> COUNT(s.attname) AS is_na
+                            FROM   pg_attribute  AS att
+                            JOIN   tbls_         AS tbl ON att.attrelid = tbl.tid
+                            LEFT   JOIN pg_stats AS s
+                            ON     s.schemaname = tbl.nspname
+                            AND    s.tablename = tbl.relname
+                            AND    s.attname = att.attname
+                            LEFT   JOIN pg_class AS toast
+                            ON     tbl.reltoastrelid = toast.oid
+                            WHERE  NOT att.attisdropped
+                            AND    tbl.relkind NOT IN ('i', 'I')
+                            GROUP  BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+                            ORDER  BY 2, 3) AS s) AS s2) AS s3
+    UNION ALL
+    SELECT idxoid,nspname AS schemaname, 
+        CASE WHEN upper(idxname) like upper('%'||&ixname ||'%') THEN idxname ELSE tblname||' -> '||idxname END table_index,
+        object_type,
+        reltuples,null::float,relpages,
+        bs*(relpages)::bigint AS real_size,
+        nullif(greatest(0,bs*(relpages-est_pages)::bigint),0) AS extra_size,
+        nullif(greatest(0,(relpages-est_pages)::float / relpages),0) AS extra_pct,
+        fillfactor,
+        nullif(greatest(0,CASE WHEN relpages > est_pages_ff THEN bs*(relpages-est_pages_ff) ELSE 0 END),0) AS bloat_size,
+        nullif(greatest(0,(relpages-est_pages_ff)::float / relpages),0) AS bloat_pct,
+        is_na --is the estimation "Not Applicable" ? If true, do not trust the stats.
+    FROM (
+        SELECT coalesce(1 + ceil(reltuples/floor((bs-pageopqdata-pagehdr)/(4+nulldatahdrwidth)::float)), 0) AS est_pages, -- ItemIdData size + computed avg size of a tuple (nulldatahdrwidth)
+            coalesce(1 + ceil(reltuples/floor((bs-pageopqdata-pagehdr)*fillfactor/(100*(4+nulldatahdrwidth)::float))), 0) AS est_pages_ff,
+            rows_hdr_pdg_stats.*
+        FROM (
+        SELECT rows_data_stats.*,
+                ( index_tuple_hdr_bm + maxalign + nulldatawidth + maxalign 
+                - CASE -- Add padding to the index tuple header to align on MAXALIGN
+                    WHEN index_tuple_hdr_bm%maxalign = 0 THEN maxalign
+                    ELSE index_tuple_hdr_bm%maxalign
+                    END
+                - CASE -- Add padding to the data to align on MAXALIGN
+                    WHEN nulldatawidth = 0 THEN 0
+                    WHEN nulldatawidth::integer%maxalign = 0 THEN maxalign
+                    ELSE nulldatawidth::integer%maxalign
+                    END
+                )::numeric AS nulldatahdrwidth
+        FROM (
+            SELECT i.nspname, i.tblname, i.idxname, i.reltuples, i.relpages,i.object_type,
+                    i.idxoid, i.fillfactor, 
+                    current_setting('block_size')::numeric AS bs,
+                    CASE WHEN version() ~ 'mingw32' OR version() ~ '64-bit|x86_64|ppc64|ia64|amd64' THEN 8 ELSE 4 END AS maxalign, -- MAXALIGN: 4 on 32bits, 8 on 64bits (and mingw32 ?)
+                    24 AS pagehdr, --per page header, fixed size: 20 for 7.X, 24 for others
+                    16 AS pageopqdata,--per page btree opaque data
+                    /* per tuple header: add IndexAttributeBitMapData if some cols are null-able */
+                    CASE WHEN max(coalesce(s.null_frac,0)) = 0
+                        THEN 8 -- IndexTupleData size
+                        ELSE 8 + (( 32 + 8 - 1 ) / 8) -- IndexTupleData size + IndexAttributeBitMapData size ( max num filed per index + 8 - 1 /8)
+                    END AS index_tuple_hdr_bm,
+                    /* data len: we remove null values save space using it fractionnal part from stats */
+                    sum( (1-coalesce(s.null_frac, 0)) * coalesce(s.avg_width, 1024)) AS nulldatawidth,
+                    max( CASE WHEN i.atttypid = 'pg_catalog.name'::regtype THEN 1 ELSE 0 END ) > 0 AS is_na
+            FROM (
+                SELECT ic.*,
+                        a1.attnum, a1.attname, a1.atttypid atttypid,
+                        CASE WHEN ic.indkey[ic.attpos] = 0 THEN ic.idxname ELSE ic.tblname END AS attrelname
+                FROM (
+                    SELECT ci.relname AS idxname, ci.reltuples, ci.relpages, ci.parent_oid AS tbloid,
+                            ci.tid AS idxoid,
+                            ci.parent_name tblname,ci.parent_owner,ci.nspname,
+                            ci.object_type,
+                            coalesce(substring(array_to_string(ci.reloptions, ' ') from 'fillfactor=([0-9]+)')::smallint, 90) AS fillfactor,
+                            pg_catalog.generate_series(1,ci.indnatts) AS attpos,
+                            pg_catalog.string_to_array(pg_catalog.textin(pg_catalog.int2vectorout(ci.indkey)),' ')::int[] AS indkey
+                    FROM   ix_ ci
+                    WHERE  ci.relam=(SELECT oid FROM pg_am WHERE amname = 'btree')
+                    AND    ci.relpages > 0
+                    AND    ci.relkind IN('i','I') ) AS ic
+                JOIN pg_catalog.pg_attribute a1
+                ON   a1.attrelid =  CASE WHEN ic.indkey[ic.attpos] <> 0 THEN ic.tbloid ELSE ic.idxoid END
+                AND  a1.attnum   =  CASE WHEN ic.indkey[ic.attpos] <> 0 THEN ic.indkey[ic.attpos] ELSE ic.attpos END
+            ) i
+            LEFT JOIN pg_catalog.pg_stats s 
+            ON   s.schemaname = i.parent_owner
+            AND  s.tablename = i.attrelname
+            AND  s.attname = i.attname
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12
+        ) AS rows_data_stats
+    ) AS rows_hdr_pdg_stats
+    ) AS relation_stats) A
+WHERE '&object_name' !='' OR "bloat">(coalesce(nullif(regexp_replace('&V1'::text,'[^\.\d]+'::text,'','g'),''),'1')::numeric * 1024 * 1024)
+ORDER BY "real" desc limit 100

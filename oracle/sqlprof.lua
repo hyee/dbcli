@@ -514,8 +514,10 @@ end
 function sqlprof.onload()
     local help=[[
     Extract sql profile. Usage: @@NAME {<sql_id|sql_prof_name|spm_plan_name|spm_sql> [<plan_hash_value|new_sql_id|sql_prof_name|spm_plan_name|statement_id>|plan]}
-    The command will not make any changes on the database, but to create a SQL file that used to fix the execution plan by SQL Profile.
+    The command will not make any changes in database, but to create a SQL file that used to fix the execution plan by SQL Profile.
+
     Examples:
+    =========
         1). Generate the profile for the last plan of target SQL ID: @@NAME gjm43un5cy843
         2). Generate the profile of the specifc SQL ID + plan hash value: @@NAME gjm43un5cy843 1106594730
         3). Generate the profile for a SQL id with the plan of another SQL: @@NAME gjm43un5cy843 53c2k4c43zcfx

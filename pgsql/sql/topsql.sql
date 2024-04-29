@@ -74,7 +74,6 @@ SELECT queryid::text sql_id,
        "db",
        LTRIM(SUBSTR(regexp_replace(query, '\s+', ' ', 'g'), 1, 200)) short_sql_text
 FROM   pg_stat_statements a
-LEFT JOIN (select rolname "user",oid from pg_authid) au on a.userid=au.oid
 LEFT JOIN (select datname "db",oid from pg_database) db on a.dbid=db.oid
 WHERE &filter
 ORDER  BY &ord desc nulls last limit 50;

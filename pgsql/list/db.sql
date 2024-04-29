@@ -17,7 +17,7 @@ SELECT p.datid "dbid",
        case when current_database()=p.datname then '* ' else '  ' end||p.datname "database_name",
        pg_database_size(d.oid) "size",
        p.temp_bytes "temp",
-       o.rolname "owner",
+       pg_get_userbyid(d.datdba) "owner",
        has_database_privilege(d.oid, 'CREATE') "granted",
        t.spcname "tablespace",
        pg_encoding_to_char(encoding) "encoding",
@@ -35,9 +35,8 @@ SELECT p.datid "dbid",
        p.deadlocks, 
        p.stats_reset,
        d.datacl
-FROM   pg_stat_database p, pg_database d, pg_authid o, pg_tablespace t
+FROM   pg_stat_database p, pg_database d, pg_tablespace t
 WHERE  p.datid = d.oid
-AND    d.datdba = o.oid
 AND    d.dattablespace = t.oid
 AND    d.datistemplate = FALSE
 ORDER  BY p.datid;

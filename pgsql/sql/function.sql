@@ -18,7 +18,7 @@
 ]]*/
 
 SELECT p.oid,
-       au.rolname AS "owner",
+       pg_get_userbyid(p.proowner) AS "owner",
        n.nspname AS schema_name,
        p.proname AS function_name,
        pg_has_role(p.proowner, 'USAGE'::text) OR has_function_privilege(p.oid, 'EXECUTE'::text) "granted",
@@ -55,7 +55,6 @@ SELECT p.oid,
         d.description AS function_description
 FROM   pg_proc p
 JOIN   pg_namespace n ON n.oid = p.pronamespace
-JOIN   pg_authid au ON p.proowner = au.oid
 LEFT   JOIN pg_description d ON d.objoid = p.oid AND d.objsubid = 0
 LEFT   JOIN pg_language l ON l.oid = p.prolang
 WHERE  &filter

@@ -4,7 +4,7 @@ local set_command,exec_command=env.set_command,env.exec_command
 local pgsql=env.class(env.db_core)
 pgsql.module_list={
    "dict","findobj","desc","xplan","sql","list","gaussdb","chart","ssh","snap",
-   "show","psql_exe",
+   "show","dba","psql_exe",
 }
 
 function pgsql:ctor(isdefault)
@@ -96,8 +96,9 @@ function pgsql:connect(conn_str)
                inet_server_addr(),
                inet_server_port(),
                pg_backend_pid(),
-               (select count(1) cnt from pg_proc where proname = 'opengauss_version') gaussdb,
-               (select max(setting) from pg_settings where name='plan_cache_mode')]])
+               (select count(1) cnt from pg_catalog.pg_proc where proname = 'opengauss_version') gaussdb,
+               (select max(setting) from pg_catalog.pg_settings where name='plan_cache_mode'),
+               (select rolsuper from pg_catalog.pg_roles where rolname=current_user)]])
     table.clear(self.props)
     self.props.privs={}
     self.props.db_version,self.props.server=info[2]:match('^([%d%.]+)'),info[4]
@@ -105,6 +106,7 @@ function pgsql:connect(conn_str)
     self.props.gaussdb=info[7]>0 and true or nil 
     self.props.plan_cache_mode=(info[8] or '')~='' and info[8] or nil
     self.props.database=info[1] or ""
+    self.props.isdba=tostring(info[9]):find('^t') and true or false
     self.connection_info=args
     if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
     if tonumber(self.props.db_version:match("^%d+%.%d"))<5 then
