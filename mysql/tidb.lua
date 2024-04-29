@@ -305,16 +305,13 @@ function tidb.parse_explain_option(analyze,format)
     end
 end
 
-function tidb:onload()
+function tidb:finalize()
     env.event.snoop('ON_PARSE_PLAN',function(self,data)
         if  type(data[2])=='string' and (data[2]:find('FORMAT=TREE',1,1) or data[2]:find('FORMAT=TRADITIONAL')) then
             return
         end
         if data[1] and self:parse_plan(data[1])~=false then data[1]=nil end 
     end,self)
-end
-
-function tidb:finalize()
     env.set_command(self,"tiplan",nil,self.parse_plan,false,2)
     for _,n in ipairs{'TRACE','MODIFY','ADMIN','BACKUP','RECOVER','RESTORE','FLASHBACK'} do
         env.set_command(db,n,"#TiDB command",db.command_call,true,1,true)

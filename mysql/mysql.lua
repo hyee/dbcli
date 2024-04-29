@@ -32,6 +32,7 @@ local native_cmds={}
 --local jdbc_prefix='com.mysql.cj'
 local jdbc_prefix='com.mysql.cj'
 function mysql:connect(conn_str)
+    env.checkhelp(conn_str)
     local args
     local usr,pwd,conn_desc,url,host,port
     local driver="jdbc:mysql://"

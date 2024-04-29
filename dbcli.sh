@@ -51,7 +51,7 @@ elif type -p java &>/dev/null; then
         if [[ "$_java" ]]; then
             _java="$_java/bin/java"
         elif [ "$os" = "mac-arm" ]; then
-            echo "Cannot find Java 8 - Java 20 executable for ARM-64, please manually set JRE_HOME for available Java program."
+            echo "Cannot find Java 8 - Java 20 executable for ARM-64, please manually set JRE_HOME for suitable JDK/JRE."
             popd
             exit 1
         fi
@@ -81,7 +81,7 @@ if [[ $found < 2 ]]; then
         _java=./jre_$os/bin/java
         ver="52"
     else
-        echo "Cannot find Java 8 - Java 20 for X86-64, please manually set JRE_HOME for available Java program."
+        echo "Cannot find Java 8 - Java 20 for X86-64, please manually set JRE_HOME for suitable JDK/JRE."
         exit 1
     fi
 fi

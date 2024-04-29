@@ -46,6 +46,11 @@ JOIN INFORMATION_SCHEMA.CLUSTER_INFO B
 USING (Type,Instance)
 ORDER BY 1,2;
 
+COL MEMORY_TOTAL,MEMORY_LIMIT,MEMORY_CURRENT,MEMORY_MAX_USED FOR KMG2
+PRINT Memory Usage:
+PRINT =============
+select * from memory_usage;
+
 PRINT Cluser Load:
 PRINT ============
 WITH mp AS(

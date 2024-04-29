@@ -17,7 +17,6 @@ local prev_conn=nil
 function pgsql:connect(conn_str)
     local args
     local usr,pwd,conn_desc,url
-    local host,port
     env.checkhelp(conn_str)
     local driver='jdbc:postgresql:'
     if type(conn_str)=="table" then

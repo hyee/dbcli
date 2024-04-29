@@ -1,0 +1,1 @@
+env autoplan $1[xplan] autoplanformat $2[oracle]
