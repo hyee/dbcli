@@ -1,50 +1,42 @@
 /*[[
-   Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]} [-m]
-   Author:      Carlos Sierra
-   Version:     Modified version based on V2014/10/31
-   Usage:       Lists statements that have changed their elapsed time per execution over
-                some history.
-                Uses the ration between "elapsed time per execution" and the median of
-                this metric for SQL statements within the sampled history, and using
-                linear regression identifies those that have changed the most. In other
-                words where the slope of the linear regression is larger. Positive slopes
-                are considered "improving" while negative are "regressing".
-
-   Notes:       Developed and tested on 11.2.0.3.
-
-                Requires an Oracle Diagnostics Pack License since AWR data is accessed.
-
-                To further investigate poorly performing SQL use sqltxplain.sql or sqlhc
-                (or planx.sql or sqlmon.sql or sqlash.sql).
+    Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]} [-m] [-regress|-improve]
+    
+    -regress: order by regression
+    -improve: order by improvement
     --[[
         &BASE : s={sql_id}, m={signature},
         &SIG  : s={},m={signature,}
         &FILTER: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
+        &ORD   : default={"Total SQL ms" desc} improve={"Diff%"} regress={"Diff%" desc}
     --]]
 
 ]]*/
 
 DEF min_slope_threshold='0.1';
-SET PRINTSIZE 50
+SET PRINTSIZE 100
 ORA _sqlstat
 COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec,AVG ELA" for usmhd2
-col "Weight%" for pct2
+col "Weight%,Diff%" for pct2
 COL "Total SQL ms" NOPRINT
 col "execs,buff gets" for tmb2
 col sql_id break
 
 WITH src AS
-(SELECT a.*,COUNT(DISTINCT phf) OVER(PARTITION BY dbid,sql_id) phfs,count(distinct flag) OVER(PARTITION BY dbid,sql_id) flags
+(SELECT a.*,
+       COUNT(DISTINCT phf) OVER(PARTITION BY dbid,sql_id) phfs,
+       COUNT(distinct flag) OVER(PARTITION BY dbid,sql_id) flags,
+       SUM(decode(flag,1,ela)) over(partition by sql_id,dbid) * SUM(decode(flag,0,exe)) over(partition by sql_id,dbid)  
+           /nullif(SUM(decode(flag,0,ela)) over(partition by sql_id,dbid)*SUM(decode(flag,1,exe)) over(partition by sql_id,dbid),0) diff
  FROM(SELECT coalesce(
                  extractvalue(dbms_xmlgen.getxmltype(q'~
-                               select nullif(to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0') phf
-                               from  dba_hist_sql_plan b
-                               where b.sql_id='~'||a.sql_id||'''
-                               and   b.dbid=' || a.dbid || '
-                               and   b.plan_hash_value=' || a.plan_hash || '
-                               and   b.other_xml is not null
-                               and   rownum<2'),
-                              '/ROWSET/ROW/PHF') + 0,
+                        select nullif(to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0') phf
+                        from  dba_hist_sql_plan b
+                        where b.sql_id='~'||a.sql_id||'''
+                        and   b.dbid=' || a.dbid || '
+                        and   b.plan_hash_value=' || a.plan_hash || '
+                        and   b.other_xml is not null
+                        and   rownum<2'),
+                        '/ROWSET/ROW/PHF') + 0,
                  a.plan_hash) phf,
              a.*
       FROM   (SELECT dbid,
@@ -54,7 +46,7 @@ WITH src AS
                      to_char(MIN(begin_interval_time), 'YYMMDD HH24:MI') first_seen,
                      to_char(MAX(end_interval_time), 'YYMMDD HH24:MI') last_seen,
                      SUM(elapsed_time) ela,
-                     GREATEST(SUM(executions),1) exe,
+                     SUM(executions) exe,
                      SUM(cpu_time) CPU,
                      SUM(iowait) iowait,
                      SUM(clwait) clwait,
@@ -79,9 +71,10 @@ SELECT * FROM (
            MIN(first_seen) first_seen,
            MAX(last_seen) last_seen,
            ratio_to_report(SUM(decode(flag,1,ela))) OVER() "Weight%",
+           MAX(diff) "Diff%",
            SUM(exe) "Execs",
            '|' "|",
-           ROUND(SUM(ela)/SUM(exe)) "Avg ELA",
+           ROUND(SUM(ela)/greatest(1,SUM(exe))) "Avg ELA",
            ROUND(100*SUM(CPU)/SUM(ela),2) "CPU%",
            ROUND(100*SUM(iowait)/SUM(ela),2) "IO%",
            ROUND(100*SUM(clwait)/SUM(ela),2) "Cl%",
@@ -89,7 +82,7 @@ SELECT * FROM (
            ROUND(100*SUM(apwait)/SUM(ela),2) "APP%",
            ROUND(100*SUM(plsexec_time)/SUM(ela),2) "PLSQL%",
            ROUND(100*SUM(javexec_time)/SUM(ela),2) "JAVA%",
-           ROUND(SUM(buffer_gets)/SUM(exe),2) "Buff Gets",
+           ROUND(SUM(buffer_gets)/greatest(1,SUM(exe)),2) "Buff Gets",
            SUM(SUM(decode(flag,1,ela))) OVER(PARTITION BY dbid,sql_id)*1e3 "Total SQL ms",
            substr(trim(regexp_replace(MAX(to_char(SUBSTR(sql_text,1,1000))),'\s+',' ')),1,200) sql_text
     FROM src 
@@ -97,5 +90,5 @@ SELECT * FROM (
     WHERE phfs>1 and flags>1
     GROUP BY sql_id,dbid,phf
 ) 
-ORDER BY "Total SQL ms" DESC,sql_id,last_seen desc, first_seen desc,"Weight%";
+ORDER BY &ord nulls last,sql_id,last_seen desc, first_seen desc,"Weight%";
 

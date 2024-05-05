@@ -23,11 +23,11 @@
 
         &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a where dbid=&dbid)}
         &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a where dbid=&dbid)}
-        &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate+1)}
+        &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date('&V2','YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date('&V3','YYMMDDHH24MI'),sysdate+1)}
         &Time_Filter:{
             default={&TIME_BAND},
             t={sample_time > sysdate - :V2/1440}, 
-            r={sample_time between nvl(to_date(:V2,'YYMMDDHH24MI'),sysdate-3) and nvl(to_date(:V3,'YYMMDDHH24MI'),sysdate+1)}
+            r={sample_time between nvl(to_date('&V2','YYMMDDHH24MI'),sysdate-3) and nvl(to_date('&V3','YYMMDDHH24MI'),sysdate+1)}
         }    
         &Filter:default={1=1},u={username=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &GROUPS:{
@@ -68,9 +68,8 @@
                         COUNT(1) CNT1
                  FROM   &ASH_NAME a
                  WHERE  (&Time_Filter)
-                 AND    (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR inst_id = :V1)
+                 AND    ('&V1' IS NULL OR lower('&V1') IN ('0', 'a') OR inst_id = '&V1')
                  AND    (&Filter)
-                 AND    (&GROUPS IS NOT NULL)
                  AND    (&cpu=0 OR event IS NULL)
                  GROUP BY trunc(sample_time, 'MI'),&GROUPS
                  UNION ALL

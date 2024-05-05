@@ -37,7 +37,10 @@ function db_Types:get(position,typeName,res,conn)
     --if value==nil then return nil end
     local getter=self[typeName].getter
     local rtn,value=pcall(res[getter],res,position)
-    if not rtn and typeName=='CURSOR' then return nil end
+    if not rtn and typeName=='CURSOR' then
+        --print(tostring(value))
+        return nil 
+    end
     env.checkerr(rtn,value)
     if value == nil or res:wasNull() then return nil end
     if not self[typeName].handler then return value end
@@ -478,7 +481,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
             env.log_debug("db","SQL:",sql)
         end
         self:is_connect(nil,true)
-        local info,internal={db=self,sql=sql,error=tostring(obj):rtrim()}
+        local info={db=self,sql=sql,error=tostring(obj):rtrim()}
         local code=''
 
         if obj.getErrorCode then
@@ -497,13 +500,10 @@ function db_core:call_sql_method(event_name,sql,method,...)
         env.log_debug('error',info.error)
         event(event_name,info)
         local showline,found=cfg.get("SQLERRLINE"),false
-        local sql_name=self.get_command_type(sql)
-
         if info and info.error and info.error~="" then
             __stmts[select(1,...)]=nil
-            if  info.sql and (not self:is_internal_call(info.sql)) and 
-                (env.ROOT_CMD~=sql_name or showline~='off') then
-                if showline~='off' and ((info.position or 0) > 1 or info.col) then
+            if  info.sql and (not self:is_internal_call(info.sql)) then
+                if showline~='off' and ((info.position or 0) > 1 or info.col or info.row) then
                     info.row,info.col=tonumber(info.row),tonumber(info.col)
                     local pos,sql=math.min(#info.sql,(tonumber(info.position) or 0)+1),info.sql..'\n'
                     local curr,row,col,done=0,0
@@ -544,10 +544,9 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     end)
                     info.sql,info.row,info.col=sql:sub(1,curr-1),info.row or row,info.col or col
                 end
-                if showline=="off" or showline=='auto' and not found then
-                    local row=0
+                if showline~='on' and #env.RUNNING_THREADS>2 and not found then
                     print('SQL: '..info.sql:gsub("\n",'\n     '))
-                else
+                elseif #env.RUNNING_THREADS>2 or found then
                     local lineno=0
                     if found and env.history then env.history.set_current_line(info.row) end
                     if info.col then print(string.rep('-',106)) end

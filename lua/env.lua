@@ -408,6 +408,7 @@ function env.format_error(src,errmsg,...)
     end
 
     env.log_debug("ERROR",errmsg)
+    env.log_debug('ERROR',debug.traceback)
     if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u+%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
         errmsg,count=errmsg:gsub('^.-(%u%u+%-%d%d%d%d%d)','%1') 
         if count==0 then
@@ -449,6 +450,7 @@ function env.raise(index,...)
     else
         stack={...}
     end
+    
     table.insert(stack,1,(env.callee(index)))
     local str=env.format_error(table.unpack(stack))
     return error(str)
@@ -1060,14 +1062,17 @@ function env.log_debug(name,...)
     if not print_debug or env.set.get('debug')=="off" then return end
     local value=env.set.get('debug'):upper()
     local args={'['..name..']'}
+    local n=select('#',...)
     for i=1,select('#',...) do
         local v=select(i,...)
         if v==nil then
             args[i+1]='nil'
         elseif type(v)=="table" then 
             args[i+1]=table.dump(v)
+        elseif n==1 and type(v)=='function' then
+            args[i+1]=v()
         else
-            args[i+1]=v
+            args[i+1]=tostring(v)
         end
     end
     if value=="ALL" or value==name then print_debug(table.unpack(args)) end

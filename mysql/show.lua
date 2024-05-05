@@ -22,6 +22,7 @@ function show.run(...)
     db:assert_connect()
     local cmd={"SHOW"}
     env.set.set("printsize",10000)
+    env.set.set("colwrap",80)
     for i,k in ipairs(args) do
         cmd[#cmd+1]=i<3 and abbrs[k:upper()] or k
         local c=cmd[#cmd]:upper()

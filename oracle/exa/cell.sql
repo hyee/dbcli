@@ -387,13 +387,13 @@ BEGIN
                         sum(c.freeSpace+nvl(g.usize,0)) usize,
                         sum(g.fcsize) fc
                 from   (select * from grid a where grp='CELLDISK' and (caching=0 or dtypes=1)) c 
-                left   join (select * from grid where grp='GRIDDISK') g 
+                full   join (select * from grid where grp='GRIDDISK') g 
                 using  (name)
                 group  by g.diskgroup)
             SELECT  /*+no_merge(c) no_merge(a) use_hash(c a)*/
                     DISTINCT a.*, listagg(decode(mod(r,8),0,chr(10),'')||tbs,',') WITHIN GROUP(ORDER BY tbs) OVER(PARTITION BY DISKGROUP) tablespaces
             FROM   (SELECT  /*+no_merge(c) no_merge(b) use_hash(c b a)*/
-                            nvl(diskgroup,'--TOTAL--') diskgroup,
+                            nvl(a.name,'--TOTAL--') diskgroup,
                             a.type type,
                             a.DATABASE_COMPATIBILITY "DB_COMP",
                             SUM(b.errors) errs,
@@ -409,7 +409,7 @@ BEGIN
                     FROM    storage b,
                             v$asm_diskgroup a
                     WHERE  a.name(+) = b.DISKGROUP
-                    GROUP  BY dtypes,rollup((DISKGROUP,type,DATABASE_COMPATIBILITY))) a,
+                    GROUP  BY dtypes,rollup((a.name,type,DATABASE_COMPATIBILITY))) a,
             (SELECT c.*,row_number() over(PARTITION by dg order by tbs) r
              FROM
                 (SELECT DISTINCT tbs, regexp_substr(FILE_NAME, '[^\+\\\/]+') dg
@@ -427,7 +427,7 @@ BEGIN
                                 UNION ALL
                                 SELECT '(ArchivedLog)', NAME
                                 FROM   V$ARCHIVED_LOG
-                                WHERE  ROWNUM <= 30)) c) c
+                                WHERE  STATUS='A' AND ROWNUM <= 30)) c) c
                 WHERE  a.DISKGROUP = c.dg(+)
             ORDER  BY 1;
     $END

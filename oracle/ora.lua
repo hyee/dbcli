@@ -55,7 +55,7 @@ function ora:validate_accessable(name,options,values)
                 elseif obj:upper()=='AWRPDB' then
                     local rtn,c=nil,0
                     if ispdb then
-                        rtn,c=pcall(db.get_value,db,'select /*BYPASS_DBCLI_REWRITE*/ /*+INDEX(A)*/ count(1) from awr_pdb_snapshot a where dbid=&dbid rownum<2')
+                        rtn,c=pcall(db.get_value,db,'select /*BYPASS_DBCLI_REWRITE*/ /*+INDEX(A)*/ count(1) from awr_pdb_snapshot a where dbid=&dbid and rownum<2')
                     end
                     if c==0 then
                         check_flag=4
