@@ -28,7 +28,7 @@
         &filter: default={1=2} f={} k={operation||' '||options||' '||object_name like upper('%&0%')}
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
-        &ptable: default={plan_table} p={}
+        &ptable: default={SYS.PLAN_TABLE$} p={}
         @CHECK_USER_FLAG: SYSDBA={1} DEFAULT={0}
         @CHECK_USER_X : {
             SYSDBA = {

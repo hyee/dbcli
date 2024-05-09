@@ -372,7 +372,7 @@ DECLARE
             IF is_test = 2 THEN
                 test_stmt := 'select /*+parallel(a 8)*/ count(1)';
             ELSE
-                test_stmt := 'explain plan set statement_id=''' || stmt_id || ''' for select /*+no_parallel(a) cursor_sharing_exact no_index(a) full(a)*/ *';
+                test_stmt := 'explain plan set statement_id=''' || stmt_id || ''' INTO SYS.PLAN_TABLE$ for select /*+no_parallel(a) cursor_sharing_exact no_index(a) full(a)*/ *';
             END IF;
             test_stmt := test_stmt || ' from ' || target || ' a where "' || col || '"';
         END IF;
@@ -402,11 +402,11 @@ DECLARE
             EXECUTE IMMEDIATE test_stmt || test_val INTO rtn;
         ELSE
             SAVEPOINT test_card;
-            DELETE plan_table a WHERE a.statement_id = stmt_id;
+            DELETE SYS.PLAN_TABLE$ a WHERE a.statement_id = stmt_id;
             EXECUTE IMMEDIATE test_stmt || test_val;
             SELECT MAX(a.cardinality)
             INTO   rtn
-            FROM   plan_table a
+            FROM   SYS.PLAN_TABLE$ a
             WHERE  a.statement_id = stmt_id
             AND    ROWNUM < 2;
             IF txn_id IS NOT NULL THEN

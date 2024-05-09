@@ -354,14 +354,14 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          access_predicates ap,filter_predicates fp,search_columns sc,
                          &dop over(partition by plan_id) dop,
                          &g_mbrc mbrc
-                  FROM   plan_table a
+                  FROM   sys.plan_table$ a
                   WHERE  '&v1' not in('&_sql_id')
                   AND    &SRC = 0
                   AND    (plan_id,timestamp)=(
                       select /*+precompute_subquery*/ 
                              max(plan_id) keep(dense_rank last order by timestamp),
                              max(timestamp)
-                      from   plan_table
+                      from   sys.plan_table$
                       where  nvl(upper('&V1'),'X') in(statement_id,''||plan_id,'X')
                       AND    &SRC = 0
                       AND    '&v1' not in('&_sql_id'))) a
@@ -422,7 +422,7 @@ xplan AS
   WHERE  flag = 5
   UNION ALL
   SELECT a.*
-  FROM   qry,TABLE(dbms_xplan.display('plan_table',NULL,format,'plan_id=' || sq)) a
+  FROM   qry,TABLE(dbms_xplan.display('sys.plan_table$',NULL,format,'plan_id=' || sq)) a
   WHERE  flag = 9
   UNION  ALL
   SELECT a.*

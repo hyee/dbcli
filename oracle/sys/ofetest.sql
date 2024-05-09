@@ -118,7 +118,7 @@ BEGIN
         WHEN NO_DATA_FOUND THEN
             raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || :v1);
     END;
-    sql_text := 'explain plan set statement_id=''OFE_@dbcli_stmt_id@'' for ';
+    sql_text := 'explain plan set statement_id=''OFE_@dbcli_stmt_id@'' INTO SYS.PLAN_TABLE$ for ';
     buff := regexp_replace(buff,'^\s*explain.*?for\s*','',1,1,'i');
     dbms_lob.append(sql_text, buff);
 
@@ -214,7 +214,7 @@ BEGIN
     dbms_output.put_line(counter||' OFE differences are tested.');
 
     IF :accu = 1 THEN
-        DELETE plan_table WHERE STATEMENT_ID IN(
+        DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IN(
             SELECT /*+unnest*/ STATEMENT_ID 
             FROM (
                 SELECT STATEMENT_ID,ID, DECODE(STATS, LAG(STATS) OVER(ORDER BY ID), 'Y', 'N') is_Delete
@@ -224,7 +224,7 @@ BEGIN
                                CHR(1) ||
                                MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) ||
                                CHR(1) || MAX(q.cost) || CHR(1) || MAX(bytes) || CHR(1) || MAX(cardinality) keep(dense_rank FIRST ORDER BY id) || CHR(1) || SUM(nvl2(object_owner, cardinality, 0)) STATS
-                        FROM   PLAN_TABLE q
+                        FROM   SYS.PLAN_TABLE$ q
                         WHERE  STATEMENT_ID NOT LIKE '%BASELINE_%'
                         GROUP  BY STATEMENT_ID
                         ORDER  BY ID))
@@ -238,7 +238,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    MERGE INTO PLAN_TABLE A
+    MERGE INTO SYS.PLAN_TABLE$ A
     USING ( SELECT r,v1||chr(9)||v2 MEMO
             FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofeold)) A
             JOIN  (SELECT rownum r,trim(chr(10) from column_value) v2 from table(ofedesc)) B
@@ -269,7 +269,7 @@ BEGIN
                           NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
                           MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
                           MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2
-                   FROM   PLAN_TABLE q
+                   FROM   SYS.PLAN_TABLE$ q
                    GROUP  BY STATEMENT_ID)
               SELECT MIN(STATEMENT_ID) id, 
                      MIN(ID) seq, 
@@ -281,7 +281,7 @@ BEGIN
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_2: ' || r.plan_hash2;
         wr(qry);
         wr(lpad('=', length(qry), '='));
-        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('plan_table', r.id, fmt))) LOOP
+        FOR i IN (SELECT * FROM TABLE(dbms_xplan.display('SYS.PLAN_TABLE$', r.id, fmt))) LOOP
             IF trim(i.PLAN_TABLE_OUTPUT) IS NOT NULL AND i.PLAN_TABLE_OUTPUT NOT LIKE '%Plan hash value%' THEN
                 wr(i.PLAN_TABLE_OUTPUT);
             END IF;
@@ -309,7 +309,7 @@ BEGIN
                          MAX(cardinality) keep(dense_rank FIRST ORDER BY id) card,
                          SUM(nvl2(object_owner, cardinality, 0)) total_card,
                          MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
-                  FROM   PLAN_TABLE q
+                  FROM   SYS.PLAN_TABLE$ q
                   GROUP  BY STATEMENT_ID) A),
         finals AS
          (SELECT a.*, 

@@ -163,8 +163,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         AND    rownum<2
                         UNION ALL
                         SELECT other_xml, 'PLAN_TABLE' src, -1
-                        FROM   plan_table a
-                        WHERE  (v_flag=0 AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from PLAN_TABLE)
+                        FROM   sys.plan_table$ a
+                        WHERE  (v_flag=0 AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from sys.plan_table$)
                                   OR 
                                 v_flag=2 AND UPPER(qid) IN(''||plan_id,upper(statement_id))) 
                         AND    other_xml IS NOT NULL
