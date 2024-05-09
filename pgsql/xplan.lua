@@ -314,7 +314,7 @@ function xplan.parse_plan_tree(text)
                 init_space=#space
                 indent=2
             else
-                indent=math.max(2,math.floor((#space-init_space)/6)+2)
+                indent=math.min(#maps+1,math.max(2,math.floor((#space-init_space)/6)+2))
             end
             for i=#maps,indent+1,-1 do
                 maps[i]=nil

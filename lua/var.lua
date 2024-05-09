@@ -492,6 +492,10 @@ function var.format_function(fmt,next_fmt)
         local div,units
         if f:sub(1,1)=='U' then
             units,div={'us','ms','s','m','h','d'},{1000,1000,60,60,24}
+        elseif f:sub(1,1)=='N' then
+            units,div={'ns','us','ms','s','m','h','d'},{1000,1000,1000,60,60,24}
+        elseif f:sub(1,1)=='P' then
+            units,div={'ps','ns','us','ms','s','m','h','d'},{1000,1000,1000,1000,60,60,24}
         elseif f:sub(1,1)=='M' then
             units,div={'ms','s','m','h','d'},{1000,60,60,24}
         else

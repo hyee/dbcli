@@ -42,7 +42,7 @@
 ENV FEED OFF AUTOHIDE COL
 COL "Total|Ela,Avg|Ela,Max|Ela,Avg|Retry,Avg|Parse,Avg|Compile,Cop|Prox,Avg|Commit,Cop|Wait,2PC ->|PreWri,2PC ->|Commit,Avg|Backoff,Avg|Latch,Avg|Lock,Avg|TiKV,Avg|Cop,Avg|TiPD" FOR USMHD2
 COL "Avg|Disk,Avg|RocksDB" for kmg2
-COL "Avg|Keys,Avg|Rows,Execs,Retry" for tmb2
+COL "Avg|Scans,Avg|Rows,Execs,Retry" for tmb2
 COL "Cache|Hit" for pct2
 
 SELECT &hour &grp,
@@ -77,7 +77,7 @@ SELECT &hour &grp,
        NULLIF(ROUND(SUM(exec_count * avg_rocksdb_block_read_byte) / SUM(exec_count),2),0)  `Avg|RocksDB`,
        SUM(exec_count * avg_rocksdb_block_cache_hit_count)/NULLIF(SUM(exec_count*(avg_rocksdb_block_cache_hit_count+avg_rocksdb_block_read_count)),0) `Cache|Hit`,
        NULLIF(ROUND(SUM(exec_count * avg_affected_rows) / SUM(exec_count),2),0)  `Avg|Rows`,
-       NULLIF(SUM(exec_count * avg_total_keys) / SUM(exec_count),0)  `Avg|Keys`,
+       NULLIF(SUM(exec_count * avg_total_keys) / SUM(exec_count),0)  `Avg|Scans`,
        '|' `|`,
        &tail
 FROM   information_schema.&inst.statements_summary&vw h
