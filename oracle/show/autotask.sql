@@ -10,7 +10,7 @@ grid {
     '|',
     {[[/*grid={topic='dba_autotask_status'}*/select * from dba_autotask_status]],
      '-',
-     [[/*grid={topic='dba_autotask_schedule_control',pivot=8,pivotsort='TASK_NAME'}*/ select * from dba_autotask_schedule_control]],
+     [[/*grid={topic='dba_autotask_schedule_control',pivot=8,pivotsort='TASK_NAME'}*/ select * from dba_autotask_schedule_control order by enabled desc,task_name]],
      '-',
      [[/*grid={topic='dba_autotask_window_clients'}*/select * from dba_autotask_window_clients]],
      '-',

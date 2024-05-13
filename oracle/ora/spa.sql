@@ -594,8 +594,8 @@ BEGIN
                                FROM  DBA_SQLSET_STATEMENTS 
                                WHERE sqlset_owner=:sown AND sqlset_name=:snam)
                         WHERE seq=1) s USING(sql_id)
-                    WHERE task_id=:x
-                    AND   EXECUTION_NAME=:y
+                    WHERE task_id=:tid
+                    AND   EXECUTION_NAME=:nam
                     AND   (substr(:1,1,1)!='%' OR upper(sql_id||'/'||sqln||'/'||phv||'/'||plan_hash_value) like :1 OR upper(sql_text) like :1)
                     ORDER BY sort_value DESC NULLS LAST
                 ) WHERE ROWNUM<=50~','@ord@',ord) USING sq_nid,sq_txt,sown,snam,tid,nam,key,key,key;

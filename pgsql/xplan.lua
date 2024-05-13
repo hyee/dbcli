@@ -294,7 +294,7 @@ function xplan.parse_plan_tree(text)
     local pos=text:find('[^\n\r]+%(cost=[^\n\r]+ rows=%d+[^\n\r]+width=')
     if not pos then return nil end
     text=text:sub(pos)
-    local tree={[config.root]={[config.child]={}}}
+    local tree={[config.root]={[config.child]={},__indent__=0}}
     local maps={tree[config.root]}
     local seq,indent,node=0,0,maps[1]
     local init_space=nil
@@ -310,24 +310,30 @@ function xplan.parse_plan_tree(text)
         if space then
             line=suffix
             seq=0
+            indent=nil
             if init_space==nil then
                 init_space=#space
                 indent=2
-            else
-                indent=math.min(#maps+1,math.max(2,math.floor((#space-init_space)/6)+2))
             end
-            for i=#maps,indent+1,-1 do
-                maps[i]=nil
+            space=#space-init_space
+            for i=#maps,2,-1 do
+                if maps[i].__indent__>=space then
+                    maps[i]=nil
+                else
+                    indent=i+1
+                    break
+                end
             end
-
-            node={[config.child]={}}
+            if not indent then
+                indent=#maps+1
+            end
+            node={[config.child]={},__indent__=space}
             maps[indent]=node
             if maps[indent-1] then
                 table.insert(maps[indent-1][config.child],node)
             else
-                print("Missing parent node at line #"..num..": ",indent,#space,line)
+                print("Missing parent node at line #"..num..": ",indent,space,line)
             end
-            indent=nil
         end
 
         space,line,_=line:match('^(%s*)(%S.-%S)(%s*)$')

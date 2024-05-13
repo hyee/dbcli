@@ -28,7 +28,8 @@
 
     --[[
         @VER12: 12.1={} default={--}
-        @VER: 11.2={} DEFAULT={--}
+        @VER:   11.2={} DEFAULT={--}
+        @VER23: 23={-RESULT_CACHE_EXECUTIONS} DEFAULT={}
         @check_access_hist: dba_hist_sqltext={} default={--}
         @check_access_bind: dba_hist_sqlbind={1} default={0} 
         @ARGS: 1
@@ -37,9 +38,9 @@
     --]]
 ]]*/
 set feed off 
-COL AVG_ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA FORMAT USMHD2
+COL AVG_ELA,ALL_ELA,CPU,IO,CC,CL,AP,PL_JAVA,Parse|CPU FORMAT USMHD2
 COL CELLIO,READ,WRITE,CELLIO,OFLIN,OFLOUT FORMAT KMG
-COL buffs,reads,dxws for tmb2
+COL buffs,reads,dxws,Parse|Buffs for tmb2
 VAR c REFCURSOR;
 VAR b REFCURSOR "Bind List"
 VAR src  VARCHAR2;
@@ -323,9 +324,12 @@ GROUP  BY phv,OPERATION_TYPE, POLICY,LAST_EXECUTION
 ORDER  BY MEM + TEMP DESC NULLS LAST]]}
 
 PRO 
-SELECT PLAN_HASH_VALUE PHV,
+SELECT PLAN_HASH_VALUE PLAN_HASH,
+       &ver12 max(phf) PLAN_FULL,
+       max(bg) "Parse|Buffs",
+       max(cpu) "Parse|CPU",
        NULLIF(program_id || NULLIF('#' || program_line#, '#0'),'0') program#,
-       &ver trim(chr(10) from ''
+       trim(chr(10) from ''
        &ver12      || decode(is_reoptimizable,'Y','REOPTIMIZABLE'||chr(10))
        &ver12      ||decode(is_resolved_adaptive_plan,'Y','RESOLVED_ADAPTIVE_PLAN'||chr(10))
        &ver        || decode(IS_BIND_SENSITIVE, 'Y', 'BIND_SENSITIVE'||chr(10)) 
@@ -334,9 +338,10 @@ SELECT PLAN_HASH_VALUE PHV,
        &ver        || decode(IS_OBSOLETE, 'Y', 'OBSOLETE'||chr(10))
        &ver12      || decode(IS_ROLLING_INVALID, 'Y', 'ROLLING_INVALID'||chr(10))
        &ver12      || decode(IS_ROLLING_REFRESH_INVALID, 'Y', 'ROLLING_REFRESH_INVALID'||chr(10))
-       &ver ) ACS,
+       ) info,
        TRIM('/' FROM SQL_PROFILE 
        &ver || '/' || SQL_PLAN_BASELINE
+       &ver || '/' || SQL_PATCH
        ) OUTLINE,
        parsing_schema_name user#,
        SUM(EXEC) AS EXEC,
@@ -360,10 +365,21 @@ SELECT PLAN_HASH_VALUE PHV,
        &ver NULLIF(round(SUM(IO_CELL_OFFLOAD_RETURNED_BYTES)/SUM(EXEC),3),0)  oflout,
        NULLIF(round(sum(ROWS_PROCESSED)/SUM(EXEC),3),0)  rows#,
        NULLIF(round(sum(fetches)/SUM(EXEC),3),0)  fetches
-FROM   (SELECT greatest(executions + users_executing, 1) exec,a.* 
+FROM   (SELECT greatest(executions + users_executing &VER23, 1) exec,a.* 
         FROM   gv$SQL a 
         WHERE  SQL_ID=:V1 
         AND    inst_id=nvl(regexp_substr(:V2,'^\d+$')+0,inst_id))
+LEFT JOIN (
+        SELECT INST_ID,SQL_ID,PLAN_HASH_VALUE,
+               MAX(nullif(to_char(regexp_substr(other_xml,'"plan_hash_full".*?(\d+)',1,1,'n',1)),'0')) phf,
+               AVG(to_number(to_char(regexp_substr(other_xml,'"bg".*?(\d+)',1,1,'n',1)))) bg,
+               AVG(to_number(to_char(regexp_substr(other_xml,'"cpu_time".*?(\d+)',1,1,'n',1)))*1000) cpu
+        FROM   GV$SQL_PLAN
+        WHERE  SQL_ID=:V1 
+        AND    inst_id=nvl(regexp_substr(:V2,'^\d+$')+0,inst_id)
+        AND    OTHER_XML IS NOT NULL
+        GROUP BY INST_ID,SQL_ID,PLAN_HASH_VALUE
+) USING(INST_ID,SQL_ID,PLAN_HASH_VALUE)
 GROUP  BY SQL_ID,
           PLAN_HASH_VALUE,
           &ver12 is_reoptimizable,is_resolved_adaptive_plan,IS_ROLLING_INVALID,IS_ROLLING_REFRESH_INVALID,
@@ -373,6 +389,6 @@ GROUP  BY SQL_ID,
           SQL_PROFILE,
           &ver SQL_PLAN_BASELINE,
           parsing_schema_name;
-          
+       
 
 --show sqlver -s"&v1"

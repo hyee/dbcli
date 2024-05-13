@@ -213,7 +213,7 @@ function xplan.parse_plan_tree(text)
     local pos=text:find('[^\n\r]+%=%d+[^\n\r]+ rows=%d+')
     if not pos then return nil end
     text=text:sub(pos)
-    local tree={[config.root]={[config.child]={}}}
+    local tree={[config.root]={[config.child]={},__indent__=0}}
     local maps={tree[config.root]}
     local indent,node=0,maps[1]
     local init_space=nil
@@ -224,24 +224,30 @@ function xplan.parse_plan_tree(text)
             print('Unexpected line #'..num..': '..line) 
             return
         end
-
+        indent=nil
         line=suffix
         if init_space==nil then
             init_space=#space
             indent=2
-        else
-            indent=math.max(2,math.floor((#space-init_space)/4)+2)
         end
-        for i=#maps,indent+1,-1 do
-            maps[i]=nil
+        space=#space-init_space
+        for i=#maps,2,-1 do
+            if maps[i].__indent__>=space then
+                maps[i]=nil
+            else
+                indent=i+1
+                break
+            end
         end
-
-        node={[config.child]={}}
+        if not indent then
+            indent=#maps+1
+        end
+        node={[config.child]={},__indent__=space}
         maps[indent]=node
         if maps[indent-1] then
             table.insert(maps[indent-1][config.child],node)
         else
-            print("Missing parent node at line #"..num..": ",indent,#space,line)
+            print("Missing parent node at line #"..num..": ",indent,space,line)
         end
         
         local node_type,costs=line:match('^(.-)%s+(%(.-)%)$')

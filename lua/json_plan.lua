@@ -37,6 +37,7 @@ function plan.parse_json_plan(json,options)
         local row={__=depth,__childs={sig=''}}
         local child={}
         local function push_field(name,org_name,value)
+            if name:find('^__') then return end
             if value~='' and value and (tonumber(value) or 1) >0 then
                 if not fields[name] then
                     n=n+1
