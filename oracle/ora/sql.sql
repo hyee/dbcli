@@ -292,7 +292,7 @@ grid {
                &VER NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME) OPERATION,
                PLSQL_ENTRY_OBJECT_ID program#,PLSQL_OBJECT_ID call#
         FROM   &src
-        WHERE  sql_id = '&V1'
+        WHERE  '&V1' in(sql_id,top_level_sql_id)
         AND    &inst=nvl(regexp_substr('&V2','^\d+$')+0,&inst)
         AND    sample_time+0 BETWEEN nvl(to_date('&starttime','YYMMDDHH24MISS'),sysdate-7) and nvl(to_date('&endtime','YYMMDDHH24MISS'),sysdate)
         GROUP  BY sql_plan_hash_value, PLSQL_ENTRY_OBJECT_ID,PLSQL_OBJECT_ID, event
@@ -387,7 +387,7 @@ GROUP  BY SQL_ID,
           program_id,
           program_line#,
           SQL_PROFILE,
-          &ver SQL_PLAN_BASELINE,
+          &ver SQL_PLAN_BASELINE, SQL_PATCH,
           parsing_schema_name;
        
 

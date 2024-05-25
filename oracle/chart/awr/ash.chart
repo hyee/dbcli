@@ -21,8 +21,8 @@
         &V2       : default={&STARTTIME}
         &V3       : default={&ENDTIME}
 
-        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a where dbid=&dbid)}
-        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a where dbid=&dbid)}
+        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
+        &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a)}
         &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date('&V2','YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date('&V3','YYMMDDHH24MI'),sysdate+1)}
         &Time_Filter:{
             default={&TIME_BAND},

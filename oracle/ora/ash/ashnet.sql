@@ -35,7 +35,7 @@ FROM (
         from  &ash
         where p2text='#bytes' 
         and   nvl(wait_class,'Network')='Network'
-        and   upper(machine) like upper('%&V1%')
+        and   upper(machine||','||event||','||sql_id) like upper('%&V1%')
         and   nvl2(event,time_waited,wait_time)>0
         and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)
         group by machine,event,rollup((sql_id,top_level_sql_id))) a)

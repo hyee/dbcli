@@ -77,7 +77,8 @@ function desc.desc(name,option)
     local dels='\n'..string.rep("=",80)
     local feed,autohide=cfg.get("feed"),cfg.get("autohide")
     cfg.set("feed","off",true)
-    print(("%s : %s%s%s%s\n"..dels):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],rs.desc))
+    local title=("| %s : %s%s%s%s |"):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],rs.desc)
+    print(("%s\n%s\n%s"):format(string.rep('-',#title),title,string.rep('-',#title)))
     for i,sql in ipairs(sqls) do
         cfg.set("COLWRAP",120)
         cfg.set("PIVOT",sql:sub(1,256):find("/*PIVOT*/",1,true) and 1 or 0)
@@ -93,9 +94,14 @@ function desc.desc(name,option)
         end
         result=rs.v_cur
         result=db.resultset:rows(result,-1)
-        if #result>1 then 
+        if #result>1 then
+            local title=sql:match([[topic%s*=%s*['"](.-)['"].*]])
+            if not title then 
+                print(dels)
+            else
+                print('\n'..title..':\n'..string.rep('=',#title+1))
+            end
             grid.print(result)
-            if i<#sqls then print(dels) end
         end
         cfg.set("PIVOT",0)
         cfg.set("COLWRAP",'default')

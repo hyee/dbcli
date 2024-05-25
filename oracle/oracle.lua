@@ -765,7 +765,7 @@ function oracle:onload()
          ['oracle.net.networkCompression']='on',
          ['oracle.net.keepAlive']='true',
          ['oracle.jdbc.convertNcharLiterals']='true',
-         ['oracle.net.ssl_server_dn_match']='true',
+         --['oracle.net.ssl_server_dn_match']='false',
          ['oracle.jdbc.timezoneAsRegion']='false',
          ['oracle.jdbc.TcpNoDelay']='false',
          ["oracle.net.disableOob"]='false',

@@ -148,7 +148,7 @@ return  obj.object_type=='FIXED TABLE' and [[
         AND   a.col#=c.col#(+)
         ORDER  BY 1,2
     ]] or {[[
-        SELECT /*INTERNAL_DBCLI_CMD*/ 
+        SELECT /*INTERNAL_DBCLI_CMD topic="Column info"*/ 
              /*+opt_param('container_data' 'current_dictionary') opt_param('optimizer_dynamic_sampling' 5)
                no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c) */
                a.INTERNAL_COLUMN_ID NO#,
@@ -297,7 +297,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :table_name)
-        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+topic="Index info" no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -330,7 +330,7 @@ return  obj.object_type=='FIXED TABLE' and [[
         AND    :table_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD*/ --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
+        SELECT /*INTERNAL_DBCLI_CMD topic="Constraint info"*/ --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
