@@ -552,7 +552,14 @@ function oracle:parse(sql,params)
             if typ=="CURSOR" then
                 bind_info[binds[idx]][inIdx]=0
                 typ="SYS_REFCURSOR"
-                s1[idx]="V"..(idx+1)..' '..typ..';/* :'..binds[idx]..'*/'
+                s1[idx]="V"..(idx+1)..' '..typ..'; /*:'..binds[idx]..'*/'
+            elseif typ=="OPAQUE" then
+                bind_info[binds[idx]][inIdx]=0
+                typ="ANYDATA"
+                s1[idx]="V"..(idx+1)..' '..typ..'; /*:'..binds[idx]..'*/'
+            elseif typ=="ARRAY" or typ=='STRUCT' then
+                bind_info[binds[idx]][inIdx]=0
+                s1[idx]="V"..(idx+1)..' '..typ..'; /*:'..binds[idx]..'*/'
             else
                 index=index+1;
                 bind_info[binds[idx]][inIdx]=index
@@ -582,8 +589,13 @@ function oracle:parse(sql,params)
                 prep[p[func]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename],p[func],p[value],p[inIdx]~=0 and p[inIdx] or nil}
-            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..self.db_types:getTyeName(p[typeid]))
-            prep['registerOutParameter'](prep,p[outIdx],p[typeid])
+            local name=self.db_types:getTyeName(p[typeid])
+            env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..name)
+            if name=='OPAQUE' then
+                prep['registerOutParameter'](prep,p[outIdx],p[typeid],"SYS.ANYDATA")
+            else
+                prep['registerOutParameter'](prep,p[outIdx],p[typeid])
+            end
         end
         env.log_debug("parse","Block-Params:",table.dump(params))
         return prep,org_sql,params

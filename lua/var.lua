@@ -19,7 +19,12 @@ var.types={
     CHAR      =  'VARCHAR',
     NCHAR     =  'VARCHAR',
     NVARCHAR2 =  'VARCHAR',
-    BOOLEAN   =  'BOOLEAN'
+    BOOLEAN   =  'BOOLEAN',
+    OBJECT    =  'OBJECT',
+    JSON      =  'JSON',
+    ANYDATA   =  'OPAQUE',
+    ARRAY     =  'ARRAY',
+    STRUCT    =  'STRUCT'
 }
 
 function var.helper()
@@ -29,7 +34,7 @@ function var.helper()
             Remove variable: @@NAME <name>
         Available Data types:
         ====================
-        REFCURSOR CURSOR CLOB NUMBER CHAR VARCHAR VARCHAR2 NCHAR NVARCHAR2 BOOLEAN]]
+        REFCURSOR CURSOR CLOB NUMBER CHAR VARCHAR VARCHAR2 NCHAR NVARCHAR2 BOOLEAN JSON ANYDATA ARRAY STRUCT OBJECT]]
     return help
 end
 

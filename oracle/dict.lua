@@ -88,6 +88,10 @@ function dicts.on_before_db_exec(item)
 
     instance,container,usr,dbid=tonumber(cfg.get("instance")),tonumber(cfg.get("container")),cfg.get("schema"),cfg.get("dbid")
     if instance==0 then instance=tonumber(db.props.instance) end
+    default_dbid=db.props.dbid
+    if (db.props.container_dbid or 0)>0 and cdbmode=='pdb' then
+        default_dbid=db.props.container_dbid
+    end
     for k,v in ipairs{
         {'INSTANCE',instance and instance>0 and instance or ""},
         {'DBID',dbid and dbid>0 and dbid or default_dbid or ""},
@@ -256,9 +260,6 @@ function dicts.on_after_db_conn(instance,sql,props)
 
     if not db:is_connect(true) then
         env.set_title("")
-        default_dbid=nil
-    else
-        default_dbid=db:get_value("select /*BYPASS_DBCLI_REWRITE*/ dbid from v$database")
     end
 end
 

@@ -138,7 +138,13 @@ function db_Types:load_sql_types(className)
                     result= result:gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
                     return result
                 end
-            end}
+            end},
+        [9]={getter='getObject',setter='setObject',
+             handler=function(result,action,conn)
+                if action=="get" then
+                    return loader:object2String(result)
+                end
+            end},
     }
     local m1={
         BOOLEAN  = m2[1],
@@ -148,7 +154,10 @@ function db_Types:load_sql_types(className)
         BLOB     = m2[5],
         CURSOR   = m2[6],
         DATE     = m2[8],
-        TIMESTAMP= m2[8]
+        TIMESTAMP= m2[8],
+        OPAQUE   = m2[9],
+        ARRAY    = m2[9],
+        STRUCT   = m2[9]
     }
     for k,v in java.fields(typ) do
         if type(k) == "string" and k:match('^[%u_%d]+$') and k~='NULL' and k~='UNKNOWN' then

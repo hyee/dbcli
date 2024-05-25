@@ -40,8 +40,8 @@ public class Loader {
     public static String originProcessTitle = null;
     static LuaState lua;
     static Console console;
-    static Clipboard clipboard=null;
-    static volatile boolean isAsync=false;
+    static Clipboard clipboard = null;
+    static volatile boolean isAsync = false;
     private static Loader loader = null;
     KeyMap keyMap;
     KeyListner q = new KeyListner('q');
@@ -68,7 +68,7 @@ public class Loader {
         }
         console = new Console(root + File.separator + "cache" + File.separator + "history.log");
         try {
-            clipboard= Toolkit.getDefaultToolkit().getSystemClipboard();
+            clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         } catch (Throwable e) {
 
         }
@@ -214,9 +214,9 @@ public class Loader {
             method.invoke(classLoader, file);
         }
         TreeMap<String, Boolean> map = new TreeMap();
-        String path=System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".");
-        path=path.replaceAll(File.pathSeparator+"\\s+",File.pathSeparator);
-        for (String s : (path).split(File.pathSeparator+"+"))
+        String path = System.getProperty("java.class.path") + File.pathSeparator + file.replace(root, ".");
+        path = path.replaceAll(File.pathSeparator + "\\s+", File.pathSeparator);
+        for (String s : (path).split(File.pathSeparator + "+"))
             map.put(s, true);
         System.setProperty("java.class.path", String.join(File.pathSeparator, map.keySet().toArray(new String[0])));
     }
@@ -261,9 +261,9 @@ public class Loader {
         }
     }
 
-    public static boolean copyToClipboard(String string) throws IOException{
-        if(string==null||string.trim().equals("")) return false;
-        if(clipboard==null) {
+    public static boolean copyToClipboard(String string) throws IOException {
+        if (string == null || string.trim().equals("")) return false;
+        if (clipboard == null) {
             /*
             String encodedString = Base64.getEncoder().encodeToString(string.getBytes());
             console.write("\u001b]52;c;"+encodedString+"\u001b7");
@@ -461,6 +461,24 @@ public class Loader {
         }));
     }
 
+    public String object2String(Object obj) throws Exception {
+        if (obj instanceof Array || obj instanceof Struct) {
+            try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+                StringBuilder sb = new StringBuilder();
+                helper.object2String(sb, obj, "", ResultSetHelperService.DEFAULT_DATE_FORMAT, ResultSetHelperService.DEFAULT_DATE_FORMAT);
+                return sb.toString();
+            }
+        } else {
+            String clz = obj.getClass().getSimpleName();
+            try {
+                Method method = obj.getClass().getDeclaredMethod("stringValue");
+                return (String) method.invoke(obj);
+            } catch (Exception e) {
+                return obj.toString();
+            }
+        }
+    }
+
     public void closeWithoutWait(final Connection conn) {
         Thread t = new Thread(() -> {
             try {
@@ -567,7 +585,7 @@ public class Loader {
 
     public Object asyncCall(Callable<Object> c) throws Throwable {
         try {
-            isAsync=true;
+            isAsync = true;
             this.sleeper = Console.threadPool.submit(c);
             console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
@@ -580,24 +598,25 @@ public class Loader {
             if (rs != null && !rs.isClosed()) rs.close();
             sleeper = null;
             rs = null;
-            isAsync=false;
+            isAsync = false;
             console.setEvents(null, null);
         }
     }
 
     Object tempResult = null;
-    Throwable err =null;
+    Throwable err = null;
+
     public void asyncExecuteStatement(final Statement p, String sql) {
-        isAsync=true;
+        isAsync = true;
         tempResult = null;
         err = null;
-        Thread t=new Thread(()->{
+        Thread t = new Thread(() -> {
             try {
-                tempResult = asyncCall(() -> setStatement(p,sql));
+                tempResult = asyncCall(() -> setStatement(p, sql));
             } catch (Throwable e) {
                 err = e;
             } finally {
-                isAsync=false;
+                isAsync = false;
             }
         });
         t.setDaemon(true);
@@ -605,8 +624,8 @@ public class Loader {
     }
 
     public Object getAsyncExecuteResult() throws Throwable {
-        if(isAsync) return null;
-        if(err!=null) throw err;
+        if (isAsync) return null;
+        if (err != null) throw err;
         return tempResult;
     }
 
