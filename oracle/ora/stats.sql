@@ -237,7 +237,7 @@ BEGIN
     dbms_output.put_line(rpad('-',120,'-'));
     --refer to https://github.com/FranckPachot/scripts/blob/master/statistic-gathering/display-system-statistics.txt
     FOR C IN(
-        SELECT r,pname, to_char(nvl(round(nvl(calc,pval1),4),0),'999990.999')||nullif(' ('||formula||')',' ()') value
+        SELECT r,pname, to_char(nvl(round(nvl(calc,pval1),4),0),'999999990.999')||nullif(' ('||formula||')',' ()') value
         FROM   (SELECT rownum r,objectschema pname,objectname+0 pval1 FROM TABLE(lst))
         MODEL 
         REFERENCE sga ON 
@@ -260,7 +260,7 @@ BEGIN
                     FROM   v$parameter
                     WHERE  NAME = 'db_block_size') DIMENSION BY(NAME) MEASURES(VALUE) 
         DIMENSION BY(pname)
-        MEASURES(pval1,r, CAST(NULL AS NUMBER) AS calc, CAST(NULL AS VARCHAR2(120)) AS formula)
+        MEASURES(pval1,r, CAST(NULL AS NUMBER) AS calc, CAST(NULL AS VARCHAR2(200)) AS formula)
         RULES(
              calc ['MBRC'] = coalesce(pval1 ['MBRC'], parameter.value ['db_file_multiblock_read_count'], parameter.value ['_db_file_optimizer_read_count'], 8),
              calc ['MREADTIM'] = coalesce(pval1 ['MREADTIM'],pval1 ['IOSEEKTIM'] + (parameter.value ['db_block_size'] * calc ['MBRC']) / pval1 ['IOTFRSPEED']),
@@ -271,6 +271,9 @@ BEGIN
              calc ['IOTFRSPEED'] = pval1 ['IOTFRSPEED']/1024,
              calc ['CPUSPEED'] = pval1 ['CPUSPEED'],
              calc ['CPUSPEEDNW'] = pval1 ['CPUSPEEDNW'],
+             calc ['MAXTHR'] = coalesce(pval1['MAXTHR'],parameter.value['db_block_size'] * calc ['MBRC']/calc ['MREADTIM'] 
+                                * CASE WHEN dbms_db_version.version>11 then 1000 else 1 end),  --bug #13097308
+             calc ['SLAVETHR'] = coalesce(pval1['SLAVETHR'], 0.9* calc ['MAXTHR']),
              r['   maximum mbrc']=98,
              r['   single cost / block']=99,
              r['   multi  cost / block']=100,
@@ -293,8 +296,8 @@ BEGIN
              formula ['   maximum mbrc'] = 'buffer cache size in blocks / sessions',
              formula ['CPUSPEED'] = 'workload CPU speed in MHZ',
              formula ['CPUSPEEDNW'] = 'noworkload CPU speed in MHZ',
-             formula ['MAXTHR'] = 'maximum throughput that the I/O subsystem can deliver',
-             formula ['SLAVETHR'] = 'average parallel slave I/O throughput'
+             formula ['MAXTHR'] = 'maximum serial I/O throughput in bytes/'||CASE WHEN dbms_db_version.version>11 then 's' else 'ms' end,
+             formula ['SLAVETHR'] = 'average per parallel slave I/O throughput in bytes/'||CASE WHEN dbms_db_version.version>11 then 's' else 'ms' end||', parallel I/O cost should be: (<serial_cost> * MAXTHR / (<dop> * SLAVETHR)'
         ) ORDER BY r) LOOP
         dbms_output.put_line(rpad('System Stats - '||c.pname,45)||': '||c.value);
     END LOOP;

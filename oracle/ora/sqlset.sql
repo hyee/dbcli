@@ -190,7 +190,9 @@ BEGIN
                  WHERE ('||filter||')
                  AND   command_type in (1, 2, 3, 6, 7, 9, 47, 170, 189)
                  AND   substr(sql_text,1,256) NOT LIKE ''%/*+%dbms_stats%''
-                 AND   NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze)\W'')';
+                 AND   force_matching_signature > 0
+                 AND   plan_hash_value > 0
+                 AND   NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze|AUTO_INDEX:ddl)\W'')';
         stmt := replace(replace('
         WITH t AS(select /*+materialize opt_estimate(query_block rows=0)*/ 1 from v$sqlarea where 1=2)
         SELECT /*+monitor opt_param(''container_data'' ''current_dictionary'') opt_param(''_fix_control'' ''26552730:0'')*/

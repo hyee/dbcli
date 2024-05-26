@@ -775,6 +775,7 @@ function oracle:onload()
          ['oracle.jdbc.autoCommitSpecCompliant']='false',
          ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
          ['oracle.net.networkCompression']='on',
+         ['oracle.net.networkCompressionThreshold']='1024',
          ['oracle.net.keepAlive']='true',
          ['oracle.jdbc.convertNcharLiterals']='true',
          --['oracle.net.ssl_server_dn_match']='false',

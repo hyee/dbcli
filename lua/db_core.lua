@@ -83,7 +83,7 @@ function db_Types:load_sql_types(className)
                         str=str..v..",\n "
                     end
                     if #str>1 then str=str:sub(1,-4) end
-                     str=str.."}"
+                        str=str.."}"
                     return str
                 else
                     return conn:createArrayOf("VARCHAR", result);
@@ -148,7 +148,7 @@ function db_Types:load_sql_types(className)
     }
     local m1={
         BOOLEAN  = m2[1],
-        ARRAY    = m2[3],
+        --ARRAY    = m2[3],
         CLOB     = m2[4],
         NCLOB    = m2[4],
         BLOB     = m2[5],
