@@ -353,18 +353,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 v_hint := REGEXP_REPLACE(i.hint,'^((NO_)?INDEX[A-Z_]*)_[ADE]+SC\(','\1(');
                 IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
                     v_embed := '        q''{' || v_hint || '}'','; 
-                ELSIF v_hint NOT LIKE '%OUTLINE_DATA' THEN
-                    --v_hint := regexp_replace(v_hint,'"([0-9A-Z$#_]+)"','\1');
-                    WHILE NVL(LENGTH(v_hint), 0) > 0 LOOP
-                        IF LENGTH(v_hint) <= 500 THEN
-                            pr('        q''{' || v_hint || '}'',');
-                            v_hint := NULL;
-                        ELSE
-                            v_pos := INSTR(SUBSTR(v_hint, 1, 500), ' ', -1);
-                            pr('        q''{' || SUBSTR(v_hint, 1, v_pos) || '}'',');
-                            v_hint := '   ' || SUBSTR(v_hint, v_pos);
-                        END IF;
-                    END LOOP;
+                ELSIF v_hint NOT LIKE '%OUTLINE_DATA' AND length(v_hint)<500 THEN
+                    pr('        q''{' || v_hint || '}'',');
                 END IF;
             END LOOP;
             
