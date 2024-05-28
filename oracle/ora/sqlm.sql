@@ -376,7 +376,7 @@ BEGIN
                     AND   inst_id=nvl(inst,inst_id);
                 END IF;
                 $IF &check_access_report=1 $THEN
-                    if lower(sq_id1) not in('l','last') and (sq_id is null or last_date<sysdate-2/24) then
+                    if lower(sq_id1) not in('l','last') and (sq_id is null or nvl(last_date,sysdate-1)<sysdate-2/24) then
                         select max(key1) keep(dense_rank last order by ptime,key2),
                                max(report_id) keep(dense_rank last order by ptime,key2)
                         into  sq_id1,rpt_id
@@ -386,9 +386,9 @@ BEGIN
                             from  dba_hist_reports
                             where key1=nvl(sq_id,sq_id1)
                             AND   key2>0
+                            AND   did in(dbid,con_dbid)
                             AND   (plan_hash IS NULL OR plan_hash in(key2,report_id) or instr(report_summary,'plan_hash>'||plan_hash||'<')>0)
                             AND   component_name='sqlmonitor'
-                            AND   dbid=did
                             AND   instance_number=nvl(inst,instance_number));
                         sq_id := nvl(sq_id1,sq_id);
                     end if;
@@ -419,7 +419,7 @@ BEGIN
                         SELECT XMLTYPE(report)
                         INTO   xml
                         FROM   dba_hist_reports_details
-                        WHERE  dbid=did
+                        WHERE  did in(dbid,con_dbid)
                         AND    report_id=rpt_id
                         AND    instr(report,sq_id)>0
                         AND    rownum<2;

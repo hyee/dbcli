@@ -42,15 +42,28 @@ BEGIN
         WITH plans AS(
             SELECT A.*
             FROM   &plan a
-            WHERE  UPPER('&V1') IN(a.OBJECT_NAME,''||a.object#)
+            WHERE  UPPER('&V1') IN(a.OBJECT_NAME,''||a.object#,a.OBJECT_OWNER||'.'||a.OBJECT_NAME)
             AND    A.DBID='&dbid'
         )
-        SELECT * FROM (
+        SELECT a.dbid,
+               a.id,
+               a.sorttype,
+               a.sq_id,
+               a.plan_full,
+               a.plan_hash,
+               a.obj,
+               a.object_name,
+               a.options,
+               a.operation,
+               substr(A.PREDS||NVL2(b.sql_id,'Join  Filter: '||NVL(b.ACCESS_PREDICATES,b.FILTER_PREDICATES),''),1,3500) join_preds
+        FROM (
             SELECT row_number() over(partition by dbid,sq_id,plan_hash_value,id order by flag) seq_,
                    a.dbid,
                    a.id,
-                   nvl(lower('&V2'),'total') sorttype,
+                   parent_,
+                   nvl(lower(''),'total') sorttype,
                    sq_id,
+                   sql_id,
                    plan_full,
                    a.plan_hash_value plan_hash,
                    a.object# obj,
@@ -86,11 +99,12 @@ BEGIN
                    REPLACE(CASE WHEN a.ACCESS_PREDICATES IS NOT NULL THEN nvl(prefix,'Table')||' Access: '||substr(a.ACCESS_PREDICATES,1,800)||chr(10) END ||
                            CASE WHEN a.FILTER_PREDICATES IS NOT NULL THEN nvl(prefix,'Table')||' Filter: '||substr(a.FILTER_PREDICATES,1,800)||chr(10) END ||
                            CASE WHEN b_ACCESS_PREDICATES IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Access: '||substr(b_ACCESS_PREDICATES,1,800)||chr(10) END ||
-                           CASE WHEN b_FILTER_PREDICATES IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Filter: '||substr(b_FILTER_PREDICATES,1,800) END
+                           CASE WHEN b_FILTER_PREDICATES IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Filter: '||substr(b_FILTER_PREDICATES,1,800)||chr(10) END
                         ,'"') PREDS
             FROM (
                 SELECT  /*+outline_leaf use_hash(a b) */
                         A.*,
+                        least(b.parent_id,a.parent_id) parent_,
                         decode(a.plan_hash_value,0,a.sql_id) sq_id,
                         nvl(max(0+nvl2(b.other_xml,nullif(to_char(regexp_substr(b.other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0'),'')) over(partition by a.dbid,a.plan_hash_value),a.plan_hash_value) plan_full,
                         b.ACCESS_PREDICATES B_ACCESS_PREDICATES,
@@ -102,18 +116,26 @@ BEGIN
                             AND  b.id BETWEEN a.id - 1 AND a.id + 1
                             AND  nvl(a.OBJECT_ALIAS,' ')=nvl(b.OBJECT_ALIAS,' ')
                             AND  nvl(a.QBLOCK_NAME,' ')=nvl(b.QBLOCK_NAME,' ')
-                            AND (a.prefix='Index' AND B.options like '%INDEX ROWID%' AND 
+                            AND (a.prefix='Index' AND B.options like '%INDEX ROWID%' AND
                                  b.depth=a.depth-1 and (a.parent_id=b.id or a.parent_id!=b.id-1)
-                              OR a.prefix='Table' AND B.operation like 'INDEX%' AND 
+                              OR a.prefix='Table' AND B.operation like 'INDEX%' AND
                                  b.depth=a.depth+1 and (b.parent_id=a.id or b.parent_id!=a.id-1))
                         THEN 1 ELSE 2 END FLAG
                 FROM (SELECT /*+NO_MERGE*/ A.*,CASE WHEN OPERATION LIKE 'INDEX%' THEN 'Index' WHEN options LIKE '%INDEX ROWID%' THEN 'Table' END prefix FROM  plans a) a
-                JOIN &plan b
+                JOIN AWR_PDB_SQL_PLAN b
                 ON   b.dbid = a.dbid
                 AND  a.sql_id = b.sql_id
                 AND  a.plan_hash_value = b.plan_hash_value
-            ) a
-        ) WHERE seq_=1~');
+            ) a) a
+        LEFT JOIN AWR_PDB_SQL_PLAN b
+        ON   b.dbid = a.dbid
+        AND  a.sql_id = b.sql_id
+        AND  a.plan_hash = b.plan_hash_value
+        AND  a.parent_=b.id
+        AND  regexp_like(b.operation,'HASH|NESTED|MERGE')
+        AND  NVL(b.ACCESS_PREDICATES,b.FILTER_PREDICATES) IS NOT NULL
+        WHERE seq_=1~');
+    
     stmt :=q'~
         WITH ops AS(
             SELECT *
@@ -129,7 +151,7 @@ BEGIN
                         OPERATION VARCHAR2(300) PATH 'OPERATION',
                         OPTIONS VARCHAR2(300) PATH 'OPTIONS',
                         OP VARCHAR2(300) PATH 'OP',
-                        PREDS VARCHAR2(4000) PATH 'PREDS'
+                        PREDS VARCHAR2(4000) PATH 'JOIN_PREDS'
             )
         ),~';
     IF '&typ' ='d' THEN
@@ -179,7 +201,7 @@ BEGIN
                    ratio_to_report(sum(total_ela)) over() weight,
                    sum(execs) execs,
                    round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela,
-                   op,PREDS
+                   op,max(PREDS) PREDS
             FROM (
                 SELECT /*+outline_leaf ordered use_hash(hs s) opt_param('_optimizer_cartesian_enabled' 'false')  opt_param('_optimizer_mjc_enabled' 'false') */
                        hs.sql_id,dbid &con,

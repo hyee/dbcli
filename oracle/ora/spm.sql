@@ -383,38 +383,40 @@ BEGIN
                         nvl(last_modified+0,created+0) updated,          
                         schema,
                         substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                    FROM   (select a.*,
-                                   trim(',' FROM CASE WHEN enabled='YES' THEN 'ENABLED,' END
-                                        ||CASE WHEN fixed='YES' THEN 'FIXED,' END
-                                        ||CASE WHEN accepted='YES' THEN 'ACCEPTED,' END
-                                        ||CASE WHEN autopurge='YES' THEN 'AUTOPURGE,' END
-                                        ||CASE WHEN reproduced='NO' THEN 'NON-REPRODUCED,' END
-                                    $IF DBMS_DB_VERSION.VERSION > 11 $THEN
-                                        ||CASE WHEN adaptive='YES' THEN 'ADAPTIVE,' END
-                                    $END
-                                    $IF DBMS_DB_VERSION.VERSION > 23 $THEN
-                                        ||nvl2(foreground_last_verified,'FG-VERIFIED,','')
-                                        ||decode(bitand(flags, 1024), 0, '', 'REALTIME,')
-                                        ||decode(bitand(flags, 2048), 0, '', 'REVERSE,')
-                                        ||n.status
-                                    $END
-                                    ) attrs,
-                                  parsing_schema_name schema 
-                            from  dba_sql_plan_baselines a
+                    FROM   (
+                        select a.*,
+                               trim(',' FROM CASE WHEN enabled='YES' THEN 'ENABLED,' END
+                                    ||CASE WHEN fixed='YES' THEN 'FIXED,' END
+                                    ||CASE WHEN accepted='YES' THEN 'ACCEPTED,' END
+                                    ||CASE WHEN autopurge='YES' THEN 'AUTOPURGE,' END
+                                    ||CASE WHEN reproduced='NO' THEN 'NON-REPRODUCED,' END
+                                $IF DBMS_DB_VERSION.VERSION > 11 $THEN
+                                    ||CASE WHEN adaptive='YES' THEN 'ADAPTIVE,' END
+                                $END
+                                $IF DBMS_DB_VERSION.VERSION > 23 $THEN
+                                    ||nvl2(foreground_last_verified,'FG-VERIFIED,','')
+                                    ||decode(bitand(flags, 1024), 0, '', 'REALTIME,')
+                                    ||decode(bitand(flags, 2048), 0, '', 'REVERSE,')
+                                    ||n.status
+                                $END
+                                ) attrs,
+                              parsing_schema_name schema 
+                        from  dba_sql_plan_baselines a
                         $IF DBMS_DB_VERSION.VERSION > 22 $THEN
-                                 ,XMLTABLE('/notes'
-                                    passing xmltype(a.notes)
-                                    columns
-                                        sql_id          VARCHAR2(20)   path '//sql_id',
-                                        plan_id         NUMBER         path 'plan_id',
-                                        flags           NUMBER         path 'flags',
-                                        ref_phv         NUMBER         path '//ref_phv',
-                                        test_phv        NUMBER         path '//test_phv',
-                                        ver             VARCHAR2(8)    path '//ver',
-                                        comp_time       VARCHAR2(20)   path '//comp_time',
-                                        ver_time        VARCHAR2(20)   path '//ver_time',
-                                        status          VARCHAR2(8)    path '//status') n) a
-                        $END    
+                             ,XMLTABLE('/notes'
+                                passing xmltype(a.notes)
+                                columns
+                                    sql_id          VARCHAR2(20)   path '//sql_id',
+                                    plan_id         NUMBER         path 'plan_id',
+                                    flags           NUMBER         path 'flags',
+                                    ref_phv         NUMBER         path '//ref_phv',
+                                    test_phv        NUMBER         path '//test_phv',
+                                    ver             VARCHAR2(8)    path '//ver',
+                                    comp_time       VARCHAR2(20)   path '//comp_time',
+                                    ver_time        VARCHAR2(20)   path '//ver_time',
+                                    status          VARCHAR2(8)    path '//status') n
+                        $END 
+                        ) a
                     WHERE  (&filter)
                     AND    (v3=chr(0) AND  signature IN(V1,V2) OR
                             v3=chr(1) AND (V1 IS NULL OR upper(sql_handle||','||plan_name||','

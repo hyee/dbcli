@@ -13,7 +13,6 @@
 ]]*/
 
 DEF min_slope_threshold='0.1';
-SET PRINTSIZE 100
 ORA _sqlstat
 COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec,AVG ELA" for usmhd2
 col "Weight%,Diff%" for pct2
@@ -65,30 +64,34 @@ WITH src AS
               HAVING SUM(elapsed_time)>0
               ) a) a)
 SELECT * FROM (
-    SELECT sql_id,
-           MAX(plan_hash) KEEP(dense_rank LAST ORDER BY ela) plan_hash,
-           phf PLAN_HASH_FULL,
-           MIN(first_seen) first_seen,
-           MAX(last_seen) last_seen,
-           ratio_to_report(SUM(decode(flag,1,ela))) OVER() "Weight%",
-           MAX(diff) "Diff%",
-           SUM(exe) "Execs",
-           '|' "|",
-           ROUND(SUM(ela)/greatest(1,SUM(exe))) "Avg ELA",
-           ROUND(100*SUM(CPU)/SUM(ela),2) "CPU%",
-           ROUND(100*SUM(iowait)/SUM(ela),2) "IO%",
-           ROUND(100*SUM(clwait)/SUM(ela),2) "Cl%",
-           ROUND(100*SUM(ccwait)/SUM(ela),2) "CC%",
-           ROUND(100*SUM(apwait)/SUM(ela),2) "APP%",
-           ROUND(100*SUM(plsexec_time)/SUM(ela),2) "PLSQL%",
-           ROUND(100*SUM(javexec_time)/SUM(ela),2) "JAVA%",
-           ROUND(SUM(buffer_gets)/greatest(1,SUM(exe)),2) "Buff Gets",
-           SUM(SUM(decode(flag,1,ela))) OVER(PARTITION BY dbid,sql_id)*1e3 "Total SQL ms",
-           substr(trim(regexp_replace(MAX(to_char(SUBSTR(sql_text,1,1000))),'\s+',' ')),1,200) sql_text
-    FROM src 
-    LEFT JOIN dba_hist_sqltext USING(dbid,sql_id)
-    WHERE phfs>1 and flags>1
-    GROUP BY sql_id,dbid,phf
-) 
-ORDER BY &ord nulls last,sql_id,last_seen desc, first_seen desc,"Weight%";
+    SELECT dense_rank() OVER(ORDER BY &ord nulls last,sql_id) "#",
+           a.* 
+    FROM (
+        SELECT sql_id,
+               MAX(plan_hash) KEEP(dense_rank LAST ORDER BY ela) plan_hash,
+               phf PLAN_HASH_FULL,
+               MIN(first_seen) first_seen,
+               MAX(last_seen) last_seen,
+               ratio_to_report(SUM(decode(flag,1,ela))) OVER() "Weight%",
+               MAX(diff) "Diff%",
+               SUM(exe) "Execs",
+               '|' "|",
+               ROUND(SUM(ela)/greatest(1,SUM(exe))) "Avg ELA",
+               ROUND(100*SUM(CPU)/SUM(ela),2) "CPU%",
+               ROUND(100*SUM(iowait)/SUM(ela),2) "IO%",
+               ROUND(100*SUM(clwait)/SUM(ela),2) "Cl%",
+               ROUND(100*SUM(ccwait)/SUM(ela),2) "CC%",
+               ROUND(100*SUM(apwait)/SUM(ela),2) "APP%",
+               ROUND(100*SUM(plsexec_time)/SUM(ela),2) "PLSQL%",
+               ROUND(100*SUM(javexec_time)/SUM(ela),2) "JAVA%",
+               ROUND(SUM(buffer_gets)/greatest(1,SUM(exe)),2) "Buff Gets",
+               SUM(SUM(decode(flag,1,ela))) OVER(PARTITION BY dbid,sql_id)*1e3 "Total SQL ms",
+               substr(trim(regexp_replace(MAX(to_char(SUBSTR(sql_text,1,1000))),'\s+',' ')),1,200) sql_text
+        FROM src 
+        LEFT JOIN dba_hist_sqltext USING(dbid,sql_id)
+        WHERE phfs>1 and flags>1
+        GROUP BY sql_id,dbid,phf
+    ) A)
+WHERE "#" <=30
+ORDER BY "#",last_seen desc, first_seen desc,  "Weight%";
 
