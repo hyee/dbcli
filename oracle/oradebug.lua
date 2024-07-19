@@ -1173,6 +1173,7 @@ function oradebug.profile(sid,samples,interval,event)
             get_output("SETTRACEFILEID "..os.time())
             tracename=oradebug.tracename():trim()
             print('Trace file name is '..tracename)
+            --alter session set events 'wait_event[all] trace("\nevents=%,p1=%,p2=%,p3=%,ela=%,stk=%",evargs(5),evargn(2),evargn(3),evargn(4),evargn(1),shortstack())';
             local cmd='session_event wait_event['..event..[[] trace('\nevent="%",p1=%,p2=%,p3=%,ela=%,stk=%',evargs(5),evargn(2),evargn(3),evargn(4),evargn(1),shortstack())]]
             print('Command:  oradebug '..cmd)
             print(get_output(cmd,true)[1])

@@ -233,7 +233,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
     --if not title then print(table.dump(rows)) end
     local verticals=rows and rows.verticals and math.min(#rows,rows.verticals+1)
     rows=rows.data or rows
-    local colinfo=rows.colinfo or {}
+    local colinfo=rows.colinfo or rows[1] and rows[1].colinfo or {}
     local title = rows[1]
     local maxsize = grid.col_size
     local pivot = math.abs(grid.pivot) + 1
@@ -344,7 +344,8 @@ function grid.show_pivot(rows, col_del,pivotsort)
         for i = 2, pivot, 1 do
             row[#row+1]=get_value(v,i,keys[v])
         end
-        local print_=colinfo[keys[v]] and not colinfo[keys[v]].no_print
+
+        local print_=not colinfo[keys[v]] or not colinfo[keys[v]].no_print
         if pivot==2 and row[#row]=='' and (autohide=='col' or autohide=='all') then
             print_=false
         end
@@ -374,7 +375,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
             if r[i] then table.remove(r, i) end
         end
         grid.pivot = 1
-    elseif grid.pivot > 0 and head==nil then
+    elseif grid.pivot > 0 and #r>0 and head==nil then
         local titles = {" "}
         for i = 2, #r[1], 1 do
             titles[i] = ' #' .. (i - 1)

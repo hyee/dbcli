@@ -38,7 +38,7 @@ DECLARE
     xml   xmltype;
     stmt  VARCHAR2(32767);
 BEGIN
-    xml := dbms_xmlgen.getxmltype(q'~
+    stmt := q'~
         WITH plans AS(
             SELECT A.*
             FROM   &plan a
@@ -122,20 +122,20 @@ BEGIN
                                  b.depth=a.depth+1 and (b.parent_id=a.id or b.parent_id!=a.id-1))
                         THEN 1 ELSE 2 END FLAG
                 FROM (SELECT /*+NO_MERGE*/ A.*,CASE WHEN OPERATION LIKE 'INDEX%' THEN 'Index' WHEN options LIKE '%INDEX ROWID%' THEN 'Table' END prefix FROM  plans a) a
-                JOIN AWR_PDB_SQL_PLAN b
+                JOIN &plan b
                 ON   b.dbid = a.dbid
                 AND  a.sql_id = b.sql_id
                 AND  a.plan_hash_value = b.plan_hash_value
             ) a) a
-        LEFT JOIN AWR_PDB_SQL_PLAN b
+        LEFT JOIN &plan b
         ON   b.dbid = a.dbid
         AND  a.sql_id = b.sql_id
         AND  a.plan_hash = b.plan_hash_value
         AND  a.parent_=b.id
         AND  regexp_like(b.operation,'HASH|NESTED|MERGE')
         AND  NVL(b.ACCESS_PREDICATES,b.FILTER_PREDICATES) IS NOT NULL
-        WHERE seq_=1~');
-    
+        WHERE seq_=1~';
+    xml := dbms_xmlgen.getxmltype(stmt);
     stmt :=q'~
         WITH ops AS(
             SELECT *

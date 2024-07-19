@@ -32,7 +32,7 @@ function desc.desc(name,option)
             AND    object_type NOT LIKE '% BODY'
             AND    owner IS NOT NULL
             AND    rownum<2]],{obj.object_id})
-        if new_obj[1] then
+        if new_obj and new_obj[1] then
             obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
         end
     end

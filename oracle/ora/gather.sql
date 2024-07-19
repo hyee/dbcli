@@ -8,8 +8,8 @@
     =================
     <percent>            : The sample percentage(in %) for gathering stats, 0 as default 
     -list                : List the empty/stale/auto objects
-         -f"<key>"       : Only list matched objects whose name contains <key>, such as owner/name/partition
-         -nopart         : Don't list partition, sum up to top object level instead
+        -k"<key>"        : Only list matched objects whose name contains <key>, such as owner/name/partition
+        -table           : Group in table level instead of segment level, sum up to top object level instead
     -auto                : Gather stats with 'GATHER AUTO'
     -empty               : Gather stats with 'GATHER EMPTY'
     -stale               : Gather stats with 'GATHER STALE'
@@ -48,9 +48,10 @@
         &V4     : default={} skew={FOR ALL COLUMNS SIZE SKEWONLY} repeat={FOR ALL COLUMNS SIZE REPEAT}
         &stale  : default={} stale={ STALE} auto={ AUTO} empty={ EMPTY}
         &list   : default={0} list={1}
-        &filter : default={} f={}
+        &filter : default={} k={}
         &exec   : default={true} print={false}
-        &nopart : default={0} nopart={1}
+        &nopart : default={0} table={1}
+        &stat   : default={--} table={}
         &block  : default={true} row={false}
         &pending: default={0} pending={1} publish={2} unpend={3}
         @check_access_seg: dba_segments={dba_segments} default={(select user owner,a.* from user_segments a)}
@@ -109,7 +110,7 @@
 findobj "&V1" 1 1
 set feed off
 COL BYTES FOR KMG2
-COL BLOCKS,EXTENTS FOR TMB2
+COL BLOCKS,EXTENTS,STATS_ROWS,STATS_BLOCKS FOR TMB2
 var CUR REFCURSOR;
 
 DECLARE
@@ -406,7 +407,7 @@ BEGIN
         OPEN :cur FOR
             SELECT ROW_NUMBER() OVER(ORDER BY OWNER,OBJECT_NAME,PART_NAME,SUBPART) "#",
                    A.*
-            FROM(SELECT /*+NO_EXPAND USE_HASH(A B) opt_param('optimizer_dynamic_sampling' 5)*/
+            FROM(SELECT /*+NO_EXPAND USE_HASH(A B C) outline_leaf opt_param('optimizer_dynamic_sampling' 5) */
                         TABLESCHEMA OWNER,
                         TABLENAME OBJECT_NAME,
                         COLNAME TYPE,
@@ -415,10 +416,19 @@ BEGIN
                         DECODE(BITAND(ARGTYPE,4),4,'EMPTY,')||
                         DECODE(BITAND(ARGTYPE,2),2,'STALE,')||
                         DECODE(BITAND(ARGTYPE,1),1,'AUTO') GATHER_OPTIONS,
-                        SUM(BYTES) BYTES,
-                        SUM(BLOCKS) BLOCKS,
-                        SUM(EXTENTS) EXTENTS
+                        '||' "||",
+                        SUM(B.BYTES) BYTES,
+                        SUM(B.BLOCKS) BLOCKS,
+                        SUM(B.EXTENTS) EXTENTS,
+                        '|' "|",
+                        MAX(C.NUM_ROWS) STATS_ROWS,
+                        MAX(C.BLOCKS) STATS_BLOCKS,
+                        MAX(C.LAST_ANALYZED) LAST_ANALYZED
                  FROM   TABLE(tabs) A
+                 LEFT   JOIN   all_tables C
+                 ON     A.TABLESCHEMA=C.OWNER
+                 AND    A.TABLENAME=C.TABLE_NAME
+                 AND   (&nopart=1 OR TABLEPARTITIONLOWER IS NULL)
                  LEFT   JOIN  &check_access_seg B
                  ON     A.TABLESCHEMA=B.OWNER
                  AND    A.TABLENAME=B.SEGMENT_NAME

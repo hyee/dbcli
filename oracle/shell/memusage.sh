@@ -13,6 +13,18 @@ proc() {
     done           
 }
 
+pga=0
+fmap() {
+   pga=0
+   echo "$1" | while IFS= read -r line
+   do
+       #mb=$(pmap -x $line 2>&1  | egrep "^\w{16}" | grep -v shmid | awk ' BEGIN { sum=0 } { sum+=$3} END {print int(sum/1024)}')
+       #pmap -x 237878 | egrep "^\w{16}" |grep -v SYSV00000000 | sort -nk3| tail -20
+       mb=`pmap -x  $line  | grep "total kB" | awk '{print int($4/1024)}'`
+       pga=$(( $pga + $mb ))
+       echo "PID $line: $mb MB"
+   done
+}
 
 echo "============================================================"
 echo "Memory Summary By User:"
@@ -51,8 +63,16 @@ for pid in `ps -ef |  grep -E "ora_pmon|asm_pmon|db_pmon"|egrep -v "grep"|  awk 
               END {for (i in rss) {print i,int(rss[i]/1024),int(pct[i]/1024),int(vmem[i]/1024),c[i]}
      }' | sort -k2 | awk '{rss+=$2;vmem+=$4;pct+=$3;c1+=$5; print $0};END {print "TOTAL",rss,pct,vmem,c1}') | column -t
     echo " "
+    
+    pids=`ps -eaf |grep -E " (ora_|oracle|db_|asm_)"| grep -- "$sid" | grep -v " grep " | awk '{print $2}'`
+    #echo "Top Processes: "
+    #echo ".............."
+    #fmap "$pids"| sort -nk3 | tail -10 | column -t
+    #echo " "
+    
     FNAME="/proc/$pid/smaps"
-    if [[ -r $FNAME && -w $FNAME ]]; then
+    can=`cat $FNAME 2>/dev/null | wc -l`
+    if [[ "$can" != "0" ]]; then
         shmsize=`grep -A 1 'SYSV00000000' $FNAME | grep "^Size:" | awk 'BEGIN{sum=0}{sum+=$2}END{print sum/1024}' |  awk -F"." '{print $1}'`
         hugepagesize=`grep -B 11 'KernelPageSize:     2048 kB' $FNAME | grep "^Size:" | awk 'BEGIN{sum=0}{sum+=$2}END{print sum/1024}' | awk -F"." '{print $1}'`
         echo "SGA (SMALL/HUGE page) :" $shmsize "MB"
@@ -64,10 +84,13 @@ for pid in `ps -ef |  grep -E "ora_pmon|asm_pmon|db_pmon"|egrep -v "grep"|  awk 
         shmsize=`pmap $smon 2>&1 | grep "K .*SYSV00000000"| sort | awk '{print $1 " " substr($2,1,length($2)-1)}' | uniq | awk ' BEGIN { sum=0 } { sum+=$2} END {print sum/1024}'`
         echo "SGA (SMALL/HUGE page) :" $shmsize "MB"
     fi
-    pids=`ps -eaf |grep -E " (ora_|oracle|db_|asm_)"| grep -- "$sid" | grep -v " grep " | awk '{print $2}'`
-    pga=`pmap -x $pids 2>&1  | egrep "^\w{16}" | grep -v shmid | awk ' BEGIN { sum=0 } { sum+=$3} END {print sum/1024}'`
+
+    mems=$(pmap -xp $pids 2>&1  | egrep "^\w{16}" | grep -v shmid | awk ' BEGIN {sum=0;f=0;c=0} {sum+=$3;if(index($6, "KSIPC_MGA_NMSPC")!=0) c+=$3;else if(index($6, "/")==1) f+=$3} END {print sum/1024,f/1024,c/1024}')
+    pga=$(echo $mems|awk '{print $1}')
+    file=$(echo $mems|awk '{print $2}')
+    mga=$(echo $mems|awk '{print $3}')
     mem=`echo "$pga + $shmsize"|bc`
-    echo "Non-SGA Memory        : $pga MB"
+    echo "Non-SGA Memory        : $pga MB (Files=$file, MGA=$mga)"
     echo "Total Used Memory     : $mem MB"
     total_shmsize=$(( $shmsize + $total_shmsize ))
     total=`echo "$total + $mem"|bc`
@@ -77,11 +100,24 @@ done
 echo "All Instances:"
 echo "**************"
 echo "SGA TOTAL (SMALL/HUGE page):" $total_shmsize "MB"
-if [[ $total_hugepagesize > 0 ]]; then
+pga=`echo "$total - $total_shmsize"|bc`
+
+if [ "$total_hugepagesize" -gt "0" ]; then
     echo "SGA TOTAL (HUGE PAGE)      :" $total_hugepagesize "MB"
     echo "Percent Huge page          :" $(( $total_hugepagesize *100 / $total_shmsize  )) "%"
+    if [ "$total_hugepagesize" -gt "$total_shmsize" ]; then
+        total=`echo "$total + $total_hugepagesize - $total_shmsize"|bc`
+    fi
 fi
-pga=`echo "$total - $total_shmsize"|bc`
+
+if [[ -r /proc/meminfo ]]; then
+    hugepage_total=$(cat /proc/meminfo|grep HugePages_Total|awk '{print $2*2}')
+    echo "HugePages_Total            : $hugepage_total MB (/proc/meminfo)"
+    if [ "$hugepage_total" -gt "$total_hugepagesize" ]; then
+        total=`echo "$total + $hugepage_total - $total_hugepagesize"|bc`
+    fi
+fi
+
 echo "Non-SGA Memory             : $pga MB"
 echo "Total Used Memory          : $total MB"
 echo "============================================================"

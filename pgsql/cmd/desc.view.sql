@@ -29,6 +29,12 @@ SELECT ordinal_position "#",
        s.avg_width::int AS "len",
        CASE WHEN s.n_distinct<0 THEN ROUND(ABS(100*n_distinct)::numeric,2)::text||'%' ELSE nullif(n_distinct,0)::text END  AS ndv,
        nullif(s.null_frac,0)::numeric AS "null%",
+       case att.attstorage
+          when 'p' then 'plain'
+          when 'm' then 'main'
+          when 'e' then 'external'
+          when 'x' then 'extended'
+       end as "Storage",
        pg_catalog.col_description(format('%s.%s',table_schema,table_name)::regclass::oid,ordinal_position) as "description"
 FROM   (select a.*,case when column_default like 'nextval(%'||table_name||'_'||column_name||'_seq%)' then true else false end is_serial 
         from   information_schema.columns a
@@ -38,6 +44,9 @@ LEFT   JOIN pg_stats s
 ON     a.column_name=s.attname
 AND    s.schemaname= :object_owner
 AND    s.tablename=:object_name
+LEFT   JOIN pg_attribute att
+ON     att.attrelid=:object_id::int
+AND    a.column_name=att.attname
 ORDER  BY 1;
 
 SELECT t.tgname DEP_NAME,'TRIGGER' "type",
