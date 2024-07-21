@@ -21,7 +21,7 @@ SELECT * FROM TABLE(gv$(CURSOR(select * from sys.X$KCBBHS where ISSUED > 0))) or
 
 PRO x$kvii
 pro ========
-SELECT * FROM TABLE(gv$(CURSOR(select INST_ID,INDX,KVIIVAL,KVIITAG,KVIIDSC from x$kvii))) ORDER BY INDX,INST_ID;
+SELECT * FROM TABLE(gv$(CURSOR(select INST_ID,INDX,KVIIVAL,KVIITAG,KVIIDSC from sys.x$kvii))) ORDER BY INDX,INST_ID;
 --From Tanel Poder
 pro x$kcbbes
 pro ========

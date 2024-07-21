@@ -243,7 +243,7 @@ BEGIN
             dbms_output.put_line(lpad('=',length(xplan),'='));
             xplan := 'ora plan -g '||substr(sq_nid,1,13)||' '||phv2||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
-            DELETE PLAN_TABLE
+            DELETE SYS.PLAN_TABLE$
             WHERE  PLAN_ID=phv2;
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));

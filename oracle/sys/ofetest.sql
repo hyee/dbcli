@@ -3,6 +3,7 @@
     -env  : only test the parameters
     -ofe  : only test the fix controls
     -accu : test the options in accumulation mode, instead turning on/off one by one
+    -desc : test from high OFE to low OFE, instead of from low to high
 
     Example: @@NAME g6px76dmjv1jy 10.2.0.4 12.1.0
              @@NAME g6px76dmjv1jy 11.2.0.4 -k"PARTITION RANGE SINGLE"
@@ -13,6 +14,7 @@
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
         &accu  : default={0} accu={1}
+        &dir   : default={asc} desc={desc}
     --]]
 ]]*/
 set SQLTIMEOUT 7200 verify off feed off &sep
@@ -32,6 +34,7 @@ DECLARE
     env_cnt   PLS_INTEGER := 0;
     old_ofe   VARCHAR2(32767);
     new_ofe   VARCHAR2(32767);
+    tmp_ofe   VARCHAR2(32767);
     errcount  PLS_INTEGER := 0;
     ofelist   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     ofeold    SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
@@ -41,13 +44,14 @@ DECLARE
     fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
     qry       VARCHAR2(4000) := q'{
-        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,nvl2(optimizer_feature_enable,1,0) flag
+        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,nvl2(optimizer_feature_enable,1,0) flag,0+regexp_substr(optimizer_feature_enable,'^\d+\.\d+') ofe
         FROM   v$session_fix_control
         WHERE  SESSION_ID=userenv('sid')
         AND    '&typ' IN('all','ofe')
         AND    bugno NOT IN(16923858,25167306)
+        AND    (optimizer_feature_enable IS NOT NULL OR value>0)
         UNION  ALL
-        SELECT 'env',pi.ksppinm, NVL(kc.PVALUE_QKSCESEROW,cv.KSPPSTVL), ksppity,ksppdesc,1
+        SELECT 'env',pi.ksppinm, NVL(kc.PVALUE_QKSCESEROW,cv.KSPPSTVL), ksppity,ksppdesc,1,0
         FROM   sys.x$ksppi pi ,sys.x$ksppcv cv,sys.X$QKSCESES kc
         WHERE  pi.indx=cv.indx
         AND    pi.ksppinm=kc.PNAME_QKSCESEROW(+)
@@ -58,20 +62,19 @@ DECLARE
         AND    substr(pi.ksppinm,1,2)!='__'
         AND    pi.ksppinm!='optimizer_features_enable'
         AND    '&typ' IN('all','env')
-        ORDER  BY 1,2}';
+        ORDER  BY 1,ofe &dir,2 &dir}';
     CURSOR c IS
         SELECT /*+ordered use_hash(b)*/ 
-               typ,name,vtype,value_high,
-               CASE 
-                    WHEN flag=0 AND nvl(value_high, '_') = nvl(value_low, '_') THEN 
-                          to_char(1-sign(0+value_high)) 
-                    ELSE value_low 
-               END value_low ,a.description
+               typ,name,vtype,
+               CASE WHEN flag=0 AND '&dir'='asc'  THEN '1' ELSE value_high END value_high,
+               CASE WHEN flag=0 AND '&dir'='desc' THEN '1' ELSE value_low  END value_low,
+               a.description
         FROM   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
                        extractvalue(column_value, '/ROW/NAME') NAME,
                        extractvalue(column_value, '/ROW/VTYPE') + 0 VTYPE,
                        extractvalue(column_value, '/ROW/VALUE') value_high,
                        extractvalue(column_value, '/ROW/FLAG')+0 flag,
+                       extractvalue(column_value, '/ROW/OFE')+0 ofe,
                        regexp_replace(extractvalue(column_value, '/ROW/DESCRIPTION'), '\s+', ' ') description
                 FROM   TABLE(XMLSEQUENCE(extract(high_env, '/ROWSET/ROW')))) a
         JOIN   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
@@ -79,8 +82,8 @@ DECLARE
                        extractvalue(column_value, '/ROW/VALUE') value_low
                 FROM   TABLE(XMLSEQUENCE(extract(low_env, '/ROWSET/ROW')))) b
         USING  (typ, NAME)
-        WHERE  nvl(value_high, '_') != nvl(value_low, '_') OR a.flag=0
-        ORDER  BY nvl2(regexp_substr(name,'^\d+$'),1,0),decode(substr(name,1,1),'_',1,0);
+        WHERE  nvl(value_high, '_') != nvl(value_low, '_') OR flag=0
+        ORDER  BY typ,ofe &dir,nvl(regexp_substr(name,'^\d+$')+0,0) &dir,decode(substr(name,1,1),'_',1,0);
     TYPE t_changes IS TABLE OF c%ROWTYPE;
     changes t_changes;
     PROCEDURE wr(msg VARCHAR2) IS
@@ -136,8 +139,8 @@ BEGIN
         WHERE  rownum < 2;
     END IF;
 
-
-
+    DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IS NOT NULL;
+    COMMIT;
     EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || high_ofe || '''';
     high_env := dbms_xmlgen.getxmltype(qry);
@@ -151,6 +154,10 @@ BEGIN
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_LOW');
     COMMIT;
+
+    IF '&dir'='desc' THEN
+        EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || high_ofe || '''';
+    END IF;
 
     OPEN c;
     LOOP
@@ -188,6 +195,12 @@ BEGIN
             END IF;
         END LOOP;
         ofedesc(counter) := NVL(REPLACE(TRIM(ofedesc(counter)),CHR(9)),' ');
+
+        IF '&dir'='desc' THEN
+            tmp_ofe          := ofelist(counter);
+            ofelist(counter) := ofeold(counter);
+            ofeold(counter)  := tmp_ofe;
+        END IF;
 
         IF new_ofe IS NOT NULL THEN
             old_ofe := ofeold(counter);
@@ -240,7 +253,7 @@ BEGIN
 
     MERGE INTO SYS.PLAN_TABLE$ A
     USING ( SELECT r,v1||chr(9)||v2 MEMO
-            FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofeold)) A
+            FROM  (SELECT rownum r,trim(chr(10) from column_value) v1 from table(ofelist)) A
             JOIN  (SELECT rownum r,trim(chr(10) from column_value) v2 from table(ofedesc)) B
             USING (r)) B
     ON   (B.r=regexp_substr(STATEMENT_ID, '\d+$') AND A.OTHER_XML IS NOT NULL)
@@ -270,6 +283,7 @@ BEGIN
                           MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
                           MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2
                    FROM   SYS.PLAN_TABLE$ q
+                   WHERE  STATEMENT_ID IS NOT NULL
                    GROUP  BY STATEMENT_ID)
               SELECT MIN(STATEMENT_ID) id, 
                      MIN(ID) seq, 
@@ -294,7 +308,7 @@ BEGIN
     OPEN :cur FOR
         WITH plans AS
          (SELECT A.*,
-                 dense_rank() over(order by grp, plan_hash, cost, bytes, total_card, card) p,
+                 dense_rank() over(order by grp, plan_hash,plan_hash2,cost, bytes, total_card, card) p,
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,1) d1,
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,2) d2
           FROM  (SELECT  STATEMENT_ID,
@@ -310,6 +324,7 @@ BEGIN
                          SUM(nvl2(object_owner, cardinality, 0)) total_card,
                          MAX(CASE WHEN &filter THEN 'Y' ELSE 'N' END) is_matched
                   FROM   SYS.PLAN_TABLE$ q
+                  WHERE  STATEMENT_ID IS NOT NULL
                   GROUP  BY STATEMENT_ID) A),
         finals AS
          (SELECT a.*, 
