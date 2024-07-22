@@ -1,17 +1,5 @@
 #!/bin/bash
 page_size=$(getconf PAGE_SIZE)
-proc() {
-    eval "$1" | while IFS= read -r line
-    do
-       pid=$(echo $line | awk '{print $2}')
-       if [ -e "/proc/$pid/statm" ]; then
-           memory_pages=$(awk '{print $3}' "/proc/$pid/statm")
-           echo $(($memory_pages * $page_size /1024)) "$line"
-       else
-           echo "0 $line"
-       fi
-    done           
-}
 
 pga=0
 fmap() {
@@ -29,10 +17,10 @@ fmap() {
 echo "============================================================"
 echo "Memory Summary By User:"
 echo "============================================================"
-(echo "User RSS(MB) SHARE(MB)  VMEM(MB)  COUNT"
- echo "---- ------- --------   --------  -----"
- proc "ps aux --no-headers"| awk '{rss[$2]+=$7;vmem[$2]+=$6;pct[$2]+=$1;c[$2]+=1}; END {for (i in rss) {print i,int(rss[i]/1024),int(pct[i]/1024),int(vmem[i]/1024),c[i]}}' \
-       | sort -k2 | awk '{rss+=$2;vmem+=$4;pct+=$3;c1+=$5; print $0};END {print "TOTAL",rss,pct,vmem,c1}') | column -t
+(echo "User RSS(MB) VMEM(MB)  COUNT"
+ echo "---- ------- --------  -----"
+ ps aux --no-headers| awk '{rss[$1]+=$6;vmem[$1]+=$5;c[$1]+=1}; END {for (i in rss) {print i,int(rss[i]/1024),int(vmem[i]/1024),c[i]}}' \
+       | sort -k2 | awk '{rss+=$2;vmem+=$3;c1+=$4; print $0};END {print "TOTAL",rss,vmem,c1}') | column -t
 echo "============================================================"
 echo 
 echo "Oracle Memory Usage:"
@@ -45,23 +33,25 @@ for pid in `ps -ef |  grep -E "ora_pmon|asm_pmon|db_pmon"|egrep -v "grep"|  awk 
     sid=`ps -eaf|grep $pid | grep -v " grep "|awk '{print substr($NF,10)}'`
     echo "Instance \"$sid\":"
     echo "*****************"
-    (echo "Type RSS(MB) SHARE(MB)  VMEM(MB)  COUNT"
-     echo "---- ------- --------   --------  -----"
-     proc "ps aux --no-headers|grep -E \" (ora_|oracle|db_|asm_)\"|grep $sid| grep -v grep" |awk '{
-              i="local";
-              if(index($12, "_pmon_") != 0)
+    (echo "Type RSS(MB) VMEM(MB)  COUNT"
+     echo "---- ------- --------  -----"
+     ps aux --no-headers|grep -E " (ora_|oracle|db_|asm_)"|grep $sid| grep -v grep |awk '{
+              i="Others";
+              if(index($11, "_pmon_") != 0)
                 i="pmon";
-              else if(index($12, "_smon_") != 0)
+              else if(index($11, "_smon_") != 0)
                 i="smon";
-              else if(index($12, "_dbw") != 0)
+              else if(index($11, "_dbw") != 0)
                 i="dbwr"; 
-              else if(index($12, "_lg") != 0)
+              else if(index($11, "_lg") != 0)
                 i="lgwr";                  
-              else if(index($13, "NO") != 0)  
+              else if(index($12, "NO") != 0)  
                 i="remote";
-              rss[i]+=$7;vmem[i]+=$6;pct[i]+=$1;c[i]+=1}
-              END {for (i in rss) {print i,int(rss[i]/1024),int(pct[i]/1024),int(vmem[i]/1024),c[i]}
-     }' | sort -k2 | awk '{rss+=$2;vmem+=$4;pct+=$3;c1+=$5; print $0};END {print "TOTAL",rss,pct,vmem,c1}') | column -t
+              else if(index($12, "YES") != 0)  
+                i="local";
+              rss[i]+=$6;vmem[i]+=$5;c[i]+=1}
+              END {for (i in rss) {print i,int(rss[i]/1024),int(vmem[i]/1024),c[i]}
+     }' | sort -k2 | awk '{rss+=$2;vmem+=$3;c1+=$4; print $0};END {print "TOTAL",rss,vmem,c1}') | column -t
     echo " "
     
     pids=`ps -eaf |grep -E " (ora_|oracle|db_|asm_)"| grep -- "$sid" | grep -v " grep " | awk '{print $2}'`
@@ -84,13 +74,21 @@ for pid in `ps -ef |  grep -E "ora_pmon|asm_pmon|db_pmon"|egrep -v "grep"|  awk 
         shmsize=`pmap $smon 2>&1 | grep "K .*SYSV00000000"| sort | awk '{print $1 " " substr($2,1,length($2)-1)}' | uniq | awk ' BEGIN { sum=0 } { sum+=$2} END {print sum/1024}'`
         echo "SGA (SMALL/HUGE page) :" $shmsize "MB"
     fi
-
-    mems=$(pmap -xp $pids 2>&1  | egrep "^\w{16}" | grep -v shmid | awk ' BEGIN {sum=0;f=0;c=0} {sum+=$3;if(index($6, "KSIPC_MGA_NMSPC")!=0) c+=$3;else if(index($6, "/")==1) f+=$3} END {print sum/1024,f/1024,c/1024}')
+    mems=$(pmap -Xp $pids 2>&1 | grep -E '^\s*\w{8,16}\s+'| awk '{
+        rss+=$7;
+        pss+=$8;
+        if(index($21, "KSIPC_MGA_NMSPC")!=0) 
+            c+=$7;
+        else if(index($21, "/")==1) 
+            f+=$7;
+        } END {print rss/1024,c/1024,f/1024, pss/1024}')
+   
     pga=$(echo $mems|awk '{print $1}')
     file=$(echo $mems|awk '{print $2}')
     mga=$(echo $mems|awk '{print $3}')
+    pss=$(echo $mems|awk '{print $4}')
     mem=`echo "$pga + $shmsize"|bc`
-    echo "Non-SGA Memory        : $pga MB (Files=$file, MGA=$mga)"
+    echo "Non-SGA Memory        : $pga MB (Files=$file, MGA=$mga, PSS=$pss)"
     echo "Total Used Memory     : $mem MB"
     total_shmsize=$(( $shmsize + $total_shmsize ))
     total=`echo "$total + $mem"|bc`

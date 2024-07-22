@@ -185,7 +185,6 @@ return  obj.object_type=='FIXED TABLE' and [[
                round(greatest(0,b.num_rows-a.num_nulls)/nullif(a.num_distinct,0),2) CARDINALITY,
                nullif(HISTOGRAM,'NONE') HISTOGRAM,
                a.NUM_BUCKETS buckets,
-               c.comments,
                case when a.low_value is not null then 
                substrb(decode(dtype
                   ,'NUMBER'       ,to_char(utl_raw.cast_to_number(low_value))
@@ -259,7 +258,8 @@ return  obj.object_type=='FIXED TABLE' and [[
                                 lpad(TO_NUMBER(SUBSTR(high_value, 9, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 11, 2), 'XX')-1,2,0)|| ':' ||
                                 lpad(TO_NUMBER(SUBSTR(high_value, 13, 2), 'XX')-1,2,0)
-                        ,  high_value),1,32) end high_value
+                        ,  high_value),1,32) end high_value,
+            c.comments
         FROM      (select /*+no_merge*/ a.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols a where a.owner=:owner and a.table_name=:object_name) a
         LEFT JOIN (select /*+no_merge*/ * from all_tables a where '&object_type' like 'TABLE%' and a.owner=:owner and a.table_name=:object_name) b 
         ON        (a.table_name=b.table_name)
