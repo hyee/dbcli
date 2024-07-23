@@ -721,6 +721,10 @@ function env.parse_args(cmd,rest,is_cross_line)
                         local scope=(rest:sub(i)..' '):match('^%b'..char..(char=='[' and ']' or ']')..'%s')
                         if scope then
                             args[#args+1],scope_index,piece=scope,i+#scope,''
+                            --if enclosed with [[...]] then only get the inner content
+                            if scope:sub(1,2)=='[[' and scope:sub(-3,-2)==']]' then
+                                args[#args]=scope:sub(3,-4)..scope:sub(-1)
+                            end
                         else
                             piece = char
                         end

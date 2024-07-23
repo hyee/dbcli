@@ -30,7 +30,7 @@ total_hugepagesize=0
 total=0
 
 for pid in `ps -ef |  grep -E "ora_pmon|asm_pmon|db_pmon"|egrep -v "grep"|  awk '{print $2}' | uniq`; do
-    sid=`ps -eaf|grep $pid | grep -v " grep "|awk '{print substr($NF,10)}'`
+    sid=`ps -eaf|egrep "$pid.*(ora_pmon|asm_pmon|db_pmon)"| grep -v " grep "|awk '{print substr($NF,10)}'`
     echo "Instance \"$sid\":"
     echo "*****************"
     (echo "Type RSS(MB) VMEM(MB)  COUNT"
@@ -74,12 +74,12 @@ for pid in `ps -ef |  grep -E "ora_pmon|asm_pmon|db_pmon"|egrep -v "grep"|  awk 
         shmsize=`pmap $smon 2>&1 | grep "K .*SYSV00000000"| sort | awk '{print $1 " " substr($2,1,length($2)-1)}' | uniq | awk ' BEGIN { sum=0 } { sum+=$2} END {print sum/1024}'`
         echo "SGA (SMALL/HUGE page) :" $shmsize "MB"
     fi
-    mems=$(pmap -Xp $pids 2>&1 | grep -E '^\s*\w{8,16}\s+'| awk '{
+    mems=$(pmap -Xp $pids 2>&1 | grep -E '^\s{0,10}\w{8,16}\s+'| awk '{
         rss+=$7;
         pss+=$8;
-        if(index($21, "KSIPC_MGA_NMSPC")!=0) 
+        if(index($NF, "KSIPC_MGA_NMSPC")!=0) 
             c+=$7;
-        else if(index($21, "/")==1) 
+        else if(index($NF, "/")==1) 
             f+=$7;
         } END {print rss/1024,c/1024,f/1024, pss/1024}')
    
@@ -119,3 +119,5 @@ fi
 echo "Non-SGA Memory             : $pga MB"
 echo "Total Used Memory          : $total MB"
 echo "============================================================"
+
+free -m
