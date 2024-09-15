@@ -572,6 +572,8 @@ ash_agg as(
                                         nvl(c.object_name,''||current_obj#) 
                                     when p2text='id1' then
                                          ''||p2
+                                    when p3text in('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') then 
+                                         ''||trunc(p3/power(16,8))
                                     when p3text like '%namespace' and p3>power(16,8)*4294950912 then
                                         'Undo'
                                     when p3text like '%namespace' and p3>power(16,8) then 

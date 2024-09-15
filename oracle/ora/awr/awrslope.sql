@@ -1,5 +1,5 @@
 /*[[
-    Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]} [-m] [-regress|-improve]
+    Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]} [-m] [-regress|-improve] [-f"<filter>"]
     
     -regress: order by regression
     -improve: order by improvement

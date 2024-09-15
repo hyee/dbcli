@@ -80,7 +80,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_found  BOOLEAN := false;
         l_intval PLS_INTEGER;
         l_strval VARCHAR2(20);
-        TYPE l_rec IS RECORD(sql_id varchar2(13),child_addr raw(8),child_num int);
+        TYPE l_rec IS RECORD(sql_id varchar2(13),sql_text varchar2(200),child_addr raw(8),child_num int);
         TYPE t_recs IS TABLE OF l_rec;
         l_recs t_recs := t_recs();
         procedure wr is
@@ -97,7 +97,10 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
     BEGIN
         IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
-                execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
+                execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
+                                            prev_sql_id,prev_child_number 
+                                     from   sys.v_$session 
+                                     where  sid=:sid and username is not null and prev_hash_value!=0]'
                 into l_sql_id,l_child USING l_sid;
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
@@ -149,16 +152,22 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             END IF;
             BEGIN
                 $IF DBMS_DB_VERSION.VERSION>10 $THEN
-                    l_sql := 'SELECT /*+dbcli_ignore order_predicates no_expand*/ SQL_ID,'
+                    l_sql := 'SELECT /*+dbcli_ignore ordered_predicates no_expand*/ SQL_ID,trim(SQL_TEXT),'
                               || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN 'CHILD_ADDRESS' ELSE 'CAST(NULL AS RAW(8))' END 
                               || q'!,null 
-                             FROM sys.V_$OPEN_CURSOR 
-                             WHERE sid=:sid
+                             FROM sys.V_$OPEN_CURSOR a
+                             WHERE a.sid=:sid
                              AND   cursor_type like '%OPEN%'
-                             AND   (instr(sql_text,'dbcli_ignore')=0 and instr(sql_text,'INTERNAL_DBCLI_CMD')=0)
-                             AND   (last_sql_active_time>=SYSDATE-numtodsinterval(:2,'second') or
-                                    last_sql_active_time is null and cursor_type='OPEN' and sql_exec_id IS NOT NULL)
-                             AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')!';
+                             AND   instr(sql_text,'dbcli_ignore')=0 
+                             AND   instr(sql_text,'INTERNAL_DBCLI_CMD')=0
+                             AND   sql_text not like 'table_%'
+                             AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')
+                             AND   SYSDATE-numtodsinterval(:2,'second')<=nvl(last_sql_active_time,
+                                      (select /*+outline_leaf push_pred(b)*/ 
+                                              max(last_active_time) 
+                                       from   sys.v_$sql b
+                                       where  b.sql_id=a.sql_id!'
+                              || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN ' AND A.CHILD_ADDRESS=B.CHILD_ADDRESS))' ELSE '))' END;
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;
                         FOR i in 1..l_recs.count LOOP
@@ -198,7 +207,10 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                                 end if;
                                 if trim(l_plans(i)) is not null then
                                     l_max := greatest(l_max,length(l_plans(i)));
-                                    l_buffer := l_buffer || replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:') || chr(10);
+                                    IF instr(l_plans(i),'Plan hash value:')>0 THEN
+                                        l_plans(i) := replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:')||'   SQL: '||l_recs(j).sql_text;
+                                    END IF;  
+                                    l_buffer := l_buffer || l_plans(i) || chr(10);
                                     wr;
                                 end if;
                             elsif i=1 and l_recs(j).sql_id=l_sql_id then
@@ -322,7 +334,7 @@ function output.getOutput(item)
         args.child=tonumber(args1.last_child) or ''
         args.autotrace=autotrace
         args.cdbid=tonumber(db.props.container_dbid) or -1
-        args.secs,timer=timer and math.min(30,math.ceil(clock-timer)) or 10,clock
+        args.secs,timer=timer and math.min(30,math.ceil(clock-timer)) or 3,clock
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then
             output.is_exec=nil

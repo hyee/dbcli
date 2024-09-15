@@ -92,6 +92,7 @@ BEGIN
         WITH segs AS(
             SELECT /*+MATERIALIZE*/ 
                    owner,object_name,
+                   decode(COUNT(DISTINCT nvl(SUBOBJECT_NAME,' ')),1,max(obj#)) obj#,
                    decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,''||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))) segments,
                    nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,
                    nullif(&imscans,0) imscans,
@@ -137,7 +138,7 @@ BEGIN
                     ) a)
             GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
             HAVING grouping_id(SUBOBJECT_NAME)=&flag)
-        SELECT n "Statistics",v "Value",p "Weight", owner,object_name,segments
+        SELECT n "Statistics",v "Value",p "Weight", owner,object_name,obj#,segments
         FROM (
             SELECT a.*,round(ratio_to_report(v) over(PARTITION BY n),4) p
             FROM (
@@ -188,7 +189,7 @@ BEGIN
                                       20,chain_rows,
                                       21,pop_cus,
                                       22,repop_cus),2),0) v,
-                        owner,object_name,segments
+                        owner,object_name,obj#,segments
                 FROM (select rownum r from dual connect by rownum<=22) a, segs) a
         WHERE v>0)
     WHERE p>=0.08

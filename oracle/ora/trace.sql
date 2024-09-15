@@ -89,7 +89,7 @@ DECLARE
         ELSIF upper(obj)='OFF' then
             lv := 0;
         ELSIF lv IS NULL THEN
-            raise_application_error(-20001, 'Invalid data type of parameter "' || obj || '", number is expected!');
+            raise_application_error(-20001, 'Invalid data type of parameter "' || obj || '", <level>/on/off is expected!');
         END IF;
     END;
 BEGIN

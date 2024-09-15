@@ -23,8 +23,8 @@ WITH lp AS
                 DECODE(mode_held, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE')||'('||mode_held||')' held_mode,
                 DECODE(mode_requested, 1, 'NULL', 2, 'SHARED', 3, 'EXCLUSIVE', 'NONE')||'('||mode_requested||')' req_mode,
                 case when h.p1text='cache id' then (select parameter from v$rowcache where cache#=p1 and rownum<2) end cache_name,
-                case when h.p3text='100*mode+namespace' then trunc(p3/power(16,8)) end object_id,
-                case when h.p3text='100*mode+namespace' then nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) end namespace,
+                case when h.p3text in('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') then trunc(p3/power(16,8)) end object_id,
+                case when h.p3text in('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') then nullif(trunc(mod(p3,power(16,8))/power(16,4)),0) end namespace,
                 h.event  event,
                 ho.&TYP object_type
         FROM   v$session h,

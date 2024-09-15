@@ -174,6 +174,7 @@ for cols,line in output('ps aux | grep -v grep','parse') do
         field=users[cols.user][instance][group]
         if not dbs[instance] then dbs[instance]={pga=0,sga=0,proc=0,hugepage=0} end
         dbs[instance].proc=dbs[instance].proc+1
+        dbs[instance].pga=dbs[instance].pga+tonumber(cols.rss)
         if p1=='smon' then --try to read the HugePages usage
             local fname='/proc/'..cols.pid..'/smaps'
             local smap=[[grep -B 11 'KernelPageSize:     2048 kB' FNAME | grep "^Size:" | awk 'BEGIN{sum=0}{sum+=$2}END{print sum}']]
@@ -201,6 +202,7 @@ for cols,line in output('ps aux | grep -v grep','parse') do
             found = true
             field._count=field._count+1
             field._rss=field._rss-tonumber(cols.rss)
+            if p1 then dbs[instance].pga=dbs[instance].pga-tonumber(cols.rss) end
         end
             
         for n,v in pairs{
@@ -223,7 +225,7 @@ for cols,line in output('ps aux | grep -v grep','parse') do
         
         --caculate PGA from Rss
         if p1 then 
-            dbs[instance].pga=dbs[instance].pga+(tonumber(m.rss) or 0)
+            dbs[instance].pga=dbs[instance].pga+(tonumber(m.pss) or 0)
         end
         --SGA seems like starting with /SYSV, i.e.: /SYSV00000000
         if  p1=='smon' and m.mapping:find('^/SYSV000') then
@@ -336,9 +338,14 @@ for index,name in ipairs(titles) do
     temp[index]=0
 end
 
+--read /proc/meminfo
+local mem={}
+for line in output('cat /proc/meminfo 2>/dev/null') do
+    local name,kb = line:match('(%S+):%s+(%d+)')
+    mem[name]=kb
+end
 --read HugePages from /proc/meminfo
-hugepage_total=[[grep HugePages_Total /proc/meminfo 2>/dev/null | awk '{print $2*2}']]
-hugepage_total=tonumber(output(hugepage_total,true)) or 0
+hugepage_total=math.ceil((tonumber(mem['HugePages_Total']) or 0)*(tonumber(mem['Hugepagesize']) or 0)/1024)
 local remain=hugepage_total
 for instance,info in pairs(dbs) do
     temp[1]=instance
@@ -379,5 +386,78 @@ print(' ')
 print('==========================')
 print('|      OS MEMORY (MB)    |')
 print('==========================')
-os.execute('free -m -w')
-print(' ')
+local function mb(val)
+    if type(val)=='number' then return tostring(math.ceil(val/1024)) end
+    val = tonumber(mem[val]);
+    if not val then return ' ' end
+    return tostring(math.ceil(val/1024))
+end
+
+if not tonumber(mem['MemTotal']) then
+    return print('free -m')
+end
+
+fmt='%-11s   %11s   %11s   %13s   %10s   %10s   %10s'
+print(fmt:format('','Total','Used/Active','Free/Inactive','Available','Cached','Buffers'))
+print(fmt:format('-----------','-----------','-----------','----------','----------','----------','----------'))
+print(fmt:format('Mem',
+                 mb('MemTotal'),
+                 mb(tonumber(mem['MemTotal'])-tonumber(mem['MemFree'])),
+                 mb('MemFree'),
+                 mb('MemAvailable'),
+                 mb('Cached'),
+                 mb('Buffers')))
+print(fmt:format('Slab',
+                 mb('Slab'),
+                 mb('SUnreclaim'),
+                 mb('SReclaimable'),
+                 mb('SReclaimable'),
+                 mb('SReclaimable'),
+                 ''))
+print(fmt:format('PageCache',
+                 mb(tonumber(mem['Active(file)'])+tonumber(mem['Inactive(file)'])),
+                 mb('Active(file)'),
+                 mb('Inactive(file)'),
+                 mb(tonumber(mem['Active(file)'])+tonumber(mem['Inactive(file)'])),
+                 mb(tonumber(mem['Active(file)'])+tonumber(mem['Inactive(file)'])),
+                 ''))
+print(fmt:format('Anon',
+                 mb(tonumber(mem['Active(anon)'])+tonumber(mem['Inactive(anon)'])),
+                 mb('Active(anon)'),
+                 mb('Inactive(anon)'),
+                 mb(tonumber(mem['Active(anon)'])+tonumber(mem['Inactive(anon)'])),
+                 '',
+                 ''))
+print(fmt:format('Shared',
+                 mb('Shmem'),
+                 mb(tonumber(mem['Shmem'])-tonumber(mem['KReclaimable'] or mem['SReclaimable'])+tonumber(mem['SReclaimable'])),
+                 '',
+                 mb(tonumber(mem['KReclaimable'] or mem['SReclaimable'])-tonumber(mem['SReclaimable'])),
+                 
+                 '',
+                 ''))                 
+local tmpfs=output([[df -m 2>/dev/null | egrep '^tmpfs' | awk '{t+=$2;u+=$3;a+=$4}END{print t,u,a}']],true)
+local t,u,a=(tmpfs or ''):match('(%d+)%s+(%d+)%s+(%d+)')
+if t then
+    print(fmt:format('tmpfs',
+                     t,
+                     u,
+                     a,
+                     a,
+                     '',
+                     ''))
+end
+print(fmt:format('Swap',
+                 mb('SwapTotal'),
+                 mb(tonumber(mem['SwapTotal'])-tonumber(mem['SwapFree'])),
+                 mb('SwapFree'),
+                 '',
+                 mb('SwapCached'),
+                 ''))    
+print(fmt:format('Vmalloc',
+                 mb('VmallocTotal'),
+                 mb('VmallocUsed'),
+                 mb(tonumber(mem['VmallocTotal'])-tonumber(mem['VmallocUsed'])),
+                 '',
+                 '',
+                 ''))

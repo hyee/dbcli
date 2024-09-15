@@ -163,6 +163,7 @@ Parameters
     _px_reuse_server_groups: reuse existing px server group for CDT
     _px_partition_scan_threshold: default as 64, when partitions>64*dop then use PX partition-wise scan instead of PX block interator
     _ktb_debug_flags: 2 - disable oustanding read events on SecureFile insertion, but increase the undo header lookups during cleanouts
+                      8 - Blocks are repaired when they are cleaned out.
     _dbg_scan: default as 0
         1: Disable LOB predicate pushdown to Smart Scan
         128: disable HCC read-ahead and disable preventing tiny HCC tiny CU(buffer_size<block_size) creation(bug 32290386)
@@ -188,7 +189,8 @@ Parameters
     _smu_debug_mode: 33554432 - TUNED_UNDORETENTION is not calculated based on a percentage of the fixed size undo tablespace.
                                 Instead it is set to the max(MAXQUERYLEN + 300, UNDO_RETENTION).
                                 Use _undo_autotune=false instead when undo datafile's AUTOEXTENSIBLE=YES
-                     134217728 - turn off storage index
+                                Fix high row cache objects or enq: US - contention events due to requests on dc_rollback_segments
+                     134217728 - turn off storage index and disable min active SCN optimization feature(or "_enable_minscn_cr"=false)
     _direct_read_decision_statistics_driven: 
         Direct path read decision is done based on the segment header's block count,
             instead of statistics(TAB$.BLKCNT/TABPART$.BLKCNT/IND$.LEAFCNT/etc)
