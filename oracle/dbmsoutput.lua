@@ -162,12 +162,12 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                              AND   instr(sql_text,'INTERNAL_DBCLI_CMD')=0
                              AND   sql_text not like 'table_%'
                              AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')
-                             AND   SYSDATE-numtodsinterval(:2,'second')<=nvl(last_sql_active_time,
-                                      (select /*+outline_leaf push_pred(b)*/ 
+                             AND   SYSDATE-numtodsinterval(:2,'second')<=(
+                                       select /*+outline_leaf push_pred(b)*/ 
                                               max(last_active_time) 
                                        from   sys.v_$sql b
                                        where  b.sql_id=a.sql_id!'
-                              || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN ' AND A.CHILD_ADDRESS=B.CHILD_ADDRESS))' ELSE '))' END;
+                              || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN ' AND A.CHILD_ADDRESS=B.CHILD_ADDRESS)' ELSE ')' END;
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;
                         FOR i in 1..l_recs.count LOOP

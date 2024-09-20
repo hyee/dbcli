@@ -1,13 +1,15 @@
 
+local blocks,rows=0,0
 if obj.object_type:find('^TABLE') then
     local result=db:dba_query(db.internal_call,
-                              [[select nvl(cluster_name,table_name)
+                              [[select nvl(cluster_name,table_name),blocks,num_rows
                                from ALL_TABLES
                                WHERE owner = :owner AND table_name = :object_name]],
                               {owner=obj[1],object_name=obj[2]})
     result=db.resultset:rows(result,-1)
     result=result[2] or {}
     obj.table_name=result[1]
+    blocks,rows=result[2] or 0,result[3] or 0
 
     if obj.object_name:find('^X%$') and obj.owner=='SYS' and obj.object_id>=4200000000 then
         obj.object_type='FIXED TABLE'
@@ -280,7 +282,7 @@ return  obj.object_type=='FIXED TABLE' and [[
         ON        (a.column_name=e.cname)
         ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
+        WITH I AS (SELECT /*+cardinality(1) outline_leaf push_pred(c) opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
                            I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                            PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                     SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -297,27 +299,29 @@ return  obj.object_type=='FIXED TABLE' and [[
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :table_name)
-        SELECT /*+topic="Index info" no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+topic="Index info" outline_leaf push_pred(e) push_pred(c) no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
-                DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
-                DECODE(C.COLUMN_POSITION, 1, DECODE(I.UNIQUENESS,'UNIQUE','YES','NO'), '') "UNIQUE",
-                DECODE(C.COLUMN_POSITION, 1, NVL(PARTITIONED_BY||NULLIF(','||SUBPART_BY,','),'NO'), '') "PARTITIONED",
-                DECODE(C.COLUMN_POSITION, 1, LOCALITY, '') "LOCALITY",
+                DECODE(C.COLUMN_POSITION, 1, 
+                       trim(',' from I.INDEX_TYPE||','||LOCALITY||','
+                            ||DECODE(I.UNIQUENESS,'UNIQUE','UNIQUE,')
+                            ||NVL2(PARTITIONED_BY,'PARTT['||PARTITIONED_BY||NULLIF(','||SUBPART_BY,',')||'],','')
+                            ||nullif(decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS)||',','VALID,')
+                        )) attrs,
                 --DECODE(C.COLUMN_POSITION, 1, (SELECT NVL(MAX('YES'),'NO') FROM ALL_Constraints AC WHERE AC.INDEX_OWNER = I.OWNER AND AC.INDEX_NAME = I.INDEX_NAME), '') "IS_PK",
-                DECODE(C.COLUMN_POSITION, 1, decode(I.STATUS,'N/A',(SELECT MIN(STATUS) FROM All_Ind_Partitions p WHERE p.INDEX_OWNER = I.OWNER AND p.INDEX_NAME = I.INDEX_NAME),I.STATUS), '') STATUS,
-                DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLEVEL,
-                DECODE(C.COLUMN_POSITION, 1, round(100*i.CLUSTERING_FACTOR/greatest(i.num_rows,1),2)) "CF(%)/Rows",
-                DECODE(C.COLUMN_POSITION, 1, i.DISTINCT_KEYS) DISTINCTS,
-                DECODE(C.COLUMN_POSITION, 1, i.LEAF_BLOCKS) LEAF_BLOCKS,
-                DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "LB/KEY",
-                DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "DB/KEY",
-                DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) CARD,
-                DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED,
+                DECODE(C.COLUMN_POSITION, 1, i.BLEVEL) BLV,
+                DECODE(C.COLUMN_POSITION, 1, round(100*i.num_rows*]]..blocks..'/nullif('..rows..[[*i.CLUSTERING_FACTOR,0),2)) "Blks/|CF(%)",
+                DECODE(C.COLUMN_POSITION, 1, dbms_xplan.format_number(i.num_rows)) "Rows",
+                DECODE(C.COLUMN_POSITION, 1, dbms_xplan.format_number(i.DISTINCT_KEYS)) NDV,
+                DECODE(C.COLUMN_POSITION, 1, dbms_xplan.format_number(i.LEAF_BLOCKS)) "Blks",
+                DECODE(C.COLUMN_POSITION, 1, AVG_LEAF_BLOCKS_PER_KEY) "Leaf|B/KEY",
+                DECODE(C.COLUMN_POSITION, 1, AVG_DATA_BLOCKS_PER_KEY) "Data|B/KEY",
+                DECODE(C.COLUMN_POSITION, 1, ceil(i.num_rows/greatest(i.DISTINCT_KEYS,1))) "Card",
                 C.COLUMN_POSITION NO#,
                 C.COLUMN_NAME,
                 E.COLUMN_EXPRESSION COLUMN_EXPR,
-                C.DESCEND
+                C.DESCEND DIR,
+                DECODE(C.COLUMN_POSITION, 1, i.LAST_ANALYZED) LAST_ANALYZED
         FROM   I,  ALL_IND_COLUMNS C,  all_ind_expressions e
         WHERE  C.INDEX_OWNER = I.OWNER
         AND    C.INDEX_NAME = I.INDEX_NAME
@@ -330,7 +334,8 @@ return  obj.object_type=='FIXED TABLE' and [[
         AND    :table_name =e.table_name(+)
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
-        SELECT /*INTERNAL_DBCLI_CMD topic="Constraint info"*/ --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
+        SELECT /*INTERNAL_DBCLI_CMD topic="Constraint info"*/ 
+               --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
@@ -341,7 +346,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+no_merge(a) leading(a r c) use_nl(a r c) cardinality(a 1) opt_param('container_data' 'current_dictionary')
+        FROM   (SELECT --+outline_leaf leading(a r c) use_nl(a r c) push_pred(r) push_pred(c) opt_param('container_data' 'current_dictionary')
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,

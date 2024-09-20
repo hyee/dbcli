@@ -76,10 +76,10 @@ FROM (
     &check_access_fn        name,
     &check_access_fn        nullif('('||(SELECT listagg(datatype, ',') within GROUP(ORDER BY argnum) FROM V$SQLFN_ARG_METADATA WHERE func_id = a.func_id)||')','()') args,
     &check_access_fn        null,null,'FUNCTION => '||DATATYPE,null,null,VERSION,null
-    &check_access_fn FROM   V$SQLFN_METADATA a
+    &check_access_fn FROM   SYS.V_$SQLFN_METADATA a
     &check_access_fn WHERE  name||' '||VERSION like '%'||NVL(UPPER(:V1), 'xxxx')||'%' escape '\'
     &check_access_ft UNION ALL
     &check_access_ft SELECT 'SYSDBA',NAME,NULL,object_id,null,'FIXED TABLE',null,null,null,null
-    &check_access_ft FROM   v$fixed_table WHERE TYPE='TABLE' AND NAME LIKE '%'||NVL(UPPER(:V1), 'xxxx')||'%'
+    &check_access_ft FROM   SYS.v_$fixed_table WHERE TYPE='TABLE' AND NAME LIKE '%'||NVL(UPPER(:V1), 'xxxx')||'%'
 ) A) WHERE R=1
 ORDER  BY 1, 2
