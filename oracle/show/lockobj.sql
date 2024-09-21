@@ -1,4 +1,4 @@
-/*[[Show locked objects in gv$locked_object whose lock_type.id1_tag LIKE 'object%'
+/*[[Show locked objects in gv$locked_object whose lock_type.id1_tag LIKE 'object%'. Usage: @@NAME [-f"<filter>"]
    --[[
     @CHECK_ACCESS: dba_objects={dba_objects},all_objects={all_objects}
     &FILTER: default={1=1} f={}
@@ -19,8 +19,17 @@ WITH b AS
   LEFT  JOIN gv$session_wait s
   ON     l.id1=s.p2 AND l.id2=s.p3 AND t.id1_tag=s.p2text AND t.id2_tag=s.p3text
   AND    l.request=0
-  WHERE (t.id1_tag LIKE 'obj%' or s.sid is not null))
-SELECT /*+ opt_param('_optimizer_mjc_enabled' 'false')*/
+  WHERE (t.id1_tag LIKE 'obj%' or s.sid is not null)),
+objs AS (
+  SELECT id1,b.*
+  FROM   (select /*+no_merge*/ distinct id1 from b) d,
+         XMLTABLE('/ROWSET/ROW' 
+                passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) 
+                columns owner VARCHAR2(128),
+                        object_name VARCHAR2(128), 
+                        subobject_name VARCHAR2(128)) b
+)
+SELECT /*+leading(b d) outline_leaf*/
          distinct 
          c.sid||','||c.serial#||',@'||c.inst_id session#,
          d.type,
@@ -42,13 +51,10 @@ SELECT /*+ opt_param('_optimizer_mjc_enabled' 'false')*/
          c.osuser,
          c.machine
 FROM   b d,
-       gv$session c,
-       XMLTABLE('/ROWSET/ROW' 
-                passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) 
-                columns owner VARCHAR2(128),
-                        object_name VARCHAR2(128), 
-                        subobject_name VARCHAR2(128)) b
+       objs b,
+       gv$session c
 WHERE  d.inst_id = c.inst_id
+AND    d.id1=b.id1
 AND    d.sid = c.sid AND (&filter)
 ORDER  BY owner, table_name,sub_name,type,nvl2(blocking,2,0)+nvl2(blocker,0,1),1;
 

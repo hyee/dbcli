@@ -28,26 +28,30 @@ output.trace_sql_after=([[
         l_rtn    PLS_INTEGER;
         l_sid    PLS_INTEGER;
     BEGIN
-        open :stats for q'[@GET_STATS@]';
         l_sid :=sys_context('userenv','sid');
         begin
-            execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ prev_sql_id,prev_child_number from sys.v_$session where sid=:sid and username is not null and prev_hash_value!=0]'
-            into l_sql_id,l_child using l_sid;
-
-            if l_sql_id is null then
+            execute immediate q'[
+                select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
+                      prev_sql_id,prev_child_number 
+                from sys.v_$session 
+                where sid=:sid and username is not null and prev_hash_value!=0]'
+                into l_sql_id,l_child using l_sid;
+        exception when others then null; end;
+        open :stats for @GET_STATS@;
+        
+        if l_sql_id is null then
+            l_sql_id := l_tmp_id;
+        elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
+            begin
+                execute immediate q'[begin :rtn := sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
+                    using out l_rtn, in out l_intval,in out l_strval;
+            exception when others then null; end;
+            if nvl(lower(l_strval),'exact')!='exact' then
                 l_sql_id := l_tmp_id;
-            elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
-                begin
-                    execute immediate q'[begin :rtn := sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
-                        using out l_rtn, in out l_intval,in out l_strval;
-                exception when others then null; end;
-                if nvl(lower(l_strval),'exact')!='exact' then
-                    l_sql_id := l_tmp_id;
-                    l_child  := null;
-                end if;
+                l_child  := null;
             end if;
-        exception when others then null;
-        end;
+        end if;
+        
         :last_sql_id := l_sql_id;
         :last_child  := l_child; 
     END;]]):gsub('@GET_STATS@',output.trace_sql)
@@ -97,11 +101,12 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
     BEGIN
         IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
             begin
-                execute immediate q'[select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
-                                            prev_sql_id,prev_child_number 
-                                     from   sys.v_$session 
-                                     where  sid=:sid and username is not null and prev_hash_value!=0]'
-                into l_sql_id,l_child USING l_sid;
+                execute immediate q'[
+                    select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
+                           prev_sql_id,prev_child_number 
+                    from   sys.v_$session 
+                    where  sid=:sid and username is not null and prev_hash_value!=0]'
+                    into l_sql_id,l_child USING l_sid;
                 if l_sql_id is null then
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
@@ -193,7 +198,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                         ELSIF l_recs(j).child_addr IS NOT NULL THEN
                             l_sql := l_sql||'child_address=hextoraw('''||l_recs(j).child_addr||''')';
                         ELSE
-                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by executions,last_active_time) from sys.v_$sql where sql_id='''||l_recs(j).sql_id||''')';
+                            l_sql := l_sql||'child_number=(select max(child_number) keep(dense_rank last order by last_active_time) from sys.v_$sql where sql_id='''||l_recs(j).sql_id||''')';
                         END IF;
                         SELECT * BULK COLLECT INTO l_plans
                         FROM TABLE(dbms_xplan.display('v$sql_plan_statistics_all',NULL,l_fmt,l_sql));
@@ -247,26 +252,42 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
     EXCEPTION WHEN OTHERS THEN NULL;
     END;]]):gsub('@GET_STATS_ID@',loader:computeSQLIdFromText(output.trace_sql))
 
+local idx=0;
+local function next_()
+    idx=idx+1
+    return idx
+end
+
 local fixed_stats={
-    ['DB time']=1,
-    ['CPU used by this session']={2,1},
-    ['non-idle wait time']=3,
-    ['recursive calls']={4,6},
-    ['db block gets']=5,
-    ['consistent gets']={6,1},
-    ['physical reads']=7,
-    ['physical writes']=8,
-    ['session logical reads']=9,
-    ['logical read bytes from cache']=10,
-    ['cell physical IO interconnect bytes']=11,
-    ['redo size']=12,
-    ['bytes sent via SQL*Net to client']={13,3200},
-    ['bytes received via SQL*Net from client']={14,1314},
-    ['SQL*Net roundtrips to/from client']={15,1},
-    ['sorts (memory)']=16,
-    ['sorts (disk)']=17,
-    ['sorts (rows)']=18,
-    ['rows processed']=19
+    ['DB time']={next_(),0},
+    ['CPU used by this session']={next_(),1},
+    ['RM usage']=next_(),
+    ['non-idle wait time']=next_(),
+    ['recursive calls']={next_(),6},
+    ['db block changes']=next_(),
+    ['db block gets']=next_(),
+    ['db block gets from cache']=next_(),
+    ['db block gets from cache (fastpath)']=next_(),
+    ['consistent gets']={next_(),1},
+    ['consistent gets direct']=next_(),
+    ['consistent gets from cache']={next_(),1},
+    ['consistent gets examination']={next_(),0},
+    ['consistent gets examination (fastpath)']={next_(),0},
+    ['consistent gets pin']={next_(),0},
+    ['consistent gets pin (fastpath)']={next_(),0},
+    ['physical reads']=next_(),
+    ['physical writes']=next_(),
+    ['session logical reads']=next_(),
+    ['logical read bytes from cache']=next_(),
+    ['cell physical IO interconnect bytes']=next_(),
+    ['redo size']=next_(),
+    --['bytes sent via SQL*Net to client']={next_(),3600},
+    --['bytes received via SQL*Net from client']={next_(),1314},
+    --['SQL*Net roundtrips to/from client']={next_(),2},
+    ['sorts (memory)']=next_(),
+    ['sorts (disk)']=next_(),
+    ['sorts (rows)']=next_(),
+    ['rows processed']=next_()
 }
 
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1,INSERT=1}
@@ -279,6 +300,7 @@ function output.getOutput(item)
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
+    --[[
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
         if not db:is_internal_call(sql) then
             db.props.last_sql_id=loader:computeSQLIdFromText(sql)
@@ -286,6 +308,7 @@ function output.getOutput(item)
         end
         return 
     end
+    --]]
 
     if DDL[typ]  then
         if (typ=='CREATE' or typ=='ALTER') and CODES[objtype] and objname then
@@ -312,7 +335,7 @@ function output.getOutput(item)
         if autotrace=='off' and objtype~='SESSION' then return end
     end
 
-    if sql:find('^BeGin dbms_output') or (not (sql:sub(1,256):lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql)) then
+    if sql:find('^BeGin dbms_output') or (sql:find('%s') and not db:is_internal_call(sql)) then
         local args,stats
         output.is_exec=true
         sql_id=sql_id or loader:computeSQLIdFromText(sql)
@@ -330,6 +353,7 @@ function output.getOutput(item)
         local args1=args or {}
         local clock=os.timer()
         args=table.clone(default_args)
+
         args.sql_id=args1.last_sql_id or sql_id
         args.child=tonumber(args1.last_child) or ''
         args.autotrace=autotrace
@@ -430,7 +454,7 @@ function output.capture_stats(info)
     sqlerror=false
     if term then cfg.set('TERMOUT','off') end
     local db,sql=info[1],info[2]
-    if sql and not (sql:lower():find('internal',1,true) and not sql:find('%s')) and not db:is_internal_call(sql) then
+    if sql and sql:find('%s') and not db:is_internal_call(sql) then
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             output.is_exec=true
             local done,result=pcall(db.exec_cache,db,output.trace_sql,{},'Internal_GetSQLSTATS')
