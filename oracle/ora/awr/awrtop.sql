@@ -68,7 +68,7 @@ SELECT /*+ordered use_nl(a b)*/
      val &v2,
      pct,
      round(val/greatest(execs,1),2) "AVG",
-     EXTRACTVALUE(DBMS_XMLGEN.GETXMLTYPE(q'~SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[\s[:cntrl:]]+',' '),1,200)) text FROM &check_access_pdb.SQLTEXT WHERE SQL_ID='~'||regexp_substr(a.top_sql,'\w+')||''' and dbid='||a.dbid||' and rownum<2'),'//TEXT') SQL_TEXT
+     EXTRACTVALUE(DBMS_XMLGEN.GETXMLTYPE(q'~SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[[:space:][:cntrl:]]+',' '),1,200)) text FROM &check_access_pdb.SQLTEXT WHERE SQL_ID='~'||regexp_substr(a.top_sql,'\w+')||''' and dbid='||a.dbid||' and rownum<2'),'//TEXT') SQL_TEXT
 FROM (SELECT rownum r,
              ratio_to_report(val) over() pct,
              a.* 

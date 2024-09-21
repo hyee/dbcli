@@ -99,7 +99,7 @@ prompt  ============
 col last_loaded format smhd2
 SELECT /*+ BDAGEVIL leading(se) */sql_id, COUNT(DISTINCT child_number) child_nums, SUM(users_executing) users, username,
        (sysdate-min(to_date(LAST_LOAD_TIME,'YYYY-MM-DD/HH24:MI:SS')))*86400 last_loaded,
-       substr(trim(regexp_replace(REPLACE(max(sql_text), chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' ')),1,150) sql_text
+       substr(trim(regexp_replace(REPLACE(max(sql_text), chr(0)),'[[:space:][:cntrl:]]+',' ')),1,150) sql_text
 FROM   (SELECT s.*,parsing_schema_name username from gv$sql s) s
 WHERE  s.users_executing > 0
 AND    s.sql_text NOT LIKE '%BDAGEVIL%'

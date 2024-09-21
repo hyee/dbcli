@@ -12,7 +12,7 @@ Examples:
 set feed off
 var c refcursor;
 declare
-   src  CLOB:=regexp_replace(trim(:v1),'[; '||chr(10)||chr(13)||chr(9)||']+$');
+   src  CLOB:=regexp_replace(trim(:v1),'[;[:space:][:cntrl:]]+$');
    schem1 VARCHAR2(128):=SYS_CONTEXT('USERENV','CURRENT_SCHEMA');
    schem2 VARCHAR2(128);
    text CLOB;

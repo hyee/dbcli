@@ -86,7 +86,7 @@ BEGIN
                            PERIOD_START_TIME,
                            PERIOD_END_TIME,
                            b.*,
-                           substr(TRIM(regexp_replace(REPLACE(EXTRACTVALUE(summary, '//sql_text'), chr(0)), '[' || chr(10) || chr(13) || chr(9) || ' ]+', ' ')), 1, 250) SQL_TEXT
+                           substr(TRIM(regexp_replace(REPLACE(EXTRACTVALUE(summary, '//sql_text'), chr(0)), '[[:space:][:cntrl:]]+', ' ')), 1, 250) SQL_TEXT
                     FROM   (SELECT a.*, xmltype(a.report_summary) summary 
                             FROM   &dict a
                             WHERE  COMPONENT_NAME='sqlmonitor'

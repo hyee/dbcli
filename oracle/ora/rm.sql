@@ -351,7 +351,7 @@ DECLARE
             END LOOP;
         
             -- CREATE_PLAN_DIRECTIVE statements
-            SELECT rpad(argument_name, l), data_type, regexp_replace(comments, '[' || CHR(10) || CHR(13) || CHR(9) || ' ]+', ' ')
+            SELECT rpad(argument_name, l), data_type, regexp_replace(comments, '[[:space:][:cntrl:]]+', ' ')
             BULK   COLLECT
             INTO   fields, dtypes, descs
             FROM   (SELECT a.*, MAX(LENGTH(argument_name)) OVER() l

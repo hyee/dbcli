@@ -41,7 +41,7 @@ DECLARE
     cnt      PLS_INTEGER:=0;
     mx       PLS_INTEGER:=65535;
     facility varchar2(30);
-    strip    varchar2(30):='['||chr(10)||chr(13)||chr(9)||']+';
+    strip    varchar2(30):='[[:space:][:cntrl:]]+';
     TYPE t IS TABLE OF VARCHAR2(300) INDEX BY PLS_INTEGER;
     t1 t;
 

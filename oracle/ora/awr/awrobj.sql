@@ -236,7 +236,7 @@ BEGIN
             GROUP BY &phf,dbid &con,case when plan_hash=0 THEN sql_id END)
         SELECT &phf,id plan#,sql_id top_sql_id,ids "SQLs",obj,
                coalesce(op,operation||' '||options) operation,total_ela,weight,avg_ela,execs,
-               substr(regexp_replace(trim(to_char(SUBSTR(sql_text, 1, 500))),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,200) text
+               substr(regexp_replace(trim(to_char(SUBSTR(sql_text, 1, 500))),'[[:space:][:cntrl:]]+',' '),1,200) text
         FROM  ops a
         JOIN  stats b USING(dbid,&phf)
         LEFT JOIN &check_access_pdb.sqltext USING(dbid &con,sql_id)

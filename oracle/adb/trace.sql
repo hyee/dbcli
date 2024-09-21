@@ -27,7 +27,7 @@ BEGIN
     DBMS_SESSION.SET_IDENTIFIER('dbcli');
     dbms_application_info.set_module(c,'');
     dbms_output.put_line('Trace file will be created under '||trim('/' from bucket)||'/sqltrace/dbcli/'||c);
-    ctx := regexp_replace(ctx,'\s+$');
+    ctx := regexp_replace(ctx,'[[:space:][:cntrl:]]+$');
     IF not regexp_like(substr(ctx,-64),'end;') then
         IF substr(ctx,-1)!=';' then
             ctx := ctx ||';';
@@ -52,7 +52,7 @@ DECLARE
     c       PLS_INTEGER := 0;
     piece   VARCHAR2(32767);
     isbreak BOOLEAN := FALSE;
-    pattern VARCHAR2(100) := '^[' || chr(13) || chr(10) || ']*(.*?)\s*$';
+    pattern VARCHAR2(100) := '^[[:space:][:cntrl:]]*(.*?)\s*$';
     @lz_compress@
 BEGIN
     DBMS_SESSION.SET_IDENTIFIER('');

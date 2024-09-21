@@ -173,7 +173,7 @@ BEGIN
                         nvl(sql_text,(select max(owner||'.'||object_name||nullif('.'||subobject_name,'.')) from dba_objects where object_id=regexp_substr(target_id,'^\d+$')))
                 from (
                     SELECT max(item_impact) impact, target_id,
-                           trim(to_char(substr(regexp_replace(REPLACE(max(sql_text), chr(0)),'[' || chr(10) || chr(13) || chr(9) || ' ]+',' '),1,300))) sql_text
+                           trim(to_char(substr(regexp_replace(REPLACE(max(sql_text), chr(0)),'[[:space:][:cntrl:]]+',' '),1,300))) sql_text
                     FROM   b
                     WHERE  target_id is not null
                     group by target_id

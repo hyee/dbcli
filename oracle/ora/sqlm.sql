@@ -280,7 +280,7 @@ BEGIN
 
     IF sqlmon IS NULL AND upper(sq_id) LIKE 'SELECT %' THEN
         BEGIN
-            sq_id := regexp_replace(sq_id,'[;/ '||chr(10)||chr(9)||chr(13)||']+$');
+            sq_id := regexp_replace(sq_id,'[;/[:space:][:cntrl:]]+$');
             execute immediate 'SELECT * FROM ('||sq_id||') WHERE ROWNUM<2' into sqlmon;
         EXCEPTION 
             when no_data_found THEN

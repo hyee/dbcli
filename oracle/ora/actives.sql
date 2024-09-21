@@ -202,6 +202,7 @@ BEGIN
         ORDER  BY r}' USING :fil2;
     ELSE
         report_start;
+        BEGIN
         OPEN :actives FOR
             WITH s1 AS(
               SELECT /*+no_parallel materialize OPT_PARAM('_fix_control' '26552730:0') opt_estimate(query_block rows=3000) table_stats(SYS.X$KSLWT set rows=3000)*/*
@@ -227,7 +228,7 @@ BEGIN
                                and   object_type!='DATABASE LINK' 
                                and   rownum<2) A1,
                                program_line# A2,
-                               substr(trim(regexp_replace(REPLACE(sql_text, chr(0)),'['|| chr(10) || chr(13) || chr(9) || ' ]+',' ')),1,200) A3,
+                               substr(trim(regexp_replace(REPLACE(sql_text, chr(0)),'[[:space:][:cntrl:]]+',' ')),1,200) A3,
                                plan_hash_value A4,
                                round(decode(child_number,0,elapsed_time*1e-6/(1+executions),86400*(sysdate-to_date(last_load_time,'yyyy-mm-dd/hh24:mi:ss')))) A5
                         FROM  &CHECK_ACCESS_SQL a
@@ -271,6 +272,8 @@ BEGIN
             AND    d.addr = a.paddr
             AND   (:fil2 IS NOT NULL  OR (ROOT_SID =1 OR status='ACTIVE' and wait_class!='Idle'))
             ORDER  BY r;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;
         report_end;
     END IF;   
     $IF &smen=1 $THEN
