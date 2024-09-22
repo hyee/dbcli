@@ -73,7 +73,8 @@ var filter2 number;
 
 declare
     target varchar2(4000) := q'[
-        select a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
+        select /*+use_hash(@GV_ASHV A@GV_ASHV)*/ 
+                a.*,nvl(&tmodel,0) tmodel,&INST1 inst,SESSION_ID||'@'||&INST1 SID,
                 SUBSTR(a.program,-6) PRO_,
                 nvl(a.blocking_session,
                     case 
@@ -101,7 +102,7 @@ BEGIN
     IF &tree=0 THEN
         open :cur for
             WITH bclass   AS (SELECT /*+inline*/ class, ROWNUM r from v$waitstat),
-                 ash_base AS (select /*+materialize*/ a.*,nullif(b_sid_,'@') b_sid from &target a),
+                 ash_base AS (select /*+materialize use_hash(@GV_ASHV A@GV_ASHV) */ a.*,nullif(b_sid_,'@') b_sid from &target a),
                  ash_data AS (
                 SELECT /*+&hint ordered swap_join_inputs(b) swap_join_inputs(c) swap_join_inputs(u)  use_hash(a b u c)  no_expand*/
                         a.*, 

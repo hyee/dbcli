@@ -14,13 +14,20 @@
     --[[
         @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
         &ash: ash={gv$active_session_history}, dash={&check_access_pdb.Active_Sess_History}
-        &snap: default={NVL(to_date(nvl(:V2,:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7)} snap={sysdate-numtodsinterval(&0,'second')}
+        &snap: default={NVL(to_date(nvl('&V2','&STARTTIME'),'YYMMDDHH24MISS'),SYSDATE-7)} snap={sysdate-numtodsinterval(&0,'second')}
+        &src: ash={0} dash={1}
         @ver:  11={} default={--}
+        @ver12: 12={,a.con_id} default={}
     --]]
 ]]*/
 
 col latency,max_latency for usmhd2
 col avg_bytes,max_bytes for kmg
+col "Total time" for pct3
+set feed off
+
+PRO ASH Network Summary(Estimated)
+PRO ==============================
 SELECT  machine,event,aas,latency,max_latency,avg_bytes,max_bytes &ver ,top_1_sql,top_2_sql,top_3_sql
 FROM (
     select a.*,row_number() over(partition by gid order by aas desc) rnk
@@ -35,11 +42,59 @@ FROM (
         from  &ash
         where p2text='#bytes' 
         and   nvl(wait_class,'Network')='Network'
+        and   IN_SQL_EXECUTION='Y'
         and   upper(machine||','||event||','||sql_id) like upper('%&V1%')
-        and   nvl2(event,time_waited,wait_time)>0
+        and   nvl2(event,time_waited,wait_time) between 30 and 1e7
         --and   (current_obj#<1 or event is not null)
         and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)
         group by machine,event,rollup((sql_id,top_level_sql_id))) a)
 WHERE gid  = 1
-AND   rnk <= 100
+AND   rnk <= 50
 ORDER BY aas desc;
+
+var c1 refcursor "Global Network Wait Events"
+var c2 refcursor "Client Network Wait Events"
+DECLARE
+   did int := :dbid;
+   c   sys_refcursor;
+BEGIN
+    OPEN :c1 FOR
+    $IF &src=0 $THEN
+        SELECT EVENT,
+               ROUND(SUM(TIME_WAITED_MICRO_FG)/SUM(TOTAL_WAITS_FG),2) latency, 
+               ratio_to_report(SUM(TIME_WAITED_MICRO_FG)) over() "Total Time"
+        FROM   gv$system_event
+        WHERE (wait_class='Network' OR wait_class!='Idle' AND event like 'SQL*Net%')
+        AND   TOTAL_WAITS_FG>0
+        GROUP BY EVENT
+        ORDER BY 1;
+        OPEN c FOR
+            SELECT * FROM (
+                SELECT s.machine,e.EVENT,ROUND(SUM(TIME_WAITED_MICRO)/SUM(TOTAL_WAITS),2) latency, 
+                       ratio_to_report(SUM(TIME_WAITED_MICRO)) over() "Total Time"
+                FROM   gv$session_event e join gv$session s USING(inst_id,sid)
+                WHERE (e.wait_class='Network' OR e.wait_class!='Idle' AND e.event like 'SQL*Net%')
+                AND   TOTAL_WAITS>0
+                and   upper(s.machine||','||e.event) like upper('%&V1%')
+                GROUP BY s.machine,e.EVENT
+                ORDER BY "Total Time" desc)
+            WHERE ROWNUM<=30;
+    $ELSE
+        SELECT event,ROUND(SUM(micro)/nullif(SUM(cnt),0),2) latency,ratio_to_report(SUM(micro)) over() "Total Time"
+        FROM (
+            SELECT EVENT_NAME event,
+                   TIME_WAITED_MICRO_FG-lag(TIME_WAITED_MICRO_FG) over(partition by instance_number,startup_time,EVENT_NAME &ver12 ORDER BY SNAP_ID) micro,
+                   TOTAL_WAITS_FG-lag(TOTAL_WAITS_FG) over(partition by instance_number,startup_time,EVENT_NAME &ver12 ORDER BY SNAP_ID) cnt
+            FROM   dba_hist_system_event a
+            JOIN   dba_hist_snapshot b
+            USING  (instance_number,snap_id,dbid )
+            WHERE (wait_class='Network' OR wait_class!='Idle' AND EVENT_NAME like 'SQL*Net%')
+            AND   TOTAL_WAITS_FG>0
+            AND   end_interval_time+0 BETWEEN &snap AND NVL(to_date(nvl('&V3','&ENDTIME'),'YYMMDDHH24MISS'),SYSDATE+1)
+            AND   dbid=did)
+        GROUP by EVENT 
+        ORDER BY 1;
+    $END
+    :c2 := c;
+END;
+/

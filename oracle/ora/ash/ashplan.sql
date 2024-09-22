@@ -149,7 +149,7 @@ Sample Ouput:
                     FROM   gash a 
                     GROUP  BY service_hash  &con, machine, decode(port,0,session_id*inst_id*10,port),stime) b
             JOIN (
-                SELECT /*+ merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000)*/ *
+                SELECT /*+ merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000) use_hash(@GV_ASHV A@GV_ASHV)*/ *
                 FROM gv$active_session_history a) a
             USING  (service_hash &con,machine) 
             WHERE  a.sample_time+0=b.stime

@@ -165,13 +165,18 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                              AND   cursor_type like '%OPEN%'
                              AND   instr(sql_text,'dbcli_ignore')=0 
                              AND   instr(sql_text,'INTERNAL_DBCLI_CMD')=0
+                             AND   instr(sql_text,'index(idl')=0
                              AND   sql_text not like 'table_%'
+                             AND   sql_text not like 'select owner#,name,namespace%'
                              AND   lower(regexp_substr(sql_text,'\w+')) IN('create','with','select','update','merge','delete')
-                             AND   SYSDATE-numtodsinterval(:2,'second')<=(
+                             AND   0 < (
                                        select /*+outline_leaf push_pred(b)*/ 
-                                              max(last_active_time) 
+                                              1
                                        from   sys.v_$sql b
-                                       where  b.sql_id=a.sql_id!'
+                                       where  b.sql_id=a.sql_id
+                                       and    parsing_schema_name=sys_context('userenv','current_schema')
+                                       and    last_active_time>=SYSDATE-numtodsinterval(:2,'second')
+                                       and    rownum < 2!'
                               || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN ' AND A.CHILD_ADDRESS=B.CHILD_ADDRESS)' ELSE ')' END;
                     BEGIN
                         EXECUTE IMMEDIATE l_sql BULK COLLECT INTO l_recs USING l_sid,l_secs;
@@ -259,22 +264,27 @@ local function next_()
 end
 
 local fixed_stats={
-    ['DB time']={next_(),0},
+    ['DB time']={next_(),1},
     ['CPU used by this session']={next_(),1},
-    ['RM usage']=next_(),
-    ['non-idle wait time']=next_(),
-    ['recursive calls']={next_(),6},
+    ['CPU used when call started']={next_(),1},
+    ['RM usage by this session']=next_(),
+    ['non-idle wait time']={next_(),1},
+    ['non-idle wait count']={next_(),3},
     ['db block changes']=next_(),
     ['db block gets']=next_(),
     ['db block gets from cache']=next_(),
     ['db block gets from cache (fastpath)']=next_(),
+    ['buffer is pinned count']={next_(),0},--Reports the times of visited a buffer without the expense of having to first use a latch.
+    ['buffer is not pinned count']={next_(),1}, 
     ['consistent gets']={next_(),1},
     ['consistent gets direct']=next_(),
     ['consistent gets from cache']={next_(),1},
+    ['consistent gets from cache (fastpath)']={next_(),1},
     ['consistent gets examination']={next_(),0},
     ['consistent gets examination (fastpath)']={next_(),0},
-    ['consistent gets pin']={next_(),0},
-    ['consistent gets pin (fastpath)']={next_(),0},
+    ['consistent gets pin']={next_(),1},
+    ['consistent gets pin (fastpath)']={next_(),1}, --_fastpin_enable  to reduce CBC latch contention
+    ['no work - consistent read gets']={next_(),0},
     ['physical reads']=next_(),
     ['physical writes']=next_(),
     ['session logical reads']=next_(),
@@ -286,8 +296,7 @@ local fixed_stats={
     --['SQL*Net roundtrips to/from client']={next_(),2},
     ['sorts (memory)']=next_(),
     ['sorts (disk)']=next_(),
-    ['sorts (rows)']=next_(),
-    ['rows processed']=next_()
+    ['sorts (rows)']=next_()
 }
 
 local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1,INSERT=1}
@@ -300,7 +309,7 @@ function output.getOutput(item)
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
-    --[[
+
     if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
         if not db:is_internal_call(sql) then
             db.props.last_sql_id=loader:computeSQLIdFromText(sql)
@@ -308,7 +317,6 @@ function output.getOutput(item)
         end
         return 
     end
-    --]]
 
     if DDL[typ]  then
         if (typ=='CREATE' or typ=='ALTER') and CODES[objtype] and objname then
@@ -381,17 +389,17 @@ function output.getOutput(item)
         end
 
         if not sqlerror and stats and #stats>0 then 
-            local n={}
+            local n,n1={},{}
             local idx,c,v=-1,0
             grid.sort(stats,1)
             for k,v in pairs(fixed_stats) do
-                n[type(v)=='table' and v[1] or v]={0,k,env.ansi.mask('HEADCOLOR','/')}
+                n1[type(v)=='table' and v[1] or v]={0,k,env.ansi.mask('HEADCOLOR','/')}
             end
             for k,row in ipairs(stats) do
                 if tonumber(row[2]) and tonumber(row[2])>0 then
                     v=fixed_stats[row[1]]
                     if v then
-                        n[type(v)=='table' and v[1] or v][1]=math.max(0,row[2]-(type(v)=='table' and v[2] or 0))
+                        n1[type(v)=='table' and v[1] or v][1]=math.max(0,row[2]-(type(v)=='table' and v[2] or 0))
                     else
                         idx=math.fmod(idx+1,2)*3
                         if idx==0 then
@@ -401,6 +409,20 @@ function output.getOutput(item)
                         n[c][idx+4],n[c][idx+5]=row[2],row[1]
                         if idx==3 then n[c][6]='|' end
                     end
+                end
+            end
+
+            for k=#n1,3,-1 do
+                if n1[k][1]==0 then
+                    table.remove(n1,k)
+                end
+            end
+
+            for k,row in ipairs(n1) do
+                if #n<k then
+                    n[k]={row[1],row[2],env.ansi.mask('HEADCOLOR','/')}
+                else
+                    n[k][1],n[k][2]=row[1],row[2]
                 end
             end
 

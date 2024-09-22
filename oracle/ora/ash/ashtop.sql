@@ -169,8 +169,9 @@ WITH ASH_V AS(
     WHERE &filter and (&more_filter))
 SELECT * FROM (
     SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand 
-                opt_param('_sqlexec_hash_based_distagg_enabled' 'true')
-                opt_param('optimizer_dynamic_sampling' 11) cpu_costing
+              opt_param('_sqlexec_hash_based_distagg_enabled' 'true')
+              use_hash(@GV_ASHV A@GV_ASHV)
+              opt_param('optimizer_dynamic_sampling' 11) cpu_costing
            */
         &wall round(SUM(c)) Secs
       , ROUND(sum(&base)) AAS

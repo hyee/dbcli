@@ -3,7 +3,7 @@ local cfg,grid,bit,string,type,pairs,ipairs=env.set,env.grid,env.bit,env.string,
 local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
-local db_Types,__stmts={},{}
+local db_Types,__stmts,__source={},{},{}
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 
 local function is_closed(rs)
@@ -15,6 +15,7 @@ local function close(rs)
     if type(rs)~='userdata' or type(rs.close)~="function" then return nil end
     rs:close()
     __stmts[rs]=nil
+    __source[rs]=nil
 end
 
 function db_Types:set(typeName,value,conn)
@@ -260,7 +261,8 @@ function ResultSet:rows(rs,count,null_value,is_close)
     
     null_value=null_value or ''
     if count~=0 then
-        rows=loader:fetchResult(rs,count)
+        rows=self.db:call_sql_method('ON_SQL_ERROR',__source[rs] or '',loader.fetchResult,loader,rs,count)
+        --rows=loader:fetchResult(rs,count)
         for i=1,#rows do
             for j=1,cols do
                 local info=head.colinfo[j]
@@ -433,7 +435,8 @@ function db_core.print_feed(sql,result)
 end
 
 function db_core:ctor()
-    self.resultset  = ResultSet.new()
+    self.resultset = ResultSet.new()
+    self.resultset.db=self
     self.db_types:load_sql_types('java.sql.Types')
     self.__stmts = __stmts
     self.test_connection_sql="SELECT 1"
@@ -922,6 +925,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_output,index,typename=1,2,3
     local cleans={}
     local function process_result(rs,is_print)
+        __source[rs]=sql
         if print_result==true and is_print~=false then
             cleans[#cleans+1]=rs
             self.resultset:print(rs,self.conn,nil,verticals,false)
@@ -1012,6 +1016,7 @@ function db_core:is_connect(recursive,test_sql)
     end
     if is_closed then
         table.clear(__stmts)
+        table.clear(__source)
         self.__preparedCaches={}
         self.props={privs={}}
         env._CACHE_PATH=env.join_path(env._CACHE_BASE,'')
@@ -1146,6 +1151,7 @@ function db_core:connect(attrs,data_source)
         event("AFTER_DB_CONNECT",self,attrs.jdbc_alias or url,attrs)
     end
     table.clear(__stmts)
+    table.clear(__source)
     self.__preparedCaches={}
     self.properties={}
 
