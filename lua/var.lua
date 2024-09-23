@@ -97,7 +97,7 @@ function var.setOutput(name,datatype,desc)
     name=name:upper()
     if not datatype then
         var.outputs[name]=nil
-        if #env.RUNNING_THREADS==2 then
+        if env.is_main_thread() then
             global_outputs[name]=nil
         end
         return
@@ -109,7 +109,7 @@ function var.setOutput(name,datatype,desc)
     env.checkerr(var.types[datatype],'Unexpected data type['..datatype..']!')
     env.checkerr(name:match("^[%w%$_]+$"),'Unexpected variable name['..name..']!')
     var.inputs[name],var.outputs[name],var.desc[name]=nil,'#'..var.types[datatype],desc
-    if #env.RUNNING_THREADS==2 then
+    if env.is_main_thread() then
         global_outputs[name]=var.outputs[name]
     end
 end

@@ -80,7 +80,7 @@ local function load_file()
 end;
 
 function history.rerun()
-    if #env.RUNNING_THREADS>2 then
+    if not env.is_main_thread() then
         if last_line then
             env.eval_line(last_line,true,true)
         end
@@ -91,14 +91,14 @@ function history.rerun()
 end
 
 function history.edit_buffer(file)
-    if #env.RUNNING_THREADS>2 or not lastcommand then return end
+    if not env.is_main_thread() or not lastcommand then return end
     is_changed=true;
     env.printer.edit_buffer(file,'afiedt.buf',lastcommand.text)
 end
 
 local fmt='%s%-3s$PROMPTCOLOR$|$NOR$ %s'
 function history.show_command(m,n)
-    if #env.RUNNING_THREADS>2 then return end
+    if not env.is_main_thread() then return end
     local file=load_file()
     if not file or file=='' then return end
    
@@ -145,12 +145,12 @@ function history.show_command(m,n)
 end
 
 function history.set_current_line(line)
-    if #env.RUNNING_THREADS>2 then return end
+    if not env.is_main_thread() then return end
     current_index=line
 end
 
 function history.change_command(m)
-    if #env.RUNNING_THREADS>2 then return end
+    if not env.is_main_thread() then return end
     env.checkerr(m,'Nothing to change.')
     if m:sub(1,1)=='/' then m=m:sub(2) end
     local file=load_file()
@@ -176,9 +176,28 @@ function history.set_editor(name,editor)
     return editor
 end
 
+function history:rewrite(command)
+    local cmd, args = table.unpack(command)
+    local name = cmd:upper()
+    if (name=='HIS' or name=='HISTORY') and #args==1 and tonumber(args[1]) then
+        cmd=self[#self-tonumber(args[1])+1]
+    elseif (name=='R' or name=='/') and #args==0 then
+        cmd=self[#self]
+    end
+    
+    if type(cmd)=='table' then
+        command[1], command[2] = cmd.cmd,cmd.args
+        if (command[4] or "") ~= "" then
+            command[4] = cmd.text
+        end
+    end
+    return command
+end
+
 function history.onload()
     cfg.init("HISSIZE",50,history.set_editor,"core","Max size of historical commands",'0 - 999')
     event.snoop("AFTER_COMMAND",history.capture,history)
+    event.snoop('BEFORE_COMMAND',history.rewrite,history)
     env.set_command(history,{'history','his'},"Show/run historical commands. Usage: @@NAME [index|last]",history.show,false,2)
     env.set_command(nil,{'r','/'},"Rerun the previous command.",history.rerun,false,2)
     env.set_command(nil,{'l'},"Show the previous command. Usage: @@NAME [last|*|<num>] [last|*|<num>]",history.show_command,false,3)

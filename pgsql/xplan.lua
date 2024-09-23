@@ -275,7 +275,7 @@ function xplan.before_db_exec(obj)
         stmt='EXPLAIN PERFORMANCE\n'..sql
     end
     if autoplan=='analyze' then
-        if #env.RUNNING_THREADS>2 then
+        if not env.is_main_thread() then
             print('----------------------------------SQL Statement-------------------------------------')
             print(sql)
         end

@@ -44,7 +44,7 @@ FROM (
         and   nvl(wait_class,'Network')='Network'
         and   IN_SQL_EXECUTION='Y'
         and   upper(machine||','||event||','||sql_id) like upper('%&V1%')
-        and   nvl2(event,time_waited,wait_time) between 30 and 1e7
+        and   (event is not null or nvl2(event,time_waited,wait_time) between 30 and 1e7)
         --and   (current_obj#<1 or event is not null)
         and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)
         group by machine,event,rollup((sql_id,top_level_sql_id))) a)

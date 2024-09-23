@@ -556,9 +556,9 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     end)
                     info.sql,info.row,info.col=sql:sub(1,curr-1),info.row or row,info.col or col
                 end
-                if showline~='on' and #env.RUNNING_THREADS>2 and not found then
+                if showline~='on' and not env.is_main_thread() and not found then
                     print('SQL: '..info.sql:gsub("\n",'\n     '))
-                elseif #env.RUNNING_THREADS>2 or found then
+                elseif not env.is_main_thread() or found then
                     local lineno=0
                     if found and env.history then env.history.set_current_line(info.row) end
                     if info.col then print(string.rep('-',106)) end

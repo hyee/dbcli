@@ -1,13 +1,15 @@
-/*[[Show Real Application Testing info. Usage: @@NAME [<replay id> [text|html]]
+/*[[Show Real Application Testing info. Usage: @@NAME [{<replay id> [text|html]} | pause | resume]
     text|html: when specified then generate the target replay report
+    pause    : pause the running workload replay task
+    resum    : resume the running workload replay task
 
     If too many session on WCR: replay lock order, add parameter dscn_off=true to the WRC client to ignore SCN dependencies during replay.
-    If too many session on WCR: replay clock, try setting sync=false to speed up the replay
+    If too many session on WCR: replay clock, try setting dscn_off=false to speed up the replay
     If the captured workload contains the PL/SQL with refcursors, try setting _wrc_control(19.21+)
     Ref: https://westzq1.github.io/oracle/2019/02/22/Oracle-Database-Workload-Replay.html
     --[[
-        &fmt: default={DBMS_WORKLOAD_REPLAY.TYPE_TEXT} html={DBMS_WORKLOAD_REPLAY.TYPE_HTML}
         @VER122: 12.2={} default={--}
+        @check_access_wrr: sys.wrr$_replay_scn_order={1} default={0}
     --]]
 ]]*/
 SET AUTOHIDE COL FEED OFF VERIFY OFF
@@ -26,12 +28,29 @@ VAR c3 refcursor "Workload Threads Info";
 VAR rpt CLOB;
 
 DECLARE
-    rid INT := regexp_substr(:v1,'^\d+$');
-    cid INT;
+    v1     VARCHAR2(128) := upper(:v1);
+    rid    INT := regexp_substr(v1,'^\d+$');
+    cid    INT;
+    clock  NUMBER;
     status VARCHAR2(50);
     fset   VARCHAR2(50);
     options SYS.ODCIVARCHAR2LIST;
 BEGIN
+    BEGIN
+        status := CASE WHEN dbms_workload_replay.is_replay_paused() THEN 'YES' ELSE 'NO' END;
+        EXCEPTION WHEN OTHERS THEN NULL;
+    END;
+    IF v1 IN('PAUSE','RESUME') THEN
+        IF status IS NULL THEN
+            raise_application_error(-20001,'No workload replay task is paused or running');
+        END IF;
+        IF upper(:v1)='PAUSE' THEN
+            dbms_workload_replay.pause_replay();
+        ELSE
+            dbms_workload_replay.resume_replay();
+        END IF;
+    END IF;
+
     options := SYS.ODCIVARCHAR2LIST('_AUTO_AWR_EXPORT',
                                     'DBMS_LOCK_SYNC',
                                     'DO_NO_WAIT_COMMITS',
@@ -46,15 +65,56 @@ BEGIN
     dbms_output.put_line('==================');
     FOR i in 1..options.count LOOP
         BEGIN
-            dbms_output.put_line('    '||rpad(options(i),22)||' = '||dbms_workload_replay.get_advanced_parameter(options(i)));
+            dbms_output.put_line(rpad(options(i),30)||' = '||dbms_workload_replay.get_advanced_parameter(options(i)));
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
     END LOOP;
-    BEGIN
-        status := CASE WHEN dbms_workload_replay.is_replay_paused() THEN 'YES' ELSE 'NO' END;
-        EXCEPTION WHEN OTHERS THEN NULL;
-    END;
-    dbms_output.put_line('    '||rpad('IS_REPLAY_PAUSED',22)||' = '|| nvl(status,'NOT STARTED'));
+    /*IF status is NOT NULL THEN
+        FOR r in(SELECT case when event like 'WCR%' then event
+                             when file_id > 0 then 'WCR: Executing'
+                             else 'WCR: Idle'
+                        end event,COUNT(1) c 
+                 FROM   gv$workload_replay_thread
+                 GROUP BY case when event like 'WCR%' then event
+                             when file_id > 0 then 'WCR: Executing'
+                             else 'WCR: Idle'
+                        end
+                 ORDER BY 1) LOOP
+            dbms_output.put_line('  '||rpad(r.event,30)||' = '|| r.c ||' theads');
+        END LOOP;
+    END IF;
+    */
+    IF status is NOT NULL THEN
+        FOR r in(SELECT event, count(1) c 
+                 FROM   gv$workload_replay_thread
+                 WHERE  event LIKE 'WCR%'
+                 GROUP  by event
+                 ORDER BY 1) LOOP
+            dbms_output.put_line(rpad(r.event,30)||' = '|| r.c ||' theads');
+        END LOOP;
+        SELECT MAX(clock) 
+        into   clock
+        FROM   gv$workload_replay_thread;
+
+        SELECT round(100*max(clock-min_scn)/max(max_scn-min_scn),4)
+        INTO  clock
+        FROM (
+            $IF &check_access_wrr=1 $THEN
+            SELECT MIN(post_commit_scn) min_scn, MAX(post_commit_scn) max_scn  
+            FROM   sys.wrr$_replay_scn_order
+            UNION ALL
+            $END
+            SELECT start_scn min_scn,end_scn max_scn
+            FROM   dba_workload_captures 
+            WHERE  id in(select capture_id from dba_workload_replays where status='IN PROGRESS')
+            AND    clock between start_scn AND end_scn
+        ) WHERE rownum < 2;
+
+        IF clock > 0 THEN
+            dbms_output.put_line(rpad('WCR: Progress',30)||' = '|| clock || ' %');
+        END IF;
+    END IF;
+    dbms_output.put_line(rpad('IS_REPLAY_PAUSED',30)||' = '|| nvl(status,'NOT STARTED'));
     dbms_output.put_line('.');
     OPEN :c0 FOR
         SELECT ID,
@@ -119,7 +179,7 @@ BEGIN
 
     IF status IS NOT NULL THEN
         IF lower(:v2) in('text','html') THEN
-            :rpt := DBMS_WORKLOAD_REPLAY.REPORT(rid,&fmt);
+            :rpt := DBMS_WORKLOAD_REPLAY.REPORT(rid,upper(:V2));
         END IF;
         OPEN :c1 FOR SELECT * FROM dba_workload_replays WHERE id=rid;
         OPEN :c11 FOR
@@ -164,6 +224,7 @@ BEGIN
                        LOGON_TIME
                 FROM gv$workload_replay_thread 
                 WHERE file_id>0
+                AND   event not like 'WCR%'
                 ORDER BY WRC_ID;
         END IF;
     END IF;

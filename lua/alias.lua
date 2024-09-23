@@ -209,16 +209,18 @@ function alias.rewrite(command)
     if alias.cmdlist[name] then
         local line = alias.make_command(name, args)
         if line then
-            command[1], command[2] = env.eval_line(line, false)
+            command[1], command[2] = env.eval_line(line, false,true)
+            if (command[4] or "") ~= "" then
+                command[4] = line:sub(#command[1]+1):rtrim();
+            end
         end
-        return command
     end
-    return nil
+    return command
 end
 
 function alias.onload()
     --alias.rehash()
-    --env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
+    env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
     --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     loader:mkdir(alias.command_dir)
     env.event.snoop('ON_DB_ENV_LOADED', alias.load_db_aliases, nil, 1)

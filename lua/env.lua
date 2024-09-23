@@ -96,10 +96,15 @@ function env.ppcall(f, ...)
 end
 
 local writer,_THREADS=writer,{_clock={}}
-env.RUNNING_THREADS=_THREADS
 local dbcli_stack,dbcli_cmd_history={},{}
 local dbcli_current_item=dbcli_stack
 env.__DBCLI__STACK,env.__DBCLI__CMD_HIS=dbcli_stack,dbcli_cmd_history
+env.RUNNING_THREADS=_THREADS
+
+function env.is_main_thread()
+    return #_THREADS<=2
+end
+
 local function push_stack(cmd)
     local threads=_THREADS
     local thread,isMain,index=env.register_thread()
@@ -560,7 +565,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     end
     
     if event and not is_internal then
-        name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text}))) 
+        name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text})))
     end
 
     local res={pcall(_exec_command,name,params,arg_text)}

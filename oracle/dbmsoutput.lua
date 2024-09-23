@@ -23,9 +23,6 @@ output.trace_sql_after=([[
         l_sql_id VARCHAR2(15);
         l_tmp_id VARCHAR2(15) := :sql_id; 
         l_child  PLS_INTEGER;
-        l_intval PLS_INTEGER;
-        l_strval VARCHAR2(20);
-        l_rtn    PLS_INTEGER;
         l_sid    PLS_INTEGER;
     BEGIN
         l_sid :=sys_context('userenv','sid');
@@ -34,7 +31,9 @@ output.trace_sql_after=([[
                 select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
                       prev_sql_id,prev_child_number 
                 from sys.v_$session 
-                where sid=:sid and username is not null and prev_hash_value!=0]'
+                where sid=:sid 
+                and username is not null 
+                and prev_hash_value!=0]'
                 into l_sql_id,l_child using l_sid;
         exception when others then null; end;
         open :stats for @GET_STATS@;
@@ -43,13 +42,17 @@ output.trace_sql_after=([[
             l_sql_id := l_tmp_id;
         elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
             begin
-                execute immediate q'[begin :rtn := sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
-                    using out l_rtn, in out l_intval,in out l_strval;
+                execute immediate '
+                    select max(child_number) 
+                    from   sys.v_$sql 
+                    where  sql_id=:1 
+                    and    last_active_time>=sysdate-numtodsinterval(2,''second'') 
+                    and    rownum<2'
+                into l_child using l_tmp_id;
+                IF l_child IS NOT NULL THEN
+                    l_sql_id := l_tmp_id;
+                END IF;
             exception when others then null; end;
-            if nvl(lower(l_strval),'exact')!='exact' then
-                l_sql_id := l_tmp_id;
-                l_child  := null;
-            end if;
         end if;
         
         :last_sql_id := l_sql_id;
@@ -82,8 +85,6 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_sid    PLS_INTEGER:=sys_context('userenv','sid');
         l_sql    VARCHAR2(2000);
         l_found  BOOLEAN := false;
-        l_intval PLS_INTEGER;
-        l_strval VARCHAR2(20);
         TYPE l_rec IS RECORD(sql_id varchar2(13),sql_text varchar2(200),child_addr raw(8),child_num int);
         TYPE t_recs IS TABLE OF l_rec;
         l_recs t_recs := t_recs();
@@ -111,14 +112,17 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                     l_sql_id := l_tmp_id;
                 elsif l_sql_id != l_tmp_id and l_tmp_id != 'X' then
                     begin
-                        execute immediate q'[begin :rtn:=sys.dbms_utility.get_parameter_value('cursor_sharing',:l_intval,:l_strval); end;]'
-                            using out l_cid,in out l_intval,in out l_strval;
-                        l_cid := null;
+                        execute immediate '
+                            select max(child_number) 
+                            from   sys.v_$sql 
+                            where  sql_id=:1 
+                            and    last_active_time>=sysdate-numtodsinterval(:2,''second'') 
+                            and    rownum<2'
+                        into l_child using l_tmp_id,l_secs;
+                        IF l_child IS NOT NULL THEN
+                            l_sql_id := l_tmp_id;
+                        END IF;
                     exception when others then null; end;
-                    if nvl(lower(l_strval),'exact')!='exact' then
-                        l_sql_id := l_tmp_id;
-                        l_child  := null;
-                    end if;
                 end if;
             exception when others then null;
             end;
@@ -310,7 +314,7 @@ function output.getOutput(item)
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
 
-    if DML[typ] and #env.RUNNING_THREADS > 2 and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
+    if DML[typ] and not env.is_main_thread() and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
         if not db:is_internal_call(sql) then
             db.props.last_sql_id=loader:computeSQLIdFromText(sql)
             sql_id=db.props.last_sql_id
@@ -338,6 +342,8 @@ function output.getOutput(item)
                 else
                     db.props.error_obj,db.props.error_owner=nil
                 end
+            else
+                print(err)
             end
         end
         if autotrace=='off' and objtype~='SESSION' then return end

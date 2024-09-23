@@ -136,7 +136,8 @@ Examples:
                               inst_id number path '$[0]',
                               name    varchar2(100) path '$[1]',
                               value number path '$[2]')} 
-                  default={(select extractvalue(column_value,'/ROW/INST_ID')+0 inst_id,
+                  default={(
+                  select  extractvalue(column_value,'/ROW/INST_ID')+0 inst_id,
                           extractvalue(column_value,'/ROW/NAME') name,
                           extractvalue(column_value,'/ROW/VALUE')+0 VALUE
                   from    TABLE(XMLSEQUENCE(EXTRACT(sysstat,'/ROWSET/ROW'))))}
@@ -427,7 +428,7 @@ Examples:
         GROUP BY name]],
       '-',
       [[/*grid={topic='CPU/Memory/Performance',fixed_title=true,include_zero=true,order_by=1,per_second='on'}*/
-        SELECT * 
+        SELECT /*+outline_leaf*/ * 
         FROM(
             SELECT inst_id "#", 
                 SUM(DECODE(stat_name, 'BUSY_TIME', v/cpus)) "Busy",
@@ -439,7 +440,7 @@ Examples:
                 MAX(DECODE(stat_name, 'FREE_MEMORY_BYTES', value)) "FreeMem",
                 SUM(DECODE(stat_name, 'VM_IN_BYTES', value,'VM_OUT_BYTES',value)) "Swap"
             FROM  (SELECT inst_id,stat_name,VALUE,
-                          (SELECT min(VALUE) FROM gv$osstat a WHERE a.inst_id = b.inst_id AND a.STAT_NAME in ('NUM_CPUS')) CPUS,
+                          max(decode(stat_name,'NUM_CPUS',value)) over(partition by inst_id) cpus,
                           (select sum(value)/1e4 FROM &timemodel a WHERE a.inst_id = b.inst_id and a.stat_name in('DB CPU','background cpu time')) db,
                           VALUE v
                    FROM   gv$osstat b

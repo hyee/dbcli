@@ -350,7 +350,7 @@ function scripter:run_sql(sql,args,cmds)
     local ary=env.var.backup_context()
     var.import_context(args)
     
-    if #env.RUNNING_THREADS == 2 then
+    if env.is_main_thread() then
         cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT","ONERREXIT","ON")
     end
     local _args,_parms={},{}
