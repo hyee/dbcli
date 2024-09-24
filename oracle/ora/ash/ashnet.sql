@@ -21,9 +21,10 @@
     --]]
 ]]*/
 
-col latency,max_latency for usmhd2
+col latency,max_latency,time for usmhd2
 col avg_bytes,max_bytes for kmg
-col "Total time" for pct3
+col waits for tmb2
+col Time% for pct3
 set feed off
 
 PRO ASH Network Summary(Estimated)
@@ -62,7 +63,9 @@ BEGIN
     $IF &src=0 $THEN
         SELECT EVENT,
                ROUND(SUM(TIME_WAITED_MICRO_FG)/SUM(TOTAL_WAITS_FG),2) latency, 
-               ratio_to_report(SUM(TIME_WAITED_MICRO_FG)) over() "Total Time"
+               sum(TOTAL_WAITS_FG) waits,
+               SUM(TIME_WAITED_MICRO_FG) "Time",
+               ratio_to_report(SUM(TIME_WAITED_MICRO_FG)) over() "Time%"
         FROM   gv$system_event
         WHERE (wait_class='Network' OR wait_class!='Idle' AND event like 'SQL*Net%')
         AND   TOTAL_WAITS_FG>0
@@ -71,16 +74,18 @@ BEGIN
         OPEN c FOR
             SELECT * FROM (
                 SELECT s.machine,e.EVENT,ROUND(SUM(TIME_WAITED_MICRO)/SUM(TOTAL_WAITS),2) latency, 
-                       ratio_to_report(SUM(TIME_WAITED_MICRO)) over() "Total Time"
+                       sum(TOTAL_WAITS) waits,
+                       SUM(TIME_WAITED_MICRO) "Time",
+                       ratio_to_report(SUM(TIME_WAITED_MICRO)) over() "Time%"
                 FROM   gv$session_event e join gv$session s USING(inst_id,sid)
                 WHERE (e.wait_class='Network' OR e.wait_class!='Idle' AND e.event like 'SQL*Net%')
                 AND   TOTAL_WAITS>0
                 and   upper(s.machine||','||e.event) like upper('%&V1%')
                 GROUP BY s.machine,e.EVENT
-                ORDER BY "Total Time" desc)
+                ORDER BY "Time" desc)
             WHERE ROWNUM<=30;
     $ELSE
-        SELECT event,ROUND(SUM(micro)/nullif(SUM(cnt),0),2) latency,ratio_to_report(SUM(micro)) over() "Total Time"
+        SELECT event,ROUND(SUM(micro)/nullif(SUM(cnt),0),2) latency,sum(cnt) waits,SUM(micro) "Time",ratio_to_report(SUM(micro)) over() "Time%"
         FROM (
             SELECT EVENT_NAME event,
                    TIME_WAITED_MICRO_FG-lag(TIME_WAITED_MICRO_FG) over(partition by instance_number,startup_time,EVENT_NAME &ver12 ORDER BY SNAP_ID) micro,

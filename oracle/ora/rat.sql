@@ -1,11 +1,14 @@
-/*[[Show Real Application Testing info. Usage: @@NAME [{<replay id> [text|html]} | pause | resume]
-    text|html: when specified then generate the target replay report
-    pause    : pause the running workload replay task
-    resum    : resume the running workload replay task
+/*[[Show Real Application Testing info. Usage: @@NAME [{<replay id> [text|html]} | pause | resume | cancel]
+    Parameters:
+    -----------
+        text|html: when specified then generate the target replay report
+        pause    : pause the running workload replay task
+        resume   : resume the running workload replay task
+        cancel   : cancel the replay task which cannot be resumed
 
     If too many session on WCR: replay lock order, add parameter dscn_off=true to the WRC client to ignore SCN dependencies during replay.
     If too many session on WCR: replay clock, try setting dscn_off=false to speed up the replay
-    If the captured workload contains the PL/SQL with refcursors, try setting _wrc_control(19.21+)
+    If the captured workload contains the PL/SQL with refcursors, try setting _wcr_control(19.21+)
     Ref: https://westzq1.github.io/oracle/2019/02/22/Oracle-Database-Workload-Replay.html
     --[[
         @VER122: 12.2={} default={--}
@@ -40,14 +43,16 @@ BEGIN
         status := CASE WHEN dbms_workload_replay.is_replay_paused() THEN 'YES' ELSE 'NO' END;
         EXCEPTION WHEN OTHERS THEN NULL;
     END;
-    IF v1 IN('PAUSE','RESUME') THEN
+    IF v1 IN('PAUSE','RESUME','CANCEL') THEN
         IF status IS NULL THEN
             raise_application_error(-20001,'No workload replay task is paused or running');
         END IF;
         IF upper(:v1)='PAUSE' THEN
             dbms_workload_replay.pause_replay();
-        ELSE
+        ELSIF upper(:v1)='RESUME' THEN
             dbms_workload_replay.resume_replay();
+        ELSE
+            dbms_workload_replay.cancel_replay();
         END IF;
     END IF;
 
@@ -107,8 +112,9 @@ BEGIN
             SELECT start_scn min_scn,end_scn max_scn
             FROM   dba_workload_captures 
             WHERE  id in(select capture_id from dba_workload_replays where status='IN PROGRESS')
-            AND    clock between start_scn AND end_scn
-        ) WHERE rownum < 2;
+        ) 
+        WHERE clock between min_scn AND max_scn
+        AND   rownum < 2;
 
         IF clock > 0 THEN
             dbms_output.put_line(rpad('WCR: Progress',30)||' = '|| clock || ' %');

@@ -37,10 +37,11 @@ Parameters
     _kcfis_cell_passthru_fromcpu_enabled: disable Exadata reverse offloading
     _sql_plan_management_control: 4 - diagnose issues with SQL plan baselines of why it fails to use / 16 - Allow SPM on the SQLs start with "/* SQL Analyze("
     _optimizer_squ_bottomup: false to reduce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
-                             Other relative parameters to optimize long parse time: 
-                                  _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
-                                  _fix_control 31360214/17442009:1
-                                  _optimizer_max_permutations =100/200/300
+        Other relative parameters to optimize long parse time: 
+            _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
+            _fix_control 31360214/17442009:1
+            _optimizer_max_permutations =100/200/300
+    _optimizer_multi_table_outerjoin: could result in scalar-subquery or plsql function to be over executed
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and :
         0  to avoid column group creation by dbms_stats
         1  to monitor column usage

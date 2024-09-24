@@ -24,6 +24,7 @@ output.trace_sql_after=([[
         l_tmp_id VARCHAR2(15) := :sql_id; 
         l_child  PLS_INTEGER;
         l_sid    PLS_INTEGER;
+        l_cid    PLS_INTEGER;
     BEGIN
         l_sid :=sys_context('userenv','sid');
         begin
@@ -48,9 +49,10 @@ output.trace_sql_after=([[
                     where  sql_id=:1 
                     and    last_active_time>=sysdate-numtodsinterval(2,''second'') 
                     and    rownum<2'
-                into l_child using l_tmp_id;
-                IF l_child IS NOT NULL THEN
+                into l_cid using l_tmp_id;
+                IF l_cid IS NOT NULL THEN
                     l_sql_id := l_tmp_id;
+                    l_child  := l_cid;
                 END IF;
             exception when others then null; end;
         end if;
@@ -118,9 +120,11 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                             where  sql_id=:1 
                             and    last_active_time>=sysdate-numtodsinterval(:2,''second'') 
                             and    rownum<2'
-                        into l_child using l_tmp_id,l_secs;
-                        IF l_child IS NOT NULL THEN
+                        into l_cid using l_tmp_id,l_secs;
+                        IF l_cid IS NOT NULL THEN
                             l_sql_id := l_tmp_id;
+                            l_child  := l_cid;
+                            l_cid    := null;
                         END IF;
                     exception when others then null; end;
                 end if;
