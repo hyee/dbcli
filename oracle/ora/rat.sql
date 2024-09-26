@@ -1,10 +1,10 @@
 /*[[Show Real Application Testing info. Usage: @@NAME [{<replay id> [text|html]} | pause | resume | cancel]
     Parameters:
     -----------
-        text|html: when specified then generate the target replay report
-        pause    : pause the running workload replay task
-        resume   : resume the running workload replay task
-        cancel   : cancel the replay task which cannot be resumed
+    text|html: when specified then generate the target replay report
+    pause    : pause the running workload replay task
+    resume   : resume the running workload replay task
+    cancel   : cancel(abort) the replay task, after the operation the task cannot be resumed
 
     If too many session on WCR: replay lock order, add parameter dscn_off=true to the WRC client to ignore SCN dependencies during replay.
     If too many session on WCR: replay clock, try setting dscn_off=false to speed up the replay
@@ -95,7 +95,7 @@ BEGIN
                  WHERE  event LIKE 'WCR%'
                  GROUP  by event
                  ORDER BY 1) LOOP
-            dbms_output.put_line(rpad(r.event,30)||' = '|| r.c ||' theads');
+            dbms_output.put_line(rpad(r.event,30)||' = '|| r.c ||' threads');
         END LOOP;
         SELECT MAX(clock) 
         into   clock
@@ -210,7 +210,7 @@ BEGIN
                        CLIENT_PID "Client|PID",
                        nullif(CLOCK,0) "CLOCK|SCN",
                        nullif(WAIT_FOR_SCN,0) "WAIT|SCN",
-                       nullif(DEPENDENT_SCN,0) "DEP|SCN",
+                       nullif(DEPENDENT_SCN,0) "DEPEND|SCN",
                        nullif(STATEMENT_SCN,0) "STMT|SCN",
                        nullif(COMMIT_WAIT_SCN,0) "COMMIT|SCN",
                        nullif(POST_COMMIT_SCN,0) "POST|SCN",

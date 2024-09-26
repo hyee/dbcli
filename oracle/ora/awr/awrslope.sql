@@ -1,11 +1,11 @@
 /*[[
     Lists SQL Statements with Elapsed Time per Execution changing over time. Usage: @@NAME {[YYMMDDHH24MI] [YYMMDDHH24MI]} [-m] [-regress|-improve] [-f"<filter>"]
-    
+    -m      : group by force_matching_signature instead of sql_id
     -regress: order by regression
     -improve: order by improvement
     --[[
-        &BASE : s={sql_id}, m={signature},
-        &SIG  : s={},m={signature,}
+        &BASE : s={sql_id}, m={force_matching_signature},
+        &SIG  : s={},m={force_signature,}
         &FILTER: s={1=1},u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},f={}
         &ORD   : default={"Total SQL ms" desc} improve={"Diff%"} regress={"Diff%" desc}
     --]]
@@ -18,7 +18,7 @@ COL "Median|Per Exec,Std Dev|Per Exec,Avg|Per Exec,Min|Per Exec,Max|Per Exec,AVG
 col "Weight%,Diff%" for pct2
 COL "Total SQL ms" NOPRINT
 col "execs,buff gets" for tmb2
-col sql_id break
+col  &SIG.TOP_SQL break
 
 WITH src AS
 (SELECT a.*,
@@ -39,6 +39,7 @@ WITH src AS
                  a.plan_hash) phf,
              a.*
       FROM   (SELECT dbid,
+                     &BASE force_signature,
                      CASE WHEN end_time >= NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-3) THEN 1 ELSE 0 END flag,
                      MAX(SQL_id) keep(dense_rank last order by elapsed_time) sql_id,
                      plan_hash_value plan_hash,
@@ -60,14 +61,15 @@ WITH src AS
               AND   (:instance is null or instance_number=:instance)
               AND   dbid=:dbid
               AND   (&filter)
-              GROUP  BY dbid, force_matching_signature, plan_hash_value,CASE WHEN end_time >= NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-3) THEN 1 ELSE 0 END
+              GROUP  BY dbid, &BASE, plan_hash_value,CASE WHEN end_time >= NVL(TO_DATE(nvl(:V1,:starttime),'YYMMDDHH24MI'),SYSDATE-3) THEN 1 ELSE 0 END
               HAVING SUM(elapsed_time)>0
               ) a) a)
 SELECT * FROM (
-    SELECT dense_rank() OVER(ORDER BY &ord nulls last,sql_id) "#",
+    SELECT dense_rank() OVER(ORDER BY &ord nulls last,top_sql) "#",
            a.* 
     FROM (
-        SELECT sql_id,
+        SELECT &SIG
+               max(sql_id) keep(dense_rank last order by ela) top_sql,
                MAX(plan_hash) KEEP(dense_rank LAST ORDER BY ela) plan_hash,
                phf PLAN_HASH_FULL,
                MIN(first_seen) first_seen,
@@ -85,12 +87,12 @@ SELECT * FROM (
                ROUND(100*SUM(plsexec_time)/SUM(ela),2) "PLSQL%",
                ROUND(100*SUM(javexec_time)/SUM(ela),2) "JAVA%",
                ROUND(SUM(buffer_gets)/greatest(1,SUM(exe)),2) "Buff Gets",
-               SUM(SUM(decode(flag,1,ela))) OVER(PARTITION BY dbid,sql_id)*1e3 "Total SQL ms",
+               SUM(SUM(decode(flag,1,ela))) OVER(PARTITION BY dbid,force_signature)*1e3 "Total SQL ms",
                substr(trim(regexp_replace(MAX(to_char(SUBSTR(sql_text,1,1000))),'\s+',' ')),1,200) sql_text
         FROM src 
         LEFT JOIN dba_hist_sqltext USING(dbid,sql_id)
         WHERE phfs>1 and flags>1
-        GROUP BY sql_id,dbid,phf
+        GROUP BY force_signature,dbid,phf
     ) A)
 WHERE "#" <=30
 ORDER BY "#",last_seen desc, first_seen desc,  "Weight%";

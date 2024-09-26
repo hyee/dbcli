@@ -8,12 +8,12 @@ local enabled='on'
 local autotrace='off'
 local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",last_sql_id='#VARCHAR',curr_schema='#VARCHAR'}
 local prev_stats
-
+local switch_prefix="BeGin /*switch*/dbms_output."
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
     cfg.force_set('autotrace','off')
     sqlerror,timer=nil
-    local stmt="BeGin dbms_output."..(flag=="on" and "enable(null)" or "disable()")..";end;"
+    local stmt=switch_prefix..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
 
@@ -102,7 +102,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             END IF;
         end;
     BEGIN
-        IF l_trace NOT IN('on','statistics','traceonly') AND l_child IS NOT NULL THEN
+        IF l_trace NOT IN('on','statistics','traceonly','switch') AND l_child IS NOT NULL THEN
             begin
                 execute immediate q'[
                     select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
@@ -157,7 +157,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             dbms_output.enable(null);
         END IF;
 
-        IF l_trace NOT IN('off','statistics','sql_id') THEN
+        IF l_trace NOT IN('off','statistics','sql_id','switch') THEN
             IF dbms_db_version.version>11 THEN
                 l_fmt := l_fmt||' +METRICS +REPORT -ADAPTIVE';
             ELSIF dbms_db_version.version>10 THEN
@@ -326,7 +326,7 @@ function output.getOutput(item)
         return 
     end
 
-    if DDL[typ]  then
+    if DDL[typ] then
         if (typ=='CREATE' or typ=='ALTER') and CODES[objtype] and objname then
             local orgname,owner,cnt=objname,''
             if objname:find('.',2,true) then owner,objname=objname:match('^(.-)%.(.+)$') end
@@ -353,7 +353,7 @@ function output.getOutput(item)
         if autotrace=='off' and objtype~='SESSION' then return end
     end
 
-    if sql:find('^BeGin dbms_output') or (sql:find('%s') and not db:is_internal_call(sql)) then
+    if sql:sub(1,32):find(switch_prefix,1,true)==1 or (sql:find('%s') and not db:is_internal_call(sql)) then
         local args,stats
         output.is_exec=true
         sql_id=sql_id or loader:computeSQLIdFromText(sql)
@@ -374,7 +374,7 @@ function output.getOutput(item)
 
         args.sql_id=args1.last_sql_id or sql_id
         args.child=tonumber(args1.last_child) or ''
-        args.autotrace=autotrace
+        args.autotrace=(sql:sub(1,64):find(switch_prefix,1,true)==1 or objtype=='SESSION') and 'switch' or autotrace
         args.cdbid=tonumber(db.props.container_dbid) or -1
         args.secs,timer=timer and math.min(30,math.ceil(clock-timer)) or 3,clock
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
