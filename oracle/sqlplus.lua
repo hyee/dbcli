@@ -17,7 +17,6 @@ end
 
 function sqlplus:after_process_created()
     self.work_dir=self.work_path
-    
     print(self:get_last_line("select * from(&prompt_sql);"))
     self:run_command('store set dbcli_sqlplus_settings.sql replace',false)
 end
@@ -95,18 +94,18 @@ function sqlplus:get_startup_cmd(args,is_native)
     local tmpfile=env.join_path(env.WORK_DIR,'oracle/sqlplus/init/init.sql')
     local f,err=io.open(tmpfile,'w')
     env.checkerr(f,"Unable to write file "..tmpfile)
-    local props=self.db.props
-    local container,schema=props.container_name,props.curr_schema
+    local props_=self.db.props
+    local container,schema=props_.container_name,props_.curr_schema
     local changes={}
-    if container and props.curr_service and props.curr_service~='SYS$USERS' and props.curr_service~=props.service_name then
+    if container and props_.curr_service and props_.curr_service~='SYS$USERS' and props_.curr_service~=props.service_name then
         changes[1]='container='..container
     end
-    if schema and schema~=props.db_user then
+    if schema and schema~=props_.db_user then
         changes[#changes+1]='current_schema='..schema
     end
     if #changes>0 then
         changes='alter session set '..table.concat(changes,' ')..';'
-        f:write('PRO Changing environment: '..changes..' ..\n')
+        f:write('PRO Changing environment: '..changes..'\n')
         f:write(changes..'\n')
     end
     f:close()
