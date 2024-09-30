@@ -15,3 +15,5 @@ col PLAN_TABLE_OUTPUT format a200
 ----set the format of "SHOW PARAMETERS"
 COLUMN name_col_plus_show_param FORMAT a36 HEADING NAME
 COLUMN value_col_plus_show_param FORMAT a100 HEADING VALUE
+@@init.sql
+

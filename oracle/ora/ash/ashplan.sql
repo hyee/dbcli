@@ -1,4 +1,4 @@
-/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value> [sql_exec_id|PHV] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-d|-g] [-o] [-all]
+/*[[Show ash cost for a specific SQL for multiple executions. usage: @@NAME {<sql_id|plan_hash_value|signature> [sql_exec_id|PHV] [YYMMDDHH24MI] [YYMMDDHH24MI]}  [-d|-g] [-o] [-all]
 
 Options:
     -o      : Show top objects (defaults to show top events)
@@ -247,7 +247,7 @@ WITH gash as(
     from   gv$active_session_history a
     where  userenv('instance')=nvl(:instance,userenv('instance'))
     AND    sample_time+0 BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE)
-    AND    '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
+    AND    '&V1' IN(sql_id,top_level_sql_id,''||force_matching_signature,''||sql_plan_hash_value &phf1)
     AND    nvl(0+regexp_substr('&V2','^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND   '&vw' IN('A','G')),
 dash as(
@@ -256,7 +256,7 @@ dash as(
     from   &check_access_pdb.active_sess_history d
     WHERE  '&vw' IN('A','D')
     AND    dbid=&dbid
-    AND    '&V1' IN(sql_id,top_level_sql_id,''||sql_plan_hash_value &phf1)
+    AND    '&V1' IN(sql_id,top_level_sql_id,''||force_matching_signature,''||sql_plan_hash_value &phf1)
     AND    nvl(0+regexp_substr('&V2','^\d+$'),0) in(0,sql_exec_id,nullif(sql_plan_hash_value,0) &phf1)
     AND    sample_time BETWEEN nvl(to_date('&V3','YYMMDDHH24MISS'),SYSDATE-7) AND nvl(to_date('&V4','YYMMDDHH24MISS'),SYSDATE+1)),
 ash_raw as (

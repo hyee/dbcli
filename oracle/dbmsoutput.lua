@@ -6,7 +6,19 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local default_args={enable=enabled,cdbid=-1,buff="#VARCHAR",txn="#VARCHAR",lob="#CLOB",con_name="#VARCHAR",con_id="#NUMBER",con_dbid="#NUMBER",dbid="#NUMBER",last_sql_id='#VARCHAR',curr_schema='#VARCHAR'}
+local default_args={
+    enable=enabled,
+    cdbid=-1,
+    buff="#VARCHAR",
+    txn="#VARCHAR",
+    lob="#CLOB",
+    con_name="#VARCHAR",
+    con_id="#NUMBER",
+    con_dbid="#NUMBER",
+    dbid="#NUMBER",
+    last_sql_id='#VARCHAR',
+    curr_service='#VARCHAR',
+    curr_schema='#VARCHAR'}
 local prev_stats
 local switch_prefix="BeGin /*switch*/dbms_output."
 function output.setOutput(db)
@@ -261,6 +273,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         :con_dbid    := l_cdbid;
         :dbid        := l_dbid; 
         :lob         := l_lob;
+        :curr_service:= SYS_CONTEXT('USERENV','SERVICE_NAME');
         :curr_schema := SYS_CONTEXT('USERENV','CURRENT_SCHEMA');
     EXCEPTION WHEN OTHERS THEN NULL;
     END;]]):gsub('@GET_STATS_ID@',loader:computeSQLIdFromText(output.trace_sql))
@@ -456,9 +469,11 @@ function output.getOutput(item)
         end
 
         db.resultset:close(args.stats)
+        db.props.curr_service=args.curr_service
         db.props.curr_schema=args.curr_schema
         db.props.container=args.cont
         db.props.container_id=args.con_id
+        db.props.container_name=args.con_name
         db.props.container_dbid=args.con_dbid
         db.props.dbid=args.dbid or db.props.dbid
         if not db.props.last_sql_id or args.last_sql_id~='X' then

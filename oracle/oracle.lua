@@ -376,9 +376,11 @@ function oracle:connect(conn_str)
             $IF dbms_db_version.version > 9 $THEN      
                    userenv('sid') ssid,
                    userenv('instance') inst,
+                   sys_context('userenv', 'instance_name') inst_name,
             $ELSE
                    (select sid from v$mystat where rownum<2) ssid,
                    (select instance_number from v$instance where rownum<2) inst,
+                   (select instance_name from v$instance where rownum<2) inst_name,
             $END
 
             $IF dbms_db_version.version > 11 $THEN
@@ -393,7 +395,7 @@ function oracle:connect(conn_str)
                    decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PHYSICAL STANDBY','(DG)> ','TRUE CACHE','(TC)> ')) END,
                    0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re),
                    decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang,:sid,:instance, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :version,:isadb
+            INTO   :db_user,:db_version, :nls_lang,:sid,:instance,:instance_name, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :version,:isadb
             FROM   nls_Database_Parameters
             WHERE  parameter = 'NLS_CHARACTERSET';
             
@@ -451,7 +453,12 @@ function oracle:connect(conn_str)
             end
             return port..sep..sid
         end,1)
-        
+
+        if props.instance_name and props.israc and 
+            self.conn_str:find('/'..props.service_name,1,true) and 
+            not self.conn_str:find('/'..props.service_name..'/',1,true) then
+            self.conn_str=self.conn_str:replace('/'..props.service_name,'/'..props.service_name..'/'..props.instance_name,true)
+        end
         env.uv.os.setenv("NLS_LANG",self.props.nls_lang)
     end
 

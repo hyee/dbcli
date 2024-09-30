@@ -17,6 +17,7 @@ end
 
 function sqlplus:after_process_created()
     self.work_dir=self.work_path
+    
     print(self:get_last_line("select * from(&prompt_sql);"))
     self:run_command('store set dbcli_sqlplus_settings.sql replace',false)
 end
@@ -91,7 +92,24 @@ function sqlplus:get_startup_cmd(args,is_native)
             table.remove(args,1)
         end
     end
-
+    local tmpfile=env.join_path(env.WORK_DIR,'oracle/sqlplus/init/init.sql')
+    local f,err=io.open(tmpfile,'w')
+    env.checkerr(f,"Unable to write file "..tmpfile)
+    local props=self.db.props
+    local container,schema=props.container_name,props.curr_schema
+    local changes={}
+    if container and props.curr_service and props.curr_service~='SYS$USERS' and props.curr_service~=props.service_name then
+        changes[1]='container='..container
+    end
+    if schema and schema~=props.db_user then
+        changes[#changes+1]='current_schema='..schema
+    end
+    if #changes>0 then
+        changes='alter session set '..table.concat(changes,' ')..';'
+        f:write('PRO Changing environment: '..changes..' ..\n')
+        f:write(changes..'\n')
+    end
+    f:close()
     env.checkerr(not args[1] or not args[1]:find(".*/.*@.+"),"You cannot specify user/pwd here, default a/c should be used!")
     local conn_str=env.packer.unpack_str(db.conn_str) or "/nolog"
     props[#props+1]=env.IS_WINDOWS and conn_str or conn_str:gsub('%$','\\$')
