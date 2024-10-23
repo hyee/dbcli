@@ -641,7 +641,7 @@ function var.define_column(col,...)
                 local siz=tonumber(arg:match("%d+"))
                 obj.format_dir='%-'..siz..'s'
                 func=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
-            elseif f:find("^HEADING") then
+            elseif f:find("^HEAD") then
                 f = arg:match('^%w+%s+(.+)')
                 if f then return var.define_column(col,'HEADING',f) end
             else
@@ -732,14 +732,14 @@ function var.trigger_column(field)
     local index
     if type(col)~="string" then return end
     col=col:upper()
-    if not var.columns[col] then return end
     local obj=var.columns[col]
+    if not obj then return end
     rowind=rowind or rownum
 
     if rownum==0 then
         index=obj.heading
         if index then
-            field[2],var.columns[index:upper()]=index,obj
+            value,field[2],var.columns[index:upper()]=index,index,obj
         end
     elseif rownum>0 and grid and not grid.__var_parsed then
         grid.__var_parsed=true

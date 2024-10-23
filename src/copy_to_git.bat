@@ -1,4 +1,5 @@
 cd "%~dp0"
+echo select sys_context('userenv','current_schema') current_schema, sys_context('userenv','instance_name') instance from dual; > ..\oracle\sqlplus\init\init.sql
 cd ..
 for /f %%i in ('dir /b/s/a:-H dump\*.jar') do (pack200 -O -S-1 -G "%%i.pack.gz" "%%i" && del "%%i")
 set GIT_HOME=d:\green\github
