@@ -6,9 +6,9 @@
     resume   : resume the running workload replay task
     cancel   : cancel(abort) the replay task, after the operation the task cannot be resumed
 
-    If too many session on WCR: replay lock order, add parameter dscn_off=true to the WRC client to ignore SCN dependencies during replay.
+    If too many session on 'WCR: replay lock order"/buffer busy waits" or "gc current block busy", add parameter dscn_off=true to the WRC client to ignore SCN dependencies during replay.
     If too many session on WCR: replay clock, try setting dscn_off=false to speed up the replay
-    If the captured workload contains the PL/SQL with refcursors, try setting _wcr_control(19.21+)
+    If the captured workload contains the PL/SQL with refcursors, try setting _wcr_control=1(19.21+)
     Ref: https://westzq1.github.io/oracle/2019/02/22/Oracle-Database-Workload-Replay.html
     --[[
         @VER122: 12.2={} default={--}

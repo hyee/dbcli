@@ -1,4 +1,5 @@
 /*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>]
+   Or: @@NAME <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>] <SQL_Text with EOF>
     -batch: number of options to be tested for each batch
     -env  : only test the parameters
     -ofe  : only test the fix controls
@@ -20,14 +21,16 @@
 set SQLTIMEOUT 7200 verify off feed off &sep
 var cur refcursor;
 var msg varchar2
+var descr varchar2
 var plans clob;
-
+var sql_id varchar2
 DECLARE
-    low_ofe   VARCHAR2(30) := :V2;
-    high_ofe  VARCHAR2(30) := :V3;
-    buff      CLOB;
-    bulks     PLS_INTEGER := :batch;
+    sq_id     VARCHAR2(30):=:V1;
+    low_ofe   VARCHAR2(32767) := :V2;
+    high_ofe  VARCHAR2(32767) := :V3;
+    buff      CLOB:=nvl(high_ofe,low_ofe);
     sql_text  CLOB;
+    bulks     PLS_INTEGER := :batch;
     low_env   sys.XMLTYPE;
     high_env  sys.XMLTYPE;
     ofe_cnt   PLS_INTEGER := 0;
@@ -91,36 +94,45 @@ DECLARE
         dbms_lob.writeappend(sql_text, nvl(length(msg), 0) + 1, msg || chr(10));
     END;
 BEGIN
-    BEGIN
-        SELECT *
-        INTO   to_schema, buff
-        FROM   (SELECT parsing_schema_name, sql_fulltext
-                FROM   gv$sqlarea
-                WHERE  sql_id = :V1
-                AND    rownum < 2
-                UNION ALL
-                SELECT parsing_schema_name, sql_text
-                FROM   all_sqlset_statements
-                WHERE  sql_id = :v1
-                AND    rownum < 2
-                UNION ALL
-                SELECT parsing_schema_name, sql_text
-                FROM   dba_hist_sqlstat
-                JOIN   dba_hist_sqltext
-                USING  (sql_id)
-                WHERE  sql_id = :v1
-                AND    rownum < 2
-                UNION ALL
-                SELECT username, TO_CLOB(sql_text)
-                FROM   gv$sql_monitor
-                WHERE  sql_id = :v1
-                AND    IS_FULL_SQLTEXT = 'Y'
-                AND    rownum < 2)
-        WHERE  rownum < 2;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || :v1);
-    END;
+    IF length(buff)>20 AND regexp_like(buff,'\s') THEN
+        if high_ofe IS NOT NULL then 
+            high_ofe := low_ofe;
+        end if;
+        low_ofe   := sq_id;
+        sq_id     := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(buff);
+        to_schema := sys_context('userenv','current_schema');
+    ELSE
+        BEGIN
+            SELECT *
+            INTO   to_schema, buff
+            FROM   (SELECT parsing_schema_name, sql_fulltext
+                    FROM   gv$sqlarea
+                    WHERE  sql_id = sq_id
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT parsing_schema_name, sql_text
+                    FROM   all_sqlset_statements
+                    WHERE  sql_id = sq_id
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT parsing_schema_name, sql_text
+                    FROM   dba_hist_sqlstat
+                    JOIN   dba_hist_sqltext
+                    USING  (sql_id)
+                    WHERE  sql_id = sq_id
+                    AND    rownum < 2
+                    UNION ALL
+                    SELECT username, TO_CLOB(sql_text)
+                    FROM   gv$sql_monitor
+                    WHERE  sql_id = sq_id
+                    AND    IS_FULL_SQLTEXT = 'Y'
+                    AND    rownum < 2)
+            WHERE  rownum < 2;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);
+        END;
+    END IF;
     sql_text := 'explain plan set statement_id=''OFE_@dbcli_stmt_id@'' INTO SYS.PLAN_TABLE$ for ';
     buff := regexp_replace(buff,'^\s*explain.*?for\s*','',1,1,'i');
     dbms_lob.append(sql_text, buff);
@@ -138,6 +150,13 @@ BEGIN
                           optimizer_feature_enable DESC)
         WHERE  rownum < 2;
     END IF;
+
+    IF '&dir'='asc' THEN
+        :descr := 'tested from '||low_ofe||' to '||high_ofe;
+    ELSE
+        :descr := 'tested from '||high_ofe||' to '||low_ofe;
+    END IF;
+    :sql_id := sq_id;
 
     DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IS NOT NULL;
     COMMIT;
@@ -312,7 +331,10 @@ BEGIN
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,1) d1,
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,2) d2
           FROM  (SELECT  STATEMENT_ID,
-                         CASE WHEN STATEMENT_ID LIKE '%BASELINE_%' THEN 0 ELSE 1 END grp,
+                         CASE WHEN STATEMENT_ID LIKE '%BASELINE_LOW%' then decode('&dir','asc',0,2)
+                              WHEN STATEMENT_ID LIKE '%BASELINE_HIGH%' then decode('&dir','asc',2,0)
+                              ELSE 1 
+                         END grp,
                          NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
                          MAX(ID) plan_lines,
                          MAX(remarks) remarks,
@@ -335,8 +357,7 @@ BEGIN
                          row_number() over(PARTITION BY P ORDER BY id) seq
                   FROM   plans a) a
           WHERE  seq<=10)
-        SELECT /*+ordered use_hash(b)*/
-                 STATEMENT_ID,
+        SELECT   STATEMENT_ID,
                  is_matched matched,
                  plan_hash,
                  plan_hash2 phv2,
@@ -344,7 +365,7 @@ BEGIN
                  cnt            plans,
                  cost,
                  bytes,
-                 card           "ROWS",
+                 card           "Card",
                  total_card,
                  settings "Top 10 Settings",
                  description "Top 10 Descriptions"
@@ -362,9 +383,9 @@ EXCEPTION
         RAISE;
 END;
 /
-SPOOL ofe_test_&v1..txt
-PRO SQL Plan Summary:
-PRO =================
+SPOOL ofe_test_&sql_id..txt
+PRO SQL Plan Summary (&descr):
+PRO ========================================================
 print cur
 SET TERMOUT OFF
 print plans

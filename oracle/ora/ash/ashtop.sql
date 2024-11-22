@@ -81,7 +81,7 @@
       &more_filter: default={1=1},f={}
       @CHECK_ACCESS_USER: dba_users={dba_users} default={all_users}
       @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
-      @counter: 11.2={, count(distinct sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
+      @counter: 11.2={, count(distinct sql_id||sql_exec_id||to_char(sql_exec_start,'yyyymmddhh24miss')) "Execs"},default={}
       @UNIT   : 11.2={least(nvl(tm_delta_db_time,delta_time),DELTA_TIME)*1e-6}, default={&BASE}
       @CPU    : 11.2={least(nvl(tm_delta_cpu_time,delta_time),DELTA_TIME)*1e-6}, default={0}
       @IOS    : 11.2={,SUM(DELTA_READ_IO_BYTES) reads,SUM(DELTA_Write_IO_BYTES) writes,SUM(nvl(DELTA_READ_IO_BYTES,0)+nvl(DELTA_Write_IO_BYTES,0))/nullif(SUM(nvl(DELTA_READ_IO_REQUESTS,0)+nvl(DELTA_WRITE_IO_REQUESTS,0)),0) AVG_IO},default={}
