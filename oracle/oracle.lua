@@ -437,6 +437,12 @@ function oracle:connect(conn_str)
                 self.props[k]=v
             end
         end
+
+        if args.user=='' and args.password=='' and args.internal_logon and err:find('ORA-01008') then
+            env.warn('Cannot establish the bequeathed connection as sysdba due to password file is missing.');
+            self:disconnect(false)
+            return
+        end
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         self.props=props

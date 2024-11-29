@@ -144,10 +144,10 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             etim1         date;
             stim          date;
             etim          date;
-            dbid          INT;
+            dbid          INT;--:=3538174753;
             st            INT;
             ed            INT;
-            dbid2         INT;--:=1877023642;
+            dbid2         INT;--:=200;
             st2           INT;
             ed2           INT;
             rc            SYS_REFCURSOR;
@@ -155,7 +155,7 @@ function awr.extract_awr(starttime,endtime,instances,starttime2,endtime2,contain
             inst          VARCHAR2(30) := NULLIF(NULLIF(upper(p_inst), 'A'),'0');
             inst1         INT;
             inst2         INT;
-            PROCEDURE gen_ranges(p_start VARCHAR2, p_end VARCHAR2,dbid OUT INT,st OUT INT,ed OUT INT) IS
+            PROCEDURE gen_ranges(p_start VARCHAR2, p_end VARCHAR2,dbid IN OUT INT,st OUT INT,ed OUT INT) IS
             BEGIN
                 IF p_end IS NULL AND stim IS NOT NULL AND etim IS NOT NULL THEN
                     etim := to_date(p_start, 'YYMMDDHH24MISS')+(etim-stim);

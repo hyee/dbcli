@@ -47,7 +47,9 @@ DECLARE
     fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
     qry       VARCHAR2(4000) := q'{
-        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,nvl2(optimizer_feature_enable,1,0) flag,0+regexp_substr(optimizer_feature_enable,'^\d+\.\d+') ofe
+        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,
+               nvl2(optimizer_feature_enable,1,0) flag,
+               0+regexp_replace(OPTIMIZER_FEATURE_ENABLE,'(\d+\.)(\d+)\.(\d?)\.?(\d?)\.?','\1\2\3\4') ofe
         FROM   v$session_fix_control
         WHERE  SESSION_ID=userenv('sid')
         AND    '&typ' IN('all','ofe')
@@ -245,23 +247,24 @@ BEGIN
 
     dbms_output.put_line(counter||' OFE differences are tested.');
 
+    DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IN(
+        SELECT /*+unnest*/ STATEMENT_ID 
+        FROM (
+            SELECT STATEMENT_ID,ID, DECODE(STATS, LAG(STATS) OVER(ORDER BY ID), 'Y', 'N') is_Delete
+            FROM   (SELECT STATEMENT_ID,
+                           NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
+                           MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) ||
+                           CHR(1) ||
+                           MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) ||
+                           CHR(1) || MAX(q.cost) || CHR(1) || MAX(bytes) || CHR(1) || MAX(cardinality) keep(dense_rank FIRST ORDER BY id) || CHR(1) || SUM(nvl2(object_owner, cardinality, 0)) STATS
+                    FROM   SYS.PLAN_TABLE$ q
+                    WHERE  STATEMENT_ID NOT LIKE '%BASELINE%'
+                    GROUP  BY STATEMENT_ID
+                    ORDER  BY ID))
+        WHERE is_Delete='Y');
+    COMMIT;
+
     IF :accu = 1 THEN
-        DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IN(
-            SELECT /*+unnest*/ STATEMENT_ID 
-            FROM (
-                SELECT STATEMENT_ID,ID, DECODE(STATS, LAG(STATS) OVER(ORDER BY ID), 'Y', 'N') is_Delete
-                FROM   (SELECT STATEMENT_ID,
-                               NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                               MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) ||
-                               CHR(1) ||
-                               MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml, 1, 2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) ||
-                               CHR(1) || MAX(q.cost) || CHR(1) || MAX(bytes) || CHR(1) || MAX(cardinality) keep(dense_rank FIRST ORDER BY id) || CHR(1) || SUM(nvl2(object_owner, cardinality, 0)) STATS
-                        FROM   SYS.PLAN_TABLE$ q
-                        WHERE  STATEMENT_ID NOT LIKE '%BASELINE_%'
-                        GROUP  BY STATEMENT_ID
-                        ORDER  BY ID))
-            WHERE is_Delete='Y');
-        COMMIT;
         FOR i in 1..counter LOOP
             BEGIN
                 EXECUTE IMMEDIATE 'alter session set '|| ofeold(i);
@@ -331,8 +334,8 @@ BEGIN
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,1) d1,
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,2) d2
           FROM  (SELECT  STATEMENT_ID,
-                         CASE WHEN STATEMENT_ID LIKE '%BASELINE_LOW%' then decode('&dir','asc',0,2)
-                              WHEN STATEMENT_ID LIKE '%BASELINE_HIGH%' then decode('&dir','asc',2,0)
+                         CASE WHEN STATEMENT_ID LIKE '%OFE_BASELINE_LOW%' then decode('&dir','asc',0,2)
+                              WHEN STATEMENT_ID LIKE '%OFE_BASELINE_HIGH%' then decode('&dir','asc',2,0)
                               ELSE 1 
                          END grp,
                          NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
@@ -351,27 +354,29 @@ BEGIN
         finals AS
          (SELECT a.*, 
                  decode(seq,1,listagg(d1,decode(bulks,1,chr(10),chr(10)||chr(10))) within group(ORDER BY seq) over(partition by p)) settings,
-                 decode(seq,1,listagg(d2,decode(bulks,1,chr(10),chr(10)||chr(10))) within group(ORDER BY seq) over(partition by p)) description
+                 decode(seq,1,listagg('('||STATEMENT_ID||') '||d2,decode(bulks,1,chr(10),chr(10)||chr(10))) within group(ORDER BY seq) over(partition by p)) description
           FROM   (SELECT a.*,
                          COUNT(DISTINCT STATEMENT_ID) over(PARTITION BY P) cnt,
                          row_number() over(PARTITION BY P ORDER BY id) seq
                   FROM   plans a) a
           WHERE  seq<=10)
-        SELECT   STATEMENT_ID,
-                 is_matched matched,
-                 plan_hash,
-                 plan_hash2 phv2,
-                 plan_lines     lines,
-                 cnt            plans,
-                 cost,
-                 bytes,
-                 card           "Card",
-                 total_card,
-                 settings "Top 10 Settings",
-                 description "Top 10 Descriptions"
-        FROM   finals a
-        WHERE  seq=1
-        ORDER  BY grp,decode(:accu,1,id,0),regexp_substr(statement_id,'\d+')+0,plan_hash,plan_hash2,cost,bytes,total_card,id;
+        SELECT rownum "#",a.*
+        FROM (
+            SELECT   --STATEMENT_ID stmt_id,
+                     is_matched matched,
+                     plan_hash,
+                     plan_hash2,
+                     plan_lines     lines,
+                     cnt            plans,
+                     cost,
+                     bytes,
+                     card           "Card",
+                     total_card,
+                     settings "Top 10 Settings",
+                     description||CASE WHEN a.description like '%OFE_BASELINE_LOW%' THEN low_ofe WHEN a.description like '%OFE_BASELINE_HIGH%' THEN high_ofe END "Top 10 Descriptions"
+            FROM   finals a
+            WHERE  seq=1
+            ORDER  BY grp,decode(:accu,1,id,0),regexp_substr(statement_id,'\d+')+0,plan_hash,plan_hash2,cost,bytes,total_card,id) a;
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested, including %d fix controls and %d parameters. Please reconnect to reset all options to the defaults.',
                                    ofe_cnt + env_cnt,
