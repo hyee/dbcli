@@ -100,6 +100,7 @@ Parameters
         2097152: enable PCODE support for case statements
         1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
     _memory_imm_mode_without_autosga: when 0 then stop resize of SGA component
+        or set _shared_pool_reserved_pct/shared_pool_reserved_size/_shared_pool_max_size/_kghdsidx_count to avoid ORA-4031 errors
     _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
     _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
     _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
@@ -289,6 +290,8 @@ Fix Controls:
     30822446:  enable window pushed rank optimization with partition by keys
     22387320:  use HASH UNIQUE with UNION operator when applicable
     20379571:  0 to fix issue of HIGH EXECUTION COUNTS OF TBL$OR$IDX$PART$NUM (Doc ID 2935058.1) (can also set _subquery_pruning_enabled=false or 30978868:1)
+    27261477:  fix ORA-12850 error when query gv$ views in RAC
+    8893626,9195582: 0 to fix some index skip scan cost under-estimated issues
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views

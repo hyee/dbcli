@@ -109,7 +109,7 @@ BEGIN
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv
+        SELECT /*+NO_MINITOR OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv
         INTO own,sq_text,sig,bw,phv
         FROM (
             SELECT * FROM (
@@ -132,7 +132,7 @@ BEGIN
                            FROM   dba_hist_sqlstat
                            WHERE  sql_id = sq_id
                            AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
-                           ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC)
+                           ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC,decode(instance_number,userenv('instance'),1,2))
                    WHERE  rownum < 2)
             USING  (dbid, sql_id)
             WHERE  sql_id = sq_id
@@ -173,6 +173,8 @@ BEGIN
         trace  :='alter session set events ''10046 trace name context @''';
         EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
         EXECUTE IMMEDIATE replace(trace,'@','forever,level 12');
+    ELSIF &opt=4 THEN
+        ctrl:='<parameter name="mode">safe</parameter>';
     ELSIF &opt=8 THEN
         ctrl:='<parameter name="sharing">"1"</parameter><parameter name="approximate">"OTNFSLVRH_"</parameter>';
     END IF;
@@ -211,7 +213,7 @@ BEGIN
 
         xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||fixctl;
 
-        SELECT MAX(sql_id||' # '||child_number)
+        SELECT /*+NO_MINITOR*/ MAX(sql_id||' # '||child_number)
         INTO   sq_nid
         FROM (SELECT sql_id,child_number
               FROM   v$sql
@@ -269,7 +271,7 @@ BEGIN
                  TIME,
                  QBLOCK_NAME,
                  OTHER_XML)
-            SELECT 'INTERNAL_DBCLI_CMD',
+            SELECT /*+NO_MINITOR*/ 'INTERNAL_DBCLI_CMD',
                    SIG,
                    SYSDATE,
                    REMARKS,
@@ -316,7 +318,8 @@ BEGIN
     IF sq_text IS NOT NULL THEN
         IF bitand(&opt,3)>0 THEN
             OPEN cur FOR
-                SELECT xplan_cost, a.name,
+                SELECT /*+NO_MINITOR*/ 
+                        xplan_cost, a.name,
                        '$HEADCOLOR$/$NOR$' "/",
                        exec_cost,b.name
                 FROM (
@@ -335,7 +338,7 @@ BEGIN
                 ORDER  BY R;
         ELSIF bitand(&opt,4)=4 THEN
             OPEN cur FOR
-                SELECT /*+NO_EXPAND*/ 
+                SELECT /*+NO_EXPAND NO_MINITOR*/ 
                        object_id,owner,object_name,subobject_name part_name,type,
                        COUNT(1) SEGS,
                        SUM(BYTES) BYTES,

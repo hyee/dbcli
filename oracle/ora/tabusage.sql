@@ -146,7 +146,7 @@ BEGIN
                REGEXP_SUBSTR(cols_and_cards,'[^//]+',1,1) col_names,
                REGEXP_SUBSTR(cols_and_cards,'[^//]+',1,2) cards,
                USAGES，
-               (SELECT distinct sys.stragg(e.extension_name||' ') over() 
+               (SELECT distinct to_char(sys.stragg(e.extension_name||' ') over()) 
                 FROM   dba_tab_cols c, dba_stat_extensions e
                 WHERE  c.owner = '&object_owner'
                 AND    c.table_name = '&object_name'

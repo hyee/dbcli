@@ -31,8 +31,7 @@ ORCL> ora tbs SYSTEM
                     #1      32.00 GB 1010.00 MB 1002.00 MB 1001.80 MB    8.20 MB   31.02 GB    3.06    0 122  B     1ms   82.81 /u01/app/oracle
 
     --[[
-        @CHECK_ACCESS: wmsys.wm_concat={wmsys.wm_concat(DISTINCT loc)}, default={&VERSION}
-        @VERSION: 11.2={regexp_replace(listagg(loc,',') within group(order by loc),'([^,]+)(,\1)+','\1')} default={null}
+        @aggs   : 11.2={regexp_replace(listagg(loc,',') within group(order by loc),'([^,]+)(,\1)+','\1')} default={wmsys.wm_concat(DISTINCT loc)}
         &cid    : default={file_id} cdb={con_id}
         &cid2   : default={null} cdb={con_id}
         &cname  : default={fid} cdb={con_id}
@@ -83,7 +82,7 @@ FROM (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UNI
               NULLIF(SUM(MBPS*blocksiz),0) MBPS,
               NULLIF(round(1E4*SUM(latency)/nullif(SUM(IOPS),0)),0) latency,
               IS_TEMP,
-              decode(grouping_id(file_id),0,max(file_name),&CHECK_ACCESS) g,
+              decode(grouping_id(file_id),0,max(file_name),&aggs) g,
               decode(grouping_id(TABLESPACE_NAME,file_id),0,MAX(F.ATTRS),1,MAX(T.ATTRS)) attrs
       FROM( SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
             FROM (

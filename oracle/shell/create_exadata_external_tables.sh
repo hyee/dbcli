@@ -931,6 +931,7 @@ sqlplus -s "$db_account" <<'EOF'
             EXECUTE IMMEDIATE stmt;
         END;
     BEGIN
+        dbms_output.enable(null);
         SELECT XMLTYPE(CURSOR
                        (SELECT NAME,
                                objecttype typ,
@@ -947,7 +948,12 @@ sqlplus -s "$db_account" <<'EOF'
             stmt := 'create or replace view ' || NAME ||
                     ' as select /*+opt_param(''parallel_force_local'' ''true'')*/ * from (select CELLNODE,METRICOBJECTNAME OBJECTNAME,name n,METRICVALUE v from EXA$METRIC where objecttype=''' || r.typ ||
                     ''') pivot(sum(v) for n in(' || cols || '))';
-            EXECUTE IMMEDIATE (stmt);
+            BEGIN
+                EXECUTE IMMEDIATE (stmt);
+            EXCEPTION WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE(sqlerrm);
+                DBMS_OUTPUT.PUT_LINE(stmt);
+            END;
 
             FOR r1 IN (SELECT regexp_replace(NAME, '^\w\w_') n, d
                        FROM   XMLTABLE('/ROWSET/ROW' PASSING DATA COLUMNS NAME PATH 'NAME', typ PATH 'TYP', D PATH 'D')

@@ -9,7 +9,7 @@ if obj.object_type:find('^TABLE') then
     result=db.resultset:rows(result,-1)
     result=result[2] or {}
     obj.table_name=result[1]
-    blocks,rows=result[2] or 0,result[3] or 0
+    blocks,rows=env.tonumber(result[2]) or 0,env.tonumber(result[3]) or 0
 
     if obj.object_name:find('^X%$') and obj.owner=='SYS' and obj.object_id>=4200000000 then
         obj.object_type='FIXED TABLE'

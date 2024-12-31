@@ -295,27 +295,23 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 END IF;
                 IF (v_size <= 1200 OR dbms_lob.instr(p_SQL, CHR(10)) > 0 OR p_name != 'sql_txt') AND v_size<=24000 THEN
                     pr('        '||p_name||' := '||v_begin, FALSE);
-                    dbms_lob.append(v_text, replace(p_SQL,chr(0),'@chr(0)@'));
+                    dbms_lob.append(v_text, replace(p_SQL,chr(0),' '));
                     pr(v_end||';');
                 ELSE
                     pr('        dbms_lob.createtemporary(sql_txt, TRUE);');
                     v_pos := 0;
                     WHILE TRUE LOOP
-                        pr('        wr('||v_begin|| replace(dbms_lob.substr(p_SQL, 1000, v_pos * 1000 + 1),chr(0),'@chr(0)@') || v_end||');');
+                        pr('        wr('||v_begin|| replace(dbms_lob.substr(p_SQL, 1000, v_pos * 1000 + 1),chr(0),' ') || v_end||');');
                         v_pos  := v_pos + 1;
                         v_size := v_size - 1000;
                         EXIT WHEN v_size < 1;
                     END LOOP;
                 END IF;
-                
-                IF p_name = 'sql_txt' THEN
-                    pr(q'[        sql_txt := replace(sql_txt,'@chr(0)@',chr(0));]');
-                END IF;
             END;
         BEGIN
             dbms_output.enable(NULL);
 
-            IF v_dbid IS NULL THEN
+            IF nullif(v_dbid,0) IS NULL THEN
                 SELECT dbid
                 INTO   v_dbid
                 FROM   v$database;

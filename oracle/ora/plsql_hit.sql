@@ -51,7 +51,7 @@
         &V2: default={128k}
         &V3: default={1}
         &V4: default={100}
-        &ran: default={} random={order by dbms_random.value(1,1e20)}
+        &ran: default={order by r} random={order by dbms_random.value(1,1e20)}
         @VER: 12.1={}
     --]]
  ]]*/
@@ -97,6 +97,7 @@ PRO ****************************************************************************
 PRO
 PRO Stats with infinite fetch_size
 PRO ==============================
+set autotrace explain
 WITH FUNCTION c1 (r INT,d DATE) RETURN NUMBER DETERMINISTIC IS
     PRAGMA UDF;
 BEGIN
@@ -113,15 +114,18 @@ BEGIN
     RETURN dbms_random.value(1,1e20)+r+EXTRACT(SECOND FROM ts)*1e6;
 END;
 r  AS (SELECT ROWNUM r,SYSDATE+ROWNUM d,SYSTIMESTAMP+NUMTODSINTERVAL(dbms_random.value*1e3,'day') ts FROM dual CONNECT BY ROWNUM<=&V1),
-r1 AS (SELECT /*+materialize ordered use_nl(b)*/ a.* FROM (SELECT * FROM r UNION ALL SELECT * FROM (SELECT * FROM r ORDER BY 1 DESC)) a,(select * from dual connect by rownum<=&v3) b &ran)
-SELECT /*+param('_query_execution_cache_max_size', &newv)*/ count(1) rows#,
+r1 AS (SELECT /*+materialize ordered use_nl(b)*/ a.* 
+       FROM (SELECT * FROM r UNION ALL SELECT * FROM (SELECT * FROM r ORDER BY 1 DESC)) a,
+            (select * from dual connect by rownum<=&v3) b &ran)
+SELECT /*+opt_param('_optimizer_unnest_scalar_sq', 'false')*/ count(1) rows#,
        COUNT(DISTINCT r) "NDV",
        round(100*(count(1)-COUNT(DISTINCT c1(r,d)))/ (count(1)-COUNT(DISTINCT r)),3)||'%' deterministic_hit_ratio,
        round(100*(count(1)-COUNT(DISTINCT (SELECT c2(r,ts) FROM dual)))/ (count(1)-COUNT(DISTINCT r)),3)||'%' scalarquery_hit_ratio,
        round(100*(count(1)-COUNT(DISTINCT (SELECT c3(r,d,ts) FROM dual)))/ (count(1)-COUNT(DISTINCT r)),3)||'%' combine_hit_ratio
 FROM r1
+WHERE d in(select /*+no_unnest*/ r.d from r where r.r=r1.r) --subquery caching
 /
-
+set autotrace off
 var c REFCURSOR;
 DECLARE
     c SYS_REFCURSOR;
@@ -151,7 +155,7 @@ BEGIN
             RETURN dbms_random.value(1,1e20)+r+EXTRACT(SECOND FROM ts)*1e6;
         END;
         r  AS (SELECT ROWNUM r,SYSDATE+ROWNUM d,SYSTIMESTAMP+NUMTODSINTERVAL(dbms_random.value*1e3,'day') ts FROM dual CONNECT BY ROWNUM<=&V1)
-        SELECT /*+param('_query_execution_cache_max_size', &newv) ordered use_nl(b)*/ 
+        SELECT /*+opt_param('_optimizer_unnest_scalar_sq', 'false') ordered use_nl(b)*/ 
               XMLELEMENT("ROW",XMLFOREST(c1(r,d) AS C1,(SELECT c2(r,ts) FROM dual) AS C2,(SELECT c3(r,d,ts) FROM dual) AS C3,r)).getStringval()
         FROM (SELECT * FROM r UNION ALL SELECT * FROM (SELECT * FROM r ORDER BY 1 DESC)) a,
              (select * from dual connect by rownum<=&v3) b &ran
