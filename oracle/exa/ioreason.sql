@@ -43,7 +43,7 @@ BEGIN
                     SELECT /*+ordered use_nl(timer stat) no_expand outline_leaf*/
                            reason_name,n,
                            SUM(v*DECODE(r, 1, -1, 1))/&AVG v
-                    FROM   (SELECT /*+ ordered use_nl(timer stat)*/ROWNUM r, sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
+                    FROM   (SELECT ROWNUM r, sysdate+numtodsinterval(&V2,'second') mr FROM XMLTABLE('1 to 2')) dummy,
                             LATERAL (SELECT  do_sleep(dummy.r, dummy.mr) stime FROM dual) timer,
                             LATERAL (SELECT  reason_name, metric_name n, metric_value v FROM v$cell_ioreason a WHERE timer.stime IS NOT NULL) stat
                     GROUP  BY reason_name,n

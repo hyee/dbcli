@@ -184,7 +184,8 @@ BEGIN
             control_options_xml => ctrl
             &O121 ,con_dbid=>null,con_name=>con
             &O122 ,param_xml=>null
-            &O181 ,result_data_checksum=>rdata,result_type_checksum=>rtype);
+            &O181 ,result_data_checksum=>rdata,result_type_checksum=>rtype
+            );
     dbms_output.put_line('===================================================');
     pr('plan_hash1',phv1);
     pr('plan_hash2',phv2);

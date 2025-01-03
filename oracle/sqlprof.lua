@@ -100,31 +100,32 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                     INTO v_schema,v_plan,v_plan_source,v_dbid
                     FROM (
                         SELECT * FROM (
-                            SELECT PARSING_SCHEMA_NAME schema_name,'SQL' src,plan_hash_value p,last_active_time last_active,v_dbid dbid
+                            SELECT 1 seq_,PARSING_SCHEMA_NAME schema_name,'SQL' src,plan_hash_value p,last_active_time last_active,v_dbid dbid
                             FROM   GV$SQL
                             WHERE  sql_id=v_sql_id
                             AND    plan_hash_value>0
                             UNION ALL
-                            SELECT MAX(PARSING_SCHEMA_NAME) OVER(),'AWR',plan_hash_value,nvl(c.end_interval_time+0,a.timestamp),dbid
+                            SELECT 2,MAX(PARSING_SCHEMA_NAME) OVER(PARTITION BY DBID order by c.end_interval_time desc),'AWR',plan_hash_value,nvl(c.end_interval_time+0,a.timestamp),dbid
                             FROM   DBA_HIST_SQL_PLAN A
                             LEFT   JOIN DBA_HIST_SQLSTAT B USING(DBID,SQL_ID,PLAN_HASH_VALUE)
                             LEFT   JOIN DBA_HIST_SNAPSHOT C USING(DBID,INSTANCE_NUMBER,SNAP_ID) 
                             WHERE  SQL_ID=v_sql_id
+                            AND    OTHER_XML IS NOT NULL
                             UNION ALL
-                            SELECT PARSING_SCHEMA_NAME,'SQLSET',plan_hash_value,plan_timestamp,v_dbid
+                            SELECT 3,PARSING_SCHEMA_NAME,'SQLSET',plan_hash_value,plan_timestamp,v_dbid
                             FROM   all_sqlset_statements
                             WHERE  sql_id=v_sql_id
                             AND    plan_hash_value>0
                         $IF DBMS_DB_VERSION.VERSION>11  $THEN
                             UNION ALL
-                            SELECT USERNAME,'MON',sql_plan_hash_value,LAST_REFRESH_TIME,v_dbid
-                            FROM   GV$SQL_MONITOR 
+                            SELECT 4,USERNAME,'MON',sql_plan_hash_value,LAST_REFRESH_TIME,v_dbid
+                            FROM   GV$SQL_MONITOR
                             WHERE  sql_id=v_sql_id
                             AND    sql_plan_hash_value>0
                             AND    username is not null
                         $END
                         ) 
-                        ORDER BY DECODE(p,phv,1,2),decode(dbid,v_dbid,1,2),last_active desc
+                        ORDER BY DECODE(p,phv,1,2),decode(dbid,v_dbid,1,2),seq_,last_active desc
                     ) WHERE ROWNUM<2;
                     
                     IF v_plan IS NOT NULL AND ''||v_plan=p_plan THEN
@@ -266,7 +267,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 WHERE  rownum < 2;
             EXCEPTION
                 WHEN no_data_found THEN
-                    raise_application_error(-20001, 'Cannot find outlines for the execution plan of '||qid);
+                    raise_application_error(-20001, 'Cannot find outlines for the execution plan of '||qid||' with phv='||phv||' and dbid='||v_dbid);
             END;
 
             PROCEDURE pr(p_text VARCHAR2, flag BOOLEAN DEFAULT TRUE) IS

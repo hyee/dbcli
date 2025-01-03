@@ -330,7 +330,8 @@ function oracle:connect(conn_str)
             --lateral view and JPPD
             set_param(q'[events '22829 trace name context forever']');
             set_param(q'["_fix_control"='30786641:1','22258300:1']');
-            
+            --ORA-12850 on gv$ views
+            set_param(q'["_fix_control"='27261477:1']');
             $IF dbms_db_version.version > 12 $THEN
                 vf := get_param('SELECT VERSION_FULL FROM v$instance');
                 --Used on ADW/ATP

@@ -99,7 +99,7 @@ Parameters
         262144: disable  PCODE filtering(not impact cc2 codepath)
         2097152: enable PCODE support for case statements
         1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
-    _memory_imm_mode_without_autosga: when 0 then stop resize of SGA component
+    _memory_imm_mode_without_autosga/_enable_shared_pool_durations: when 0/false then stop resize of SGA component
         or set _shared_pool_reserved_pct/shared_pool_reserved_size/_shared_pool_max_size/_kghdsidx_count to avoid ORA-4031 errors
     _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
     _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
