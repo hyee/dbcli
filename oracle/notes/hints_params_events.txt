@@ -41,6 +41,8 @@ Parameters
             _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
             _fix_control 31360214/17442009:1
             _optimizer_max_permutations =100/200/300
+    _optimizer_filter_pushdown: false to prevent pl/sql function from pushing down to the predicates of inline view which results in over-executions.
+            Other option: hint NO_ELIMINATE_OBY in inline view
     _optimizer_multi_table_outerjoin: could result in scalar-subquery or plsql function to be over executed
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and :
         0  to avoid column group creation by dbms_stats

@@ -1,3 +1,4 @@
+2025-01-07: + oracle: new script 'ora depsql'
 2024-09-22: + oracle: new script 'show cputest'
 2024-09-20: + oracle: new script 'ora rat'
 2024-04-27: + pgsql : many enhancements including desc, xplan, env autoplan/autoplanformat, misc scripts
