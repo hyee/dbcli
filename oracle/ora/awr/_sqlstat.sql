@@ -39,6 +39,7 @@ BEGIN
     IF dbms_db_version.version>11 or (dbms_db_version.version>10 and dbms_db_version.release>1) THEN
         sq := replace(sq,'@11g@','
                ,decode(delta_flag, 0, physical_read_bytes_total, physical_read_bytes_delta) phyread
+               ,decode(delta_flag, 0, optimized_physical_reads_total, optimized_physical_reads_delta) optread
                ,decode(delta_flag, 0, physical_write_bytes_total, physical_write_bytes_delta) phywrite
                ,decode(delta_flag, 0, physical_read_requests_total, physical_read_requests_delta) readreq
                ,decode(delta_flag, 0, physical_write_requests_total, physical_write_requests_delta) writereq
@@ -47,7 +48,7 @@ BEGIN
                ,decode(delta_flag, 0, io_offload_return_bytes_total, io_offload_return_bytes_delta) oflout
                ,decode(delta_flag, 0, io_interconnect_bytes_total, io_interconnect_bytes_delta) cellio');
     ELSE
-        sq := replace(sq,'@11g@',',0 phyread,null phywrite,null readreq,null writereq,null ioreqs,0 oflin,0 oflout,null cellio');
+        sq := replace(sq,'@11g@',',0 phyread,null optread,null phywrite,null readreq,null writereq,null ioreqs,0 oflin,0 oflout,null cellio');
     END IF;
 
     IF dbms_db_version.version>=18 THEN

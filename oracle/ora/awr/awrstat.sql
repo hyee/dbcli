@@ -29,7 +29,7 @@
 
 ORA _sqlstat
 col ela,ELA(Avg),cost/io format usmhd2
-col iowait,cpuwait,ccwait,clwait,apwait,plsql for pct1
+col iowait,cpuwait,ccwait,clwait,apwait,plsql,Flash% for pct1
 Col buff,read,avg_read,write,cellio,oflin,oflout format kmg
 set autohide col
 select time,
@@ -54,6 +54,7 @@ select time,
        nullif(round(sum(oflin)/&avg,2),0) oflin, 
        nullif(round(sign(sum(oflin))*sum(oflout)/&avg,2),0) oflout,
        nullif(round(sum(read)/&avg,2),0) read,
+       nullif(sum(optread)/nullif(sum(phyreq),0),0) "Flash%",
        nullif(round(sum(write)/&avg,2),0)  write,
        nullif(round(sum(rows#)/&avg,2),0) rows#,
        nullif(round(sum(fetches)/&avg,2),0) fetches,
@@ -69,7 +70,6 @@ FROM(
            sum(ela)    ELA,
            sum(iowait) iowait,
            sum(ioreqs) ioreqs,
-           sum(readreq) readreq,
            sum(cpuwait) cpuwait,
            sum(ccwait) ccwait,
            sum(clwait) clwait,
@@ -77,6 +77,9 @@ FROM(
            max(px_count) px_count,
            sum(buff) buff,
            sum(read) read,
+           sum(optread) optread,
+           sum(readreq) readreq,
+           sum(phyread) phyreq,
            sum(write) write,
            sum(cellio) cellio,
            sum(oflin) oflin,
@@ -106,14 +109,17 @@ FROM(
                PLSEXEC_TIME+JAVEXEC_TIME PLSQL,
                cellio,oflin,oflout,
                greatest(disk_reads,phyread) READ,
+               optread,
                nvl(phywrite,0)+nvl(direct_writes,0) WRITE,
                buffer_gets buff,
                a.rows_processed rows#,
                a.fetches,
                readreq,
+               phyread,
                invalidations invalids,
                SUM(executions) over(partition by &BASE,plan_hash_value) execs_,
-               delta_flag
+               delta_flag,
+               BITAND (NVL(flag, 0), 1) flag
          from &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
         WHERE '&V1' in(sql_id,''||plan_hash_value,''||signature)) a
     --WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0

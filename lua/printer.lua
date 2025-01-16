@@ -313,44 +313,48 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
     if not printer.tee_hdl then return end
 
     local hdl=printer.tee_hdl
-    if type(row)=="table" and printer.tee_type=="html" then
-        local td='td'
-        if(row[0]==0) then
-            hdl:write("<table>\n")
-            printer.tee_colinfo=row.colinfo
-            td='th'
-        end
-        hdl:write("  <tr>")
-        for idx,cell in ipairs(row) do
-            hdl:write("<"..td..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')..">")
-            if type(cell)=="string" then
-                hdl:write((cell:gsub("( +)",function(s)
-                        if #s==1 then return s end
-                        return " "..string.rep('&nbsp;',#s-1)
-                    end):gsub("\r?\n","<br/>"):gsub("<",'&lt;'):gsub(">","&gt;")))
-            elseif cell~=nil then
-                hdl:write(cell)
+    if type(row)=="table" then
+        if printer.tee_type=="html" then
+            local td='td'
+            if(row[0]==0) then
+                hdl:write("<table border>\n")
+                printer.tee_colinfo=row.colinfo
+                td='th'
             end
-            hdl:write("</"..td..">")
-        end
-        hdl:write("</tr>\n")
-        if row[0]==total_rows-1 then 
-            hdl:write("</table>\n")
-            printer.tee_colinfo=nil
-        end
-    elseif type(row)=="table" and printer.tee_type=="csv" then
-        for idx,cell in ipairs(row) do
-            if idx>1 then hdl:write(",") end
-            if type(cell)=="string" then
-                cell=cell:gsub('"','""')
-                if cell:find('[",\n\r]') then cell='"'..cell..'"' end
-                hdl:write(cell)
-            elseif cell~=nil then
-                hdl:write(cell)    
+            hdl:write("  <tr>")
+            for idx,cell in ipairs(row) do
+                hdl:write("<"..td..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')..">")
+                if type(cell)=="string" then
+                    cell=strip_ansi(cell)
+                    hdl:write((cell:gsub("( +)",function(s)
+                            if #s==1 then return s end
+                            return " "..string.rep('&nbsp;',#s-1)
+                        end):gsub("\r?\n","<br/>"):gsub("<",'&lt;'):gsub(">","&gt;")))
+                elseif cell~=nil then
+                    hdl:write(cell)
+                end
+                hdl:write("</"..td..">")
             end
+            hdl:write("</tr>\n")
+            if row[0]==total_rows-1 then 
+                hdl:write("</table>\n")
+                printer.tee_colinfo=nil
+            end
+        elseif printer.tee_type=="csv" then
+            for idx,cell in ipairs(row) do
+                if idx>1 then hdl:write(",") end
+                if type(cell)=="string" then
+                    cell=strip_ansi(cell):gsub('"','""')
+                    if row[0]==0 then cell=cell:trim() end
+                    if cell:find('[",\n\r]') then cell='"'..cell..'"' end
+                    hdl:write(cell)
+                elseif cell~=nil then
+                    hdl:write(cell)    
+                end
+            end
+            hdl:write("\n")
         end
-        hdl:write("\n")
-    elseif type(str)=="string" then
+    elseif type(str)=="string" and printer.tee_type~="html" and printer.tee_type~="csv" then
         pcall(hdl.write,hdl,env.space..(printer.tee_type=='ans' and str:convert_ansi() or strip_ansi(str)):rtrim().."\n")
     end
 end

@@ -83,6 +83,7 @@
                             '>=1m'
                        END unit,
                        MAX(SUM(TIME_WAITED_MICRO)) over(PARTITION BY inst,wait_class,event) Time,
+                       MAX(SUM(TIME_WAITED_MICRO)) over() "Time%",
                        MAX(SUM(total_waits)) over(PARTITION BY inst,wait_class,event) Waits,
                        0 avg_time,
                        '|' "|",
@@ -91,7 +92,7 @@
                 FROM   (
                           SELECT /*+ordered use_hash(a b)*/
                                  decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
-                                 event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
+                                 trim(substr(event,1,40)) event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
                                  a.wait_class
                           FROM   gv$system_event a
                           JOIN   &tab b
@@ -136,7 +137,7 @@
                        '<1m' "<1m",
                        '>=1m' ">1m"))
     ]],
-    delta_by="TIME,AVG_TIME,WAITS,TOTAL,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m",
+    delta_by="TIME,Time%,AVG_TIME,WAITS,TOTAL,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m",
     group_by="inst,event,g",
     include_zero=&showzero,
     fixed_title=true,
@@ -144,10 +145,13 @@
     column_formatter={
         noprint='total,g',
         USMHD2="time,avg_time",
+        ['%.1f%%']='Time%',
         k='WAITS,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m'
     },
     calc_rules={
-        avg_time='[Time]/[waits]',["<1us"]="100*[<1us]/&calc",
+        avg_time='[Time]/[waits]',
+        ["Time%"]="100*[Time]/[Time%]",
+        ["<1us"]="100*[<1us]/&calc",
         ["<2us"]="100*[<2us]/&calc",
         ["<4us"]="100*[<4us]/&calc",
         ["<8us"]="100*[<8us]/&calc",

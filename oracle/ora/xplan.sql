@@ -48,6 +48,7 @@ DECLARE
     phv2    INT;
     st      DATE;
     ctrl    VARCHAR2(2000);
+    start_  VARCHAR2(20);
     siz     INT;
     rdata   NUMBER;
     rtype   NUMBER;
@@ -151,7 +152,8 @@ BEGIN
     --SELECT value into siz
     --FROM   v$parameter where name='sort_area_size';
     --execute immediate 'alter session set sort_area_size='||round(65536+1024*1024*512*dbms_random.value);
-    phv1 := phv;
+    phv1   := phv;
+    start_ := to_date(sysdate,'YYYY-MM-DD/HH24:MI:SS');
     dbms_sqlpa.remote_process_sql(
             sql_text => sq_text,
             parsing_schema => own,
@@ -186,7 +188,7 @@ BEGIN
             &O122 ,param_xml=>null
             &O181 ,result_data_checksum=>rdata,result_type_checksum=>rtype
             );
-    dbms_output.put_line('===================================================');
+    dbms_output.put_line('=============================================================================================================');
     pr('plan_hash1',phv1);
     pr('plan_hash2',phv2);
     pr('optimizer_cost',stats.optimizer_cost);
@@ -210,7 +212,6 @@ BEGIN
     pr('err_code',sig);
     pr('err_mesg',err);
     pr('extra_res',extra);
-    dbms_output.put_line('===================================================');
     --execute immediate 'alter session set sort_area_size='||siz;
     IF trace IS NOT NULL THEN
         EXECUTE IMMEDIATE replace(trace,'@','off');
@@ -225,7 +226,7 @@ BEGIN
 
     IF phv2 is not null THEN
         xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||phv2;
-        SELECT MAX(sql_id||' # '||child_number)
+        SELECT MAX(sql_id||' #'||child_number)
         INTO   sq_nid
         FROM (SELECT sql_id,child_number
               FROM   v$sql
@@ -233,19 +234,22 @@ BEGIN
               AND    parsing_schema_name=own
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
               AND    program_id=0
+              AND    last_load_time>=start_
               ORDER  BY decode(force_matching_signature,stats.force_matching_signature,1,2),
                         sign(instr(sql_fulltext,regexp_replace(to_char(substr(sq_text,1,512)),'^\s+|\s+$'))) desc,
-                        last_active_time desc nulls last)
+                        last_load_time desc,child_number desc)
         WHERE rownum<2;
 
         IF sq_nid IS NOT NULL THEN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
+            dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||substr(sq_nid,1,13)||' '||phv2||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
             DELETE SYS.PLAN_TABLE$
             WHERE  PLAN_ID=phv2;
+            dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
             xplan := 'xplan -'||sq_id||' '||phv2;

@@ -297,10 +297,10 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &g_mbrc mbrc
                   FROM   gv$sql_plan_statistics_all a
                   WHERE  a.sql_id = '&v1'
-                  AND   ('&v1' != '&_sql_id' or inst_id=userenv('instance'))
+                  AND   ('&v1' != '&_sql_id' or nvl('&V2'+0,1)>0 or inst_id=userenv('instance'))
                   AND    '&v1' !='X'
                   AND    &SRC != 2
-                  AND    nvl('&V2'+0,-1) in(plan_hash_value,child_number,-1)
+                  AND    nvl(abs('&V2'+0),-1) in(plan_hash_value,child_number,-1)
                   UNION ALL
                   SELECT /*+no_expand*/ id,
                          min(id) over() minid,

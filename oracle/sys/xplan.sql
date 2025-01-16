@@ -6,10 +6,12 @@
     -exec          : execute SQL instead of explain only
     -obj           : generate relative object list
     -10046         : execute SQL and get 10046 trace file
+    -nobase        : bypass possible SQL Plan Baseline
 
     --[[
         @ARGS: 1
-        &opt: default={2} exec={1} gather={8} obj={4} diag={64} o={2} c={2} 10046={3}
+        &opt  : xplan={2} exec={1} gather={8} obj={4} diag={64} o={2} c={2} 10046={3}
+        &base : default={0} nobase={128}
         &trace: default={0} o={1} c={2}
         &load: default={--} o={} c={} 10046={}
         &lv  : default={medium} low={low} high={high}
@@ -20,7 +22,7 @@ var cur REFCURSOR;
 var xplan VARCHAR2(300);
 col ela for usmhd2
 col cpu for pct2
-col val,xplan_cost,exec_cost for k0
+col val,xplan_cost,first_row,all_rows for k0
 col buff,reads,dxwrites,rows#,blocks,extents for tmb2
 col bytes,NEXT_KB for kmg2
 
@@ -159,7 +161,11 @@ BEGIN
         own    := nvl(upper(own),sys_context('userenv','current_schema'));
     END IF;
 
-    stmt := SYS.SQLSET_ROW(sq_id,sig,sq_text,null,bw,own);
+    stmt := SYS.SQLSET_ROW(sq_id,sig,sq_text,null,bw,own,'SYS_XPLAN',round(dbms_random.value(1e9,1e10)));
+
+    IF bitand(&opt,5)>0 THEN
+        ctrl:='<parameter name="mode">safe</parameter>';
+    END IF;
 
     IF &trace>0 THEN
         trace  :='alter session set events ''trace [SQL_'|| CASE trace WHEN 1 THEN 'Optimizer' ELSE 'Compiler' END || '.*] @''';
@@ -173,18 +179,17 @@ BEGIN
         trace  :='alter session set events ''10046 trace name context @''';
         EXECUTE IMMEDIATE 'ALTER SESSION SET tracefile_identifier='''||sq_id||'_'||ROUND(DBMS_RANDOM.VALUE(1,1E6))||'''';
         EXECUTE IMMEDIATE replace(trace,'@','forever,level 12');
-    ELSIF &opt=4 THEN
-        ctrl:='<parameter name="mode">safe</parameter>';
     ELSIF &opt=8 THEN
-        ctrl:='<parameter name="sharing">"1"</parameter><parameter name="approximate">"OTNFSLVRH_"</parameter>';
+        ctrl:='<parameter name="sharing">1</parameter><parameter name="approximate">OT</parameter>';
     END IF;
     sq_text := NULL;
     st := SYSDATE;
     --SELECT value into siz
     --FROM   v$parameter where name='sort_area_size';
     --execute immediate 'alter session set sort_area_size='||round(65536+1024*1024*512*dbms_random.value);
+    stmt.last_exec_start_time := to_date(sysdate,'YYYY-MM-DD/HH24:MI:SS');
     I_PROCESS_SQL_CALLOUT(stmt=>stmt,
-                          action=>&opt,
+                          action=>&opt + &base,
                           time_limit=>86400,
                           ctrl_options=>CASE WHEN ctrl IS NOT NULL THEN xmltype(process_ctrl_dtd||process_ctrl_begin||ctrl ||process_ctrl_end) END,
                           extra_result=>sq_text,
@@ -213,7 +218,7 @@ BEGIN
 
         xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||fixctl;
 
-        SELECT /*+NO_MINITOR*/ MAX(sql_id||' # '||child_number)
+        SELECT /*+NO_MINITOR*/ MAX(sql_id||' #'||child_number)
         INTO   sq_nid
         FROM (SELECT sql_id,child_number
               FROM   v$sql
@@ -221,16 +226,17 @@ BEGIN
               AND    parsing_schema_name=stmt.parsing_schema_name
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
               AND    program_id=0
+              AND    last_load_time>=stmt.last_exec_start_time
               ORDER  BY decode(force_matching_signature,stmt.force_matching_signature,1,2),
                         sign(instr(sql_fulltext,regexp_replace(to_char(substr(stmt.sql_text,1,512)),'^\s+|\s+$'))) desc,
-                        last_active_time desc nulls last)
+                        last_load_time desc,child_number desc)
         WHERE rownum<2;
 
         IF sq_nid IS NOT NULL THEN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||substr(sq_nid,1,13)||' '||fixctl||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
             DELETE SYS.PLAN_TABLE$
             WHERE  PLAN_ID=sig;
@@ -316,24 +322,30 @@ BEGIN
     END IF;
 
     IF sq_text IS NOT NULL THEN
+        
         IF bitand(&opt,3)>0 THEN
             OPEN cur FOR
                 SELECT /*+NO_MINITOR*/ 
                         xplan_cost, a.name,
                        '$HEADCOLOR$/$NOR$' "/",
-                       exec_cost,b.name
+                       b.first_row,b.all_rows,b.name
                 FROM (
                     SELECT a.*,row_number() over(order by name) r
-                    FROM   XMLTABLE('//stats[@type="compilation" and number()>-1]/stat' 
+                    FROM   XMLTABLE('//stats[@type="compilation" and number()>-1][1]/stat' 
                            passing xmltype(sq_text)
                            columns name       varchar2(128) path '@name',
                                    xplan_cost INT path 'number()') a) a
                 FULL JOIN (
-                    SELECT a.*,row_number() over(order by name) r
-                    FROM   XMLTABLE('//stats[@type="execution" and number()>-1]/stat' 
+                    SELECT name,first_row,all_rows,row_number() over(order by name) r
+                    FROM   XMLTABLE('//stats[@type="execution" and number()>-1][1]/stat' 
                            passing xmltype(sq_text)
                            columns name       varchar2(128) path '@name',
-                                   exec_cost  INT path 'number()') a) b
+                                   all_rows  INT path 'number()') a
+                    FULL JOIN  XMLTABLE('//stats[@type="execution_first_row" and number()>-1][1]/stat' 
+                           passing xmltype(sq_text)
+                           columns name       varchar2(128) path '@name',
+                                   first_row  INT path 'number()') b
+                    USING(name)) b
                 USING (r)
                 ORDER  BY R;
         ELSIF bitand(&opt,4)=4 THEN

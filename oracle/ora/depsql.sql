@@ -30,7 +30,7 @@ FROM   (
           WHERE a.from_hash = b.hash_value
           AND   a.from_address = b.address
           AND   a.to_name = :object_name
-          AND   a.to_owner = :object_owner  &ver
+          AND   a.to_owner = :object_owner &ver
           UNION ALL
           SELECT /*+outline_leaf leading(a) use_nl(b) push_pred(b) opt_estimate(table b rows=1000000)*/
                 b.sql_id,
@@ -41,9 +41,9 @@ FROM   (
                 TRIM(regexp_replace(substr(b.sql_text, 1, 250), '\s+', ' ')) sql_text
           FROM  (SELECT /*+cardinality(1)*/ 
                        DISTINCT key 
-                 from  v$sql_plan_monitor 
+                 FROM  v$sql_plan_monitor 
                  WHERE plan_object_owner = :object_owner 
-                 AND plan_object_name = :object_name) a, 
+                 AND   plan_object_name = :object_name) a, 
                 v$sql_monitor b
           WHERE a.key = b.key
           AND   b.status not like '%EXECUTING%')))
