@@ -127,8 +127,8 @@ function printer.print(...)
         if printer.hdl then
             pcall(printer.hdl.write,printer.hdl,strip_ansi(output).."\n")
         end
-        if ignore~='__BYPASS_GREP__' and (printer.tee_hdl and printer.tee_type~='csv' and printer.tee_type~='html') then
-            pcall(printer.tee_hdl.write,printer.tee_hdl,(printer.tee_type=='ans' and output or strip_ansi(output)).."\n")
+        if ignore~='__BYPASS_GREP__' and printer.tee_hdl then
+            printer.tee_to_file(output)
         end
     end
 
@@ -313,23 +313,26 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
     if not printer.tee_hdl then return end
 
     local hdl=printer.tee_hdl
-    if type(row)=="table" then
-        if printer.tee_type=="html" then
+    if printer.tee_type=="html" then
+        local font='font-size:8pt;font-family:Arial,Helvetica,Geneva,sans-serif'
+        if type(row)=="table" then
             local td='td'
             if(row[0]==0) then
-                hdl:write("<table border>\n")
+                hdl:write("<table style='border:1px solid #0066CC;border-collapse:seperate;"..font.."'>\n")
                 printer.tee_colinfo=row.colinfo
                 td='th'
             end
-            hdl:write("  <tr>")
+            hdl:write("  <tr style='white-space:nowrap;background:"..(row[0]==0 and '#0066CC' or math.fmod(row[0],2)==0 and 'white' or '#FFFFCC')..";color:"..(row[0]==0 and 'white' or 'black').."'>")
             for idx,cell in ipairs(row) do
-                hdl:write("<"..td..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')..">")
+                hdl:write("<"..td
+                             ..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')
+                             ..">")
                 if type(cell)=="string" then
                     cell=strip_ansi(cell)
                     hdl:write((cell:gsub("( +)",function(s)
                             if #s==1 then return s end
                             return " "..string.rep('&nbsp;',#s-1)
-                        end):gsub("\r?\n","<br/>"):gsub("<",'&lt;'):gsub(">","&gt;")))
+                        end):gsub("<",'&lt;'):gsub(">","&gt;"):gsub("\r?\n","<br/>")))
                 elseif cell~=nil then
                     hdl:write(cell)
                 end
@@ -337,21 +340,26 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             end
             hdl:write("</tr>\n")
             if row[0]==total_rows-1 then 
-                hdl:write("</table>\n")
+                hdl:write('</table>\n<br/>\n')
                 printer.tee_colinfo=nil
             end
-        elseif printer.tee_type=="csv" then
-            for idx,cell in ipairs(row) do
-                if idx>1 then hdl:write(",") end
-                if type(cell)=="string" then
-                    cell=strip_ansi(cell):gsub('"','""')
-                    if row[0]==0 then cell=cell:trim() end
-                    if cell:find('[",\n\r]') then cell='"'..cell..'"' end
-                    hdl:write(cell)
-                elseif cell~=nil then
-                    hdl:write(cell)    
-                end
+        elseif not printer.tee_colinfo and type(str)=="string" then
+            hdl:write('<p style="margin:0;'..font..'">'..strip_ansi(str):gsub("<",'&lt;'):gsub(">","&gt;"):gsub("\r?\n","<br/>")..'</p>\n')
+        end
+    elseif type(row)=="table" and printer.tee_type=="csv" then
+        for idx,cell in ipairs(row) do
+            if idx>1 then hdl:write(",") end
+            if type(cell)=="string" then
+                cell=strip_ansi(cell):gsub('"','""')
+                if row[0]==0 then cell=cell:trim() end
+                if cell:find('[",\n\r]') then cell='"'..cell..'"' end
+                hdl:write(cell)
+            elseif cell~=nil then
+                hdl:write(cell)    
             end
+        end
+        hdl:write("\n")
+        if row[0]==total_rows-1 then
             hdl:write("\n")
         end
     elseif type(str)=="string" and printer.tee_type~="html" and printer.tee_type~="csv" then
