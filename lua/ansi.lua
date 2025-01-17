@@ -68,47 +68,47 @@ local base_color={
 
 
     --Foreground Colors
-    BLK={"\27[0;30m","Foreground Color: Black"},
-    RED={"\27[0;31m","Foreground Color: Red"},
-    GRN={"\27[0;32m","Foreground Color: Green"},
-    YEL={"\27[0;33m","Foreground Color: Yellow"},
-    BLU={"\27[0;34m","Foreground Color: Blue"},
-    MAG={"\27[0;35m","Foreground Color: Magenta"},
-    CYN={"\27[0;36m","Foreground Color: Cyan"},
-    WHT={"\27[0;37m","Foreground Color: White"},
-    GRY={"\27[90m","Foreground Color: Gray"},
+    BLK={"\27[0;30m","Foreground Color: Black",'color:black'},
+    RED={"\27[0;31m","Foreground Color: Red",'color:FireBrick'},
+    GRN={"\27[0;32m","Foreground Color: Green",'color:DarkGreen'},
+    YEL={"\27[0;33m","Foreground Color: Yellow",'color:GoldenRod'},
+    BLU={"\27[0;34m","Foreground Color: Blue",'color:DarkBlue'},
+    MAG={"\27[0;35m","Foreground Color: Magenta",'color:DarkMagenta'},
+    CYN={"\27[0;36m","Foreground Color: Cyan",'color:DarkCyan'},
+    WHT={"\27[0;37m","Foreground Color: White",'color:GhostWhite'},
+    GRY={"\27[90m","Foreground Color: Gray",'color:Gray'},
     --GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
 
     --High Intensity Foreground Colors
    --BG Light gray
-    HIR={"\27[91m","High Intensity Foreground Color: Red"},
-    HIG={"\27[92m","High Intensity Foreground Color: Green"},
-    HIY={"\27[93m","High Intensity Foreground Color: Yellow"},
-    HIB={"\27[94m","High Intensity Foreground Color: Blue"},
-    HIM={"\27[95m","High Intensity Foreground Color: Magenta"},
-    HIC={"\27[96m","High Intensity Foreground Color: Cyan"},
-    HIW={"\27[97m","High Intensity Foreground Color: White"},
+    HIR={"\27[91m","High Intensity Foreground Color: Red",'color:Red'},
+    HIG={"\27[92m","High Intensity Foreground Color: Green",'color:Green'},
+    HIY={"\27[93m","High Intensity Foreground Color: Yellow",'color:Yellow'},
+    HIB={"\27[94m","High Intensity Foreground Color: Blue",'color:Blue'},
+    HIM={"\27[95m","High Intensity Foreground Color: Magenta",'color:Magenta'},
+    HIC={"\27[96m","High Intensity Foreground Color: Cyan",'color:LightCyan'},
+    HIW={"\27[97m","High Intensity Foreground Color: White",'color:white'},
 
     --High Intensity Background Colors
-    HBRED={"\27[101m","High Intensity Background Color: Red"},
-    HBGRN={"\27[102m","High Intensity Background Color: Green"},
-    HBYEL={"\27[103m","High Intensity Background Color: Yellow"},
-    HBBLU={"\27[104m","High Intensity Background Color: Blue"},
-    HBMAG={"\27[105m","High Intensity Background Color: Magenta"},
-    HBCYN={"\27[106m","High Intensity Background Color: Cyan"},
-    HBWHT={"\27[107m","High Intensity Background Color: White"},    
+    HBRED={"\27[101m","High Intensity Background Color: Red",'background:Red'},
+    HBGRN={"\27[102m","High Intensity Background Color: Green",'background:Green'},
+    HBYEL={"\27[103m","High Intensity Background Color: Yellow",'background:Yellow'},
+    HBBLU={"\27[104m","High Intensity Background Color: Blue",'background:Blue'},
+    HBMAG={"\27[105m","High Intensity Background Color: Magenta",'background:Magenta'},
+    HBCYN={"\27[106m","High Intensity Background Color: Cyan",'background:Cyan'},
+    HBWHT={"\27[107m","High Intensity Background Color: White",'background:White'},    
 
     --Background Colors
-    BBLK={"\27[40m","Background Color: Black"},
-    BRED={"\27[41m","Background Color: Red"},
-    BGRN={"\27[42m","Background Color: Green"},
-    BYEL={"\27[43m","Background Color: Yellow"},
-    BBLU={"\27[44m","Background Color: Blue"},
-    BMAG={"\27[45m","Background Color: Magenta"},
-    BCYN={"\27[46m","Background Color: Cyan"},
-    BWHT={"\27[47m","Background Color: White"},
-    BGRY={"\27[100m","Background Color: Gray"}, 
-    NOR ={"\27[39;49;0m","Puts every color back to normal"},
+    BBLK={"\27[40m","Background Color: Black",'background:black'},
+    BRED={"\27[41m","Background Color: Red",'background:FireBrick'},
+    BGRN={"\27[42m","Background Color: Green",'background:DarkGreen'},
+    BYEL={"\27[43m","Background Color: Yellow",'background:GoldenRod'},
+    BBLU={"\27[44m","Background Color: Blue",'background:DarkBlue'},
+    BMAG={"\27[45m","Background Color: Magenta",'background:DarkMagenta'},
+    BCYN={"\27[46m","Background Color: Cyan",'background:DarkCyan'},
+    BWHT={"\27[47m","Background Color: White",'background:GhostWhite'},
+    BGRY={"\27[100m","Background Color: Gray",'background:gray'}, 
+    NOR ={"\27[39;49;0m","Puts every color back to normal",'\0'},
 
 
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
@@ -187,9 +187,9 @@ local console_color=os.getenv("CONSOLE_COLOR")
 if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
     local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
-    if bg and fg and env.IS_WINDOWS then
-        base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
-    end
+    --if bg and fg and env.IS_WINDOWS then
+    --    base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
+    --end
 end
 
 local color=setmetatable({},{__index=function(self,k) return rawget(self,k:upper()) end})
@@ -332,13 +332,19 @@ function ansi.enable_color(name,value)
     return value
 end
 
+local color_map={}
 function ansi.onload()
     env.set_command(nil,{"clear","cls","cl"},"Clear screen ",ansi.clear_screen,false,1)
     writer=console:getOutput()
     ansi.loaded=true
     --str_completer=java.require("jline.console.completer.StringsCompleter",true)
     --arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
-    for k,v in pairs(base_color) do color[k]=isAnsiSupported and v or '' end
+    for k,v in pairs(base_color) do 
+        color[k]=isAnsiSupported and v or ''
+        if type(v)=='table' and v[1] then
+            color_map[v[1]]=v
+        end
+    end
     env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')
     env.set_command(nil,'ansi',"Show and test ansi colors, run '@@NAME' for more details",ansi.test_text,false,2)
     ansi.color,ansi.map=color,cfg
@@ -348,9 +354,20 @@ local function _strip_repl(s)
     return (ansi.cfg(s) or color[s]) and '' or "$"..s.."$"
 end
 
-local function _strip_ansi(str)
-    --if not enabled then return str end
-    return str:gsub(ansi.pattern,""):gsub(ansi.escape,""):gsub("%$(%u+)%$",_strip_repl)
+local function _strip_ansi(str,func)
+    local func_=nil
+    if type(func)=='function' then 
+        func_=function(s) return func(s,color_map[s]) end
+    end
+    return str:gsub(ansi.escape,function(m) return '\27'..m:gsub('M','m') end)
+              :gsub(ansi.pattern,func_ or '')
+              :gsub("%$(%u+)%$",function(s)
+                  local s1=ansi.cfg(s) or color[s]
+                  if s1 then
+                      return func_ and func_(s1) or ''
+                  end
+                  return "$"..s.."$"
+               end)
 end
 
 local ulen=console.ulen
@@ -378,8 +395,8 @@ function string.ulen(s,maxlen)
     return len1,len2,s1
 end
 
-function ansi.strip_ansi(str)
-    local e,s=pcall(_strip_ansi,str)
+function ansi.strip_ansi(str,func)
+    local e,s=pcall(_strip_ansi,str,func)
     return s
 end
 
