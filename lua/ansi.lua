@@ -63,8 +63,8 @@ local base_color={
     SET        =function(r,c) return "\27["..r..";"..c.."H" end, --'Set Cursor position, Usage: SET,<n rows>,<n cols>'
 --  FRSCREEN   =function(a,b) return"\27["..a..";"..b.."r" end,
 --  FR         =function(a) return "\27["..a.."r" end,
-    DELLINE    ={"\27[1K\27[1G",'Erase the whole line',1},
-    DELAFT     ={"\27[0K",'Erase from cursor to the end of line',1},
+    DELLINE    ={"\27[1K\27[1G",'Erase the whole line',nil,1},
+    DELAFT     ={"\27[0K",'Erase from cursor to the end of line',nil,1},
 
 
     --Foreground Colors
@@ -114,41 +114,41 @@ local base_color={
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
-    RESET   ={"\27[0m","Reset",0},
-    BOLD    ={"\27[1m","Turn on  Bright Or Bold",0}, 
-    UBOLD   ={"\27[2m","Turn off Bright Or Bold",0}, 
-    ITA     ={"\27[3m","Turn on  Italic Or Inverse",0}, 
-    BKP     ={'\27[?2004h',"Turn on bracketed paste",1},
-    UBKP    ={'\27[?2004l',"Turn off bracketed paste",1},
-    CLR     ={"\27C\27[3J","Clear the screen",1},
-    HOME    ={"\27[H","Send cursor to home position",1},
-    REF     ={"\27[2J;H" , "Clear screen and home cursor",1},
-    KILLBL  ={"\27[0J","Clear from cursor to end of screen",1},
-    BIGTOP  ={"\27#3","Dbl height characters, top half",1},
-    BIGBOT  ={"\27#4","Dbl height characters, bottem half",1},
-    SAVEC   ={"\27[s","Save cursor position",1},
-    REST    ={"\27[u","Restore cursor to saved position",1},
+    RESET   ={"\27[0m","Reset",nil,0},
+    BOLD    ={"\27[1m","Turn on  Bright Or Bold",nil,0}, 
+    UBOLD   ={"\27[2m","Turn off Bright Or Bold",nil,0}, 
+    ITA     ={"\27[3m","Turn on  Italic Or Inverse",nil,0}, 
+    BKP     ={'\27[?2004h',"Turn on bracketed paste",nil,1},
+    UBKP    ={'\27[?2004l',"Turn off bracketed paste",nil,1},
+    CLR     ={"\27C\27[3J","Clear the screen",nil,1},
+    HOME    ={"\27[H","Send cursor to home position",nil,1},
+    REF     ={"\27[2J;H" , "Clear screen and home cursor",nil,1},
+    KILLBL  ={"\27[0J","Clear from cursor to end of screen",nil,1},
+    BIGTOP  ={"\27#3","Dbl height characters, top half",nil,1},
+    BIGBOT  ={"\27#4","Dbl height characters, bottem half",nil,1},
+    SAVEC   ={"\27[s","Save cursor position",nil,1},
+    REST    ={"\27[u","Restore cursor to saved position",nil,1},
  -- REVINDEX={"\27M","Scroll screen in opposite direction",1},
  -- SINGW   ={"\27#5","Normal, single-width characters",1},
  -- DBL     ={"\27#6","Creates double-width characters",1},
  -- FRTOP   ={"\27[2;25r","Freeze top line",1},
  -- FRBOT   ={"\27[1;24r","Freeze bottom line",1},
  -- UNFR    ={"\27[r","Unfreeze top and bottom lines",1},
-    BLINK   ={"\27[5m","Blink on",0},
-    BLINK2  ={"\27[6m","Blink on",0},
-    UBLNK   ={"\27[25m","Blink off",0},
-    UBLNK2  ={"\27[26m","Blink off",0},
-    UDL     ={"\27[4m","Underline on",0},
-    UUDL    ={"\27[24m","Underline off",0},
-    REV     ={"\27[7m","Reverse video mode on",0},
-    UREV    ={"\27[27m","Reverse video mode off",0},
-    CONC    ={"\27[8m","Concealed(foreground becomes background)",0},
-    UCONC   ={"\27[28m","Concealed off",0},
-    CROSS   ={"\27[9m","Crossline on",0},
-    UCROSS  ={"\27[29m","Crossline off",0},
-    HIREV   ={"\27[1,7m","High intensity reverse video",0},
-    WRAP    ={"\27[?7h","Wrap lines at screen edge",1},
-    UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",1}
+    BLINK   ={"\27[5m","Blink on",nil,0},
+    BLINK2  ={"\27[6m","Blink on",nil,0},
+    UBLNK   ={"\27[25m","Blink off",nil,0},
+    UBLNK2  ={"\27[26m","Blink off",nil,0},
+    UDL     ={"\27[4m","Underline on",nil,0},
+    UUDL    ={"\27[24m","Underline off",nil,0},
+    REV     ={"\27[7m","Reverse video mode on",nil,0},
+    UREV    ={"\27[27m","Reverse video mode off",nil,0},
+    CONC    ={"\27[8m","Concealed(foreground becomes background)",nil,0},
+    UCONC   ={"\27[28m","Concealed off",nil,0},
+    CROSS   ={"\27[9m","Crossline on",nil,0},
+    UCROSS  ={"\27[29m","Crossline off",nil,0},
+    HIREV   ={"\27[1,7m","High intensity reverse video",nil,0},
+    WRAP    ={"\27[?7h","Wrap lines at screen edge",nil,1},
+    UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",nil,1}
 
     --CLIP ={"\27]52;c;%s\7"}
 }
@@ -172,6 +172,8 @@ local default_color={
     ['F']={'HBWHT','HIW'},
 }
 
+local color_map={}
+
 local var=os.getenv("ANSICOLOR")
 if var and var:lower()=="off" then
     isAnsiSupported,enabled=false,false
@@ -186,7 +188,7 @@ ansi.pattern="\27%[[%d;]*[mK]"
 local console_color=os.getenv("CONSOLE_COLOR")
 if isAnsiSupported and console_color and console_color~='NA' then
     ansi.ansi_default=console_color
-    local fg,bg=default_color[console_color:sub(2)][2],default_color[console_color:sub(1,1)][1]
+    local fg,bg=default_color[console_color:sub(2)][2] or '',default_color[console_color:sub(1,1)][1] or ''
     --if bg and fg and env.IS_WINDOWS then
     --    base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     --end
@@ -220,20 +222,35 @@ function ansi.string_color(code,...)
     return c
 end
 
-function ansi.mask(codes,msg,continue)
+function ansi.mask(codes,msg,continue,cfg_name)
     if codes==nil then return msg end
-    local str
-    for v in codes:gmatch(codes:find('[\\]?[eE]%[') and ('[\\]?[eE][^eE\\]+') or "([^; \t,]+)") do
-        local c=ansi.string_color(v:find('^[eE]%[') and '\\'..v or v)
-        if not c then
-            v=ansi.cfg(v)
-            if v then return ansi.mask(v,msg,continue) end
-        else
-            if not str then
-                str=c
-            elseif c~="" then
-                str=str:gsub("([%d;]+)","%1;"..c:match("([%d;]+)"),1)
+    local combines,str
+    if color_map[codes] and not cfg_name then
+        str=base_color[codes][1]
+    else
+        for v in codes:gmatch(codes:find('[\\]?[eE]%[') and ('[\\]?[eE][^eE\\]+') or "([^; \t,]+)") do
+            local c=ansi.string_color(v:find('^[eE]%[') and '\\'..v or v)
+            if not c then
+                local v1=ansi.cfg(v)
+                if v1 then return ansi.mask(v1,msg,continue,v) end
+            else
+                if not str then
+                    str,combines=c,{color_map[c]}
+                elseif c~="" then
+                    combines[#combines+1]=color_map[c]
+                    str=str:gsub("([%d;]+)","%1;"..c:match("([%d;]+)"),1)
+                end
             end
+        end
+
+        if combines and #combines>1 then
+            local desc,css={},{}
+            for i,color in ipairs(combines) do
+                desc[i],css[i]=color[2],color[3]
+            end
+            local color={str,table.concat(desc,';'),table.concat(css,';')}
+            color[0]=cfg_name or codes
+            color_map[color[0]],color_map[str]=color,color
         end
     end
 
@@ -307,7 +324,7 @@ function ansi.get_color(name,...)
     if not name or not enabled then return "" end
     name=name:upper()
     local c=ansi.string_color(name,...)
-    return c and c or ansi.cfg(name) and ansi.mask(ansi.cfg(name),"",true) or ""
+    return c and c or ansi.cfg(name) and ansi.mask(ansi.cfg(name),"",true,name) or ""
 end
 
 function ansi.enable_color(name,value)
@@ -332,7 +349,6 @@ function ansi.enable_color(name,value)
     return value
 end
 
-local color_map={}
 function ansi.onload()
     env.set_command(nil,{"clear","cls","cl"},"Clear screen ",ansi.clear_screen,false,1)
     writer=console:getOutput()
@@ -342,6 +358,7 @@ function ansi.onload()
     for k,v in pairs(base_color) do 
         color[k]=isAnsiSupported and v or ''
         if type(v)=='table' and v[1] then
+            v[0]=k
             color_map[v[1]]=v
         end
     end
@@ -534,12 +551,12 @@ function ansi.test_text(str)
                 if type(v)=="table" then
                     local text=string.format('%-'..max_len..'s',v[2])
                     is_fg=text:lower():match("foreground")
-                    local ctl=v[3] or 0
+                    local ctl=v[4] or 0
                     row:add{k,
-                        v[3] and " Control" or is_fg and 'FG color' or 'BG color',
+                        ctl>0 and " Control" or is_fg and 'FG color' or 'BG color',
                         text,
-                        ctl>0 and "N/A" or fmt:format(is_fg and v[1]..wb or wf..v[1],text),
-                        ctl>0 and "N/A" or fmt:format(is_fg and v[1]..bb or bf..v[1],text)}
+                        ctl>0 and "N/A" or fmt:format(is_fg and (v[1]..wb) or (wf..v[1]),text),
+                        ctl>0 and "N/A" or fmt:format(is_fg and (v[1]..bb) or (bf..v[1]),text)}
                 end
             end
             row:sort("-2,3,1",true)

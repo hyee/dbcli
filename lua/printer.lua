@@ -296,7 +296,7 @@ function printer.after_command()
 end
 
 local html_map={
-    ['\n']='<br/>',
+    ['\n']='<br/>\n',
     ['\r']='',
     ['\b']='',
     ['\f']='',
@@ -327,13 +327,15 @@ local function to_html(str)
         if s2 then
             local font=''
             if s2=='\0' then
-                for i=1,font_count do font=font..'</font>' end
+                font=font..string.rep('</font>',font_count)
+                font_count=0
             else
                 font='<font style="'..s2..'">'
                 font_count=font_count+1
             end
             return font
         else
+            --printer.rawprint((s1:gsub('\27','\\E')))
             return ''
         end
     end)
@@ -403,15 +405,16 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             end
         elseif (not printer.tee_colinfo or not total_rows) and type(str)=="string" then
             str=str:rtrim()
-            local c=0
-            local strip=strip_ansi(str)
-            if strip:find('^'..space) then
-                str,c=str:gsub(space,'',1)
+            local c,strip=0
+            for line in str:gsplit('[\n\r]+') do
+                line,c=line:gsub('^'..space,'')
+                strip=c==0 and strip_ansi(line)
+                if strip and strip:find('^'..space) then
+                    line,c=line:gsub(space,'',1)
+                end
+                hdl:write('<p style="margin:0;'..font..'">'..to_html(line)..'</p>\n')
             end
-            if c==0 then
-                str=str:gsub('^'..space,''):gsub('\n'..space,'\n')
-            end
-            hdl:write('<p style="margin:0;'..font..'">'..to_html(str)..'</p>\n')
+            
         end
     elseif type(row)=="table" and printer.tee_type=="csv" then
         for idx,cell in ipairs(row) do

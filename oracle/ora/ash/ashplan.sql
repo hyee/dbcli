@@ -8,8 +8,8 @@ Options:
     -all    : Use hierachy clause to grab the possible missing PX slave records, mainly use for parallel execution
     -pdb    : default to query dba_hist_* views in PDB, when specified this option then use awr_pdb_* views instead
     Format  : defaults not to display the outlines
-        *             s : -outline -rows -parallel
-        * fmt"<format>" : user-defined formats
+        *             -s : -outline -rows -parallel
+        * -fmt"<format>" : user-defined formats
 
 Outputs:
     Plan Summary :  The summary of all execution plans, grouping by <Plan Hash Value>+<SQL id>+<Plan Hash Full>

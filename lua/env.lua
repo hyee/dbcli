@@ -1186,7 +1186,7 @@ function env.onload(...)
         env.ansi.define_color("Promptcolor","YEL","ansi.core","Define prompt's color, type 'ansi' for more available options")
         env.ansi.define_color("ERRCOLOR","HIR","ansi.core","Define color of the error messages, type 'ansi' for more available options")
         env.ansi.define_color("PromptSubcolor","E[38;5;213m","ansi.core","Define the prompt color for subsystem, type 'ansi' for more available options")
-        env.ansi.define_color("commandcolor",env.IS_WINDOWS and "HIC" or "CYN","ansi.core","Define command line's color, type 'ansi' for more available options")
+        env.ansi.define_color("commandcolor","CYN","ansi.core","Define command line's color, type 'ansi' for more available options")
         env.ansi.define_color("UsageColor",'YEL',"ansi.core","Define color of the help usage, type 'ansi' for more available options")
     end
     if env.event then

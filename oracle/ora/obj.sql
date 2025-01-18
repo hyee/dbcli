@@ -22,7 +22,7 @@ ORCL> ora obj 727555
         @check_access_awr: {
           dba_hist_seg_stat_obj={
             UNION ALL
-            SELECT obj#,dataobj#,owner,object_name,object_type,subobject_name,null,null,null,null,null,null,null,2
+            SELECT obj#,dataobj#,NULL,owner,object_name,object_type,subobject_name,null,null,null,null,2
             FROM   &check_access_pdb
             WHERE  dbid=:dbid
             AND    regexp_substr(:V1,'^\d+$')+0 in(obj#,dataobj#)
@@ -46,14 +46,44 @@ BEGIN
         OPEN rec FOR
             SELECT * FROM (
                 SELECT /*+no_expand*/ 
-                       object_id,DATA_OBJECT_ID,owner, object_name,object_type,
-                       case when :object_type IN('PACKAGE','TYPE') then :object_subname else subobject_name end subobject_name,
-                       CREATED,LAST_DDL_TIME,TIMESTAMP,STATUS,TEMPORARY,GENERATED,SECONDARY,1 pos
+                       object_id OBJ#,DATA_OBJECT_ID DATA_OBJ#,NAMESPACE NS#,owner, object_name obj_name,object_type obj_type,
+                       case when :object_type IN('PACKAGE','TYPE') then :object_subname else subobject_name end subobj_name,
+                       TRIM(',' FROM 
+                            CASE WHEN STATUS!='VALID' THEN STATUS||',' END ||
+                            CASE WHEN TEMPORARY='Y' THEN 'TEMPORARY,' END ||
+                            CASE WHEN GENERATED='Y' THEN 'GENERATED,' END ||
+                            CASE WHEN SECONDARY='Y' THEN 'SECONDARY,' END ||
+                        $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                             CASE WHEN EDITION_NAME IS NOT NULL THEN 'EDITION='||EDITION_NAME||',' END||
+                        $END
+                        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                            CASE WHEN SHARING!='NONE' THEN SHARING||',' END ||
+                        $END
+                        $IF DBMS_DB_VERSION.VERSION>12 OR (DBMS_DB_VERSION.VERSION>11 AND DBMS_DB_VERSION.RELEASE>1) $THEN
+                            CASE WHEN APPLICATION='Y' THEN 'APP-COMMON,' END ||
+                            CASE WHEN nullif(DEFAULT_COLLATION,'USING_NLS_COMP') IS NOT NULL THEN 'COLLATION='||DEFAULT_COLLATION||',' END ||
+                            CASE WHEN SHARDED='Y' THEN 'SHARD'||
+                                CASE
+                                    $IF DBMS_DB_VERSION.VERSION>22 $THEN 
+                                    WHEN SYNCHRONOUS_DUPLICATED='Y' THEN '-SYNC-DUPL,'
+                                    $END
+                                    WHEN DUPLICATED='Y' THEN '-DUPL,'
+                                ELSE
+                                    'ED,'
+                                END
+                            END ||
+                        $END
+                        $IF DBMS_DB_VERSION.VERSION>22 $THEN
+                            CASE WHEN IMPORTED_OBJECT='Y' THEN 'IMPORTED,' END ||
+                        $END
+                            ''
+                        ) ATTRS,
+                       CREATED,LAST_DDL_TIME,TIMESTAMP,1 pos
                 FROM   &check_access_obj 
                 WHERE  owner=own
                 AND    object_name=nam
                 AND    (:object_type IN('PACKAGE','TYPE')  OR nvl(subobject_name,' ') like :object_subname||'%') &check_access_awr
-                ORDER  BY pos,OBJECT_ID)
+                ORDER  BY pos,OBJ#)
             WHERE ROWNUM<=50;
     ELSE
         dbms_output.put_line('No results from dba_objects, searching from recyclebin...');
