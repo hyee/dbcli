@@ -232,7 +232,7 @@ function lexer:read(data,file,seq)
         if file then 
             stack[#stack+1]=sep
             file=file:gsub('[$@/\\%*%?<>]','_'):lower()
-            print("Result saved to",env.write_cache(root.prefix..'_'..file..'.txt',table.concat(stack,'\n'):strip_ansi()))
+            print("Result saved as",env.write_cache(root.prefix..'_'..file..'.txt',table.concat(stack,'\n'):strip_ansi()))
         end
         if feed then print(lineno,'lines matched.') end
     end

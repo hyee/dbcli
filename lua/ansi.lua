@@ -114,10 +114,10 @@ local base_color={
     --Additional ansi Esc codes added to ansi.h by Gothic  april 23,1993
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
-    RESET   ={"\27[0m","Reset",nil,0},
-    BOLD    ={"\27[1m","Turn on  Bright Or Bold",nil,0}, 
-    UBOLD   ={"\27[2m","Turn off Bright Or Bold",nil,0}, 
-    ITA     ={"\27[3m","Turn on  Italic Or Inverse",nil,0}, 
+    RESET   ={"\27[0m","Reset",'\0',1},
+    BOLD    ={"\27[1m","Turn on  Bright Or Bold",'font-weight:bold'}, 
+    UBOLD   ={"\27[2m","Turn off Bright Or Bold",'font-weight:normal'}, 
+    ITA     ={"\27[3m","Turn on  Italic Or Inverse",'font-style:italic'}, 
     BKP     ={'\27[?2004h',"Turn on bracketed paste",nil,1},
     UBKP    ={'\27[?2004l',"Turn off bracketed paste",nil,1},
     CLR     ={"\27C\27[3J","Clear the screen",nil,1},
@@ -138,14 +138,14 @@ local base_color={
     BLINK2  ={"\27[6m","Blink on",nil,0},
     UBLNK   ={"\27[25m","Blink off",nil,0},
     UBLNK2  ={"\27[26m","Blink off",nil,0},
-    UDL     ={"\27[4m","Underline on",nil,0},
-    UUDL    ={"\27[24m","Underline off",nil,0},
+    UDL     ={"\27[4m","Underline on",'text-decoration: underline',0},
+    UUDL    ={"\27[24m","Underline off",'text-decoration: none',0},
     REV     ={"\27[7m","Reverse video mode on",nil,0},
     UREV    ={"\27[27m","Reverse video mode off",nil,0},
     CONC    ={"\27[8m","Concealed(foreground becomes background)",nil,0},
     UCONC   ={"\27[28m","Concealed off",nil,0},
-    CROSS   ={"\27[9m","Crossline on",nil,0},
-    UCROSS  ={"\27[29m","Crossline off",nil,0},
+    CROSS   ={"\27[9m","Crossline on",'text-decoration: line-through',0},
+    UCROSS  ={"\27[29m","Crossline off",'text-decoration: none',0},
     HIREV   ={"\27[1,7m","High intensity reverse video",nil,0},
     WRAP    ={"\27[?7h","Wrap lines at screen edge",nil,1},
     UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",nil,1}
@@ -243,7 +243,7 @@ function ansi.mask(codes,msg,continue,cfg_name)
             end
         end
 
-        if combines and #combines>1 then
+        if combines and #combines>0 then
             local desc,css={},{}
             for i,color in ipairs(combines) do
                 desc[i],css[i]=color[2],color[3]
@@ -359,7 +359,7 @@ function ansi.onload()
         color[k]=isAnsiSupported and v or ''
         if type(v)=='table' and v[1] then
             v[0]=k
-            color_map[v[1]]=v
+            color_map[v[1]],color_map[k]=v,v
         end
     end
     env.set.init("ansicolor",isAnsiSupported and 'on' or 'off',ansi.enable_color,"core","Enable color masking inside the intepreter.",'on,off')

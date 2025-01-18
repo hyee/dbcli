@@ -1400,9 +1400,9 @@ function oradebug.profile(sid,samples,interval,event)
     rows:print()
     out=table.concat(env.printer.get_last_output(),'\n')
     if log then print("Short stacks are written to", log) end
-    print("Analyze result is saved to",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
-    print("Collapsed profile result is saved to",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
-    print("FlameGraph is saved to",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{titletext=title,funcdesc=cache,countname=is_ms and 'ms' or 'count'})))
+    print("Analyze result is saved as",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
+    print("Collapsed profile result is saved as",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
+    print("FlameGraph is saved as",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{titletext=title,funcdesc=cache,countname=is_ms and 'ms' or 'count'})))
     print(title)
 end
 

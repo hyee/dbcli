@@ -174,7 +174,7 @@ function printer.spool(file,option)
         if printer.hdl then 
             pcall(printer.hdl.close,printer.hdl)
             if env.set and env.set.get("feed")=="on" then
-                printer.rawprint(env.space..'Output is written to "'..printer.file..'".')
+                printer.rawprint(env.space..'Output is saved as "'..printer.file..'".')
             end
         end
         printer.hdl=nil
@@ -218,6 +218,9 @@ end
 local str_buff=buffer.new()
 function printer.tee(file,stmt)
     env.checkhelp(file)
+    if printer.tee_hdl then 
+        return env.warn("Another Tee file handler exists, ignored.")
+    end
     local mode='w'
     if not stmt then 
         file,stmt='',file 
@@ -258,7 +261,7 @@ function printer.tee_after()
     if not printer.tee_hdl then return end
     local res,err=pcall(printer.tee_hdl.close,printer.tee_hdl)
     if not res then print(err) end
-    if printer.tee_file~='>CLIP' then printer.rawprint(env.space.."Output is written to "..printer.tee_file) end
+    if printer.tee_file~='>CLIP' then printer.rawprint(env.space.."Output is saved as "..printer.tee_file) end
     printer.tee_file,printer.tee_hdl,printer.tee_colinfo=nil,nil
 end
 
@@ -277,7 +280,7 @@ function printer.before_command(command)
 end
 
 function printer.after_command()
-    if #env.RUNNING_THREADS>1  then return end
+    if not env.is_main_thread() then return end
     if printer.grep_text then 
         printer.grep_after()
     end
@@ -316,18 +319,22 @@ local csv_map={
     ['\f']='',
     ['\0']=''
 }
+
+local headcolor='background:#0066CC;color:white'
 local function to_html(str)
     local font_count=0
     str=str:gsub('.',function(s) return html_map[s] or s end)
-    if str:find('  ') then
-        str=str:gsub('( +)',function(s) return ('&nbsp;'):rep(#s) end)
-    end
-    return strip_ansi(str,function(s1,s2)
+    str=str:gsub('  +',function(s,e) return ('&nbsp;'):rep(#s) end)
+    return (strip_ansi(str,function(s1,s2)
+        local name=type(s2)=='table' and s2[0] or nil
         s2=type(s2)=='table' and s2[3] or nil
-        if s2 then
+        if name=='HEADCOLOR' then
+            font_count=font_count+1
+            return '<font style="'..headcolor..'">'
+        elseif s2 then
             local font=''
             if s2=='\0' then
-                font=font..string.rep('</font>',font_count)
+                font=font..('</font>'):rep(font_count)
                 font_count=0
             else
                 font='<font style="'..s2..'">'
@@ -338,7 +345,7 @@ local function to_html(str)
             --printer.rawprint((s1:gsub('\27','\\E')))
             return ''
         end
-    end)
+    end):gsub('> ','>&nbsp;'):gsub(' <','&nbsp;<'));
 end
 
 local function to_csv(str)
@@ -354,8 +361,8 @@ local function to_csv(str)
     return quote..str..quote
 end
 
-local font='font-size:8pt;font-family:Consolas,DejaVu Sans Mono,Space Mono,Courier New,Courier'
-function printer.tee_to_file(row,total_rows, format_func, format_str,include_head)
+local font='font-size:8pt;font-family:Fira Code;Consolas,Space Mono,Courier New,Courier'
+function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
     local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
     local space=env.space
     more_text[#more_text+1]=space..str:rtrim()
@@ -383,13 +390,14 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
                 end
                 hdl:write("<table style='border:1px solid #0066CC;border-collapse:seperate;border-spacing:2px 0;"..font.."'>\n")
                 hdl:write("<tr style='height:3px'/>")
-                printer.tee_colinfo=row.colinfo
+                printer.tee_colinfo=row.colinfo or {}
                 td='th'
             end
-            hdl:write("  <tr style='white-space:nowrap;background:"..(row[0]==0 and '#0066CC' or math.fmod(row[0],2)==1 and 'white' or '#FFFFCC')..";color:"..(row[0]==0 and 'white' or 'black').."'>\n")
+            hdl:write("  <tr style='white-space:nowrap;"..(row[0]==0 and headcolor or ('background:'..(math.fmod(row[0],2)==1 and 'white' or '#FFFFCC'))).."'>\n")
+            local col=printer.tee_colinfo and printer.tee_colinfo[idx]
             for idx,cell in ipairs(row) do
                 hdl:write("    <"..td
-                             ..(printer.tee_colinfo and printer.tee_colinfo[idx].is_number==1 and ' align="right"' or '')
+                             ..(col and col.is_number==1 and ' align="right"' or '')
                              ..">")
                 if type(cell)=="string" then
                     --cell=strip_ansi(cell)
@@ -400,22 +408,21 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
                 hdl:write("</"..td..">\n")
             end
             hdl:write("  </tr>\n")
-            if row[0]==total_rows-1 then 
-                hdl:write('</table>\n<br/>\n')
+            if rowidx[1]==rowidx[2] then 
+                hdl:write('</table>\n')
                 printer.tee_colinfo=nil
             end
-        elseif (not printer.tee_colinfo or not total_rows) and type(str)=="string" then
-            str=str:rtrim()
+        elseif not printer.tee_colinfo and type(str)=="string" then
             local c,strip=0
-            for line in str:gsplit('[\n\r]+') do
+            for line in str:gsplit('\r?\n\r?') do
                 line,c=line:gsub('^'..space,'')
                 strip=c==0 and strip_ansi(line)
                 if strip and strip:find('^'..space) then
                     line,c=line:gsub(space,'',1)
                 end
-                hdl:write('<p style="margin:0;white-space:nowrap;'..font..'">'..to_html(line)..'</p>\n')
+                line=to_html(line)
+                hdl:write('<p style="margin:0;white-space:nowrap;'..font..'">'..(line=='' and '&nbsp;' or line)..'</p>\n')
             end
-            
         end
     elseif type(row)=="table" and printer.tee_type=="csv" then
         for idx,cell in ipairs(row) do
@@ -429,11 +436,11 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
             end
         end
         hdl:write("\n")
-        if row[0]==total_rows-1 then
+        if rowidx[1]==rowidx[2] then
             hdl:write("\n")
         end
     elseif type(str)=="string" and printer.tee_type~="csv" then
-        pcall(hdl.write,hdl,(total_rows and space or '')..(printer.tee_type=='ans' and str:convert_ansi() or strip_ansi(str)):rtrim().."\n")
+        pcall(hdl.write,hdl,(rowidx and space or '')..(printer.tee_type=='ans' and str:convert_ansi() or strip_ansi(str)):rtrim().."\n")
     end
 end
 
@@ -458,7 +465,7 @@ function printer.edit_buffer(file,default_file,text)
     if text then
         f=env.write_cache(file or default_file,text)
         if default_file and file and file~=default_file then
-            print('Result written to '..file)
+            print('Result saved as '..file)
         end
     else
         f=env.join_path(env._CACHE_PATH,file or default_file)

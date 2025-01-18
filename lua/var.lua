@@ -345,7 +345,7 @@ function var.save(name,file)
 
     if env.ansi then obj:strip_ansi() end
     file=env.write_cache(file,obj);
-    print("Data saved to "..file);
+    print("Data saved as "..file);
 end
 
 local allow_cmds={}

@@ -1032,12 +1032,12 @@ end
 
 function grid.format_output(output,rows_limit,include_head)
     if type(output)=="table" then
-        rows_limit=rows_limit or #output
+        rows_limit=rows_limit and math.min(rows_limit,#output) or #output
         for i=1,rows_limit do
             local v=output[i]
             if type(v)=='table' then
                 local s=v.format_func(v.fmt,table.unpack(v))
-                env.event.callback("ON_PRINT_GRID_ROW",v,output.len,v.format_func,v.fmt,include_head)
+                env.event.callback("ON_PRINT_GRID_ROW",v,{i,rows_limit},v.format_func,v.fmt,include_head)
                 output[i]=s
             end
         end
@@ -1065,7 +1065,7 @@ function grid.print(rows, include_head, col_del, row_del, rows_limit, prefix, su
     if test then env.write_cache("grid_output.txt", str) end
     if type(output)=="table" then
         for k,v in ipairs(output) do
-            env.event.callback("ON_PRINT_GRID_ROW",v,output.len,v.format_func,v.fmt,include_head)
+            env.event.callback("ON_PRINT_GRID_ROW",v,{k,#output},v.format_func,v.fmt,include_head)
         end
     end
     env.printer.print_grid(str)
@@ -1315,11 +1315,11 @@ function grid.merge(tabs, is_print, prefix, suffix)
         end
         for rowidx, row in ipairs(result) do
             tab[#tab + 1] = space..grid.cut(row, linesize):convert_ansi()
-            env.event.callback("ON_PRINT_GRID_ROW",row,#result)
+            env.event.callback("ON_PRINT_GRID_ROW",row,{rowidx,#result})
             if #tab >= height - 1 then
                 if rowidx < #result then 
                     tab[#tab + 1] = space..grid.cut(result[#result], linesize)
-                    env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],#result)
+                    env.event.callback("ON_PRINT_GRID_ROW",tab[#tab],{rowidx,#result})
                 end
                 break
             end
