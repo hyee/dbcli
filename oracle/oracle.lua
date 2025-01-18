@@ -239,7 +239,7 @@ function oracle:connect(conn_str)
     self.temp_tns_admin,self.conn_str=tns_admin or args['oracle.net.tns_admin'],sqlplustr:gsub('%?.*','')
 
     local props={host=self.properties['AUTH_SC_SERVER_HOST'],
-                 instance_name=self.properties['AUTH_INSTANCENAME'],
+                 instance_name=self.properties['AUTH_INSTANCENAME'] or '#VARCHAR',
                  instance='#NUMBER',
                  sid='#NUMBER',
                  dbid="#NUMBER",

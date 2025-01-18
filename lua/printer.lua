@@ -381,7 +381,8 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
                 if printer.tee_colinfo then
                     hdl:write('</table>\n')
                 end
-                hdl:write("<table style='border:1px solid #0066CC;border-collapse:seperate;"..font.."'>\n")
+                hdl:write("<table style='border:1px solid #0066CC;border-collapse:seperate;border-spacing:2px 0;"..font.."'>\n")
+                hdl:write("<tr style='height:3px'/>")
                 printer.tee_colinfo=row.colinfo
                 td='th'
             end
@@ -412,7 +413,7 @@ function printer.tee_to_file(row,total_rows, format_func, format_str,include_hea
                 if strip and strip:find('^'..space) then
                     line,c=line:gsub(space,'',1)
                 end
-                hdl:write('<p style="margin:0;'..font..'">'..to_html(line)..'</p>\n')
+                hdl:write('<p style="margin:0;white-space:nowrap;'..font..'">'..to_html(line)..'</p>\n')
             end
             
         end

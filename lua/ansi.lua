@@ -226,7 +226,7 @@ function ansi.mask(codes,msg,continue,cfg_name)
     if codes==nil then return msg end
     local combines,str
     if color_map[codes] and not cfg_name then
-        str=base_color[codes][1]
+        str=color_map[codes][1]
     else
         for v in codes:gmatch(codes:find('[\\]?[eE]%[') and ('[\\]?[eE][^eE\\]+') or "([^; \t,]+)") do
             local c=ansi.string_color(v:find('^[eE]%[') and '\\'..v or v)
