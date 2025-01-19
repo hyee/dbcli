@@ -661,7 +661,7 @@ function var.define_column(col,...)
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
                     end
-                    return res:trim(),1
+                    return res:trim(),true
                 end
                 local res,msg=pcall(func,999.99)
                 env.checkerr(res,"Unsupported format %s on field %s",arg,col)
@@ -703,7 +703,7 @@ function var.define_column(col,...)
                 obj.format_dir='%'..dir..siz..'s'
                 formats[#formats+1]=function(v)
                     if not v or v=='' then return v,1 end
-                    return obj.format_dir:format(tostring(v)),1
+                    return obj.format_dir:format(tostring(v)),true
                 end
             end
             i=i+1
@@ -725,7 +725,6 @@ function var.define_column(col,...)
     end
     return valid
 end
-
 
 function var.trigger_column(field)
     local col,value,rownum,grid,rowind,row=table.unpack(field)

@@ -383,21 +383,17 @@ function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
 
     if printer.tee_type=="html" then
         if type(row)=="table" then
-            local td='td'
-            if(row[0]==0) then
-                if printer.tee_colinfo then
-                    hdl:write('</table>\n')
-                end
+            local td=row[0]==0 and 'th' or 'td'
+            if not printer.tee_colinfo then
                 hdl:write("<table style='border:1px solid #0066CC;border-collapse:seperate;border-spacing:2px 0;"..font.."'>\n")
                 hdl:write("<tr style='height:3px'/>")
                 printer.tee_colinfo=row.colinfo or {}
-                td='th'
             end
             hdl:write("  <tr style='white-space:nowrap;"..(row[0]==0 and headcolor or ('background:'..(math.fmod(row[0],2)==1 and 'white' or '#FFFFCC'))).."'>\n")
-            local col=printer.tee_colinfo and printer.tee_colinfo[idx]
             for idx,cell in ipairs(row) do
+                local col=printer.tee_colinfo and printer.tee_colinfo[idx] or {}
                 hdl:write("    <"..td
-                             ..(col and col.is_number==1 and ' align="right"' or '')
+                             ..(col.is_number and ' align="right"' or '')
                              ..">")
                 if type(cell)=="string" then
                     --cell=strip_ansi(cell)

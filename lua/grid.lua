@@ -525,7 +525,7 @@ function grid:add(row)
 
         if not self.colinfo then self.colinfo={} end
         if not self.colinfo[k] then
-            local info={column_name = #result > 0 and result[1]._org[k] or tostring(v)}
+            local info={column_name = #result > 0 and result[1]._org[k] or tostring(v),numbers=0}
             self.colinfo[k]=info
             self.colinfo[info.column_name:upper()]=k
         elseif self.colinfo[k].is_number and type(v)=='string' then
@@ -533,6 +533,7 @@ function grid:add(row)
         end
 
         is_number, v1 = grid.format_column(self.include_head, self.colinfo[k], v, #result,self,headind,rs)
+
         if tostring(v) ~= tostring(v1) then v = v1 end
         if st or ed then v=(st or '')..v..(ed or '') end
         if colsize[k][3] and type(v)=='string' and colsize[k][3]:find(v,1,true) then
@@ -545,10 +546,13 @@ function grid:add(row)
                 v=''
             end
             colsize[k][3],colsize[k][4]=nil
+            self.colinfo[k].numbers=(self.colinfo[k].numbers or 0)+1
         elseif type(v) ~= "string" or v == "" or (v==null_value) then
             v=tostring(v)
             csize = strip_len(v)
+            self.colinfo[k].nulls=(self.colinfo[k].nulls or 0)+1
         else
+            if headind>0 then self.colinfo[k].chars=(self.colinfo[k].chars or 0)+1 end
             local grp = empty
             v = v:convert_ansi()
             if headind == 0 then
@@ -749,7 +753,7 @@ end
 
 function grid:wellform(col_del, row_del)
     self.break_groups=nil
-    local result, colsize = self.data, self.colsize
+    local result, colinfo, colsize = self.data,self.colinfo, self.colsize
     if #result==0 or (grid.autohide== 'on' or grid.autohide== 'all') and result[#result][0]==0 then return {},{}  end
     local rownum = grid.row_num
     local siz, rows, output = #result, table.new(#result + 1, 0), table.new(#result + 1, #result[1])
@@ -792,6 +796,7 @@ function grid:wellform(col_del, row_del)
                 table.insert(row, idx + 1, n)
             end
             table.insert(colsize, idx + 1, {7, 1})
+            table.insert(colinfo, idx + 1, {column_name=name,is_number=true})
         end
         self.ratio_cols = nil
     end
@@ -809,6 +814,10 @@ function grid:wellform(col_del, row_del)
 
     row_dels = calc_col_sep(fmt,row_del)
     for k, v in ipairs(colsize) do
+        if v[2]==1 or (not colinfo[k].is_number and (colinfo[k].chars or 0)==0 and (colinfo[k].numbers or 0)>0) then
+            colinfo[k].is_number=true
+            v[2]=1
+        end
         if max_siz==0 and k>1 then v[3]=nil end
         siz,seps[k]=v[1],v[3]
         if seps[k] then
@@ -983,8 +992,9 @@ function grid:wellform(col_del, row_del)
         table.insert(rows, 1, line)
         table.insert(output,1, line)
     end
-    self = nil
     output.len=len
+    output.colinfo,(output[1] or {}).colinfo=colinfo,colinfo
+
     return rows,output
 end
 

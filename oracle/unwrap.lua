@@ -191,7 +191,7 @@ local function load_sql_text(sql_fulltext,pr,title,sql_id)
             sql_text=table.concat(sql_text,'\n',1,math.min(33,ln))
         end
         local text,data=grid.tostring({{sql_text}},false,'','')
-        pr(text..'\n',sql_fulltext)
+        pr(text..'\n',sql_fulltext,true)
     end
 end
 
@@ -912,7 +912,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     end
 
     local print_grid=env.printer.print_grid
-    local function pr(msg,shadow)
+    local function pr(msg,shadow,force)
         --store rowset instead of screen output to avoid line chopping
         if type(shadow)=='table' then
             shadow=grid.format_output(shadow)
@@ -920,7 +920,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
         text[#text+1]=type(shadow)=='string' and shadow or msg
         if not seq then
-            if type(shadow)=='string' then
+            if type(shadow)=='string' and not force then
                 print_grid(msg)
             else
                 print(msg)
@@ -1397,7 +1397,6 @@ function unwrap.analyze_sqlmon(text,file,seq)
             end
             add_aas(idx,v[1])
         end
-        
 
         local function add_sqlstat(row,stat,max_stats)
             local stats={}
@@ -2674,7 +2673,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
 
     text,file={},file:gsub('%.[^\\/%.]+$','')..'_sqld'..(seq and ('_'..seq) or '')
     local print_grid=env.printer.print_grid
-    local function pr(msg,shadow)
+    local function pr(msg,shadow,force)
         --store rowset instead of screen output to avoid line chopping
         if type(shadow)=='table' then
             shadow=grid.format_output(shadow)
@@ -2682,7 +2681,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
 
         text[#text+1]=type(shadow)=='string' and shadow or msg
         if not seq then
-            if type(shadow)=='string' then
+            if type(shadow)=='string' and not force then
                 print_grid(msg)
             else
                 print(msg)
