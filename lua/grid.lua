@@ -412,7 +412,7 @@ function grid.format_column(include_head, colinfo, value, rownum,instance,rowind
     
     if rownum > 0 and (type(value) == "number" or include_head and colinfo.is_number) then
         if value == nil then return true, '' end
-        local v1, v2 = tonumber(value)
+        local v1, v2 = tonumber(type(value)=='string' and (value:gsub(',','')) or value)
         local is_same=type(value)=='number' or tostring(v1)==value
         if not v1 then return true,value end
         local pre, scal = math.modf(v1)

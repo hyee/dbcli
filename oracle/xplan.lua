@@ -101,36 +101,43 @@ function xplan.explain(fmt,sql)
                     local msg="Explain SQL Id: "..sqldiag..'    Source SQL Id: '..sql_id
                     print(msg..'\n'..string.rep('=',#msg))
                     db:query([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
-                        SELECT /*+ordered use_hash(a b)*/DISTINCT
+                        SELECT /*+ordered outline_leaf use_hash(a b)*/DISTINCT
                                a.child#,
                                min(a.repo#) over(partition by a.type,a.state,a.feature,a.reason) repo#,
                                count(1) over(partition by a.type,a.state,a.feature,a.reason) seens,
                                a.type,
                                a.state,
-                               a.feature,
                                a.reason,
                                b.description feature_description,
-                               C,E,S
+                               nvl(replace(replace(b.path,' ALL COMPILATION '),' ',' > '),a.feature) feature
                         FROM (
-                            SELECT /*+no_merge ordered use_hash(a b)*/
+                            SELECT /*+outline_leaf ordered use_hash(a b)*/
                                    max(a.child_number) over() child#,
                                    a.type,
                                    a.sql_diag_repo_id repo#,
                                    a.feature,
                                    a.state,
                                    b.reason,
-                                   b.compilation_origin C,
-                                   b.execution_origin E,
-                                   b.slave_origin S,
+                                   b.compilation_origin compilation,
+                                   b.execution_origin execution,
+                                   b.slave_origin slave,
                                    a.child_number CN
                             FROM   v$sql_diag_repository a, v$sql_diag_repository_reason b
                             WHERE  a.sql_id = b.sql_id(+)
                             AND    a.child_number = b.child_number(+)
                             AND    a.sql_diag_repo_id = b.sql_diag_repo_id(+)
-                            AND    a.sql_id = :sql_id) a,v$sql_feature b
+                            AND    a.sql_id = :sql_id) a,
+                           (SELECT f.sql_feature, f.description, 
+                                   row_number() over(partition by f.sql_feature order by fh.parent_id) seq_,
+                                   REPLACE(SYS_CONNECT_BY_PATH(f.sql_feature, ' '),'QKSFM_') path
+                            FROM   v$sql_feature f, v$sql_feature_hierarchy fh
+                            WHERE  f.sql_feature = fh.sql_feature
+                            CONNECT BY fh.parent_id = PRIOR f.sql_Feature
+                            START  WITH fh.sql_feature = 'QKSFM_ALL') b
                         WHERE cn=child#
                         AND   a.feature=b.sql_feature(+)
-                        ORDER BY feature,repo#]],{sql_id=sqldiag})
+                        AND   b.seq_(+)=1
+                        ORDER BY repo#,feature]],{sql_id=sqldiag})
                 else
                     if not is_tee then env.printer.tee_after() end
                 end
@@ -257,7 +264,7 @@ end
 
 function xplan.onload()
     local help=[[
-    Explain SQL execution plan. Usage: @@NAME {[-<format>|-10053|-prof|diag] "<SQL Text>"|<SQL ID>}
+    Explain SQL execution plan. Usage: @@NAME {[-<format>|-10053|-prof|-diag] "<SQL Text>"|<SQL ID>}
     Options:
         -<format>: Refer to the 'format' field in the document of 'dbms_xplan'.
                        Default is ']]..default_fmt..[['

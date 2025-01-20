@@ -15,6 +15,7 @@ local more_text={lines=0}
 local termout='on'
 local getWidth = console.getBufferWidth
 local terminal=terminal
+local in_tab
 
 function printer.set_termout(name,value)
     termout=value
@@ -254,6 +255,7 @@ function printer.tee(file,stmt)
     printer.tee_type=file:lower():match("%.([^%.]+)$")
     if printer.tee_type=='htm' then printer.tee_type='html' end
     env.checkerr(printer.tee_hdl,"Failed to open the target file "..file)
+    printer.tee_colinfo,in_tab=nil,nil
     if stmt~='' then env.eval_line(stmt,true,true) end
 end
 
@@ -262,7 +264,7 @@ function printer.tee_after()
     local res,err=pcall(printer.tee_hdl.close,printer.tee_hdl)
     if not res then print(err) end
     if printer.tee_file~='>CLIP' then printer.rawprint(env.space.."Output is saved as "..printer.tee_file) end
-    printer.tee_file,printer.tee_hdl,printer.tee_colinfo=nil,nil
+    printer.tee_file,printer.tee_hdl,printer.tee_colinfo,in_tab=nil,nil
 end
 
 function printer.before_command(command)
@@ -310,6 +312,11 @@ local html_map={
     ['&']='&amp;',
     ['"']='&quot;'
 }
+local html_tabs={
+    ['-']='&#9472;',
+    ['|']='&#9474;',
+    [':']='&#9482;',
+}
 
 local csv_map={
     ['"']='""',
@@ -321,9 +328,32 @@ local csv_map={
 }
 
 local headcolor='background:#0066CC;color:white'
-local function to_html(str)
+local function to_html(str,curr,total)
     local font_count=0
     str=str:gsub('.',function(s) return html_map[s] or s end)
+    --handles +-| characters
+    
+    local function handle_tabs()
+        str=str:gsub('^(%s*)%+',in_tab==2 and '%1&#9492;' or '%1&#9484;')
+               :gsub('%+(%s*)$',in_tab==2 and '&#9496;%1' or '&#9488;%1')
+               :gsub('-%+%-',in_tab==2 and '-&#9532;-' or '-&#9516;-')
+               :gsub(' %+%-',in_tab==2 and (total and curr<total and ' &#9500;-' or ' &#9492;-') or ' &#9484;-')
+               :gsub('%-%+ ',in_tab==2 and (total and curr<total and '-&#9508; ' or '-&#9496; ') or '-&#9488; ')
+               :gsub('[%-%|:]',html_tabs)
+    end
+    if str:find('^%s*[%+%-%|:]%-') then
+        handle_tabs()
+        in_tab=1
+    elseif in_tab and str:find('^%s*%|') then
+        str=str:gsub('%|',html_tabs)
+        in_tab=2
+        if str:find('---',2,true) then
+            str=str:gsub('(%-%-+)',function(s) return (s:gsub('.',html_tabs)) end)
+        end
+    else
+        in_tab=nil
+    end
+
     str=str:gsub('  +',function(s,e) return ('&nbsp;'):rep(#s) end)
     return (strip_ansi(str,function(s1,s2)
         local name=type(s2)=='table' and s2[0] or nil
@@ -361,7 +391,7 @@ local function to_csv(str)
     return quote..str..quote
 end
 
-local font='font-size:8pt;font-family:Fira Code;Consolas,Space Mono,Courier New,Courier'
+local font='font-size:8pt;font-family:Courier New,Courier,Consolas,Space Mono'
 function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
     local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
     local space=env.space
@@ -410,14 +440,16 @@ function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
             end
         elseif not printer.tee_colinfo and type(str)=="string" then
             local c,strip=0
-            for line in str:gsplit('\r?\n\r?') do
+            local lines=str:split('\r?\n\r?')
+            local siz=#lines
+            for idx,line in ipairs(lines) do
                 line,c=line:gsub('^'..space,'')
                 strip=c==0 and strip_ansi(line)
                 if strip and strip:find('^'..space) then
                     line,c=line:gsub(space,'',1)
                 end
-                line=to_html(line)
-                hdl:write('<p style="margin:0;white-space:nowrap;'..font..'">'..(line=='' and '&nbsp;' or line)..'</p>\n')
+                line=to_html(line,idx,siz)
+                hdl:write('<span style="margin:0;white-space:nowrap;'..font..'">'..(line=='' and '&nbsp;' or line)..'</span><br/>\n')
             end
         end
     elseif type(row)=="table" and printer.tee_type=="csv" then

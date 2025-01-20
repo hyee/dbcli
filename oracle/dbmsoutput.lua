@@ -238,7 +238,8 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                                 if trim(l_plans(i)) is not null then
                                     l_max := greatest(l_max,length(l_plans(i)));
                                     IF instr(l_plans(i),'Plan hash value:')>0 THEN
-                                        l_plans(i) := replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:')||'   SQL: '||l_recs(j).sql_text;
+                                        l_plans(i) := replace(l_plans(i),'Plan hash value:','SQL ID: '||l_recs(j).sql_id||'   Plan hash value:')
+                                                    ||CASE WHEN l_recs(j).sql_text IS NOT NULL THEN '   SQL: '||l_recs(j).sql_text||'...' END;
                                     END IF;  
                                     l_buffer := l_buffer || l_plans(i) || chr(10);
                                     wr;
