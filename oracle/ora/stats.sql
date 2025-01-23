@@ -37,6 +37,7 @@ Get preferences/stats of the target object or compare stats. Usage: @@NAME {[own
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}
        @notes           : 12.1={,t.notes} default={}
+       @notes2          : 18.1={t.notes} default={}
        @im              : 12.2={} default={--}
        @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
        &t               : default={} t={}
@@ -400,8 +401,8 @@ BEGIN
                 &im ,t1.notes,IMCU,IM_BLOCK,IM_TIME
             from &check_access_dba.tables t 
             left join 
-                (select owner,table_name &im ,t1.notes,t1.IM_IMCU_COUNT IMCU,t1.IM_BLOCK_COUNT IM_BLOCK,t1.IM_STAT_UPDATE_TIME IM_TIME
-                  from &check_access_dba.tab_statistics t1
+                (select owner,table_name &im, &notes2 notes,t.IM_IMCU_COUNT IMCU,t.IM_BLOCK_COUNT IM_BLOCK,t.IM_STAT_UPDATE_TIME IM_TIME
+                  from &check_access_dba.tab_statistics t
                   where owner = own
                   and   table_name = nam
                   and   rownum<2) t1

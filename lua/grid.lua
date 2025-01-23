@@ -359,7 +359,7 @@ function grid.show_pivot(rows, col_del,pivotsort)
     if pivot == 2 and grid.pivot > 0 then
         for i = 1, #r, 2 do
             if r[i + 1] then
-                local k, v = '. ' .. r[i + 1][1], r[i + 1][2]
+                local k, v = '* ' .. r[i + 1][1], r[i + 1][2]
                 if type(v) == "string" then
                     v:gsub('[%s\r\n\t]+$', ''):gsub('\r?\n', function() k = k .. '\n.' end)
                 end

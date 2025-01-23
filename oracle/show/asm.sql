@@ -49,16 +49,41 @@
 
    --[[
        @fg: 11={,listagg(failgroup,',') within group(order by failgroup) failgroup}
+       @OP: 12={PASS} DEFAULT={OPERATION}
    ]]--
 ]]*/
 set feed off verify on
 col reads,writes for tmb
-col BYTES_READ,BYTES_WRITTEN for kmg
+col BYTES_READ,BYTES_WRITTEN,TOTAL|SIZE,free|SIZE,hot|used,cold|used,mirror|free,usable|file for kmg
 col AVG_R_TIME,AVG_W_TIME,AVG_TIME for usmhd0
+col PROG(%) for pct
 
-select * from v$asm_diskgroup order by 1;
+PRO V$ASM_DISKGROUP:
+PRO ================
+select  GROUP_NUMBER GROUP#,
+        NAME,
+        TYPE,
+        STATE,
+        VOTING_FILES VOTING,
+        SECTOR_SIZE "SECTOR|SIZE",
+        LOGICAL_SECTOR_SIZE "LOGCAL|SECTOR",
+        BLOCK_SIZE "BLOCK|SIZE",
+        ALLOCATION_UNIT_SIZE "AU|SIZE",
+        TOTAL_MB*1024*1024 "TOTAL|SIZE",
+        HOT_USED_MB*1024*1024 "HOT|USED",
+        COLD_USED_MB*1024*1024 "COLD|USED",
+        FREE_MB*1024*1024 "FREE|SIZE",
+        REQUIRED_MIRROR_FREE_MB*1024*1024 "MIRROR|FREE",
+        USABLE_FILE_MB*1024*1024 "USABLE|FILE",
+        OFFLINE_DISKS "OFFLINE|DISKS",
+        COMPATIBILITY COMPATIBIL,
+        DATABASE_COMPATIBILITY DB_COMPATIBIL
+ from v$asm_diskgroup order by 1;
+
+PRO V$ASM_DISK:
+PRO ===========
 SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
-       GROUP_NUMBER,
+       GROUP_NUMBER GROUP#,
        NAME,
        SUM(ONLINES) ONLINES,
        SUM(OFFLINES) OFFLINES,
@@ -92,19 +117,37 @@ NATURAL RIGHT JOIN   (SELECT GROUP_NUMBER,
 GROUP  BY GROUP_NUMBER, NAME
 ORDER  BY 1;
 
-var x refcursor;
+var x refcursor "V$ASM_ATTRIBUTE";
 declare
    c sys_refcursor;
    grps VARCHAR2(4000);
 BEGIN
-   
-   select LISTAGG('''#'||GROUP_NUMBER||''' AS DISKGROUP#'||GROUP_NUMBER||'',',') within group(order by GROUP_NUMBER) into grps from v$asm_diskgroup;
+   select LISTAGG(''''||NAME||''' AS "'||name||'"',',') within group(order by GROUP_NUMBER) into grps from v$asm_diskgroup;
    OPEN C for '
         SELECT *
-        FROM  (SELECT NAME, READ_ONLY,VALUE, ''#'' || group_number grp FROM V$ASM_ATTRIBUTE WHERE NAME NOT LIKE ''template%'')
+        FROM  (SELECT /*+outline_leaf*/ a.NAME, a.READ_ONLY,a.VALUE, b.name grp 
+               FROM  V$ASM_ATTRIBUTE a JOIN v$asm_diskgroup b USING(GROUP_NUMBER)
+               WHERE a.NAME NOT LIKE ''template%'')
         PIVOT (MAX(VALUE) FOR grp IN('||grps||'))
         ORDER BY name';
-   
    :x := c;
 END;
 /
+
+PRO V$ASM_OPERATION:
+PRO ================
+SELECT  /*+outline_leaf*/
+        a.INST_ID inst,
+        b.name,
+        a.&OP,
+        a.STATE,
+        a.POWER,
+        a.ACTUAL,
+        a.SOFAR,
+        a.EST_WORK,
+        a.SOFAR/nullif(a.EST_WORK,0) "PROG(%)",
+        a.EST_MINUTES,
+        a.ERROR_CODE
+FROM GV$ASM_OPERATION a
+JOIN v$asm_diskgroup b USING(GROUP_NUMBER)
+ORDER BY 2,1;

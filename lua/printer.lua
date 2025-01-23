@@ -313,9 +313,11 @@ local html_map={
     ['"']='&quot;'
 }
 local html_tabs={
-    ['-']='&#9472;',
-    ['|']='&#9474;',
-    [':']='&#9482;',
+    ['-']='─',
+    ['|']='│',
+    [':']='┊',
+    ['*']='╳',
+    ['/']='╳'
 }
 
 local csv_map={
@@ -333,23 +335,26 @@ local function to_html(str,curr,total)
     str=str:gsub('.',function(s) return html_map[s] or s end)
     --handles +-| characters
     
+    local str1=strip_ansi(str):trim()
     local function handle_tabs()
-        str=str:gsub('^(%s*)%+',in_tab==2 and '%1&#9492;' or '%1&#9484;')
-               :gsub('%+(%s*)$',in_tab==2 and '&#9496;%1' or '&#9488;%1')
-               :gsub('-%+%-',in_tab==2 and '-&#9532;-' or '-&#9516;-')
-               :gsub(' %+%-',in_tab==2 and (total and curr<total and ' &#9500;-' or ' &#9492;-') or ' &#9484;-')
-               :gsub('%-%+ ',in_tab==2 and (total and curr<total and '-&#9508; ' or '-&#9496; ') or '-&#9488; ')
-               :gsub('[%-%|:]',html_tabs)
+        str=str:gsub('^(%s*)%+',in_tab==2 and '%1└' or '%1┌')
+               :gsub('%+(%s*)$',in_tab==2 and '┘%1' or '┐%1')
+               :gsub('-%+%-',in_tab==2 and '-┼-' or '-┬-')
+               :gsub(' %+%-',in_tab==2 and (total and curr<total and ' ├-' or ' └-') or ' ┌-')
+               :gsub('%-%+ ',in_tab==2 and (total and curr<total and '-┤ ' or '-┘ ') or '-┐ ')
+               :gsub('[%-%|%*:]',html_tabs)
     end
-    if str:find('^%s*[%+%-%|:]%-') then
+    if str1:find('^[%+%-%|%*:]%-') then
         handle_tabs()
         in_tab=1
-    elseif in_tab and str:find('^%s*%|') then
+    elseif in_tab and str1:find('^%|') then
         str=str:gsub('%|',html_tabs)
         in_tab=2
         if str:find('---',2,true) then
             str=str:gsub('(%-%-+)',function(s) return (s:gsub('.',html_tabs)) end)
         end
+    elseif str1:find('^[%-%|%*:]+$') then
+        str=str:gsub('[%-%|%*:]',html_tabs)
     else
         in_tab=nil
     end

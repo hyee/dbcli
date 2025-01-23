@@ -39,7 +39,7 @@ Parameters
     _optimizer_squ_bottomup: false to reduce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
         Other relative parameters to optimize long parse time: 
             _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
-            _fix_control 31360214/17442009:1
+            _fix_control 31360214/17442009/29487407/31195441 :1
             _optimizer_max_permutations =100/200/300
     _optimizer_filter_pushdown: false to prevent pl/sql function from pushing down to the predicates of inline view which results in over-executions.
             Other option: hint NO_ELIMINATE_OBY in inline view
@@ -231,6 +231,7 @@ Events:
                     level 20971520: disables “rowset to one row” in hash join probe side
     65002: enable to free temp LOB spaces when no active temp lob in the session
     44951 TRACE NAME CONTEXT FOREVER, LEVEL 1024 : bug 6376915 causes high water (HW) enqueue contention when the database is busy handling large objects (LOB) and the database is configured to use automatic segments space management (ASSM)
+    19119:  fix ORA-31011: XML Parsing Failed in xmlelement(invalid characters)
     10503: enables users to specify a character bind buffer length to avoid BIND_LENGTH_UPGRADEABLE.
            Depending on the length used, the character binds in the child cursor can all be created using the same bind length
 
@@ -275,6 +276,7 @@ Fix Controls:
     13583722/16726844: impact the CBO behaviour for incr stats, ref: https://hourim.wordpress.com/2019/11/21/incremental-histogram-and-fix-control/
     16923858:  Display timings in Optimizer trace(10053) when over 10^<value> microsec
     6972291 :  CBO can use the selectivity of column groups but this option is disabled if there is a histogram defined on any of the columns of the column group
+    28498976/29450812/29304314/ 29385774/28234255/32302470: allow legacy or expansion some cases 
     20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time), for example the large inlist
     5400639:0, 8275054:0, 12335617:0: reduce parse time on huge OR-list/Inlist(possibly _optimizer_join_elimination_enabled in 11g) 
     25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
@@ -294,6 +296,7 @@ Fix Controls:
     20379571:  0 to fix issue of HIGH EXECUTION COUNTS OF TBL$OR$IDX$PART$NUM (Doc ID 2935058.1) (can also set _subquery_pruning_enabled=false or 30978868:1)
     27261477:  fix ORA-12850 error when query gv$ views in RAC
     8893626,9195582: 0 to fix some index skip scan cost under-estimated issues
+
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';
    NO_CROSS_CONTAINER/NO_OBJECT_LINK/NO_COMMON_DATA/NO_ROOT_SW_FOR_LOCAL/_object_link_fixed_enabled/_common_data_view_enabled/CONTAINER_DATA(bug30122249): Used on PDB to query dict views
