@@ -339,24 +339,26 @@ local function to_html(str,curr,total)
     local function handle_tabs()
         str=str:gsub('^(%s*)%+',in_tab==2 and '%1└' or '%1┌')
                :gsub('%+(%s*)$',in_tab==2 and '┘%1' or '┐%1')
-               :gsub('-%+%-',in_tab==2 and '-┼-' or '-┬-')
+               :gsub('%-%+%-',in_tab==2 and '-┼-' or '-┬-')
                :gsub(' %+%-',in_tab==2 and (total and curr<total and ' ├-' or ' └-') or ' ┌-')
                :gsub('%-%+ ',in_tab==2 and (total and curr<total and '-┤ ' or '-┘ ') or '-┐ ')
-               :gsub('[%-%|%*:]',html_tabs)
+               :gsub('[%-%|%*]',html_tabs)
     end
-    if str1:find('^[%+%-%|%*:]%-') then
-        handle_tabs()
-        in_tab=1
-    elseif in_tab and str1:find('^%|') then
-        str=str:gsub('%|',html_tabs)
-        in_tab=2
-        if str:find('---',2,true) then
-            str=str:gsub('(%-%-+)',function(s) return (s:gsub('.',html_tabs)) end)
+    if curr then
+        if str1:find('^[%+%-%|%*]%-') then
+            handle_tabs()
+            in_tab=1
+        elseif in_tab and str1:find('^%|') then
+            str=str:gsub('%|',html_tabs)
+            in_tab=2
+            if str:find('---',2,true) then
+                str=str:gsub('(%-%-+)',function(s) return (s:gsub('.',html_tabs)) end)
+            end
+        elseif str1:find('^[%-%|%*]+$') then
+            str=str:gsub('[%-%|%*]',html_tabs)
+        else
+            in_tab=nil
         end
-    elseif str1:find('^[%-%|%*:]+$') then
-        str=str:gsub('[%-%|%*:]',html_tabs)
-    else
-        in_tab=nil
     end
 
     str=str:gsub('  +',function(s,e) return ('&nbsp;'):rep(#s) end)

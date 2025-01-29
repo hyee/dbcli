@@ -288,6 +288,7 @@ Fix Controls:
     30786641:  default 0, enable to support JPPD within lateral view(VW_LAT)
     33381775:  Resolves lack of null skew handling for PX HASH-HASH distribution in DML or Bloom Filter(patch 33408482 since 19.11)
     9721439:   Forces bloom filter and bypasses all the statistics based heuristics
+    31072746:  enable bloom filter when PX selector is used on the build side(i.e. INDEX RANGE SCAN)
     16792882:  The threshold(10^n rows) of switching SORT to HASH GROUP BY/UNIQUE
     31626438:  use smart scan on partition table when partition size > 100MB
     27268249:  0 to disable approximate ndv on gathering (index) stats and possible to reduce IO (bug 33427856)

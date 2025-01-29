@@ -1,3 +1,4 @@
+2025-01-29: + oracle: new script 'show dg'
 2025-01-20: * public: enhance "<command> | tee <html file>" to save command output as HTML file
 2025-01-07: + oracle: new script 'ora depsql'
 2024-09-22: + oracle: new script 'show cputest'
