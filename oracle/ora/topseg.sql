@@ -51,5 +51,5 @@ SELECT * FROM (
     FROM   GV$SEGMENT_STATISTICS
     WHERE  (&filter)
     GROUP  BY owner,  &cols
-    ORDER  BY  &v2 desc,nvl(logi_reads,0)/15+nvl(phy_reads,0)+nvl(phy_writes,0) DESC)
+    ORDER  BY  &v2 desc nulls last,nvl(logi_reads,0)/15+nvl(phy_reads,0)+nvl(phy_writes,0) DESC)
 WHERE ROWNUM<=50;

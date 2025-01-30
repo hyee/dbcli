@@ -334,8 +334,8 @@ function snapper:next_exec()
                     local idx=props.delta_by:find(','..tit..',',1,true)
                     if calc_rules[tit] then
                         local v=calc_rules[tit]
-                        for i,x in ipairs(rs1[1]) do
-                            v=v:replace('['..x:upper()..']','\1'..i..'\2',true)
+                        for y,x in ipairs(rs1[1]) do
+                            v=v:replace('['..x:upper()..']','\1'..y..'\2',true)
                         end
                         calc_cols[i]='return '..v
                     end
@@ -470,7 +470,7 @@ function snapper:next_exec()
                                 local row=top_data[group_name][1]
                                 for k,v in pairs(calc_cols) do
                                     for i,x in ipairs(rs1[1]) do
-                                        v=v:gsub('\1'..i..'\2',row[i]==nil and '0' or tostring(row[i]))
+                                        v=v:gsub('\1'..i..'\2',(row[i]==nil or row[i]=='') and '0' or tostring(row[i]))
                                     end
                                     v=loadstring(v)
                                     if v then

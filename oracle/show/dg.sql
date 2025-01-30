@@ -13,18 +13,18 @@ WITH r AS
   WHERE  NAME LIKE 'log_archive_dest_%'
   AND    VALUE IS NOT NULL)
 SELECT * FROM (
-    SELECT r.*
+    SELECT r.name,r.value
     FROM   r
     JOIN (SELECT DISTINCT regexp_substr(NAME, '\d+$') n 
           FROM r 
           WHERE NAME LIKE 'log_archive_dest%' AND NAME NOT LIKE 'log_archive_dest_state%'
           ) r1
     ON     r1.n = regexp_substr(r.NAME, '\d+$')
-    ORDER BY 0+r1.n,r.name)
-UNION ALL
-SELECT name,value
-FROM   V$PARAMETER
-WHERE  NAME LIKE 'fal_%';
+    UNION ALL
+    SELECT name,value
+    FROM   V$PARAMETER
+    WHERE  NAME LIKE 'fal_%' or description like '%standby%')
+ORDER BY substr(name,1,16),regexp_substr(name,'\d+$'),name;
 
 PRO v$archive_dest:
 PRO ===============

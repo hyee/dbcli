@@ -993,7 +993,7 @@ function grid:wellform(col_del, row_del)
         table.insert(output,1, line)
     end
     output.len=len
-    output.colinfo,(output[1] or {}).colinfo=colinfo,colinfo
+    output.colinfo,(type(output[1])=='table' and output[1] or {}).colinfo=colinfo,colinfo
 
     return rows,output
 end
