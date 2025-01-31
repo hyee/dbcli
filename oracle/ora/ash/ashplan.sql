@@ -149,7 +149,13 @@ Sample Ouput:
                     FROM   gash a 
                     GROUP  BY service_hash  &con, machine, decode(port,0,session_id*inst_id*10,port),stime) b
             JOIN (
-                SELECT /*+ merge(a) OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000) use_hash(@GV_ASHV A@GV_ASHV)*/ *
+                SELECT /*+ OPT_ESTIMATE(QUERY_BLOCK ROWS=30000000) use_hash(@GV_ASHV A@GV_ASHV)
+                           full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
+                           full(A.GV$ACTIVE_SESSION_HISTORY.A)
+                           leading(A.GV$ACTIVE_SESSION_HISTORY.A)
+                           use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
+                           swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+                       */ *
                 FROM gv$active_session_history a) a
             USING  (service_hash &con,machine) 
             WHERE  a.sample_time+0=b.stime
@@ -175,6 +181,7 @@ Sample Ouput:
                         swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
                         PX_JOIN_FILTER(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
                         OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
+
                        */ *
                 FROM &check_access_pdb.active_sess_history d) a
             USING  (dbid,service_hash &con,machine)

@@ -96,7 +96,8 @@ col reads,writes,AVG_IO format KMG
 COL WALL,SECS,AAS FOR smhd2
 COL wait for usmhd2
 WITH ASH_V AS(
-    SELECT a.*,
+    SELECT /*+outline*/
+           a.*,
            decode(:fields,'wait_class',' ',
            CASE WHEN PRO_ LIKE '(%)' AND upper(substr(PRO_,2,1))=substr(PRO_,2,1) THEN
                 CASE WHEN PRO_ LIKE '(%)' AND substr(PRO_,2,1) IN('P','W','J') THEN
@@ -106,7 +107,14 @@ WITH ASH_V AS(
                 nullif(substr(program,1,instr(program,'@')-1),'oracle')
            END) program#,
            decode(:fields,'wait_class',to_number(null),user_id) u_id
-    FROM (SELECT a.*,
+    FROM (SELECT /*+full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
+                    full(A.GV$ACTIVE_SESSION_HISTORY.A)
+                    leading(A.GV$ACTIVE_SESSION_HISTORY.A)
+                    use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
+                    swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+                    use_hash(@GV_ASHV A@GV_ASHV)
+                */
+                a.*,
                 coalesce(sql_id, &top_sql null) "SQL Id",
                 sql_plan_hash_value plan_hash,
                 nvl(trim(case 
@@ -169,9 +177,6 @@ WITH ASH_V AS(
     WHERE &filter and (&more_filter))
 SELECT * FROM (
     SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand 
-              opt_param('_sqlexec_hash_based_distagg_enabled' 'true')
-              use_hash(@GV_ASHV A@GV_ASHV)
-              opt_param('optimizer_dynamic_sampling' 11) cpu_costing
            */
         &wall round(SUM(c)) Secs
       , ROUND(sum(&base)) AAS

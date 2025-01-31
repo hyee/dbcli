@@ -13,13 +13,13 @@ SELECT /*+ OPT_PARAM('_fix_control' '26552730:0') opt_param('optimizer_dynamic_s
      sql_id,
      COUNT(DISTINCT plan_hash) plans,
      SUM(ela) ela,
-     SUM(ela) / SUM(execs) avg_ela,
+     SUM(ela) / nullif(SUM(execs),0) avg_ela,
      SUM(EXECUTING) EXECUTING,
      MAX(sql_text) sql_text
 FROM   (
     SELECT *
     FROM TABLE(GV$(CURSOR( --
-          SELECT /*+outline_leaf leading(a) use_nl(b) push_pred(b) opt_estimate(table b rows=1000000)*/
+          SELECT /*+no_merge(a) leading(a) use_nl(b) opt_estimate(table b rows=1000000)*/
                 b.sql_id,
                 plan_hash_value plan_hash,
                 elapsed_time ela,
@@ -32,7 +32,7 @@ FROM   (
           AND   a.to_name = :object_name
           AND   a.to_owner = :object_owner &ver
           UNION ALL
-          SELECT /*+outline_leaf leading(a) use_nl(b) push_pred(b) opt_estimate(table b rows=1000000)*/
+          SELECT /*+no_merge(a) leading(a) use_nl(b) opt_estimate(table b rows=1000000)*/
                 b.sql_id,
                 sql_plan_hash_value plan_hash,
                 GREATEST(ELAPSED_TIME,CPU_TIME+APPLICATION_WAIT_TIME+CONCURRENCY_WAIT_TIME+CLUSTER_WAIT_TIME+USER_IO_WAIT_TIME+QUEUING_TIME) ela,
