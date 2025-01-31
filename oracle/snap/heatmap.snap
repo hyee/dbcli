@@ -55,7 +55,7 @@
                          'log file switch completion',
                          'log file switch (checkpoint incomplete)',
                          'log file switch (private strand flush incomplete)')},
-          io={wait_class in('System I/O','User I/O')},
+          io={(wait_class in('System I/O','User I/O') or event like 'cell%')},
           gc={wait_class='Cluster' or event like 'gc%'},
           w={lower('&0') in (lower(event),lower(wait_class))},
           f={}

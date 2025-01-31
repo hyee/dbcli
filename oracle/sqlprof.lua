@@ -345,11 +345,14 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    sql_prof := SYS.SQLPROF_ATTR(');
             pr('        q''[BEGIN_OUTLINE_DATA]'',');
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
-                             SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint
+                             SUBSTR(EXTRACTVALUE(VALUE(d), '/hint'), 1, 4000) hint,
+                             COUNT(1) OVER(PARTITION BY REPLACE(EXTRACTVALUE(VALUE(d), '/hint'),'USE_NL(','FULL(')) C
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
                 v_hint := REGEXP_REPLACE(i.hint,'^((NO_)?INDEX[A-Z_]*)_[ADE]+SC\(','\1(');
                 IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
                     v_embed := '        q''{' || v_hint || '}'','; 
+                ELSIF i.c > 1 AND v_hint LIKE 'FULL(%' THEN
+                    NULL;  --bypass the FULL hint when USE_NL to access remote object via dblink
                 ELSIF v_hint NOT LIKE '%OUTLINE_DATA' AND length(v_hint)<500 THEN
                     pr('        q''{' || v_hint || '}'',');
                 END IF;

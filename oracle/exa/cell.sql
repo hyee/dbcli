@@ -169,8 +169,8 @@ BEGIN
                         'Flash cache bytes used for OLTP data' AS "Used|OLTP",
                         'Flash cache bytes allocated for unflushed data' AS "OLTP|Dirty",
                         'Flash cache bytes used - keep objects' AS "FCache|Keep",
-                        'Flash cache bytes allocated for OLTP keep objects' AS  "Keep|OLTP",
-                        --'Flash cache bytes used - columnar keep' AS "Keep|FCC",
+                        'Flash cache bytes allocated for OLTP keep objects' AS  "OLTP|Keep",
+                        --'Flash cache bytes used - columnar keep' AS "CC|Keep",
                         '|' as "|",
                         'PMEM cache bytes allocated' as "Alloc|PMEM",
                         'RAM cache bytes allocated' as "Alloc|RAM",
@@ -437,6 +437,6 @@ BEGIN
 END;
 /
 col "Disk Group|Total Size,total|size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|Un-|Alloc,GridDisk|Size,HD_SIZE,FD_SIZE,PMEM|SIZE,flash_cache,flash_log,flash|cache" format kmg
-col SmartIO|Cached,un-|alloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,Keep|OLTP,Keep|FCC format kmg
+col SmartIO|Cached,un-|alloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,OLTP|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,OLTP|Keep,CC|Keep format kmg
 col "FCC%|Scan,Read|Hit,RAM|Hit,PMEM|Hit,FC|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,SmartIO|CCSaved,Offload|Out/In" for pct
 grid {'c1','-','c2','-','c3'}
