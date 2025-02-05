@@ -374,7 +374,8 @@ BEGIN
             OPEN c FOR SELECT sql_text PLAN_TABLE_OUTPUT FROM dual;
         ELSE
             OPEN c FOR
-                SELECT /*+opt_param('DYNAMIC_SAMPLING' 7) OPT_PARAM('_fix_control' '26552730:0')*/ * FROM (
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 7) opt_param('_fix_control' '26552730:0')*/ * 
+                FROM (
                     SELECT /*+NO_EXPAND*/ plan_name,sql_handle handle,
                         to_number(substr(plan_name,-8),'fmxxxxxxxx') plan_hash_2,
                         signature,

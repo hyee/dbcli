@@ -288,7 +288,7 @@ BEGIN
             AND    EXECUTION_NAME IS NULL
             ORDER  BY PARAMETER_NAME;
 
-        IF STATUS='COMPLETED' THEN
+        IF STATUS NOT IN('INITIAL','EXECUTING') THEN
             SELECT MAX(EXECUTION_NAME) KEEP(DENSE_RANK LAST ORDER BY EXECUTION_END)
             INTO   enam
             FROM   DBA_ADVISOR_EXECUTIONS
@@ -303,7 +303,9 @@ BEGIN
             IF aname='SQL Repair Advisor' THEN
                 stmt := replace(stmt,'dbms_sqltune.report_tuning_task','dbms_sqldiag.report_diagnosis_task');
             END IF;
-            EXECUTE IMMEDIATE stmt USING out :txt,tsk,own;
+            EXECUTE IMMEDIATE stmt USING out sq_txt,tsk,own;
+            :txt   := sq_txt;
+            sq_txt := null;
             OPEN c2 FOR
                 SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                        DISTINCT
