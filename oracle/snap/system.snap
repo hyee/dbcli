@@ -294,25 +294,26 @@ Examples:
         &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1 in(''||INST_ID,'0','a'))}
         &secs : 11.2={WAIT_TIME_MICRO} default={seconds_in_wait*1e6}
         &sql1: {sql={[[ 
-                        SELECT /*+ignore_me grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
+                        SELECT /*ignore_me grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
                         FROM (
                             SELECT inst,sql_id,SUM(cnt) sess,SUM(WAIT) WAIT,MAX(sql_text) sql_text
-                            FROM (
-                                SELECT &inst1 inst,a.* 
-                                FROM   TABLE(gv$(CURSOR(
-                                    SELECT /*+no_merge(a) leading(a) use_nl(b) opt_estimate(table a rows=10) opt_estimate(table b rows=1000000)*/
-                                           USERENV('instance') inst_id,
-                                           a.sql_id,
+                            FROM TABLE(gv$(CURSOR(
+                                SELECT /*+no_merge(a) leading(a) use_nl(b) opt_estimate(table a rows=10) opt_estimate(table b rows=1000000)*/ DISTINCT
+                                       &inst1 inst,
+                                       a.*,
+                                       substr(TRIM(regexp_replace(REPLACE(b.sql_text, chr(0)), '\s+', ' ')), 1, 80) sql_text
+                                FROM (
+                                    SELECT USERENV('instance') inst_id,
+                                           sql_id,
                                            COUNT(1) cnt,
-                                           SUM(LEAST(DECODE(wait_class,'Idle',0,&secs), :snap_interval)) WAIT,
-                                           MAX(substr(TRIM(regexp_replace(REPLACE(b.sql_text, chr(0)), '\s+', ' ')), 1, 80)) sql_text
-                                    FROM   v$session a, v$sql b
-                                    WHERE  a.sql_id IS NOT NULL
-                                    AND    a.sql_id = b.sql_id
-                                    AND    a.sql_child_number = b.child_number
-                                    AND    b.sql_text NOT LIKE '%ignore_me%'
-                                    GROUP  BY a.sql_id))) A
-                                 WHERE &inst_filter)
+                                           SUM(LEAST(DECODE(wait_class,'Idle',0,&secs), :snap_interval)) WAIT
+                                    FROM   v$session
+                                    WHERE  sql_id IS NOT NULL
+                                    GROUP  BY sql_id) a,
+                                    v$sqlstats b
+                                WHERE &inst_filter
+                                AND    a.sql_id = b.sql_id
+                                AND    b.sql_text NOT LIKE '%ignore_me%')))
                             GROUP BY inst,sql_id
                             ORDER BY wait desc,sess desc,sql_text)
                         WHERE  ROWNUM <= 30]]},

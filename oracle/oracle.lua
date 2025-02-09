@@ -327,8 +327,11 @@ function oracle:connect(conn_str)
             set_param('statistics_level=all "_rowsource_statistics_sampfreq"=16');
             set_param('parallel_degree_policy=MANUAL');
             set_param('"_query_execution_cache_max_size"=4194304');
-            --lateral view and JPPD
-            set_param(q'[events '22829 trace name context forever']');
+            -- lateral view and JPPD and deal with XML invalid chars error(19119):
+            --   level 0x100000: replace with "?"
+            --   level 0x200000: replace with character reference, i.e "&#x%04x;"
+            --   level 0x400000: remove the illegal character
+            set_param(q'[events '22829 trace name context forever:19119 trace name context forever, level 0x400000']');
             set_param(q'["_fix_control"='30786641:1','22258300:1']');
             --ORA-12850 on gv$ views
             set_param(q'["_fix_control"='27261477:1']');
