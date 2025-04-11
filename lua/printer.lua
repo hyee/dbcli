@@ -334,7 +334,7 @@ local function to_html(str,curr,total)
     local font_count=0
     str=str:gsub('.',function(s) return html_map[s] or s end)
     --handles +-| characters
-    
+    --[[--doesn't work well in Android browsers
     local str1=strip_ansi(str):trim()
     local function handle_tabs()
         str=str:gsub('^(%s*)%+',in_tab==2 and '%1└' or '%1┌')
@@ -360,6 +360,7 @@ local function to_html(str,curr,total)
             in_tab=nil
         end
     end
+    --]]--
 
     str=str:gsub('  +',function(s,e) return ('&nbsp;'):rep(#s) end)
     return (strip_ansi(str,function(s1,s2)
@@ -398,7 +399,7 @@ local function to_csv(str)
     return quote..str..quote
 end
 
-local font='font-size:8pt;font-family:Courier New,Courier,Consolas,Space Mono'
+local font='font-size:8pt;font-family:Courier New,Courier,Consolas,Roboto Mono,Space Mono'
 function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
     local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
     local space=env.space

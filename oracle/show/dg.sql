@@ -23,13 +23,16 @@ SELECT * FROM (
     UNION ALL
     SELECT name,value
     FROM   V$PARAMETER
-    WHERE  NAME LIKE 'fal_%' or description like '%standby%')
+    WHERE  NAME LIKE 'fal_%' or NAME like '%log_archive_max_processes%' or description like '%standby%')
 ORDER BY substr(name,1,16),regexp_substr(name,'\d+$'),name;
+
+PRO v$dataguard_config:
+PRO ===================
+SELECT * FROM V$DATAGUARD_CONFIG;
 
 PRO v$archive_dest:
 PRO ===============
-SELECT gvi.thread#,
-       gvad.dest_id        dest#,
+SELECT gvad.dest_id        dest#,
        gvas.dest_name,
        gvas.destination,   
        gvas.database_mode,
@@ -46,6 +49,7 @@ SELECT gvi.thread#,
        gvad.reopen_secs    reopen,
        gvad.register,
        gvad.binding,
+       gvad.compression,
        gvad.status,
        gvas.gap_status,
        gvad.target,
@@ -58,11 +62,10 @@ SELECT gvi.thread#,
        gvad.FAILURE_COUNT,
        gvad.MAX_FAILURE,
        gvad.ERROR
-FROM   v$archive_dest gvad, v$instance gvi, v$archive_dest_status gvas
+FROM   v$archive_dest gvad, v$archive_dest_status gvas
 WHERE  gvad.dest_id = gvas.dest_id
---AND    gvi.thread#=gvas.archived_thread# 
 AND    gvad.destination IS NOT NULL
-ORDER  BY gvi.thread#, gvad.dest_id\G
+ORDER  BY gvad.dest_id\G
 
 PRO gv$dataguard_status:
 PRO ====================
@@ -76,28 +79,111 @@ WHERE  ROWNUM <= 30;
 
 PRO gv$managed_standby:
 PRO ===================
-SELECT thread#, process, pid, status, client_process, client_pid, sequence#, block#, delay_mins,active_agents, known_agents
+SELECT inst_id,thread#, pid, role,client_pid, client_role,action,  sequence#, block#,block_count, delay_mins
+FROM   gv$dataguard_process
+where sequence#>0;
+
+SELECT inst_id,thread#, process, pid, status, client_process, client_pid, sequence#, block#, delay_mins,active_agents, known_agents
 FROM   gv$managed_standby
-WHERE  NULLIF(client_process,'N/A') IS NOT NULL
+WHERE  (NULLIF(client_process,'N/A') IS NOT NULL OR process like 'MRP%')
 ORDER  BY sequence#,thread#, process;
+
+COL SLOT,SOURCE_DBID,SOURCE_DB_UNIQUE_NAME,CON_ID NOPRINT
+col "bytes,Redo/Sec,Complete/Sec,Apply/Sec" for kmg
+PRO Archive Rate:
+PRO =============
+SELECT a.dest_id,
+       b.target,
+       a.thread#,
+       TO_CHAR(first_time,'yyyy-mm-dd')||' '||TO_CHAR(MIN(first_time),'HH24:MI')||' ~ '||TO_CHAR(MAX(next_time),'HH24:MI') first_time,
+       FLOOR(to_char(first_time,'HH24')/8) slot,
+       ROUND(SUM(BLOCKS*BLOCK_SIZE)/nullif(MAX(next_time)-MIN(first_time),0)/86400) "Redo/Sec",
+       AVG(BLOCKS*BLOCK_SIZE/86400/nullif(completion_time-first_time,0)) "Complete/Sec",
+       ROUND(COUNT(1)/nullif(MAX(next_time)-MIN(first_time),0)/24,2) "Switches/Hour"
+FROM   v$archived_log a, v$archive_dest b,v$database c
+WHERE  a.dest_id = b.dest_id
+AND    a.resetlogs_change#=c.resetlogs_change#
+AND    b.target IN('LOCAL','STANDBY')
+AND    first_time>sysdate-1
+GROUP  BY b.target, a.dest_id,a.thread#,TO_CHAR(first_time,'yyyy-mm-dd'),FLOOR(to_char(first_time,'HH24')/8)
+ORDER  BY first_time desc,slot desc,a.dest_id,a.thread#;
 
 PRO Apply stats:
 PRO ============
-SELECT al.thrd "Thread", almax "Last Seq Received", lhmax "Last Seq Applied"
-FROM   (SELECT thread# thrd, MAX(sequence#) almax
-        FROM   v$archived_log
+SELECT dest_id,
+       target,
+       thread#,
+       MAX(sequence#) max_sequence#,
+       MAX(CASE WHEN applied = 'YES' THEN sequence# END) max_applied#,
+       MAX(CASE WHEN standby_dest!='YES' or applied = 'YES' then next_time end) max_next_time,
+       COUNT(1) logs,
+       SUM(CASE WHEN applied = 'YES' THEN 1 END) applies,
+       SUM(CASE WHEN target='PRIMARY' AND sequence#>max_apl THEN standbys-trans END) missings
+FROM   (
+    SELECT b.target,
+           a.*,
+           COUNT(DISTINCT decode(b.target,'STANDBY',a.dest_id)) OVER() standbys,
+           DECODE(a.standby_dest,'PRIMARY',SUM(decode(b.target,'STANDBY',1,0)) OVER(PARTITION BY a.thread#,a.sequence#)) trans,
+           MAX(CASE WHEN b.target='STANDBY' AND a.applied='YES' THEN sequence# END) OVER(PARTITION BY a.thread#) max_apl
+    FROM   v$archived_log a, v$archive_dest b,v$database c
+    WHERE  a.dest_id = b.dest_id
+    AND    a.resetlogs_change#=c.resetlogs_change#
+    AND    a.standby_dest=decode(b.target,'STANDBY','YES','PRIMARY','NO',a.standby_dest)
+)
+GROUP  BY target, dest_id,thread#
+ORDER  BY 1, 2,3;
+
+SELECT ARCH.THREAD# "Thread",
+       ARCH.SEQUENCE# "Last Sequence Received",
+       APPL.SEQUENCE# "Last Sequence Applied",
+       (ARCH.SEQUENCE# - APPL.SEQUENCE#) "Difference"
+FROM   (SELECT THREAD#, MAX(SEQUENCE#) KEEP(DENSE_RANK LAST ORDER BY FIRST_TIME) SEQUENCE#
+        FROM   V$ARCHIVED_LOG
         WHERE  resetlogs_change# = (SELECT resetlogs_change# FROM v$database)
-        GROUP  BY thread#) al,
-       (SELECT thread# thrd, MAX(sequence#) lhmax
-        FROM   v$log_history
+        GROUP BY THREAD#) ARCH,
+       (SELECT THREAD#, MAX(SEQUENCE#) KEEP(DENSE_RANK LAST ORDER BY FIRST_TIME) SEQUENCE#
+        FROM   V$LOG_HISTORY
         WHERE  resetlogs_change# = (SELECT resetlogs_change# FROM v$database)
-        GROUP  BY thread#) lh
-WHERE  al.thrd = lh.thrd;
+        GROUP BY THREAD#) APPL
+WHERE  ARCH.THREAD# = APPL.THREAD#
+ORDER  BY 1;
+
 
 PRO v$dataguard_stats(for LGWR log transport and real time apply):
 PRO ==============================================================
-SELECT * FROM v$dataguard_stats WHERE name LIKE '%lag%';
-SELECT * FROM v$standby_event_histogram ORDER BY unit DESC, time;
+SELECT A.*,TO_CHAR(SYSDATE,'MM/DD/YYYY HH24:MI:SS') "SYSDATE" FROM v$dataguard_stats A;
+
+PRO v$standby_event_histogram
+PRO =========================
+SELECT NAME,
+       MIN("TIME") || ' ~ ' || MAX("TIME") "TIME",
+       MIN(TIME) SLOT,
+       unit,
+       SUM("COUNT") "Count",
+       MAX(LAST_TIME_UPDATED) LAST_TIME_UPDATED
+FROM   v$standby_event_histogram
+WHERE  "COUNT" > 0
+GROUP  BY NAME, UNIT, FLOOR(TIME / 6)
+ORDER  BY unit DESC, SLOT;
+
+PRO v$standby_logs:
+PRO ===============
+PRO Standby groups should be larger than redo log groups
+PRO If redo size > standby size: results in Transport Lag by RFS process
+PRO If redo size < standby size: results in Apply Lag by MRP process
+PRO *********************************************************************
+SELECT thread#, bytes, rd.cnt redo_groups, st.cnt standby_groups, st.actives standby_actives, st.errs standby_erros
+FROM   (SELECT thread#, bytes, COUNT(DISTINCT GROUP#) cnt FROM v$log GROUP BY thread#, bytes) rd
+FULL   JOIN (SELECT thread#,
+                    bytes,
+                    COUNT(DISTINCT GROUP#) cnt,
+                    COUNT(DISTINCT DECODE(status, 'ACTIVE', group#)) actives,
+                    COUNT(DISTINCT CASE WHEN status NOT IN ('ACTIVE', 'UNASSIGNED') THEN group# END) errs
+             FROM   v$standby_log
+             GROUP  BY thread#, bytes) st
+USING  (thread#, bytes)
+ORDER  BY 1, 2;
+
 
 PRO v$archive_gap:
 PRO ==============

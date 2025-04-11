@@ -39,8 +39,8 @@
             CELLIO={CELLIO}
             OFLIN={OFLIN}
             OFLOUT={OFLOUT}
-            READS={READS}
-            WRITES={WRITES}
+            READ={READ}
+            WRITE={WRITE}
             BUFF={BUFF}
             ROWS={RWS}
             PX={PX}

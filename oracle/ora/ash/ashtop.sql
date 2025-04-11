@@ -112,7 +112,7 @@ WITH ASH_V AS(
                     leading(A.GV$ACTIVE_SESSION_HISTORY.A)
                     use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
                     swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                    use_hash(@GV_ASHV A@GV_ASHV)
+                    use_hash(@GV_ASHV A@GV_ASHV) 
                 */
                 a.*,
                 coalesce(sql_id, &top_sql null) "SQL Id",

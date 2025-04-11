@@ -35,3 +35,23 @@ order by UPPER(NAME);
 pro PGA Parameters:
 pro ================
 ora param pga workarea smm area_size
+
+
+pro PGA_AGGREGATE_LIMIT Calculation:
+pro ================================
+WITH MAX_PGA AS
+ (SELECT round(VALUE / 1024 / 1024, 1) max_pga FROM v$pgastat WHERE NAME = 'maximum PGA allocated'),
+MGA_CURR AS
+ (SELECT round(VALUE / 1024 / 1024, 1) mga_curr FROM v$pgastat WHERE NAME = 'MGA allocated (under PGA)'),
+MAX_UTIL AS
+ (SELECT max_utilization AS max_util FROM v$resource_limit WHERE resource_name = 'processes'),
+PARMS AS
+ (SELECT name,value from v$parameter where name in('processes','pga_aggregate_target'))
+SELECT a.max_pga "Max PGA (MB)",
+       b.mga_curr "Current MGA (MB)",
+       c.max_util "Max # of processes",
+       round(((a.max_pga - b.mga_curr) + (c.max_util * 5)) * 1.1, 1) "PGA_AGGREGATE_LIMIT (MB)|Based on current stats",
+       ceil((select value from PARMS WHERE name='pga_aggregate_target')*2/1024/1024 
+        + 5*(select value from parms WHERE name='processes')) "PGA_AGGREGATE_LIMIT (MB)|Based on parameters"
+FROM   MAX_PGA a, MGA_CURR b, MAX_UTIL c
+WHERE  1 = 1;

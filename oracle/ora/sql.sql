@@ -285,14 +285,21 @@ COL FLASH FOR PCT2
 grid {
 [[/*grid={topic='ASH Result'}*/
   SELECT *
-  FROM  (SELECT &VER top_level_sql_id top_sql,
+  FROM  (SELECT /*+full(a.a) leading(a.a) use_hash(a.a a.s) swap_join_inputs(a.s)
+                    full(A.GV$ACTIVE_SESSION_HISTORY.A)
+                    leading(A.GV$ACTIVE_SESSION_HISTORY.A)
+                    use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
+                    swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
+                    use_hash(@GV_ASHV A@GV_ASHV) 
+                */
+               &VER top_level_sql_id top_sql,
                COUNT(1) aas,
                NVL(event, 'ON CPU') event,
                sql_plan_hash_value phv,
                &VER sql_plan_line_id plan_line,
                &VER NVL(TRIM(SQL_PLAN_OPERATION||' '||SQL_PLAN_OPTIONS),TOP_LEVEL_CALL_NAME) OPERATION,
                PLSQL_ENTRY_OBJECT_ID program#,PLSQL_OBJECT_ID call#
-        FROM   &src
+        FROM   &src a
         WHERE  '&V1' in(sql_id,top_level_sql_id)
         AND    &inst=nvl(regexp_substr('&V2','^\d+$')+0,&inst)
         AND    sample_time+0 BETWEEN nvl(to_date('&starttime','YYMMDDHH24MISS'),sysdate-7) and nvl(to_date('&endtime','YYMMDDHH24MISS'),sysdate)

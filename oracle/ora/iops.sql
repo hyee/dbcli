@@ -3,7 +3,7 @@
 ]]*/
 
 DECLARE
-    lat  INTEGER;
+    lat  NUMBER;
     iops INTEGER;
     mbps INTEGER;
 BEGIN
