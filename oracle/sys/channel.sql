@@ -1,6 +1,6 @@
 
 /*[[
-  Show the channel info whose p1text='channel context'(such as "reliable message"). Usage: @@NAME  [<sid>|<sql_id>|<p1>|<event>] [<inst_id>]
+  Show the channel info whose p1text='channel context'(such as "reliable message"). Usage: @@NAME  [<sid>|<sql_id>|<p1>|<event>] [<inst_id>] [YYMMDDHH24MI] [YYMMDDHH24MI]
   Refer to Doc ID 69088.1
 
   Mainly used to diagnostic below events:
@@ -63,7 +63,7 @@ FROM   (SELECT *
                                 MAX(sample_time) last_seen
                          FROM   &src2 a
                          WHERE  p1text = 'channel context'
-                         AND    sample_time+0 between nvl(to_date(:starttime,'yymmddhh24mi'),sysdate-7) and nvl(to_date(:endtime,'yymmddhh24mi'),sysdate+1)
+                         AND    sample_time+0 between nvl(to_date(coalesce(:V3,:starttime),'yymmddhh24mi'),sysdate-7) and nvl(to_date(coalesce(:V4,:endtime),'yymmddhh24mi'),sysdate+1)
                          AND    nvl(:v1,'x') in('x',''||a.session_id,a.sql_id,a.event,''||p1)
                          GROUP  BY sql_id, event,program, p1,instance_number) c,
                         sys.X$KSRCCTX b,
@@ -74,7 +74,7 @@ FROM   (SELECT *
                 AND    instance_number = nvl(:V2, instance_number)
                 AND    b.addr = p1raw)))
         ORDER  BY aas DESC, inst)
-WHERE  ROWNUM <= 50;
+WHERE  ROWNUM <= 30;
 
 
 PRO data from V$SESSION
@@ -99,3 +99,13 @@ FROM   TABLE(gv$(CURSOR( --
     and cd.indx=ctx.name_ksrcctx)))
 WHERE p1 in(select p1 from gv$session)
 ORDER BY P1,SID; 
+
+PRO data from V$CHANNEL_WAITS
+PRO =========================
+COL WAIT_TIME,AVG_TIME FOR USMHD2
+SELECT * FROM (
+    SELECT INST_ID,CHANNEL,MESSAGES_PUBLISHED,WAIT_COUNT,WAIT_TIME_USEC WAIT_TIME,WAIT_TIME_USEC/WAIT_COUNT AVG_TIME
+    FROM GV$CHANNEL_WAITS
+    WHERE WAIT_COUNT>0
+    ORDER BY WAIT_TIME DESC
+) WHERE ROWNUM<=20;

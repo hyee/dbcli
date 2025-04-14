@@ -2,4 +2,7 @@
 select * 
 from table(gv$(cursor(
     select * from sys.x$messages 
-    where :V1 is null or lower(DESCRIPTION) like lower('%&V1%') or lower(DEST) like lower('%&V1%'))));
+    where :V1 is null 
+    or    lower(DESCRIPTION) like lower('%&V1%') 
+    or    lower(DEST) like lower('%&V1%')
+)));

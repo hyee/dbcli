@@ -441,7 +441,7 @@ function dicts.set_dict(typ,scope)
             with r as(
                     SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/ owner,table_name, column_name col,data_type
                     FROM   dba_tab_cols, dba_users
-                    WHERE  username IN (SELECT COMP_ID FROM dba_registry_schemas UNION SELECT COMP_ID FROM dba_registry)
+                    WHERE  username IN (SELECT SCHEMA FROM dba_registry)
                     AND    username = owner
                     AND    (owner,table_name) in(select distinct owner,TABLE_NAME from dba_tab_privs where grantee in('PUBLIC','SELECT_CATALOG_ROLE','EXECUTE_CATALOG_ROLE'))  
                     @XTABLE@),

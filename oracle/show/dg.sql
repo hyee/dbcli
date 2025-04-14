@@ -104,7 +104,7 @@ FROM   v$archived_log a, v$archive_dest b,v$database c
 WHERE  a.dest_id = b.dest_id
 AND    a.resetlogs_change#=c.resetlogs_change#
 AND    b.target IN('LOCAL','STANDBY')
-AND    first_time>sysdate-1
+AND    first_time>sysdate-7
 GROUP  BY b.target, a.dest_id,a.thread#,TO_CHAR(first_time,'yyyy-mm-dd'),FLOOR(to_char(first_time,'HH24')/8)
 ORDER  BY first_time desc,slot desc,a.dest_id,a.thread#;
 

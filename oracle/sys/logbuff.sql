@@ -7,12 +7,13 @@ PRO Redo Strands
 PRO ============
 SELECT * FROM TABLE(GV$(CURSOR(
     SELECT Userenv('instance') inst,
-           DECODE(last_buf_kcrfa,'00','Private Strands','Shared Strands') typ,
+           DECODE(last_buf_kcrfa,hextoraw('00'),'Private Strands','Shared Strands') typ,
            COUNT(1) Strands,
            SUM(strand_size_kcrfa) total_size,
            AVG(strand_size_kcrfa) avg_size
     FROM   sys.x$kcrfstrand
-    GROUP BY DECODE(last_buf_kcrfa,'00','Private Strands','Shared Strands')
+    WHERE  strand_size_kcrfa>0
+    GROUP BY DECODE(last_buf_kcrfa,hextoraw('00'),'Private Strands','Shared Strands')
 ))) LEFT JOIN  TABLE(GV$(CURSOR(
     SELECT Userenv('instance') inst,
            decode(bitand(ktcxbflg, 4096),0,'Private Strands','Shared Strands') typ,
@@ -29,7 +30,7 @@ PRO ================
 SELECT * FROM gv$sysstat where name in('redo buffer allocation retries','redo entries') ORDER BY 1,name;
 
 SELECT * FROM gv$system_event 
-where event in('log buffer space','latch: redo allocation','latch: redo copy','latch: redo writing') 
+where event in('log buffer space','latch: redo allocation','latch: redo copy','latch: redo writing','log file sync','log file parallel writer') 
 ORDER BY 1,event;
 
 WITH A AS(

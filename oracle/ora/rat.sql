@@ -1,4 +1,5 @@
-/*[[Show Real Application Testing info. Usage: @@NAME [{<replay id> [text|html]} | pause | resume | cancel]
+/*[[
+    Show Real Application Testing info. Usage: @@NAME [{<replay id> [text|html]} | pause | resume | cancel]
     Parameters:
     -----------
     text|html: when specified then generate the target replay report
@@ -9,6 +10,7 @@
     If too many session on 'WCR: replay lock order"/buffer busy waits" or "gc current block busy", add parameter dscn_off=true to the WRC client to ignore SCN dependencies during replay.
     If too many session on WCR: replay clock, try setting dscn_off=false to speed up the replay
     If the captured workload contains the PL/SQL with refcursors, try setting _wcr_control=1(19.21+)
+    set max_idle_blocker_time=1 to reduce row lock contention issue 
     Ref: https://westzq1.github.io/oracle/2019/02/22/Oracle-Database-Workload-Replay.html
     --[[
         @VER122: 12.2={} default={--}
