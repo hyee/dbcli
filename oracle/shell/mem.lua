@@ -386,27 +386,42 @@ print(' ')
 print('==========================')
 print('|      OS MEMORY (MB)    |')
 print('==========================')
+local ref_mems={}
 local function mb(val)
     if type(val)=='number' then return tostring(math.ceil(val/1024)) end
+    ref_mems[val]=1
     val = tonumber(mem[val]);
     if not val then return ' ' end
+    
     return tostring(math.ceil(val/1024))
+end
+
+local function mem_(val,default)
+    ref_mems[val]=1
+    return tonumber(mem[val]) or default
 end
 
 if not tonumber(mem['MemTotal']) then
     return print('free -m')
 end
 
-fmt='%-11s   %11s   %11s   %13s   %10s   %10s   %10s'
-print(fmt:format('','Total','Used/Active','Free/Inactive','Available','Cached','Buffers'))
+fmt='%-20s   %11s   %11s   %13s   %10s   %10s   %10s'
+print(fmt:format('Main Mem','Total','Used/Active','Free/Inactive','Available','Cached','Buffers'))
 print(fmt:format('-----------','-----------','-----------','----------','----------','----------','----------'))
 print(fmt:format('Mem',
                  mb('MemTotal'),
-                 mb(tonumber(mem['MemTotal'])-tonumber(mem['MemFree'])),
+                 mb(mem_('MemTotal',0)-mem_('MemFree',0)),
                  mb('MemFree'),
                  mb('MemAvailable'),
                  mb('Cached'),
                  mb('Buffers')))
+print(fmt:format('HugePages',
+                 mb(mem_('HugePages_Total',0)*mem_('Hugepagesize',0)),
+                 mb((mem_('HugePages_Total',0)-mem_('HugePages_Free',0))*mem_('Hugepagesize',0)),
+                 mb(mem_('HugePages_Free',0)*mem_('Hugepagesize',0)),
+                 '',
+                 '',
+                 ''))
 print(fmt:format('Slab',
                  mb('Slab'),
                  mb('SUnreclaim'),
@@ -415,27 +430,27 @@ print(fmt:format('Slab',
                  mb('SReclaimable'),
                  ''))
 print(fmt:format('PageCache',
-                 mb(tonumber(mem['Active(file)'])+tonumber(mem['Inactive(file)'])),
+                 mb(mem_('Active(file)')+mem_('Inactive(file)')),
                  mb('Active(file)'),
                  mb('Inactive(file)'),
-                 mb(tonumber(mem['Active(file)'])+tonumber(mem['Inactive(file)'])),
-                 mb(tonumber(mem['Active(file)'])+tonumber(mem['Inactive(file)'])),
+                 mb(mem_('Active(file)')+mem_('Inactive(file)')),
+                 mb(mem_('Active(file)')+mem_('Inactive(file)')),
                  ''))
 print(fmt:format('Anon',
-                 mb(tonumber(mem['Active(anon)'])+tonumber(mem['Inactive(anon)'])),
+                 mb(mem_('Active(anon)')+mem_('Inactive(anon)')),
                  mb('Active(anon)'),
                  mb('Inactive(anon)'),
-                 mb(tonumber(mem['Active(anon)'])+tonumber(mem['Inactive(anon)'])),
+                 mb(mem_('Active(anon)')+mem_('Inactive(anon)')),
                  '',
                  ''))
 print(fmt:format('Shared',
                  mb('Shmem'),
-                 mb(tonumber(mem['Shmem'])-tonumber(mem['KReclaimable'] or mem['SReclaimable'])+tonumber(mem['SReclaimable'])),
+                 mb(mem_('Shmem')-(mem_('KReclaimable') or mem('SReclaimable'))+mem_('SReclaimable')),
                  '',
-                 mb(tonumber(mem['KReclaimable'] or mem['SReclaimable'])-tonumber(mem['SReclaimable'])),
+                 mb((mem_('KReclaimable') or mem('SReclaimable'))-mem_('SReclaimable')),
                  
                  '',
-                 ''))                 
+                 ''))
 local tmpfs=output([[df -m 2>/dev/null | egrep '^tmpfs' | awk '{t+=$2;u+=$3;a+=$4}END{print t,u,a}']],true)
 local t,u,a=(tmpfs or ''):match('(%d+)%s+(%d+)%s+(%d+)')
 if t then
@@ -449,7 +464,7 @@ if t then
 end
 print(fmt:format('Swap',
                  mb('SwapTotal'),
-                 mb(tonumber(mem['SwapTotal'])-tonumber(mem['SwapFree'])),
+                 mb(mem_('SwapTotal')-mem_('SwapFree')),
                  mb('SwapFree'),
                  '',
                  mb('SwapCached'),
@@ -457,7 +472,27 @@ print(fmt:format('Swap',
 print(fmt:format('Vmalloc',
                  mb('VmallocTotal'),
                  mb('VmallocUsed'),
-                 mb(tonumber(mem['VmallocTotal'])-tonumber(mem['VmallocUsed'])),
+                 mb(mem_('VmallocTotal')-mem_('VmallocUsed')),
                  '',
                  '',
                  ''))
+
+local other_mems={}
+mem['Active'],mem['Inactive'],mem['HugePages_Rsvd'],mem['HugePages_Surp']=nil
+for n,v in pairs(mem) do
+    v=math.ceil((tonumber(v) or 0)/1024)
+    if v>100 and not ref_mems[n] then
+        other_mems[#other_mems+1]={n,v}
+    end
+end
+
+if #other_mems > 0 then
+    fmt='%-20s   %11s'
+    print(' ')
+    print(fmt:format('Other Mem','Size(MB)'))
+    print(fmt:format('-----------','-----------'))
+    table.sort(other_mems,function(a,b) return b[2]<a[2] end)
+    for n,v in ipairs(other_mems) do
+        print(fmt:format(v[1],tostring(v[2])))
+    end
+end

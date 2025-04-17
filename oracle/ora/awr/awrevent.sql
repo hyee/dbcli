@@ -198,8 +198,8 @@ BEGIN
                    round(sum(waits/div),&rd) counts,
                    nullif(round(sum(timeouts/div)/nullif(sum(waits/div),0),4),0) timeouts,
                    round(sum(micro/div),&rd) waited,
-                   round(sum(micro/div)/sum(distinct ela),4) db,
-                   round(sum(micro/div)/sum(waits/div),2) avg_wait
+                   round(sum(micro/div)/nullif(sum(distinct ela),0),4) db,
+                   round(sum(micro/div)/nullif(sum(waits/div),0),2) avg_wait
             FROM (
                 SELECT event_name event,wait_class,div,decode(f,0,''||inst,to_char(etime,'&fmt')) inst,
                        (total_Waits-lag(total_Waits,1,0) over(partition by pkey,event_name order by etime)) waits,

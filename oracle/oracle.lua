@@ -800,6 +800,7 @@ function oracle:onload()
          ['oracle.jdbc.timezoneAsRegion']='false',
          ['oracle.jdbc.TcpNoDelay']='false',
          ["oracle.net.disableOob"]='false',
+         ["oracle.jdbc.javaNetNio"]='false',--auto clean dead session and fix setQueryTimeout issue
          ["oracle.jdbc.maxCachedBufferSize"]='25'
         }
 end

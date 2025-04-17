@@ -6,7 +6,6 @@ import jdk.internal.org.objectweb.asm.ClassReader;
 import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -29,7 +28,7 @@ public class JavaAgent implements ClassFileTransformer {
     static String separator = File.separator;
     static String libPath = null;
     private static final Pattern re1 = Pattern.compile("^\\[+L(.+);?$");
-    private static final int dumpLevel =  System.getProperty("java.version").startsWith("1.8") ? 1 : 0;
+    private static final int dumpLevel = System.getProperty("java.version").startsWith("1.8") ? 1 : 0;
 
     static {
         try {
@@ -403,6 +402,7 @@ public class JavaAgent implements ClassFileTransformer {
             }
             return addUrlMethod;
         }
+
         private static ClassLoader addUrlThis;
         private static Method addUrlMethod;
         static boolean loadedViaPreMain = false;

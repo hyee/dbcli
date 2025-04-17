@@ -82,8 +82,8 @@
                            ELSE
                             '>=1m'
                        END unit,
-                       MAX(SUM(TIME_WAITED_MICRO)) over(PARTITION BY inst,wait_class,event) Time,
-                       MAX(SUM(TIME_WAITED_MICRO)) over() "Time%",
+                       MAX(SUM(TIME_WAITED_MICRO)/1E3) over(PARTITION BY inst,wait_class,event) Time,
+                       MAX(SUM(TIME_WAITED_MICRO)/1E3) over() "Time%",
                        MAX(SUM(total_waits)) over(PARTITION BY inst,wait_class,event) Waits,
                        0 avg_time,
                        '|' "|",
@@ -144,12 +144,13 @@
     order_by="-g,-time",
     column_formatter={
         noprint='total,g',
-        USMHD2="time,avg_time",
+        MSMHD2="time",
+        USMHD2='avg_time',
         ['%.1f%%']='Time%',
         k='WAITS,<1us,<2us,<4us,<8us,<16us,<32us,<64us,<128us,<256us,<512us,<1ms,<2ms,<4ms,<8ms,<16ms,<32ms,<64ms,<128ms,<256ms,<512ms,<1s,<2s,<4s,<8s,<16s,<32s,<1m,>1m'
     },
     calc_rules={
-        avg_time='[Time]/[waits]',
+        avg_time='[Time]/[waits]*1E3',
         ["Time%"]="100*[Time]/[Time%]",
         ["<1us"]="100*[<1us]/&calc",
         ["<2us"]="100*[<2us]/&calc",

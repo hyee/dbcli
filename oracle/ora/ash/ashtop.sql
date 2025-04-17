@@ -1,5 +1,5 @@
 /*[[
-  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [{<sql_id|sid|event|phv> [YYMMDDHH24MI] [YYMMDDHH24MI]} | {-snap <secs>} |-u] [<other options>]
+  Get ASH top event, type 'help @@NAME' for more info. Usage: @@NAME [{<sql_id|sid|event|phv> {[YYMMDDHH24MI] [YYMMDDHH24MI] | -snap <secs>}} | -u] [<other options>]
   
   Options:
   ========
@@ -74,8 +74,8 @@
       &ASH : default={&view} t={&0}
       &Range: default={sample_time+0 between nvl(to_date(nvl('&V2','&STARTTIME'),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl('&V3','&ENDTIME'),'YYMMDDHH24MISS'),sysdate+1)}
       &filter: {
-            id={(trim('&1') is null or upper('&V1')='A' or '&V1' in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU'))) and &range},
-            snap={sample_time+0>=sysdate-NUMTODSINTERVAL(nvl(0+'&V1',30),'second') and ('&V2' is null or '&V2' in(&top_sql sql_id,''||session_id,'event')) &V3},
+            id={(trim('&V1') is null or upper('&V1')='A' or '&V1' in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU'))) and &range},
+            snap={sample_time+0>=sysdate-NUMTODSINTERVAL(0+coalesce('&V2','&V1','30'),'second') and (trim('&V2') is null or trim('&V2') is not null and (upper('&V1')='A' or '&V1' in(&top_sql sql_id,''||session_id,''||sql_plan_hash_value,nvl(event,'ON CPU')))) &V3},
             u={user_id=(select user_id from &CHECK_ACCESS_USER where username=nvl('&0',sys_context('userenv','current_schema'))) and &range}
         }
       &more_filter: default={1=1},f={}
