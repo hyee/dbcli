@@ -147,7 +147,7 @@ fi
 !
 
 cat >getcellparams.cli<<'!'
-cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('cellparams',1)'|grep trc|awk '{print "cat " $NF "; rm -f " $NF}'|sh|grep -P "^\S+ ="|sed 's/(default = \(.*\))/ \1/'|awk -v c=$cell '{print c "|" $1 "|" $3 "|" $4}'
+cellcli -e 'alter cell events="immediate cellsrv.cellsrv_dump('cellparams',1)"'|grep trc|awk '{print "cat " $NF "; rm -f " $NF}'|sh|grep -P "^\S+ ="|sed 's/(default = \(.*\))/ \1/'|awk -v c=$cell '{print c "|" $1 "|" $3 "|" $4}'
 !
 cat >getcellparams.sh<<'!'
 export PATH=$PATH:/usr/bin;cd $(dirname $0)

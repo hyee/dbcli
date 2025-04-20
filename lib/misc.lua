@@ -42,10 +42,11 @@ function string.split (s, sep, plain,occurrence,case_insensitive)
     return r
 end
 
+local table_concat=table.concat
 function string.replace(s,sep,txt,plain,occurrence,case_insensitive)
     if not sep or s=='' then return s end
     local r=s:split(sep,plain,occurrence,case_insensitive)
-    return table.concat(r,txt),#r-1
+    return table_concat(r,txt),#r-1
 end
 
 function string.escape(s, mode)

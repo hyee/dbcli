@@ -24,6 +24,7 @@ BEGIN
                            XMLTABLE('/cli-output/griddisk' PASSING xmltype(a.confval) COLUMNS --
                                     "cellDisk" VARCHAR2(300) path 'cellDisk',
                                     "name" VARCHAR2(300) path 'name',
+                                    "healthFactor" VARCHAR2(30) path 'healthFactor',
                                     "diskType" VARCHAR2(300) path 'diskType',
                                     "offset" INT path 'offset',
                                     "size" INT path 'size',
