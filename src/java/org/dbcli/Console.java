@@ -4,6 +4,7 @@ import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
+import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
@@ -81,11 +82,28 @@ public final class Console {
             System.out.println("Unsupported encoding: " + System.getProperty("file.encoding") + ", DBCLI will use the default encoding(" + encoding.name() + ") instead.");
 
         }
+        this.terminal = (AbstractTerminal) TerminalBuilder
+                .builder()
+                .system(true)
+                .name(colorPlan)
+                .color(!(OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM) ||
+                        (("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU)))
+                .jna(false)
+                .jansi(false)
+                .jni(true)
+                .signalHandler(Terminal.SignalHandler.SIG_DFL)
+                .encoding(encoding)
+                .nativeSignals(true)
+                .build();
+
+        /*
         if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
             this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, encoding, 0, true, Terminal.SignalHandler.SIG_DFL, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_DFL).encoding(encoding).nativeSignals(true).build();
+        */
         Interrupter.reset();
+
 
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         terminal.handle(Terminal.Signal.TSTP, new Interrupter());
@@ -110,7 +128,8 @@ public final class Console {
         this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
-        this.isJansiConsole = this.terminal instanceof WinSysTerminal;
+        System.out.println(this.terminal);
+        //this.isJansiConsole = this.terminal instanceof WinSysTerminal;
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
@@ -182,6 +201,8 @@ public final class Console {
 
     public void display(String[] args) {
         display.clear();
+        Size size = terminal.getSize();
+        display.resize(size.getRows(), size.getColumns());
         display.updateAnsi(Arrays.asList(args), -1);
     }
 
@@ -200,7 +221,7 @@ public final class Console {
             terminal.writer().write(BRACKETED_PASTE_ON);
         }
         terminal.writer().flush();
-        if (isJansiConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
+        //if (isJansiConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
 
 
@@ -320,7 +341,8 @@ public final class Console {
 
     public void less(String output, int titleLines, int spaces, int lines) {
         More less = new More(terminal, null);
-        //less.noInit = true;
+        //Less less=new Less(terminal, null);
+        less.noInit = true;
         less.veryQuiet = true;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));
         less.padding = spaces;

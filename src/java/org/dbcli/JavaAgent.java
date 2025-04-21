@@ -288,8 +288,10 @@ public class JavaAgent implements ClassFileTransformer {
             ClassReader cr = new ClassReader(classFileBuffer);
             if (className == null) className = cr.getClassName();
             if (className != null) copyFile(domain, className, classFileBuffer);
+            //System.out.println(className);
         } catch (Exception e) {
-            Loader.getRootCause(e).printStackTrace();
+            //System.out.println("Failed" + className);
+            //Loader.getRootCause(e).printStackTrace();
         }
         return classFileBuffer;
     }

@@ -140,6 +140,8 @@ local options ={'-server','-XX:CompileThreshold=5',
                 java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
+                java_ver>52 and '--enable-native-access=ALL-UNNAMED' or nil,
+                java_ver>67 and '--illegal-native-access=allow' or nil,
                 java_ver>52 and '--add-modules=jdk.unsupported' or nil}
 for _,param in ipairs(other_options) do options[#options+1]=param end
 javavm = require("javavm",true)

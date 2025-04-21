@@ -32,7 +32,9 @@ import java.util.List;
  * @author Brett Wooldridge
  */
 public class WinProcessFactory implements NuProcessFactory {
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public NuProcess createProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd) {
         WindowsProcess process = new WindowsProcess(processListener);
@@ -40,7 +42,9 @@ public class WinProcessFactory implements NuProcessFactory {
         return process;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void runProcess(List<String> commands, String[] env, NuProcessHandler processListener, Path cwd) {
         WindowsProcess process = new WindowsProcess(processListener);
