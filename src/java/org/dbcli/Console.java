@@ -4,7 +4,6 @@ import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
-import org.jline.builtins.Less;
 import org.jline.builtins.Source;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
@@ -57,7 +56,7 @@ public final class Console {
 
     MyCompleter completer = new MyCompleter(this);
     boolean isPrompt = true;
-    boolean isJansiConsole = false;
+    boolean isJNIConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
     ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     private LuaState lua;
@@ -84,26 +83,32 @@ public final class Console {
             System.out.println("Unsupported encoding: " + System.getProperty("file.encoding") + ", DBCLI will use the default encoding(" + encoding.name() + ") instead.");
 
         }
-        TerminalBuilder.SystemOutput output = TerminalBuilder.SystemOutput.ForcedSysOut;
-
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) , encoding, true, Terminal.SignalHandler.SIG_DFL, false);
+        String mode = System.getenv("ANSICON_DEF");
+        if (mode == null || mode.equals("")) mode = "jni";
+        mode = mode.toLowerCase();
+        if (!mode.equals("jni") && !mode.equals("jna") && !mode.equals("ffm") && !mode.equals("ansicon") &&!mode.equals("conemu"))
+            mode = "jni";
+        if (OSUtils.IS_WINDOWS
+                && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
+                && !"jna".equals(mode)
+                && !"ffm".equals(mode))
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, "ansicon".equals(mode)||"conemu".equals(mode), encoding, true, Terminal.SignalHandler.SIG_DFL, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder
                     .builder()
                     .system(true)
                     .name(colorPlan)
-                    .jna(false)
-                    .jansi(false)
-                    .jni(true)
-                    .signalHandler(Terminal.SignalHandler.SIG_DFL)
                     .encoding(encoding)
+                    .jansi(false)
+                    .jna("jna".equals(mode))
+                    .jni("jni".equals(mode) || "ansicon".equals(mode)|| "conemu".equals(mode))
+                    .ffm("ffm".equals(mode) || "ansicon".equals(mode)|| "conemu".equals(mode))
                     .nativeSignals(true)
+                    .signalHandler(Terminal.SignalHandler.SIG_DFL)
                     .build();
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         terminal.handle(Terminal.Signal.TSTP, new Interrupter());
-
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -122,8 +127,7 @@ public final class Console {
         this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
-        System.out.println(this.terminal);
-        //this.isJansiConsole = this.terminal instanceof WinSysTerminal;
+        this.isJNIConsole = this.terminal instanceof WinSysTerminal;
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
@@ -215,9 +219,8 @@ public final class Console {
             terminal.writer().write(BRACKETED_PASTE_ON);
         }
         terminal.writer().flush();
-        //if (isJansiConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
+        if (isJNIConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
-
 
     public void setLua(LuaState lua) {
         this.lua = lua;

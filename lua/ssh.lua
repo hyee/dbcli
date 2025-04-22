@@ -2,7 +2,7 @@ local env,uv=env,uv
 local ssh=env.class(env.scripter)
 local cfg,terminal=env.set,env.terminal
 local instance
-local _term=env.ansi and env.ansi.ansi_mode=="jansi" and "none" or "vt100"
+local _term=env.ansi and env.ansi.ansi_mode=="jni" and "none" or "vt100"
 
 function ssh:ctor()
     self.forwards={}

@@ -194,6 +194,7 @@ end
 function helper.help(cmd,...)
     local grid,_CMDS=env.grid,env._CMDS
     local rows={}
+    if cmd then cmd=cmd:lower() end
     if cmd and cmd:sub(1,1)~="-" then
         cmd = cmd:upper()
         if not _CMDS[cmd] or not _CMDS[cmd].HELPER then
@@ -215,6 +216,12 @@ function helper.help(cmd,...)
         helps,target=helper.colorful(helps,target)
         if not target then return print(helps) end
         return print(env.space..helps:gsub('\n','\n'..env.space),'__PRINT_COLUMN_')
+    elseif cmd=='-term' then
+        local term=terminal
+        if term then
+            print(term)
+        end
+        return
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then
@@ -338,6 +345,7 @@ function helper.desc()
            -a         To show all commands, including the hidden commands.
            -j         To show current JVM information
            -e         To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
+           -term      To Show terminal info
            Internal:
                 -verbose [class] :  dump a class or classes from verbose.log into dir "dump"
                 -dump            :  dump classed of current process into dir "dump"

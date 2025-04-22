@@ -918,8 +918,8 @@ final public class More {
                                 moveToNextMatch();
                             } else {
                                 matchedAsc = false;
-                                if (lines.size() - firstLineToDisplay <= size.getRows()) {
-                                    firstLineToDisplay = lines.size();
+                                if (totalLines - firstLineToDisplay <= size.getRows()) {
+                                    firstLineToDisplay = totalLines;
                                 } else {
                                     moveForward(size.getRows() - 1);
                                 }
@@ -1251,7 +1251,7 @@ final public class More {
     void moveBackward(int lines) throws IOException {
         Pattern dpCompiled = getPattern(true);
         int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0);
-        if (titleLines > 0 && lines > titleLines) lines -= titleLines;
+        //if (titleLines > 0 && lines > titleLines) lines -= titleLines;
         if (lines >= size.getRows() - 1) {
             display.clear();
         }
@@ -1465,7 +1465,7 @@ final public class More {
             Long allLines = source.lines();
             message = source.getName()
                     + (sources.size() > 2 ? " (file " + sourceIdx + " of " + (sources.size() - 1) + ")" : "")
-                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/" + (allLines != null ? allLines : lines.size())
+                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/" + (allLines != null ? allLines : totalLines)
                     + (eof ? " (END)" : "");
         }
         if (buffer.length() > 0) {

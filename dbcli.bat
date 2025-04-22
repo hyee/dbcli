@@ -75,14 +75,14 @@ if not defined ANSICON if defined ANSICON_CMD (
    if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
 )
 
-if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
-rem if defined ConEmuPID set "ANSICON_DEF=conemu"
+if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jni"
 if defined MSYSTEM set "ANSICON_DEF=msys"
 set "ANSICON_CMD="
 
-rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
-
+rem set "ANSICON_DEF=native"
+rem set "ANSICON_DEF=ffm"
+rem set "ANSICON_DEF=jna"
+rem if defined ANSICON_DEF set "ANSICON_DEF=conemu"
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 rem unpack jar files for the first use
 for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (

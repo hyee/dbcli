@@ -8,12 +8,15 @@ import java.io.Writer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.IntConsumer;
 
+import org.jline.keymap.KeyMap;
 import org.jline.nativ.Kernel32;
 import org.jline.nativ.Kernel32.CONSOLE_SCREEN_BUFFER_INFO;
 import org.jline.nativ.Kernel32.INPUT_RECORD;
 import org.jline.nativ.Kernel32.KEY_EVENT_RECORD;
+import org.jline.reader.impl.LineReaderImpl;
 import org.jline.terminal.Cursor;
 import org.jline.terminal.Size;
 import org.jline.terminal.TerminalBuilder;
@@ -89,8 +92,11 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                     writer = newConsoleWriter(console);
                 } else {
                     type = TYPE_WINDOWS_CONEMU;
-                    writer = new WinConsoleWriter(1);
+                    writer = new WinConsoleWriter(console, 1);
                 }
+            } else if (("conemu").equals(System.getenv("ANSICON_DEF"))) {
+                type = TYPE_WINDOWS_CONEMU;
+                writer = new WinConsoleWriter(console, 1);
             } else {
                 type = type != null ? type : OSUtils.IS_CONEMU ? TYPE_WINDOWS_CONEMU : TYPE_WINDOWS;
                 writer = newConsoleWriter(console);
@@ -153,26 +159,6 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         return new WinConsoleWriter(console);
     }
 
-    final private static int[] mode = new int[1];
-
-    public static boolean isWindowsSystemStream(SystemStream stream) {
-        long console;
-        switch (stream) {
-            case Input:
-                console = consoleIn;
-                break;
-            case Output:
-                console = consoleOut;
-                break;
-            case Error:
-                console = consoleErr;
-                break;
-            default:
-                return false;
-        }
-        return Kernel32.GetConsoleMode(console, mode) != 0;
-    }
-
     WinSysTerminal(
             TerminalProvider provider,
             SystemStream systemStream,
@@ -200,11 +186,35 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 inMode,
                 outConsole,
                 outMode);
+        if (status != null) {
+            status.close();
+            status = null;
+        }
+        t.setDaemon(true);
+        t.start();
+    }
+
+    final private static int[] mode = new int[1];
+    public static boolean isWindowsSystemStream(SystemStream stream) {
+        long console;
+        switch (stream) {
+            case Input:
+                console = consoleIn;
+                break;
+            case Output:
+                console = consoleOut;
+                break;
+            case Error:
+                console = consoleErr;
+                break;
+            default:
+                return false;
+        }
+        return Kernel32.GetConsoleMode(console, mode) != 0;
     }
 
     @Override
     protected int getConsoleMode(Long console) {
-
         if (Kernel32.GetConsoleMode(console, mode) == 0) {
             return -1;
         }
@@ -233,6 +243,95 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         size.setColumns(info.size.x);
         size.setRows(info.size.y);
         return size;
+    }
+
+    private volatile long prevTime = 0;
+    private volatile int pasteCount = 0;
+    private volatile char lastChar;
+    private volatile boolean enablePaste = true;
+    volatile CountDownLatch latch = null;
+    final char[] bp = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_BEGIN).toCharArray();
+    final char[] ep = KeyMap.translate(LineReaderImpl.BRACKETED_PASTE_END).toCharArray();
+    final short bpl = (short) (bp.length - 1);
+    final short epl = (short) (ep.length - 1);
+    final short START_POS = 1;
+    final String tab = "    ";
+    short beginIdx = START_POS;
+    short endIdx = START_POS;
+
+    public void enablePaste(boolean enabled) {
+        enablePaste = enabled;
+    }
+
+    Thread t = new Thread(() -> {
+        while (true) {
+            try {
+                if (!paused() && latch == null) {
+                    latch = new CountDownLatch(1);
+                    latch.await();
+                } else Thread.sleep(32);
+                if (prevTime == 0 || pasteCount == 0 || paused()) continue;
+                //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
+                if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
+                    pasteCount = 0;
+                    if (endIdx != epl) {
+                        slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_END);
+                        if (lastChar == '\r' || lastChar == '\n') processChar('\n');
+                        prevTime = 0;
+                    }
+                    latch = null;
+                }
+            } catch (Exception e) {
+            }
+        }
+    });
+
+    final void processChar(char c) throws IOException {
+        super.processInputChar(c);
+    }
+
+    @Override
+    public void processInputChar(char c) throws IOException {
+        lastChar = c;
+        //check if the console natively supports Bracketed Paste
+        if (pasteCount == 0 && c == bp[beginIdx]) beginIdx += beginIdx >= bpl ? 0 : 1;
+        else if (pasteCount == 0 && beginIdx > START_POS && beginIdx < bpl) beginIdx = START_POS;
+        else if (pasteCount > 0 && c == ep[endIdx]) endIdx += endIdx >= epl ? 0 : 1;
+        else if (pasteCount > 0 && endIdx > START_POS && endIdx < epl) endIdx = START_POS;
+        //Check remaining input chars and determine if enter paste mode
+        if (enablePaste && beginIdx != bpl && pasteCount == 0 && Character.isWhitespace(c) && reader.available() >= 3) {
+            this.slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_BEGIN);
+            prevTime = System.currentTimeMillis();
+            pasteCount = 1;
+            if (latch != null) latch.countDown();
+            //insert one more space to bypass the completor's detection if the first pasted char is tab
+            if (c == '\t') {
+                this.slaveInputPipe.write(' ');
+                return;
+            }
+        } else if (pasteCount > 0) {
+            if (latch != null) latch.countDown();
+            pasteCount = pasteCount + 1;
+            //reduce the frequency of getting timer to avoid performance issue
+            //the timer is used to determine whether to leave the paste mode
+            if (pasteCount > 100) {
+                prevTime = System.currentTimeMillis();
+                pasteCount = 1;
+            }
+        } else if (c == '\t') {
+            //deal with tab, if there are remaining input chars, then replace as 4 spaces to bypass the completor's detection
+            if (reader.available() == 0) {
+                try {
+                    Thread.sleep(16L);
+                } catch (InterruptedException e) {
+                }
+            }
+            if (reader.available() > 0) {
+                this.slaveInputPipe.write(tab);
+                return;
+            }
+        }
+        processChar(c);
     }
 
     final protected boolean processConsoleInput() throws IOException {
@@ -336,4 +435,6 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, 0, errorCode, 0, data, bufferSize, null);
         return new String(data, StandardCharsets.UTF_16LE).trim();
     }
+
+
 }
