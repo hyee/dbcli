@@ -14,6 +14,7 @@ import org.jline.terminal.Size;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.utils.*;
 
 import java.awt.event.ActionEvent;
@@ -46,6 +47,7 @@ public final class Console {
     public static NonBlockingReader input;
     public static String charset = System.getProperty("sun.stdout.encoding");
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
+    public static ClassAccess<AbstractWindowsTerminal> terminalAccess = ClassAccess.access(Terminal.class);
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(6);
     public AbstractTerminal terminal;
     public boolean isSubSystem = false;
@@ -82,29 +84,23 @@ public final class Console {
             System.out.println("Unsupported encoding: " + System.getProperty("file.encoding") + ", DBCLI will use the default encoding(" + encoding.name() + ") instead.");
 
         }
-        this.terminal = (AbstractTerminal) TerminalBuilder
-                .builder()
-                .system(true)
-                .name(colorPlan)
-                .color(!(OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM) ||
-                        (("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU)))
-                .jna(false)
-                .jansi(false)
-                .jni(true)
-                .signalHandler(Terminal.SignalHandler.SIG_DFL)
-                .encoding(encoding)
-                .nativeSignals(true)
-                .build();
+        TerminalBuilder.SystemOutput output = TerminalBuilder.SystemOutput.ForcedSysOut;
 
-        /*
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, encoding, 0, true, Terminal.SignalHandler.SIG_DFL, false);
+        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU))
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) , encoding, true, Terminal.SignalHandler.SIG_DFL, false);
         else
-            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_DFL).encoding(encoding).nativeSignals(true).build();
-        */
+            this.terminal = (AbstractTerminal) TerminalBuilder
+                    .builder()
+                    .system(true)
+                    .name(colorPlan)
+                    .jna(false)
+                    .jansi(false)
+                    .jni(true)
+                    .signalHandler(Terminal.SignalHandler.SIG_DFL)
+                    .encoding(encoding)
+                    .nativeSignals(true)
+                    .build();
         Interrupter.reset();
-
-
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
         terminal.handle(Terminal.Signal.TSTP, new Interrupter());
 
@@ -123,8 +119,6 @@ public final class Console {
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.LIST_ROWS_FIRST);
         this.reader.setOpt(LineReader.Option.INSERT_TAB);
-
-
         this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);

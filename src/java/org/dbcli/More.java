@@ -39,8 +39,7 @@ import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
 
 import static org.jline.keymap.KeyMap.*;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
+import static org.jline.terminal.impl.AbstractWindowsTerminal.*;
 
 /* Change following class/methods as public：
    Nano.PatternHistory
@@ -663,6 +662,9 @@ final public class More {
             }
         } finally {
             lines = null;
+            totalLines = 0;
+            titleLines = 0;
+            titles = null;
             if (reader != null) {
                 reader.close();
             }
@@ -1383,7 +1385,9 @@ final public class More {
         if (highlight) {
             syntaxHighlighter.reset();
             for (int i = Math.max(0, inputLine - rows); i < inputLine; i++) {
-                syntaxHighlighter.highlight(getLine(i));
+                final AttributedString line = getLine(i);
+                if (line != null) syntaxHighlighter.highlight(line);
+                else break;
             }
         }
         int off = 0;
@@ -1505,10 +1509,11 @@ final public class More {
     int lineIndex;
     private final static Pattern RTRIM = Pattern.compile("\\s+$");
     int paddingCounter = 0;
+    int totalLines = 0;
 
     AttributedString getLine(int line) throws IOException {
         if (line < 0) line = 0;
-        while (line >= lines.size()) {
+        while (line >= totalLines) {
             String str = reader.readLine();
             if (str != null) {
                 AttributedString buff = AttributedString.fromAnsi(RTRIM.matcher(str).replaceAll(""), tabs);
@@ -1521,24 +1526,21 @@ final public class More {
                     }
                     ++paddingCounter;
                 }
-                boolean found = false;
-                for (int i = 0; i < titleLines; i++) {
-                    if (titles[i] == null) {
-                        titles[i] = buff;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) lines.add(buff);
+                if (totalLines < titleLines)
+                    titles[totalLines] = buff;
+                else
+                    lines.add(buff);
+                ++totalLines;
             } else {
                 break;
             }
         }
         lineIndex = -1;
         final int line1 = line - firstLineToDisplay;
-        if (line1 >= 0 && line1 < titleLines && titleLines > 0) {
-            return titles[line1];
-        } else line -= titleLines;
+        if (line1 < titleLines && titleLines > 0) {
+            return line1 >= 0 ? titles[line1] : null;
+        }
+        line -= titleLines;
         if (line >= 0 && line < lines.size()) {
             lineIndex = line + 1;
             return lines.get(line);
@@ -1711,11 +1713,11 @@ final public class More {
 
     static class Play extends Display {
         public Play(Terminal terminal) {
-            this(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR) && !terminal.getType().equals(TYPE_WINDOWS));
+            this(terminal, true);
         }
 
         public Play(Terminal terminal, boolean fullScreen) {
-            super(terminal, fullScreen);
+            super(terminal, fullScreen && terminal.getStringCapability(Capability.enter_ca_mode) != null);
         }
 
         boolean isStarted;
@@ -1730,7 +1732,9 @@ final public class More {
             this.isEnterCA = isEnterCA;
             status = Status.getStatus(terminal, false);
             if (status != null) status.suspend();
-            if (isEnterCA) terminal.puts(Capability.enter_ca_mode);
+            if (isEnterCA && fullScreen) {
+                terminal.puts(Capability.enter_ca_mode);
+            }
         }
 
         public void exit() {
@@ -1767,6 +1771,7 @@ final public class More {
             isStarted = true;
             if (!isEnterCA && fullScreen) {
                 terminal.puts(Capability.enter_ca_mode);
+                clear();
                 isEnterCA = true;
             }
             if (cursorPos > 0 && prevBuff != null && prevOffset > 0) {
