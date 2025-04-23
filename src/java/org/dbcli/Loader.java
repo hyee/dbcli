@@ -45,6 +45,7 @@ public class Loader {
     static volatile boolean isAsync = false;
     private static Loader loader = null;
     KeyMap keyMap;
+    KeyListner q = new KeyListner('q');
     Future sleeper;
     private volatile Statement stmt = null;
     private final Sleeper runner = new Sleeper();
@@ -568,6 +569,7 @@ public class Loader {
     public synchronized boolean setStatement(final Statement p, String sql) throws Exception {
         try (Closeable ignored = console::setEvents) {
             this.stmt = p;
+            console.setEvents(p == null ? null : q, new char[]{'q', 'Q'});
             if (p == null) return false;
             boolean result;
             if (sql == null) result = ((PreparedStatement) p).execute();
@@ -586,6 +588,7 @@ public class Loader {
         try {
             isAsync = true;
             this.sleeper = Console.threadPool.submit(c);
+            console.setEvents(q, new char[]{'q', 'Q'});
             return sleeper.get();
         } catch (CancellationException | InterruptedException e) {
             throw CancelError;
@@ -646,6 +649,7 @@ public class Loader {
         try (Closeable clo = console::setEvents) {
             runner.setSleep(millSeconds);
             sleeper = Console.threadPool.submit(runner);
+            console.setEvents(q, new char[]{'q'});
             sleeper.get();
         } catch (Exception e) {
             throw CancelError;
@@ -656,11 +660,45 @@ public class Loader {
 
     public void shutdown() throws IOException {
         Console.threadPool.shutdown();
-        Status status=console.terminal.getStatus(false);
-        if(status!=null) status.close();
+        Status status = console.terminal.getStatus(false);
+        if (status != null) status.close();
         console.terminal.close();
     }
 
+    /*
+        public Commander newExtProcess(String cmd) {
+            return new Commander(printer,cmd,console);
+        }
+    */
+    private class KeyListner implements ActionListener {
+        int key;
+
+        public KeyListner(int k) {
+            this.key = k;
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            try {
+                if (e != null) key = Character.codePointAt(e.getActionCommand(), 0);
+                if (sleeper != null) {
+                    sleeper.cancel(true);
+                }
+
+                if (rs != null && !rs.isClosed()) {
+                    ResultSetHelperService.abort();
+                    rs.close();
+                }
+
+                if (console.isRunning() && stmt != null && !stmt.isClosed()) {
+                    stmt.cancel();
+                    stmt = null;
+                }
+            } catch (Exception err) {
+                //getRootCause(err).printStackTrace();
+            }
+        }
+    }
 
     private class Sleeper implements Runnable {
         private int timer = 0;

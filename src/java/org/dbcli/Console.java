@@ -86,13 +86,13 @@ public final class Console {
         String mode = System.getenv("ANSICON_DEF");
         if (mode == null || mode.equals("")) mode = "jni";
         mode = mode.toLowerCase();
-        if (!mode.equals("jni") && !mode.equals("jna") && !mode.equals("ffm") && !mode.equals("ansicon") &&!mode.equals("conemu"))
+        if (!mode.equals("jni") && !mode.equals("jna") && !mode.equals("ffm") && !mode.equals("ansicon") && !mode.equals("conemu"))
             mode = "jni";
         if (OSUtils.IS_WINDOWS
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
                 && !"jna".equals(mode)
                 && !"ffm".equals(mode))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, "ansicon".equals(mode)||"conemu".equals(mode), encoding, true, Terminal.SignalHandler.SIG_DFL, false);
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, "ansicon".equals(mode) || "conemu".equals(mode), encoding, true, Terminal.SignalHandler.SIG_DFL, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder
                     .builder()
@@ -101,8 +101,8 @@ public final class Console {
                     .encoding(encoding)
                     .jansi(false)
                     .jna("jna".equals(mode))
-                    .jni("jni".equals(mode) || "ansicon".equals(mode)|| "conemu".equals(mode))
-                    .ffm("ffm".equals(mode) || "ansicon".equals(mode)|| "conemu".equals(mode))
+                    .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode))
+                    .ffm("ffm".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode))
                     .nativeSignals(true)
                     .signalHandler(Terminal.SignalHandler.SIG_DFL)
                     .build();
@@ -176,8 +176,8 @@ public final class Console {
                             Thread.sleep(1000);
                         } catch (InterruptedException e) {
                         }
-                        setStatus("flush", null);
                         reader.redrawLine();
+                        setStatus("flush", null);
                     }).start();
             }
         };
@@ -199,6 +199,8 @@ public final class Console {
 
     public void display(String[] args) {
         display.clear();
+        Status status = terminal.getStatus(false);
+        if (status != null) status.close();
         Size size = terminal.getSize();
         display.resize(size.getRows(), size.getColumns());
         display.updateAnsi(Arrays.asList(args), -1);
@@ -284,7 +286,7 @@ public final class Console {
 
     public void setStatus(String status, String color) {
         try {
-            this.status = terminal.getStatus(status != null && !status.equals(""));
+            this.status = terminal.getStatus(status != null && !status.equals("") && !status.equals("flush"));
         } catch (Exception e) {
             e.printStackTrace();
             return;
@@ -308,9 +310,9 @@ public final class Console {
             }
             this.status.update(titles);
         }
-        if(status.equals("")&&this.status!=null) {
+        if (status.equals("") && this.status != null) {
             this.status.close();
-            this.status=null;
+            this.status = null;
         }
     }
 
