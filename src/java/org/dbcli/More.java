@@ -1075,14 +1075,19 @@ final public class More {
         Pattern dpCompiled = getPattern(true);
         if (compiled != null) {
             if (!matchedAsc) {
-                if (matchedIndex >= 1) {
+                if (matchedIndex > 0) {
                     display.clear();
                     --matchedIndex;
                     firstLineToDisplay = matchedLines.get(matchedIndex);
                     offsetInLine = 0;
                     return;
                 }
-            } else
+            } else if (matchedLines.size() > (matchedIndex + 1)) {
+                ++matchedIndex;
+                firstLineToDisplay = matchedLines.get(matchedIndex);
+                offsetInLine = 0;
+                return;
+            } else {
                 for (int lineNumber = firstLineToDisplay + 1; ; lineNumber++) {
                     AttributedString line = getLine(lineNumber);
                     if (line == null) {
@@ -1098,6 +1103,7 @@ final public class More {
                         return;
                     }
                 }
+            }
         }
         if (spanFiles) {
             if (sourceIdx < sources.size() - 1) {
@@ -1126,26 +1132,33 @@ final public class More {
         Pattern dpCompiled = getPattern(true);
         if (compiled != null) {
             if (matchedAsc) {
-                if (matchedIndex >= 1) {
+                if (matchedIndex > 0) {
                     display.clear();
                     --matchedIndex;
                     firstLineToDisplay = matchedLines.get(matchedIndex);
                     offsetInLine = 0;
                     return;
                 }
-            } else for (int lineNumber = firstLineToDisplay - 1; lineNumber >= firstLineInMemory; lineNumber--) {
-                AttributedString line = getLine(lineNumber);
-                if (line == null) {
-                    break;
-                } else if (!toBeDisplayed(line, dpCompiled)) {
-                    continue;
-                } else if (compiled.matcher(line).find()) {
-                    display.clear();
-                    firstLineToDisplay = lineNumber;
-                    offsetInLine = 0;
-                    ++matchedIndex;
-                    matchedLines.add(firstLineToDisplay);
-                    return;
+            } else if (matchedLines.size() > (matchedIndex + 1)) {
+                ++matchedIndex;
+                firstLineToDisplay = matchedLines.get(matchedIndex);
+                offsetInLine = 0;
+                return;
+            } else {
+                for (int lineNumber = firstLineToDisplay - 1; lineNumber >= firstLineInMemory; lineNumber--) {
+                    AttributedString line = getLine(lineNumber);
+                    if (line == null) {
+                        break;
+                    } else if (!toBeDisplayed(line, dpCompiled)) {
+                        continue;
+                    } else if (compiled.matcher(line).find()) {
+                        display.clear();
+                        firstLineToDisplay = lineNumber;
+                        offsetInLine = 0;
+                        ++matchedIndex;
+                        matchedLines.add(firstLineToDisplay);
+                        return;
+                    }
                 }
             }
         }

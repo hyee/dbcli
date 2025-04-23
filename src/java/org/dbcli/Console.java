@@ -283,7 +283,12 @@ public final class Console {
     }
 
     public void setStatus(String status, String color) {
-        this.status = terminal.getStatus(status != null && !status.equals(""));
+        try {
+            this.status = terminal.getStatus(status != null && !status.equals(""));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
         if (this.status == null || getScreenWidth() <= 0)
             return;
         if (tmpTitles.size() == 0) {
@@ -302,6 +307,10 @@ public final class Console {
                 titles.add(asb.toAttributedString());
             }
             this.status.update(titles);
+        }
+        if(status.equals("")&&this.status!=null) {
+            this.status.close();
+            this.status=null;
         }
     }
 

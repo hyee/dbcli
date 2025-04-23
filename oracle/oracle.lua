@@ -828,7 +828,8 @@ function oracle:get_library()
         end
     end
     if #files==0 and v>64 then
-        files[1]=env.join_path(self.root_dir..'/jar/ojdbc11.jar')
+        print(env.join_path(self.root_dir..'jar/ojdbc17.jar'))
+        files[1]=env.join_path(self.root_dir..'jar/ojdbc17.jar')
     end
     if #files>0 then
         for _,file in pairs(os.list_dir(self.root_dir,"jar",1)) do

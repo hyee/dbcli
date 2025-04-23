@@ -17,18 +17,6 @@ if _os=="windows" then
     psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
 else
     psep,fsep,dll,which,dlldir=':','/',".so",'which java 2>/dev/null',_os
-    local f,err=io.popen('uname -a 2>/dev/null')
-    if f then
-        for line in f:lines() do
-            if line:lower():find("microsoft") then
-                luv.os_setenv("IS_WSL","true")
-                if not os.getenv('ConEmuPID') and os.getenv('TERM')=='xterm-256color' then
-                    luv.os_setenv("TERM","terminator")
-                end
-            end
-        end
-        f:close()
-    end
 end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
