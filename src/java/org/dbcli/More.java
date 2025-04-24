@@ -39,7 +39,6 @@ import java.util.regex.PatternSyntaxException;
 import java.util.stream.Stream;
 
 import static org.jline.keymap.KeyMap.*;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.*;
 
 /* Change following class/methods as public：
    Nano.PatternHistory
