@@ -43,7 +43,7 @@
         &V8: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid )}
         &Filter: default={:V1 in(p1text,''||session_id,''||sql_plan_hash_value,sql_id,&top_sql SESSION_ID||'@'||&INST1,event,''||current_obj#)} f={}
         &filter1: default={0} f={1}
-        &range : default={sample_time BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MI'),SYSDATE-7) AND NVL(TO_DATE(:V3,'YYMMDDHH24MI'),SYSDATE+1)}, snap={sample_time>=sysdate - nvl(:V2,60)/86400}, f1={}
+        &range : default={sample_time BETWEEN NVL(TO_DATE(:V2,'YYMMDDHH24MISS'),SYSDATE-7) AND NVL(TO_DATE(:V3,'YYMMDDHH24MISS'),SYSDATE+1)}, snap={sample_time>=sysdate - nvl(:V2,60)/86400}, f1={}
         &snap:   default={--} snap={}
         &pname : default={decode(session_type,'BACKGROUND',program2)} p={program2}
         &group : default={curr_obj#}, p={p123}, phase={phase} , op={sql_opname}

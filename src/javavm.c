@@ -78,6 +78,12 @@ static int error(lua_State *L, JNIEnv *env, const char *msg)
 	{
 		lua_pushstring(L, msg);
 	}
+	if (string) {
+		(*env)->DeleteLocalRef(env, string);
+	}
+	if (throwable_class) {
+		(*env)->DeleteLocalRef(env, throwable_class);
+	}
 	return luaL_error(L, lua_tostring(L, -1));
 }
 
@@ -183,9 +189,29 @@ static jclass referenceclass(JNIEnv *env, const char *className)
 
 static void set_trace(lua_State *L)
 {
-	if (!trace_id)
+	if (!trace_id || !luastate_class || !env)
 		return;
-	(*env)->SetStaticIntField(env, luastate, trace_id, trace_on);
+	(*env)->SetStaticIntField(env, luastate_class, trace_id, trace_on);
+}
+
+static void clearRefs() {
+	if (luastate_class) {
+        (*env)->DeleteGlobalRef(env, luastate_class);
+        luastate_class = NULL;
+    }
+    if (library_class) {
+        (*env)->DeleteGlobalRef(env, library_class);
+        library_class = NULL;
+    }
+	if (luastate) {
+        (*env)->DeleteGlobalRef(env, luastate);
+        luastate = NULL;
+    }
+	if (java) {
+        (*env)->DeleteGlobalRef(env, java);
+        java = NULL;
+    }
+	(*env)->PopLocalFrame(env, NULL);
 }
 
 static int create_vm(lua_State *L)
@@ -208,7 +234,6 @@ static int create_vm(lua_State *L)
 	memset(vm, 0, sizeof(vm_rec));
 	luaL_getmetatable(L, JAVAVM_METATABLE);
 	lua_setmetatable(L, -2);
-
 	/* Process options */
 	vm->num_options = lua_gettop(L) - 1;
 	if (vm->num_options > JAVAVM_MAXOPTIONS)
@@ -234,49 +259,59 @@ static int create_vm(lua_State *L)
 	vm_args.options = vm->options;
 	vm_args.nOptions = vm->num_options;
 	vm_args.ignoreUnrecognized = JNI_TRUE;
-
 	res = JNI_CreateJavaVM(&vm->vm, (void **)&env, &vm_args);
 	if (res < 0)
 	{
-		return luaL_error(L, "error creating Java VM: %d", res);
+		for (int j = 0; j < vm->num_options; j++) {
+            free(vm->options[j].optionString);
+        }
+		return luaL_error(L, "error creating Java VM: %d (%s)", res, 
+			res == JNI_ERR ? "JNI_ERR" : 
+			res == JNI_EDETACHED ? "JNI_EDETACHED" : 
+			res == JNI_EVERSION ? "JNI_EVERSION" : "Unknown error");
 	}
 
 	java_vm = vm->vm;
 
-	(*env)->EnsureLocalCapacity(env, 512);
+	(*env)->EnsureLocalCapacity(env, 1048576);
 	(*env)->PushLocalFrame(env, 128);
 	/* Create a LuaState in the Java VM */
 	if (!(luastate_class = referenceclass(env, "com/naef/jnlua/LuaState"))			 //
 		|| !(trace_id = (*env)->GetStaticFieldID(env, luastate_class, "trace", "I")) //
-		|| !(init_id = (*env)->GetMethodID(env, luastate_class, "<init>", "(J)V")) || !(close_id = (*env)->GetMethodID(env, luastate_class, "close", "()V")))
+		|| !(init_id  = (*env)->GetMethodID(env, luastate_class, "<init>", "(J)V")) 
+		|| !(close_id = (*env)->GetMethodID(env, luastate_class, "close", "()V")))
 	{
+		clearRefs();
 		return error(L, env, "LuaState not found");
 	}
 	/* Load the Java module */
-	if (!(library_class = referenceclass(env, "com/naef/jnlua/LuaState$Library")) || !(openlib_id = (*env)->GetMethodID(env, luastate_class, "openLib", "(Lcom/naef/jnlua/LuaState$Library;)V")) || !(java_id = (*env)->GetStaticFieldID(env, library_class, "JAVA", "Lcom/naef/jnlua/LuaState$Library;")) || !(java = (*env)->GetStaticObjectField(env, library_class, java_id)))
+	if (!(library_class = referenceclass(env, "com/naef/jnlua/LuaState$Library")) 
+	   || !(openlib_id  = (*env)->GetMethodID(env, luastate_class, "openLib", "(Lcom/naef/jnlua/LuaState$Library;)V")) 
+	   || !(java_id     = (*env)->GetStaticFieldID(env, library_class, "JAVA", "Lcom/naef/jnlua/LuaState$Library;")) 
+	   || !(java        = (*env)->NewGlobalRef(env,(*env)->GetStaticObjectField(env, library_class, java_id))))
 	{
+		clearRefs();
 		return error(L, env, "Java module not found");
 	}
-
+	luastate =  (*env)->NewGlobalRef(env,(*env)->NewObject(env, luastate_class, init_id, (jlong)(uintptr_t)L));
 	set_trace(L);
-	luastate = (*env)->NewObject(env, luastate_class, init_id, (jlong)(uintptr_t)L);
 	if (!luastate)
 	{
+		clearRefs();
 		return error(L, env, "error creating LuaState");
 	}
-
 	(*env)->CallVoidMethod(env, luastate, openlib_id, java);
 	if ((*env)->ExceptionCheck(env))
 	{
+		clearRefs();
 		return error(L, env, "error loading Java module");
 	}
-
-	vm->luastate = (*env)->NewGlobalRef(env, luastate);
+	vm->luastate = luastate;
 	if (!vm->luastate)
 	{
+		clearRefs();
 		return luaL_error(L, "error referencing LuaState");
 	}
-
 	/* Store VM */
 	lua_pushvalue(L, -1);
 	lua_setfield(L, LUA_REGISTRYINDEX, JAVAVM_VM);
@@ -377,6 +412,19 @@ static int destroy_vm(lua_State *L)
 
 	/* Success */
 	lua_pushboolean(L, 1);
+
+	if (luastate_class) {
+        (*env)->DeleteGlobalRef(env, luastate_class);
+        luastate_class = NULL;
+    }
+    if (library_class) {
+        (*env)->DeleteGlobalRef(env, library_class);
+        library_class = NULL;
+    }
+    if (java) {
+        (*env)->DeleteGlobalRef(env, java);
+        java = NULL;
+    }
 	return 1;
 }
 
@@ -395,9 +443,9 @@ static int get_vm(lua_State *L)
 
 static int trace(lua_State *L)
 {
-	if (!lua_isnumber(L, -1))
-		return 0;
 	trace_on = lua_tointeger(L, -1);
+	if (!lua_isnumber(L, -1))
+		return trace_on;
 	set_trace(L);
 	return 0;
 }

@@ -7,7 +7,7 @@
 # Also works with MinGW and Cygwin on Windows.
 # Please check msvcbuild.bat for building with MSVC on Windows.
 #
-# Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
+# Copyright (C) 2005-2023 Mike Pall. See Copyright Notice in luajit.h
 ##############################################################################
 
 MAJVER=  2
@@ -70,7 +70,7 @@ CCWARN= -Wall
 # as dynamic mode.
 #
 # Mixed mode creates a static + dynamic library and a statically linked luajit.
-BUILDMODE= mixed
+BUILDMODE= dynamic
 #
 # Static mode creates a static library and a statically linked luajit.
 #BUILDMODE= static
@@ -226,7 +226,7 @@ TARGET_LFSFLAGS= -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE
 TARGET_XCFLAGS= $(TARGET_LFSFLAGS) -U_FORTIFY_SOURCE
 TARGET_XLDFLAGS=
 #remove -static-libgcc for MacOS
-TARGET_XLIBS= -lm -static-libgcc
+TARGET_XLIBS= -lm 
 TARGET_TCFLAGS= $(CCOPTIONS) $(TARGET_XCFLAGS) $(TARGET_FLAGS) $(TARGET_CFLAGS)
 TARGET_ACFLAGS= $(CCOPTIONS) $(TARGET_XCFLAGS) $(TARGET_FLAGS) $(TARGET_CFLAGS)
 TARGET_ASFLAGS= $(ASOPTIONS) $(TARGET_XCFLAGS) $(TARGET_FLAGS) $(TARGET_CFLAGS)
@@ -330,13 +330,13 @@ ifeq (Darwin,$(TARGET_SYS))
   TARGET_XCFLAGS+= -DLUAJIT_UNWIND_EXTERNAL
   TARGET_XSHLDFLAGS= -dynamiclib -single_module -undefined dynamic_lookup -fPIC
   TARGET_DYNXLDOPTS=
-  TARGET_XSHLDFLAGS+= -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
+  TARGET_XSHLDFLAGS+=  -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
 else
 ifeq (iOS,$(TARGET_SYS))
   TARGET_STRIP+= -x
   TARGET_XSHLDFLAGS= -dynamiclib -single_module -undefined dynamic_lookup -fPIC
   TARGET_DYNXLDOPTS=
-  TARGET_XSHLDFLAGS+= -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
+  TARGET_XSHLDFLAGS+=  -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
   ifeq (arm64,$(TARGET_LJARCH))
     TARGET_XCFLAGS+= -fno-omit-frame-pointer
   endif

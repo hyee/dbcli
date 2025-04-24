@@ -813,7 +813,7 @@ function oracle:get_library()
     local files={}
     if home then
         local ver=8+v-52
-        for i=ver,v>64 and 11 or 6,-1 do
+        for i=ver,v>64 and 8 or 6,-1 do
             local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
             if os.exists(jar) then 
                 files[#files+1]=jar
@@ -827,10 +827,11 @@ function oracle:get_library()
             end
         end
     end
+    --[[
     if #files==0 and v>64 then
-        print(env.join_path(self.root_dir..'jar/ojdbc17.jar'))
         files[1]=env.join_path(self.root_dir..'jar/ojdbc17.jar')
     end
+    --]]
     if #files>0 then
         for _,file in pairs(os.list_dir(self.root_dir,"jar",1)) do
             if type(file)=="table" and not file.name:find('^ojdbc') then

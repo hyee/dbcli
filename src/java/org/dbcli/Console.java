@@ -15,6 +15,7 @@ import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.utils.*;
+import org.jline.widget.AutosuggestionWidgets;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -102,7 +103,7 @@ public final class Console {
                     .jansi(false)
                     .jna("jna".equals(mode))
                     .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode))
-                    .ffm("ffm".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode))
+                    .ffm("ffm".equals(mode))
                     .nativeSignals(true)
                     .signalHandler(Terminal.SignalHandler.SIG_DFL)
                     .build();
@@ -128,6 +129,8 @@ public final class Console {
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
         this.isJNIConsole = this.terminal instanceof WinSysTerminal;
+        AutosuggestionWidgets autosuggestionWidgets = new AutosuggestionWidgets(reader);
+        autosuggestionWidgets.enable();
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);

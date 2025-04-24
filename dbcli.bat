@@ -39,7 +39,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
             SET found=1
             SET "JAVA_VER_=!v!"
             if "52.0" GTR "!v!" (SET found=0)
-            if "64.0" LSS "!v!" (SET found=0)
+            rem if "64.0" LSS "!v!" (SET found=0)
         )
       )
 	  if "!found!" == "0" (set "JAVA_EXE_=")
@@ -54,7 +54,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
 If not exist "!JAVA_EXE!" (
     ver|findstr -r " 5.[0-9]*\.[0-9]" > NUL && (SET "BASE=!JRE_HOME!" && if not exist "!BASE!\bin\java.exe" SET "BASE=jre") || (SET "BASE=jre")
     if not exist "jre\bin\java.exe" (
-        echo Cannot find Java 8 - Java 20 executable, please manually set JRE_HOME for available Java program.
+        echo Cannot find Java 8+ executable, please manually set JRE_HOME for available Java program.
         pause
         popd
         exit /b 1

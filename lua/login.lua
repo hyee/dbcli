@@ -147,7 +147,14 @@ function login.search(id,filter,url_filter)
             if (not filter and not url_filter) or (k:find(filter or "",1,true)  and v.url:find(url_filter or "",1,true)) then
                 counter=counter+1
                 if counter==1 then account=k end
-                grid.add(hdl,{ind,v.alias or "",k:gsub(':%d+(%W)','%1'),v.user,v.ssh_link or "",v.url,v.lastlogin})
+                local usr,url=v.user,v.url
+                if #usr>40 then
+                    usr=usr:sub(1,38)..'...'
+                end
+                if #url>80 then
+                    url=url:sub(1,68)..'...'
+                end
+                grid.add(hdl,{ind,v.alias or "",k:gsub(':%d+(%W)','%1'),usr,v.ssh_link or "",url,v.lastlogin})
                 if id=="-d" then
                     list[k]=nil
                 end
