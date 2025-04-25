@@ -28,7 +28,7 @@ oracle.module_list={
     "parse10053"
 }
 
-local home,tns=os.getenv("ORACLE_HOME"),os.getenv("TNS_ADM") or os.getenv("TNS_ADMIN")
+local home,tns=env.uv.os.getenv("ORACLE_HOME"),env.uv.os.getenv("TNS_ADM") or env.uv.os.getenv("TNS_ADMIN")
 if not home then
     local bin=os.find_extension("sqlplus",true)
     if bin then
@@ -844,6 +844,7 @@ function oracle:get_library()
             lib=env.CPATH_DEL..lib
         end
         env.uv.os.setenv('LD_LIBRARY_PATH',java.system:getProperty("java.library.path")..lib)
+        env.uv.os.setenv('DYLD_LIBRARY_PATH',java.system:getProperty("java.library.path")..lib)
         return files
     end
     return nil

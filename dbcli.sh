@@ -11,12 +11,15 @@ if [[ "$os" =~ Darwin.*ARM ]]; then
     os="mac-arm"
 elif [[ "$os" = *Darwin* ]]; then
     os="mac"
-elif [[ "$os" =~ Linux.*x86 ]]; then
+elif [[ "$os" =~ Linux.*x86_64 ]]; then
     os="linux"
     bind 'set enable-bracketed-paste on' &>/dev/null
-elif [[ "$os" =~ Linux.* ]]; then
+elif [[ "$os" =~ Linux.*.aarch64 ]]; then
     os="linux-arm"
     bind 'set enable-bracketed-paste on' &>/dev/null
+else
+    echo "DBCLI only supports Win32/Win64/Linux-x64/Linux-aarch64/Darwin/Darwin-ARM"
+    exit 1
 fi
 
 #DBCLI_ENCODING=UTF-8
@@ -70,7 +73,7 @@ if [[ "$_java" ]]; then
     bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
     ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
 
-    if [[ "$ver" < "52.0" ]] || [[ "$ver" > "64.0" ]] || [[ "$bit" != "64" ]]; then
+    if [[ "$ver" < "52.0" ]]; then
         found=1
     fi
 fi
@@ -81,7 +84,7 @@ if [[ $found < 2 ]]; then
         _java=./jre_$os/bin/java
         ver="52"
     else
-        echo "Cannot find Java 8+ for X86-64, please manually set JRE_HOME for suitable JDK/JRE."
+        echo "Cannot find Java 8+ for $arch, please manually set JRE_HOME for suitable JDK/JRE."
         exit 1
     fi
 fi
@@ -114,26 +117,14 @@ fi
 if [[ "$os" = mac* ]]; then
     export DYLD_FALLBACK_LIBRARY_PATH="$LD_LIBRARY_PATH"
 fi
+
+#if [ ! -z "$ORACLE_HOME" ]; then
+#    export DYLD_LIBRARY_PATH="$ORACLE_HOME/lib"
+#fi
 # unpack jar files for the first use
-unpack="$JAVA_ROOT/bin/unpack200"
-if [[ -f ./jre_$os/bin/unpack200 ]]; then
-    unpack=./jre_$os/bin/unpack200
-    if [ ! -x "$unpack" ]; then
-        chmod  +x ./jre_$os/bin/* &>/dev/null
-    fi
-elif [ ! -x "$unpack" ]; then
-    echo "Cannot find unpack200 executable, exit."
-    popd
-    exit 1
-fi
 
-for f in `find . -type f -name "*.pack.gz" 2>/dev/null | egrep -v "cache|dump"`; do
-    echo "Unpacking $f ..."
-    "$unpack" -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
-done
-wait
 
-trap '' TSTP &>/dev/null
+#trap '' TSTP &>/dev/null
 
 chmod  +x ./lib/$os/luajit &>/dev/null
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"

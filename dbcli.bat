@@ -84,16 +84,6 @@ rem set "ANSICON_DEF=ffm"
 rem set "ANSICON_DEF=jna"
 rem if defined ANSICON_DEF set "ANSICON_DEF=conemu"
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
-rem unpack jar files for the first use
-for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (
-   set "var=%%i" &set "str=!var:@=!"
-   echo Unpacking %%i to jar file for the first use...
-   If exist "jre\bin\unpack200.exe" (
-       jre\bin\unpack200.exe -q -r "%%i" "!str:~0,-8!"
-   ) else (
-       "!JAVA_BIN!\unpack200.exe" -q -r "%%i" "!str:~0,-8!"
-   )
-)
 
 (cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*)||pause
 popd

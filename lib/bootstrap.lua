@@ -10,8 +10,8 @@ if ver then
     end
 end
 if not luv then luv=require("luv") end
-
 _os=_os=='osx' and (jit.arch:lower()=='arm64' and 'mac-arm' or 'mac') or _os
+_os=_os=='linux' and (jit.arch:lower()=='arm64' and 'linux-arm' or 'linux') or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
     psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
@@ -137,6 +137,7 @@ for _,param in ipairs(other_options) do options[#options+1]=param end
 options={table.unpack(options)}
 
 javavm = require("javavm",true)
+--javavm.trace(2)
 javavm.create(table.unpack(options))
 
 _G.__jvmclock=os.clock()-clock

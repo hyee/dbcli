@@ -77,7 +77,7 @@ BUILDMODE= dynamic
 #
 # Dynamic mode creates a dynamic library and a dynamically linked luajit.
 # Note: this executable will only run when the library is installed!
-#BUILDMODE= dynamic
+BUILDMODE= dynamic
 #
 ##############################################################################
 
