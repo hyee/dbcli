@@ -288,12 +288,7 @@ public final class Console {
     }
 
     public void setStatus(String status, String color) {
-        try {
-            this.status = terminal.getStatus(status != null && !status.equals("") && !status.equals("flush"));
-        } catch (Exception e) {
-            e.printStackTrace();
-            return;
-        }
+        this.status = terminal.getStatus(status != null && !status.equals("") && !status.equals("flush"));
         if (this.status == null || getScreenWidth() <= 0)
             return;
         if (tmpTitles.size() == 0) {
@@ -301,8 +296,9 @@ public final class Console {
             tmpTitles.add(tmpTitles.get(0));
         }
         this.status.update(tmpTitles);
-        if ("flush".equals(status)) this.status.update(titles);
-        else {
+        if ("flush".equals(status)) {
+            this.status.update(titles);
+        } else if(status!=null&&!status.equals("")){
             AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
             titles.clear();
             if (status != null && !status.equals("")) {
@@ -312,8 +308,8 @@ public final class Console {
                 titles.add(asb.toAttributedString());
             }
             this.status.update(titles);
-        }
-        if (status.equals("") && this.status != null) {
+        } else {
+            this.status.suspend();
             this.status.close();
             this.status = null;
         }

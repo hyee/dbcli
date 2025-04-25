@@ -1250,11 +1250,12 @@ function env.reload()
 end
 
 function env.exit()
-    print("Exited.")
+    
     env.RELOAD_SIGNAL=false
     env.set_title(nil,'__EXIT__')
     env.unload()
     java.system.exit(0)
+    print("Exited.")
 end
 
 function env.load_data(file,isUnpack,callback)
@@ -1415,6 +1416,7 @@ function env.set_title(title,value,callee)
     else
         titles=org_title
         title_list={}
+        console:setStatus(nil,nil)
     end
 
     if CURRENT_TITLE~=titles or enabled then

@@ -78,9 +78,8 @@ if [[ "$_java" ]]; then
     fi
 fi
 
-
 if [[ $found < 2 ]]; then
-    if [[ -f ./jre_$os/bin/unpack200 ]];  then
+    if [[ -f ./jre_$os/bin/java ]];  then
         _java=./jre_$os/bin/java
         ver="52"
     else
@@ -124,7 +123,7 @@ fi
 # unpack jar files for the first use
 
 
-#trap '' TSTP &>/dev/null
+trap '' TSTP &>/dev/null
 
 chmod  +x ./lib/$os/luajit &>/dev/null
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"
