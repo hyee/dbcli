@@ -1,0 +1,33 @@
+name: MacOS x86 Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up JDK 21
+      uses: actions/setup-java@v3
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+    
+    - name: Make dbcli.sh executable
+      run: chmod +x dbcli.sh
+    
+    - name: Run dbcli.sh
+      run: ./dbcli.sh
+      
+    - name: Verify file generation
+      run: |
+        if [ ! -f "generated_file" ]; then
+          echo "Error: File was not generated"
+          exit 1
+        fi
