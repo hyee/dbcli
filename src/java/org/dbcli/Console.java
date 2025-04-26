@@ -164,7 +164,7 @@ public final class Console {
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
-                if (cancelSeq == 0) ++cancelSeq;
+                increaseCancelSeq();
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
@@ -298,7 +298,7 @@ public final class Console {
         this.status.update(tmpTitles);
         if ("flush".equals(status)) {
             this.status.update(titles);
-        } else if(status!=null&&!status.equals("")){
+        } else if (status != null && !status.equals("")) {
             AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
             titles.clear();
             if (status != null && !status.equals("")) {
@@ -384,14 +384,16 @@ public final class Console {
         return accessor.invoke(reader, method, o);
     }
 
-    public int cancelSeq = 0;
+
     private String currentBuffer;
     private String firstPrompt = "SQL> ";
     private int promptWidth = 5;
-
+    private int cancelSeq = 0;
+    public synchronized void increaseCancelSeq() {
+        if (cancelSeq == 0) ++cancelSeq;
+    }
     public String readLine(String prompt, String buffer) {
         try {
-            if (cancelSeq >= 5) System.exit(0);
             setEvents(null, null);
             terminal.echo(false);
             terminal.resume();
@@ -409,7 +411,7 @@ public final class Console {
                 promptWidth = wcwidth(firstPrompt);
             }
             String line = reader.readLine(prompt, null, buffer);
-
+            status = terminal.getStatus(false);
             if (line != null) {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
@@ -422,15 +424,36 @@ public final class Console {
                 pause = true;
             }
             return line;
-        } catch (UserInterruptException | EndOfFileException e) {
+        } catch (Throwable e) {
             ++cancelSeq;
-            terminal.puts(InfoCmp.Capability.cursor_up);
-            terminal.puts(InfoCmp.Capability.delete_line);
-            terminal.raise(Terminal.Signal.INT);
+            try {
+                if (cancelSeq >= 5) {
+                    System.out.println("Detected 5 readLine errors, terminating the console to avoid blocking in backgound.");
+                    System.out.flush();
+                    if (status != null) {
+                        this.status.suspend();
+                        this.status.close();
+                    }
+                    return null;
+                } else {
+                    terminal.puts(InfoCmp.Capability.cursor_up);
+                    terminal.puts(InfoCmp.Capability.delete_line);
+                    terminal.raise(Terminal.Signal.INT);
+                }
+            } catch (Throwable e1) {
+            }
             return "";
         } finally {
-            status = terminal.getStatus(false);
-            if (status != null) status.redraw();
+            try {
+                if (cancelSeq >= 5) {
+                    System.exit(0);
+                } else {
+                    if (status != null) status.redraw();
+                }
+            } catch (Throwable e2) {
+                ++cancelSeq;
+            }
+
         }
     }
 
