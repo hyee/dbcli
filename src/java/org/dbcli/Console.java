@@ -72,7 +72,7 @@ public final class Console {
 
     private String colorPlan;
     private final KeyMap keyMap;
-    protected Status status;
+    protected volatile Status status;
     protected Timer timer = new Timer(this);
 
     public Console(String historyLog) throws Exception {
@@ -295,21 +295,19 @@ public final class Console {
 
     public void setStatus(String title, String color) {
         try {
+            final int width = getScreenWidth();
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
-            if (this.status == null || getScreenWidth() <= 0)
+            if (this.status == null || width <= 0)
                 return;
-            if (tmpTitles.size() == 0) {
-                tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
-                tmpTitles.add(tmpTitles.get(0));
-            }
-            this.status.update(tmpTitles);
+
             if (title == null || title.equals("")) {
-                this.status.suspend();
+                this.status.hide();
                 this.status.close();
                 this.status = null;
                 return;
             }
             if (terminal.paused()) return;
+            final String chars = new String(new char[width - 1]);
             String time = timer.getTime();
             if ("flush".equals(title) && prevTime.equals(time)) {
                 this.status.update(titles);
@@ -320,7 +318,7 @@ public final class Console {
                     prevTitle = title;
                 }
                 prevTime = time;
-                AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
+                AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + chars.replace('\0', '-'));
                 titles.clear();
                 titles.add(sep);
                 AttributedStringBuilder asb = new AttributedStringBuilder();

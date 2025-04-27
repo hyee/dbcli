@@ -1255,6 +1255,7 @@ function env.exit()
     env.set_title(nil,'__EXIT__')
     env.unload()
     print("Exited.")
+    console:suspend(true)
     java.system.exit(0)
 end
 
