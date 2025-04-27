@@ -72,7 +72,8 @@ public final class Console {
 
     private String colorPlan;
     private final KeyMap keyMap;
-    private Status status;
+    protected Status status;
+    protected Timer timer = new Timer(this);
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -93,7 +94,7 @@ public final class Console {
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
                 && !"jna".equals(mode)
                 && !"ffm".equals(mode))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, "ansicon".equals(mode) || "conemu".equals(mode), encoding, true, Terminal.SignalHandler.SIG_DFL, false);
+            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, "ansicon".equals(mode) || "conemu".equals(mode), encoding, true, Terminal.SignalHandler.SIG_IGN, false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder
                     .builder()
@@ -105,11 +106,13 @@ public final class Console {
                     .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode))
                     .ffm("ffm".equals(mode))
                     .nativeSignals(true)
-                    .signalHandler(Terminal.SignalHandler.SIG_DFL)
+                    .signalHandler(Terminal.SignalHandler.SIG_IGN)
                     .build();
+        Interrupter interrupter = new Interrupter();
         Interrupter.reset();
-        Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
-        terminal.handle(Terminal.Signal.TSTP, new Interrupter());
+        Interrupter.handler = terminal.handle(Terminal.Signal.INT, interrupter);
+        terminal.handle(Terminal.Signal.TSTP, interrupter);
+        terminal.handle(Terminal.Signal.QUIT, interrupter);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -180,7 +183,7 @@ public final class Console {
                         } catch (InterruptedException e) {
                         }
                         reader.redrawLine();
-                        if(status!=null) setStatus("flush", null);
+                        if (status != null) setStatus("flush", null);
                     }).start();
             }
         };
@@ -287,29 +290,46 @@ public final class Console {
         return "linux";
     }
 
-    public void setStatus(String status, String color) {
-        this.status = terminal.getStatus(status != null && !status.equals("") && !status.equals("flush"));
-        if (this.status == null || getScreenWidth() <= 0)
-            return;
-        if (tmpTitles.size() == 0) {
-            tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
-            tmpTitles.add(tmpTitles.get(0));
-        }
-        this.status.update(tmpTitles);
-        if ("flush".equals(status)) {
-            this.status.update(titles);
-        } else if (status != null && !status.equals("")) {
-            AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
-            titles.clear();
-            titles.add(sep);
-            AttributedStringBuilder asb = new AttributedStringBuilder();
-            asb.ansiAppend(status);
-            titles.add(asb.toAttributedString());
-            this.status.update(titles);
-        } else {
-            this.status.suspend();
-            this.status.close();
-            this.status = null;
+    private volatile String prevTitle = "";
+    private volatile String prevTime = "";
+
+    public void setStatus(String title, String color) {
+        try {
+            this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
+            if (this.status == null || getScreenWidth() <= 0)
+                return;
+            if (tmpTitles.size() == 0) {
+                tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
+                tmpTitles.add(tmpTitles.get(0));
+            }
+            this.status.update(tmpTitles);
+            if (title == null || title.equals("")) {
+                this.status.suspend();
+                this.status.close();
+                this.status = null;
+                return;
+            }
+            if (terminal.paused()) return;
+            String time = timer.getTime();
+            if ("flush".equals(title) && prevTime.equals(time)) {
+                this.status.update(titles);
+            } else {
+                if ("flush".equals(title)) {
+                    title = prevTitle;
+                } else {
+                    prevTitle = title;
+                }
+                prevTime = time;
+                AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
+                titles.clear();
+                titles.add(sep);
+                AttributedStringBuilder asb = new AttributedStringBuilder();
+                asb.ansiAppend(time).ansiAppend(title);
+                titles.add(asb.toAttributedString());
+                this.status.update(titles);
+            }
+        } catch (Throwable e) {
+            e.printStackTrace();
         }
     }
 
@@ -387,9 +407,11 @@ public final class Console {
     private String firstPrompt = "SQL> ";
     private int promptWidth = 5;
     private int cancelSeq = 0;
+
     public synchronized void increaseCancelSeq() {
         if (cancelSeq == 0) ++cancelSeq;
     }
+
     public String readLine(String prompt, String buffer) {
         try {
             setEvents(null, null);
@@ -408,7 +430,11 @@ public final class Console {
                 firstPrompt = prompt;
                 promptWidth = wcwidth(firstPrompt);
             }
+
+            timer.stop();
             String line = reader.readLine(prompt, null, buffer);
+            timer.start();
+
             if (line != null) {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
@@ -422,6 +448,7 @@ public final class Console {
             }
             return line;
         } catch (Throwable e) {
+            timer.stop();
             ++cancelSeq;
             try {
                 if (cancelSeq >= 5) {
@@ -466,6 +493,10 @@ public final class Console {
         return pause;
     }
 
+    public Boolean isBroken() {
+        return cancelSeq >= 5;
+    }
+
     public int setLastHistory() {
         return history.setIndex();
     }
@@ -475,22 +506,26 @@ public final class Console {
     }
 
     public void suspend(boolean enable) {
-        if(enable) {
-            if(status!=null) {
+        if (enable) {
+            if (status != null) {
                 status.hide();
                 status.suspend();
             }
             terminal.echo(true);
             terminal.pause();
         } else {
+            if (isBroken()) {
+                System.exit(0);
+                return;
+            }
             terminal.resume();
             terminal.echo(false);
-            if(status!=null) {
+            if (status != null) {
                 status.restore();
-                setStatus("flush","");
+                setStatus("flush", "");
             }
         }
-        pause=enable;
+        pause = enable;
     }
 
     public synchronized void setEvents(ActionListener event, char[] keys) {

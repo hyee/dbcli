@@ -189,7 +189,7 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 inMode,
                 outConsole,
                 outMode);
-        if (status != null) {
+        if (status != null && type.equals(TYPE_WINDOWS)) {
             status.close();
             status = null;
         }

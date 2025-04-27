@@ -251,10 +251,11 @@ function oracle:connect(conn_str)
 
     local succ,err=pcall(self.exec,self,[[
         DECLARE /*INTERNAL_DBCLI_CMD*/
-            vs      PLS_INTEGER  := dbms_db_version.version;
-            ver     PLS_INTEGER  := sign(vs-9);
-            re      PLS_INTEGER  := dbms_db_version.release;
+            vs      PLS_INTEGER;
+            ver     PLS_INTEGER;
+            re      PLS_INTEGER;
             vf      VARCHAR2(30);
+            vf1     VARCHAR2(30);
             isADB   PLS_INTEGER  := 0;
             rtn     PLS_INTEGER;
             cdbid   NUMBER;
@@ -292,6 +293,31 @@ function oracle:connect(conn_str)
                 RETURN dfl;
             END;
         BEGIN
+            SELECT MAX(REGEXP_SUBSTR(banner,'\d+\.\d+\.[\.0-9]+')) 
+            INTO   vf
+            from   v$version;
+            vs := regexp_substr(vf,'\d+');
+            ver:= sign(vs-9);
+
+            IF vs > 12 THEN
+                vf1 := get_param('SELECT VERSION_FULL FROM v$instance');
+                --Used on ADW/ATP
+                IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
+                    isADB := get_param(q'[SELECT COUNT(1) FROM ALL_USERS WHERE  USERNAME='C##CLOUD$SERVICE']');
+                END IF;
+                set_param('optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false');
+            END IF;
+            IF vf1 IS NULL THEN
+                vf1 := get_param(q'[SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION']');
+            END IF;
+
+            IF vf1 IS NOT NULL THEN
+                vf := vf1;
+            END IF;
+
+            :db_version := vf;
+            re := regexp_substr(vf,'\d+',1,2);
+
             blk_siz:=get_param('db_block_size',8192);
             mbrc   :=get_param('_db_file_optimizer_read_count',8);
             
@@ -335,23 +361,13 @@ function oracle:connect(conn_str)
             set_param(q'["_fix_control"='30786641:1','22258300:1']');
             --ORA-12850 on gv$ views
             set_param(q'["_fix_control"='27261477:1']');
-            $IF dbms_db_version.version > 12 $THEN
-                vf := get_param('SELECT VERSION_FULL FROM v$instance');
-                --Used on ADW/ATP
-                IF sys_context('userenv', 'con_name') != 'CDB$ROOT' THEN
-                    SELECT COUNT(1)
-                    INTO   isADB
-                    FROM   ALL_USERS
-                    WHERE  USERNAME='C##CLOUD$SERVICE';
-                END IF;
-                set_param('optimizer_ignore_hints=false optimizer_ignore_parallel_hints=false');
-            $END
-
-            $IF dbms_db_version.version < 18 $THEN
+            
+            
+            IF vs < 18 THEN
                 did := get_param('select dbid from v$database');
-            $ELSE
+            ELSE
                 did := sys_context('userenv', 'dbid');
-            $END
+            END IF;
 
             FOR r in(SELECT role p FROM SESSION_ROLES UNION ALL SELECT * FROM SESSION_PRIVS) LOOP
                 IF nvl(length(pv),0)<32000 THEN
@@ -368,48 +384,51 @@ function oracle:connect(conn_str)
             IF ccflags IS NOT NULL THEN
                 set_param('PLSQL_CCFLAGS='''||ccflags||'''');
             END IF;
-            :privs := pv;
-
+            
             IF sv like 'SYS$%' THEN
                 sv := regexp_substr(get_param('service_names','SQL'),'[^ ,]+');
             END IF;
 
-            SELECT user,
-                   nvl(vf,(SELECT value FROM Nls_Database_Parameters WHERE parameter = 'NLS_RDBMS_VERSION')) version,
-                   userenv('language') nls,
-            $IF dbms_db_version.version > 9 $THEN      
-                   userenv('sid') ssid,
-                   userenv('instance') inst,
-                   sys_context('userenv', 'instance_name') inst_name,
-            $ELSE
-                   (select sid from v$mystat where rownum<2) ssid,
-                   (select instance_number from v$instance where rownum<2) inst,
-                   (select instance_name from v$instance where rownum<2) inst_name,
-            $END
+            :privs        := pv;
+            :db_user      := user;
+            :dbid         := did;
+            :nls_lang     := userenv('language');
+            :dbname       := sys_context('userenv', 'db_unique_name');
+            :isdba        := sys_context('userenv', 'isdba') ;
+            :service_name := nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) ;
+            :version      := 0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re);
+            :isadb        := CASE WHEN isADB = 0 THEN 'FALSE' ELSE 'TRUE' END;
+            IF vs > 9 THEN
+                :sid           := userenv('sid');
+                :instance      := userenv('instance');
+                :instance_name := sys_context('userenv', 'instance_name');
+            ELSE
+                SELECT (select sid from v$mystat where rownum<2) ssid,
+                       (select instance_number from v$instance where rownum<2) inst,
+                       (select instance_name from v$instance where rownum<2) inst_name
+                INTO  :sid,:instance,:instance_name
+                FROM  v$version
+                WHERE rownum < 2;
+            END IF;
 
-            $IF dbms_db_version.version > 11 $THEN
-                   sys_context('userenv', 'con_name') con_name,
-            $ELSE
-                   null con_name,
-            $END   
-                   did dbid,
-                   sys_context('userenv', 'db_unique_name') dbname,
-                   sys_context('userenv', 'isdba') isdba,
-                   nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) service_name,
-                   decode(sign(vs||re-111),1,decode(sys_context('userenv', 'DATABASE_ROLE'),'PHYSICAL STANDBY','(DG)> ','TRUE CACHE','(TC)> ')) END,
-                   0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re),
-                   decode(isADB,0,'FALSE','TRUE')
-            INTO   :db_user,:db_version, :nls_lang,:sid,:instance,:instance_name, :container, :dbid, :dbname,:isdba, :service_name,:db_role, :version,:isadb
-            FROM   nls_Database_Parameters
-            WHERE  parameter = 'NLS_CHARACTERSET';
-            
-            IF :db_role IS NULL THEN 
-                :db_role:=get_param(q'[select decode(DATABASE_ROLE,'PHYSICAL STANDBY','(DG)> ','TRUE CACHE','(TC)> ') from v$database]');
-            ELSIF :db_role = ' ' THEN
-                :db_role := trim(:db_role);
+            IF vs > 11 THEN
+                :container := sys_context('userenv', 'con_name');
             END IF;
             
-            strval := get_param('cluster_database','FALSE');
+            :db_role:=CASE
+                WHEN :version <=11.1 THEN
+                    ''
+                WHEN sys_context('userenv', 'DATABASE_ROLE')='PHYSICAL STANDBY' THEN
+                    '(DG)> '
+                WHEN sys_context('userenv', 'DATABASE_ROLE')='TRUE CACHE' THEN
+                    '(TC)> '
+            END;
+            
+            IF :db_role IS NULL THEN 
+                :db_role := get_param(q'[select decode(DATABASE_ROLE,'PHYSICAL STANDBY','(DG)> ','TRUE CACHE','(TC)> ') from v$database]');
+            END IF;
+            
+            strval  := get_param('cluster_database','FALSE');
             IF strval = 'TRUE' THEN
                 strval := get_param(q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance where status='OPEN']');
             END IF;
@@ -447,6 +466,7 @@ function oracle:connect(conn_str)
             self:disconnect(false)
             return
         end
+        print(err)
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         self.props=props
@@ -487,7 +507,11 @@ function oracle:connect(conn_str)
     end
     self.session_title=('%s@%s   SID: %s@%s   Version: Oracle(%s)')
             :format(self.props.db_user,prompt,self.props.sid,self.props.instance,self.props.db_version)
-    env.set_title(self.session_title)
+    if self.props.sid then
+        env.set_title(self.session_title)
+    else 
+        env.set_title("Connected(Limited)")
+    end
     for k,v in pairs(self.props) do args[k]=v end
     args.oci_connection=packer.pack_str(self.conn_str)
     if not packer.unpack_str(args.oci_connection) then

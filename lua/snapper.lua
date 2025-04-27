@@ -268,6 +268,9 @@ end
 function snapper:next_exec()
     local cmds,args,db,clock=self.cmds,self.args,self.db,os.timer()
     --self:trigger('before_exec_action')
+    if console:isBroken() then
+        env.exit()
+    end
     for name,cmd in pairs(cmds) do
         self.db.grid_cost=nil
         args[name].snap_interval=clock - cmd.begin_time

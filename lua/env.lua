@@ -1112,7 +1112,7 @@ end
 
 function env.run_luajit()
     console:suspend(true)
-    pcall(os.execute,env.join_path(env.LIB_PATH,'luajit'))
+    pcall(os.execute,'cd "'..env.LIB_PATH..'" && .'..env.PATH_DEL..'luajit')
     console:suspend(false)
 end
 
@@ -1416,7 +1416,7 @@ function env.set_title(title,value,callee)
     else
         titles=org_title
         title_list={}
-        console:setStatus(nil,nil)
+        return console:setStatus(nil,nil)
     end
 
     if CURRENT_TITLE~=titles or enabled then
