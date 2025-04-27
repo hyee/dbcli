@@ -1111,8 +1111,9 @@ local function set_cache_path(name,path)
 end
 
 function env.run_luajit()
-    terminal:echo(true)
+    console:suspend(true)
     pcall(os.execute,env.join_path(env.LIB_PATH,'luajit'))
+    console:suspend(false)
 end
 
 function env.set_option(name,value)

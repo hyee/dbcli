@@ -177,11 +177,10 @@ function system:call_process(cmd,is_native)
                 env1[k]=os.getenv(k) or ""
                 env.uv.os.setenv(k,v)
             end
-            terminal:echo(true)
-            terminal:pause()
+            
+            console:suspend(true)
             pcall(os.execute,line)
-
-            terminal:resume()
+            console:suspend(false)
             for k,v in pairs(env1) do
                 if v~="" then
                     env.uv.os.setenv(k,v)

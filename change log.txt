@@ -1,4 +1,4 @@
-2021-04-30: * public: upgrade libs: JNA->5.17, jline -> 3.29.1, jansi(removed), conemu-> 210912(last work on XP), LuaJIT -> 250424, LPeg -> 1.1.0(without re)
+2021-04-30: * public: upgrade libs: JNA->5.17, jline -> 3.29.1, jansi(removed), conemu-> 210912(last work on XP), LuaJIT -> 250424, LPeg -> 1.1.0(without re), luv->1.50
             + public: also support JDK 21+
             + public: support Linux-ARM64
 2025-04-27: + oracle: new script 'show dictcheck' for 23ai

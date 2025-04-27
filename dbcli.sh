@@ -7,10 +7,17 @@ fi
 
 pushd "$(dirname "$0")" > /dev/null
 os=$(uname -a)
-if [[ "$os" =~ Darwin.*ARM ]]; then
-    os="mac-arm"
-elif [[ "$os" = *Darwin* ]]; then
+arch=$os
+if [[ "$os" = *Darwin* ]]; then
     os="mac"
+    arch=$(machine 2>&1)
+    if [[ "$arch" = *arm64* ]]; then
+        os="mac-arm"
+        arch="ARM64"
+    else
+        os="mac"
+        arch="X86_64"
+    fi
 elif [[ "$os" =~ Linux.*x86_64 ]]; then
     os="linux"
     bind 'set enable-bracketed-paste on' &>/dev/null
@@ -47,7 +54,7 @@ elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
         if [ "$os" = "mac" ]; then
-            _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d"|grep -oh "/Library.*"|head -1`
+            _java=`/usr/libexec/java_home -V 2>&1|egrep -v "^\s+\d.+arm64"|grep -oh "/Library.*"|head -1`
         else
             _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d.+arm64"|grep -oh "/Library.*"|head -1`
         fi

@@ -180,7 +180,7 @@ public final class Console {
                         } catch (InterruptedException e) {
                         }
                         reader.redrawLine();
-                        setStatus("flush", null);
+                        if(status!=null) setStatus("flush", null);
                     }).start();
             }
         };
@@ -301,12 +301,10 @@ public final class Console {
         } else if (status != null && !status.equals("")) {
             AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
             titles.clear();
-            if (status != null && !status.equals("")) {
-                titles.add(sep);
-                AttributedStringBuilder asb = new AttributedStringBuilder();
-                asb.ansiAppend(status);
-                titles.add(asb.toAttributedString());
-            }
+            titles.add(sep);
+            AttributedStringBuilder asb = new AttributedStringBuilder();
+            asb.ansiAppend(status);
+            titles.add(asb.toAttributedString());
             this.status.update(titles);
         } else {
             this.status.suspend();
@@ -411,7 +409,6 @@ public final class Console {
                 promptWidth = wcwidth(firstPrompt);
             }
             String line = reader.readLine(prompt, null, buffer);
-            status = terminal.getStatus(false);
             if (line != null) {
                 line = parser.getLines();
                 if (line == null) return readLine(parser.secondPrompt, null);
@@ -475,6 +472,25 @@ public final class Console {
 
     public void updateLastHistory(String line) {
         history.updateLast(line);
+    }
+
+    public void suspend(boolean enable) {
+        if(enable) {
+            if(status!=null) {
+                status.hide();
+                status.suspend();
+            }
+            terminal.echo(true);
+            terminal.pause();
+        } else {
+            terminal.resume();
+            terminal.echo(false);
+            if(status!=null) {
+                status.restore();
+                setStatus("flush","");
+            }
+        }
+        pause=enable;
     }
 
     public synchronized void setEvents(ActionListener event, char[] keys) {
