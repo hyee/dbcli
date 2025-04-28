@@ -772,6 +772,15 @@ final public class More {
         int saveFirstLineToDisplay;
         int saveFirstColumnToDisplay;
         int saveOffsetInLine;
+        List<AttributedString> savelines = new ArrayList<>();
+        int saveTotalLines = 0;
+        int saveTitleLines = 0;
+        AttributedString[] saveTitles = null;
+        boolean saveMatchedAsc;
+        int saveMatchedIndex;
+        String savePattern;
+        ArrayList<Integer> saveMatchedLines=new ArrayList<>();
+
         boolean savePrintLineNumbers;
 
         public SavedSourcePositions() {
@@ -784,6 +793,28 @@ final public class More {
             saveFirstColumnToDisplay = firstColumnToDisplay;
             saveOffsetInLine = offsetInLine;
             savePrintLineNumbers = printLineNumbers;
+            saveTitles = titles;
+            saveTotalLines = totalLines;
+            saveTitleLines = titleLines;
+            savePattern = pattern;
+            saveMatchedAsc=matchedAsc;
+            saveMatchedIndex=matchedIndex;
+            saveMatchedLines.clear();
+            saveMatchedLines.addAll(matchedLines);
+            savelines.clear();
+            savelines.addAll(lines);
+            //sourceIdx = dec;
+            firstLineToDisplay = 0;
+            firstColumnToDisplay = 0;
+            offsetInLine = 0;
+            printLineNumbers = false;
+            lines.clear();
+            titleLines = 0;
+            titles = new AttributedString[titleLines];
+            totalLines =0;
+            matchedAsc = true;
+            matchedIndex = -1;
+            matchedLines.clear();
         }
 
         public void restore(String failingSource) throws IOException {
@@ -793,6 +824,16 @@ final public class More {
             firstColumnToDisplay = saveFirstColumnToDisplay;
             offsetInLine = saveOffsetInLine;
             printLineNumbers = savePrintLineNumbers;
+            titles = saveTitles;
+            totalLines = saveTotalLines;
+            titleLines = saveTitleLines;
+            pattern = savePattern;
+            matchedAsc = saveMatchedAsc;
+            matchedIndex = saveMatchedIndex;
+            matchedLines.clear();
+            matchedLines.addAll(saveMatchedLines);
+            lines.clear();
+            lines.addAll(savelines);
             if (failingSource != null) {
                 message = failingSource + " not found!";
             }
@@ -1009,11 +1050,6 @@ final public class More {
                 }
                 reader = new BufferedReader(new InputStreamReader(
                         new InterruptibleInputStream(in)));
-                firstLineInMemory = 0;
-                lines = new ArrayList<>();
-                firstLineToDisplay = 0;
-                firstColumnToDisplay = 0;
-                offsetInLine = 0;
                 display.clear();
                 if (sourceIdx == 0) {
                     syntaxHighlighter = SyntaxHighlighter.build(syntaxFiles, null, "none");
@@ -1743,7 +1779,10 @@ final public class More {
             isStarted = false;
             this.isEnterCA = isEnterCA;
             status = Status.getStatus(terminal, false);
-            if (status != null) status.suspend();
+            if (status != null) {
+                status.hide();
+                status.suspend();
+            }
             if (isEnterCA && fullScreen) {
                 terminal.puts(Capability.enter_ca_mode);
             }
@@ -1757,7 +1796,9 @@ final public class More {
                 else
                     terminal.puts(Capability.exit_ca_mode);
             }
-            if (status != null && !isSuspended) status.restore();
+            if (status != null && !isSuspended) {
+                status.restore();
+            }
         }
 
         @Override

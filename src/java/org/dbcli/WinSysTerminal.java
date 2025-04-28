@@ -237,6 +237,7 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         Kernel32.GetConsoleScreenBufferInfo(outConsole, info);
         size.setColumns(info.windowWidth());
         size.setRows(info.windowHeight());
+        size.cursorPos(info.cursorPosition.x,info.cursorPosition.y);
         return size;
 
     }
@@ -246,6 +247,7 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         Kernel32.GetConsoleScreenBufferInfo(outConsole, info);
         size.setColumns(info.size.x);
         size.setRows(info.size.y);
+        size.cursorPos(info.cursorPosition.x,info.cursorPosition.y);
         return size;
     }
 

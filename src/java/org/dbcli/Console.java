@@ -9,11 +9,13 @@ import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
+import org.jline.terminal.Cursor;
 import org.jline.terminal.Size;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.terminal.impl.CursorSupport;
 import org.jline.utils.*;
 import org.jline.widget.AutosuggestionWidgets;
 
@@ -59,7 +61,6 @@ public final class Console {
     boolean isPrompt = true;
     boolean isJNIConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
-    ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     private LuaState lua;
     volatile private ScheduledFuture task;
     private ActionListener event;
@@ -73,7 +74,7 @@ public final class Console {
     private String colorPlan;
     private final KeyMap keyMap;
     protected volatile Status status;
-    protected Timer timer = new Timer(this);
+    public Timer timer = new Timer(this);
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -94,7 +95,12 @@ public final class Console {
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
                 && !"jna".equals(mode)
                 && !"ffm".equals(mode))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, "ansicon".equals(mode) || "conemu".equals(mode), encoding, true, Terminal.SignalHandler.SIG_IGN, false);
+            this.terminal = WinSysTerminal.createTerminal(colorPlan,
+                    null,
+                    "ansicon".equals(mode) || "conemu".equals(mode),
+                    encoding, true,
+                    Terminal.SignalHandler.SIG_IGN,
+                    false);
         else
             this.terminal = (AbstractTerminal) TerminalBuilder
                     .builder()
@@ -195,7 +201,7 @@ public final class Console {
         display = new More.Play(terminal, false);
         display.init(false);
         Size size = terminal.getSize();
-        display.resize(size.getRows(), size.getColumns());
+        display.resize(getBufferWidth() - 1, getScreenHeight());
     }
 
     public void exitDisplay() {
@@ -206,9 +212,8 @@ public final class Console {
     public void display(String[] args) {
         display.clear();
         Status status = terminal.getStatus(false);
-        if (status != null) status.close();
-        Size size = terminal.getSize();
-        display.resize(size.getRows(), size.getColumns());
+        if (status != null) status.hide();
+        display.resize(getScreenHeight(), getBufferWidth());
         display.updateAnsi(Arrays.asList(args), -1);
     }
 
@@ -326,6 +331,7 @@ public final class Console {
                 titles.add(asb.toAttributedString());
                 this.status.update(titles);
             }
+            terminal.writer().flush();
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -341,7 +347,6 @@ public final class Console {
     }
 
     public int getBufferWidth() {
-        if ("terminator".equals(System.getenv("TERM"))) return 2000;
         return terminal.getBufferSize().getColumns();
     }
 
@@ -429,9 +434,7 @@ public final class Console {
                 promptWidth = wcwidth(firstPrompt);
             }
 
-            timer.stop();
             String line = reader.readLine(prompt, null, buffer);
-            timer.start();
 
             if (line != null) {
                 line = parser.getLines();

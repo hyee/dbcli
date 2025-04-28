@@ -60,9 +60,10 @@ public class Loader {
             libPath = System.getProperty("java.library.path");
             //String libs = System.getenv("LD_LIBRARY_PATH");
             //addLibrary(libPath + (libs == null ? "" : File.pathSeparator + libs), true);
-            System.setProperty("library.jansi.path", libPath);
+            System.setProperty("library.jline.path", libPath);
             System.setProperty("jna.library.path", libPath);
             System.setProperty("jna.boot.library.path", libPath);
+            System.setProperty("LUA_CPAH", libPath+"/?.so");
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);

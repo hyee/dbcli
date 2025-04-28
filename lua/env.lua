@@ -559,6 +559,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         if writer then env.ROOT_CMD=name end
         --collectgarbage("stop")
         env.log_debug("CMD",name,params)
+        console.timer:start()
     else
         if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
         env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
@@ -579,6 +580,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if isMain then
         collectgarbage("collect")
         env.set_prompt(nil,env.PRI_PROMPT)
+        console.timer:stop()
     end
     return table.unpack(res,2)
 end
@@ -1175,7 +1177,7 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
-        env.set.init("Status",'on',env.set_title,"core","Display the status bar","on,off")
+        env.set.init("Status",'on' or 'off',env.set_title,"core","Display the status bar","on,off")
         --env.set_title('status',enabled)
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
         env.set.init("MOUSE",'off',env.set_option,"core","Enable to use mouse to navigate the cursor, and use SHIFT+Mouse to select text","on,off")
@@ -1241,7 +1243,6 @@ function env.unload()
     end
     setmetatable(_G,nil)
 end
-
 
 function env.reload()
     print("Reloading environment ...")
