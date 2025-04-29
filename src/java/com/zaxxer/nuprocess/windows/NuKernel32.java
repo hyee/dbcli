@@ -16,15 +16,21 @@
 
 package com.zaxxer.nuprocess.windows;
 
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.List;
+
 import com.sun.jna.*;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
 import com.sun.jna.win32.W32APIOptions;
-import com.zaxxer.nuprocess.windows.NuWinNT.*;
-
-import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.List;
+import com.zaxxer.nuprocess.windows.NuWinNT.DWORD;
+import com.zaxxer.nuprocess.windows.NuWinNT.HANDLE;
+import com.zaxxer.nuprocess.windows.NuWinNT.SECURITY_ATTRIBUTES;
+import com.zaxxer.nuprocess.windows.NuWinNT.PROCESS_INFORMATION;
+import com.zaxxer.nuprocess.windows.NuWinNT.STARTUPINFO;
+import com.zaxxer.nuprocess.windows.NuWinNT.ULONG_PTRByReference;
+import com.zaxxer.nuprocess.windows.NuWinNT.ULONG_PTR;
 
 public class NuKernel32 {
     static {

@@ -779,7 +779,7 @@ final public class More {
         boolean saveMatchedAsc;
         int saveMatchedIndex;
         String savePattern;
-        ArrayList<Integer> saveMatchedLines=new ArrayList<>();
+        ArrayList<Integer> saveMatchedLines = new ArrayList<>();
 
         boolean savePrintLineNumbers;
 
@@ -797,8 +797,8 @@ final public class More {
             saveTotalLines = totalLines;
             saveTitleLines = titleLines;
             savePattern = pattern;
-            saveMatchedAsc=matchedAsc;
-            saveMatchedIndex=matchedIndex;
+            saveMatchedAsc = matchedAsc;
+            saveMatchedIndex = matchedIndex;
             saveMatchedLines.clear();
             saveMatchedLines.addAll(matchedLines);
             savelines.clear();
@@ -811,7 +811,7 @@ final public class More {
             lines.clear();
             titleLines = 0;
             titles = new AttributedString[titleLines];
-            totalLines =0;
+            totalLines = 0;
             matchedAsc = true;
             matchedIndex = -1;
             matchedLines.clear();
@@ -1777,7 +1777,7 @@ final public class More {
             reset();
             prevBuff = null;
             isStarted = false;
-            this.isEnterCA = isEnterCA;
+            this.isEnterCA = isEnterCA && terminal.getStringCapability(Capability.clear_screen) != null;
             status = Status.getStatus(terminal, false);
             if (status != null) {
                 status.hide();
@@ -1798,6 +1798,7 @@ final public class More {
             }
             if (status != null && !isSuspended) {
                 status.restore();
+                status.redraw();
             }
         }
 

@@ -17,8 +17,12 @@
 package com.zaxxer.nuprocess;
 
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.TreeMap;
 
 /**
  * This class is used to create operating system processes.
@@ -234,6 +238,7 @@ public class NuProcessBuilder {
      * immediately detectable launch failure
      */
     public NuProcess start() {
+        ensureNoNullCharacters(command);
         ensureListener();
         String[] env = prepareEnvironment();
 
@@ -247,6 +252,7 @@ public class NuProcessBuilder {
      * @since 1.3
      */
     public void run() {
+        ensureNoNullCharacters(command);
         ensureListener();
         String[] env = prepareEnvironment();
 
@@ -259,11 +265,29 @@ public class NuProcessBuilder {
         }
     }
 
+    private void ensureNoNullCharacters(List<String> commands) {
+        for (String command : commands) {
+            if (command.indexOf('\u0000') >= 0) {
+                throw new IllegalArgumentException("Commands may not contain null characters");
+            }
+        }
+    }
+
+    private void ensureNoNullCharacters(String environment) {
+        if (environment.indexOf('\u0000') >= 0) {
+            throw new IllegalArgumentException("Environment may not contain null characters");
+        }
+    }
+
     private String[] prepareEnvironment() {
         String[] env = new String[environment.size()];
         int i = 0;
         for (Entry<String, String> entrySet : environment.entrySet()) {
-            env[i++] = entrySet.getKey() + "=" + entrySet.getValue();
+            String key = entrySet.getKey();
+            String value = entrySet.getValue();
+            ensureNoNullCharacters(key);
+            ensureNoNullCharacters(value);
+            env[i++] = key + "=" + value;
         }
 
         return env;

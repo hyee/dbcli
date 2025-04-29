@@ -77,16 +77,14 @@ end
 function snapper:after_script()
     self.cmds,self.args=nil,nil
     self.db:close_cache('Internal_snapper')
-    if self.top_mode==true then 
-        console:exitDisplay()
-        env.printer.top_mode=false
-    end
+    
     if self.autosize then grid.col_auto_size=self.autosize end
     if self.var_context then
         env.var.import_context(table.unpack(self.var_context))
         self.var_context=nil
     end
     if self.start_flag then
+        if self.is_first_top then console:exitDisplay() end
         self.start_flag,self.snap_cmd,self.is_repeat,self.is_first_top=false
         self:trigger('after_exec_action')
         self.db:commit()
@@ -94,6 +92,9 @@ function snapper:after_script()
         cfg.set("feed","back")
         cfg.set("digits","back")
         cfg.set("sep4k",'back')
+    end
+    if self.top_mode==true then 
+        env.printer.top_mode=false
     end
 end
 

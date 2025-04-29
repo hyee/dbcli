@@ -84,7 +84,7 @@ public final class WindowsProcess implements NuProcess {
     private PROCESS_INFORMATION processInfo;
 
     static {
-        namedPipePathPrefix = "\\\\.\\pipe\\NuProcess-" + UUID.randomUUID() + "-";
+        namedPipePathPrefix = "\\\\.\\pipe\\NuProcess-" + UUID.randomUUID().toString() + "-";
         namedPipeCounter = new AtomicInteger(100);
 
         IS_SOFTEXIT_DETECTION = Boolean.parseBoolean(System.getProperty("com.zaxxer.nuprocess.softExitDetection", "true"));
@@ -607,7 +607,7 @@ public final class WindowsProcess implements NuProcess {
         if (myProcessor.checkAndSetRunning()) {
             CyclicBarrier spawnBarrier = myProcessor.getSpawnBarrier();
 
-            Thread t = new Thread(myProcessor, "ProcessIoCompletion" + mySlot);
+            Thread t = new Thread(myProcessor, "NuProcessIoCompletion-" + mySlot);
             t.setDaemon(true);
             t.start();
 

@@ -19,12 +19,13 @@
  */
 package com.zaxxer.nuprocess.windows;
 
+import java.nio.file.Path;
+
+import java.util.List;
+
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessFactory;
 import com.zaxxer.nuprocess.NuProcessHandler;
-
-import java.nio.file.Path;
-import java.util.List;
 
 /**
  * Windows process factory.  Creates and starts a process.

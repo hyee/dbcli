@@ -222,6 +222,18 @@ function helper.help(cmd,...)
             print(term)
         end
         return
+    elseif cmd=='-ttop' then
+        local top=java.new('org.jline.builtins.TTop',console.terminal)
+        if console.status~=nil then
+            console.status:hide()
+            console.status:suspend()
+        end
+        pcall(top.run,top)
+        if console.status~=nil then
+            console.status:restore()
+            console.status:redraw()
+        end
+        return;
     elseif cmd=="-e" or cmd=="-E" then
         return helper.env(...)
     elseif cmd=="-j" or cmd=="-J" then
@@ -346,6 +358,7 @@ function helper.desc()
            -j         To show current JVM information
            -e         To show current environment infomation. Usage: help -e [<lua_table>[.<sub_table>] ]
            -term      To Show terminal info
+           -ttop      To top activities of current JVM
            Internal:
                 -verbose [class] :  dump a class or classes from verbose.log into dir "dump"
                 -dump            :  dump classed of current process into dir "dump"

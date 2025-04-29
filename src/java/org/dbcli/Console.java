@@ -5,14 +5,12 @@ import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Source;
+import org.jline.builtins.TTop;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
-import org.jline.terminal.Cursor;
-import org.jline.terminal.Size;
-import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.*;
 import org.jline.terminal.impl.AbstractTerminal;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.terminal.impl.CursorSupport;
@@ -200,8 +198,7 @@ public final class Console {
     public void initDisplay() {
         display = new More.Play(terminal, false);
         display.init(false);
-        Size size = terminal.getSize();
-        display.resize(getBufferWidth() - 1, getScreenHeight());
+        display.resize(getScreenHeight(), getBufferWidth() - 1);
     }
 
     public void exitDisplay() {
@@ -210,13 +207,21 @@ public final class Console {
     }
 
     public void display(String[] args) {
+        //display.reset();
+        int width = getBufferWidth() - 1;
+        /*for(int i=0;i<args.length;i++) {
+            String line=args[i];
+            int size=wcwidth(line);
+            if(size<width) {
+                args[i]+=new String(new char[width-size]).replace('\0',' ');
+            }
+        }*/
         display.clear();
-        Status status = terminal.getStatus(false);
-        if (status != null) status.hide();
-        display.resize(getScreenHeight(), getBufferWidth());
+        display.resize(getScreenHeight(), width);
+        //Attributes attrs = terminal.enterRawMode();
         display.updateAnsi(Arrays.asList(args), -1);
+        //terminal.setAttributes(attrs);
     }
-
 
     public void enableMouse(String val) {
         if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
@@ -312,8 +317,10 @@ public final class Console {
                 return;
             }
             if (terminal.paused()) return;
+            //must be width -1 to avoid cursor position issue, don't know why
             final String chars = new String(new char[width - 1]);
             String time = timer.getTime();
+            this.status.resize();
             if ("flush".equals(title) && prevTime.equals(time)) {
                 this.status.update(titles);
             } else {
@@ -331,7 +338,6 @@ public final class Console {
                 titles.add(asb.toAttributedString());
                 this.status.update(titles);
             }
-            terminal.writer().flush();
         } catch (Throwable e) {
             e.printStackTrace();
         }

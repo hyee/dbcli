@@ -8,6 +8,7 @@ import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
 import com.opencsv.SQLWriter;
 import org.jline.keymap.KeyMap;
+import org.jline.utils.OSUtils;
 import org.jline.utils.Status;
 
 import javax.sql.DataSource;
@@ -63,7 +64,7 @@ public class Loader {
             System.setProperty("library.jline.path", libPath);
             System.setProperty("jna.library.path", libPath);
             System.setProperty("jna.boot.library.path", libPath);
-            System.setProperty("LUA_CPAH", libPath+"/?.so");
+            System.setProperty("LUA_CPATH", libPath + File.separator + (OSUtils.IS_WINDOWS ? "?.dll" : "?.so"));
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);

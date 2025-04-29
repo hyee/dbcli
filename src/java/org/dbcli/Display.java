@@ -1,11 +1,11 @@
 /*
-                                    * Copyright (c) 2002-2020, the original author(s).
-                                    *
-                                    * This software is distributable under the BSD license. See the terms of the
-                                    * BSD license in the documentation provided with this software.
-                                    *
-                                    * https://opensource.org/licenses/BSD-3-Clause
-                                    */
+ * Copyright (c) 2002-2020, the original author(s).
+ *
+ * This software is distributable under the BSD license. See the terms of the
+ * BSD license in the documentation provided with this software.
+ *
+ * https://opensource.org/licenses/BSD-3-Clause
+ */
 package org.dbcli;
 
 import org.jline.terminal.Terminal;
@@ -142,8 +142,8 @@ public class Display {
             }
             while (nbFooters < l - nbHeaders - 1
                     && Objects.equals(
-                            newLines.get(newLines.size() - nbFooters - 1),
-                            oldLines.get(oldLines.size() - nbFooters - 1))) {
+                    newLines.get(newLines.size() - nbFooters - 1),
+                    oldLines.get(oldLines.size() - nbFooters - 1))) {
                 nbFooters++;
             }
             List<AttributedString> o1 = newLines.subList(nbHeaders, newLines.size() - nbFooters);
@@ -288,7 +288,7 @@ public class Display {
                         int newLen = newLine.columnLength();
                         int nb = Math.max(oldLen, newLen) - (currentPos - curCol);
                         moveVisualCursorTo(currentPos);
-                        if (!terminal.puts(Capability.clr_eol)) { //eraise line
+                        if (!terminal.puts(Capability.clr_eol)) {
                             rawPrint(' ', nb);
                             cursorPos += nb;
                         }
@@ -309,8 +309,8 @@ public class Display {
                     if (newWrap) wrapNeeded = true;
                     else terminal.puts(Capability.clr_eol);
                 }
-            } else if (atRight) {
-                if (this.wrapAtEol) {
+            } else {
+                if (atRight && this.wrapAtEol) {
                     if (!fullScreen || (fullScreen && lineIndex < numLines)) {
                         rawPrint(' ');
                         terminal.puts(Capability.key_backspace);
@@ -396,7 +396,7 @@ public class Display {
                 }
             }
         }
-        return max != 0 ? new int[] {start1, start2, max} : null;
+        return max != 0 ? new int[]{start1, start2, max} : null;
     }
 
     /*

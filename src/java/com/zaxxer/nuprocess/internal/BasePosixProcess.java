@@ -163,7 +163,16 @@ public abstract class BasePosixProcess implements NuProcess {
     @Override
     public void destroy(boolean force) {
         if (isRunning) {
-            checkReturnCode(LibC.kill(pid, force ? LibC.SIGKILL : LibC.SIGTERM), "Sending signal failed");
+            int result = LibC.kill(pid, force ? LibC.SIGKILL : LibC.SIGTERM);
+            if (result != 0) {
+                int errno = Native.getLastError();
+                if (errno == LibC.ESRCH) {
+                    LOGGER.log(Level.FINE, "{0}: The process exited before it could be {1}",
+                            new Object[]{pid, force ? "killed" : "terminated"});
+                } else {
+                    throw new RuntimeException("Sending signal failed, return code: " + result + ", last error: " + errno);
+                }
+            }
         }
     }
 
@@ -336,8 +345,9 @@ public abstract class BasePosixProcess implements NuProcess {
             int read = LibC.read(fd, outBuffer, Math.min(availability, outBuffer.remaining()));
             if (read == -1) {
                 outClosed = true;
-                throw new RuntimeException("Unexpected eof");
-                // EOF?
+
+                int errno = Native.getLastError();
+                throw new RuntimeException("Unexpected EOF reading stdout, errno: " + errno);
             }
 
             outBuffer.limit(outBuffer.position() + read);
@@ -373,7 +383,9 @@ public abstract class BasePosixProcess implements NuProcess {
             if (read == -1) {
                 // EOF?
                 errClosed = true;
-                throw new RuntimeException("Unexpected eof");
+
+                int errno = Native.getLastError();
+                throw new RuntimeException("Unexpected EOF reading stderr, errno: " + errno);
             }
 
             errBuffer.limit(errBuffer.position() + read);
@@ -530,7 +542,7 @@ public abstract class BasePosixProcess implements NuProcess {
         if (myProcessor.checkAndSetRunning()) {
             CyclicBarrier spawnBarrier = myProcessor.getSpawnBarrier();
 
-            Thread t = new Thread(myProcessor, "ProcessQueue" + mySlot);
+            Thread t = new Thread(myProcessor, "NuProcessQueue-" + mySlot);
             t.setDaemon(true);
             t.start();
 

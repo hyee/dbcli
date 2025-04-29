@@ -16,10 +16,14 @@
 
 package com.zaxxer.nuprocess.osx;
 
-import com.sun.jna.*;
-
 import java.util.Arrays;
 import java.util.List;
+
+import com.sun.jna.Native;
+import com.sun.jna.NativeLibrary;
+import com.sun.jna.NativeLong;
+import com.sun.jna.Pointer;
+import com.sun.jna.Structure;
 
 /**
  * @author Brett Wooldridge
