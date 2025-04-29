@@ -338,6 +338,8 @@ public final class Console {
                 titles.add(asb.toAttributedString());
                 this.status.update(titles);
             }
+            //manually flush or cursor position is incorrect
+            terminal.writer().flush();
         } catch (Throwable e) {
             e.printStackTrace();
         }
