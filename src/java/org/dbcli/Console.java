@@ -85,21 +85,27 @@ public final class Console {
 
         }
         String mode = System.getenv("ANSICON_DEF");
-        if (mode == null || mode.equals("")) mode = "jni";
+        if (mode == null || mode.equals("")) mode = "default";
         mode = mode.toLowerCase();
-        if (!mode.equals("jni") && !mode.equals("jna") && !mode.equals("ffm") && !mode.equals("ansicon") && !mode.equals("conemu"))
-            mode = "jni";
+        if (!mode.equals("default")
+                && !mode.equals("jni")
+                && !mode.equals("jna")
+                && !mode.equals("ffm")
+                && !mode.equals("ansicon")
+                && !mode.equals("conemu")) {
+            mode = "default";
+        }
         if (OSUtils.IS_WINDOWS
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
                 && !"jna".equals(mode)
-                && !"ffm".equals(mode))
+                && !"ffm".equals(mode)) {
             this.terminal = WinSysTerminal.createTerminal(colorPlan,
                     null,
                     "ansicon".equals(mode) || "conemu".equals(mode),
                     encoding, true,
                     Terminal.SignalHandler.SIG_IGN,
                     false);
-        else
+        } else {
             this.terminal = (AbstractTerminal) TerminalBuilder
                     .builder()
                     .system(true)
@@ -107,11 +113,12 @@ public final class Console {
                     .encoding(encoding)
                     .jansi(false)
                     .jna("jna".equals(mode))
-                    .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode))
-                    .ffm("ffm".equals(mode))
+                    .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode) || "default".equals(mode))
+                    .ffm("ffm".equals(mode) || "default".equals(mode))
                     .nativeSignals(true)
                     .signalHandler(Terminal.SignalHandler.SIG_IGN)
                     .build();
+        }
         Interrupter interrupter = new Interrupter();
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, interrupter);
@@ -218,9 +225,9 @@ public final class Console {
         }*/
         display.clear();
         display.resize(getScreenHeight(), width);
-        //Attributes attrs = terminal.enterRawMode();
+        Attributes attrs = terminal.enterRawMode();
         display.updateAnsi(Arrays.asList(args), -1);
-        //terminal.setAttributes(attrs);
+        terminal.setAttributes(attrs);
     }
 
     public void enableMouse(String val) {
@@ -302,23 +309,24 @@ public final class Console {
 
     private volatile String prevTitle = "";
     private volatile String prevTime = "";
+    private volatile String prevColor = "";
 
-    public void setStatus(String title, String color) {
+    public boolean setStatus(String title, String color) {
         try {
             final int width = getScreenWidth();
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
-                return;
+                return false;
 
             if (title == null || title.equals("")) {
                 this.status.hide();
                 this.status.close();
                 this.status = null;
-                return;
+                return false;
             }
-            if (terminal.paused()) return;
+            if (terminal.paused() || "flush".equals(title)) return false;
             //must be width -1 to avoid cursor position issue, don't know why
-            final String chars = new String(new char[width - 1]);
+            final String chars = new String(new char[width]);
             String time = timer.getTime();
             this.status.resize();
             if ("flush".equals(title) && prevTime.equals(time)) {
@@ -330,18 +338,30 @@ public final class Console {
                     prevTitle = title;
                 }
                 prevTime = time;
-                AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + chars.replace('\0', '-'));
+                AttributedString sep;
+                if (color != null && !color.equals("") && !color.equals(prevColor)) {
+                    sep = AttributedString.fromAnsi(color + chars.replace('\0', '-'));
+                    prevColor = color;
+                } else if (titles.size() > 0) {
+                    sep = titles.get(0);
+                } else {
+                    sep = AttributedString.fromAnsi(prevColor + chars.replace('\0', '-'));
+                }
                 titles.clear();
                 titles.add(sep);
                 AttributedStringBuilder asb = new AttributedStringBuilder();
+                //int siz=wcwidth(title);
+                //String suffix = siz >= width ? "":new String(new char[width - siz]).replace('\0', ' ');
                 asb.ansiAppend(time).ansiAppend(title);
                 titles.add(asb.toAttributedString());
                 this.status.update(titles);
             }
             //manually flush or cursor position is incorrect
-            terminal.writer().flush();
+            terminal.flush();
+            return true;
         } catch (Throwable e) {
             e.printStackTrace();
+            return false;
         }
     }
 
@@ -515,6 +535,7 @@ public final class Console {
     }
 
     public void suspend(boolean enable) {
+        if (terminal.paused() == enable && pause == enable) return;
         if (enable) {
             if (status != null) {
                 status.hide();

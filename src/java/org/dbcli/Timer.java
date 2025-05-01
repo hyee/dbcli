@@ -18,8 +18,7 @@ class Timer {
     private volatile String time = String.format(format, "*", 0, 0, 0, 0);
 
     private void flushTime(String icon) {
-        Status status;
-        status = console.status;
+        Status status = console.status;
         if (status != null) {
             long secs = clock == 0 ? 0 : (System.currentTimeMillis() - clock) / 10;
             time = String.format(format, icon != null ? icon : icons[(int) (secs / 100) % icons.length], secs / 360000, (secs % 360000) / 6000, (secs % 6000) / 100, (secs % 100));
@@ -28,7 +27,6 @@ class Timer {
     }
 
     private final Thread t = new Thread(() -> {
-
         while (clock >= 0) {
             try {
                 if (latch == null) {

@@ -45,11 +45,24 @@ if [[ "$EXT_PATH" ]]; then
     export PATH=$EXT_PATH:$PATH
 fi
 
+is_java8() {
+    [[ -n "$1" ]] &&  [[ -x "$1/bin/java"  ]] && [[  $("$1/bin/java" -XshowSettings:properties 2>&1|grep java.class.version| awk '{print $3}') > '51.9' ]]
+}
+
+found=0
 # find executable java program
-if [[ -n "$JDK_HOME" ]] && [[ -x "$JDK_HOME/bin/java" ]];  then
+if is_java8 "$JDK_HOME" ; then
     _java="$JDK_HOME/bin/java"
-elif [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
+    found=2
+elif is_java8 "$JRE_HOME"; then
     _java="$JRE_HOME/bin/java"
+    found=2
+elif is_java8 "$ORACLE_HOME/jdk"; then
+    _java="$ORACLE_HOME/jdk/bin/java"
+    found=2
+elif is_java8 "$JAVA_HOME";  then    
+    _java="$JAVA_HOME/bin/java"
+    found=2
 elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
@@ -68,20 +81,15 @@ elif type -p java &>/dev/null; then
     else
         _java=$(readlink -f "`type -p java`")
     fi
-elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then    
-    _java="$JAVA_HOME/bin/java"
-fi
 
-# find executable java program
-found=0
-if [[ "$_java" ]]; then
-    found=2
-    info=$("$_java" -XshowSettings:properties 2>&1)
-    bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
-    ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
-
-    if [[ "$ver" < "52.0" ]]; then
-        found=1
+    if [[ "$_java" ]]; then
+        found=2
+        info=$("$_java" -XshowSettings:properties 2>&1)
+        bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
+        ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
+        if [[ "$ver" < "52.0" ]]; then
+            found=1
+        fi
     fi
 fi
 

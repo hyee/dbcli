@@ -1,5 +1,5 @@
-2021-04-30: * public: upgrade libs: JNA->5.17, jline -> 3.29.1, jansi(removed), conemu-> 210912(last work on XP), LuaJIT -> 250424, LPeg -> 1.1.0(without re), luv->1.50, NuProcess->3.0
-            + public: also support JDK 21+
+2021-04-30: * public: upgrade libs: JNA->5.17, JLine3 -> 3.29.1, jansi(removed), conemu-> 210912(last work on XP), LuaJIT -> 250424, LPeg -> 1.1.0(without re), luv->1.50, NuProcess->3.0, ojdbc8(19.3)->23.7
+            + public: fix on lib jnluajit to support JDK 21+
             + public: support Linux-ARM64
             + public: status bar is visible and add its timer(swith with `set status on/off`)
 2025-04-27: + oracle: new script 'show dictcheck' for 23ai

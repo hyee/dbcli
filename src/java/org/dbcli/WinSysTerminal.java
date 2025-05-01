@@ -27,6 +27,7 @@ import org.jline.terminal.spi.SystemStream;
 import org.jline.terminal.spi.TerminalProvider;
 import org.jline.utils.InfoCmp;
 import org.jline.utils.OSUtils;
+import org.jline.utils.Status;
 
 import static org.jline.nativ.Kernel32.FORMAT_MESSAGE_FROM_SYSTEM;
 import static org.jline.nativ.Kernel32.FormatMessageW;
@@ -191,10 +192,24 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 outMode);
         if (status != null && type.equals(TYPE_WINDOWS)) {
             status.close();
+            status.hide();
+            status.suspend();
             status = null;
         }
         t.setDaemon(true);
         t.start();
+    }
+
+    @Override
+    public Status getStatus(boolean create) {
+        super.getStatus(create);
+        if (status != null && status.toString().contains("false")) {
+            status.close();
+            status.hide();
+            status.suspend();
+            status = null;
+        }
+        return status;
     }
 
     final private static int[] mode = new int[1];

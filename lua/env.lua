@@ -1230,6 +1230,7 @@ function env.onload(...)
         end
     end
     env.IS_ENV_LOADED=true
+    console:suspend(false)
 end
 
 function env.unload()
@@ -1242,6 +1243,7 @@ function env.unload()
         if not e then print(msg) end
     end
     setmetatable(_G,nil)
+    console:suspend(true)
 end
 
 function env.reload()
@@ -1256,7 +1258,6 @@ function env.exit()
     env.set_title(nil,'__EXIT__')
     print("Exited.")
     env.unload()
-    console:suspend(true)
     java.system.exit(0)
 end
 

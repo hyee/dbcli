@@ -1771,9 +1771,9 @@ final public class More {
         boolean isStarted;
         boolean isEnterCA;
         Status status = null;
-        boolean isSuspended = false;
 
         public void init(boolean isEnterCA) {
+            if (isStarted) return;
             reset();
             prevBuff = null;
             isStarted = false;
@@ -1796,9 +1796,9 @@ final public class More {
                 else
                     terminal.puts(Capability.exit_ca_mode);
             }
-            if (status != null && !isSuspended) {
+            status = Status.getStatus(terminal, false);
+            if (status != null) {
                 status.restore();
-                status.redraw();
             }
         }
 

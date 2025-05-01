@@ -837,6 +837,7 @@ function oracle:get_library()
     local files={}
     if home then
         local ver=8+v-52
+        --for i=ver,v>64 and 11 or 6,-1 do
         for i=ver,v>64 and 8 or 6,-1 do
             local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
             if os.exists(jar) then 
