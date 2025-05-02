@@ -1,4 +1,5 @@
 https://invisible-island.net/ncurses/
+XTERM Control Sequences: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 ######## TERMINAL TYPE DESCRIPTIONS SOURCE FILE
 #
 # This version of terminfo.src is distributed with ncurses and is maintained

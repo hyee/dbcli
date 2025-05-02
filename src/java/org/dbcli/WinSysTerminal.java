@@ -191,7 +191,6 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 outConsole,
                 outMode);
         if (status != null && type.equals(TYPE_WINDOWS)) {
-            status.close();
             status.hide();
             status.suspend();
             status = null;
@@ -205,7 +204,6 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         super.getStatus(create);
         if (status != null && status.toString().contains("false")) {
             status.close();
-            status.hide();
             status.suspend();
             status = null;
         }
@@ -307,6 +305,24 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
 
     final void processChar(char c) throws IOException {
         super.processInputChar(c);
+    }
+
+    @Override
+    public int getDefaultForegroundColor() {
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        if (GetConsoleScreenBufferInfo(outConsole, info) == 0) {
+            return -1;
+        }
+        return convertAttributeToRgb(info.attributes & 0x0F, true);
+    }
+
+    @Override
+    public int getDefaultBackgroundColor() {
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        if (GetConsoleScreenBufferInfo(outConsole, info) == 0) {
+            return -1;
+        }
+        return convertAttributeToRgb((info.attributes & 0xF0) >> 4, false);
     }
 
     @Override

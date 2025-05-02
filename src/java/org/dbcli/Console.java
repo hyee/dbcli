@@ -313,7 +313,7 @@ public final class Console {
 
     public boolean setStatus(String title, String color) {
         try {
-            final int width = getScreenWidth();
+            final int width = getScreenWidth()-1;
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
                 return false;
@@ -321,6 +321,7 @@ public final class Console {
             if (title == null || title.equals("")) {
                 this.status.hide();
                 this.status.close();
+                this.status.suspend();
                 this.status = null;
                 return false;
             }
@@ -350,8 +351,6 @@ public final class Console {
                 titles.clear();
                 titles.add(sep);
                 AttributedStringBuilder asb = new AttributedStringBuilder();
-                //int siz=wcwidth(title);
-                //String suffix = siz >= width ? "":new String(new char[width - siz]).replace('\0', ' ');
                 asb.ansiAppend(time).ansiAppend(title);
                 titles.add(asb.toAttributedString());
                 this.status.update(titles);
