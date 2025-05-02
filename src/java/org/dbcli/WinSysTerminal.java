@@ -1,66 +1,136 @@
 package org.dbcli;
 
 
-import org.fusesource.jansi.internal.Kernel32;
-import org.jline.keymap.KeyMap;
-import org.jline.reader.impl.LineReaderImpl;
-import org.jline.terminal.Cursor;
-import org.jline.terminal.Size;
-import org.jline.terminal.impl.AbstractWindowsTerminal;
-import org.jline.terminal.impl.jansi.win.WindowsAnsiWriter;
-import org.jline.utils.InfoCmp;
-import org.jline.utils.OSUtils;
-import org.jline.utils.Status;
-
 import java.io.BufferedWriter;
 import java.io.IOError;
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.IntConsumer;
 
-import static org.fusesource.jansi.internal.Kernel32.*;
+import org.jline.keymap.KeyMap;
+import org.jline.nativ.Kernel32;
+import org.jline.nativ.Kernel32.CONSOLE_SCREEN_BUFFER_INFO;
+import org.jline.nativ.Kernel32.INPUT_RECORD;
+import org.jline.nativ.Kernel32.KEY_EVENT_RECORD;
+import org.jline.reader.impl.LineReaderImpl;
+import org.jline.terminal.Cursor;
+import org.jline.terminal.Size;
+import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.terminal.impl.jni.JniTerminalProvider;
+import org.jline.terminal.impl.jni.win.WindowsAnsiWriter;
+import org.jline.terminal.spi.SystemStream;
+import org.jline.terminal.spi.TerminalProvider;
+import org.jline.utils.InfoCmp;
+import org.jline.utils.OSUtils;
+import org.jline.utils.Status;
 
-public final class WinSysTerminal extends AbstractWindowsTerminal {
-    private static final long consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+import static org.jline.nativ.Kernel32.FORMAT_MESSAGE_FROM_SYSTEM;
+import static org.jline.nativ.Kernel32.FormatMessageW;
+import static org.jline.nativ.Kernel32.GetConsoleScreenBufferInfo;
+import static org.jline.nativ.Kernel32.GetLastError;
+import static org.jline.nativ.Kernel32.GetStdHandle;
+import static org.jline.nativ.Kernel32.INVALID_HANDLE_VALUE;
+import static org.jline.nativ.Kernel32.STD_ERROR_HANDLE;
+import static org.jline.nativ.Kernel32.STD_INPUT_HANDLE;
+import static org.jline.nativ.Kernel32.STD_OUTPUT_HANDLE;
+import static org.jline.nativ.Kernel32.WaitForSingleObject;
+import static org.jline.nativ.Kernel32.readConsoleInputHelper;
+
+public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
+
     private static final long consoleIn = GetStdHandle(STD_INPUT_HANDLE);
+    private static final long consoleOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    private static final long consoleErr = GetStdHandle(STD_ERROR_HANDLE);
 
-    public static WinSysTerminal createTerminal(String name, String type, boolean ansiPassThrough, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler, boolean paused) throws IOException {
-        Writer writer;
-        int[] mode = new int[1];
-        if (Kernel32.GetConsoleMode(consoleOut, mode) == 0) {
+    /*
+    public SystemStream getSystemStream(List<TerminalProvider> providers) {
+        SystemOutput systemOutput = computeSystemOutput();
+        Map<SystemStream, Boolean> system = Stream.of(SystemStream.values())
+                .collect(Collectors.toMap(
+                        stream -> stream, stream -> providers.stream().anyMatch(p -> p.isSystemStream(stream))));
+        return select(system, systemOutput);
+    }
+    * */
+
+    public static WinSysTerminal createTerminal(
+            String name,
+            String type,
+            boolean ansiPassThrough,
+            Charset encoding,
+            boolean nativeSignals,
+            SignalHandler signalHandler,
+            boolean paused)
+            throws IOException {
+        // Get input console mode
+        int[] inMode = new int[1];
+        if (Kernel32.GetConsoleMode(consoleIn, inMode) == 0) {
             throw new IOException("Failed to get console mode: " + getLastErrorMessage());
         }
-        if (type == null) {
-            if (Kernel32.SetConsoleMode(consoleOut, mode[0] | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
-                type = TYPE_WINDOWS_VTP;
-            else if (OSUtils.IS_CONEMU)
-                type = TYPE_WINDOWS_CONEMU;
-            else
-                type = TYPE_WINDOWS;
+        JniTerminalProvider provider = new JniTerminalProvider();
+        ArrayList<TerminalProvider> providers = new ArrayList<>();
+        providers.add(provider);
+        // Get output console and mode
+        SystemStream systemStream = TerminalBuilder
+                .builder().getSystemStream(providers);
+
+        long console = getConsole(systemStream);
+        int[] outMode = new int[1];
+        if (Kernel32.GetConsoleMode(console, outMode) == 0) {
+            throw new IOException("Failed to get console mode: " + getLastErrorMessage());
         }
-        String secondType = null;
-        if (ansiPassThrough) {
+        // Create writer
+        Writer writer;
+
+        if (("conemu").equals(System.getenv("ANSICON_DEF"))) {
+            type = TYPE_WINDOWS_CONEMU;
+            writer = new WinConsoleWriter(console, 1);
+        } else if (System.getenv("WT_PROFILE_ID") != null && System.getenv("WT_SESSION") != null) {
+            type = type != null ? type : "xterm-256color";
+            writer = newConsoleWriter(console);
+        } else if (ansiPassThrough) {
             if (("ansicon").equals(System.getenv("ANSICON_DEF"))) {
-                writer = new WinConsoleWriter(type.equals(TYPE_WINDOWS_VTP) ? 0 : 1);
-                if (type.equals(TYPE_WINDOWS_VTP)) secondType = TYPE_WINDOWS_256_COLOR;
-                else type = TYPE_WINDOWS_256_COLOR;
+                if (enableVtp(console, outMode[0])) {
+                    type = type != null ? type : TYPE_WINDOWS_VTP;
+                    writer = newConsoleWriter(console);
+                } else {
+                    type = TYPE_WINDOWS_CONEMU;
+                    writer = new WinConsoleWriter(console, 1);
+                }
             } else {
-                writer = new WinConsoleWriter();
+                type = type != null ? type : OSUtils.IS_CONEMU ? TYPE_WINDOWS_CONEMU : TYPE_WINDOWS;
+                writer = newConsoleWriter(console);
             }
         } else {
-            if (type.equals(TYPE_WINDOWS_VTP) || type.equals(TYPE_WINDOWS_CONEMU)) {
-                writer = new WinConsoleWriter();
+            if (enableVtp(console, outMode[0])) {
+                type = type != null ? type : TYPE_WINDOWS_VTP;
+                writer = newConsoleWriter(console);
+            } else if (OSUtils.IS_CONEMU) {
+                type = type != null ? type : TYPE_WINDOWS_CONEMU;
+                writer = newConsoleWriter(console);
             } else {
-                writer = new WindowsAnsiWriter(new BufferedWriter(new WinConsoleWriter()));
+                type = type != null ? type : TYPE_WINDOWS;
+                writer = new WindowsAnsiWriter(new BufferedWriter(newConsoleWriter(console)));
             }
         }
-        if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
-            throw new IOException("Failed to get console mode: " + getLastErrorMessage());
-        }
-        WinSysTerminal terminal = new WinSysTerminal(writer, name, type, encoding, codepage, nativeSignals, signalHandler, secondType);
+        // Create terminal
+        WinSysTerminal terminal = new WinSysTerminal(
+                provider,
+                systemStream,
+                writer,
+                name,
+                type,
+                encoding,
+                nativeSignals,
+                signalHandler,
+                consoleIn,
+                inMode[0],
+                console,
+                outMode[0]);
         // Start input pump thread
         if (!paused) {
             terminal.resume();
@@ -68,91 +138,127 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         return terminal;
     }
 
-    final private static int[] mode = new int[1];
 
-
-    public static boolean isWindowsConsole() {
-        return Kernel32.GetConsoleMode(consoleOut, mode) != 0 && Kernel32.GetConsoleMode(consoleIn, mode) != 0;
-    }
-
-    public static boolean isConsoleOutput() {
-        return Kernel32.GetConsoleMode(consoleOut, mode) != 0;
-    }
-
-    public static boolean isConsoleInput() {
-        return Kernel32.GetConsoleMode(consoleIn, mode) != 0;
-    }
-
-    String[] infoComps = null;
-
-    public final int currentWriter() {
-        return console.currentWriter();
-    }
-
-    WinConsoleWriter console = null;
-
-    WinSysTerminal(Writer writer, String name, String type, Charset encoding, int codepage, boolean nativeSignals, SignalHandler signalHandler,
-                   String secondType) throws IOException {
-        super(writer, name, type, encoding, codepage, nativeSignals, signalHandler);
-        if (secondType != null) {
-            console = (WinConsoleWriter) writer;
-            infoComps = new String[]{type, secondType};
-            console.setWriter(type.equals(TYPE_WINDOWS_VTP) ? 0 : 1);
+    public static long getConsole(SystemStream systemStream) {
+        long console;
+        switch (systemStream) {
+            case Output:
+                console = consoleOut;
+                break;
+            case Error:
+                console = consoleErr;
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported stream for console: " + systemStream);
         }
-        //set status as null due to run into display issue in case of scrolling screen
-        status = null;
+        return console;
+    }
+
+    private static boolean enableVtp(long console, int outMode) {
+        return Kernel32.SetConsoleMode(console, outMode | AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+                != 0;
+    }
+
+    private static Writer newConsoleWriter(long console) {
+        return new WinConsoleWriter(console);
+    }
+
+    WinSysTerminal(
+            TerminalProvider provider,
+            SystemStream systemStream,
+            Writer writer,
+            String name,
+            String type,
+            Charset encoding,
+            boolean nativeSignals,
+            SignalHandler signalHandler,
+            long inConsole,
+            int inMode,
+            long outConsole,
+            int outMode)
+            throws IOException {
+        super(
+                provider,
+                systemStream,
+                writer,
+                name,
+                type,
+                encoding,
+                nativeSignals,
+                signalHandler,
+                inConsole,
+                inMode,
+                outConsole,
+                outMode);
+        if (status != null && type.equals(TYPE_WINDOWS)) {
+            status.close();
+            status.hide();
+            status.suspend();
+            status = null;
+        }
         t.setDaemon(true);
         t.start();
     }
 
-    //remove the "final" keywords of type from AbstractWindowsTerminal
-    public void switchWriter(int index) {
-        if (infoComps == null || index == currentWriter()) return;
-        writer.flush();
-        type = infoComps[index];
-        bools.clear();
-        ints.clear();
-        strings.clear();
-        parseInfoCmp();
-        console.setWriter(index);
-        if (index == 1) {
-            writer.write(enablePaste ? LineReaderImpl.BRACKETED_PASTE_ON : LineReaderImpl.BRACKETED_PASTE_OFF);
-        }
-        if (status != null) status.redraw();
-    }
-
     @Override
-    public Status getStatus() {
+    public Status getStatus(boolean create) {
+        super.getStatus(create);
+        if (status != null && status.toString().contains("false")) {
+            status.close();
+            status.hide();
+            status.suspend();
+            status = null;
+        }
         return status;
     }
 
+    final private static int[] mode = new int[1];
+
+    public static boolean isWindowsSystemStream(SystemStream stream) {
+        long console;
+        switch (stream) {
+            case Input:
+                console = consoleIn;
+                break;
+            case Output:
+                console = consoleOut;
+                break;
+            case Error:
+                console = consoleErr;
+                break;
+            default:
+                return false;
+        }
+        return Kernel32.GetConsoleMode(console, mode) != 0;
+    }
+
     @Override
-    protected int getConsoleMode() {
-        if (Kernel32.GetConsoleMode(consoleIn, mode) == 0) {
+    protected int getConsoleMode(Long console) {
+        if (Kernel32.GetConsoleMode(console, mode) == 0) {
             return -1;
         }
         return mode[0];
     }
 
     @Override
-    protected void setConsoleMode(int mode) {
-        Kernel32.SetConsoleMode(consoleIn, mode);
+    protected void setConsoleMode(Long console, int mode) {
+        Kernel32.SetConsoleMode(console, mode);
     }
 
-    final CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
     final Size size = new Size();
-    final Cursor cursor = new Cursor(0, 0);
+    final CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
 
     public Size getSize() {
-        Kernel32.GetConsoleScreenBufferInfo(consoleOut, info);
+        Kernel32.GetConsoleScreenBufferInfo(outConsole, info);
         size.setColumns(info.windowWidth());
         size.setRows(info.windowHeight());
         return size;
+
     }
 
     @Override
     public Size getBufferSize() {
-        Kernel32.GetConsoleScreenBufferInfo(consoleOut, info);
+        Kernel32.GetConsoleScreenBufferInfo(outConsole, info);
         size.setColumns(info.size.x);
         size.setRows(info.size.y);
         return size;
@@ -172,12 +278,35 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
     short beginIdx = START_POS;
     short endIdx = START_POS;
 
-    final void processChar(char c) throws IOException {
-        super.processInputChar(c);
-    }
-
     public void enablePaste(boolean enabled) {
         enablePaste = enabled;
+    }
+
+    Thread t = new Thread(() -> {
+        while (true) {
+            try {
+                if (!paused() && latch == null) {
+                    latch = new CountDownLatch(1);
+                    latch.await();
+                } else Thread.sleep(32);
+                if (prevTime == 0 || pasteCount == 0 || paused()) continue;
+                //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
+                if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
+                    pasteCount = 0;
+                    if (endIdx != epl) {
+                        slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_END);
+                        if (lastChar == '\r' || lastChar == '\n') processChar('\n');
+                        prevTime = 0;
+                    }
+                    latch = null;
+                }
+            } catch (Exception e) {
+            }
+        }
+    });
+
+    final void processChar(char c) throws IOException {
+        super.processInputChar(c);
     }
 
     @Override
@@ -224,35 +353,10 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         processChar(c);
     }
 
-    Thread t = new Thread(() -> {
-        while (true) {
-            try {
-                if (!paused() && latch == null) {
-                    latch = new CountDownLatch(1);
-                    latch.await();
-                } else Thread.sleep(32);
-                if (prevTime == 0 || pasteCount == 0 || paused()) continue;
-                //If no more input after 128+ ms, leave the paste mode (Assume that consuming a input char costs 300us)
-                if (System.currentTimeMillis() - prevTime >= 128 + pasteCount * 0.3) {
-                    pasteCount = 0;
-                    if (endIdx != epl) {
-                        slaveInputPipe.write(LineReaderImpl.BRACKETED_PASTE_END);
-                        if (lastChar == '\r' || lastChar == '\n') processChar('\n');
-                        prevTime = 0;
-                    }
-                    latch = null;
-                }
-            } catch (Exception e) {
-            }
-        }
-    });
-
-
     final protected boolean processConsoleInput() throws IOException {
         INPUT_RECORD[] events;
-        if (consoleIn != INVALID_HANDLE_VALUE
-                && WaitForSingleObject(consoleIn, 128) == 0) {
-            events = readConsoleInputHelper(consoleIn, 1, false);
+        if (inConsole != INVALID_HANDLE_VALUE && WaitForSingleObject(inConsole, 100) == 0) {
+            events = readConsoleInputHelper(inConsole, 1, false);
         } else {
             return false;
         }
@@ -292,7 +396,9 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         int dwButtonState = mouseEvent.buttonState;
         if (tracking == MouseTracking.Off
                 || tracking == MouseTracking.Normal && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
-                || tracking == MouseTracking.Button && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED && dwButtonState == 0) {
+                || tracking == MouseTracking.Button
+                && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
+                && dwButtonState == 0) {
             return;
         }
         int cb = 0;
@@ -323,10 +429,10 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
 
     @Override
     public Cursor getCursorPosition(IntConsumer discarded) {
-        if (GetConsoleScreenBufferInfo(consoleOut, info) == 0) {
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        if (GetConsoleScreenBufferInfo(outConsole, info) == 0) {
             throw new IOError(new IOException("Could not get the cursor position: " + getLastErrorMessage()));
         }
-
         return new Cursor(info.cursorPosition.x, info.cursorPosition.y);
     }
 
@@ -348,4 +454,6 @@ public final class WinSysTerminal extends AbstractWindowsTerminal {
         FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, 0, errorCode, 0, data, bufferSize, null);
         return new String(data, StandardCharsets.UTF_16LE).trim();
     }
+
+
 }

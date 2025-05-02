@@ -10,33 +10,18 @@ if ver then
     end
 end
 if not luv then luv=require("luv") end
-
 _os=_os=='osx' and (jit.arch:lower()=='arm64' and 'mac-arm' or 'mac') or _os
+_os=_os=='linux' and (jit.arch:lower()=='arm64' and 'linux-arm' or 'linux') or _os
 local psep,fsep,dll,which,dlldir
 if _os=="windows" then 
     psep,fsep,dll,which,dlldir=';','\\','.dll','where java 2>nul',jit.arch
 else
     psep,fsep,dll,which,dlldir=':','/',".so",'which java 2>/dev/null',_os
-    local f,err=io.popen('uname -a 2>/dev/null')
-    if f then
-        for line in f:lines() do
-            if line:lower():find("microsoft") then
-                luv.os_setenv("IS_WSL","true")
-                if not os.getenv('ConEmuPID') and os.getenv('TERM')=='xterm-256color' then
-                    luv.os_setenv("TERM","terminator")
-                end
-            end
-        end
-        f:close()
-    end
 end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
 local java_bin,java_ver,java_home=arg[1],tonumber(arg[2]) or 52
-if java_ver>64 then 
-    print("Java 21+ is unsupported, exit.")
-    os.exit(1)
-end
+
 luv.set_process_title("DBCli - Initializing")
 local files={}
 local function scan(dir,ext)
@@ -113,7 +98,7 @@ path[#path+1]=os.getenv("PATH")
 luv.os_setenv("PATH",table.concat(path,psep))
 local freem=luv.get_free_memory()
 local charset=os.getenv("DBCLI_ENCODING") or "UTF-8"
-local options ={'-server','-XX:CompileThreshold=5',
+local options ={'-server',
                 '-noverify',
                 '-Xms64m',
                 '-Xmx'..math.max(128,math.min(math.floor((dlldir=='x86' and luv.get_free_memory() or luv.get_total_memory())/1024/1024*0.75),dlldir=='x86' and 512 or 2048))..'m',
@@ -121,6 +106,8 @@ local options ={'-server','-XX:CompileThreshold=5',
                 java_ver>64 and '-XX:+UseZGC' or '-XX:+UseG1GC',
                 --'-XX:+UseG1GC','-XX:G1PeriodicGCInterval=3000','-XX:+G1PeriodicGCInvokesConcurrent','-XX:G1PeriodicGCSystemLoadThreshold=0.3',
                 --'-XX:-BackgroundCompilation',
+                --'-Xcheck:jni','-verbose:jni',
+                '-XX:MaxJNILocalCapacity=1048576',
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
                 '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
@@ -139,12 +126,20 @@ local options ={'-server','-XX:CompileThreshold=5',
                 java_ver>52 and '--add-opens=java.base/jdk.internal=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm.util=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
+                java_ver>52 and '--enable-native-access=ALL-UNNAMED' or nil,
+                java_ver>64 and '--illegal-native-access=allow' or nil,
+                java_ver>64 and '-XX:UseSVE=0' or nil,
                 java_ver>52 and '--add-modules=jdk.unsupported' or nil}
+
 for _,param in ipairs(other_options) do options[#options+1]=param end
+options={table.unpack(options)}
+
 javavm = require("javavm",true)
---javavm.trace(1)
+--javavm.trace(2)
 javavm.create(table.unpack(options))
+
 _G.__jvmclock=os.clock()-clock
 clock=os.clock()
 local destroy=javavm.destroy
@@ -163,6 +158,7 @@ end
 
 _G.__loadclock=os.clock()-clock
 clock=os.clock()
+
 while true do
     _G.__startclock=os.clock()
     local input,err=loadfile(resolve(input),'bt',_env)

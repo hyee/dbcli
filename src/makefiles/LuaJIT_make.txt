@@ -7,7 +7,7 @@
 # Also works with MinGW and Cygwin on Windows.
 # Please check msvcbuild.bat for building with MSVC on Windows.
 #
-# Copyright (C) 2005-2023 Mike Pall. See Copyright Notice in luajit.h
+# Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
 ##############################################################################
 
 MAJVER=  2
@@ -70,14 +70,14 @@ CCWARN= -Wall
 # as dynamic mode.
 #
 # Mixed mode creates a static + dynamic library and a statically linked luajit.
-BUILDMODE= dynamic
+BUILDMODE= mixed
 #
 # Static mode creates a static library and a statically linked luajit.
 #BUILDMODE= static
 #
 # Dynamic mode creates a dynamic library and a dynamically linked luajit.
 # Note: this executable will only run when the library is installed!
-#BUILDMODE= dynamic
+BUILDMODE= dynamic
 #
 ##############################################################################
 
@@ -140,7 +140,7 @@ XCFLAGS+= -DLUAJIT_NUMMODE=2
 #
 # Turn on assertions for the Lua/C API to debug problems with lua_* calls.
 # This is rather slow -- use only while developing C libraries/embeddings.
-XCFLAGS+= -DLUA_USE_APICHECK
+#XCFLAGS+= -DLUA_USE_APICHECK
 #
 # Turn on assertions for the whole LuaJIT VM. This significantly slows down
 # everything. Use only if you suspect a problem with LuaJIT itself.
@@ -299,6 +299,12 @@ ifneq (,$(MULTILIB))
 endif
 ifneq (,$(LMULTILIB))
   TARGET_XCFLAGS+= -DLUA_LMULTILIB=\"$(LMULTILIB)\"
+endif
+ifneq (,$(INSTALL_LJLIBD))
+  TARGET_XCFLAGS+= -DLUA_LJDIR=\"$(INSTALL_LJLIBD)\"
+endif
+ifeq (,$(shell $(TARGET_CC) -o /dev/null -c -x c /dev/null -fno-strict-float-cast-overflow 2>/dev/null || echo 1))
+  TARGET_XCFLAGS+= -fno-strict-float-cast-overflow
 endif
 
 ##############################################################################

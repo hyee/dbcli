@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.zaxxer.nuprocess.internal.Constants.JVM_MAJOR_VERSION;
 import static com.zaxxer.nuprocess.internal.Constants.OS;
 
 public class LibJava10 {

@@ -2,7 +2,7 @@ package org.dbcli;
 
 import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 
-import static org.fusesource.jansi.internal.Kernel32.*;
+import static org.jline.nativ.Kernel32.*;
 
 public final class WinConsoleWriter extends AbstractWindowsConsoleWriter {
     private final ConEmuWriter conEmuWriter;
@@ -36,22 +36,24 @@ public final class WinConsoleWriter extends AbstractWindowsConsoleWriter {
             }
         }
     });*/
+    private long console;
 
-    public WinConsoleWriter(int index) {
+    public WinConsoleWriter(long console, int index) {
         super();
         this.index = index;
         this.mode = index;
+        this.console = console;
         conEmuWriter = mode <= 1 ? new ConEmuWriter() : null;
         if (mode <= 1) conEmuWriter.register(true);
         //t.setDaemon(true);
         //t.start();
     }
 
-    public WinConsoleWriter() {
-        this(2);
+    public WinConsoleWriter(long console) {
+        this(console, 2);
     }
 
-    private static final long console = GetStdHandle(STD_OUTPUT_HANDLE);
+
     private final int[] writtenChars = new int[1];
     private int index = 0;
 

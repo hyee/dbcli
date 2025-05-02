@@ -78,12 +78,12 @@ public class LibC {
     // from /usr/include/sys/syscall.h
     // We can't use JNA direct mapping for syscall(), since it takes varargs.
     public interface SyscallLibrary extends Library {
-        int SYS___pthread_chdir = 348;
+        public static final int SYS___pthread_chdir = 348;
 
         int syscall(int syscall_number, Object... args);
     }
 
-    public static SyscallLibrary SYSCALL = Native.loadLibrary(Platform.C_LIBRARY_NAME, SyscallLibrary.class);
+    public static SyscallLibrary SYSCALL = (SyscallLibrary) Native.loadLibrary(Platform.C_LIBRARY_NAME, SyscallLibrary.class);
 
     public static final int F_GETFL = 3;
     public static final int F_SETFL = 4;
@@ -91,6 +91,8 @@ public class LibC {
     public static final int O_NONBLOCK;
 
     // from /usr/include/asm-generic/errno-base.h
+    public static final int ESRCH = 3;   /* No such process */
+    public static final int EINTR = 4;   /* Interrupted system call */
     public static final int ECHILD = 10; /* No child processes */
 
     // from /usr/include/sys/wait.h

@@ -559,6 +559,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
         if writer then env.ROOT_CMD=name end
         --collectgarbage("stop")
         env.log_debug("CMD",name,params)
+        console.timer:start()
     else
         if not env.isInterrupted then env.isInterrupted=console.cancelSeq>0 end
         env.checkerr(env.isInterrupted~=true,"Operation is cancelled.")
@@ -579,6 +580,7 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if isMain then
         collectgarbage("collect")
         env.set_prompt(nil,env.PRI_PROMPT)
+        console.timer:stop()
     end
     return table.unpack(res,2)
 end
@@ -1111,8 +1113,9 @@ local function set_cache_path(name,path)
 end
 
 function env.run_luajit()
-    terminal:echo(true)
-    pcall(os.execute,env.join_path(env.LIB_PATH,'luajit'))
+    console:suspend(true)
+    pcall(os.execute,'cd "'..env.LIB_PATH..'" && .'..env.PATH_DEL..'luajit')
+    console:suspend(false)
 end
 
 function env.set_option(name,value)
@@ -1174,8 +1177,8 @@ function env.onload(...)
         env.set.init("Debug",'off',set_debug,"core","Indicates the option to print debug info, 'all' for always, 'off' for disable, others for specific modules.")
         env.set.init("OnErrExit",'on',nil,"core","Indicates whether to continue the remaining statements if error encountered.","on,off")
         env.set.init("TEMPPATH",'cache',set_cache_path,"core","Define the dir to store the temp files.","*")
-        env.set.init("Status",'off',env.set_title,"core","Display the status bar","on,off")
-        --env.set_title('status',enabled)
+        env.set.init("Status",console:getScreenWidth()==console:getBufferWidth() and 'on' or 'off',env.set_title,"core","Display the status bar","on,off")
+        --env.set.init("Status", 'on',env.set_title,"core","Display the status bar","on,off")
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
         env.set.init("MOUSE",'off',env.set_option,"core","Enable to use mouse to navigate the cursor, and use SHIFT+Mouse to select text","on,off")
         env.set.init("BRACKETED_PASTE",'on',env.set_option,"core","Enable Bracketed Paste","on,off")
@@ -1227,6 +1230,7 @@ function env.onload(...)
         end
     end
     env.IS_ENV_LOADED=true
+    console:suspend(false)
 end
 
 function env.unload()
@@ -1239,8 +1243,8 @@ function env.unload()
         if not e then print(msg) end
     end
     setmetatable(_G,nil)
+    console:suspend(true)
 end
-
 
 function env.reload()
     print("Reloading environment ...")
@@ -1250,9 +1254,9 @@ function env.reload()
 end
 
 function env.exit()
-    print("Exited.")
     env.RELOAD_SIGNAL=false
     env.set_title(nil,'__EXIT__')
+    print("Exited.")
     env.unload()
     java.system.exit(0)
 end
@@ -1415,6 +1419,7 @@ function env.set_title(title,value,callee)
     else
         titles=org_title
         title_list={}
+        return console:setStatus(nil,nil)
     end
 
     if CURRENT_TITLE~=titles or enabled then

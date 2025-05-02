@@ -3,7 +3,7 @@
     Options:
         -d      :  Show the detail segment, instead of grouping by object name
         -u      :  Only show the segment statistics of current schema
-        -a      :  Group the segments  by schema
+        -a      :  Group the segments by schema
     Tips:
         The query is based on GV$SEGMENT_STATISTICS which can be very slow. Use 'set instance' to limit the target instance.
 

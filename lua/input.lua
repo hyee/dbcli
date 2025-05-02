@@ -38,11 +38,10 @@ while true do
     end
     if ccolor=="" then ccolor="\27[0m" end
     env.isInterrupted=false
-    line=readLine(console,
-        prompt_color:format(ncolor,env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
+    line=readLine(console,prompt_color:format(ncolor,env._SUBSYSTEM and subcolor or pcolor,prompt,ncolor,empty),ccolor)
     if line then
         eval()
     else
-        env.eval_line('exit')
+        env.exit()
     end
 end

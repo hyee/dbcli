@@ -10,5 +10,5 @@ set feed off
 grid {[[/*grid={topic='gv$database', pivot=10, pivotsort='head'}*/
     select * from gv$database order by inst_id
 ]] &check_access_pdb,'-',[[/*grid={topic='database_properties'}*/
-    select * from database_properties order by 1
+    select PROPERTY_NAME,SUBSTR(PROPERTY_VALUE,1,60) PROPERTY_VALUE,DESCRIPTION from database_properties order by 1
 ]]}

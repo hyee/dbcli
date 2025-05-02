@@ -16,14 +16,8 @@ package org.dbcli;
  * https://opensource.org/licenses/BSD-3-Clause
  */
 
-
-import org.jline.builtins.Commands;
-import org.jline.builtins.ConfigurationPath;
-import org.jline.builtins.Nano.Parser;
+import org.jline.builtins.*;
 import org.jline.builtins.Nano.PatternHistory;
-import org.jline.builtins.Nano.SyntaxHighlighter;
-import org.jline.builtins.Options;
-import org.jline.builtins.Source;
 import org.jline.builtins.Source.ResourceSource;
 import org.jline.builtins.Source.URLSource;
 import org.jline.keymap.BindingReader;
@@ -36,16 +30,15 @@ import org.jline.terminal.Terminal.SignalHandler;
 import org.jline.utils.*;
 import org.jline.utils.InfoCmp.Capability;
 
-import java.io.InputStreamReader;
 import java.io.*;
+import java.io.InputStreamReader;
 import java.nio.file.*;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Stream;
 
 import static org.jline.keymap.KeyMap.*;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS;
-import static org.jline.terminal.impl.AbstractWindowsTerminal.TYPE_WINDOWS_256_COLOR;
 
 /* Change following class/methods as public：
    Nano.PatternHistory
@@ -106,6 +99,9 @@ final public class More {
     protected String displayPattern;
 
     protected final Size size = new Size();
+    protected final ArrayList<Integer> matchedLines = new ArrayList<>();
+    protected int matchedIndex = -1;
+    protected boolean matchedAsc = true;
 
     SyntaxHighlighter syntaxHighlighter;
     private final List<Path> syntaxFiles = new ArrayList<>();
@@ -158,9 +154,8 @@ final public class More {
             }
         } else if (new File("/usr/share/nano").exists() && !ignorercfiles) {
             PathMatcher pathMatcher = FileSystems.getDefault().getPathMatcher("glob:/usr/share/nano/*.nanorc");
-            try {
-                Files.find(Paths.get("/usr/share/nano"), Integer.MAX_VALUE, (path, f) -> pathMatcher.matches(path))
-                        .forEach(syntaxFiles::add);
+            try (Stream<Path> pathStream = Files.walk(Paths.get("/usr/share/nano"))) {
+                pathStream.filter(pathMatcher::matches).forEach(syntaxFiles::add);
                 nanorcIgnoreErrors = true;
             } catch (IOException e) {
                 errorMessage = "Encountered error while reading nanorc files";
@@ -221,64 +216,60 @@ final public class More {
     }
 
     private void parseConfig(Path file) throws IOException {
-        BufferedReader reader = new BufferedReader(new FileReader(file.toFile()));
-        String line = reader.readLine();
-        while (line != null) {
-            line = line.trim();
-            if (line.length() > 0 && !line.startsWith("#")) {
-                List<String> parts = Parser.split(line);
-                if (parts.get(0).equals("include")) {
-                    if (parts.get(1).contains("*") || parts.get(1).contains("?")) {
-                        PathMatcher pathMatcher = FileSystems.getDefault().getPathMatcher("glob:" + parts.get(1));
-                        Files.find(Paths.get(new File(parts.get(1)).getParent()), Integer.MAX_VALUE, (path, f) -> pathMatcher.matches(path))
-                                .forEach(syntaxFiles::add);
+        try (BufferedReader reader = Files.newBufferedReader(file)) {
+            String line = reader.readLine();
+            while (line != null) {
+                line = line.trim();
+                if (!line.isEmpty() && !line.startsWith("#")) {
+                    List<String> parts = SyntaxHighlighter.RuleSplitter.split(line);
+                    if (parts.get(0).equals("include")) {
+                        SyntaxHighlighter.nanorcInclude(parts.get(1), syntaxFiles);
+                    } else if (parts.get(0).equals("theme")) {
+                        SyntaxHighlighter.nanorcTheme(parts.get(1), syntaxFiles);
+                    } else if (parts.size() == 2
+                            && (parts.get(0).equals("set") || parts.get(0).equals("unset"))) {
+                        String option = parts.get(1);
+                        boolean val = parts.get(0).equals("set");
+                        if (option.equals("QUIT-AT-EOF")) {
+                            quitAtFirstEof = val;
+                        } else if (option.equals("quit-at-eof")) {
+                            quitAtSecondEof = val;
+                        } else if (option.equals("quit-if-one-screen")) {
+                            quitIfOneScreen = val;
+                        } else if (option.equals("quiet") || option.equals("silent")) {
+                            quiet = val;
+                        } else if (option.equals("QUIET") || option.equals("SILENT")) {
+                            veryQuiet = val;
+                        } else if (option.equals("chop-long-lines")) {
+                            chopLongLines = val;
+                        } else if (option.equals("IGNORE-CASE")) {
+                            ignoreCaseAlways = val;
+                        } else if (option.equals("ignore-case")) {
+                            ignoreCaseCond = val;
+                        } else if (option.equals("LINE-NUMBERS")) {
+                            printLineNumbers = val;
+                        } else {
+                            errorMessage = "Less config: Unknown or unsupported configuration option " + option;
+                        }
+                    } else if (parts.size() == 3 && parts.get(0).equals("set")) {
+                        String option = parts.get(1);
+                        String val = parts.get(2);
+                        if (option.equals("tabs")) {
+                            doTabs(val);
+                        } else if (option.equals("historylog")) {
+                            historyLog = val;
+                        } else {
+                            errorMessage = "Less config: Unknown or unsupported configuration option " + option;
+                        }
+                    } else if (parts.get(0).equals("bind") || parts.get(0).equals("unbind")) {
+                        errorMessage = "Less config: Key bindings can not be changed!";
                     } else {
-                        syntaxFiles.add(Paths.get(parts.get(1)));
+                        errorMessage = "Less config: Bad configuration '" + line + "'";
                     }
-                } else if (parts.size() == 2
-                        && (parts.get(0).equals("set") || parts.get(0).equals("unset"))) {
-                    String option = parts.get(1);
-                    boolean val = parts.get(0).equals("set");
-                    if (option.equals("QUIT-AT-EOF")) {
-                        quitAtFirstEof = val;
-                    } else if (option.equals("quit-at-eof")) {
-                        quitAtSecondEof = val;
-                    } else if (option.equals("quit-if-one-screen")) {
-                        quitIfOneScreen = val;
-                    } else if (option.equals("quiet") || option.equals("silent")) {
-                        quiet = val;
-                    } else if (option.equals("QUIET") || option.equals("SILENT")) {
-                        veryQuiet = val;
-                    } else if (option.equals("chop-long-lines")) {
-                        chopLongLines = val;
-                    } else if (option.equals("IGNORE-CASE")) {
-                        ignoreCaseAlways = val;
-                    } else if (option.equals("ignore-case")) {
-                        ignoreCaseCond = val;
-                    } else if (option.equals("LINE-NUMBERS")) {
-                        printLineNumbers = val;
-                    } else {
-                        errorMessage = "Less config: Unknown or unsupported configuration option " + option;
-                    }
-                } else if (parts.size() == 3 && parts.get(0).equals("set")) {
-                    String option = parts.get(1);
-                    String val = parts.get(2);
-                    if (option.equals("tabs")) {
-                        doTabs(val);
-                    } else if (option.equals("historylog")) {
-                        historyLog = val;
-                    } else {
-                        errorMessage = "Less config: Unknown or unsupported configuration option " + option;
-                    }
-                } else if (parts.get(0).equals("bind") || parts.get(0).equals("unbind")) {
-                    errorMessage = "Less config: Key bindings can not be changed!";
-                } else {
-                    errorMessage = "Less config: Bad configuration '" + line + "'";
                 }
+                line = reader.readLine();
             }
-            line = reader.readLine();
         }
-        reader.close();
     }
 
     private void doTabs(String val) {
@@ -315,7 +306,7 @@ final public class More {
     }
 
     public void run(Source... sources) throws IOException, InterruptedException {
-        run(Arrays.asList(sources));
+        run(new ArrayList<>(Arrays.asList(sources)));
     }
 
     public void run(List<Source> sources) throws IOException, InterruptedException {
@@ -352,10 +343,6 @@ final public class More {
                     terminal.puts(Capability.keypad_xmit);
                 }
 
-                terminal.writer().flush();
-                display(false);
-                checkInterrupted();
-
                 options.put("-e", Operation.OPT_QUIT_AT_SECOND_EOF);
                 options.put("--quit-at-eof", Operation.OPT_QUIT_AT_SECOND_EOF);
                 options.put("-E", Operation.OPT_QUIT_AT_FIRST_EOF);
@@ -379,6 +366,8 @@ final public class More {
 
                 Operation op;
                 boolean forward = true;
+                terminal.writer().flush();
+                display(false);
                 do {
                     checkInterrupted();
                     size.copy(terminal.getSize());
@@ -672,6 +661,9 @@ final public class More {
             }
         } finally {
             lines = null;
+            totalLines = 0;
+            titleLines = 0;
+            titles = null;
             if (reader != null) {
                 reader.close();
             }
@@ -780,6 +772,15 @@ final public class More {
         int saveFirstLineToDisplay;
         int saveFirstColumnToDisplay;
         int saveOffsetInLine;
+        List<AttributedString> savelines = new ArrayList<>();
+        int saveTotalLines = 0;
+        int saveTitleLines = 0;
+        AttributedString[] saveTitles = null;
+        boolean saveMatchedAsc;
+        int saveMatchedIndex;
+        String savePattern;
+        ArrayList<Integer> saveMatchedLines = new ArrayList<>();
+
         boolean savePrintLineNumbers;
 
         public SavedSourcePositions() {
@@ -792,6 +793,28 @@ final public class More {
             saveFirstColumnToDisplay = firstColumnToDisplay;
             saveOffsetInLine = offsetInLine;
             savePrintLineNumbers = printLineNumbers;
+            saveTitles = titles;
+            saveTotalLines = totalLines;
+            saveTitleLines = titleLines;
+            savePattern = pattern;
+            saveMatchedAsc = matchedAsc;
+            saveMatchedIndex = matchedIndex;
+            saveMatchedLines.clear();
+            saveMatchedLines.addAll(matchedLines);
+            savelines.clear();
+            savelines.addAll(lines);
+            //sourceIdx = dec;
+            firstLineToDisplay = 0;
+            firstColumnToDisplay = 0;
+            offsetInLine = 0;
+            printLineNumbers = false;
+            lines.clear();
+            titleLines = 0;
+            titles = new AttributedString[titleLines];
+            totalLines = 0;
+            matchedAsc = true;
+            matchedIndex = -1;
+            matchedLines.clear();
         }
 
         public void restore(String failingSource) throws IOException {
@@ -801,6 +824,16 @@ final public class More {
             firstColumnToDisplay = saveFirstColumnToDisplay;
             offsetInLine = saveOffsetInLine;
             printLineNumbers = savePrintLineNumbers;
+            titles = saveTitles;
+            totalLines = saveTotalLines;
+            titleLines = saveTitleLines;
+            pattern = savePattern;
+            matchedAsc = saveMatchedAsc;
+            matchedIndex = saveMatchedIndex;
+            matchedLines.clear();
+            matchedLines.addAll(saveMatchedLines);
+            lines.clear();
+            lines.addAll(savelines);
             if (failingSource != null) {
                 message = failingSource + " not found!";
             }
@@ -843,20 +876,18 @@ final public class More {
         LineEditor lineEditor = new LineEditor(begPos);
         while (true) {
             checkInterrupted();
-            Operation op;
-            switch (op = bindingReader.readBinding(fileKeyMap)) {
-                case ACCEPT:
-                    String name = buffer.substring(begPos);
-                    addSource(name);
-                    try {
-                        openSource();
-                    } catch (Exception exp) {
-                        ssp.restore(name);
-                    }
-                    return;
-                default:
-                    curPos = lineEditor.editBuffer(op, curPos);
-                    break;
+            Operation op = bindingReader.readBinding(fileKeyMap);
+            if (op == Operation.ACCEPT) {
+                String name = buffer.substring(begPos);
+                addSource(name);
+                try {
+                    openSource();
+                } catch (Exception exp) {
+                    ssp.restore(name);
+                }
+                return;
+            } else if (op != null) {
+                curPos = lineEditor.editBuffer(op, curPos);
             }
             if (curPos > begPos) {
                 display(false, curPos);
@@ -918,13 +949,17 @@ final public class More {
                             displayPattern = _pattern.length() > 0 ? _pattern : null;
                             getPattern(true);
                         } else {
+                            matchedLines.clear();
+                            matchedIndex = -1;
                             pattern = _pattern;
                             getPattern();
                             if (type == '/') {
+                                matchedAsc = true;
                                 moveToNextMatch();
                             } else {
-                                if (lines.size() - firstLineToDisplay <= size.getRows()) {
-                                    firstLineToDisplay = lines.size();
+                                matchedAsc = false;
+                                if (totalLines - firstLineToDisplay <= size.getRows()) {
+                                    firstLineToDisplay = totalLines;
                                 } else {
                                     moveForward(size.getRows() - 1);
                                 }
@@ -1015,11 +1050,6 @@ final public class More {
                 }
                 reader = new BufferedReader(new InputStreamReader(
                         new InterruptibleInputStream(in)));
-                firstLineInMemory = 0;
-                lines = new ArrayList<>();
-                firstLineToDisplay = 0;
-                firstColumnToDisplay = 0;
-                offsetInLine = 0;
                 display.clear();
                 if (sourceIdx == 0) {
                     syntaxHighlighter = SyntaxHighlighter.build(syntaxFiles, null, "none");
@@ -1079,17 +1109,34 @@ final public class More {
         Pattern compiled = getPattern();
         Pattern dpCompiled = getPattern(true);
         if (compiled != null) {
-            for (int lineNumber = firstLineToDisplay + 1; ; lineNumber++) {
-                AttributedString line = getLine(lineNumber);
-                if (line == null) {
-                    break;
-                } else if (!toBeDisplayed(line, dpCompiled)) {
-                    continue;
-                } else if (compiled.matcher(line).find()) {
+            if (!matchedAsc) {
+                if (matchedIndex > 0) {
                     display.clear();
-                    firstLineToDisplay = lineNumber;
+                    --matchedIndex;
+                    firstLineToDisplay = matchedLines.get(matchedIndex);
                     offsetInLine = 0;
                     return;
+                }
+            } else if (matchedLines.size() > (matchedIndex + 1)) {
+                ++matchedIndex;
+                firstLineToDisplay = matchedLines.get(matchedIndex);
+                offsetInLine = 0;
+                return;
+            } else {
+                for (int lineNumber = firstLineToDisplay + 1; ; lineNumber++) {
+                    AttributedString line = getLine(lineNumber);
+                    if (line == null) {
+                        break;
+                    } else if (!toBeDisplayed(line, dpCompiled)) {
+                        continue;
+                    } else if (compiled.matcher(line).find()) {
+                        display.clear();
+                        firstLineToDisplay = lineNumber;
+                        ++matchedIndex;
+                        matchedLines.add(firstLineToDisplay);
+                        offsetInLine = 0;
+                        return;
+                    }
                 }
             }
         }
@@ -1119,17 +1166,34 @@ final public class More {
         Pattern compiled = getPattern();
         Pattern dpCompiled = getPattern(true);
         if (compiled != null) {
-            for (int lineNumber = firstLineToDisplay - 1; lineNumber >= firstLineInMemory; lineNumber--) {
-                AttributedString line = getLine(lineNumber);
-                if (line == null) {
-                    break;
-                } else if (!toBeDisplayed(line, dpCompiled)) {
-                    continue;
-                } else if (compiled.matcher(line).find()) {
+            if (matchedAsc) {
+                if (matchedIndex > 0) {
                     display.clear();
-                    firstLineToDisplay = lineNumber;
+                    --matchedIndex;
+                    firstLineToDisplay = matchedLines.get(matchedIndex);
                     offsetInLine = 0;
                     return;
+                }
+            } else if (matchedLines.size() > (matchedIndex + 1)) {
+                ++matchedIndex;
+                firstLineToDisplay = matchedLines.get(matchedIndex);
+                offsetInLine = 0;
+                return;
+            } else {
+                for (int lineNumber = firstLineToDisplay - 1; lineNumber >= firstLineInMemory; lineNumber--) {
+                    AttributedString line = getLine(lineNumber);
+                    if (line == null) {
+                        break;
+                    } else if (!toBeDisplayed(line, dpCompiled)) {
+                        continue;
+                    } else if (compiled.matcher(line).find()) {
+                        display.clear();
+                        firstLineToDisplay = lineNumber;
+                        offsetInLine = 0;
+                        ++matchedIndex;
+                        matchedLines.add(firstLineToDisplay);
+                        return;
+                    }
                 }
             }
         }
@@ -1139,7 +1203,7 @@ final public class More {
                 String newSource = sources.get(--sourceIdx).getName();
                 try {
                     openSource();
-                    firstLineToDisplay = (int) (long) sources.get(sourceIdx).lines();
+                    moveTo(Integer.MAX_VALUE);
                     moveToPreviousMatch(true);
                 } catch (FileNotFoundException exp) {
                     ssp.restore(newSource);
@@ -1187,12 +1251,11 @@ final public class More {
             display.clear();
         }
         if (lines == Integer.MAX_VALUE) {
-            Long allLines = sources.get(sourceIdx).lines();
-            if (allLines != null) {
-                firstLineToDisplay = (int) (long) allLines;
-                for (int l = 0; l < height - 1; l++) {
-                    firstLineToDisplay = prevLine2display(firstLineToDisplay, dpCompiled).getU();
-                }
+            moveTo(Integer.MAX_VALUE);
+            firstLineToDisplay = height - 1;
+            for (int l = 0; l < height - 1; l++) {
+                firstLineToDisplay =
+                        prevLine2display(firstLineToDisplay, dpCompiled).getU();
             }
         }
         while (--lines >= 0) {
@@ -1236,7 +1299,7 @@ final public class More {
     void moveBackward(int lines) throws IOException {
         Pattern dpCompiled = getPattern(true);
         int width = size.getColumns() - (printLineNumbers ? numWidth + 1 : 0);
-        if (titleLines > 0 && lines > titleLines) lines -= titleLines;
+        //if (titleLines > 0 && lines > titleLines) lines -= titleLines;
         if (lines >= size.getRows() - 1) {
             display.clear();
         }
@@ -1367,8 +1430,14 @@ final public class More {
         Pattern dpCompiled = getPattern(true);
         boolean fitOnOneScreen = false;
         boolean eof = false;
-        syntaxHighlighter.reset();
-
+        if (highlight) {
+            syntaxHighlighter.reset();
+            for (int i = Math.max(0, inputLine - rows); i < inputLine; i++) {
+                final AttributedString line = getLine(i);
+                if (line != null) syntaxHighlighter.highlight(line);
+                else break;
+            }
+        }
         int off = 0;
         final String spaces = String.join("", Collections.nCopies(padding, " "));
 
@@ -1444,7 +1513,7 @@ final public class More {
             Long allLines = source.lines();
             message = source.getName()
                     + (sources.size() > 2 ? " (file " + sourceIdx + " of " + (sources.size() - 1) + ")" : "")
-                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/" + (allLines != null ? allLines : lines.size())
+                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/" + (allLines != null ? allLines : totalLines)
                     + (eof ? " (END)" : "");
         }
         if (buffer.length() > 0) {
@@ -1488,10 +1557,11 @@ final public class More {
     int lineIndex;
     private final static Pattern RTRIM = Pattern.compile("\\s+$");
     int paddingCounter = 0;
+    int totalLines = 0;
 
     AttributedString getLine(int line) throws IOException {
         if (line < 0) line = 0;
-        while (line >= lines.size()) {
+        while (line >= totalLines) {
             String str = reader.readLine();
             if (str != null) {
                 AttributedString buff = AttributedString.fromAnsi(RTRIM.matcher(str).replaceAll(""), tabs);
@@ -1504,24 +1574,22 @@ final public class More {
                     }
                     ++paddingCounter;
                 }
-                boolean found = false;
-                for (int i = 0; i < titleLines; i++) {
-                    if (titles[i] == null) {
-                        titles[i] = buff;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) lines.add(buff);
+                if (totalLines < titleLines)
+                    titles[totalLines] = buff;
+                else
+                    lines.add(buff);
+                ++totalLines;
             } else {
                 break;
             }
         }
         lineIndex = -1;
-        if (line - firstLineToDisplay < titleLines && titleLines > 0) return titles[line - firstLineToDisplay];
-        else line -= titleLines;
-
-        if (line < lines.size()) {
+        final int line1 = line - firstLineToDisplay;
+        if (line1 < titleLines && titleLines > 0) {
+            return line1 >= 0 ? titles[line1] : null;
+        }
+        line -= titleLines;
+        if (line >= 0 && line < lines.size()) {
             lineIndex = line + 1;
             return lines.get(line);
         }
@@ -1693,26 +1761,31 @@ final public class More {
 
     static class Play extends Display {
         public Play(Terminal terminal) {
-            this(terminal, !terminal.getType().equals(TYPE_WINDOWS_256_COLOR) && !terminal.getType().equals(TYPE_WINDOWS));
+            this(terminal, true);
         }
 
         public Play(Terminal terminal, boolean fullScreen) {
-            super(terminal, fullScreen);
+            super(terminal, fullScreen && terminal.getStringCapability(Capability.enter_ca_mode) != null);
         }
 
         boolean isStarted;
         boolean isEnterCA;
         Status status = null;
-        boolean isSuspended = false;
 
         public void init(boolean isEnterCA) {
+            if (isStarted) return;
             reset();
             prevBuff = null;
             isStarted = false;
-            this.isEnterCA = isEnterCA;
-            status = Status.getStatus(terminal);
-            if (status != null && !(isSuspended = status.isSuspended())) status.suspend();
-            if (isEnterCA) terminal.puts(Capability.enter_ca_mode);
+            this.isEnterCA = isEnterCA && terminal.getStringCapability(Capability.clear_screen) != null;
+            status = Status.getStatus(terminal, false);
+            if (status != null) {
+                status.hide();
+                status.suspend();
+            }
+            if (isEnterCA && fullScreen) {
+                terminal.puts(Capability.enter_ca_mode);
+            }
         }
 
         public void exit() {
@@ -1723,7 +1796,10 @@ final public class More {
                 else
                     terminal.puts(Capability.exit_ca_mode);
             }
-            if (status != null && !isSuspended) status.restore();
+            status = Status.getStatus(terminal, false);
+            if (status != null) {
+                status.restore();
+            }
         }
 
         @Override
@@ -1746,13 +1822,11 @@ final public class More {
         public synchronized void update(List<AttributedString> newLines, int targetCursorPos) {
             Size size = terminal.getSize();
             resize(size.getRows(), size.getColumns());
-            if (isStarted) {
-                if (!isEnterCA && fullScreen) {
-                    terminal.puts(Capability.enter_ca_mode);
-                    isEnterCA = true;
-                }
-            } else {
-                isStarted = true;
+            isStarted = true;
+            if (!isEnterCA && fullScreen) {
+                terminal.puts(Capability.enter_ca_mode);
+                clear();
+                isEnterCA = true;
             }
             if (cursorPos > 0 && prevBuff != null && prevOffset > 0) {
                 updateBuff("", 0);

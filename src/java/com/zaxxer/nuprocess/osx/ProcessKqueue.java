@@ -16,13 +16,10 @@
 
 package com.zaxxer.nuprocess.osx;
 
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-import com.sun.jna.ptr.IntByReference;
-import com.zaxxer.nuprocess.internal.BaseEventProcessor;
-import com.zaxxer.nuprocess.internal.LibC;
-import com.zaxxer.nuprocess.osx.LibKevent.Kevent;
-import com.zaxxer.nuprocess.osx.LibKevent.TimeSpec;
+import static com.zaxxer.nuprocess.internal.LibC.WEXITSTATUS;
+import static com.zaxxer.nuprocess.internal.LibC.WIFEXITED;
+import static com.zaxxer.nuprocess.internal.LibC.WIFSIGNALED;
+import static com.zaxxer.nuprocess.internal.LibC.WTERMSIG;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -31,7 +28,13 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import static com.zaxxer.nuprocess.internal.LibC.*;
+import com.sun.jna.Native;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
+import com.zaxxer.nuprocess.internal.BaseEventProcessor;
+import com.zaxxer.nuprocess.internal.LibC;
+import com.zaxxer.nuprocess.osx.LibKevent.Kevent;
+import com.zaxxer.nuprocess.osx.LibKevent.TimeSpec;
 
 /**
  * @author Brett Wooldridge
@@ -43,7 +46,7 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
     private static final int NUM_KEVENTS = 64;
     private static final int JAVA_PID;
 
-    private final int kqueue;
+    private volatile int kqueue;
 
     // Re-used in process() to avoid repeatedly allocating and destroying array of events.
     private final Kevent[] processEvents;
@@ -62,6 +65,7 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
         this(-1);
 
         registerProcess(process);
+        queueRead(process);
         checkAndSetRunning();
     }
 
@@ -93,9 +97,17 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
         }
 
         int pid = process.getPid();
-        Pointer pidPointer = Pointer.createConstant(pid);
-
         pidToProcessMap.put(pid, process);
+    }
+
+    @Override
+    public void queueRead(OsxProcess process) {
+        if (shutdown) {
+            return;
+        }
+
+        int pid = process.getPid();
+        Pointer pidPointer = Pointer.createConstant(pid);
 
         Integer stdinFd = null;
         Integer stdoutFd = null;
@@ -104,11 +116,12 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
             stdinFd = process.getStdin().acquire();
             stdoutFd = process.getStdout().acquire();
             stderrFd = process.getStderr().acquire();
+
             // We don't use the processEvents array here, since this method is not
             // called on the event processor thread.
             Kevent[] events = (Kevent[]) new Kevent().toArray(4);
             // Listen for process exit (one-shot event)
-            events[0].EV_SET(pid, Kevent.EVFILT_PROC, Kevent.EV_ADD | Kevent.EV_RECEIPT | Kevent.EV_ONESHOT,
+            events[0].EV_SET((long) pid, Kevent.EVFILT_PROC, Kevent.EV_ADD | Kevent.EV_RECEIPT | Kevent.EV_ONESHOT,
                     Kevent.NOTE_EXIT | Kevent.NOTE_EXITSTATUS | Kevent.NOTE_REAP, 0L, pidPointer);
             // Listen for stdout and stderr data availability (events deleted automatically when file descriptors closed)
             events[1].EV_SET(stdoutFd, Kevent.EVFILT_READ, Kevent.EV_ADD | Kevent.EV_RECEIPT, 0, 0L, pidPointer);
@@ -236,7 +249,7 @@ final class ProcessKqueue extends BaseEventProcessor<OsxProcess> {
 
     private void processEvent(Kevent kevent) {
         int ident = kevent.ident.intValue();
-        int filter = kevent.filter;
+        int filter = (int) kevent.filter;
         int udata = (int) (Pointer.nativeValue(kevent.udata));
 
         if (filter == Kevent.EVFILT_SIGNAL) {

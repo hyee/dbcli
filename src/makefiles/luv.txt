@@ -1,0 +1,54 @@
+First of all, make sure the LuaJIT binaries has been built in target directory
+
+* Makefile add -DLUAJIT_INCLUDE_DIR=<LUAJIT_DIR/src> -DLUAJIT_LIBRARIES=<LUAJIT_DIR/src>
+* FOR Centos 6(glibc 2.12)
+    * CMakeLists.txt add:
+        set(CMAKE_C_STANDARD 99)
+        set(CMAKE_C_STANDARD_REQUIRED TRUE)
+    * search CLOCK_BOOTTIME and replace as CLOCK_MONOTONIC
+    * replace "sendmsg(fd, m, n, 0)" as "sendmsg(fd, m, 0)"
+* build with LUA_BUILD_TYPE=System make
+
+For Win-64
+==========
+cd /mnt/d/luv
+sudo rm -rf build
+mkdir build && cd build
+
+sudo cmake .. \
+-DCMAKE_SYSTEM_NAME=Windows \
+-DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+-DCMAKE_BUILD_TYPE=Release \
+-DBUILD_SHARED_LIBS=ON \
+-DBUILD_MODULE=ON \
+-DWITH_SHARED_LIBUV=OFF \
+-DLUA_BUILD_TYPE=System \
+-DWITH_LUA_ENGINE=LuaJIT \
+-DLUAJIT_INCLUDE_DIR=/mnt/d/LuaJIT-2.1/src \
+-DLUAJIT_LIBRARIES=/mnt/d/LuaJIT-2.1/src/lua5.1.dll 
+
+sudo make -j4
+strip luv.dll && cp luv.dll /mnt/d/dbcli/lib/x64/
+
+For Win-32
+==========
+cd /mnt/d/luv
+sudo rm -rf build-32
+mkdir build-32 && cd build-32
+
+sudo cmake .. \
+-DCMAKE_SYSTEM_NAME=Windows \
+-DCMAKE_C_COMPILER=i686-w64-mingw32-gcc \
+-DCMAKE_BUILD_TYPE=Release \
+-DBUILD_SHARED_LIBS=ON \
+-DBUILD_MODULE=ON \
+-DWITH_SHARED_LIBUV=OFF \
+-DLUA_BUILD_TYPE=System \
+-DWITH_LUA_ENGINE=LuaJIT \
+-DLUAJIT_INCLUDE_DIR=/mnt/d/LuaJIT-2.1/src \
+-DLUAJIT_LIBRARIES=/mnt/d/LuaJIT-2.1/src/lua5.1.dll \
+-DCMAKE_C_FLAGS="-m32 -static-libgcc" \
+-DCMAKE_SHARED_LINKER_FLAGS="-static-libgcc"
+
+sudo make -j4
+strip luv.dll && cp luv.dll /mnt/d/dbcli/lib/x86/

@@ -39,7 +39,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
             SET found=1
             SET "JAVA_VER_=!v!"
             if "52.0" GTR "!v!" (SET found=0)
-            if "64.0" LSS "!v!" (SET found=0)
+            rem if "64.0" LSS "!v!" (SET found=0)
         )
       )
 	  if "!found!" == "0" (set "JAVA_EXE_=")
@@ -54,7 +54,7 @@ for /F "usebackq delims=" %%p in (`where java.exe 2^>NUL`) do (
 If not exist "!JAVA_EXE!" (
     ver|findstr -r " 5.[0-9]*\.[0-9]" > NUL && (SET "BASE=!JRE_HOME!" && if not exist "!BASE!\bin\java.exe" SET "BASE=jre") || (SET "BASE=jre")
     if not exist "jre\bin\java.exe" (
-        echo Cannot find Java 8 - Java 20 executable, please manually set JRE_HOME for available Java program.
+        echo Cannot find Java 8+ executable, please manually set JRE_HOME for available Java program.
         pause
         popd
         exit /b 1
@@ -75,25 +75,15 @@ if not defined ANSICON if defined ANSICON_CMD (
    if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
 )
 
-if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
-rem if defined ConEmuPID set "ANSICON_DEF=conemu"
+if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jni"
 if defined MSYSTEM set "ANSICON_DEF=msys"
 set "ANSICON_CMD="
 
-rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
-rem ver|findstr -r "[1-9][0-9]\.[0-9]*\.[0-9]">NUL && (SET "ANSICON_CMD=" && set "ANSICON_DEF=native")
-
+rem set "ANSICON_DEF=native"
+rem set "ANSICON_DEF=ffm"
+rem set "ANSICON_DEF=jna"
+rem if defined ANSICON_DEF set "ANSICON_DEF=conemu"
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
-rem unpack jar files for the first use
-for /f %%i in ('dir /s/b *.pack.gz 2^>NUL ^|findstr -v "cache dump" ') do (
-   set "var=%%i" &set "str=!var:@=!"
-   echo Unpacking %%i to jar file for the first use...
-   If exist "jre\bin\unpack200.exe" (
-       jre\bin\unpack200.exe -q -r "%%i" "!str:~0,-8!"
-   ) else (
-       "!JAVA_BIN!\unpack200.exe" -q -r "%%i" "!str:~0,-8!"
-   )
-)
 
 (cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*)||pause
 popd

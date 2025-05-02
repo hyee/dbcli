@@ -16,13 +16,15 @@
 
 package com.zaxxer.nuprocess.internal;
 
-import com.sun.jna.ptr.IntByReference;
-
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import com.sun.jna.ptr.IntByReference;
 
 /**
  * @author Brett Wooldridge
@@ -32,6 +34,9 @@ public abstract class BaseEventProcessor<T extends BasePosixProcess> implements 
 
     protected static final int DEADPOOL_POLL_INTERVAL;
     protected static final int LINGER_ITERATIONS;
+
+    private static final Logger LOGGER = Logger.getLogger(BaseEventProcessor.class.getCanonicalName());
+
     private final int lingerIterations;
 
     protected Map<Integer, T> pidToProcessMap;
@@ -78,6 +83,8 @@ public abstract class BaseEventProcessor<T extends BasePosixProcess> implements 
             }
         } catch (Exception e) {
             // TODO: how to handle this error?
+            LOGGER.log(Level.WARNING, "Aborting processing loop after unexpected exception (" +
+                    pidToProcessMap.size() + " processes running)", e);
             isRunning.set(false);
         } finally {
             if (startBarrier == null) {

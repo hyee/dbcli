@@ -5,15 +5,17 @@ import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Source;
+import org.jline.builtins.TTop;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
-import org.jline.terminal.Size;
-import org.jline.terminal.Terminal;
-import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.*;
 import org.jline.terminal.impl.AbstractTerminal;
+import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.terminal.impl.CursorSupport;
 import org.jline.utils.*;
+import org.jline.widget.AutosuggestionWidgets;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -45,6 +47,7 @@ public final class Console {
     public static NonBlockingReader input;
     public static String charset = System.getProperty("sun.stdout.encoding");
     public static ClassAccess<LineReaderImpl> accessor = ClassAccess.access(LineReaderImpl.class);
+    public static ClassAccess<AbstractWindowsTerminal> terminalAccess = ClassAccess.access(Terminal.class);
     protected static ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(6);
     public AbstractTerminal terminal;
     public boolean isSubSystem = false;
@@ -54,9 +57,8 @@ public final class Console {
 
     MyCompleter completer = new MyCompleter(this);
     boolean isPrompt = true;
-    boolean isJansiConsole = false;
+    boolean isJNIConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
-    ArrayList<AttributedString> tmpTitles = new ArrayList<>(2);
     private LuaState lua;
     volatile private ScheduledFuture task;
     private ActionListener event;
@@ -69,7 +71,8 @@ public final class Console {
 
     private String colorPlan;
     private final KeyMap keyMap;
-    private Status status;
+    protected volatile Status status;
+    public Timer timer = new Timer(this);
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -81,15 +84,46 @@ public final class Console {
             System.out.println("Unsupported encoding: " + System.getProperty("file.encoding") + ", DBCLI will use the default encoding(" + encoding.name() + ") instead.");
 
         }
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM))
-            this.terminal = WinSysTerminal.createTerminal(colorPlan, null, ("ansicon").equals(System.getenv("ANSICON_DEF")) || OSUtils.IS_CONEMU, encoding, 0, true, Terminal.SignalHandler.SIG_DFL, false);
-        else
-            this.terminal = (AbstractTerminal) TerminalBuilder.builder().system(true).name(colorPlan).jna(false).jansi(true).signalHandler(Terminal.SignalHandler.SIG_DFL).encoding(encoding).nativeSignals(true).build();
+        String mode = System.getenv("ANSICON_DEF");
+        if (mode == null || mode.equals("")) mode = "default";
+        mode = mode.toLowerCase();
+        if (!mode.equals("default")
+                && !mode.equals("jni")
+                && !mode.equals("jna")
+                && !mode.equals("ffm")
+                && !mode.equals("ansicon")
+                && !mode.equals("conemu")) {
+            mode = "default";
+        }
+        if (OSUtils.IS_WINDOWS
+                && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
+                && !"jna".equals(mode)
+                && !"ffm".equals(mode)) {
+            this.terminal = WinSysTerminal.createTerminal(colorPlan,
+                    null,
+                    "ansicon".equals(mode) || "conemu".equals(mode),
+                    encoding, true,
+                    Terminal.SignalHandler.SIG_IGN,
+                    false);
+        } else {
+            this.terminal = (AbstractTerminal) TerminalBuilder
+                    .builder()
+                    .system(true)
+                    .name(colorPlan)
+                    .encoding(encoding)
+                    .jansi(false)
+                    .jna("jna".equals(mode))
+                    .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode) || "default".equals(mode))
+                    .ffm("ffm".equals(mode) || "default".equals(mode))
+                    .nativeSignals(true)
+                    .signalHandler(Terminal.SignalHandler.SIG_IGN)
+                    .build();
+        }
+        Interrupter interrupter = new Interrupter();
         Interrupter.reset();
-
-        Interrupter.handler = terminal.handle(Terminal.Signal.INT, new Interrupter());
-        terminal.handle(Terminal.Signal.TSTP, new Interrupter());
-
+        Interrupter.handler = terminal.handle(Terminal.Signal.INT, interrupter);
+        terminal.handle(Terminal.Signal.TSTP, interrupter);
+        terminal.handle(Terminal.Signal.QUIT, interrupter);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -105,12 +139,12 @@ public final class Console {
         this.reader.setOpt(LineReader.Option.AUTO_FRESH_LINE);
         this.reader.setOpt(LineReader.Option.LIST_ROWS_FIRST);
         this.reader.setOpt(LineReader.Option.INSERT_TAB);
-
-
         this.reader.setVariable(DISABLE_HISTORY, true);
         this.reader.setVariable(LineReader.HISTORY_FILE, historyLog);
         this.reader.setVariable(LineReader.HISTORY_FILE_SIZE, 2000);
-        this.isJansiConsole = this.terminal instanceof WinSysTerminal;
+        this.isJNIConsole = this.terminal instanceof WinSysTerminal;
+        AutosuggestionWidgets autosuggestionWidgets = new AutosuggestionWidgets(reader);
+        autosuggestionWidgets.enable();
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
@@ -144,7 +178,7 @@ public final class Console {
         callback = new EventCallback() {
             @Override
             public void call(Object... c) {
-                if (cancelSeq == 0) ++cancelSeq;
+                increaseCancelSeq();
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
                     lua.getGlobal("TRIGGER_EVENT");
                     Integer r = (Integer) (lua.call(c)[0]);
@@ -159,8 +193,8 @@ public final class Console {
                             Thread.sleep(1000);
                         } catch (InterruptedException e) {
                         }
-                        setStatus("flush", null);
                         reader.redrawLine();
+                        if (status != null) setStatus("flush", null);
                     }).start();
             }
         };
@@ -171,8 +205,7 @@ public final class Console {
     public void initDisplay() {
         display = new More.Play(terminal, false);
         display.init(false);
-        Size size = terminal.getSize();
-        display.resize(size.getRows(), size.getColumns());
+        display.resize(getScreenHeight(), getBufferWidth() - 1);
     }
 
     public void exitDisplay() {
@@ -181,10 +214,21 @@ public final class Console {
     }
 
     public void display(String[] args) {
+        //display.reset();
+        int width = getBufferWidth() - 1;
+        /*for(int i=0;i<args.length;i++) {
+            String line=args[i];
+            int size=wcwidth(line);
+            if(size<width) {
+                args[i]+=new String(new char[width-size]).replace('\0',' ');
+            }
+        }*/
         display.clear();
+        display.resize(getScreenHeight(), width);
+        Attributes attrs = terminal.enterRawMode();
         display.updateAnsi(Arrays.asList(args), -1);
+        terminal.setAttributes(attrs);
     }
-
 
     public void enableMouse(String val) {
         if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
@@ -200,9 +244,8 @@ public final class Console {
             terminal.writer().write(BRACKETED_PASTE_ON);
         }
         terminal.writer().flush();
-        if (isJansiConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
+        if (isJNIConsole) ((WinSysTerminal) terminal).enablePaste(!"off".equals(val));
     }
-
 
     public void setLua(LuaState lua) {
         this.lua = lua;
@@ -264,26 +307,61 @@ public final class Console {
         return "linux";
     }
 
-    public void setStatus(String status, String color) {
-        this.status = terminal.getStatus(status != null && !status.equals(""));
-        if (this.status == null || getScreenWidth() <= 0)
-            return;
-        if (tmpTitles.size() == 0) {
-            tmpTitles.add(AttributedString.fromAnsi(new String(new char[getScreenWidth() - 1]).replace('\0', ' ')));
-            tmpTitles.add(tmpTitles.get(0));
-        }
-        this.status.update(tmpTitles);
-        if ("flush".equals(status)) this.status.update(titles);
-        else {
-            AttributedString sep = titles.size() != 0 ? titles.get(0) : AttributedString.fromAnsi(color + new String(new char[getScreenWidth() - 1]).replace('\0', '-'));
-            titles.clear();
-            if (status != null && !status.equals("")) {
+    private volatile String prevTitle = "";
+    private volatile String prevTime = "";
+    private volatile String prevColor = "";
+
+    public boolean setStatus(String title, String color) {
+        try {
+            final int width = getScreenWidth();
+            this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
+            if (this.status == null || width <= 0)
+                return false;
+
+            if (title == null || title.equals("")) {
+                this.status.hide();
+                this.status.close();
+                this.status = null;
+                return false;
+            }
+            if (terminal.paused() || "flush".equals(title)) return false;
+            //must be width -1 to avoid cursor position issue, don't know why
+            final String chars = new String(new char[width]);
+            String time = timer.getTime();
+            this.status.resize();
+            if ("flush".equals(title) && prevTime.equals(time)) {
+                this.status.update(titles);
+            } else {
+                if ("flush".equals(title)) {
+                    title = prevTitle;
+                } else {
+                    prevTitle = title;
+                }
+                prevTime = time;
+                AttributedString sep;
+                if (color != null && !color.equals("") && !color.equals(prevColor)) {
+                    sep = AttributedString.fromAnsi(color + chars.replace('\0', '-'));
+                    prevColor = color;
+                } else if (titles.size() > 0) {
+                    sep = titles.get(0);
+                } else {
+                    sep = AttributedString.fromAnsi(prevColor + chars.replace('\0', '-'));
+                }
+                titles.clear();
                 titles.add(sep);
                 AttributedStringBuilder asb = new AttributedStringBuilder();
-                asb.ansiAppend(status);
+                //int siz=wcwidth(title);
+                //String suffix = siz >= width ? "":new String(new char[width - siz]).replace('\0', ' ');
+                asb.ansiAppend(time).ansiAppend(title);
                 titles.add(asb.toAttributedString());
+                this.status.update(titles);
             }
-            this.status.update(titles);
+            //manually flush or cursor position is incorrect
+            terminal.flush();
+            return true;
+        } catch (Throwable e) {
+            e.printStackTrace();
+            return false;
         }
     }
 
@@ -297,7 +375,6 @@ public final class Console {
     }
 
     public int getBufferWidth() {
-        if ("terminator".equals(System.getenv("TERM"))) return 2000;
         return terminal.getBufferSize().getColumns();
     }
 
@@ -320,7 +397,8 @@ public final class Console {
 
     public void less(String output, int titleLines, int spaces, int lines) {
         More less = new More(terminal, null);
-        //less.noInit = true;
+        //Less less=new Less(terminal, null);
+        less.noInit = true;
         less.veryQuiet = true;
         less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));
         less.padding = spaces;
@@ -355,14 +433,18 @@ public final class Console {
         return accessor.invoke(reader, method, o);
     }
 
-    public int cancelSeq = 0;
+
     private String currentBuffer;
     private String firstPrompt = "SQL> ";
     private int promptWidth = 5;
+    private int cancelSeq = 0;
+
+    public synchronized void increaseCancelSeq() {
+        if (cancelSeq == 0) ++cancelSeq;
+    }
 
     public String readLine(String prompt, String buffer) {
         try {
-            if (cancelSeq >= 5) System.exit(0);
             setEvents(null, null);
             terminal.echo(false);
             terminal.resume();
@@ -379,6 +461,7 @@ public final class Console {
                 firstPrompt = prompt;
                 promptWidth = wcwidth(firstPrompt);
             }
+
             String line = reader.readLine(prompt, null, buffer);
 
             if (line != null) {
@@ -393,15 +476,37 @@ public final class Console {
                 pause = true;
             }
             return line;
-        } catch (UserInterruptException | EndOfFileException e) {
+        } catch (Throwable e) {
+            timer.stop();
             ++cancelSeq;
-            terminal.puts(InfoCmp.Capability.cursor_up);
-            terminal.puts(InfoCmp.Capability.delete_line);
-            terminal.raise(Terminal.Signal.INT);
+            try {
+                if (cancelSeq >= 5) {
+                    System.out.println("Detected 5 readLine errors, terminating the console to avoid blocking in backgound.");
+                    System.out.flush();
+                    if (status != null) {
+                        this.status.suspend();
+                        this.status.close();
+                    }
+                    return null;
+                } else {
+                    terminal.puts(InfoCmp.Capability.cursor_up);
+                    terminal.puts(InfoCmp.Capability.delete_line);
+                    terminal.raise(Terminal.Signal.INT);
+                }
+            } catch (Throwable e1) {
+            }
             return "";
         } finally {
-            status = terminal.getStatus(false);
-            if (status != null) status.redraw();
+            try {
+                if (cancelSeq >= 5) {
+                    System.exit(0);
+                } else {
+                    if (status != null) status.redraw();
+                }
+            } catch (Throwable e2) {
+                ++cancelSeq;
+            }
+
         }
     }
 
@@ -417,12 +522,40 @@ public final class Console {
         return pause;
     }
 
+    public Boolean isBroken() {
+        return cancelSeq >= 5;
+    }
+
     public int setLastHistory() {
         return history.setIndex();
     }
 
     public void updateLastHistory(String line) {
         history.updateLast(line);
+    }
+
+    public void suspend(boolean enable) {
+        if (terminal.paused() == enable && pause == enable) return;
+        if (enable) {
+            if (status != null) {
+                status.hide();
+                status.suspend();
+            }
+            terminal.echo(true);
+            terminal.pause();
+        } else {
+            if (isBroken()) {
+                System.exit(0);
+                return;
+            }
+            terminal.resume();
+            terminal.echo(false);
+            if (status != null) {
+                status.restore();
+                setStatus("flush", "");
+            }
+        }
+        pause = enable;
     }
 
     public synchronized void setEvents(ActionListener event, char[] keys) {

@@ -16,6 +16,20 @@
 
 package com.zaxxer.nuprocess.windows;
 
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import com.sun.jna.Native;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
@@ -25,16 +39,10 @@ import com.zaxxer.nuprocess.windows.NuWinNT.ULONG_PTR;
 import com.zaxxer.nuprocess.windows.NuWinNT.ULONG_PTRByReference;
 import com.zaxxer.nuprocess.windows.WindowsProcess.PipeBundle;
 
-import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
-
 public final class ProcessCompletions implements Runnable {
     private static final int DEADPOOL_POLL_INTERVAL;
     private static final int LINGER_ITERATIONS;
+    private static final Logger LOGGER = Logger.getLogger(ProcessCompletions.class.getCanonicalName());
     private static final int STDOUT = 0;
     private static final int STDERR = 1;
 
@@ -111,7 +119,8 @@ public final class ProcessCompletions implements Runnable {
             }
         } catch (Exception e) {
             // TODO: how to handle this error?
-            e.printStackTrace();
+            LOGGER.log(Level.WARNING, "Aborting processing loop after unexpected exception (" +
+                    completionKeyToProcessMap.size() + " processes running)", e);
             isRunning.set(false);
         } finally {
             if (startBarrier == null) {

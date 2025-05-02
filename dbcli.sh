@@ -7,16 +7,26 @@ fi
 
 pushd "$(dirname "$0")" > /dev/null
 os=$(uname -a)
-if [[ "$os" =~ Darwin.*ARM ]]; then
-    os="mac-arm"
-elif [[ "$os" = *Darwin* ]]; then
+arch=$os
+if [[ "$os" = *Darwin* ]]; then
     os="mac"
-elif [[ "$os" =~ Linux.*x86 ]]; then
+    arch=$(/usr/bin/machine 2>&1)
+    if [[ "$arch" = *arm64* ]]; then
+        os="mac-arm"
+        arch="ARM64"
+    else
+        os="mac"
+        arch="X86_64"
+    fi
+elif [[ "$os" =~ Linux.*x86_64 ]]; then
     os="linux"
     bind 'set enable-bracketed-paste on' &>/dev/null
-elif [[ "$os" =~ Linux.* ]]; then
+elif [[ "$os" =~ Linux.*.aarch64 ]]; then
     os="linux-arm"
     bind 'set enable-bracketed-paste on' &>/dev/null
+else
+    echo "DBCLI only supports Win32/Win64/Linux-x64/Linux-aarch64/Darwin/Darwin-ARM"
+    exit 1
 fi
 
 #DBCLI_ENCODING=UTF-8
@@ -35,53 +45,60 @@ if [[ "$EXT_PATH" ]]; then
     export PATH=$EXT_PATH:$PATH
 fi
 
+is_java8() {
+    [[ -n "$1" ]] &&  [[ -x "$1/bin/java"  ]] && [[  $("$1/bin/java" -XshowSettings:properties 2>&1|grep java.class.version| awk '{print $3}') > '51.9' ]]
+}
+
+found=0
 # find executable java program
-if [[ -n "$JDK_HOME" ]] && [[ -x "$JDK_HOME/bin/java" ]];  then
+if is_java8 "$JDK_HOME" ; then
     _java="$JDK_HOME/bin/java"
-elif [[ -n "$JRE_HOME" ]] && [[ -x "$JRE_HOME/bin/java" ]];  then
+    found=2
+elif is_java8 "$JRE_HOME"; then
     _java="$JRE_HOME/bin/java"
+    found=2
+elif is_java8 "$ORACLE_HOME/jdk"; then
+    _java="$ORACLE_HOME/jdk/bin/java"
+    found=2
+elif is_java8 "$JAVA_HOME";  then    
+    _java="$JAVA_HOME/bin/java"
+    found=2
 elif type -p java &>/dev/null; then
     if [[ "$os" = mac* ]]; then
         unset JAVA_VERSION
         if [ "$os" = "mac" ]; then
-            _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d"|grep -oh "/Library.*"|head -1`
+            _java=`/usr/libexec/java_home -V 2>&1|egrep -v "^\s+\d.+arm64"|grep -oh "/Library.*"|head -1`
         else
             _java=`/usr/libexec/java_home -V 2>&1|egrep "^\s+\d.+arm64"|grep -oh "/Library.*"|head -1`
         fi
         if [[ "$_java" ]]; then
             _java="$_java/bin/java"
         elif [ "$os" = "mac-arm" ]; then
-            echo "Cannot find Java 8 - Java 20 executable for ARM-64, please manually set JRE_HOME for suitable JDK/JRE."
+            echo "Cannot find Java 8+ executable for ARM-64, please manually set JRE_HOME for suitable JDK/JRE."
             popd
             exit 1
         fi
     else
         _java=$(readlink -f "`type -p java`")
     fi
-elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then    
-    _java="$JAVA_HOME/bin/java"
-fi
 
-# find executable java program
-found=0
-if [[ "$_java" ]]; then
-    found=2
-    info=$("$_java" -XshowSettings:properties 2>&1)
-    bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
-    ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
-
-    if [[ "$ver" < "52.0" ]] || [[ "$ver" > "64.0" ]] || [[ "$bit" != "64" ]]; then
-        found=1
+    if [[ "$_java" ]]; then
+        found=2
+        info=$("$_java" -XshowSettings:properties 2>&1)
+        bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
+        ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
+        if [[ "$ver" < "52.0" ]]; then
+            found=1
+        fi
     fi
 fi
 
-
 if [[ $found < 2 ]]; then
-    if [[ -f ./jre_$os/bin/unpack200 ]];  then
+    if [[ -f ./jre_$os/bin/java ]];  then
         _java=./jre_$os/bin/java
         ver="52"
     else
-        echo "Cannot find Java 8 - Java 20 for X86-64, please manually set JRE_HOME for suitable JDK/JRE."
+        echo "Cannot find Java 8+ for $arch, please manually set JRE_HOME for suitable JDK/JRE."
         exit 1
     fi
 fi
@@ -114,24 +131,12 @@ fi
 if [[ "$os" = mac* ]]; then
     export DYLD_FALLBACK_LIBRARY_PATH="$LD_LIBRARY_PATH"
 fi
-# unpack jar files for the first use
-unpack="$JAVA_ROOT/bin/unpack200"
-if [[ -f ./jre_$os/bin/unpack200 ]]; then
-    unpack=./jre_$os/bin/unpack200
-    if [ ! -x "$unpack" ]; then
-        chmod  +x ./jre_$os/bin/* &>/dev/null
-    fi
-elif [ ! -x "$unpack" ]; then
-    echo "Cannot find unpack200 executable, exit."
-    popd
-    exit 1
-fi
 
-for f in `find . -type f -name "*.pack.gz" 2>/dev/null | egrep -v "cache|dump"`; do
-    echo "Unpacking $f ..."
-    "$unpack" -q -r  $f $(echo $f|sed 's/\.pack\.gz//g') &
-done
-wait
+#if [ ! -z "$ORACLE_HOME" ]; then
+#    export DYLD_LIBRARY_PATH="$ORACLE_HOME/lib"
+#fi
+# unpack jar files for the first use
+
 
 trap '' TSTP &>/dev/null
 
