@@ -324,7 +324,7 @@ public final class Console {
                 this.status = null;
                 return false;
             }
-            if (terminal.paused() || "flush".equals(title)) return false;
+            if (terminal.paused()) return false;
             //must be width -1 to avoid cursor position issue, don't know why
             final String chars = new String(new char[width]);
             String time = timer.getTime();
@@ -484,6 +484,7 @@ public final class Console {
                     System.out.println("Detected 5 readLine errors, terminating the console to avoid blocking in backgound.");
                     System.out.flush();
                     if (status != null) {
+                        this.status.hide();
                         this.status.suspend();
                         this.status.close();
                     }

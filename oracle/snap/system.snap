@@ -296,23 +296,25 @@ Examples:
         &sql1: {sql={[[ 
                         SELECT /*ignore_me grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
                         FROM (
-                            SELECT inst,sql_id,SUM(cnt) sess,SUM(WAIT) WAIT,MAX(sql_text) sql_text
+                            SELECT inst,sql_id,SUM(cnt) sess,round(sum(cnt*ela),2) WAIT,MAX(sql_text) sql_text
                             FROM TABLE(gv$(CURSOR(
-                                SELECT /*+no_merge(a) leading(a) use_nl(b) opt_estimate(table a rows=10) opt_estimate(table b rows=1000000)*/ DISTINCT
+                                SELECT /*+no_merge(a) leading(a) use_nl(b) push_pred(b) opt_estimate(table a rows=10) opt_estimate(table b rows=1000000)*/ DISTINCT
                                        &inst1 inst,
                                        a.*,
+                                       elapsed_time/greatest(1,executions,parse_calls) ela,
                                        substr(TRIM(regexp_replace(REPLACE(b.sql_text, chr(0)), '\s+', ' ')), 1, 80) sql_text
                                 FROM (
                                     SELECT USERENV('instance') inst_id,
                                            sql_id,
-                                           COUNT(1) cnt,
-                                           SUM(LEAST(DECODE(wait_class,'Idle',0,&secs), :snap_interval)) WAIT
+                                           sql_child_number,
+                                           COUNT(1) cnt
                                     FROM   v$session
-                                    WHERE  sql_id IS NOT NULL
-                                    GROUP  BY sql_id) a,
-                                    v$sqlstats b
+                                    WHERE  sql_id IS NOT NULL and wait_class!='Idle'
+                                    GROUP  BY sql_id,sql_child_number) a,
+                                    v$sql b
                                 WHERE &inst_filter
                                 AND    a.sql_id = b.sql_id
+                                AND    a.sql_child_number = b.child_number
                                 AND    b.sql_text NOT LIKE '%ignore_me%')))
                             GROUP BY inst,sql_id
                             ORDER BY wait desc,sess desc,sql_text)
@@ -443,7 +445,10 @@ Examples:
                    FROM   gv$osstat b
                    WHERE  &inst_filter) a 
             GROUP  BY inst_id)
-        RIGHT JOIN (select inst_id "#", '|' "|", sum(TIME_WAITED_MICRO) "IO Wait",sum(total_waits) total_waits from &sysevent where wait_class like '%I/O%' group by inst_id)  using("#")
+        RIGHT JOIN (select inst_id "#", '|' "|", sum(TIME_WAITED_MICRO) "IO Wait",sum(total_waits) total_waits 
+                    from &sysevent 
+                    where wait_class like '%I/O%' or event like 'cell%physical%'
+                    group by inst_id)  using("#")
         JOIN (SELECT inst_id "#",
                      sum(CASE WHEN NAME IN('physical write total IO requests','physical read total IO requests') THEN VALUE END) IOPs,
                      SUM(DECODE(NAME, 'user commits', VALUE,'user rollbacks',VALUE)) "TPS",
