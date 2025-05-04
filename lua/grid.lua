@@ -1335,9 +1335,9 @@ function grid.merge(tabs, is_print, prefix, suffix)
             end
         end
         if env.printer.top_mode==true then
-            tab[#tab+1]=''
+            tab[#tab+1]=' '
             local height=console:getScreenHeight()
-            for i=#tab,height+1,-1 do
+            for i=#tab,height,-1 do
                 table.remove(tab,i)
             end
             return console:display(tab)

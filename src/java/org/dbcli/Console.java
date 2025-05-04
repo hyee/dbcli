@@ -206,11 +206,13 @@ public final class Console {
         display = new More.Play(terminal, false);
         display.init(false);
         display.resize(getScreenHeight(), getBufferWidth() - 1);
+        display.setTopMode(true);
     }
 
     public void exitDisplay() {
         if (display == null) return;
         display.exit();
+        display.setTopMode(false);
     }
 
     public void display(String[] args) {

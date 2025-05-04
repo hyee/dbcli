@@ -35,7 +35,6 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.InflaterInputStream;
 
 public class Loader {
-
     public static String ReloadNextTime = "_init_";
     public static String root = "";
     public static String libPath;
@@ -264,17 +263,15 @@ public class Loader {
         }
     }
 
-    public static boolean copyToClipboard(String string) throws IOException {
+    public static boolean copyToClipboard(String string) {
         if (string == null || string.trim().equals("")) return false;
         if (clipboard == null) {
-            /*
-            String encodedString = Base64.getEncoder().encodeToString(string.getBytes());
-            console.write("\u001b]52;c;"+encodedString+"\u001b7");
-             */
             return false;
-        } else {
+        } else try {
             StringSelection data = new StringSelection(string);
             clipboard.setContents(data, data);
+        } catch (Throwable e) {
+            return false;
         }
         return true;
     }

@@ -242,7 +242,9 @@ function env.smart_check_end(cmd,rest,from_pos,stmt)
         other_parts=concat(stmt,'\n')..' '..other_parts
     end
     local args=env.parse_args(from_pos,other_parts,stmt)
-    if #args==0 then return true,env.COMMAND_SEPS.match(rest) end
+    if #args==0 then
+        return true,env.COMMAND_SEPS.match(rest) 
+    end
     for k=#args,1,-1 do
         if not env.check_cmd_end(args[k]:upper(),concat(args,' ',k+1)) then
             return false,rest
@@ -694,7 +696,8 @@ function env.parse_args(cmd,rest,is_cross_line)
         curr_cmd=nil
     elseif arg_count == 2 then
         if type(rest)=="string" and not rest:match('".+" *%. *".+"') then
-            rest=rest:gsub('^"(.*)"$','%1')
+            local rest1=rest:gsub('^"(.*)"$','%1')
+            if not rest1:find('"',1,true) then rest=rest1 end
         end
         args[#args+1]=rest
     elseif rest then
@@ -747,7 +750,9 @@ function env.parse_args(cmd,rest,is_cross_line)
                     local name=args[count]:upper()
                     local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
                     if count>=arg_count-2 or is_multi_cmd then--the last parameter
-                        piece=rest:sub(i+1):ltrim():gsub('^"(.*)"$','%1')
+                        piece=rest:sub(i+1):ltrim()
+                        local piece1=piece:gsub('^"(.*)"$','%1')
+                        if not piece1:find('"',1,true) then piece=piece1 end
                         if terminator and piece:find(terminator_str,1,true)==1 then
                             piece=piece:sub(#terminator_str+1):ltrim()
                         end
