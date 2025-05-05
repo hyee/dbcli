@@ -100,6 +100,7 @@ function printer.print(...)
     end
 
     output=table.concat(output,' ')
+    local _
     if output.convert_ansi then output=output:convert_ansi() end
     output,rows=output:gsub("([^\n\r]*)([\n\r]*)",function(s,sep)
         if printer.grep_text and not ignore then

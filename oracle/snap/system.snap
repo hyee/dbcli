@@ -294,13 +294,20 @@ Examples:
         &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1 in(''||INST_ID,'0','a'))}
         &secs : 11.2={WAIT_TIME_MICRO} default={seconds_in_wait*1e6}
         &sql1: {sql={[[ 
-                        SELECT /*ignore_me grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
+                        SELECT /*grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
                         FROM (
-                            SELECT inst,sql_id,SUM(sess) sess,round(sum(sess*ela),2) WAIT,MAX(sql_text) sql_text
+                            SELECT inst,
+                                   max(sql_id) keep(dense_rank last order by sess*ela) top_sql,
+                                   SUM(sess) sess,
+                                   round(sum(sess*ela),2) WAIT,
+                                   MAX(sql_text) keep(dense_rank last order by sess*ela) sql_text
                             FROM TABLE(gv$(CURSOR(
-                                SELECT /*+no_merge(a) leading(a) use_nl(b) push_pred(b) opt_estimate(table a rows=10) opt_estimate(table b rows=1000000)*/ DISTINCT
+                                SELECT /*+ignore_me no_merge(a) leading(a) use_nl(b) push_pred(b) 
+                                          opt_estimate(table a rows=10) 
+                                          opt_estimate(table b rows=1000000)*/ DISTINCT
                                        &inst1 inst,
                                        a.sql_id,
+                                       nvl(b.force_matching_signature,0) sig,
                                        greatest(a.cnt,b.users_executing) sess,
                                        elapsed_time/greatest(1,executions,parse_calls) ela,
                                        substr(TRIM(regexp_replace(REPLACE(b.sql_text, chr(0)), '\s+', ' ')), 1, 80) sql_text
@@ -317,7 +324,7 @@ Examples:
                                 AND    a.sql_id = b.sql_id
                                 AND    a.sql_child_number = b.child_number
                                 AND    b.sql_text NOT LIKE '%ignore_me%')))
-                            GROUP BY inst,sql_id
+                            GROUP BY inst,decode(sig,0,sql_id,''||sig)
                             ORDER BY wait desc,sess desc,sql_text)
                         WHERE  ROWNUM <= 30]]},
                 latch={[[

@@ -213,8 +213,9 @@ function helper.help(cmd,...)
         end
         
         if helps=="" then return end
+
         helps,target=helper.colorful(helps,target)
-        if not target then return print(helps) end
+        if not target then return print(helps,'__PRINT_COLUMN_') end
         return print(env.space..helps:gsub('\n','\n'..env.space),'__PRINT_COLUMN_')
     elseif cmd=='-term' then
         local term=terminal

@@ -23,10 +23,7 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.security.Provider;
 import java.security.Security;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -52,7 +49,7 @@ public final class Console {
     public AbstractTerminal terminal;
     public boolean isSubSystem = false;
     LineReaderImpl reader;
-    More.Play display;
+    Display display;
     long threadID;
 
     MyCompleter completer = new MyCompleter(this);
@@ -199,36 +196,33 @@ public final class Console {
             }
         };
         Interrupter.listen(this, callback);
-        display = new More.Play(terminal, false);
+        display = new Display(terminal, false);
     }
 
     public void initDisplay() {
-        display = new More.Play(terminal, false);
-        display.init(false);
-        display.resize(getScreenHeight(), getBufferWidth() - 1);
+        display = new Display(terminal, false);
+        if (status != null) {
+            status.hide();
+            status.suspend();
+        }
         display.setTopMode(true);
     }
 
     public void exitDisplay() {
         if (display == null) return;
-        display.exit();
+        //display.exit();
         display.setTopMode(false);
+        if (status != null) {
+            status.restore();
+        }
     }
 
     public void display(String[] args) {
-        //display.reset();
-        int width = getBufferWidth() - 1;
-        /*for(int i=0;i<args.length;i++) {
-            String line=args[i];
-            int size=wcwidth(line);
-            if(size<width) {
-                args[i]+=new String(new char[width-size]).replace('\0',' ');
-            }
-        }*/
+        int width = getBufferWidth();
         display.clear();
         display.resize(getScreenHeight(), width);
         Attributes attrs = terminal.enterRawMode();
-        display.updateAnsi(Arrays.asList(args), -1);
+        display.update(Arrays.stream(args).map(s -> AttributedString.fromAnsi(s).columnSubSequence(0, width)).collect(Collectors.toList()), -1);
         terminal.setAttributes(attrs);
     }
 
@@ -315,7 +309,7 @@ public final class Console {
 
     public boolean setStatus(String title, String color) {
         try {
-            final int width = getScreenWidth()-1;
+            final int width = getScreenWidth() - 1;
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
                 return false;
