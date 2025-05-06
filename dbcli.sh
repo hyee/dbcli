@@ -81,15 +81,15 @@ elif type -p java &>/dev/null; then
     else
         _java=$(readlink -f "`type -p java`")
     fi
+fi
 
-    if [[ "$_java" ]]; then
-        found=2
-        info=$("$_java" -XshowSettings:properties 2>&1)
-        bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
-        ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
-        if [[ "$ver" < "52.0" ]]; then
-            found=1
-        fi
+if [[ "$_java" ]]; then
+    found=2
+    info=$("$_java" -XshowSettings:properties 2>&1)
+    bit=$(echo "$info"|grep "sun.arch.data.model"|awk '{print $3}')
+    ver=$(echo "$info"|grep "java.class.version" |awk '{print $3}')
+    if [[ "$ver" < "52.0" ]]; then
+        found=1
     fi
 fi
 

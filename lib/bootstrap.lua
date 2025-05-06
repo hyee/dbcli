@@ -110,14 +110,12 @@ local options ={'-server',
                 '-XX:MaxJNILocalCapacity=1048576',
                 '-Dfile.encoding='..charset,
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
-                '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
                 '-Djava.security.egd=file:/dev/./urandom',
                 '-Dsecurerandom.source=file:/dev/./urandom',
-                '-Djava.class.path='..jars,
                 --'-Djava.awt.headless=true',
                 java_ver>52 and '--release=8' or nil,
+                java_ver>52 and java_ver<61 and '--illegal-access=permit' or nil,
                 java_ver>52 and '-Djdk.module.illegalAccess=deny' or nil,
-                --java_ver>52 and '--add-modules=java.xml.bind' or nil,
                 java_ver>52 and '--add-opens=java.sql/java.sql=ALL-UNNAMED' or nil ,
                 java_ver>52 and '--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED' or nil ,
                 java_ver>52 and '--add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED' or nil ,
@@ -130,16 +128,24 @@ local options ={'-server',
                 java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm.util=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
                 java_ver>52 and '--enable-native-access=ALL-UNNAMED' or nil,
+                java_ver>52 and '--add-modules=jdk.unsupported' or nil,
                 java_ver>64 and '--illegal-native-access=allow' or nil,
                 java_ver>64 and '-XX:UseSVE=0' or nil,
-                java_ver>52 and '--add-modules=jdk.unsupported' or nil}
-
-for _,param in ipairs(other_options) do options[#options+1]=param end
-options={table.unpack(options)}
+                '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
+                '-Djava.class.path='..jars,
+                }
+local siz=select('#',table.unpack(options))
+local params={}
+for i=1,siz do
+    local param = options[i]
+    if param then
+        params[#params+1]=param
+    end
+end
 
 javavm = require("javavm",true)
 --javavm.trace(2)
-javavm.create(table.unpack(options))
+javavm.create(table.unpack(params))
 
 _G.__jvmclock=os.clock()-clock
 clock=os.clock()

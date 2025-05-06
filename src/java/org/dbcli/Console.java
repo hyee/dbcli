@@ -111,7 +111,7 @@ public final class Console {
                     .jansi(false)
                     .jna("jna".equals(mode))
                     .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode) || "default".equals(mode))
-                    .ffm("ffm".equals(mode) || "default".equals(mode))
+                    .ffm("ffm".equals(mode)) // || "default".equals(mode) default to disable due to possible warning
                     .nativeSignals(true)
                     .signalHandler(Terminal.SignalHandler.SIG_IGN)
                     .build();
