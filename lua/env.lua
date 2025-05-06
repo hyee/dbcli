@@ -697,7 +697,7 @@ function env.parse_args(cmd,rest,is_cross_line)
     elseif arg_count == 2 then
         if type(rest)=="string" and not rest:match('".+" *%. *".+"') then
             local rest1=rest:gsub('^"(.*)"$','%1')
-            if not rest1:find('"',1,true) then rest=rest1 end
+            if not rest1:find('[^\\]"') then rest=rest1 end
         end
         args[#args+1]=rest
     elseif rest then
@@ -720,7 +720,8 @@ function env.parse_args(cmd,rest,is_cross_line)
                     piece = piece .. char
                     if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+" *%. *".+"') then
                         --end of a quote string if next char is a space
-                        args[#args+1]=piece:gsub('^"(.*)"$','%1')
+                        local piece1=piece:gsub('^"(.*)"$','%1')
+                        args[#args+1]=piece1:find('[^\\]"') and piece or piece1
                         piece,is_quote_string='',false
                     end
                 else
@@ -752,7 +753,7 @@ function env.parse_args(cmd,rest,is_cross_line)
                     if count>=arg_count-2 or is_multi_cmd then--the last parameter
                         piece=rest:sub(i+1):ltrim()
                         local piece1=piece:gsub('^"(.*)"$','%1')
-                        if not piece1:find('"',1,true) then piece=piece1 end
+                        if not piece1:find('[^\\]"') then piece=piece1 end
                         if terminator and piece:find(terminator_str,1,true)==1 then
                             piece=piece:sub(#terminator_str+1):ltrim()
                         end
@@ -1424,7 +1425,7 @@ function env.set_title(title,value,callee)
     else
         titles=org_title
         title_list={}
-        return console:setStatus(nil,nil)
+        console:setStatus(nil,nil)
     end
 
     if CURRENT_TITLE~=titles or enabled then

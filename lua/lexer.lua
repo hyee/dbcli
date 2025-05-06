@@ -307,7 +307,7 @@ function lexer:__onload()
         close=self.close,
     }
     local help={[[Analyze :name trace file. type 'help @@NAME' for more detail.
-        [| grid:{topic='List of :name Commands'}
+[| grid:{topic='List of :name Commands'}
          | Command | Description |
          | open <file path> [<seq>] | Attach to an :name trace file, this is the pre-action of other operations|
          | close | Dettach from the opened trace file |
