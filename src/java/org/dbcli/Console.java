@@ -309,6 +309,7 @@ public final class Console {
 
     public boolean setStatus(String title, String color) {
         try {
+
             final int width = getScreenWidth() - 1;
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)

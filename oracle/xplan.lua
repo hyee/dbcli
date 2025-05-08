@@ -198,7 +198,7 @@ function xplan.explain(fmt,sql)
                          io_cost
                  END)),' ') blks,
                  COUNT(*) over() AS rc
-            FROM   (SELECT rownum r,x.* FROM TABLE(dbms_xplan.display('PLAN_TABLE', NULL, '@fmt@', 'PLAN_ID=(select max(plan_id) from plan_table WHERE STATEMENT_ID=''INTERNAL_DBCLI_CMD'')')) x) x
+            FROM   (SELECT rownum r,x.* FROM TABLE(dbms_xplan.display('SYS.PLAN_TABLE$', NULL, '@fmt@', 'PLAN_ID=(select max(plan_id) from SYS.plan_table WHERE STATEMENT_ID=''INTERNAL_DBCLI_CMD'')')) x) x
             LEFT   OUTER JOIN ordered_hierarchy_data o
             ON     (o.id = CASE WHEN regexp_like(x.plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(x.plan_table_output, '[0-9]+')) END))
         select plan_table_output

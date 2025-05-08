@@ -312,12 +312,13 @@ Examples:
                                            a.sql_id,
                                            nvl(b.force_matching_signature,0) sig,
                                            greatest(a.cnt,b.users_executing) sess,
+                                           plan_hash_value phv,
                                            elapsed_time/greatest(1,executions,parse_calls) ela,
                                            substr(TRIM(regexp_replace(REPLACE(b.sql_text, chr(0)), '\s+', ' ')), 1, 80) sql_text
                                     FROM (
                                         SELECT USERENV('instance') inst_id,
                                                sql_id,
-                                               sql_child_number,
+                                               nvl(sql_child_number,0) child_number,
                                                COUNT(1) cnt
                                         FROM   v$session
                                         WHERE  sql_id IS NOT NULL and wait_class!='Idle'
@@ -325,9 +326,9 @@ Examples:
                                         v$sql b
                                     WHERE  &inst_filter
                                     AND    a.sql_id = b.sql_id
-                                    AND    a.sql_child_number = b.child_number
+                                    AND    a.child_number = b.child_number
                                     AND    b.sql_text NOT LIKE '%ignore_me%'))) A)
-                            GROUP BY inst,decode(sig,0,sql_id,''||sig)
+                            GROUP BY inst,decode(sig,0,sql_id,''||sig),phv
                             ORDER BY wait desc,sess desc,sql_text)
                         WHERE  ROWNUM <= 30]]},
                 latch={[[

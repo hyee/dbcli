@@ -20,88 +20,88 @@ end
 env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 
 return  obj.object_type=='FIXED TABLE' and [[
-        SELECT /*+ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5)*/ 
+        SELECT /*+outline_leaf ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5)*/ 
                a.*,
-               C.avgcln AVG_LEN,
-               C.DISTCNT "NDV",
-               CASE WHEN B.ROWCNT>=c.NULL_CNT THEN round(c.NULL_CNT*100/nullif(B.ROWCNT,0),2) END "Nulls(%)",
-               CASE WHEN B.ROWCNT>=c.NULL_CNT THEN round((B.ROWCNT-c.NULL_CNT)/nullif(C.DISTCNT,0),2) END CARDINALITY,
+               C.AVG_COL_LEN AVG_LEN,
+               C.NUM_DISTINCT "NDV",
+               CASE WHEN B.ROWCNT>=c.NUM_NULLS THEN round(c.NUM_NULLS*100/nullif(B.ROWCNT,0),2) END "Nulls(%)",
+               CASE WHEN B.ROWCNT>=c.NUM_NULLS THEN round((B.ROWCNT-c.NUM_NULLS)/nullif(C.NUM_DISTINCT,0),2) END CARDINALITY,
                c.sample_size,
-               c.TIMESTAMP# LAST_ANALYZED,
-               case when LOWVAL is not null then 
+               c.LAST_ANALYZED,
+               case when C.LOW_VALUE is not null then 
                substrb(decode(regexp_substr(DATA_TYPE,'[^\(]+')
-                  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(LOWVAL))
-                  ,'FLOAT'        ,to_char(utl_raw.cast_to_number(LOWVAL))
-                  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(LOWVAL))
-                  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(LOWVAL))
-                  ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(LOWVAL))
-                  ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(LOWVAL))
-                  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(LOWVAL))
-                  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(LOWVAL))
-                  ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(LOWVAL, 1, 2), 'XX')-100,2,0)||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 5, 2), 'XX') ,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                    nvl(substr(TO_NUMBER(SUBSTR(LOWVAL, 15, 8), 'XXXXXXXX'),1,6),'0')
+                  ,'NUMBER'       ,to_char(utl_raw.cast_to_number(C.LOW_VALUE))
+                  ,'FLOAT'        ,to_char(utl_raw.cast_to_number(C.LOW_VALUE))
+                  ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(C.LOW_VALUE))
+                  ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(C.LOW_VALUE))
+                  ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(C.LOW_VALUE))
+                  ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(C.LOW_VALUE))
+                  ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(C.LOW_VALUE))
+                  ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(C.LOW_VALUE))
+                  ,'TIMESTAMP'    , lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(C.LOW_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')
                   ,'TIMESTAMP WITH TIME ZONE',
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 1, 2), 'XX')-100,2,0)||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 5, 2), 'XX'),2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 7, 2), 'XX'),2,0)|| ' ' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(LOWVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                    nvl(substr(TO_NUMBER(SUBSTR(LOWVAL, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                    nvl(TO_NUMBER(SUBSTR(LOWVAL, 23,2),'XX')-20,0)||':'||
-                                    nvl(TO_NUMBER(SUBSTR(LOWVAL, 25, 2), 'XX')-60,0)
-                  ,'DATE',lpad(TO_NUMBER(SUBSTR(LOWVAL, 1, 2), 'XX')-100,2,0)||
-                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
-                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 5, 2), 'XX') ,2,0)|| '-' ||
-                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
-                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
-                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
-                          lpad(TO_NUMBER(SUBSTR(LOWVAL, 13, 2), 'XX')-1,2,0)
-                  ,  LOWVAL),1,32) end LOWVAL,
-                case when HIVAL is not null then 
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 5, 2), 'XX'),2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 7, 2), 'XX'),2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(C.LOW_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                    nvl(TO_NUMBER(SUBSTR(C.LOW_VALUE, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(C.LOW_VALUE, 25, 2), 'XX')-60,0)
+                  ,'DATE',lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 1, 2), 'XX')-100,2,0)||
+                          lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                          lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                          lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                          lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                          lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                          lpad(TO_NUMBER(SUBSTR(C.LOW_VALUE, 13, 2), 'XX')-1,2,0)
+                  ,  C.LOW_VALUE),1,32) end LOW_VALUE,
+                case when C.HIGH_VALUE is not null then 
                 substrb(decode(regexp_substr(DATA_TYPE,'[^\(]+')
-                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(HIVAL))
-                      ,'FLOAT'        ,to_char(utl_raw.cast_to_number(HIVAL))
-                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(HIVAL))
-                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(HIVAL))
-                      ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(HIVAL))
-                      ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(HIVAL))
-                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(HIVAL))
-                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(HIVAL))
-                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(HIVAL, 1, 2), 'XX')-100,2,0)||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 5, 2), 'XX') ,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                    nvl(substr(TO_NUMBER(SUBSTR(HIVAL, 15, 8), 'XXXXXXXX'),1,6),'0')
+                      ,'NUMBER'       ,to_char(utl_raw.cast_to_number(C.HIGH_VALUE))
+                      ,'FLOAT'        ,to_char(utl_raw.cast_to_number(C.HIGH_VALUE))
+                      ,'VARCHAR2'     ,to_char(utl_raw.cast_to_varchar2(C.HIGH_VALUE))
+                      ,'NVARCHAR2'    ,to_char(utl_raw.cast_to_nvarchar2(C.HIGH_VALUE))
+                      ,'CHAR'         ,to_char(utl_raw.cast_to_varchar2(C.HIGH_VALUE))
+                      ,'NCHAR'        ,to_char(utl_raw.cast_to_nvarchar2(C.HIGH_VALUE))
+                      ,'BINARY_DOUBLE',to_char(utl_raw.cast_to_binary_double(C.HIGH_VALUE))
+                      ,'BINARY_FLOAT' ,to_char(utl_raw.cast_to_binary_float(C.HIGH_VALUE))
+                      ,'TIMESTAMP'   , lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')
                         ,'TIMESTAMP WITH TIME ZONE',
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 1, 2), 'XX')-100,2,0)||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 5, 2), 'XX'),2,0)|| '-' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 7, 2), 'XX'),2,0)|| ' ' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                    lpad(TO_NUMBER(SUBSTR(HIVAL, 13, 2), 'XX')-1,2,0)|| '.' ||
-                                    nvl(substr(TO_NUMBER(SUBSTR(HIVAL, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
-                                    nvl(TO_NUMBER(SUBSTR(HIVAL, 23,2),'XX')-20,0)||':'||
-                                    nvl(TO_NUMBER(SUBSTR(HIVAL, 25, 2), 'XX')-60,0)
-                        ,'DATE',lpad(TO_NUMBER(SUBSTR(HIVAL, 1, 2), 'XX')-100,2,0)||
-                                lpad(TO_NUMBER(SUBSTR(HIVAL, 3, 2), 'XX')-100,2,0)|| '-' ||
-                                lpad(TO_NUMBER(SUBSTR(HIVAL, 5, 2), 'XX') ,2,0)|| '-' ||
-                                lpad(TO_NUMBER(SUBSTR(HIVAL, 7, 2), 'XX') ,2,0)|| ' ' ||
-                                lpad(TO_NUMBER(SUBSTR(HIVAL, 9, 2), 'XX')-1,2,0)|| ':' ||
-                                lpad(TO_NUMBER(SUBSTR(HIVAL, 11, 2), 'XX')-1,2,0)|| ':' ||
-                                lpad(TO_NUMBER(SUBSTR(HIVAL, 13, 2), 'XX')-1,2,0)
-                        ,  HIVAL),1,32) end HIVAL
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 1, 2), 'XX')-100,2,0)||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 5, 2), 'XX'),2,0)|| '-' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 7, 2), 'XX'),2,0)|| ' ' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                    lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 13, 2), 'XX')-1,2,0)|| '.' ||
+                                    nvl(substr(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 15, 8), 'XXXXXXXX'),1,6),'0')||' '||
+                                    nvl(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 23,2),'XX')-20,0)||':'||
+                                    nvl(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 25, 2), 'XX')-60,0)
+                        ,'DATE',lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 1, 2), 'XX')-100,2,0)||
+                                lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 3, 2), 'XX')-100,2,0)|| '-' ||
+                                lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 5, 2), 'XX') ,2,0)|| '-' ||
+                                lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 7, 2), 'XX') ,2,0)|| ' ' ||
+                                lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 9, 2), 'XX')-1,2,0)|| ':' ||
+                                lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 11, 2), 'XX')-1,2,0)|| ':' ||
+                                lpad(TO_NUMBER(SUBSTR(C.HIGH_VALUE, 13, 2), 'XX')-1,2,0)
+                        ,  C.HIGH_VALUE),1,32) end HIGH_VALUE
         FROM (
             SELECT KQFTAOBJ obj#, c.KQFCOCNO COL#, c.kqfconam COLUMN_NAME,
                    decode(kqfcodty,
@@ -144,10 +144,11 @@ return  obj.object_type=='FIXED TABLE' and [[
             AND    c.inst_id = t.inst_id
             AND   (t.kqftanam=:object_name or t.kqftanam=(SELECT KQFDTEQU FROM sys.x$kqfdt WHERE KQFDTNAM=:object_name))) a,
             sys.tab_stats$ b,
-            sys.hist_head$ c
+            SYS.DBA_TAB_COL_STATISTICS c
         WHERE a.obj#=b.obj#(+)
-        AND   a.obj#=c.obj#(+)
-        AND   a.col#=c.col#(+)
+        AND   c.owner(+)=:owner
+        AND   c.table_name(+)=:object_name
+        AND   c.column_name(+)=a.column_name
         ORDER  BY 1,2
     ]] or {[[
         SELECT /*INTERNAL_DBCLI_CMD topic="Column info"*/ 

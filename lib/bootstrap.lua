@@ -139,7 +139,7 @@ local params={}
 for i=1,siz do
     local param = options[i]
     if param then
-        params[#params+1]=param
+        params[#params+1]=param 
     end
 end
 
