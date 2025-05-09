@@ -252,7 +252,8 @@ public final class Console {
 
         if( prevDisplay != null) {
             prevSize.copy(size);
-            terminal.puts(InfoCmp.Capability.clear_screen);
+            display.moveVisualCursorTo(0);
+            terminal.puts(InfoCmp.Capability.clr_eos);
             display.empty();
             display(prevDisplay);
         }

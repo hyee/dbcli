@@ -511,8 +511,9 @@ function snapper:next_exec()
             if top_mode then
                 env.printer.top_mode=true
                 if not self.is_first_top then
-                    reader:clearScreen()
+                    --reader:clearScreen()
                     console:initDisplay()
+                    --reader:clearScreen()
                     self.is_first_top=true;
                 end
                 cmd.rs2.max_rows=getHeight(console)-2
