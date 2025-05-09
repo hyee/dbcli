@@ -87,8 +87,15 @@ FROM (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UNI
       FROM( SELECT a.*,row_number() over(partition by tablespace_name,loc order by 1) loc_seq
             FROM (
                 SELECT /*+no_merge no_expand outline_leaf no_push_pred(a) use_hash(b a c) 
-                         opt_param('_optimizer_sortmerge_join_enabled','false') opt_param('optimizer_index_cost_adj' 1000)
-                         table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=1024) */
+                         opt_param('_optimizer_sortmerge_join_enabled','false') 
+                         opt_param('optimizer_index_cost_adj' 1000)
+                         table_stats(SYS.FILE$ set rows=100000)
+                         table_stats(SYS.RECYCLEBIN$ set rows=100000)
+                         table_stats(SYS.TS$ set rows=200)
+                         table_stats(SYS.X$KTFBUE,scale,rows=10000 blocks=100)
+                         table_stats(SYS.X$KTFBFE,scale,rows=10000 blocks=1000)
+                         table_stats(SYS.SEG$ SAMPLE BLOCKS=1024) 
+                      */
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
                        max(b.bytes/b.blocks) blocksiz, 

@@ -608,7 +608,7 @@ function grid:add(row)
                         local linesize = self.linesize
                         if linesize <= 10 then linesize = getWidth(console) - (#env.space) * 2 end
                         if usize>math.max(linesize,maxsize)  then
-                            col_wrap=col_wrap==0 and linesize or math.min(linesize,col_wrap)
+                            col_wrap=col_wrap==0 and linesize or col_wrap
                         end
                     end
                     if col_wrap > 0 and usize > col_wrap then

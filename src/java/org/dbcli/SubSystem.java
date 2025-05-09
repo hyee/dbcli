@@ -110,7 +110,9 @@ public class SubSystem {
 
     void print(String buff) {
         if (isCache) {
-            this.buff.append(buff);
+            synchronized (this.buff) {
+                this.buff.append(buff);
+            }
         } else if (isPrint && !isBreak) {
             Console.writer.add(buff);
             Console.writer.flush();
@@ -119,9 +121,11 @@ public class SubSystem {
 
     String getBuff(boolean wait) throws Exception {
         if (wait) waitCompletion(false);
-        final String result = buff.toString();
-        buff.setLength(0);
-        return result;
+        synchronized (this.buff) {
+            final String result = buff.toString();
+            buff.setLength(0);
+            return result;
+        }
     }
 
     synchronized void write(byte[] b) throws IOException {

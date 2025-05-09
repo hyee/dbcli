@@ -5,15 +5,16 @@ import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
 import org.jline.builtins.Source;
-import org.jline.builtins.TTop;
 import org.jline.keymap.KeyMap;
 import org.jline.reader.*;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.reader.impl.LineReaderImpl;
-import org.jline.terminal.*;
+import org.jline.terminal.Attributes;
+import org.jline.terminal.Size;
+import org.jline.terminal.Terminal;
+import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
-import org.jline.terminal.impl.CursorSupport;
 import org.jline.utils.*;
 import org.jline.widget.AutosuggestionWidgets;
 
@@ -23,7 +24,10 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.security.Provider;
 import java.security.Security;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -70,6 +74,7 @@ public final class Console {
     private final KeyMap keyMap;
     protected volatile Status status;
     public Timer timer = new Timer(this);
+    private Size prevSize = null;
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -121,6 +126,7 @@ public final class Console {
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, interrupter);
         terminal.handle(Terminal.Signal.TSTP, interrupter);
         terminal.handle(Terminal.Signal.QUIT, interrupter);
+        terminal.handle(Terminal.Signal.WINCH, this::handleResize);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -197,6 +203,7 @@ public final class Console {
         };
         Interrupter.listen(this, callback);
         display = new Display(terminal, false);
+        prevSize = new Size(getScreenHeight(), getBufferWidth());
     }
 
     public void initDisplay() {
@@ -206,16 +213,20 @@ public final class Console {
             status.suspend();
         }
         display.setTopMode(true);
+        prevDisplay = null;
     }
 
     public void exitDisplay() {
         if (display == null) return;
         //display.exit();
         display.setTopMode(false);
+        prevDisplay = null;
         if (status != null) {
             status.restore();
         }
     }
+
+    private volatile String[] prevDisplay = null;
 
     public void display(String[] args) {
         int width = getBufferWidth();
@@ -224,6 +235,27 @@ public final class Console {
         Attributes attrs = terminal.enterRawMode();
         display.update(Arrays.stream(args).map(s -> AttributedString.fromAnsi(s).columnSubSequence(0, width)).collect(Collectors.toList()), -1);
         terminal.setAttributes(attrs);
+        prevDisplay = args;
+    }
+
+    public void handleResize(Terminal.Signal signal) {
+        Size size = terminal.getBufferSize();
+        if (size.getRows() > 1 && prevSize.getColumns() == size.getColumns() && prevSize.getRows() == size.getRows()) {
+            return;
+        }
+
+        if(status !=null && !status.isHided() &&!status.isClosed() && !status.isSuspended()) {
+            status.hide();
+            terminal.puts(InfoCmp.Capability.carriage_return);
+            terminal.puts(InfoCmp.Capability.clr_eos);
+        }
+
+        if( prevDisplay != null) {
+            prevSize.copy(size);
+            terminal.puts(InfoCmp.Capability.clear_screen);
+            display.empty();
+            display(prevDisplay);
+        }
     }
 
     public void enableMouse(String val) {
@@ -457,7 +489,7 @@ public final class Console {
                 firstPrompt = prompt;
                 promptWidth = wcwidth(firstPrompt);
             }
-
+            prevDisplay = null;
             String line = reader.readLine(prompt, null, buffer);
 
             if (line != null) {

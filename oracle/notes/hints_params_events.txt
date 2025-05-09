@@ -256,10 +256,10 @@ Hints:
                                             regexp_replace(regexp_replace(regexp_replace(hint_text, '=[\.0-9]+', '=<number>'),'@\S+','[<@QB>]'),'"\S+"','<OBJ_NAME>') hints
                                      FROM   v$sql_reoptimization_hints)))
             GROUP BY hints;
-    TABLE_STATS(<table> <DEFAULT|SET|SCALE|SAMPLE> {<BLOCKS|ROWS|ROW_LENGTH>=<value>}): 
+    TABLE_STATS(<table>,<DEFAULT|SET|SCALE|SAMPLE>,{<BLOCKS|ROWS|ROW_LENGTH>=<value>}): 
        * table_stats(scott.emp set rows=14 blocks=1 row_length=10)
-    INDEX_STATS(<Table> <Index> <SCALE|NULL> {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
-    COLUMN_STATS(<Table> <Column> <SCALE|NULL> {<LENGTH|DISTINCT|NULLS|MIN|MAX> ><value>})
+    INDEX_STATS(<Table>, <Index>, <SET|SCALE|NULL>, {<BLOCKS|INDEX_ROWS|KEYS|CLUSTERING_FACTOR|ROWS>=<value>})
+    COLUMN_STATS(<Table>, <Column>, <SET|SCALE|NULL> ,{<LENGTH|DISTINCT|NULLS|MIN|MAX>=<value>})
 	NUM_INDEX_KEYS(<@QB>] <table> <index> <cols>): used on multi-column index for INLIST ITERATOR, specifying how many columns(keys) to be put in access part and the others in filter part due to fix control 16516751, or try "USE_CONCAT(OR_PREDICATES(32767))"
     PQ_DISTRIBUTE_WINDOW([<@QB>] <method>): used on PX window function.  1: hash then window sort 2: window sort then hash 3: range then window sort 4: window sort then range
     OR_EXPAND(<qb> (1) (2) ...(N)): expand N or expression to union all

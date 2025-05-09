@@ -1159,6 +1159,7 @@ function oradebug.profile(sid,samples,interval,event)
         --out=table.concat(out_,'\n')
         sqlplus:execute('oradebug short_stack',false,false)
         out=sqlplus:getBuff(false)
+        if not out then return end
         log=env.write_cache("shortstacks_"..file..".log",out)
     elseif org_sid and not tonumber(sid) then
         env.raise('No such file, please input a valid file path or a sid.')
@@ -1310,6 +1311,7 @@ function oradebug.profile(sid,samples,interval,event)
     ::printer::
     out=nil
 
+    env.set.set("COLWRAP",2000)
     local rows,index=grid.new(),0
     rows:add{'#','Calls'..(is_ms and '(ms)' or ''),'Subtree'..(is_ms and '(ms)' or ''),events>0 and 'Event' or '|*|','  Call Stacks'}
     local function compare(a,b)
