@@ -126,7 +126,6 @@ public final class Console {
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, interrupter);
         terminal.handle(Terminal.Signal.TSTP, interrupter);
         terminal.handle(Terminal.Signal.QUIT, interrupter);
-        terminal.handle(Terminal.Signal.WINCH, this::handleResize);
         this.reader = (LineReaderImpl) LineReaderBuilder.builder().terminal(terminal).appName("dbcli").build();
         this.parser = new MyParser();
         this.reader.setParser(parser);
@@ -204,26 +203,28 @@ public final class Console {
         Interrupter.listen(this, callback);
         display = new Display(terminal, false);
         prevSize = new Size(getScreenHeight(), getBufferWidth());
+        terminal.handle(Terminal.Signal.WINCH, this::handleResize);
     }
 
     public void initDisplay() {
         display = new Display(terminal, false);
         if (status != null) {
-            status.hide();
+            status.close();
             status.suspend();
         }
-        display.setTopMode(true);
+        display.setNoWrap(true);
         prevDisplay = null;
     }
 
     public void exitDisplay() {
         if (display == null) return;
         //display.exit();
-        display.setTopMode(false);
+        display.setNoWrap(false);
         prevDisplay = null;
         if (status != null) {
             status.restore();
         }
+        display.reset();
     }
 
     private volatile String[] prevDisplay = null;
@@ -233,25 +234,32 @@ public final class Console {
         display.clear();
         display.resize(getScreenHeight(), width);
         Attributes attrs = terminal.enterRawMode();
-        display.update(Arrays.stream(args).map(s -> AttributedString.fromAnsi(s).columnSubSequence(0, width)).collect(Collectors.toList()), -1);
+        display.update(Arrays.stream(args)
+                .map(s -> AttributedString.fromAnsi(s + (s.endsWith("\n") ? "" : "\n"))
+                        .columnSubSequence(0, width)).collect(Collectors.toList()), -1);
         terminal.setAttributes(attrs);
         prevDisplay = args;
     }
 
     public void handleResize(Terminal.Signal signal) {
         Size size = terminal.getBufferSize();
-        if (size.getRows() > 1 && prevSize.getColumns() == size.getColumns() && prevSize.getRows() == size.getRows()) {
+        if (size.getRows() > 1
+                && prevSize != null
+                && prevSize.getColumns() == size.getColumns()
+                && prevSize.getRows() == size.getRows()) {
             return;
         }
 
-        if(status !=null && !status.isHided() &&!status.isClosed() && !status.isSuspended()) {
-            status.hide();
+        prevSize.copy(size);
+
+        if (status != null && !status.isHided() && !status.isSuspended()) {
+            status.close();
+            status.resize();
             terminal.puts(InfoCmp.Capability.carriage_return);
             terminal.puts(InfoCmp.Capability.clr_eos);
         }
 
-        if( prevDisplay != null) {
-            prevSize.copy(size);
+        if (prevDisplay != null) {
             display.moveVisualCursorTo(0);
             terminal.puts(InfoCmp.Capability.clr_eos);
             display.empty();
@@ -342,14 +350,11 @@ public final class Console {
 
     public boolean setStatus(String title, String color) {
         try {
-
             final int width = getScreenWidth() - 1;
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
                 return false;
-
             if (title == null || title.equals("")) {
-                this.status.hide();
                 this.status.close();
                 this.status.suspend();
                 this.status = null;
@@ -369,19 +374,13 @@ public final class Console {
                     prevTitle = title;
                 }
                 prevTime = time;
-                AttributedString sep;
                 if (color != null && !color.equals("") && !color.equals(prevColor)) {
-                    sep = AttributedString.fromAnsi(color + chars.replace('\0', '-'));
                     prevColor = color;
-                } else if (titles.size() > 0) {
-                    sep = titles.get(0);
-                } else {
-                    sep = AttributedString.fromAnsi(prevColor + chars.replace('\0', '-'));
                 }
                 titles.clear();
-                titles.add(sep);
+                titles.add(AttributedString.fromAnsi(prevColor + chars.replace('\0', '-') + '\n'));
                 AttributedStringBuilder asb = new AttributedStringBuilder();
-                asb.ansiAppend(time).ansiAppend(title);
+                asb.append(time).ansiAppend(title);
                 titles.add(asb.toAttributedString());
                 this.status.update(titles);
             }
@@ -513,9 +512,8 @@ public final class Console {
                     System.out.println("Detected 5 readLine errors, terminating the console to avoid blocking in backgound.");
                     System.out.flush();
                     if (status != null) {
-                        this.status.hide();
-                        this.status.suspend();
                         this.status.close();
+                        this.status.suspend();
                     }
                     return null;
                 } else {

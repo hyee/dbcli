@@ -1777,10 +1777,10 @@ final public class More {
             reset();
             prevBuff = null;
             isStarted = false;
-            this.isEnterCA = isEnterCA && terminal.getStringCapability(Capability.clear_screen) != null;
+            this.isEnterCA = isEnterCA && terminal.getStringCapability(Capability.exit_ca_mode) != null;
             status = Status.getStatus(terminal, false);
             if (status != null) {
-                status.hide();
+                status.close();
                 status.suspend();
             }
             if (isEnterCA && fullScreen) {
@@ -1791,10 +1791,7 @@ final public class More {
         public void exit() {
             isStarted = false;
             if (this.isEnterCA) {
-                if (!fullScreen)
-                    terminal.puts(Capability.clear_screen);
-                else
-                    terminal.puts(Capability.exit_ca_mode);
+                terminal.puts(Capability.exit_ca_mode);
             }
             status = Status.getStatus(terminal, false);
             if (status != null) {
