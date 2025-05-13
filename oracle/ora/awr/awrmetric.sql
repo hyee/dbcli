@@ -197,15 +197,13 @@ grid {
             SELECT * 
             FROM (
                 SELECT  METRIC_NAME,
-                        ROUND(
-                            case when instr(METRIC_UNIT,'%')>0 or metric_name like '%Average%' then 
-                                 median(AVERAGE/div)
-                            else sum(AVERAGE/c/div)
-                            end
-                        ,2) VALUE,
-                        replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabtyes') UNIT
-                FROM (SELECT a.*, 
-                             count(distinct begin_time) over(partition by a.instance_number) c,
+                        ROUND(MAX(maxval/div),2) "Max",
+                        ROUND(median(AVERAGE/div),2) "Mid",
+                        replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabytes') UNIT
+                FROM (SELECT METRIC_NAME,METRIC_UNIT,
+                             case when instr(METRIC_UNIT,'%')>0 THEN MAX(MAXVAL) ELSE 
+                                SUM(AVERAGE)+MAX(MAXVAL-AVERAGE)+(SUM(MAXVAL-AVERAGE)-MAX(MAXVAL-AVERAGE))/SQRT(COUNT(1)) END maxval,
+                             case when instr(METRIC_UNIT,'%')>0 THEN AVG(AVERAGE) ELSE SUM(AVERAGE) END AVERAGE,
                              case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
                       FROM   dba_hist_sysmetric_summary a 
                       JOIN   (&snaps)  b
@@ -214,9 +212,10 @@ grid {
                       AND    a.instance_number=b.instance_number
                       AND    a.metric_name not like '% Per Txn'
                       AND    a.dbid=:dbid
-                      WHERE  group_id=2)
+                      WHERE  group_id=2
+                      GROUP BY METRIC_NAME,METRIC_UNIT,A.SNAP_ID,TRUNC(BEGIN_TIME,'MI'))
                 GROUP BY METRIC_NAME,METRIC_UNIT)
-            WHERE VALUE>0
-            ORDER BY UNIT,value desc]]
+            WHERE "Mid">0
+            ORDER BY UNIT,"Mid" desc]]
     }
 }

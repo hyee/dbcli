@@ -72,35 +72,36 @@ DECLARE
         WHERE  upper(V2) IN (upper(name),''||signature); 
     CURSOR get_sql(V2 VARCHAR2,PHV INT) IS
         SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 'cursor' grp,
-            sql_id,
-            plan_hash_value phv,
-            sql_fulltext sql_text,
-            cast(null as varchar2(128)) key1,
-            cast(null as varchar2(128)) key2
+               sql_id,
+               plan_hash_value phv,
+               sql_fulltext sql_text,
+               cast(null as varchar2(128)) key1,
+               cast(null as varchar2(128)) key2
         FROM   v$sqlarea
         WHERE  sql_id=V2
         AND    plan_hash_value=nvl(phv,plan_hash_value)
         AND    plan_hash_value>0
         UNION  ALL 
         SELECT 'AWR',
-            sql_id,
-            plan_hash_value,
-            sql_text,
-            ''||:dbid,
-            ''||(select MAX(snap_id) from dba_hist_sqlstat WHERE sql_id=V2 AND plan_hash_value=a.plan_hash_value AND DBID=:dbid)
+               sql_id,
+               plan_hash_value,
+               sql_text,
+               ''||dbid,
+               ''||(select MAX(snap_id) from dba_hist_sqlstat WHERE sql_id=V2 AND plan_hash_value=a.plan_hash_value AND DBID=:dbid)
         FROM   dba_hist_sql_plan a
         JOIN   dba_hist_sqltext USING(dbid,sql_id)
         WHERE  sql_id=V2
         AND    plan_hash_value=nvl(phv,plan_hash_value)
         AND    dbid=:dbid
         AND    plan_hash_value>0
+        AND    other_xml IS NOT NULL
         UNION  ALL 
         SELECT 'sqlset',
-            sql_id,
-            plan_hash_value,
-            sql_text,
-            sqlset_name,
-            sqlset_owner
+               sql_id,
+               plan_hash_value,
+               sql_text,
+               sqlset_name,
+               sqlset_owner
         FROM   dba_sqlset_statements
         WHERE  sql_id=V2
         AND    plan_hash_value=nvl(phv,plan_hash_value)
@@ -249,7 +250,7 @@ BEGIN
                                                                  plan_hash_value=>r.phv,
                                                                  fixed=>'NO',
                                                                  enabled=>'YES');
-                $IF DBMS_DB_VERSION.RELEASE>12 OR DBMS_DB_VERSION.RELEASE=12 AND DBMS_DB_VERSION.VERSION>1 $THEN
+                $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE>1 $THEN
                 ELSIF r.grp = 'AWR' THEN
                     tmp := dbms_spm.load_plans_from_awr(dbid=>r.key1,
                                                         begin_snap=>r.key2-1,

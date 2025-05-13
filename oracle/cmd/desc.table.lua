@@ -283,7 +283,8 @@ return  obj.object_type=='FIXED TABLE' and [[
         ON        (a.column_name=e.cname)
         ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+cardinality(1) outline_leaf push_pred(c) opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
+        WITH /*topic="Index info" */ 
+        I AS (SELECT /*+cardinality(1) outline_leaf push_pred(c) opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
                            I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                            PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                     SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -300,7 +301,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :table_name)
-        SELECT /*+topic="Index info" outline_leaf push_pred(e) push_pred(c) no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+use_hash(e c) outline_leaf no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, 
@@ -347,7 +348,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+outline_leaf leading(a r c) use_nl(a r c) push_pred(r) push_pred(c) opt_param('container_data' 'current_dictionary')
+        FROM   (SELECT --+outline_leaf leading(a r c) use_nl(a r) use_hash(c) push_pred(r) push_pred(c) opt_param('container_data' 'current_dictionary')
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
