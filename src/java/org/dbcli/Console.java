@@ -529,7 +529,7 @@ public final class Console {
                 if (cancelSeq >= 5) {
                     System.exit(0);
                 } else {
-                    if (status != null) status.redraw();
+                    if (status != null) status.redraw(true);
                 }
             } catch (Throwable e2) {
                 ++cancelSeq;

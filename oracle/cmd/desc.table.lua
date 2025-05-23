@@ -153,7 +153,7 @@ return  obj.object_type=='FIXED TABLE' and [[
     ]] or {[[
         SELECT /*INTERNAL_DBCLI_CMD topic="Column info"*/ 
              /*+opt_param('container_data' 'current_dictionary') opt_param('optimizer_dynamic_sampling' 5)
-               no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) swap_join_inputs(c) */
+               no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) use_hash(d) swap_join_inputs(c) */
                a.INTERNAL_COLUMN_ID NO#,
                a.COLUMN_NAME NAME,
                a.DATA_TYPE_OWNER || NVL2(a.DATA_TYPE_OWNER, '.', '') ||

@@ -157,21 +157,37 @@ BEGIN
                 from gstats
                 group by cellhash) USING(cellhash)
             RIGHT JOIN (
-                SELECT * FROM gstats PIVOT (
+                SELECT cellhash,
+                       "Alloc|FCache",
+                       "Alloc|OLTP",
+                       "Alloc|Scan",
+                       "Used|FCC",
+                       "Large|Writes",
+                       '/' "/",
+                       "FCache|Used",
+                       "Used|OLTP",
+                       synced "Alloc|Synced",
+                       dirty-synced "Alloc|Dirty",
+                       "FCache|Keep",
+                       "OLTP|Keep",
+                       '|' as "|",
+                        "Alloc|PMEM",
+                        "Alloc|RAM",
+                        "RAM|OLTP"
+                FROM gstats PIVOT (
                     MAX(v) FOR n IN(
                         'Flash cache bytes allocated' AS "Alloc|FCache",
                         'Flash cache bytes allocated for OLTP data' AS "Alloc|OLTP",
                         'SCAN' AS "Alloc|Scan",
                         'Flash cache bytes used - columnar' AS "Used|FCC",
                         'Large Writes' AS "Large|Writes",
-                        '/' "/",
                         'Flash cache bytes used' AS "FCache|Used",
                         'Flash cache bytes used for OLTP data' AS "Used|OLTP",
-                        'Flash cache bytes allocated for unflushed data' AS "Alloc|Dirty",
+                        'Flash cache bytes allocated for unflushed data' AS dirty,
+                        'Flash cache bytes allocated for synced dirty data' synced,
                         'Flash cache bytes used - keep objects' AS "FCache|Keep",
                         'Flash cache bytes allocated for OLTP keep objects' AS  "OLTP|Keep",
                         --'Flash cache bytes used - columnar keep' AS "CC|Keep",
-                        '|' as "|",
                         'PMEM cache bytes allocated' as "Alloc|PMEM",
                         'RAM cache bytes allocated' as "Alloc|RAM",
                         'RAM cache bytes allocated for OLTP data' as "RAM|OLTP"))) b 
@@ -437,6 +453,6 @@ BEGIN
 END;
 /
 col "Disk Group|Total Size,total|size,Disk Group|Free Size,cached|size,Grid|Size,Disk|Size,Usable|Size,CellDisk|Size,Keep|FCC,CellDisk|Un-|Alloc,GridDisk|Size,HD_SIZE,FD_SIZE,PMEM|SIZE,flash_cache,flash_log,flash|cache" format kmg
-col SmartIO|Cached,un-|alloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,Alloc|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,OLTP|Keep,CC|Keep format kmg
+col SmartIO|Cached,un-|alloc,flashcache,flashlog,Alloc|PMEM,PMEM|OLTP,Alloc|RAM,RAM|OLTP,Alloc|FCache,RAM|Used,PMEM|Keep,PMEM|Used,Alloc|OLTP,ALLOC|SCAN,Large|Writes,Alloc|Synced,Alloc|Dirty,FCache|Used,Used|OLTP,Used|FCC,FCache|Keep,OLTP|Keep,CC|Keep format kmg
 col "FCC%|Scan,Read|Hit,RAM|Hit,PMEM|Hit,FC|Hit,FCC|Hit,Scan|Hit,FCache|Hit,FCache|Write,RAM|Read,RAM|Scan,PMEM|Read,SmartIO|Flash,SmartIO|Filter,SmartIO|SiSaved,SmartIO|CCSaved,Offload|Out/In" for pct
 grid {'c1','-','c2','-','c3'}

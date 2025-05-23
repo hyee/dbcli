@@ -44,7 +44,7 @@ BEGIN
             SELECT r.*,0 grp1,0 grp2 FROM r
             UNION ALL
             SELECT nvl(cell,'Total Cells: '||count(distinct cell)) cell,
-                   'Total Cell Disks: '||count(distinct "cellDisk"),'Grid Disks: '||count(1),"diskType",null,
+                   'Total Cell Disks: '||count(distinct "cellDisk"),null,'Grid Disks: '||count(1),"diskType",null,
                    sum("size"),max("status"),
                    sum("errorCount"),
                    'ASM Disk Groups: '||count(distinct "asmDiskGroupName"),

@@ -85,6 +85,6 @@ rem set "ANSICON_DEF=jna"
 rem if defined ANSICON_DEF set "ANSICON_DEF=conemu"
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 
-(cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*)||pause
+cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*
 popd
 EndLocal

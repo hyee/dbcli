@@ -6,15 +6,23 @@ pro ========
 SELECT grouping_id(inst_id,dbwr_num) gid,
        nvl2(inst_id,''||inst_id,'*') inst,
        nvl2(dbwr_num,'DBW' || decode(sign(dbwr_num - 10), -1, '' || dbwr_num, chr(87 + dbwr_num)),'*') dbwr_num,
-       nvl2(SET_ID,set_id,count(1)) set_id,
+       BP_NAME pool,
+       count(1) "Work|Sets",
        SUM(cnum_set) "Work Set|Blocks",
        SUM(cnum_repl) "REPL Chain|Blocks",
        SUM(anum_repl) "Aux Chain|Blocks",
        SUM(DBINSP) "Dirty|Blocks",
-       SUM(FBINSP) "Free|Blocks"
-FROM   TABLE(gv$(CURSOR (SELECT * FROM sys.x$kcbwds WHERE cnum_set > 0)))
-GROUP  BY ROLLUP(inst_id, (dbwr_num, addr, SET_ID))
-ORDER  BY 1,2, 3, set_id;
+       SUM(FBINSP) "Free|Blocks",
+       SUM(fbwait) "Free Buff|Waits",
+       SUM(bbwait) "Buff Busy|Waits",
+       SUM(wcwait) "Write Complete|Waits"
+FROM   TABLE(gv$(CURSOR(
+    SELECT a.*,b.bp_name 
+    FROM sys.x$kcbwds a,sys.x$kcbwbpd b
+    WHERE cnum_set > 0
+    AND   a.set_id between b.BP_LO_SID and b.BP_HI_SID)))
+GROUP  BY ROLLUP(inst_id,BP_NAME,dbwr_num)
+ORDER  BY 1,2, 3, pool;
 pro x$kcbbhs
 pro ========
 SELECT * FROM TABLE(gv$(CURSOR(select * from sys.X$KCBBHS where ISSUED > 0))) order by 1,2,3;

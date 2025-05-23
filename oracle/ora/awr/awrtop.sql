@@ -109,4 +109,4 @@ FROM (SELECT rownum r,
             GROUP  BY &base,typ
             ORDER  BY decode(typ,'exec',execs,'parse',parse,val) desc nulls last) a) a
 WHERE  r<=50
-order  by r
+order  by pct desc

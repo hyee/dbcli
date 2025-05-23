@@ -44,6 +44,7 @@ DECLARE
     V1       VARCHAR2(4000):=UPPER(:V1);
     V2       VARCHAR2(4000):=:V2;
     V3       VARCHAR2(4000):=:V3;
+    key      VARCHAR2(4000):= V1;
     PHV      INT := regexp_substr(V3,'^\d+$');
     new_sql  VARCHAR2(20);
     new_phv  INT;
@@ -328,7 +329,8 @@ BEGIN
 
             IF v1 IS NULL AND sql_text IS NOT NULL THEN
                 v1 :=  dbms_sqltune.SQLTEXT_TO_SIGNATURE(sql_text,false);
-            ELSIF v2 IS NULL AND sql_text IS NOT NULL THEN
+            END IF;
+            IF v2 IS NULL AND sql_text IS NOT NULL THEN
                 v2 :=  dbms_sqltune.SQLTEXT_TO_SIGNATURE(sql_text,true);
             END IF;
         ELSE
@@ -420,7 +422,7 @@ BEGIN
                         $END 
                         ) a
                     WHERE  (&filter)
-                    AND    (v3=chr(0) AND  signature IN(V1,V2) OR
+                    AND    (v3=chr(0) AND (signature IN(V1,V2) OR INSTR(plan_name,key)>0) OR
                             v3=chr(1) AND (V1 IS NULL OR upper(sql_handle||','||plan_name||','
                                                 ||to_number(substr(plan_name,-8),'fmxxxxxxxx')||','
                                                 ||signature||','
@@ -430,7 +432,7 @@ BEGIN
                             AND    (V2 IS NULL OR v2=''||to_number(substr(plan_name,-8),'fmxxxxxxxx')))
                     AND    (tmp_now IS NULL OR greatest(created,nvl(last_modified+0,sysdate-3650))>=tmp_now)
                     UNION ALL
-                    SELECT  /*+NO_EXPAND*/ NAME,
+                    SELECT  /*+NO_EXPAND*/ plan_name,
                             'SQL Profile',
                             null,
                             signature,
@@ -439,7 +441,7 @@ BEGIN
                             nvl(last_modified+0,created+0) updated,
                             schema,
                             substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                    FROM   (select a.*,
+                    FROM   (select a.*,name plan_name,
                                    trim(',' FROM status||','
                                             ||CASE WHEN force_matching='YES' THEN 'FORCE_MATCHING,' END
                                     ) attrs,
@@ -448,13 +450,13 @@ BEGIN
                                    type||nvl2(task_id,'(task_id='||task_id||')','') origin 
                             from dba_sql_profiles a)
                     WHERE  (&filter)
-                    AND    (v3=chr(0) AND  signature IN(V1,V2) OR
+                    AND    (v3=chr(0) AND (signature IN(V1,V2) OR INSTR(plan_name,key)>0) OR
                             v3=chr(1) AND (V1 IS NULL OR upper('SQL Profile'||','||name||','
                                                 ||signature||','||category||','||attrs||','
                                                 ||to_char(substr(sql_text,1,2000))) LIKE '%'||V1||'%'))
                     AND    (tmp_now IS NULL OR greatest(created,nvl(last_modified+0,sysdate-3650))>=tmp_now)
                     UNION ALL
-                    SELECT  /*+NO_EXPAND*/ NAME,
+                    SELECT  /*+NO_EXPAND*/ plan_name,
                             'SQL Patch',
                             null,
                             signature,
@@ -463,7 +465,7 @@ BEGIN
                             nvl(last_modified+0,created+0) updated,
                             schema,
                             substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                    FROM   (select a.*,
+                    FROM   (select a.*,name plan_name,
                                    trim(',' FROM status||','
                                             ||CASE WHEN force_matching='YES' THEN 'FORCE_MATCHING,' END
                                     ) attrs,
@@ -472,7 +474,7 @@ BEGIN
                                    &org||nvl2(task_id,'(task_id='||task_id||')','') org 
                             from dba_sql_patches a)
                     WHERE  (&filter)
-                    AND    (v3=chr(0) AND signature IN(V1,V2) OR
+                    AND    (v3=chr(0) AND (signature IN(V1,V2) OR INSTR(plan_name,key)>0) OR
                             v3=chr(1) 
                             AND    (V1 IS NULL OR upper('SQL Patch'||','||name||','
                                                 ||signature||','||category||','

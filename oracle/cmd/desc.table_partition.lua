@@ -111,7 +111,7 @@ return {[[
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
          ORDER BY NO#]],
     [[
-        WITH I AS (SELECT /*+cardinality(1) no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
+        WITH I AS (SELECT /*+cardinality(1) outline_leaf push_pred(c) no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
                            I.*,I.INDEX_OWNER OWNER,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                            nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                     SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -125,7 +125,7 @@ return {[[
                     AND    I.PARTITION_NAME=:object_subname
                     AND    I.INDEX_OWNER = I1.OWNER
                     AND    I.INDEX_NAME = I1.INDEX_NAME)
-        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') outline_leaf use_hash(c e) leading(i c e)  opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, SUBPART_BY, '') "SUBPARTITIONED",
