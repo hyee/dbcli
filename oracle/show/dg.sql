@@ -23,7 +23,10 @@ SELECT * FROM (
     UNION ALL
     SELECT name,value
     FROM   V$PARAMETER
-    WHERE  NAME LIKE 'fal_%' or NAME like '%log_archive_max_processes%' or description like '%standby%')
+    WHERE  NAME like 'fal_%' 
+    or     NAME like '%data%guard%' 
+    or     NAME like '%log_archive_max_processes%' 
+    or     description like '%standby%')
 ORDER BY substr(name,1,16),regexp_substr(name,'\d+$'),name;
 
 PRO v$dataguard_config:

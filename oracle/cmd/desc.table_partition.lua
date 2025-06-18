@@ -4,20 +4,22 @@ return {[[
                 COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
-                CASE WHEN DATA_TYPE IN('CHAR',
-                                       'VARCHAR',
-                                       'VARCHAR2',
-                                       'NCHAR',
-                                       'NVARCHAR',
-                                       'NVARCHAR2',
-                                       'RAW') --
-                THEN DATA_TYPE||'(' || DECODE(CHAR_USED, 'C', CHAR_LENGTH,DATA_LENGTH) || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
-                WHEN DATA_TYPE = 'NUMBER' --
-                THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
-                           WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
-                           WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
-                           ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) ELSE DATA_TYPE END
-                data_type,
+                CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
+                    THEN DATA_TYPE||'(' || DECODE(c.CHAR_USED, 'C', c.CHAR_LENGTH,c.DATA_LENGTH) || DECODE(c.CHAR_USED, 'C', ' CHAR') || ')' --
+                    WHEN c.DATA_TYPE = 'NUMBER' --
+                    THEN (CASE WHEN nvl(c.DATA_scale, c.DATA_PRECISION) IS NULL THEN c.DATA_TYPE
+                              WHEN c.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||c.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                              WHEN c.DATA_PRECISION IS NULL AND c.DATA_SCALE=0 THEN 'INTEGER'
+                              ELSE c.DATA_TYPE||'(' || c.DATA_PRECISION ||')' END)
+                    $IF DBMS_DB_VERSION.VERSION > 22 $THEN
+                    WHEN c.DATA_TYPE = 'VECTOR' THEN c.VECTOR_INFO
+                    $END
+                    ELSE c.DATA_TYPE 
+                END
+                 $IF DBMS_DB_VERSION.VERSION > 22 $THEN
+                 ||rtrim(' '||trim('.' from decode(c.domain_owner,c.owner,'',c.domain_owner)||'.'||c.domain_name))
+                 $END
+                as data_type,
                 DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                 (CASE
                     WHEN default_length > 0 THEN

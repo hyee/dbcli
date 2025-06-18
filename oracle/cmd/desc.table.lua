@@ -158,20 +158,24 @@ return  obj.object_type=='FIXED TABLE' and [[
                a.COLUMN_NAME NAME,
                a.DATA_TYPE_OWNER || NVL2(a.DATA_TYPE_OWNER, '.', '') ||
                CASE WHEN a.DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
-               THEN a.DATA_TYPE||'(' || DECODE(a.CHAR_USED, 'C', a.CHAR_LENGTH,a.DATA_LENGTH) || DECODE(a.CHAR_USED, 'C', ' CHAR') || ')' --
-               WHEN a.DATA_TYPE = 'NUMBER' --
-               THEN (CASE WHEN nvl(a.DATA_scale, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
-                          WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
-                          WHEN a.DATA_PRECISION IS NULL AND a.DATA_SCALE=0 THEN 'INTEGER'
-                          ELSE a.DATA_TYPE||'(' || a.DATA_PRECISION ||')' END) ELSE a.DATA_TYPE END
-
-                $IF DBMS_DB_VERSION.VERSION > 22 $THEN
-                ||rtrim(' '||trim('.' from decode(a.domain_owner,a.owner,'',a.domain_owner)||'.'||a.domain_name))
-                $END
-                $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
-                ||CASE WHEN a.COLLATION != nvl(B.DEFAULT_COLLATION,a.COLLATION) THEN ' COLLATE '||a.COLLATION END
-                $END         
-               data_type,
+                    THEN a.DATA_TYPE||'(' || DECODE(a.CHAR_USED, 'C', a.CHAR_LENGTH,a.DATA_LENGTH) || DECODE(a.CHAR_USED, 'C', ' CHAR') || ')' --
+                    WHEN a.DATA_TYPE = 'NUMBER' --
+                    THEN (CASE WHEN nvl(a.DATA_scale, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
+                              WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                              WHEN a.DATA_PRECISION IS NULL AND a.DATA_SCALE=0 THEN 'INTEGER'
+                              ELSE a.DATA_TYPE||'(' || a.DATA_PRECISION ||')' END)
+                    $IF DBMS_DB_VERSION.VERSION > 22 $THEN
+                    WHEN a.DATA_TYPE = 'VECTOR' THEN A.VECTOR_INFO
+                    $END
+                    ELSE a.DATA_TYPE 
+               END
+                 $IF DBMS_DB_VERSION.VERSION > 22 $THEN
+                 ||rtrim(' '||trim('.' from decode(a.domain_owner,a.owner,'',a.domain_owner)||'.'||a.domain_name))
+                 $END
+                 $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
+                 ||CASE WHEN a.COLLATION != nvl(B.DEFAULT_COLLATION,a.COLLATION) THEN ' COLLATE '||a.COLLATION END
+                 $END         
+               as data_type,
                DECODE(a.NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                (CASE
                    WHEN a.default_length > 0 THEN

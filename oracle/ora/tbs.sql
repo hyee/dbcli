@@ -89,12 +89,9 @@ FROM (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UNI
                 SELECT /*+no_merge no_expand outline_leaf no_push_pred(a) use_hash(b a c) 
                          opt_param('_optimizer_sortmerge_join_enabled','false') 
                          opt_param('optimizer_index_cost_adj' 1000)
-                         table_stats(SYS.FILE$ set rows=100000)
-                         table_stats(SYS.RECYCLEBIN$ set rows=100000)
-                         table_stats(SYS.TS$ set rows=200)
-                         table_stats(SYS.X$KTFBUE,scale,rows=10000 blocks=100)
-                         table_stats(SYS.X$KTFBFE,scale,rows=10000 blocks=1000)
-                         table_stats(SYS.SEG$ SAMPLE BLOCKS=1024) 
+                         table_stats(SYS.X$KTFBFE SAMPLE BLOCKS=512)
+                         table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) 
+                         table_stats(SYS.SEG$ SAMPLE BLOCKS=1024)
                       */
                        TABLESPACE_NAME,FILE_ID,&cname,
                        SUM(a.BYTES) FREE_BYTES,
@@ -119,7 +116,7 @@ FROM (SELECT /*+opt_param('optimizer_dynamic_sampling' 11) NO_EXPAND_GSET_TO_UNI
                               file_id,&cid2 &cname,
                               SUM((PHYSICAL_READS+PHYSICAL_WRITES)*60/INTSIZE_CSEC) IOPS,
                               SUM((PHYSICAL_BLOCK_READS+PHYSICAL_BLOCK_WRITES)*60/INTSIZE_CSEC) MBPS,
-                              SUM((PHYSICAL_READS*AVERAGE_READ_TIME+PHYSICAL_WRITES*AVERAGE_WRITE_TIME)*60/INTSIZE_CSEC)  latency
+                              SUM(PHYSICAL_READS+PHYSICAL_WRITES)/nullif(SUM(PHYSICAL_READS*AVERAGE_READ_TIME*1E4+PHYSICAL_WRITES*AVERAGE_WRITE_TIME*1E4),0)  latency
                        FROM gv$filemetric
                        GROUP BY file_id,&cid) c
                 USING (FILE_ID,&cid)

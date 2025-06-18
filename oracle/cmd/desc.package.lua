@@ -1,5 +1,5 @@
 return [[
-    SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all') use_hash(a b) NATIVE_FULL_OUTER_JOIN*/ 
+    SELECT /*INTERNAL_DBCLI_CMD*/ /*+outline_leaf opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all') use_hash(a b) NATIVE_FULL_OUTER_JOIN*/ 
            SUBPROGRAM_ID PROG#,
            NVL(A.ELEMENT,B.ELEMENT) ELEMENT,
            NVL2(a.RETURNS,'FUNCTION',decode(sign(results),1,'FUNCTION','PROCEDURE')) Type,

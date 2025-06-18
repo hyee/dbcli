@@ -43,7 +43,7 @@ function mysql:connect(conn_str)
         args.password=pwd
         conn_str=usr and string.format("%s/%s@%s",usr,pwd,url) or url
     else
-        usr,pwd,conn_desc = string.match(conn_str or "","(.*)[/:](.*)@(.+)")
+        usr,pwd,conn_desc = string.match(conn_str or "","(.-)[/:](.*)@(.+)")
         if conn_desc == nil then
             if (conn_str or "")==nil then
                 return env.checkhelp(nil)

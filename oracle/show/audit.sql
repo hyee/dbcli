@@ -32,10 +32,12 @@ ORDER BY 1,3;
 &12c pro Unified Audit config
 &12c pro ====================
 &12c SELECT * FROM V$OPTION WHERE PARAMETER = 'Unified Auditing';
+&12c pro Unified Audit Policies
+&12c pro ======================
 &12c SELECT * FROM AUDIT_UNIFIED_ENABLED_POLICIES JOIN AUDIT_UNIFIED_POLICIES USING(POLICY_NAME);
 
-pro Audit config for object
-pro =======================
+pro Audit config for objects
+pro ========================
 SELECT * FROM DBA_OBJ_AUDIT_OPTS ORDER BY 1,2;
 
 pro Fine Grained Auditing(FGA) config

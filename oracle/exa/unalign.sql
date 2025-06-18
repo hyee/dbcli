@@ -35,7 +35,17 @@ BEGIN
             WHERE BITAND(B.FLAG,8)!=8
             AND   B.TABLESPACE_ID=A.TS#;
         open :cur2 FOR
-            SELECT /*+table_stats(SYS.X$KTFBUE SAMPLE BLOCKS=512) table_stats(SYS.SEG$ SAMPLE BLOCKS=512)*/
+            SELECT /*+
+                    opt_param('_optimizer_sortmerge_join_enabled','false') 
+                     opt_param('optimizer_index_cost_adj' 1000)
+                     table_stats(SYS.FILE$ set rows=100000)
+                     table_stats(SYS.RECYCLEBIN$ set rows=100000)
+                     table_stats(SYS.TS$ set rows=200)
+                     table_stats(SYS.X$KTFBUE,scale,rows=10000 blocks=100)
+                     table_stats(SYS.X$KTFBFE,scale,rows=10000 blocks=1000)
+                     table_stats(SYS.SEG$ SAMPLE BLOCKS=1024) 
+                     outline_leaf use_hash(t e s)
+                     */
                    s.owner,
                    s.segment_name,
                    s.segment_type,
@@ -50,6 +60,8 @@ BEGIN
             AND    s.tablespace_name = t.tablespace_name
             AND    s.segment_name = e.segment_name
             AND    s.partition_name = e.partition_name
+            AND    s.tablespace_name = e.tablespace_name
+            AND    e.tablespace_name = t.tablespace_name
             AND    (MOD(e.blocks, 262144 / t.block_size) != 0 or mod(e.block_id, 262144 / t.block_size) != 0);
     ELSE
         open :cur2 FOR

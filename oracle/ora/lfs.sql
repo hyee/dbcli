@@ -16,6 +16,8 @@
 set feed off verify OFF
 col pct FOR pct3
 col delta FOR usmhd2
+col "Count or us,CNT" for k0
+col value for k2
 var cur refcursor
 DECLARE
     qry VARCHAR2(32767):=q'!TABLE(gv$(CURSOR (SELECT event NAME, TIME_WAITED_MICRO micro, TOTAL_WAITS cnt, 'Event' typ
@@ -162,6 +164,8 @@ BEGIN
                     cnt[NAME LIKE 'redo write % time' OR NAME in('redo writes coalesced','cell pmem log writes','flashback log writes','Redo log write requests','user transactions')]=micro['redo writes'],
                     cnt[NAME LIKE 'redo synch fast sync % (usec)']=micro[REPLACE(CV(),'(usec)','count')],
                     cnt['avg_redo_synch_polls']=micro['redo synch poll writes'],
+                    cnt['redo writes (groups)']=sum(micro)[name like 'redo writes%group%'],
+                    micro['redo writes (groups)']=micro['redo writes'],
                     cnt['redo writes adaptive all']=micro['redo writes'],
                     cnt['redo writes adaptive worker']=micro['redo writes adaptive all'],
                     micro['avg_redo_synch_polls']=micro['redo synch polls'],
@@ -200,6 +204,7 @@ BEGIN
                     delta_time['redo synch time (usec)']=round((micro[cv()]-micro['redo synch time overhead (usec)'])/cnt[cv()],4),
                     micro['redo total time']=SUM(delta_time*cnt)[ANY],
                     delta_pct[ANY]=round(delta_time[CV()]*cnt[CV()]/micro['redo total time'],5),
+                    --delta_pct['redo writes (groups)']=round(cnt['redo writes (groups)']/micro['redo writes (groups)'],5),
                     delta_pct[name like 'gc%' or name like 'commit%']=round(micro[cv()]/micro['redo synch time (usec)'],4),
                     delta_pct[name like 'Flash log redo bytes%']=round(cnt[cv()]/sum(cnt)[name like 'Flash log redo bytes%'],4),
                     delta_pct[SUBSTR(NAME,1,3) IN('log','gcs','rem') OR NAME IN('redo allocation','redo copy','redo writing','lgwr LWN SCN','Redo log write request latency','Redo log write I/O latency')]=round(micro[CV()]/micro['redo total time'],5),
@@ -209,7 +214,7 @@ BEGIN
         SELECT CASE 
                     WHEN typ='Stat' AND name='redo write broadcast ack time' THEN
                       'CKPT'
-                    WHEN typ='Stat' AND (name like 'redo write%' OR name in('redo wastage')) THEN
+                    WHEN name like 'redo write%' OR name in('redo wastage') THEN
                       'LGWR'
                ELSE NVL(TYP,'Stat') END TYPE,
                decode(typ,'Event',DECODE(SUBSTR(NAME,1,3),'LGW','  '),
@@ -245,6 +250,7 @@ BEGIN
                      'redo wastage','ratio = redo wastage/size',
                      'redo writes adaptive all','ratio = redo adaptives/writes',
                      'redo writes adaptive worker','ratio = redo adaptive worker/all',
+                     'redo writes (groups)','redo writes (group *)/redo writes',
                      'redo writes coalesced','ratio = _redo_write_coalesce_all/slave_threshold(default 1MB on Exadata), coalescing the redo writes when less than the threshold in an in-memory buffer to reduce I/O',
                      'cell pmem log writes','ratio = ratio = pmem writes / redo writes, parameter: _smart_log_threshold_usec',
                      'commit cleanouts successfully completed','ratio = completed/cleanouts,number of blocks attempted to update the ITL entry and set commit SCN at commit time',

@@ -36,7 +36,7 @@ SELECT /*+leading(b d) outline_leaf*/
          d.lmode || ' [' ||
          decode(d.lmode, 0, 'None', 1, 'Null', 2, 'Row-S(SS)', 3, 'Row-X(SX)', 4, 'Share', 5, 'S/Row-X(SSX)',
                 6, 'Exclusive', 'Invalid') || ']' lock_mode,
-         decode(d.REQUEST, 0, 'Hold', 'Request') ltype,
+         decode(d.request, 0, 'Hold', 'Request') ltype,
          NULLIF(BLOCKING_SESSION || ',@' || BLOCKING_INSTANCE, ',@') BLOCKER,
          blocking,
          --d.id1 id,

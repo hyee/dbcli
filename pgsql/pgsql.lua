@@ -25,7 +25,7 @@ function pgsql:connect(conn_str)
         args.password=pwd
         conn_str=usr and string.format("%s/%s@%s",usr,pwd,url) or url
     else
-        usr,pwd,conn_desc = string.match(conn_str or "","(.*)/(.*)@(.+)")
+        usr,pwd,conn_desc = string.match(conn_str or "","(.-)/(.*)@(.+)")
         local name_pattern='[a-zA-Z][a-zA-Z0-9$_]+'
         if conn_desc == nil then
             if (conn_str or "")==nil then

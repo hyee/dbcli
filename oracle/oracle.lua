@@ -119,7 +119,7 @@ function oracle:connect(conn_str)
         conn_str=conn_str or ""
         url,isdba=conn_str:match('^(.*) +[aA][sS] +(%w+)$')
 
-        usr,_,pwd,conn_desc = (url or conn_str):match('(.*)/("?)(.*)%2@(.+)')
+        usr,_,pwd,conn_desc = (url or conn_str):match('(.-)/("?)(.*)%2@(.+)')
 
         local extras={}
         if conn_desc and conn_desc:find("?",1,true) then
