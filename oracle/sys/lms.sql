@@ -28,11 +28,12 @@ COL PTOQ_TIME for msmhd2 Head  "Defer-Ping|Queue"
 COL FSCH_TIME for msmhd2 Head  "Flush Side|Channel"
 COL IPBAT_TIME for msmhd2 Head  "Embed Batch|Msg"
 COL RETRYQ_TIME for msmhd2 Head  "Retry|Queue"
-pro X$KJMSDP:
-pro =========
-SELECT  INST_ID INST,spid,
+pro X$KJMSDP(PRIOR 1=RR):
+pro =====================
+SELECT  INST_ID INST,
         PRIORITY "PRIOR",
         SUM(PRIORITY_CHANGES) PRIOR_CHGS,
+        count(distinct spid) spids,
         count(1) threads,
         SUM(WAIT_TICKET) WAIT_TICKET,
         AVG(ACTUAL_RCV) ACTUAL_RCV,
@@ -68,7 +69,7 @@ SELECT  INST_ID INST,spid,
         CURRENT_LOGICAL_QLEN,
         HWM_RCVQ_TIME*/
 FROM TABLE(GV$(CURSOR(SELECT a.*,b.spid FROM sys.X$KJMSDP a,v$process b where a.pid=b.pid)))
-GROUP BY INST_ID,SPID,PRIORITY
-ORDER BY INST_ID,SPID;
+GROUP BY INST_ID,PRIORITY
+ORDER BY INST_ID;
 
 RAC LMS

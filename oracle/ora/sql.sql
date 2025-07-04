@@ -28,6 +28,7 @@
 
     --[[
         @VER12: 12.1={} default={--}
+        @VER122: 12.2={} default={--}
         @VER:   11.2={} DEFAULT={--}
         @VER23: 23={-RESULT_CACHE_EXECUTIONS} DEFAULT={}
         @check_access_hist: dba_hist_sqltext={} default={--}
@@ -344,8 +345,8 @@ SELECT PLAN_HASH_VALUE PLAN_HASH,
        &ver        || decode(IS_BIND_AWARE, 'Y', 'BIND_AWARE'||chr(10)) 
        &ver        || decode(IS_SHAREABLE, 'Y', 'SHAREABLE'||chr(10))
        &ver        || decode(IS_OBSOLETE, 'Y', 'OBSOLETE'||chr(10))
-       &ver12      || decode(IS_ROLLING_INVALID, 'Y', 'ROLLING_INVALID'||chr(10))
-       &ver12      || decode(IS_ROLLING_REFRESH_INVALID, 'Y', 'ROLLING_REFRESH_INVALID'||chr(10))
+       &ver122     || decode(IS_ROLLING_INVALID, 'Y', 'ROLLING_INVALID'||chr(10))
+       &ver122     || decode(IS_ROLLING_REFRESH_INVALID, 'Y', 'ROLLING_REFRESH_INVALID'||chr(10))
        ) info,
        TRIM('/' FROM SQL_PROFILE 
        &ver || '/' || SQL_PLAN_BASELINE
@@ -391,7 +392,8 @@ LEFT JOIN (
 ) USING(INST_ID,SQL_ID,PLAN_HASH_VALUE)
 GROUP  BY SQL_ID,
           PLAN_HASH_VALUE,
-          &ver12 is_reoptimizable,is_resolved_adaptive_plan,IS_ROLLING_INVALID,IS_ROLLING_REFRESH_INVALID,
+          &ver12 is_reoptimizable,is_resolved_adaptive_plan,
+          &ver122 IS_ROLLING_INVALID,IS_ROLLING_REFRESH_INVALID,
           &ver IS_BIND_SENSITIVE,IS_OBSOLETE,IS_BIND_AWARE,IS_SHAREABLE,
           program_id,
           program_line#,

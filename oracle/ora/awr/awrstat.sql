@@ -110,7 +110,7 @@ FROM(
                cellio,oflin,oflout,
                greatest(disk_reads,phyread) READ,
                optread,
-               nvl(phywrite,0)+nvl(direct_writes,0) WRITE,
+               nvl(phywrite,0)+nvl(direct_writes*512*1024,0) WRITE,
                buffer_gets buff,
                a.rows_processed rows#,
                a.fetches,

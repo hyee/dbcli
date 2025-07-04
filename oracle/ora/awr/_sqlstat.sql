@@ -20,7 +20,7 @@ BEGIN
                decode(delta_flag, 0, parse_calls_total, parse_calls_delta) parse_calls,
                decode(delta_flag, 0, disk_reads_total, disk_reads_delta)*(select value from v$parameter where name='db_block_size') disk_reads,
                decode(delta_flag, 0, buffer_gets_total, buffer_gets_delta)*(select value from v$parameter where name='db_block_size') buffer_gets,
-               decode(delta_flag, 0, direct_writes_total, direct_writes_delta)*(select value from v$parameter where name='db_block_size') direct_writes,
+               decode(delta_flag, 0, direct_writes_total, direct_writes_delta) direct_writes,
                decode(delta_flag, 0, rows_processed_total, rows_processed_delta) rows_processed,
                decode(delta_flag, 0, elapsed_time_total, elapsed_time_delta) elapsed_time,
                decode(delta_flag, 0, cpu_time_total, cpu_time_delta) cpu_time,

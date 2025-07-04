@@ -2,10 +2,10 @@
     -p : search with program name
     -r : search with request id
     -m : search with module name
-    -e : copy and execute target request_id
     -f : filter(where clause) from output
     -f0: filter(where clause) from source tables 
-
+    -e : copy and execute target request_id
+    -trace: together with -e to enable trace(remember to manully turn off trace)
     --[[
         &filter: {
             default={start_ between sysdate-3 and sysdate}
@@ -17,13 +17,20 @@
             r={req in(req_id,parent#)}
         }
         &f1: default={1=1} f0={&V1}
+        &trace: default={0} trace={&check_obj_access_mon}
+        &check_obj_access_mon: sys.DBMS_LOCK={1} default={0}
     --]]
 ]]*/
 set feed off
 var c refcursor;
+var trace VARCHAR2(300)
+
 DECLARE
-    v1 VARCHAR2(30):=upper(:v1);
+    v1 VARCHAR2(300):=upper(:v1);
     req INT := regexp_substr(v1,'^\d+$');
+    trace VARCHAR2(300);
+    inst  INT;
+    cnt   INT := 0;
 BEGIN
     IF :filter = 'req_id=req' AND req IS NOT NULL THEN
         FOR r IN (SELECT a.*, fa.APPLICATION_SHORT_NAME, fcp.CONCURRENT_PROGRAM_NAME
@@ -68,9 +75,35 @@ BEGIN
             --ROLLBACK;
             dbms_output.put_line('Request # '||req||' submmited.');
             COMMIT;
+
+            $IF &trace=1 $THEN
+                LOOP
+                    SELECT MAX('ora trace '||d.sid || ','||d.serial#),MAX(d.inst_id)
+                    INTO trace,inst
+                    FROM apps.fnd_concurrent_requests a,
+                           apps.fnd_concurrent_processes b,
+                           gv$process c,
+                           gv$session d
+                    WHERE  a.request_id= req
+                    AND    a.controlling_manager = b.concurrent_process_id
+                    AND    c.pid = b.oracle_process_id
+                    AND    c.inst_id = b.instance_number
+                    AND    c.inst_id = d.inst_id
+                    AND    c.addr = d.paddr;
+                    IF inst IS NOT NULL AND inst != userenv('instance') THEN
+                        trace := null;
+                    END IF;
+                    EXIT WHEN inst IS NOT NULL;
+                    cnt := cnt +1;
+                    EXIT WHEN cnt >= 30;
+                    sys.DBMS_LOCK.SLEEP(1);
+                END LOOP;
+            $END
             EXIT;
         END LOOP;
     END IF;
+
+    :trace := trace;
 
     OPEN :c FOR
         SELECT * FROM (
@@ -154,3 +187,5 @@ BEGIN
         fetch first 50 rows only;
 END;
 /
+
+&trace
