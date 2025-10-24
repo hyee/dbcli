@@ -292,6 +292,7 @@ local fixed_stats={
     ['RM usage by this session']=next_(),
     ['non-idle wait time']={next_(),1},
     ['non-idle wait count']={next_(),3},
+    ['recursive calls']={next_(),10},
     ['db block changes']=next_(),
     ['db block gets']=next_(),
     ['db block gets from cache']=next_(),

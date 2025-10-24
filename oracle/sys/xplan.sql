@@ -238,8 +238,7 @@ BEGIN
             dbms_output.put_line(lpad('=',length(xplan),'='));
             xplan := 'ora plan -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
-            DELETE SYS.PLAN_TABLE$
-            WHERE  PLAN_ID=sig;
+            DELETE SYS.PLAN_TABLE$;
 
             INSERT INTO SYS.PLAN_TABLE$
                 (STATEMENT_ID,

@@ -291,11 +291,11 @@ Examples:
                 AND   (&statfilter)]]}
         }
         &filter: default={} f={AND (&0)}
-        &inst1: default={decode(:V1,'0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'*'))}
-        &inst_filter: default={(:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1 in(''||INST_ID,'0','a'))}
+        &inst1: default={decode('&V1','0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'*'))}
+        &inst_filter: default={('&V1' IS NULL AND (&has_snap_cmd is null or inst_id=userenv('instance')) OR '&V1' in(''||INST_ID,'0','a'))}
         &secs : 11.2={WAIT_TIME_MICRO} default={seconds_in_wait*1e6}
-        &sql1: {sql={[[ 
-                        SELECT /*grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
+        &sql1: {sql={[[
+                    q'~SELECT /*grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 
                         FROM (
                             SELECT inst,
                                    max(sql_id) keep(dense_rank last order by sess*ela) top_sql,
@@ -305,7 +305,7 @@ Examples:
                             FROM (
                                 SELECT &inst1 inst,A.*
                                 FROM &gv
-                                    SELECT /*+ignore_me no_merge(a) leading(a) use_nl(b) push_pred(b) 
+                                    SELECT /*+ignore_me leading(a) use_nl(b) push_pred(b) 
                                               opt_estimate(table a rows=10) 
                                               opt_estimate(table b rows=1000000)*/ DISTINCT
                                            inst_id,
@@ -316,7 +316,8 @@ Examples:
                                            elapsed_time/greatest(1,executions,parse_calls) ela,
                                            substr(TRIM(regexp_replace(REPLACE(b.sql_text, chr(0)), '\s+', ' ')), 1, 80) sql_text
                                     FROM (
-                                        SELECT USERENV('instance') inst_id,
+                                        SELECT /*+outline*/
+                                               USERENV('instance') inst_id,
                                                sql_id,
                                                nvl(sql_child_number,0) child_number,
                                                COUNT(1) cnt
@@ -330,7 +331,7 @@ Examples:
                                     AND    b.sql_text NOT LIKE '%ignore_me%'))) A)
                             GROUP BY inst,decode(sig,0,sql_id,''||sig),phv
                             ORDER BY wait desc,sess desc,sql_text)
-                        WHERE  ROWNUM <= 30]]},
+                        WHERE  ROWNUM <= 30~']]},
                 latch={[[
                         SELECT inst,name,
                                sum(ms) "ms",

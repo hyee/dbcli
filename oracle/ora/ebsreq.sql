@@ -16,7 +16,7 @@
             e={req_id=req}
             r={req in(req_id,parent#)}
         }
-        &f1: default={1=1} f0={&V1}
+        &f1: default={1=1} f0={&v1}
         &trace: default={0} trace={&check_obj_access_mon}
         &check_obj_access_mon: sys.DBMS_LOCK={1} default={0}
     --]]
@@ -162,17 +162,18 @@ BEGIN
                    gv$process c,
                    gv$session d,
                    apps.fnd_concurrent_programs e,
-                   (SELECT concurrent_program_id,
+                   (SELECT application_id,concurrent_program_id,
                            MAX(user_concurrent_program_name) keep(dense_rank LAST ORDER BY decode(LANGUAGE, 'US', 1, 2)) program,
                            MAX(LANGUAGE) keep(dense_rank LAST ORDER BY decode(LANGUAGE, 'US', 1, 2)) LANGUAGE
                     FROM   apps.fnd_concurrent_programs_tl
-                    GROUP  BY concurrent_program_id) e1,
+                    GROUP  BY application_id,concurrent_program_id) e1,
                    apps.fnd_executables_tl f1,
                    apps.fnd_executables f2
             WHERE  (&f1)
             AND    a.controlling_manager = b.concurrent_process_id
             AND    a.concurrent_program_id = e.concurrent_program_id
             AND    a.concurrent_program_id = e1.concurrent_program_id
+            AND    a.program_application_id=e1.application_id
             AND    e.executable_id = f1.executable_id
             AND    e.executable_application_id = f1.application_id
             AND    f1.executable_id=f2.executable_id

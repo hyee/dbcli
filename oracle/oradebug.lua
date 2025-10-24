@@ -1093,7 +1093,7 @@ end
 function oradebug.get_pid(sid,inst)
     sid=tonumber(sid)
     env.checkerr(sid,"Please input the valid SID.")
-    local pid=db:get_value([[select pid,a.inst_id from gv$session a,gv$process b where a.inst_id=b.inst_id and a.paddr=b.addr and a.sid=:1 and a.inst_id=nvl(0+:2,a.inst_id) and rownum<2]],{sid,inst or ''})
+    local pid=db:get_value([[select * from (select pid,a.inst_id from gv$session a,gv$process b where a.inst_id=b.inst_id and a.paddr=b.addr and a.sid=:1 and a.inst_id=nvl(0+:2,a.inst_id) order by decode(a.inst_id,0+userenv('instance'),1,2)) where rownum<2]],{sid,inst or ''})
     env.checkerr(tonumber(pid and pid[1]),'No PID found for the specific sid.')
     return pid[1],pid[2]
 end

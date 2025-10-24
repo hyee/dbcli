@@ -20,7 +20,7 @@
     &grp   : default={none}, g={g}, d={d}
     &filter: default={1=1}, f={} 
     &avg   : default={sum), avg={avg}
-    &dict  : default={sys.dba_hist_reports} t={&0}
+    &dict  : default={sys.dba_hist_reports} rwp={RWP_AWRDATA_hist_reports} t={&0}
     &hub   : default={0} hub={1}
     @check_access_hub : SYS.DBMS_PERF={1} default={0}
     &out: default={active} html={html} em={em} text={text}

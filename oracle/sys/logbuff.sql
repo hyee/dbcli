@@ -2,7 +2,7 @@
 SET FEED OFF
 COL total_size,avg_size for kmg
 PRO Preferred Log_buffer = 1.5 * (redo size / second)
-sys param _log_parallelism _log_private "log buffer" "memory undo"
+sys param log%parallelism _log_private "log buffer" "memory undo"
 PRO Redo Strands
 PRO ============
 SELECT * FROM TABLE(GV$(CURSOR(

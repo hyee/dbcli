@@ -407,7 +407,7 @@ BEGIN
     key:=lst.first;
     XML := xmltype('<ROWSET/>'); 
     WHILE key IS NOT NULL LOOP
-        lst(key) := regexp_replace(lst(key),'(\d+)(,\1)+','\1');
+        lst(key) := regexp_replace(lst(key),'([^,]+)(,\1)+','\1');
         xml := xml.appendChildXML('/ROWSET',xmltype(key)
             .appendChildXML('/R',XMLTYPE('<C>'||substr(regexp_replace(lst(key),'(.{80})','\1'||chr(10)),1,3900)||'</C>'))
             .appendChildXML('/R',XMLTYPE('<PS>'||ps(key)||'</PS>'))

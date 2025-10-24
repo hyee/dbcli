@@ -246,6 +246,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
         local per_second=(cmd.per_second~=nil and cmd.per_second) or self.per_second
         self.cmds[cmds[idx]],self.args[cmds[idx]]=cmd,arg
         arg.snap_cmd=(snap_cmd or ''):sub(1,2000)
+        arg.has_snap_cmd=(snap_cmd or '')=='' and 0 or 1
         arg.snap_interval=tonumber(interval) or 0
         arg.per_second=(per_second=='on' or per_second==true) and 1 or 0
         cmd.per_second=arg.per_second==1 and true or false

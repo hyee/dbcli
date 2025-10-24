@@ -683,7 +683,7 @@ local function load_binds(binds)
                         b[1]=tostring(math.round(sign*math.pow(100,p)*tonumber(table.concat(sets)),4))
                     elseif b[1] and (att.dty=='12' or att.dty=='179' or att.dty=='180' or att.dty=='181' or att.dty=='231') then
                         local sets,idx,s={},0
-                        b[1]:gsub('..',function(s1)
+                        b[1]:sub(1,14):gsub('..',function(s1)
                             s,sep=tonumber(s1,16)
                             idx=idx+1
                             if idx<=2 then

@@ -360,7 +360,7 @@ function oracle:connect(conn_str)
             set_param(q'[events '22829 trace name context forever:19119 trace name context forever, level 0x400000']');
             set_param(q'["_fix_control"='30786641:1','22258300:1']');
             --ORA-12850 on gv$ views
-            set_param(q'["_fix_control"='27261477:1']');
+            set_param(q'["_fix_control"='27261477:1','31069997:1']');
             
             
             IF vs < 18 THEN
@@ -396,7 +396,7 @@ function oracle:connect(conn_str)
             :dbname       := sys_context('userenv', 'db_unique_name');
             :isdba        := sys_context('userenv', 'isdba') ;
             :service_name := nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) ;
-            :version      := 0+nvl(regexp_substr(vf,'^\d+\.\d+'),vs||'.'||re);
+            :version      := 0+(vs||'.'||lpad(re,case when vs>12 then 2 else 1 end,'0')||case when re>9 and mod(re,10)=0 then '1' end);
             :isadb        := CASE WHEN isADB = 0 THEN 'FALSE' ELSE 'TRUE' END;
             IF vs > 9 THEN
                 :sid           := userenv('sid');

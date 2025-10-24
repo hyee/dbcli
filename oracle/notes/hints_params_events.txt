@@ -302,6 +302,7 @@ Fix Controls:
     20379571:  0 to fix issue of HIGH EXECUTION COUNTS OF TBL$OR$IDX$PART$NUM (Doc ID 2935058.1) (can also set _subquery_pruning_enabled=false or 30978868:1)
     27261477:  fix ORA-12850 error when query gv$ views in RAC
     8893626,9195582: 0 to fix some index skip scan cost under-estimated issues
+    9728438: 0 to disable parallel query downgrade to serial if no operations are expensive enough
 
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

@@ -177,7 +177,7 @@ BEGIN
                DIRECTORY         "DIR|NAME",
                ERROR_CODE        "ERR|CODE",
                ERROR_MESSAGE     "ERR|MESG"
-        FROM   (select * from dba_workload_replays WHERE  dbid = :dbid ORDER BY START_TIME DESC) A
+        FROM   (select * from dba_workload_replays ORDER BY START_TIME DESC) A
         WHERE  rownum<=20;
     SELECT max(capture_id),
            max(status),

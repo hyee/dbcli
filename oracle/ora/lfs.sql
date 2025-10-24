@@ -22,7 +22,7 @@ var cur refcursor
 DECLARE
     qry VARCHAR2(32767):=q'!TABLE(gv$(CURSOR (SELECT event NAME, TIME_WAITED_MICRO micro, TOTAL_WAITS cnt, 'Event' typ
                                               FROM   v$system_event
-                                              WHERE  (event IN ('log file sync', 'log file parallel write','gcs log flush sync','remote log force - commit') OR
+                                              WHERE  (event IN ('log file sync', 'log file parallel write','gcs log flush sync','target log write size','remote log force - commit') OR
                                                      (event LIKE 'LGWR%' AND event NOT LIKE '%idle'))
                                               AND    userenv('INSTANCE') = nvl('&instance', userenv('INSTANCE'))
                                               AND    time_waited_micro>0
@@ -98,7 +98,7 @@ BEGIN
                 WHERE  dbid = &dbid
                 AND    time_waited_micro > 0
                 AND    snap_id IN (mid, XID)
-                AND    (event_name IN ('log file sync', 'log file parallel write','gcs log flush sync','remote log force - commit') OR (event_name LIKE 'LGWR%' AND event_name NOT LIKE '%idle'))
+                AND    (event_name IN ('log file sync', 'log file parallel write','target log write size','gcs log flush sync','remote log force - commit') OR (event_name LIKE 'LGWR%' AND event_name NOT LIKE '%idle'))
                 GROUP  BY event_name
                 UNION ALL
                 SELECT 'Latch' typ,
@@ -223,6 +223,7 @@ BEGIN
                           nvl2(delta_pct,'  ',''))||NAME NAME,
                micro "Count or us",cnt,avg_time value,delta_time delta,delta_pct pct,
                DECODE(NAME,
+                     'target log write size','LGWR waiting for LGnn to finish redo writes',
                      'log file parallel write','_use_single_log_writer/_max_outstanding_log_writes/_high_priority_processes/_adaptive_scalable_log_writer_enable_worker_aging/threshold',
                      'LGWR any worker group','All LGWR slave groups busy doing write',
                      'LGWR all worker groups','LGWR waiting for all groups to finish action (e.g., close log for log switch)',
