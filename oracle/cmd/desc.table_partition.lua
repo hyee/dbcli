@@ -1,6 +1,6 @@
 env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {[[
-         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b c) opt_param('container_data' 'current_dictionary')*/ 
+         SELECT /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) use_hash(a b c) opt_param('container_data' 'current')*/ 
                 COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
@@ -127,7 +127,7 @@ return {[[
                     AND    I.PARTITION_NAME=:object_subname
                     AND    I.INDEX_OWNER = I1.OWNER
                     AND    I.INDEX_NAME = I1.INDEX_NAME)
-        SELECT /*+no_parallel opt_param('container_data' 'current_dictionary') outline_leaf use_hash(c e) leading(i c e)  opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+no_parallel opt_param('container_data' 'current') outline_leaf use_hash(c e) leading(i c e)  opt_param('_optim_peek_user_binds','false') opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, SUBPART_BY, '') "SUBPARTITIONED",

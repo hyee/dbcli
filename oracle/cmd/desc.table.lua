@@ -20,7 +20,7 @@ end
 env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 
 return  obj.object_type=='FIXED TABLE' and [[
-        SELECT /*+outline_leaf ordered use_nl(b c) opt_param('optimizer_dynamic_sampling' 5)*/ 
+        SELECT /*+outline_leaf ordered use_nl(b c) opt_param('container_data' 'all') opt_param('optimizer_dynamic_sampling' 5)*/ 
                a.*,
                C.AVG_COL_LEN AVG_LEN,
                C.NUM_DISTINCT "NDV",
@@ -152,7 +152,7 @@ return  obj.object_type=='FIXED TABLE' and [[
         ORDER  BY 1,2
     ]] or {[[
         SELECT /*INTERNAL_DBCLI_CMD topic="Column info"*/ 
-             /*+opt_param('container_data' 'current_dictionary') opt_param('optimizer_dynamic_sampling' 5)
+             /*+opt_param('container_data' 'current') opt_param('optimizer_dynamic_sampling' 5)
                no_parallel opt_param('_optim_peek_user_binds','false') use_hash(a b c) use_hash(d) swap_join_inputs(c) */
                a.INTERNAL_COLUMN_ID NO#,
                a.COLUMN_NAME NAME,
@@ -288,7 +288,7 @@ return  obj.object_type=='FIXED TABLE' and [[
         ORDER BY NO#]],
     [[
         WITH /*topic="Index info" */ 
-        I AS (SELECT /*+cardinality(1) outline_leaf push_pred(c) opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) */ 
+        I AS (SELECT /*+cardinality(1) outline_leaf push_pred(c) opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('container_data' 'current') opt_param('optimizer_dynamic_sampling' 5) */ 
                            I.*,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                            PARTITIONING_TYPE||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                     SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
@@ -305,7 +305,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                     AND    C.INDEX_NAME(+) = I.INDEX_NAME
                     AND    I.TABLE_OWNER = :owner
                     AND    I.TABLE_NAME = :table_name)
-        SELECT /*+use_hash(e c) outline_leaf no_parallel opt_param('container_data' 'current_dictionary') leading(i c e) opt_param('_sort_elimination_cost_ratio',5)*/
+        SELECT /*+use_hash(e c) outline_leaf no_parallel opt_param('container_data' 'current') leading(i c e) opt_param('_sort_elimination_cost_ratio',5)*/
                 DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                 DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                 DECODE(C.COLUMN_POSITION, 1, 
@@ -341,7 +341,7 @@ return  obj.object_type=='FIXED TABLE' and [[
         ORDER  BY C.INDEX_NAME, C.COLUMN_POSITION]],
     [[
         SELECT /*INTERNAL_DBCLI_CMD topic="Constraint info"*/ 
-               --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5)
+               --+no_parallel opt_param('_optim_peek_user_binds','false') opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'current')
                DECODE(R, 1, CONSTRAINT_NAME) CONSTRAINT_NAME,
                DECODE(R, 1, CONSTRAINT_TYPE) CTYPE,
                DECODE(R, 1, R_TABLE) R_TABLE,
@@ -352,7 +352,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
                COLUMN_NAME
-        FROM   (SELECT --+outline_leaf leading(a r c) use_nl(a r) use_hash(c) push_pred(r) push_pred(c) opt_param('container_data' 'current_dictionary')
+        FROM   (SELECT --+outline_leaf leading(a r c) use_nl(a r) use_hash(c) push_pred(r) push_pred(c) 
                        A.CONSTRAINT_NAME,
                        A.CONSTRAINT_TYPE,
                        R.TABLE_NAME R_TABLE,
@@ -376,7 +376,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
     [[/*grid={topic='ALL_TABLES', pivot=1}*/ 
-    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5)*/ * 
+    WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'current')*/ * 
                 FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
     SELECT PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')

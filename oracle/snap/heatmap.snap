@@ -67,7 +67,7 @@
 {
     sql=[[
         SELECT /*grid={topic='Event Histogram(based on wait_count*&u)',autosize='trim',zero2null=true}*/ *
-        FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand*/
+        FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand OPT_PARAM('_fix_control' '26552730:0')*/
                        nullif(inst,0) inst,nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
                        grouping_id(wait_class,event) g,
                        CASE

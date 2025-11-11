@@ -11,7 +11,10 @@ Parameters
     _table_lookup_prefetch_thresh:  defaults as 2 and lower value makes Oracle use multiblock reads much more aggressively  (NLJ prefetching)
     _table_lookup_prefetch_size: defaults as 40 and higher value makes Oracle use multiblock reads much more aggressively (NLJ prefetching)
     _nlj_batching_enabled: defaults as 1, and 0 to turn off NLJ batching
-    _sort_elimination_cost_ratio:  defaults as 0, mainly used in first_rows. If est_cost(index_scan+order_by)*ratio>est_cost(index_full_scan) then use index_range_scan+order_by. 
+    _sort_elimination_cost_ratio:  impacts first_rows mode (index + order by)
+                                   defaults as 0, mainly used in first_rows,means that it will chosen no matter how expensive NL plan is. 
+                                   If est_cost(index_scan+order_by)*ratio>est_cost(index_full_scan) then use index_range_scan+order_by. 
+                                   set as 5 to avoid index full/skip scan for some cases
     _optimizer_skip_scan_enabled or hint NO_INDEX_SS: disable index skip scan
     _with_subquery: OPTIMIZER/MATERIALIZE/INLINE, impacts the default behaviour of with subquery
     _smm_auto_max_io_size: defaults to 256. used to reduce the direct path read/write temp overhead for hash join/sort
@@ -77,6 +80,7 @@ Parameters
     _enable_columnar_cache: refer to 'help exa offload'
     _smm_isort_cap: defaults to 100MB which limits the maximum PGA memory for sort/window sort/KEY VECTOR CREATE BUFFERED(maybe insert only), 
                     set to 0 can avoid spilling to temp I/O if _pga_max_size is explicitly set (events '10032 trace name context forever')
+    _disable_adaptive_shrunk_aggregation
     _newsort_type: 1: do not check for ordered data 
                    2: always use FTS encoding assume no fixed len flds(forces the sort to treat all columns as variable length columns)
                    4: force use of FTS encoding
@@ -228,6 +232,7 @@ Events:
     support 'LATERAL' syntax in 11g: alter session set events '22829 trace name context forever'
     support compression for updating compressed table(dbms_compression.INCREMENTAL_COMPRESS): alter session set events '70001 trace name context forever, level <object_id>'
     merge small io direct write as large io: alter session set events '10351 trace name context forever, level <blocks>'; block=1m/db_block_size
+    10031: Don't do top-n optimization in memory when rank and OBY are clumped.
     10055(rowsets): trace: 'trace [SQL_Rowsets_Setup] disk=high'
                     level 1: disables rowsets for table scan row source
                     level 16: disables rowsets for sort row source

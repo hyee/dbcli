@@ -32,8 +32,7 @@
                            (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
                            (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
                     FROM   dba_hist_snapshot
-                    WHERE  dbid=:dbid
-                     AND   end_interval_time+0 BETWEEN 
+                    WHERE  end_interval_time+0 BETWEEN 
                            NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
                            NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
                      AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
@@ -49,10 +48,10 @@
                                       inst_id,etime,secs,stat_name,
                                       decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class_name,
                                       VALUE - nvl(LAG(VALUE) OVER(PARTITION BY pkey,stat_name ORDER BY snap_id),0) value
-                               FROM   dba_hist_sysstat NATURAL JOIN snap 
-                               NATURAL JOIN v$statname
-                               WHERE   dbid=:dbid
-                               AND    (:V1 is null or upper(stat_name) like upper('%&V1%'))) a
+                               FROM   dba_hist_sysstat 
+                               NATURAL JOIN snap 
+                               LEFT JOIN (SELECT a.*,NAME stat_name FROM v$statname a) USING(stat_name)
+                               WHERE  (:V1 is null or upper(stat_name) like upper('%&V1%'))) a
                        where nvl(value,0)>0)
                  GROUP  BY event, etime) a
         WHERE  (v>0)

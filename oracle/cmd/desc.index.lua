@@ -1,6 +1,6 @@
 env.var.define_column('OWNER,INDEX_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {
-    [[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) */ 
+    [[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'current')*/ 
                DECODE(column_position,1,table_owner||'.'||table_name) table_name,
                column_position NO#,
                column_name,column_expression column_expr,column_length,char_length,descend
@@ -8,7 +8,9 @@ return {
         left   join all_ind_expressions using(index_owner,index_name,column_position,table_owner,table_name)
         WHERE  index_owner=:1 and index_name=:2
         ORDER BY NO#]],
-    [[WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode')*/* FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
+    [[WITH  r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('container_data' 'current')*/*
+                   FROM all_part_key_columns 
+                   WHERE owner=:owner and NAME = :object_name),
             r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)
      SELECT LOCALITY,
             PARTITIONING_TYPE || (SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')')
