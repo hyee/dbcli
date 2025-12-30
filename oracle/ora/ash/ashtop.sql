@@ -69,7 +69,7 @@
       &ev  : default={event_name}  noevent={1}
       &wait: default={,median(nullif(wait,0)) wait} noevent={}
       &ela : ash={1} dash={7}
-      &View: ash={gv$active_session_history}, dash={(select * from &check_access_pdb.Active_Sess_History where dbid=&dbid)}
+      &View: ash={gv$active_session_history}, dash={(select /*+full(a.AWR_CDB_ACTIVE_SESS_HISTORY.ash) full(a.AWR_PDB_ACTIVE_SESS_HISTORY.ash)*/ * from &check_access_pdb.Active_Sess_History a where dbid='&dbid')}
       &BASE: ash={1}, dash={10}
       &ASH : default={&view} t={&0}
       &Range: default={sample_time+0 between nvl(to_date(nvl('&V2','&STARTTIME'),'YYMMDDHH24MISS'),sysdate-&ela) and nvl(to_date(nvl('&V3','&ENDTIME'),'YYMMDDHH24MISS'),sysdate+1)}
@@ -112,7 +112,9 @@ WITH ASH_V AS(
                     leading(A.GV$ACTIVE_SESSION_HISTORY.A)
                     use_hash(A.GV$ACTIVE_SESSION_HISTORY.A A.GV$ACTIVE_SESSION_HISTORY.S)
                     swap_join_inputs(A.GV$ACTIVE_SESSION_HISTORY.S)
-                    use_hash(@GV_ASHV A@GV_ASHV) 
+                    use_hash(@GV_ASHV A@GV_ASHV)
+                    opt_param('optimizer_index_cost_adj',10000)
+                    opt_param('optimizer_index_caching',0)
                 */
                 a.*,
                 coalesce(sql_id, &top_sql null) "SQL Id",

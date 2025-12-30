@@ -816,6 +816,7 @@ function oracle:onload()
          ['oracle.jdbc.autoCommitSpecCompliant']='false',
          ['oracle.jdbc.useFetchSizeWithLongColumn']='true',
          ['oracle.net.networkCompression']='on',
+         ['oracle.net.networkCompressionLevels']='(high)', --only high is supported
          ['oracle.net.networkCompressionThreshold']='1024',
          ['oracle.net.keepAlive']='true',
          ['oracle.jdbc.convertNcharLiterals']='true',

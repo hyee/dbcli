@@ -175,13 +175,14 @@ Sample Ouput:
             JOIN  (
                 SELECT /*+
                         FULL(D.ASH) FULL(D.EVT) swap_join_inputs(D.EVT) PX_JOIN_FILTER(D.ASH)
-                        OPT_ESTIMATE(TABLE D.ASH ROWS=30000000)
                         full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
                         full(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
                         swap_join_inputs(D.&check_access_pdb.ACTIVE_SESS_HISTORY.EVT)
                         PX_JOIN_FILTER(D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH)
-                        OPT_ESTIMATE(TABLE D.&check_access_pdb.ACTIVE_SESS_HISTORY.ASH ROWS=30000000)
-
+                        index_Stats(SYS.WRH$_ACTIVE_SESSION_HISTORY WRH$_ACTIVE_SESSION_HISTORY_PK SET BLOCKS=3000000)
+                        table_Stats(SYS.WRH$_ACTIVE_SESSION_HISTORY SET rows=30000000)
+                        full(d.AWR_CDB_ACTIVE_SESS_HISTORY.ash) 
+                        full(d.AWR_PDB_ACTIVE_SESS_HISTORY.ash)
                        */ *
                 FROM &check_access_pdb.active_sess_history d) a
             USING  (dbid,service_hash &con,machine)

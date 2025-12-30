@@ -14,6 +14,17 @@
         * _sql_plan_management_control:
             4 : diagnose issues with SQL plan baselines of why it fails to use
             16: Allow SPM on the SQLs start with "/* SQL Analyze("
+
+    Turn on AUTO SPM:
+        exec DBMS_SPM.CONFIGURE('AUTO_SPM_EVOLVE_TASK','ON');
+        exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_SOURCE','SQL_TUNING_SET');
+        exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ACCEPT_PLANS','TRUE');
+        SELECT enabled FROM dba_autotask_schedule_control WHERE dbid=sys_context('userenv','con_dbid') AND task_name='Auto SPM Task';
+
+    Turn off AUTO SPM:
+        exec DBMS_SPM.CONFIGURE('AUTO_SPM_EVOLVE_TASK','OFF');
+        exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_SOURCE','AUTO');
+        exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_BASELINE','EXISTING');
     --[[
        
         &filter: default={1=1} f={}
@@ -50,6 +61,7 @@ DECLARE
     new_phv  INT;
     tmp_now  DATE;
     c        SYS_REFCURSOR;
+    flag     PLS_INTEGER := 0;
     cnt      PLS_INTEGER := 0;
     tmp      PLS_INTEGER := 0;
     type     T_PHV IS TABLE OF VARCHAR2(30) INDEX BY VARCHAR2(30);
@@ -334,23 +346,33 @@ BEGIN
                 v2 :=  dbms_sqltune.SQLTEXT_TO_SIGNATURE(sql_text,true);
             END IF;
         ELSE
-            SELECT count(1),max(plan_name)
-            INTO   cnt,v3
-            FROM   dba_sql_plan_baselines
-            WHERE  :v1 in(PLAN_NAME,SQL_HANDLE)
-            AND   nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(to_number(substr(plan_name,-8),'fmxxxxxxxx'),signature);
-
-            IF cnt = 0 THEN
-                v3 := chr(1);
-            END IF;
+            BEGIN
+                SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/flag,1,plan_name,sql_text
+                INTO   flag,cnt,v3,sql_text
+                FROM (
+                    SELECT 1 flag,plan_name,created,sql_text
+                    FROM   dba_sql_plan_baselines
+                    WHERE  :v1 in(PLAN_NAME,SQL_HANDLE)
+                    AND    nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(to_number(substr(plan_name,-8),'fmxxxxxxxx'),signature,-1)
+                    UNION ALL
+                    SELECT 2,name,created,sql_text
+                    FROM   dba_sql_profiles
+                    WHERE  :v1 = name
+                    AND   nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(signature,-1)
+                    UNION ALL
+                    SELECT 3,name,created,sql_text
+                    FROM   dba_sql_patches
+                    WHERE  :v1 = name
+                    AND   nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(signature,-1)
+                    ORDER  BY CREATED DESC
+                ) WHERE ROWNUM < 2;
+            EXCEPTION WHEN NO_DATA_FOUND THEN
+                v3  := chr(1);
+                cnt := 0;
+            END;
         END IF;
 
         IF cnt > 0 THEN
-            SELECT SQL_TEXT
-            INTO   SQL_TEXT
-            FROM   dba_sql_plan_baselines
-            WHERE  PLAN_NAME=v3;
-
             $IF DBMS_DB_VERSION.VERSION>11 $THEN
                 V2 := dbms_sql_translator.sql_id(sql_text);
                 sql_text := null;
@@ -367,10 +389,19 @@ BEGIN
                 sql_text := '';
             END IF;
 
-            
-            FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PLAN_BASELINE (CASE WHEN cnt>1 THEN :v1 END,CASE WHEN cnt=1 THEN v3 END,'ALL -PROJECTION'))) LOOP
-                sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
-            END LOOP;
+            IF flag=1 THEN
+                FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PLAN_BASELINE(null,v3,'ALL -PROJECTION'))) LOOP
+                    sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
+                END LOOP;
+            ELSIF flag=2 THEN
+                FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PROFILE_PLAN(v3,'ALL -PROJECTION'))) LOOP
+                    sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
+                END LOOP;
+            ELSE
+                FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PATCH_PLAN(v3,'ALL -PROJECTION'))) LOOP
+                    sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
+                END LOOP;
+            END IF;
 
             sql_text := sql_text|| 'SQL Id: ' || V2;
 

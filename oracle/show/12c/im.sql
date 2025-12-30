@@ -119,7 +119,7 @@ set feed off
 col ALLOC_BYTES format kmg
 col USED_BYTES format kmg
 col remaining_bytes format kmg
-col IM_SIZE format kmg
+col IM_SIZE,ALLOCATED_SIZE,USED_SIZE format kmg
 col total_size format kmg
 col UN_POP format kmg
 col "Used %" format %.2f%%
@@ -132,6 +132,12 @@ from  (
     &vector union all select 'VECTOR',a.* from gv$VECTOR_MEMORY_POOL a
 )
 order by 1,2;
+
+
+select *
+from   gv$inmemory_faststart_area
+order by 1,2;
+
 
 SELECT /*+monitor no_merge(a)*/ b.inst_id,
        a.owner,
