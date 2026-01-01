@@ -31,12 +31,18 @@
        &V3    : default={&instance}
    --]]
 ]]*/
-SELECT (SELECT B.VALUE FROM gv$system_fix_control b WHERE b.bugno = a.bugno and b.inst_id=a.inst_id) sys_value, A.*
-FROM   &CHECK_ACCESS_CTL A
-WHERE  ((:V1 IS NULL AND (:FILTER != '1=1' OR VALUE = 0)) OR
-       (:V1 IS NOT NULL AND
-       lower(BUGNO || DESCRIPTION || SQL_FEATURE || event || OPTIMIZER_FEATURE_ENABLE) LIKE lower(q'[%&V1%]')))
-AND    inst_id = nvl(:V3, userenv('instance'))
-AND    session_id = nvl(:V2, userenv('sid'))
-AND    &filter
+
+SELECT * 
+FROM TABLE(GV$(CURSOR(
+    SELECT /*+outline_leaf leading(a) use_nl(b)*/ * 
+    FROM (SELECT userenv('instance') inst,bugno,value sys_value
+          FROM   v$system_fix_control
+          WHERE ((:V1 IS NULL AND (:FILTER != '1=1' OR VALUE = 0)) OR
+                 (:V1 IS NOT NULL AND lower(BUGNO || DESCRIPTION || SQL_FEATURE || event || OPTIMIZER_FEATURE_ENABLE) LIKE lower(q'[%&V1%]')))
+          AND    userenv('instance') = nvl(:V3, userenv('instance'))
+          AND    (&filter)) a
+    JOIN  v$session_fix_control b USING(bugno)
+    WHERE b.session_id=0+nvl(:v2,userenv('sid'))
+    AND   userenv('instance') = nvl(:V3, userenv('instance'))
+)))
 ORDER  BY regexp_substr(OPTIMIZER_FEATURE_ENABLE,'\d+\.\d+')+0 nulls first,bugno;

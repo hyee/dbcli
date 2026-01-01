@@ -1,7 +1,6 @@
 /*[[Show instance parameters, including hidden parameters, pls use 'set instance' to show the specific instance. Usage: @@NAME [<keyword1>[ <keyword2>...]] [-v] [-f"<filter>"]
    -v: show available values
    --[[
-      @ctn: 12={decode(bitand(ksppiflg, 4), 4, 'FALSE', decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) PDB_MDF,}, default={}
       @def: 12={} default={--}
       @g11: 11={)))} default={)}
       @GV: 11.1={TABLE(GV$(CURSOR(} default={(}
@@ -22,10 +21,11 @@ SELECT * FROM &GV
                &df,
                &def decode(upper(KSPPSTVL),upper(KSPPSTDFL),'TRUE','FALSE') "DEFAULT",
                nvl2(z.flag,'TRUE','FALSE') OPT_ENV,
-               decode(bitand(ksppiflg / 256, 1), 1, 'TRUE', 'FALSE') SES_Mdf,
-               decode(bitand(ksppiflg / 65536, 3), 1, 'IMMEDIATE', 2, 'DEFERRED', 3, 'IMMEDIATE', 'FALSE') SYS_MDF,
-               decode(bitand(ksppiflg, 4),4,'FALSE',decode(bitand(ksppiflg / 65536, 3), 0, 'FALSE', 'TRUE')) INST_MDF,
-               &ctn
+               trim(',' FROM
+                   decode(bitand(ksppiflg / 256, 1), 1, 'SESSION,')||
+                   decode(bitand(ksppiflg / 65536, 3), 1, 'SYSTEM,', 2, 'DEFERRED,', 3, 'SYSTEM,')||
+                   decode(bitand(ksppiflg, 4),4,'',decode(bitand(ksppiflg / 65536, 3), 0, '', 'INSTANCE,'))||
+                   decode(bitand(ksppiflg/ 524288, 1), 1, 'PDB,')) MODIFIABLE,
                decode(bitand(ksppiflg, 7),1,'TRUE',2,'ADJUSTED',4,'SYSTEM','FALSE') MODIFIED,
                decode(bitand(ksppstvf, 2), 2, 'TRUE', 'FALSE') "DEPRECATED",ksppdesc DESCRIPTION
         FROM   sys.x$ksppcv y 

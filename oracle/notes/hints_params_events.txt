@@ -67,7 +67,7 @@ Parameters
         2) STT < OBJECT_SIZE < MTT: 
             for serial read, if >50% blocks(or 99% of compressed table) are cached or 25% blocks are dirty, then use buffer cache, otherwise use direct path read
                 Parameter _parallel_cluster_cache_policy controls the behaviour for parallel read
-            for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 means always)
+            for parallel read, when >STT then dx read would be used(also controlled by _px_adaptive_offload_percentage, 0 togemeans always)
         3) OBJECT_SIZE>=MTT: dx read
         4) Patch #31626438 supports any partitions larger than 100 MB will automatically use Direct Read and hence offload on Exadata
         4) flashback/version-based/scn-based/fragmented table(2132004.1) scan will not use dx read
@@ -111,6 +111,7 @@ Parameters
         1048576: disable Gby for HCC on Hadoop because HCC is non-dictionary encoded
     _memory_imm_mode_without_autosga/_enable_shared_pool_durations: when 0/false then stop resize of SGA component
         or set _shared_pool_reserved_pct/shared_pool_reserved_size/_shared_pool_max_size/_kghdsidx_count to avoid ORA-4031 errors
+        or set _memory_broker_stat_interval=999
     _kgl_hot_object_copies: number of hot copies for the object defined by dbms_shared_pool.markhot to reduce mutex/cursor contention
     _kgl_time_to_wait_for_locks: defaults to 15 minutes, control the threshold of (library cache)lock timeout and thuse raise ORA-04021
     _kcfis_fast_response_enabled: use to fix the inefficient offload performance in 11g to fetch first n rows
