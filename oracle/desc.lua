@@ -44,6 +44,13 @@ function desc.desc(name,option)
         rs[k]=v
     end
 
+    if rs.object_type:find('^TABLE') and rs.object_name:find('MLOG$_',1,true)==1 then
+        local is_mvlog=db:dba_query(db.get_value,[[select count(1) from all_mview_logs where LOG_OWNER=:owner and LOG_TABLE=:object_name]],rs)
+        if is_mvlog==1 then
+            rs.object_type='MATERIALIZED VIEW LOG'
+        end
+    end
+
     local file=env.join_path(db.ROOT_PATH,'cmd','desc.'..rs.object_type:lower():gsub(' ','_')..'.lua')
     local sqls
 
@@ -77,7 +84,7 @@ function desc.desc(name,option)
     local dels='\n'..string.rep("=",80)
     local feed,autohide=cfg.get("feed"),cfg.get("autohide")
     cfg.set("feed","off",true)
-    local title=("| %s : %s%s%s%s |"):format(rs[4],rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],rs.desc)
+    local title=("| %s : %s%s%s%s |"):format(rs.object_type,rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],rs.desc)
     print(("%s\n%s\n%s"):format(string.rep('-',#title),title,string.rep('-',#title)))
     for i,sql in ipairs(sqls) do
         cfg.set("COLWRAP",120)

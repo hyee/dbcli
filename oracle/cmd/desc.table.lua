@@ -1,6 +1,6 @@
 
 local blocks,rows=0,0
-if obj.object_type:find('^TABLE') then
+if obj.object_type:find('^TABLE') or obj.object_type:find('^MATERIALIZE') then
     local result=db:dba_query(db.internal_call,
                               [[select nvl(cluster_name,table_name),blocks,num_rows
                                from ALL_TABLES
