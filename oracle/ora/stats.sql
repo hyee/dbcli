@@ -5,12 +5,12 @@ Get preferences/stats of the target object or compare stats. Usage: @@NAME {[own
 
     Compare Stats:
     ==============
-        -t"<stattab>"                  ：compare the stattab stats with current/historical stats
+        -t"<stattab>"                  ：compare the stattab stats with current stats
         -pending       [<yymmddhh24mi>]：compare the pending stats with current/historical stats
         <yymmddhh24mi> [<yymmddhh24mi>]: compare the stats of 2 historical stats
 
-    Trace Flags:
-    ===========
+    Trace Flags [DBMS_STATS.SET_GLOBAL_PREFS('TRACE',<flag>)]:
+    ==========================================================
         0     : disable
         1     : use dbms_output.put_line instead of writing into trace file
         2     : enable dbms_stat trace only at session level
@@ -326,7 +326,7 @@ DECLARE
     sub  VARCHAR2(128):=:OBJECT_SUBNAME;
     typ  VARCHAR2(128):=:OBJECT_TYPE;
     st   VARCHAR2(128):=UPPER(:V2);
-    ed   VARCHAR2(128):=regexp_substr(:V3,'^\d+$');
+    ed   VARCHAR2(128):=nvl(regexp_substr(:V3,'^\d+$'),to_char(sysdate,'YYMMDDHH24MISS'));
     town VARCHAR2(128);
     tnam VARCHAR2(512) := replace(trim(upper(:t)),' '); 
     tz1  VARCHAR2(10) := to_char(systimestamp,'TZH:TZM');

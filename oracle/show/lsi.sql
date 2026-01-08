@@ -104,5 +104,5 @@ FROM   (SELECT s.*,parsing_schema_name username from gv$sql s) s
 WHERE  s.users_executing > 0
 AND    s.sql_text NOT LIKE '%BDAGEVIL%'
 AND    &usr
-group by sql_id,parsing_schema_name
+group by sql_id,username
 order by users desc;

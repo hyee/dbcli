@@ -86,6 +86,7 @@ Parameters
                    4: force use of FTS encoding
                    8: disable spilling rows before sort finishes
                    32: disable sync spill for PX servers
+    _sort_multiblock_read_count(for direct path read temp): set to 128 to improve large sort, or event 10351 level 128
     _smm_max_size: The maximum work area size(in KB) for single process, defaults to 1GB when pga is large. Also impacts the number of hash join/group slots(slots*_smm_auto_max_io_size<=_smm_max_size) 
     _smm_px_max_size: maximum total work area size(in KB) per parallel query where dop>5, defaults to pga_aggregate_target/2
     _convert_set_to_join: convert INTESECT/MINUS to (anti)semi-join, defaults to false when OFE<19.1.0.1

@@ -15,6 +15,7 @@ local default_args={
     con_name="#VARCHAR",
     con_id="#NUMBER",
     con_dbid="#NUMBER",
+    ccflag='#VARCHAR',
     dbid="#NUMBER",
     last_sql_id='#VARCHAR',
     curr_service='#VARCHAR',
@@ -91,6 +92,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_cont   VARCHAR2(50);
         l_cid    PLS_INTEGER;
         l_cdbid  INT := :cdbid;
+        l_ccflag VARCHAR2(2000) := :ccflag;
         l_dbid   INT;
         l_stats  SYS_REFCURSOR;
         l_sep    VARCHAR2(10) := chr(1)||chr(2)||chr(3)||chr(10); 
@@ -154,6 +156,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                 l_cid   :=sys_context('userenv', 'con_id'); 
                 l_cdbid :=sys_context('userenv', 'con_dbid'); 
                 l_dbid  :=sys_context('userenv', 'dbid'); 
+                l_ccflag:=$$PLSQL_CCFLAGS; 
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
         $END
@@ -272,6 +275,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         :con_name    := l_cont;
         :con_id      := l_cid;
         :con_dbid    := l_cdbid;
+        :ccflag      := l_ccflag;
         :dbid        := l_dbid; 
         :lob         := l_lob;
         :curr_service:= SYS_CONTEXT('USERENV','SERVICE_NAME');
@@ -478,6 +482,7 @@ function output.getOutput(item)
         db.props.container_name=args.con_name
         db.props.container_dbid=args.con_dbid
         db.props.dbid=args.dbid or db.props.dbid
+        db.props.curr_ccflags=args.ccflag;
         if not db.props.last_sql_id or args.last_sql_id~='X' then
             db.props.last_sql_id=args.last_sql_id
         end

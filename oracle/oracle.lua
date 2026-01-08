@@ -244,6 +244,7 @@ function oracle:connect(conn_str)
                  sid='#NUMBER',
                  dbid="#NUMBER",
                  version="#NUMBER",
+                 ccflags="#VARCHAR",
                  mbrc="#NUMBER"}
     for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
         props[v]="#VARCHAR" 
@@ -389,6 +390,7 @@ function oracle:connect(conn_str)
                 sv := regexp_substr(get_param('service_names','SQL'),'[^ ,]+');
             END IF;
 
+            :ccflags      := ccflags;
             :privs        := pv;
             :db_user      := user;
             :dbid         := did;

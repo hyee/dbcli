@@ -159,6 +159,8 @@ return  obj.object_type=='FIXED TABLE' and [[
                a.DATA_TYPE_OWNER || NVL2(a.DATA_TYPE_OWNER, '.', '') ||
                CASE WHEN a.DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
                     THEN a.DATA_TYPE||'(' || DECODE(a.CHAR_USED, 'C', a.CHAR_LENGTH,a.DATA_LENGTH) || DECODE(a.CHAR_USED, 'C', ' CHAR') || ')' --
+                    WHEN a.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
+                         a.DATA_TYPE||'['||a.DATA_LENGTH||' INLINE]'
                     WHEN a.DATA_TYPE = 'NUMBER' --
                     THEN (CASE WHEN nvl(a.DATA_scale, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
                               WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
@@ -351,6 +353,8 @@ return  obj.object_type=='FIXED TABLE' and [[
                --DECODE(R, 1, DEFERRABLE) DEFERRABLE,
                DECODE(R, 1, DEFERRED) DEFERRED,
                DECODE(R, 1, VALIDATED) VALIDATED,
+               DECODE(R, 1, RELY) RELY,
+               DECODE(R, 1, BAD) BAD,
                COLUMN_NAME
         FROM   (SELECT --+outline_leaf leading(a r c) use_nl(a r) use_hash(c) push_pred(r) push_pred(c) 
                        A.CONSTRAINT_NAME,
@@ -361,6 +365,8 @@ return  obj.object_type=='FIXED TABLE' and [[
                        a.DEFERRABLE,
                        a.DEFERRED,
                        a.VALIDATED,
+                       a.rely,
+                       a.bad,
                        A.SEARCH_CONDITION,
                        c.COLUMN_NAME,
                        ROW_NUMBER() OVER(PARTITION BY A.CONSTRAINT_NAME ORDER BY C.COLUMN_NAME) R
@@ -375,7 +381,7 @@ return  obj.object_type=='FIXED TABLE' and [[
                 AND    :object_name =c.table_name(+)
                 AND    (A.constraint_type != 'C' OR A.constraint_name NOT LIKE 'SYS\_%' ESCAPE '\'))
     ]],
-    [[/*grid={topic='ALL_TABLES', pivot=1}*/ 
+    [[/*grid={topic='Partitions', pivot=1}*/ 
     WITH r1 AS (SELECT /*+no_merge opt_param('_connect_by_use_union_all','old_plan_mode') opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'current')*/ * 
                 FROM all_part_key_columns WHERE owner=:owner and NAME = :object_name),
            r2 AS (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=:owner and NAME = :object_name)

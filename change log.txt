@@ -1,3 +1,5 @@
+2026-01-01: + oracle: new script 'ora rewrite' for mview
+            + oracle: support describing mview log and dimension, improve describing mview
 2021-05-11: * public: JLine3->3.30, plus the infocomp fix for Jline3
 2021-04-30: * public: upgrade libs: JNA->5.17, JLine3->3.29.1, jansi(removed), conemu->210912(last work on XP), LuaJIT->250424, LPeg->1.1.0, luv->1.50, NuProcess->3.0, ojdbc8(19.3)->23.7
             + public: fix on lib jnluajit to support JDK 21+

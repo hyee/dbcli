@@ -58,6 +58,10 @@ function desc.desc(name,option)
     if not os.exists(file) then
         sqls=desc_sql[rs[4]]
     else
+        if db.props.ccflags and db.props.ccflags~=db.props.curr_ccflags then
+            db:internal_call("ALTER SESSION SET PLSQL_CCFLAGS='"..db.props.ccflags.."'")
+            db.props.curr_ccflags=db.props.ccflags
+        end
         rs.load_sql=function(file,func)
             local res,rtn
             res,rtn=loadfile(file,'bt',{env=env,db=db,obj=rs,file=file})
