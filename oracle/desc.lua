@@ -58,8 +58,8 @@ function desc.desc(name,option)
     if not os.exists(file) then
         sqls=desc_sql[rs[4]]
     else
-        if db.props.ccflags and db.props.ccflags~=db.props.curr_ccflags then
-            db:internal_call("ALTER SESSION SET PLSQL_CCFLAGS='"..db.props.ccflags.."'")
+        if (db.props.ccflags or "")~="" and db.props.ccflags~=db.props.curr_ccflags then
+            pcall(db.internal_call,db,"ALTER SESSION SET PLSQL_CCFLAGS='"..db.props.ccflags.."'")
             db.props.curr_ccflags=db.props.ccflags
         end
         rs.load_sql=function(file,func)
@@ -104,15 +104,19 @@ function desc.desc(name,option)
             db:dba_query(db.internal_call,'BEGIN OPEN :v_cur FOR '..sql..';END;',rs)
         end
         result=rs.v_cur
-        result=db.resultset:rows(result,-1)
-        if #result>1 then
-            local title=sql:match([[topic%s*=%s*['"](.-)['"].*]])
-            if not title then 
-                print(dels)
-            else
-                print('\n'..title..':\n'..string.rep('=',#title+1))
+        if type(result)=='userdata' then
+            result=db.resultset:rows(result,-1)
+            if #result>1 then
+                local title=sql:match([[topic%s*=%s*['"](.-)['"].*]])
+                if not title then 
+                    print(dels)
+                else
+                    print('\n'..title..':\n'..string.rep('=',#title+1))
+                end
+                grid.print(result)
             end
-            grid.print(result)
+        elseif db.C and db.C.dbmsoutput then
+            db.C.dbmsoutput.getOutput({db,sql},true)
         end
         cfg.set("PIVOT",0)
         cfg.set("COLWRAP",'default')

@@ -1,5 +1,6 @@
 
 return {
+    "BEGIN dbms_output.disable;dbms_output.enable(null);dbms_dimension.describe_dimension('\""..obj[1].."\".\""..obj[2].."\"');END;",
     [[SELECT /*topic="Dimemsion Info"*/ /*PIVOT*/ 
              o.*,d.invalid,d.compile_state,d.revision 
       FROM   dba_objects o,dba_dimensions d

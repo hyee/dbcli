@@ -7,7 +7,8 @@ local ad=[[
                opt_param('_optimizer_cbqt_or_expansion' 'off')
                opt_param('_optimizer_reduce_groupby_key' 'false') 
                opt_param('_optimizer_group_by_placement' 'false') 
-               opt_param('_optimizer_aggr_groupby_elim' 'false') */
+               opt_param('_optimizer_aggr_groupby_elim' 'false') 
+               outline_leaf*/
              lv.level_name,
              d.level_type,
              a.attribute_name,
@@ -95,7 +96,8 @@ local ah=([[(
            ahk.member_caption,
            ahk.member_desc,
            row_number() over(ORDER BY grp, lv DESC, seq) seq
-    FROM   (SELECT 1 grp,
+    FROM   (SELECT /*+OUTLINE_LEAF*/
+                   1 grp,
                    max_lv - ahk.order_num lv,
                    MAX(max_lv - ahk.order_num) over (PARTITION BY attribute_name) min_lv,
                    max_lv,
@@ -117,7 +119,7 @@ local ah=([[(
             JOIN (SELECT ahk.*, MAX(order_num) over () max_lv
                   FROM   all_hier_levels ahk
                   WHERE  (owner,hier_name,origin_con_id) = (ah.owner,ah.hier_name,:origin_con_id)) ahk
-            ON (ahk.hier_name=ad.hier_name)
+            ON   (ahk.hier_name=ad.hier_name)
             CROSS APPLY(
                 SELECT * 
                 FROM @ad@ adt
@@ -255,7 +257,7 @@ or obj.object_type=='ANALYTIC VIEW' and {
      WHERE owner = :owner 
      AND   origin_con_id = :origin_con_id
      AND   analytic_view_name = :object_name]],
-   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)  topic="ANALYTIC VIEW DIMENSIONS"*/ 
+   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) outline_leaf topic="ANALYTIC VIEW DIMENSIONS"*/ 
            hier_alias,
            ltrim(nullif(hier_owner, owner) || '.' || hier_name, '.') src_hier_name,
            is_default hier_default,
@@ -270,7 +272,8 @@ or obj.object_type=='ANALYTIC VIEW' and {
            regexp_substr(to_char(substr(all_member_name,1,1000)),'[^'||chr(10)||']*') all_dim_member_name,
            regexp_substr(to_char(substr(all_member_caption,1,1000)),'[^'||chr(10)||']*') all_dim_member_caption,
            regexp_substr(to_char(substr(all_member_description,1,1000)),'[^'||chr(10)||']*') all_dim_member_desc
-    FROM   (SELECT owner,
+    FROM   (SELECT /*+no_merge*/
+                   owner,
                    analytic_view_name,
                    origin_con_id,
                    dimension_alias,
@@ -289,13 +292,14 @@ or obj.object_type=='ANALYTIC VIEW' and {
     AND    analytic_view_name = :object_name
     ORDER  BY 1]],
   (([[
-    SELECT /*+outline_leaf*/
+    SELECT /*+outline_leaf topic="ANALYTIC VIEW HIERARCHIES"*/
            ah.hier_name,dtl.*
     FROM   (SELECT * FROM all_analytic_view_hiers WHERE (owner,analytic_view_name,origin_con_id)=(:owner,:object_name,:origin_con_id)) avh
     CROSS  APPLY(SELECT * FROM all_hierarchies WHERE (owner,hier_name,origin_con_id)=(avh.hier_owner,avh.hier_name,:origin_con_id)) ah
     CROSS  APPLY @ah@ dtl
     UNION ALL
-    SELECT av.hier_name,
+    SELECT /*+outline_leaf*/
+           av.hier_name,
            NULL level_name,
            av.column_name,
            av.role,

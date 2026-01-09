@@ -330,14 +330,14 @@ local DML={SELECT=1,WITH=1,UPDATE=1,DELETE=1,MERGE=1,INSERT=1}
 local DDL={CREATE=1,ALTER=1,DROP=1,GRANT=1,REVOKE=1,COMMIT=1,ROLLBACK=1}
 local CODES={PACKAGE=1,FUNCTION=1,TRIGGER=1,VIEW=1,PROCEDURE=1,TYPE=1}
 
-function output.getOutput(item)
+function output.getOutput(item,force)
     if output.is_exec then return end
     if term then cfg.set('TERMOUT','on') end
     local db,sql,sql_id=item[1],item[2]
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
 
-    if DML[typ] and not env.is_main_thread() and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
+    if force~=true and DML[typ] and not env.is_main_thread() and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
         if not db:is_internal_call(sql) then
             db.props.last_sql_id=loader:computeSQLIdFromText(sql)
             sql_id=db.props.last_sql_id
