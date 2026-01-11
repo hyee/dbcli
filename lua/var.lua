@@ -288,7 +288,7 @@ function var.print(name,desc)
             desc = desc or var.desc[name]
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
                 var.inputs[name]=db.resultset:print(obj,db.conn, 
-                    desc and (desc..':\n'..string.rep('=',desc:len()+1)),
+                    desc and (desc..':\n'..string.rep('=',desc:ulen()+1)),
                     verticals)
                 var.outputs[name]="#CURSOR"
             elseif type(obj)=='table' then

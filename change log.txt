@@ -1,3 +1,4 @@
+2026-01-11: + oracle: new scripts 'ora mvstat','show plsqlenv' 
 2026-01-01: + oracle: new script 'ora rewrite' for mview
             + oracle: support describing mview log and dimension, improve describing mview
 2021-05-11: * public: JLine3->3.30, plus the infocomp fix for Jline3

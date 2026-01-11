@@ -813,6 +813,7 @@ function grid:wellform(col_del, row_del)
     end
 
     row_dels = calc_col_sep(fmt,row_del)
+    local trims=0
     for k, v in ipairs(colsize) do
         if v[2]==1 or (not colinfo[k].is_number and (colinfo[k].chars or 0)==0 and (colinfo[k].numbers or 0)>0) then
             colinfo[k].is_number=true
@@ -829,13 +830,17 @@ function grid:wellform(col_del, row_del)
         elseif siz>0 then
             prev_none_zero=k
         end
-        
         v[1] = siz
         next = colsize[k+1] or {}
         del  = (seps[k] or next[3] or next[1]==0) and ""  or " "
 
-        if siz==0 and (prev[3] or k==1) then del='' end
-        if (del~="" and pivot == 0) or (pivot ~= 0 and k ~= 1 + indx and (pivot ~= 1 or k ~= 3 + indx)) then 
+        if siz==0 and (prev[3] or k-trims==1) then
+            if k-trims==1 then
+                trims=trims+1
+            end
+            del='' 
+        end
+        if (del~="" and pivot == 0) or (pivot ~= 0 and k~= 1 + indx and (pivot ~= 1 or k~= 3 + indx)) then 
             del = col_del
         end
 

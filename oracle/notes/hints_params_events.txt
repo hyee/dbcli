@@ -227,6 +227,7 @@ Parameters
     _optimizer_rownum_pred_based_fkr: false to disable convert "where rownum<..." as first k rows mode and thus result in wrong execution plan
     _cursor_plan_unparse_enabled: false to disable storing access/filter predicates in awr plan table
     _lm_share_lock_restype: default 'L*N*Q*', set 'L*N*' to disable s-lock optimization to reduce 'latch: ges resource hash list'/'latch: ges cached resource lists'/'Row cache lock' from LMD process, or set _lm_share_lock_opt=false
+    _mv_refresh_use_stats: set to true to avoid HASH_SJ for MVIEW fast refresh mode(especially refresh on commit)
 
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
