@@ -1,15 +1,15 @@
 /*[[
-    Tune or explain query rewrite on target materialized view. Usage: @@NAME {[-tune|-xplan] <mview_name> | -rewrite <sql_id>} <select statement>
+    Tune or explain query rewrite on target materialized view. Usage: @@NAME {[-tune|-xplan] <mview_name> | -rw <sql_id>} <select statement>
     -xplan   : default,execute DBMS_MVIEW.EXPLAIN_REWRITE for target SQL with existing MVIEW
     -tune    : execute DBMS_ADVISOR.TUNE_MVIEW to generate the DDLs for relative MVIEW and MVIEW logs.
-    -rewrite : execute DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE to rewrite target SQL ID as the query.
-               needs to set QUERY_REWRITE_INTEGRITY = TRUSTED
-               if <select> is a SQL Id then auto get SQL text
-               if <select> is NULL then drop existing rewrites
+    -rw      : or `-rewrite`,execute DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE to rewrite target SQL ID as the query.
+               needs to set QUERY_REWRITE_INTEGRITY = TRUSTED/STALE_TOLERATED, the SQL will be rewritten only in the same parsing SCHEMA(CURRENT_SCHEMA)
+               if <select> is a SQL_Id then auto get SQL text
+               if <select> is NULL then drop existing rewrites from all_rewrite_equivalences
     <select> : support EOF syntax
     --[[
         @ARGS: 2
-        &tune: xplan={0} tune={1} rewrite={2}
+        &tune: xplan={0} tune={1} rewrite={2} rw={2}
         &wrap: xplan={100} tune={180}
         @check_access_rewrite: SYS.DBMS_ADVANCED_REWRITE={1} DEFAULT={0}
     --]]
@@ -74,15 +74,16 @@ BEGIN
             END IF;
         END;
     ELSIF &tune=2 THEN
-        $IF &check_access_rewrite=0 $THEN
+        IF &check_access_rewrite=0 THEN
             raise_application_error(-20001,'Need execution access right on package SYS.DBMS_ADVANCED_REWRITE');
-        $ELSE
+        ELSE
             EXECUTE IMMEDIATE q'~
                 DECLARE
                     sq_id  VARCHAR2(32) := :src;
+                    nam    VARCHAR2(99) := '"'||sys_context('userenv','current_schema')||'"."SQL_'||sq_id||'"';
                     sq_new CLOB         := TRIM(:sq_new);
                     sq_txt CLOB;
-                    id_new VARCHAR2(13) := regexp_substr(sq_new,'^.{13}$');
+                    id_new VARCHAR2(13) := regexp_substr(sq_new,'^\w{13}$');
                     FUNCTION get_text(sq_id VARCHAR2) RETURN CLOB IS
                         txt CLOB;
                     BEGIN
@@ -107,7 +108,7 @@ BEGIN
                     END;
                 BEGIN
                     BEGIN SYS.DBMS_ADVANCED_REWRITE.DROP_REWRITE_EQUIVALENCE(sq_id);EXCEPTION WHEN OTHERS THEN NULL;END;
-                    BEGIN SYS.DBMS_ADVANCED_REWRITE.DROP_REWRITE_EQUIVALENCE('SQL_'||sq_id);EXCEPTION WHEN OTHERS THEN NULL;END;
+                    BEGIN SYS.DBMS_ADVANCED_REWRITE.DROP_REWRITE_EQUIVALENCE(nam);EXCEPTION WHEN OTHERS THEN NULL;END;
                     IF id_new IS NOT NULL THEN
                         sq_new := get_text(id_new);
                     ELSIF sq_new IS NULL OR INSTR(sq_new,' ')=0 THEN 
@@ -115,25 +116,20 @@ BEGIN
                     END IF;
                     sq_txt := get_text(sq_id);
                     SYS.DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE
-                        (name             => 'SQL_'||sq_id,
+                        (name             => nam,
                          source_stmt      => sq_txt,
                          destination_stmt => sq_new,
                          validate         => FALSE,
                          rewrite_mode     => 'general'); --disabled,text_match,general,recursive
-                EXCEPTION
-                    WHEN NO_DATA_FOUND THEN
-                        raise_application_error(-20001,'Cannot find SQL text of '||sq_id);
-                    WHEN OTHERS THEN
-                        RAISE;
                 END;~' USING src,stmt;
             OPEN C FOR q'~
                 SELECT  OWNER,REWRITE_MODE,NAME,REWRITE_MODE,
                         to_char(substr(trim(regexp_replace(SOURCE_STMT,'\s+',' ')),1,80))||CASE WHEN LENGTH(SOURCE_STMT)>80 THEN '...' END SOURCE_STMT,
                         to_char(substr(trim(regexp_replace(DESTINATION_STMT,'\s+',' ')),1,80))||CASE WHEN LENGTH(DESTINATION_STMT)>80 THEN '...' END DESTINATION_STMT
                 FROM   all_rewrite_equivalences 
-                WHERE  name = upper(:task)~'
-            USING 'SQL_'||src;
-        $END
+                WHERE  name in (:sql1,upper(:sql2))~'
+            USING 'SQL_'||src,src;
+        END IF;
     ELSE
         IF :OBJECT_OWNER IS NULL OR :OBJECT_TYPE!='MATERIALIZED VIEW' THEN
             raise_application_error(-20001,'Cannot find mview:'||src);
