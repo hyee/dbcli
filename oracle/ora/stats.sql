@@ -424,7 +424,7 @@ BEGIN
                    t.HISTOGRAM,
                    t.NUM_BUCKETS BUCKETS,
                    t.SAMPLE_SIZE,
-                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS+t.NUM_DISTINCT)/nullif(NUM_ROWS,0),4) "Samples(%)",
                    t.NUM_DISTINCT,
                    t.NUM_NULLS,
                    ROUND(decode(t1.histogram,'HYBRID',NULL,greatest(0,num_rows-t.NUM_NULLS)/GREATEST(t.NUM_DISTINCT, 1)), 2) cardinality,
@@ -463,7 +463,7 @@ BEGIN
                         AND    C.INDEX_NAME(+) = I.INDEX_NAME
                         AND    I.TABLE_OWNER = own
                         AND    I.TABLE_NAME = nam)
-            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('optimizer_dynamic_sampling' 11) outline_leaf
+            SELECT /*INTERNAL_DBCLI_CMD*/ --+opt_param('optimizer_dynamic_sampling' 5) outline_leaf opt_param('container_data' 'current') leading(i c e) opt_param('_sort_elimination_cost_ratio',5)
                  DECODE(C.COLUMN_POSITION, 1, I.OWNER, '') OWNER,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_NAME, '') INDEX_NAME,
                  DECODE(C.COLUMN_POSITION, 1, I.INDEX_TYPE, '') INDEX_TYPE,
@@ -543,7 +543,7 @@ BEGIN
                    ROUND(decode(histogram,'HYBRID',NULL,greatest(0,num_rows-NUM_NULLS)/GREATEST(NUM_DISTINCT, 1)), 2) cardinality,
                    NUM_BUCKETS BUCKETS,
                    t.SAMPLE_SIZE,
-                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS+NUM_DISTINCT)/nullif(NUM_ROWS,0),4) "Samples(%)",
                    NUM_NULLS,
                    NUM_DISTINCT,
                    GLOBAL_STATS,
@@ -619,7 +619,7 @@ BEGIN
                    t.COLUMN_NAME,
                    NUM_BUCKETS BUCKETS,
                    t.SAMPLE_SIZE,
-                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS)/nullif(NUM_ROWS,0),4) "Samples(%)",
+                   round((nvl(t.SAMPLE_SIZE,0)+t.NUM_NULLS+NUM_DISTINCT)/nullif(NUM_ROWS,0),4) "Samples(%)",
                    NUM_NULLS,
                    NUM_DISTINCT,
                    t.GLOBAL_STATS,

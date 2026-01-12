@@ -195,7 +195,7 @@ end
 function grid.line_wrap(text,width)
     width=math.max(1,width-30)
     local len,result,pos,pos1,c,p=#text,{},1
-    local pt="[|),%] =]"
+    local pt="|)]}, ="
     local usize,csize,l1,l2=0,0
     local function size(line)
         l1, l2 = line:ulen()
@@ -214,7 +214,7 @@ function grid.line_wrap(text,width)
             pos1=pos1+1
             c=p or text:sub(pos1,pos1)
             p=text:sub(pos1+1,pos1+1)
-            if c=='' or (c:find(pt) and not p:find(pt)) then
+            if c=='' or (pt:find(c,1,true) and not pt:find(p,1,true)) then
                 ln=ln+1
                 result[#result+1]=text:sub(pos,pos1)
                 lines[#lines+1]=size(table.concat(result,''))

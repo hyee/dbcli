@@ -1,5 +1,5 @@
 /*[[
-    Show materialized view stats. Usage: ##NAME {[[<owner>].<name>] [-count]} | [<refresh_id>]
+    Show materialized view stats. Usage: @@NAME {[[<owner>].<name>] [yymmddhh24mi] [yymmddhh24mi] [-count]} | [<refresh_id>] |
     <name>       : can be MLOG name, MVIEW name or source table/view name
     <refresh_id> : specify DBA_MVREF_RUN_STATS.REFRESH_ID
     -count       : count the records of relative MLOG$ tables(since Oracle 12.1)
@@ -8,12 +8,14 @@
     --[[
         @check_access_obj: sys.mlog$/sys.slog$/sys.reg_snap$/sys.snap$={1} default={0}
         @check_access_dba: dba_mviews={dba_} default={all_}
-        @check_access_cfg: DBA_MVREF_STATS_SYS_DEFAULTS={1} default={0}
+        @check_access_cfg: DBA_MVREF_STATS/DBA_MVREF_STATS_SYS_DEFAULTS={1} default={0}
         &filter: default={1=1} f={}
         @ver12:  12.1={1} default={0}
         @ver18:  12.2={1} default={0}
         &count:  default={0} count={&ver12}
         @snapid: 19.11={s.snapid} default={to_number(null) snapid}
+        &v2    : default={&starttime}
+        &v3    : default={&endtime}
     --]]
 ]]*/
 set feed off verify off autohide col
@@ -32,7 +34,9 @@ DECLARE
     nam   VARCHAR2(128):=:object_name;
     typ   VARCHAR2(128):=:object_type;
     obj   VARCHAR2(256):='%s='''||own||''' AND %s='''||nam||'''';
-    rid   INT := regexp_substr(:V1,'^\d+$');
+    rid   INT  := regexp_substr(:V1,'^\d+$');
+    st    DATE := nvl(to_date(:v2,'YYMMDDHH24MISS'),date'2000-1-1');
+    ed    DATE := nvl(to_date(:v3,'YYMMDDHH24MISS'),sysdate+1);
 BEGIN
     IF &check_access_obj=1 THEN
         stmt1 := q'~
@@ -164,10 +168,11 @@ BEGIN
                b.INCREFRESHTIM "INCR|TIME"
         FROM   &check_access_dba.summaries b
         #ft#
+        AND    b.LAST_REFRESH_DATE BETWEEN :st AND :ed
         ORDER BY "REFRESH|LAST_DATE" DESC
     ) WHERE ROWNUM<=30~';
     IF nam IS NULL THEN
-        stmt1 := replace(stmt1,'#ft#','');
+        stmt1 := replace(stmt1,'#ft#','WHERE 1=1');
     ELSIF typ='MATERIALIZED VIEW' THEN
         stmt1 := replace(stmt1,'#ft#','WHERE '||utl_lms.format_message(obj,'owner','summary_name'));
     ELSIF typ='TABLE' and nam NOT like 'MLOG$%' THEN
@@ -182,7 +187,7 @@ BEGIN
     END IF;
 
     --dbms_output.put_line(stmt1);
-    OPEN :c2 FOR stmt1;
+    OPEN :c2 FOR stmt1 USING st,ed;
 
     $IF &check_access_cfg=1 $THEN
     OPEN c3 FOR 
@@ -193,10 +198,10 @@ BEGIN
         FROM   DBA_MVREF_STATS_SYS_DEFAULTS
         UNION ALL
         SELECT * FROM (
-            SELECT MV_OWNER,MV_NAME,COLLECTION_LEVEL,RETENTION_PERIOD
+            SELECT mv_owner,mv_name,collection_level,retention_period
             FROM   dba_mvref_stats_params
             WHERE  nam IS NULL 
-            OR    (MV_OWNER,MV_NAME)=(own,nam)
+            OR    (mv_owner=own AND mv_name=nam)
             ORDER  BY 1,2,3
         ) WHERE ROWNUM<=30;
     IF nam IS NULL AND rid IS NULL THEN
@@ -220,7 +225,10 @@ BEGIN
                    NUMBER_OF_FAILURES "NUM|FAILS",
                    COMPLETE_STATS_AVAILABLE "STATS|AVAIL",
                    ROLLBACK_SEG "ROLLBACK|SEG"
-            FROM   (SELECT * FROM DBA_MVREF_RUN_STATS ORDER BY START_TIME DESC)
+            FROM   (SELECT * 
+                    FROM DBA_MVREF_RUN_STATS 
+                    WHERE nvl(END_TIME,START_TIME) BETWEEN st AND ed
+                    ORDER BY START_TIME DESC)
             WHERE  ROWNUM <= 30;
     ELSE
         stmt1 := q'~
@@ -237,9 +245,10 @@ BEGIN
                    FINAL_NUM_ROWS        "FINAL|ROWS"
             FROM   (SELECT /*+outline_leaf use_nl(b) push_pred(b)*/ b.*
                     FROM DBA_MVREF_STATS b
-                    #ft# 
+                    #ft#
+                    AND  nvl(END_TIME,START_TIME) BETWEEN :st AND :ed
                     ORDER BY b.START_TIME DESC)
-            WHERE  ROWNUM <= 30~';
+            WHERE  ROWNUM <= 50~';
         IF nam IS NULL THEN
             stmt1 := replace(stmt1,'#ft#','WHERE REFRESH_ID='||rid);
         ELSIF typ='MATERIALIZED VIEW' THEN
@@ -256,7 +265,7 @@ BEGIN
         END IF;
 
         --dbms_output.put_line(stmt1);
-        OPEN c4 FOR stmt1;
+        OPEN c4 FOR stmt1 USING st,ed;
     END IF;
     $END
     :c3 := c3;

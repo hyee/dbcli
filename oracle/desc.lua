@@ -91,7 +91,7 @@ function desc.desc(name,option)
     local title=("| %s : %s%s%s%s |"):format(rs.object_type,rs[1],rs[2]=="" and "" or "."..rs[2],rs[3]=="" and "" or "."..rs[3],rs.desc)
     print(("%s\n%s\n%s"):format(string.rep('-',#title),title,string.rep('-',#title)))
     for i,sql in ipairs(sqls) do
-        cfg.set("COLWRAP",120)
+        if cfg.get("COLWRAP")==0 then cfg.set("COLWRAP",120) end
         cfg.set("PIVOT",sql:sub(1,256):find("/*PIVOT*/",1,true) and 1 or 0)
         cfg.set("autohide",sql:sub(1,256):find("/*NO_HIDE*/",1,true) and 'off' or 'col')
 
@@ -119,8 +119,8 @@ function desc.desc(name,option)
             db.C.dbmsoutput.getOutput({db,sql},true)
         end
         cfg.set("PIVOT",0)
-        cfg.set("COLWRAP",'default')
     end
+    cfg.set("COLWRAP",'default')
 
     if option and option:upper()=='ALL' then
         if rs[2]==""  then rs[2],rs[3]=rs[3],rs[2] end

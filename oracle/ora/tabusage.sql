@@ -124,7 +124,7 @@ BEGIN
                  c.sample_size,
                  c.NUM_DISTINCT,
                  c.NUM_NULLS,
-                 ROUND(((SELECT rowcnt FROM sys.tab$ WHERE obj# = o.object_id) - c.num_nulls) / GREATEST(c.NUM_DISTINCT, 1), 2) card,
+                 decode(c.histogram,'HYBRID',NULL,ROUND(((SELECT rowcnt FROM sys.tab$ WHERE obj# = o.object_id) - c.num_nulls) / GREATEST(c.NUM_DISTINCT, 1), 2)) card,
                  C.DATA_DEFAULT "DEFAULT",
                  c.last_analyzed
         FROM   dba_objects o, dba_tab_cols c, SYS.COL_USAGE$ CU
