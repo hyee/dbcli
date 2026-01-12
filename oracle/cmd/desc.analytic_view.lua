@@ -146,7 +146,7 @@ local ah=([[(
                    NULL
             FROM   (SELECT /*+OUTLINE_LEAF*/
                            g.*, i.caption, i.descr, MAX(order_num) over () max_lv
-                    FROM   (SELECT * FROM all_hier_hier_attributes WHERE (owner=ah.owner AND hier_name=ah.hier_name AND origin_con_id=:origin_con_id)) g,
+                    FROM   (SELECT * FROM all_hier_hier_attributes attr WHERE attr.owner=ah.owner AND attr.hier_name=ah.hier_name AND attr.origin_con_id=:origin_con_id) g,
                            (SELECT hier_attr_name,
                                    MAX(DECODE(classification,
                                               'CAPTION',
@@ -155,11 +155,11 @@ local ah=([[(
                                               'DESCRIPTION',
                                               regexp_substr(to_char(substr(VALUE, 1, 1000)), '[^' || chr(10) || ']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) descr
                             FROM   all_hier_hier_attr_class cls
-                            WHERE  (cls.owner=ah.owner AND cls.hier_name=ah.hier_name AND cls.origin_con_id=:origin_con_id)
+                            WHERE  cls.owner=ah.owner AND cls.hier_name=ah.hier_name AND cls.origin_con_id=:origin_con_id
                             GROUP  BY hier_attr_name) i
                     WHERE  g.hier_attr_name = i.hier_attr_name(+)) ahk
             ) ahk
-    JOIN   (SELECT * FROM all_hier_columns c WHERE (c.owner=ah.owner AND c.hier_name=ah.hier_name AND c.origin_con_id=:origin_con_id)) ahc
+    JOIN   (SELECT * FROM all_hier_columns c WHERE c.owner=ah.owner AND c.hier_name=ah.hier_name AND c.origin_con_id=:origin_con_id) ahc
     ON     (ahk.column_name = ahc.column_name)
     WHERE  lv = min_lv
     ORDER  BY seq)]]):gsub('@ad@',ad)

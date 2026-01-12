@@ -686,6 +686,7 @@ end
 
 
 function oracle:run_proc(sql)
+    env.checkerr((sql or ''):trim()~='','Input statement cannot be null.')
     return self:query('BEGIN '..sql..';END;')
 end
 

@@ -214,7 +214,7 @@ function grid.line_wrap(text,width)
             pos1=pos1+1
             c=p or text:sub(pos1,pos1)
             p=text:sub(pos1+1,pos1+1)
-            if c=='' or (pt:find(c,1,true) and not pt:find(p,1,true)) then
+            if c=='' or (pt:find(c,1,true) and (p=='' or not pt:find(p,1,true))) then
                 ln=ln+1
                 result[#result+1]=text:sub(pos,pos1)
                 lines[#lines+1]=size(table.concat(result,''))

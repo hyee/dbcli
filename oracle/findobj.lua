@@ -312,7 +312,7 @@ function db:check_access(obj_name,is_cache,is_set_env)
                 x:=1;
             ELSE
                 select /*+opt_param('optimizer_dynamic_sampling' 0)*/
-                    count(1) into x
+                       count(1) into x
                 from   table_privileges
                 where  owner=case when regexp_like(:object_name,'^(G?V)\$') then 'SYS' else :owner end
                 AND    table_name=regexp_replace(:object_name,'^(G?V)\$','\1_$')
