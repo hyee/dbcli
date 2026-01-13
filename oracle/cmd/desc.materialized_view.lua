@@ -47,6 +47,30 @@ else
     env.table.insert(result,#result,
         [[SELECT /*topic="Detail Relations"*/* FROM ALL_MVIEW_DETAIL_RELATIONS WHERE OWNER=:owner AND MVIEW_NAME=:object_name]])
 end
+
+
+env.table.insert(result,#result,[[
+    SELECT /*topic="Mview Refresh Schedules"*/
+           REFGROUP "REFRESH|GROUP",
+           ROWNER "REFRESH|OWNER",
+           RNAME "REFRESH|NAME",
+           TYPE  "REFRESH|TYPE",
+           JOB   "JOB|ID",
+           --JOB_NAME "JOB|NAME",
+           PARALLELISM "JOB|DoP",
+           BROKEN     "JOB|BROKEN",
+           IMPLICIT_DESTROY  "IMPLICIT|DESTROY",   
+           PUSH_DEFERRED_RPC  "DEFER|RPC",
+           REFRESH_AFTER_ERRORS "REFRESH|ON_ERR",
+           NEXT_DATE  "NEXT|DATE",
+           INTERVAL   "SCHEDULE|INTERVAL",
+           PURGE_OPTION "PURGE|OPTION",
+           HEAP_SIZE    "HEAP|SIZE",
+           ROLLBACK_SEG "ROLLBACK|SEGMENT"
+    FROM   all_refresh_children
+    WHERE  OWNER=:owner AND NAME=:object_name
+    ORDER  BY 1]])
+
 env.table.insert(result,#result,
     [[SELECT /*topic="Mview Logs"*/* FROM (SELECT distinct mview_id snapshot_id FROM ALL_REGISTERED_MVIEWS A WHERE OWNER=:owner AND NAME=:object_name) LEFT JOIN ALL_SNAPSHOT_LOGS USING(snapshot_id)]])
 return result

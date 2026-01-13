@@ -1,7 +1,7 @@
 /*[[
     Show materialized view stats. Usage: @@NAME {[[<owner>].<name>] [yymmddhh24mi] [yymmddhh24mi] [-count]} | [<refresh_id>] |
     <name>       : can be MLOG name, MVIEW name or source table/view name
-    <refresh_id> : specify DBA_MVREF_RUN_STATS.REFRESH_ID
+    <refresh_id> : specify DBA_MVREF_RUN_STATS.REFRESH_ID or DBA_REFRESH.REFGROUP
     -count       : count the records of relative MLOG$ tables(since Oracle 12.1)
 
     If REG_ID is null, then MV is not registered and could lead to MLOG$ table records not being cleaned
@@ -24,6 +24,7 @@ var c1 refcursor "TOP MVIEWS/MLOGS MAPPINGS ORDER BY REFRESH TIME"
 var c2 refcursor "RECENT REFRESHED MVIEWS"
 var c3 refcursor "MVREF_STATS PARAMETERS"
 var c4 refcursor "DBA_MVREF_RUN_STATS"
+var c5 refcursor "DBA_REFRESH"
 col "mv_since,mlog_gap,FULL|TIME,INCR|TIME,RUN|SECS" for smhd2
 
 DECLARE
@@ -189,6 +190,67 @@ BEGIN
     --dbms_output.put_line(stmt1);
     OPEN :c2 FOR stmt1 USING st,ed;
 
+    IF nam IS NULL AND rid IS NULL THEN
+        OPEN :c5 FOR
+            SELECT REFGROUP "REFRESH|GROUP",
+                   ROWNER   "REFRESH|OWNER",
+                   RNAME    "REFRESH|NAME",
+                   JOB      "JOB|ID",
+                   --JOB_NAME "JOB|NAME",
+                   PARALLELISM          "JOB|DoP",
+                   BROKEN               "JOB|BROKEN",
+                   IMPLICIT_DESTROY     "IMPLICIT|DESTROY",
+                   PUSH_DEFERRED_RPC    "DEFER|RPC",
+                   REFRESH_AFTER_ERRORS "REFRESH|ON_ERR",
+                   NEXT_DATE            "NEXT|DATE",
+                   INTERVAL             "SCHEDULE|INTERVAL",
+                   PURGE_OPTION         "PURGE|OPTION",
+                   HEAP_SIZE            "HEAP|SIZE",
+                   ROLLBACK_SEG         "ROLLBACK|SEGMENT"
+            FROM   &check_access_dba.refresh
+            ORDER  BY 1;
+    ELSE
+        stmt1 :=q'~
+        SELECT /*topic="Mview Refresh Schedules"*/
+               B.REFGROUP "REFRESH|GROUP",
+               B.ROWNER "REFRESH|OWNER",
+               B.RNAME "REFRESH|NAME",
+               B.OWNER "MVIEW|OWNER",
+               B.NAME "MVIEW|NAME",
+               B.TYPE  "REFRESH|TYPE",
+               B.JOB   "JOB|ID",
+               B.BROKEN     "JOB|BROKEN",
+               B.PARALLELISM "JOB|DoP",
+               B.IMPLICIT_DESTROY  "IMPLICIT|DESTROY",   
+               B.PUSH_DEFERRED_RPC  "DEFER|RPC",
+               B.REFRESH_AFTER_ERRORS "REFRESH|ON_ERR",
+               B.NEXT_DATE  "NEXT|DATE",
+               B.INTERVAL   "SCHEDULE|INTERVAL",
+               B.PURGE_OPTION "PURGE|OPTION",
+               B.HEAP_SIZE    "HEAP|SIZE",
+               B.ROLLBACK_SEG "ROLLBACK|SEGMENT"
+        FROM   &check_access_dba.refresh_children B
+        #ft#
+        ORDER  BY REFGROUP,NAME~';
+
+        IF nam IS NULL THEN
+            stmt1 := replace(stmt1,'#ft#','WHERE REFGROUP='||rid);
+        ELSIF typ='MATERIALIZED VIEW' THEN
+            stmt1 := replace(stmt1,'#ft#','WHERE '||utl_lms.format_message(obj,'owner','name'));
+        ELSIF typ='TABLE' and nam NOT like 'MLOG$%' THEN
+            stmt1 := replace(stmt1,'#ft#',
+               'JOIN &check_access_dba.summary_detail_tables a ON (a.owner=b.owner AND a.summary_name=b.name) 
+                WHERE '||utl_lms.format_message(obj,'a.detail_owner','a.detail_relation'));
+        ELSE
+            stmt1 := replace(stmt1,'#ft#',
+                'JOIN &check_access_dba.summary_detail_tables a ON (a.owner=b.owner AND a.summary_name=b.name) 
+                 JOIN &check_access_dba.snapshot_logs s ON (a.detail_owner=s.log_owner AND a.detail_relation=s.master) 
+                 WHERE '||utl_lms.format_message(obj,'s.log_owner','s.log_table'));
+        END IF;
+        --dbms_output.put_line(stmt1);
+        OPEN :c5 FOR stmt1;
+    END IF;
+
     $IF &check_access_cfg=1 $THEN
     OPEN c3 FOR 
         SELECT '<SYSTEM>' MV_OWNER,
@@ -205,7 +267,7 @@ BEGIN
             ORDER  BY 1,2,3
         ) WHERE ROWNUM<=30;
     IF nam IS NULL AND rid IS NULL THEN
-        OPEN c3 FOR
+        OPEN c4 FOR
             SELECT REFRESH_ID "REFRESH|ID",
                    RUN_OWNER "RUN|OWNER",
                    START_TIME "START|TIME",
@@ -275,5 +337,6 @@ END;
 
 print c1
 print c2
+print c5
 print c3
 print c4
