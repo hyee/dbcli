@@ -8,46 +8,56 @@ function desc.desc(name,option)
     env.checkhelp(name)
     set.set("autohide","on")
     local rs,success,err
-    local obj=db:check_obj(name)
-    if obj.object_type=='SYNONYM' then
-        local new_obj=db:dba_query(db.get_value,[[
-            WITH r AS (
-              SELECT /*+materialize cardinality(p 1) opt_param('_connect_by_use_union_all','old_plan_mode')*/
-                     REFERENCED_OBJECT_ID OBJ, rownum lv
-              FROM   PUBLIC_DEPENDENCY p
-              START  WITH OBJECT_ID = :1
-              CONNECT BY NOCYCLE PRIOR REFERENCED_OBJECT_ID = OBJECT_ID AND LEVEL<4)
-            SELECT *
-            FROM   (SELECT regexp_substr(obj,'[^/]+', 1, 1) + 0 object_id,
-                           regexp_substr(obj,'[^/]+', 1, 2) owner,
-                           regexp_substr(obj,'[^/]+', 1, 3) object_name,
-                           regexp_substr(obj,'[^/]+', 1, 4) object_type
-                     FROM (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
-                                          o.object_type
-                                   FROM   ALL_OBJECTS o
-                                   WHERE  OBJECT_ID = obj) OBJ, lv
-                           FROM   r)
-                     ORDER  BY lv)
-            WHERE  object_type != 'SYNONYM'
-            AND    object_type NOT LIKE '% BODY'
-            AND    owner IS NOT NULL
-            AND    rownum<2]],{obj.object_id})
-        if new_obj and new_obj[1] then
-            obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
+    local obj=(name..' '..(option or '')):rtrim(';')
+    local typ=db.get_command_type(obj)
+    if obj:find(" ",1,true) and (typ=="WITH" or typ=="SELECT") then
+        rs={query=obj,
+            object_type="QUERY",
+            object_name="",
+            owner=loader:computeSQLIdFromText(obj)}
+        rs[1],rs[2],rs[3],rs[4]=rs.owner,rs.object_name,rs.object_subname or "",rs.object_type
+    else
+        obj=db:check_obj(name)
+        if obj.object_type=='SYNONYM' then
+            local new_obj=db:dba_query(db.get_value,[[
+                WITH r AS (
+                SELECT /*+materialize cardinality(p 1) opt_param('_connect_by_use_union_all','old_plan_mode')*/
+                        REFERENCED_OBJECT_ID OBJ, rownum lv
+                FROM   PUBLIC_DEPENDENCY p
+                START  WITH OBJECT_ID = :1
+                CONNECT BY NOCYCLE PRIOR REFERENCED_OBJECT_ID = OBJECT_ID AND LEVEL<4)
+                SELECT *
+                FROM   (SELECT regexp_substr(obj,'[^/]+', 1, 1) + 0 object_id,
+                            regexp_substr(obj,'[^/]+', 1, 2) owner,
+                            regexp_substr(obj,'[^/]+', 1, 3) object_name,
+                            regexp_substr(obj,'[^/]+', 1, 4) object_type
+                        FROM (SELECT (SELECT o.object_id || '/' || o.owner || '/' || o.object_name || '/' ||
+                                            o.object_type
+                                    FROM   ALL_OBJECTS o
+                                    WHERE  OBJECT_ID = obj) OBJ, lv
+                            FROM   r)
+                        ORDER  BY lv)
+                WHERE  object_type != 'SYNONYM'
+                AND    object_type NOT LIKE '% BODY'
+                AND    owner IS NOT NULL
+                AND    rownum<2]],{obj.object_id})
+            if new_obj and new_obj[1] then
+                obj.object_id,obj.owner,obj.object_name,obj.object_type=table.unpack(new_obj)
+            end
         end
-    end
 
-    rs={obj.owner,obj.object_name,obj.object_subname or "",
-       (obj.object_subname or '')~='' and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE" or obj.object_type}
+        rs={obj.owner,obj.object_name,obj.object_subname or "",
+        (obj.object_subname or '')~='' and (obj.object_type=="PACKAGE" or obj.object_type=="TYPE") and "PROCEDURE" or obj.object_type}
 
-    for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
-        rs[k]=v
-    end
+        for k,v in pairs{owner=rs[1],object_name=rs[2],object_subname=rs[3],object_type=rs[4],object_id=obj.object_id} do
+            rs[k]=v
+        end
 
-    if rs.object_type:find('^TABLE') and rs.object_name:find('MLOG$_',1,true)==1 then
-        local is_mvlog=db:dba_query(db.get_value,[[select count(1) from all_mview_logs where LOG_OWNER=:owner and LOG_TABLE=:object_name]],rs)
-        if is_mvlog==1 then
-            rs.object_type='MATERIALIZED VIEW LOG'
+        if rs.object_type:find('^TABLE') and rs.object_name:find('MLOG$_',1,true)==1 then
+            local is_mvlog=db:dba_query(db.get_value,[[select count(1) from all_mview_logs where LOG_OWNER=:owner and LOG_TABLE=:object_name]],rs)
+            if is_mvlog==1 then
+                rs.object_type='MATERIALIZED VIEW LOG'
+            end
         end
     end
 

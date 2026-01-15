@@ -618,9 +618,11 @@ local function load_binds(binds)
         [113] = 'BLOB', 
         [114] = 'BFILE', 
         [115] = 'CFILE',
+        [119] = 'JSON',
         [121] = 'OBJECT',
         [122] = 'TABLE',
         [123] = 'VARRAY',
+        [127] = 'VECTOR',
         [178] = 'TIME',
         [179] = 'TIME WITH TIME ZONE',
         [180] = 'TIMESTAMP',
@@ -628,9 +630,10 @@ local function load_binds(binds)
         [231] = 'TIMESTAMP WITH LOCAL TIME ZONE',
         [182] = 'INTERVAL YEAR TO MONTH',
         [183] = 'INTERVAL DAY TO SECOND',
+        [208] = 'UROWID',
         [250] = 'PL/SQL RECORD',
         [251] = 'PL/SQL TABLE',
-        [252] = 'PL/SQL BOOLEAN'}
+        [252] = 'BOOLEAN'}
     local rows={_names={}}
     local positions={}
     for i=1,2 do
