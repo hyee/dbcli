@@ -48,12 +48,12 @@ local ad=[[
       ON     (lv.attribute_name = k.attribute_name and lv.level_name=k.level_name) 
       LEFT   JOIN (
              SELECT level_name,
-                    listagg(agg_func || ' ' || attribute_name || NULLIF(' ' || criteria, ' ASC') || NULLIF(' NULLS ' || nulls_position, ' NULLS ' || DECODE(criteria, 'ASC', 'LAST', 'FIRST')),
+                    listagg(agg_func || '(' || attribute_name||NULLIF(' ' || criteria, ' ASC') || NULLIF(' NULLS ' || nulls_position, ' NULLS ' || DECODE(criteria, 'ASC', 'LAST', 'FIRST')) ||')',
                             ',') WITHIN GROUP(ORDER BY order_num) level_order
              FROM   all_attribute_dim_order_attrs attr
              WHERE  attr.owner=ad.owner AND attr.dimension_name=ad.dimension_name AND attr.origin_con_id=:origin_con_id
              GROUP  BY level_name) aggs
-      ON     (lv.level_name = aggs.level_name)
+      ON     (lv.level_name = aggs.level_name and k.key_order_num=0)
       LEFT   JOIN (
              SELECT attribute_name,
                     MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) caption,

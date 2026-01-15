@@ -91,8 +91,8 @@ BEGIN
         IF :OBJECT_OWNER IS NULL THEN
             name := '"'||sys_context('userenv','current_schema')||'"."'||upper(src)||'"';
         END IF;
-        stmt := 'CREATE MATERIALIZED VIEW '||name||' REFRESH FAST ENABLE QUERY REWRITE AS '|| stmt;
-        --dbms_output.put_line(stmt);
+        stmt := 'CREATE MATERIALIZED VIEW '||name||' REFRESH FAST ENABLE QUERY REWRITE AS '||chr(10)||stmt;
+        
         BEGIN DBMS_ADVISOR.DELETE_TASK(task); EXCEPTION WHEN OTHERS THEN NULL;END;
         BEGIN
             DBMS_ADVISOR.TUNE_MVIEW(task,stmt);
@@ -110,6 +110,9 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN NULL;
             code := sqlcode;
             err  := sqlerrm||chr(10)||dbms_utility.format_error_backtrace;
+            dbms_output.enable(null);
+            dbms_output.put_line(stmt);
+            dbms_output.put_line(rpad('=',150,'='));
             dbms_output.put_line(err);
             BEGIN DBMS_ADVISOR.DELETE_TASK(task); EXCEPTION WHEN OTHERS THEN NULL;END;
             IF flag AND sqlcode = -942 THEN

@@ -643,7 +643,17 @@ function oracle:parse(sql,params)
         env.log_debug("parse","Block-Params:",table.dump(params))
         return prep,org_sql,params
     elseif counter>1 then
-        return self.super.parse(self,org_sql,params,':',':')
+        local inputs={}
+        for k,v in pairs(params) do
+            if type(v)=='string' and v:sub(1,1)=='#' and env.var.inputs[k] then
+                params[k],inputs[k]=env.var.inputs[k],v
+            end
+        end
+        prep,org_sql,params=self.super.parse(self,org_sql,params,':',nil,':')
+        for k,v in pairs(inputs) do
+            params[k]=v
+        end
+        return prep,org_sql,params
     else
         org_sql=sql
     end

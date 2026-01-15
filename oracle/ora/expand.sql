@@ -9,8 +9,9 @@ Examples:
         @ARGS: 1
    --]]
 ]]*/
-set feed off
+set feed off colwrap 180 verify off
 var c refcursor;
+var text clob;
 declare
    src  CLOB:=regexp_replace(trim(:v1),'[;[:space:][:cntrl:]]+$');
    schem1 VARCHAR2(128):=SYS_CONTEXT('USERENV','CURRENT_SCHEMA');
@@ -45,9 +46,13 @@ begin
        execute immediate 'alter session set current_schema='||schem2;
    END IF;
    &ver..expand_sql_text(src,text);
-   open :c for select text from dual;
+   :text := text;
+   open :c for select text text from dual;
    IF schem1!=schem2 THEN
        execute immediate 'alter session set current_schema='||schem1;
    END IF;
 end;
 /
+
+print c
+save text expand_output.sql
