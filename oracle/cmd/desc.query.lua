@@ -9,7 +9,9 @@ return [[
         v_cursor     INTEGER;
         v_col_cnt    INTEGER;
         v_desc_tab   dbms_sql.desc_tab3;
-        v_sql        VARCHAR2(32767) := :object_name;
+        v_owner      VARCHAR2(128) := :owner;
+        v_schema     VARCHAR2(128) := sys_context('userenv','current_schema');
+        v_sql        CLOB := :query;
         v_xml        XMLTYPE := XMLTYPE('<columns/>');
         v_stack      VARCHAR2(4000);
         v_typename   VARCHAR2(30);
@@ -17,18 +19,21 @@ return [[
         TYPE t IS TABLE OF VARCHAR2(30) INDEX BY PLS_INTEGER;
         v_types t;
     BEGIN
-        v_types(1)  := 'VARCHAR';
-        v_types(2)  := 'NUMBER';
-        v_types(3)  := 'NATIVE INTEGER';
-        v_types(8)  := 'LONG';
-        v_types(9)  := 'VARCHAR';
-        v_types(11)  := 'ROWID';
-        v_types(12)  := 'DATE';
-        v_types(23)  := 'RAW';
-        v_types(24)  := 'LONG RAW';
-        v_types(29)  := 'BINARY_INTEGER';
-        v_types(69)  := 'ROWID';
-        v_types(96)  := 'CHAR';
+        IF v_owner = v_schema OR v_owner like '<%>' THEN
+            v_owner := NULL;
+        END IF;
+        v_types(1)    := 'VARCHAR';
+        v_types(2)    := 'NUMBER';
+        v_types(3)    := 'NATIVE INTEGER';
+        v_types(8)    := 'LONG';
+        v_types(9)    := 'VARCHAR';
+        v_types(11)   := 'ROWID';
+        v_types(12)   := 'DATE';
+        v_types(23)   := 'RAW';
+        v_types(24)   := 'LONG RAW';
+        v_types(29)   := 'BINARY_INTEGER';
+        v_types(69)   := 'ROWID';
+        v_types(96)   := 'CHAR';
         v_types(100)  := 'BINARY_FLOAT';
         v_types(101)  := 'BINARY_DOUBLE';
         v_types(102)  := 'REF CURSOR';
@@ -62,10 +67,27 @@ return [[
         
         BEGIN
             -- Parse SQL statement
-            dbms_sql.parse(v_cursor, :query, dbms_sql.native);
+            $IF dbms_db_version.version < 12 $THEN
+            IF v_owner IS NOT NULL THEN
+                EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA="'||v_owner||'"';
+                v_owner := '1';
+            END IF;
+            $END
+
+            dbms_sql.parse(
+                c=>v_cursor, 
+                statement=>:query, 
+            $IF dbms_db_version.version > 11 $THEN
+                schema => v_owner,
+                container => sys_context('userenv','con_name'),
+            $END
+                language_flag =>dbms_sql.native);
             
             -- Get column descriptions
-            dbms_sql.describe_columns3(v_cursor, v_col_cnt, v_desc_tab);
+            dbms_sql.describe_columns3(
+                c => v_cursor, 
+                col_cnt => v_col_cnt, 
+                desc_t => v_desc_tab);
             
             -- Close cursor
             dbms_sql.close_cursor(v_cursor);
@@ -93,11 +115,17 @@ return [[
                 </column>';
                 v_xml := v_xml.appendchildxml('//columns', XMLTYPE(v_stack));
             END LOOP;
+            IF v_owner = '1' THEN
+                EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA="'||v_schema||'"';
+            END IF;
         EXCEPTION
             WHEN OTHERS THEN
                 -- Close cursor
                 IF dbms_sql.is_open(v_cursor) THEN
                     dbms_sql.close_cursor(v_cursor);
+                END IF;
+                IF v_owner = '1' THEN
+                    EXECUTE IMMEDIATE 'ALTER SESSION SET CURRENT_SCHEMA="'||v_schema||'"';
                 END IF;
                 RAISE;
         END;
@@ -105,15 +133,16 @@ return [[
         -- Open cursor to return results
         OPEN cur FOR
             SELECT x.NO#,
-                   x.NAME,
+                   x.NAME COLUMN_NAME,
                    CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
                        THEN DATA_TYPE||'(' || DATA_LENGTH || ')' --
                      WHEN DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
                          DATA_TYPE||'['||DATA_LENGTH||' INLINE]'
                      WHEN DATA_TYPE = 'NUMBER' --
                      THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
-                              WHEN DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                              WHEN DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||nullif(DATA_PRECISION,0), '38') || ',' || DATA_SCALE || ')'
                               WHEN DATA_PRECISION IS NULL AND DATA_SCALE=0 THEN 'INTEGER'
+                              WHEN DATA_PRECISION=0 THEN DATA_TYPE
                               ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END)
                      ELSE DATA_TYPE 
                    END DATA_TYPE,
@@ -122,13 +151,13 @@ return [[
                 '/columns/column'
                 PASSING v_xml
                 COLUMNS
-                    NO# NUMBER PATH 'position',
-                    NAME VARCHAR2(128) PATH 'name',
-                    DATA_TYPE VARCHAR2(128) PATH 'type',
+                    NO#         NUMBER PATH 'position',
+                    NAME        VARCHAR2(128) PATH 'name',
+                    DATA_TYPE   VARCHAR2(128) PATH 'type',
                     DATA_LENGTH NUMBER PATH 'length',
                     DATA_PRECISION NUMBER PATH 'precision',
-                    DATA_SCALE NUMBER PATH 'scale',
-                    NULLABLE VARCHAR2(1) PATH 'nullable'
+                    DATA_SCALE  NUMBER PATH 'scale',
+                    NULLABLE    VARCHAR2(1) PATH 'nullable'
             ) x
             ORDER BY x.NO#;
         

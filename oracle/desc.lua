@@ -8,16 +8,23 @@ function desc.desc(name,option)
     env.checkhelp(name)
     set.set("autohide","on")
     local rs,success,err
-    local obj=(name..' '..(option or '')):rtrim(';')
-    local typ=db.get_command_type(obj)
-    if obj:find(" ",1,true) and (typ=="WITH" or typ=="SELECT") then
-        rs={query=obj,
+    local obj=db:check_obj(name,1)
+    local sql=(name..' '..(option or '')):trim(';')
+    local typ=db.get_command_type(sql)
+    if sql:sub(1,128):find(" ",1,true) and (typ=="WITH" or typ=="SELECT") then
+        rs={query=sql,
             object_type="QUERY",
-            object_name="",
-            owner=loader:computeSQLIdFromText(obj)}
+            object_name=loader:computeSQLIdFromText(sql),
+            owner='<CURRENT_SCHEMA>'}
+        rs[1],rs[2],rs[3],rs[4]=rs.owner,rs.object_name,rs.object_subname or "",rs.object_type
+    elseif not obj and #name==13 and not name:find("%s") and name:find('^[a-z0-9]+$') then
+        rs={object_type="SQL_ID",
+            object_name=name,
+            sql_id=name,
+            owner=name}
         rs[1],rs[2],rs[3],rs[4]=rs.owner,rs.object_name,rs.object_subname or "",rs.object_type
     else
-        obj=db:check_obj(name)
+        env.checkerr(obj,"Cannot find target object: "..name)
         if obj.object_type=='SYNONYM' then
             local new_obj=db:dba_query(db.get_value,[[
                 WITH r AS (
@@ -142,5 +149,5 @@ function desc.desc(name,option)
     cfg.temp("feed",feed,true)
 end
 
-env.set_command(nil,{"describe","desc"},'Describe database object. Usage: @@NAME [owner.]<object>[.<partition>|.<sub_program>] [all]',desc.desc,false,3)
+env.set_command(nil,{"describe","desc"},'Describe database object. Usage: @@NAME {[owner.]<object>[.<partition>|.<sub_program>] [all]} | <sql_id> | <query>',desc.desc,false,3)
 return desc

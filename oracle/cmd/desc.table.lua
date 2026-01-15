@@ -19,7 +19,7 @@ else
 end
 env.var.define_column('OWNER,TABLE_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 
-return  obj.object_type=='FIXED TABLE' and [[
+return obj.object_type=='FIXED TABLE' and [[
         SELECT /*+outline_leaf ordered use_nl(b c) opt_param('container_data' 'all') opt_param('optimizer_dynamic_sampling' 5)*/ 
                a.*,
                C.AVG_COL_LEN AVG_LEN,

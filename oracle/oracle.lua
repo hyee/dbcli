@@ -253,7 +253,7 @@ function oracle:connect(conn_str)
     local succ,err=pcall(self.exec,self,[[
         DECLARE /*INTERNAL_DBCLI_CMD*/
             vs      PLS_INTEGER;
-            ver     PLS_INTEGER;
+            ver     NUMBER;
             re      PLS_INTEGER;
             vf      VARCHAR2(30);
             vf1     VARCHAR2(30);
@@ -267,7 +267,7 @@ function oracle:connect(conn_str)
             intval  NUMBER;
             strval  VARCHAR2(300);
             blk_siz PLS_INTEGER:=8192;
-            ccflags VARCHAR2(2000):='VERSION:'||(dbms_db_version.version*100+dbms_db_version.release);
+            ccflags VARCHAR2(2000):='VERSION:#version#';
             mbrc    NUMBER:=8;
             PROCEDURE set_param(params VARCHAR2) IS
             BEGIN
@@ -381,16 +381,13 @@ function oracle:connect(conn_str)
             IF sys_context('userenv','isdba')='TRUE' THEN
                 ccflags := ccflags||','||'SYSDBA:TRUE';
             END IF;
-
-            IF ccflags IS NOT NULL THEN
-                set_param('PLSQL_CCFLAGS='''||ccflags||'''');
-            END IF;
             
             IF sv like 'SYS$%' THEN
                 sv := regexp_substr(get_param('service_names','SQL'),'[^ ,]+');
             END IF;
 
-            :ccflags      := ccflags;
+            ver           := 0+(vs||'.'||lpad(re,case when vs>12 then 2 else 1 end,'0')||case when re>9 and mod(re,10)=0 then '1' end);
+            ccflags       := replace(ccflags,'#version#',floor(ver*100));
             :privs        := pv;
             :db_user      := user;
             :dbid         := did;
@@ -398,8 +395,14 @@ function oracle:connect(conn_str)
             :dbname       := sys_context('userenv', 'db_unique_name');
             :isdba        := sys_context('userenv', 'isdba') ;
             :service_name := nvl(sv,sys_context('userenv', 'db_name') || nullif('.' || sys_context('userenv', 'db_domain'), '.')) ;
-            :version      := 0+(vs||'.'||lpad(re,case when vs>12 then 2 else 1 end,'0')||case when re>9 and mod(re,10)=0 then '1' end);
+            :version      := ver;
+            :ccflags      := ccflags;
             :isadb        := CASE WHEN isADB = 0 THEN 'FALSE' ELSE 'TRUE' END;
+
+            IF ccflags IS NOT NULL THEN
+                set_param('PLSQL_CCFLAGS='''||ccflags||'''');
+            END IF;
+
             IF vs > 9 THEN
                 :sid           := userenv('sid');
                 :instance      := userenv('instance');
