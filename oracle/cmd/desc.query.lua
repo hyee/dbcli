@@ -83,7 +83,7 @@ return [[
                 statement=>:query, 
             $IF dbms_db_version.version > 11 $THEN
                 schema => v_owner,
-                container => sys_context('userenv','con_name'),
+                container => null,
             $END
                 language_flag =>dbms_sql.native);
             
