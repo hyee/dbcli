@@ -1,7 +1,7 @@
 /*[[
     Compare SQL by difference snapshot ranges. Usage: type `help @@NAME` for more details.
-    * @@NAME [<yymmddhh24mi> [<yymmddhh24mi>]]: compare between awr snapshots and delta stats of gv$sqlstats
-    * @@NAME -awr <yymmddhh24mi> <yymmddhh24mi> [<yymmddhh24mi>]: compare between snapshot ranges
+    * @@NAME [-awr] <yymmddhh24mi> <yymmddhh24mi> [<yymmddhh24mi>]: compare between snapshot ranges
+    * @@NAME -gv   [<yymmddhh24mi> [<yymmddhh24mi>]]: compare between awr snapshots and delta stats of gv$sqlstats
 
     Compare groups:
     ===============
@@ -10,8 +10,8 @@
     
     Filter diff:
     ============
-    -regress           : only list the regress SQLs
-    -improve           : only list the improve SQLs
+    -regress           : only list the regressed SQLs
+    -improve           : only list the improved SQLs
     -adj["<op><diff>"] : filter the avg_diff. i.e.: adj">=2"
 
     Other options:
@@ -20,11 +20,13 @@
     -same              : exclude same plans that exists in both `PRE` and `POST`
     
     --[[
-            &snap:   dg={2} awr={1}
-            &diff:   default={=avg_diff} regress={>=1.2} improve={<=0.8} adj={}
-            &filter: default={1=1} f={}
-            &sql:    m={signature} sql={signature,sql_id}
-            &same:   default={1=1} same={plans=1 or grp='PRE'}
+            &snap   :   awr={1} gv={2} 
+            &diff   :   default={=avg_diff} regress={>=1.2} improve={<=0.8} adj={}
+            &filter :   default={1=1} f={}
+            &sql    :    m={signature} sql={signature,sql_id}
+            &same   :   default={1=1} same={plans=1 or grp='PRE'}
+            &v1     :   deafult={&starttime}
+            &v2     :   default={&endtime}
     --]]--
 ]]*/
 
@@ -32,14 +34,16 @@ col Weight,avg_diff for pct3 break
 col avg_ela,cpu_time,io_time for usmhd2
 col buff,reads,writes,dxwrites,execs for tmb2
 col io,offload_in,offload_out for kmg2
-col hv,sig_weight,plans,grps,all_ela,all_execs noprint
-col signature break
+col hv,sig_weight,plans,grps,all_ela,all_execs,seq noprint
+col signature,# break
 set autohide col
-
-WITH r AS(
+set verify off feed off
+var c refcursor
+BEGIN OPEN :c FOR
+    WITH r AS(
         SELECT  /*+opt_param('_fix_control' '26552730:0') 
-                   opt_param('_no_or_expansion' 'true') 
-                   opt_param('_optimizer_cbqt_or_expansion' 'off')*/
+                opt_param('_no_or_expansion' 'true') 
+                opt_param('_optimizer_cbqt_or_expansion' 'off')*/
                 signature,
                 grp,
                 MAX(sql_id) keep(dense_rank LAST ORDER BY ela * log(10, execs)) sql_id,
@@ -58,7 +62,7 @@ WITH r AS(
                 nullif(ROUND(SUM(offload_in) / SUM(execs),2),0) offload_in,
                 nullif(ROUND(SUM(offload_out) / SUM(execs),2),0) offload_out
         FROM   (SELECT  /*+outline_leaf use_hash(s)*/
-                        DECODE(SIGN(end_interval_time+0-nvl(to_date(nvl('&v2','&enddate'),'yymmddhh24miss'),sysdate)),-1,'PRE','POST') grp,
+                        DECODE(SIGN(end_interval_time+0-nvl(to_date('&v2','yymmddhh24miss'),sysdate+1)),-1,'PRE','POST') grp,
                         plan_hash_value plan_hash,
                         sql_id,
                         nvl(nullif(force_matching_signature,0),plan_hash_value) signature,
@@ -76,15 +80,17 @@ WITH r AS(
                 FROM   dba_hist_sqlstat s
                 JOIN   dba_hist_snapshot USING(dbid,snap_id,instance_number)
                 WHERE  plan_hash_value > 0
-                AND   (&snap=1 OR dbid=:dbid)
+                AND    dbid='&dbid'
+                AND   (&snap=2 OR to_date('&v2','yymmddhh24miss')<nvl(to_date('&v3','yymmddhh24miss'),sysdate+1))
                 AND   (&filter)
-                AND   (:instance is null or instance_number=0+:instance)
-                AND    end_interval_time >= nvl(to_date(nvl('&v1','&starttime'),'yymmddhh24miss'),sysdate - 3)
-                AND    end_interval_time <= nvl(to_date(nvl(decode(&snap,1,'&v3','&v2'),'&endtime'),'yymmddhh24miss'),sysdate)
+                AND   ('&instance' is null or instance_number=0+'&instance')
+                AND    end_interval_time >= nvl(to_date('&v1','yymmddhh24miss'),sysdate - 3)
+                AND    end_interval_time <= nvl(to_date(decode(&snap,1,'&v3','&v2'),'yymmddhh24miss'),sysdate+1)
                 GROUP  BY plan_hash_value, sql_id, force_matching_signature,
-                          DECODE(SIGN(end_interval_time+0-nvl(to_date(nvl('&v2','&enddate'),'yymmddhh24miss'),sysdate)),-1,'PRE','POST')
+                            DECODE(SIGN(end_interval_time+0-nvl(to_date('&v2','yymmddhh24miss'),sysdate+1)),-1,'PRE','POST')
                 HAVING SUM(executions_delta) > 1)
         GROUP  BY grp,plan_hash,&sql
+    $IF DBMS_DB_VERSION.VERSION > 11 $THEN    
         UNION ALL
         SELECT  signature,
                 'POST',
@@ -119,34 +125,62 @@ WITH r AS(
                         SUM(io_cell_offload_returned_bytes) offload_out
                 FROM   gv$sqlstats
                 WHERE  &snap = 2
-                AND   (select dbid from v$database)=:dbid
+                AND   (select dbid from v$database)='&dbid'
                 AND   (&filter)
-                AND   (:instance is null or inst_id=0+:instance)
+                AND   ('&instance' is null or inst_id=0+'&instance')
                 AND    plan_hash_value > 0
                 GROUP  BY plan_hash_value, sql_id, force_matching_signature
                 HAVING SUM(delta_execution_count) > 1)
         GROUP  BY plan_hash,&sql
-),
-r1 AS(
-    SELECT sum(decode(grp,'POST',all_ela/all_execs))  over(partition by &sql)/
-           sum(decode(grp,'PRE',all_ela/all_execs)) over(partition by &sql) avg_diff,
-           a.*,
-           SYS_OP_COMBINED_HASH(&sql) hv,
-           max(decode(grp,'POST',avg_ela*execs)) over(PARTITION BY &sql)/2 sig_weight
-    FROM (SELECT r.*,
-                 SUM(execs*avg_ela) over(partition by &sql,grp) all_ela,
-                 SUM(execs) over(partition by &sql,grp) all_execs,
-                 COUNT(distinct grp) OVER(PARTITION BY &sql) grps,
-                 count(distinct grp) over(partition by plan_hash) plans 
-          FROM   r) a
-    WHERE grps>1 and (&same)
-)
-SELECT * FROM (
-    SELECT ratio_to_report(sig_weight) over() "Weight",
-    r1.*,'||' "||",
-    trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
-    FROM r1 LEFT JOIN dba_hist_sqltext s
-    ON (s.dbid=:dbid AND r1.sql_id=s.sql_id)
-    WHERE (avg_diff &diff)
-    ORDER by "Weight" desc,avg_diff,hv,grp desc,avg_ela*execs desc)
-WHERE rownum<=300;
+    $END
+    ),
+    r1 AS(
+        SELECT sum(decode(grp,'POST',all_ela/all_execs))  over(partition by &sql)/
+            sum(decode(grp,'PRE',all_ela/all_execs)) over(partition by &sql) avg_diff,
+            a.*,
+            SYS_OP_COMBINED_HASH(&sql) hv,
+            max(decode(grp,'POST',avg_ela*execs)) over(PARTITION BY &sql)/2 sig_weight
+        FROM (SELECT r.*,
+                    SUM(execs*avg_ela) over(partition by &sql,grp) all_ela,
+                    SUM(execs) over(partition by &sql,grp) all_execs,
+                    COUNT(distinct grp) OVER(PARTITION BY &sql) grps,
+                    count(distinct grp) over(partition by plan_hash) plans 
+            FROM   r) a
+        WHERE grps>1 and (&same)
+    ),
+    r2 AS(
+        SELECT /*+materialized*/ r.*,rownum seq 
+        FROM (
+            SELECT  dense_rank() over(order by sig_weight desc,avg_diff,hv) "#",
+                    ratio_to_report(sig_weight) over() "Weight",
+                    r1.*
+            FROM    r1
+            WHERE (avg_diff &diff)
+            ORDER by "Weight" desc,avg_diff,hv,grp desc,avg_ela*execs desc) r
+        WHERE "#"<=50
+    ),
+    txt AS(
+        SELECT  sql_id,
+                extractvalue(dbms_xmlgen.getxmltype(replace(q'~
+                    select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
+                    from   dba_hist_sqltext b
+                    where  dbid='&dbid'
+                    and    sql_id='#sql#'
+                    and    rownum<2~',
+                    '#sql#',sql_id)),
+                '//ROW/SQL_TEXT') sql_text
+        FROM   (
+            SELECT /*+no_merge*/ distinct sql_id 
+            FROM (SELECT max(sql_id) keep(dense_rank last order by grp) sql_id from r2 group by signature)
+        )
+    )
+    SELECT /*+outline_leaf use_hash(r2 txt)*/
+        r2.*,
+        '||' "||",
+        txt.sql_text
+    FROM r2 LEFT JOIN txt ON(r2.sql_id=txt.sql_id)
+    ORDER BY r2.seq;
+END;
+/
+
+print c
