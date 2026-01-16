@@ -8,7 +8,11 @@ return [[
     DECLARE /*INTERNAL_DBCLI_CMD topic="Column info"*/
         v_cursor     INTEGER;
         v_col_cnt    INTEGER;
-        v_desc_tab   dbms_sql.desc_tab3;
+    $IF dbms_db_version.version+dbms_db_version.release < 13 $THEN
+        v_desc       dbms_sql.desc_tab2;
+    $ELSE
+        v_desc       dbms_sql.desc_tab3;
+    $END
         v_owner      VARCHAR2(128) := :owner;
         v_schema     VARCHAR2(128) := sys_context('userenv','current_schema');
         v_sql        CLOB := :query;
@@ -83,35 +87,48 @@ return [[
             $END
                 language_flag =>dbms_sql.native);
             
-            -- Get column descriptions
-            dbms_sql.describe_columns3(
-                c => v_cursor, 
-                col_cnt => v_col_cnt, 
-                desc_t => v_desc_tab);
-            
+            $IF dbms_db_version.version+dbms_db_version.release < 13 $THEN
+                dbms_sql.describe_columns2(v_cursor, v_col_cnt, v_desc);
+            $ELSE
+                dbms_sql.describe_columns3(v_cursor, v_col_cnt, v_desc);
+            $END
             -- Close cursor
             dbms_sql.close_cursor(v_cursor);
             
             -- Generate XML results
             FOR i IN 1..v_col_cnt LOOP
-                v_typename := v_desc_tab(i).col_type;
-                IF v_typename+0 IN(1,9,96,112) AND v_desc_tab(i).col_charsetform=2 THEN
+                v_typename := v_desc(i).col_type;
+                IF v_typename+0 IN(1,9,96,112) AND v_desc(i).col_charsetform=2 THEN
                     v_typename := 'N'||v_types(v_typename+0);
-                ELSIF v_typename+0=2 AND v_desc_tab(i).col_scale=-127 THEN
+                ELSIF v_typename+0=2 AND v_desc(i).col_scale=-127 THEN
                     v_typename := 'FLOAT';
-                ELSIF v_typename+0=2 AND nvl(v_desc_tab(i).col_scale,0)=0 AND v_desc_tab(i).col_precision=38 THEN
+                ELSIF v_typename+0=2 AND nvl(v_desc(i).col_scale,0)=0 AND v_desc(i).col_precision=38 THEN
                     v_typename := 'INTEGER';
                 ELSIF v_types.exists(v_typename+0) THEN
                     v_typename := v_types(v_typename+0);
                 END IF;
                 v_stack := '<column>
                     <position>' || i || '</position>
-                    <name>' || dbms_xmlgen.convert(v_desc_tab(i).col_name, dbms_xmlgen.ENTITY_ENCODE) || '</name>
-                    <type>' || dbms_xmlgen.convert(nvl(v_desc_tab(i).col_type_name,v_typename), dbms_xmlgen.ENTITY_ENCODE) || '</type>
-                    <length>' || v_desc_tab(i).col_max_len || '</length>
-                    <precision>' || v_desc_tab(i).col_precision || '</precision>
-                    <scale>' || v_desc_tab(i).col_scale || '</scale>
-                    <nullable>' || CASE WHEN v_desc_tab(i).col_null_ok THEN 'Y' ELSE 'N' END || '</nullable>
+                    <name>' || dbms_xmlgen.convert(v_desc(i).col_name, dbms_xmlgen.ENTITY_ENCODE) || '</name>
+                    <type>' || dbms_xmlgen.convert(
+                    $IF dbms_db_version.version+dbms_db_version.release < 13 $THEN
+                        v_typename,
+                    $ELSE
+                        nvl(v_desc(i).col_type_name,v_typename),
+                    $END
+                        dbms_xmlgen.ENTITY_ENCODE) || '</type>
+                    <length>' || v_desc(i).col_max_len || '</length>
+                    <precision>' || nullif(v_desc(i).col_precision,0) || '</precision>
+                    <scale>' || v_desc(i).col_scale || '</scale>
+                    <charid>' || v_desc(i).col_charsetid || '</charid>
+                    <charset>' || CASE v_desc(i).col_type 
+                                    WHEN 1 THEN 'CHAR_CS' 
+                                    WHEN 2 THEN 'NCHAR_CS'
+                                    WHEN 3 THEN nls_charset_name(v_desc(i).col_charsetid)
+                                    ELSE 'ARG:' || v_desc(i).col_charsetid
+                                  END|| '</charset>
+                    <dec_length>' || CASE WHEN v_desc(i).col_charsetid> 1 THEN nls_charset_decl_len(v_desc(i).col_max_len,v_desc(i).col_charsetid) END || '</dec_length>
+                    <nullable>' || CASE WHEN v_desc(i).col_null_ok THEN 'Y' ELSE 'N' END || '</nullable>
                 </column>';
                 v_xml := v_xml.appendchildxml('//columns', XMLTYPE(v_stack));
             END LOOP;
@@ -139,25 +156,29 @@ return [[
                      WHEN DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
                          DATA_TYPE||'['||DATA_LENGTH||' INLINE]'
                      WHEN DATA_TYPE = 'NUMBER' --
-                     THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
-                              WHEN DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||nullif(DATA_PRECISION,0), '38') || ',' || DATA_SCALE || ')'
+                     THEN (CASE WHEN nvl(DATA_SCALE, DATA_PRECISION) IS NULL THEN DATA_TYPE
+                              WHEN DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
                               WHEN DATA_PRECISION IS NULL AND DATA_SCALE=0 THEN 'INTEGER'
-                              WHEN DATA_PRECISION=0 THEN DATA_TYPE
+                              WHEN DATA_PRECISION IS NULL THEN DATA_TYPE
                               ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END)
                      ELSE DATA_TYPE 
                    END DATA_TYPE,
-                   CASE WHEN x.NULLABLE = 'Y' THEN '' ELSE 'NOT NULL' END NULLABLE
-            FROM XMLTABLE(
-                '/columns/column'
-                PASSING v_xml
+                   CASE WHEN x.NULLABLE = 'Y' THEN '' ELSE 'NOT NULL' END NULLABLE,
+                   charset#,
+                   CHARSET,
+                   DEC_LEN CHAR_COL_DECL_LENGTH
+            FROM XMLTABLE('/columns/column' PASSING v_xml
                 COLUMNS
-                    NO#         NUMBER PATH 'position',
-                    NAME        VARCHAR2(128) PATH 'name',
-                    DATA_TYPE   VARCHAR2(128) PATH 'type',
-                    DATA_LENGTH NUMBER PATH 'length',
-                    DATA_PRECISION NUMBER PATH 'precision',
-                    DATA_SCALE  NUMBER PATH 'scale',
-                    NULLABLE    VARCHAR2(1) PATH 'nullable'
+                    NO#             NUMBER PATH 'position',
+                    NAME            VARCHAR2(128) PATH 'name',
+                    DATA_TYPE       VARCHAR2(128) PATH 'type',
+                    DATA_LENGTH     NUMBER PATH 'length',
+                    DATA_PRECISION  NUMBER PATH 'precision',
+                    DATA_SCALE      NUMBER PATH 'scale',
+                    CHARSET#        NUMBER PATH 'charid',
+                    CHARSET         VARCHAR2(128) PATH 'charset',
+                    DEC_LEN         NUMBER PATH 'dec_length',
+                    NULLABLE        VARCHAR2(1) PATH 'nullable'
             ) x
             ORDER BY x.NO#;
         

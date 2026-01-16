@@ -160,12 +160,14 @@ return obj.object_type=='FIXED TABLE' and [[
                a.INTERNAL_COLUMN_ID NO#,
                a.COLUMN_NAME NAME,
                a.DATA_TYPE_OWNER || NVL2(a.DATA_TYPE_OWNER, '.', '') ||
-               CASE WHEN a.DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
+               CASE WHEN a.DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','RAW') --
                     THEN a.DATA_TYPE||'(' || DECODE(a.CHAR_USED, 'C', a.CHAR_LENGTH,a.DATA_LENGTH) || DECODE(a.CHAR_USED, 'C', ' CHAR') || ')' --
+                    WHEN a.DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2')
+                    THEN a.DATA_TYPE||'(' || A.CHAR_LENGTH || ')' --
                     WHEN a.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
                          a.DATA_TYPE||'['||a.DATA_LENGTH||' INLINE]'
                     WHEN a.DATA_TYPE = 'NUMBER' --
-                    THEN (CASE WHEN nvl(a.DATA_scale, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
+                    THEN (CASE WHEN nvl(a.DATA_SCALE, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
                               WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
                               WHEN a.DATA_PRECISION IS NULL AND a.DATA_SCALE=0 THEN 'INTEGER'
                               ELSE a.DATA_TYPE||'(' || a.DATA_PRECISION ||')' END)

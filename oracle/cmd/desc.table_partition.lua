@@ -4,8 +4,10 @@ return {[[
                 COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
-                CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
+                CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2',RAW') --
                     THEN DATA_TYPE||'(' || DECODE(c.CHAR_USED, 'C', c.CHAR_LENGTH,c.DATA_LENGTH) || DECODE(c.CHAR_USED, 'C', ' CHAR') || ')' --
+                    WHEN DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2')
+                    THEN DATA_TYPE||'(' || c.CHAR_LENGTH || ')' --
                     WHEN C.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
                          DATA_TYPE||'['||C.DATA_LENGTH||' INLINE]'
                     WHEN c.DATA_TYPE = 'NUMBER' --

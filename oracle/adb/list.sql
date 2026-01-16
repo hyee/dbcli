@@ -125,18 +125,14 @@ DECLARE
         FOR r IN(
             SELECT '"'||column_name||'" '||
                    CASE 
-                       WHEN DATA_TYPE IN('CHAR',
-                                          'VARCHAR',
-                                          'VARCHAR2',
-                                          'NCHAR',
-                                          'NVARCHAR',
-                                          'NVARCHAR2',
-                                          'RAW') --
+                       WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','RAW') --
                        THEN DATA_TYPE||'(' || DECODE(CHAR_USED, 'C', CHAR_LENGTH,DATA_LENGTH) || DECODE(CHAR_USED, 'C', ' CHAR') || ')' --
+                       WHEN DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2')
+                       THEN DATA_TYPE||'(' || CHAR_LENGTH || ')'
                        WHEN DATA_TYPE = 'NUMBER' --
-                       THEN (CASE WHEN nvl(DATA_scale, DATA_PRECISION) IS NULL THEN DATA_TYPE
-                                  WHEN DATA_scale > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
-                                  WHEN DATA_PRECISION IS NULL AND DATA_scale=0 THEN 'INTEGER'
+                       THEN (CASE WHEN nvl(DATA_SCALE, DATA_PRECISION) IS NULL THEN DATA_TYPE
+                                  WHEN DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                                  WHEN DATA_PRECISION IS NULL AND DATA_SCALE=0 THEN 'INTEGER'
                                   ELSE DATA_TYPE||'(' || DATA_PRECISION ||')' END) 
                        WHEN DATA_TYPE='DATE' THEN
                             'TIMESTAMP(0)'
