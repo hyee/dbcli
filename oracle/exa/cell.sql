@@ -346,7 +346,7 @@ BEGIN
                    ROUND(SUM(DECODE(NAME,'Number of read hits',value))/NULLIF(SUM(DECODE(NAME,'Number of read hits',value,'Number of read misses',value)),0),4) "Read|Hit",
                    ROUND(SUM(DECODE(NAME,'Number of SCAN bytes read from cache(KB)',value))/NULLIF(SUM(DECODE(NAME,'Number of scan bytes attempted to read from cache(KB)',value)),0),4) "Scan|Hit",
                    ROUND(SUM(DECODE(NAME,'Number of scans read from Columnar Cache',value))/NULLIF(SUM(DECODE(NAME,'Number of reads attempted in  Columnar Cache',value)),0),4) "FCC|Hit",
-                   ROUND(SUM(DECODE(NAME,'Number of cache writes',value))/NULLIF(SUM(DECODE(NAME,'Number of cache writes',value,'Number of nocache writes',value)),0),4) "FCache|Write"，
+                   ROUND(SUM(DECODE(NAME,'Number of cache writes',value))/NULLIF(SUM(DECODE(NAME,'Number of cache writes',value,'Number of nocache writes',value)),0),4) "FCache|Write",
                    '|' "|",
                    SUM(DECODE(NAME,'RamCache size (KB)',value*1024)) "RAM|Used",
                    ROUND(SUM(DECODE(NAME,'RamCache read hits',value))/NULLIF(SUM(DECODE(NAME,'RamCache read hits',value,'RamCache read misses',value)),0),4) "RAM|Read",

@@ -110,7 +110,7 @@ BEGIN
         SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner', '&object_name') report FROM dual;
     $ELSE
     OPEN c1 FOR
-        SELECT /*+outline_leaf ordered use_nl(o c cu) no_expand opt_param('optimizer_dynamic_sampling' 11)*/
+        SELECT /*+outline_leaf ordered use_nl(o c cu) opt_param('_no_or_expansion' 'true')  opt_param('optimizer_dynamic_sampling' 11)*/
                  c.INTERNAL_COLUMN_ID intcol#,
                  C.column_name COL_NAME,
                  CU.EQUALITY_PREDS EQ_PREDS,
@@ -196,7 +196,7 @@ BEGIN
 
     $IF &check_access_index=1 $THEN
     OPEN c3 for 
-        SELECT /*+opt_param('optimizer_dynamic_sampling' 11) */
+        SELECT /*+opt_param('optimizer_dynamic_sampling' 11) outline_leaf*/
                a.owner,
                a.index_name,
                (SELECT listagg(column_name || NULLIF(' ' || DESCEND, ' ASC'), ',') WITHIN GROUP(ORDER BY COLUMN_POSITION)

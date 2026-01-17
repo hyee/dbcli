@@ -71,7 +71,7 @@ FROM   (SELECT type,objectnumber data_object_id,dbuniquename,
 LEFT JOIN dba_objects a 
 ON   (b.data_object_id = a.data_object_id and regexp_replace(upper(dbuniquename),'[:\.].*')= upper(sys_context('userenv','db_unique_name')))
 WHERE nvl(lower(:V1), ' ') IN (' ', 'hits', 'misses', 'cachedsize', 'cachedwrite', 'columnarcache', 'cachedkeep', 'columnarkeep') 
-OR    upper(:V1) IN (owner, object_name，owner||'.'||object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
+OR    upper(:V1) IN (owner, object_name, owner||'.'||object_name,subobject_name, object_type,''||object_id,''||a.data_object_id)
 &grp4
 ORDER  BY decode(nvl(lower(:V1), 'reqs'),
                  'reqs',"Reqs",

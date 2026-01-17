@@ -286,7 +286,7 @@ BEGIN
    
     IF tsk IS NOT NULL THEN
         SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
-               MAX(attr3),MAX(attr1),nvl(MAX(fil),'1=1'),max(sq_id)，max(sq_nid),max(sq_txt)
+               MAX(attr3),MAX(attr1),nvl(MAX(fil),'1=1'),max(sq_id),max(sq_nid),max(sq_txt)
         INTO   sown,snam,fil,sq_id,sq_nid,sq_txt
         FROM (
             SELECT decode(type,'SQLSET',attr3) attr3,
@@ -313,7 +313,7 @@ BEGIN
             UNION ALL
             SELECT MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value)),
                    MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)),
-                   MAX(DECODE(parameter_name, 'BASIC_FILTER', parameter_value))，
+                   MAX(DECODE(parameter_name, 'BASIC_FILTER', parameter_value)),
                    null,null,null
             FROM   dba_advisor_parameters
             WHERE  TASK_ID = tid

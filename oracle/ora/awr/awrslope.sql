@@ -1,7 +1,8 @@
 /*[[
-    Compare SQL by difference snapshot ranges. Usage: type `help @@NAME` for more details.
-    * @@NAME [-awr] <yymmddhh24mi> <yymmddhh24mi> [<yymmddhh24mi>]: compare between snapshot ranges
-    * @@NAME -gv   [<yymmddhh24mi> [<yymmddhh24mi>]]: compare between awr snapshots and delta stats of gv$sqlstats
+    Compare SQL pefromance by difference snapshot ranges. Usage: type `help @@NAME` for more details.
+    * @@NAME [-awr] <yymmddhh24mi> <yymmddhh24mi> [<yymmddhh24mi>]                     : compare between snapshot ranges
+    * @@NAME -gv   [<yymmddhh24mi> [<yymmddhh24mi>]]                                   : compare between awr snapshots and delta stats of gv$sqlstats
+    * @@NAME -dbid <dbid1,yymmddhh24mi,yymmddhh24mi> <dbid2,yymmddhh24mi,yymmddhh24mi> : compare awr snapshots between two dbids
 
     Compare groups:
     ===============
@@ -20,7 +21,7 @@
     -same              : exclude same plans that exists in both `PRE` and `POST`
     
     --[[
-            &snap   :   awr={1} gv={2} 
+            &snap   :   awr={1} gv={2} dbid={3}
             &diff   :   default={=avg_diff} regress={>=1.2} improve={<=0.8} adj={}
             &filter :   default={1=1} f={}
             &sql    :    m={signature} sql={signature,sql_id}
@@ -29,23 +30,72 @@
             &v2     :   default={&endtime}
     --]]--
 ]]*/
-
+ORA _sqlstat
 col Weight,avg_diff for pct3 break
 col avg_ela,cpu_time,io_time for usmhd2
 col buff,reads,writes,dxwrites,execs for tmb2
 col io,offload_in,offload_out for kmg2
-col hv,sig_weight,plans,grps,all_ela,all_execs,seq noprint
+col hv,sig_weight,plans,grps,all_ela,all_execs,seq,dbid noprint
 col signature,# break
 set autohide col
 set verify off feed off
 var c refcursor
-BEGIN OPEN :c FOR
+DECLARE
+    st1 DATE;
+    ed1 DATE;
+    st2 DATE;
+    ed2 DATE;
+    dbid1 INT := '&dbid';
+    dbid2 INT;
+    v1    VARCHAR2(128) := '&v1';
+    v2    VARCHAR2(128) := '&v2';
+    v3    VARCHAR2(128) := '&v3';
+    title VARCHAR2(200);
+BEGIN
+    IF '&snap' = '1' THEN
+        st2 := to_date(v2,'yymmddhh24miss');
+        IF st2 IS NULL THEN
+            raise_application_error(-20001,'Parameters: <yymmddhh24mi> <yymmddhh24mi> [<yymmddhh24mi>]');
+        END IF;
+        st1   := nvl(to_date(v1,'yymmddhh24miss'),sysdate-7);
+        ed1   := st2 - numtodsinterval(1,'minute');
+        ed2   := nvl(to_date(v3,'yymmddhh24miss'),sysdate+1);
+        dbid2 := dbid1;
+        title := 'Comparing AWR snapshots(dbid='||dbid1||' [ '||st1||' | '||ed1||' ] vs [ '||st2||' | '||ed2||' ]):';
+    ELSIF '&snap' = '2' THEN
+        st1   := nvl(to_date(v1,'yymmddhh24miss'),sysdate-3);
+        ed1   := nvl(to_date(v2,'yymmddhh24miss'),sysdate+1);
+        title := 'Comparing AWR snapshots(dbid='||dbid1||' | '||st1||' | '||ed1||') with GV$SQLSTATS:'; 
+
+        IF dbms_db_version.version < 12 THEN
+            raise_application_error(-20001,'The feature is only supported from Oracle 12c.');
+        END IF;
+    ELSIF '&snap' = '3' THEN
+        dbid1 := trim(regexp_substr(v1,'[^,]+',1,1));
+        st1   := nvl(to_date(trim(regexp_substr(v1,'[^,]+',1,2)),'yymmddhh24miss'),sysdate-7);
+        ed1   := nvl(to_date(trim(regexp_substr(v1,'[^,]+',1,3)),'yymmddhh24miss'),sysdate+1);
+        dbid2 := trim(regexp_substr(v2,'[^,]+',1,1));
+        st2   := nvl(to_date(trim(regexp_substr(v2,'[^,]+',1,2)),'yymmddhh24miss'),sysdate-7);
+        ed2   := nvl(to_date(trim(regexp_substr(v2,'[^,]+',1,3)),'yymmddhh24miss'),sysdate+1);
+
+        IF dbid1 IS NULL OR dbid2 IS NULL THEN
+            raise_application_error(-20001,'Parameters: -dbid <dbid1,yymmddhh24mi,yymmddhh24mi> <dbid2,yymmddhh24mi,yymmddhh24mi>');
+        END IF;
+
+        IF dbid1 = dbid2 and (st1,ed1) overlaps (st2,ed2) THEN
+            raise_application_error(-20001,'The snapshot ranges must not overlap each other in case of dbids are the same.');
+        END IF;
+        title := 'Comparing AWR snapshots(dbid='||dbid1||' | '||st1||' | '||ed1||') with (dbid='||dbid2||' | '||st2||' | '||ed2||'):';
+    END IF;
+
+    OPEN :c FOR
     WITH r AS(
         SELECT  /*+opt_param('_fix_control' '26552730:0') 
                 opt_param('_no_or_expansion' 'true') 
                 opt_param('_optimizer_cbqt_or_expansion' 'off')*/
                 signature,
                 grp,
+                dbid,
                 MAX(sql_id) keep(dense_rank LAST ORDER BY ela * log(10, execs)) sql_id,
                 plan_hash,
                 count(distinct sql_id) sqls,
@@ -62,38 +112,38 @@ BEGIN OPEN :c FOR
                 nullif(ROUND(SUM(offload_in) / SUM(execs),2),0) offload_in,
                 nullif(ROUND(SUM(offload_out) / SUM(execs),2),0) offload_out
         FROM   (SELECT  /*+outline_leaf use_hash(s)*/
-                        DECODE(SIGN(end_interval_time+0-nvl(to_date('&v2','yymmddhh24miss'),sysdate+1)),-1,'PRE','POST') grp,
+                        dbid,
+                        CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END grp,
                         plan_hash_value plan_hash,
                         sql_id,
                         nvl(nullif(force_matching_signature,0),plan_hash_value) signature,
-                        SUM(elapsed_time_delta) ela,
-                        SUM(executions_delta) execs,
-                        SUM(cpu_time_delta) cpu_time,
-                        SUM(iowait_delta) io_time,
-                        SUM(buffer_gets_delta) buff,
-                        SUM(physical_read_requests_delta) reads,
-                        SUM(physical_write_requests_delta) writes,
-                        SUM(direct_writes_delta) dxwrites,
-                        SUM(io_interconnect_bytes_delta) io,
-                        SUM(io_offload_elig_bytes_delta) offload_in,
-                        SUM(io_offload_return_bytes_delta) offload_out
-                FROM   dba_hist_sqlstat s
-                JOIN   dba_hist_snapshot USING(dbid,snap_id,instance_number)
+                        SUM(elapsed_time) ela,
+                        SUM(executions) execs,
+                        SUM(cpu_time) cpu_time,
+                        SUM(iowait) io_time,
+                        SUM(buffer_gets) buff,
+                        SUM(readreq) reads,
+                        SUM(writereq) writes,
+                        SUM(direct_writes) dxwrites,
+                        SUM(cellio) io,
+                        SUM(oflin) offload_in,
+                        SUM(oflout) offload_out
+                FROM    &awr$sqlstat
                 WHERE  plan_hash_value > 0
-                AND    dbid='&dbid'
-                AND   (&snap=2 OR to_date('&v2','yymmddhh24miss')<nvl(to_date('&v3','yymmddhh24miss'),sysdate+1))
+                AND    (dbid=dbid1 and end_interval_time+0 between st1 and ed1 
+                     or dbid=dbid2 and end_interval_time+0 between st2 and ed2)
                 AND   (&filter)
                 AND   ('&instance' is null or instance_number=0+'&instance')
-                AND    end_interval_time >= nvl(to_date('&v1','yymmddhh24miss'),sysdate - 3)
-                AND    end_interval_time <= nvl(to_date(decode(&snap,1,'&v3','&v2'),'yymmddhh24miss'),sysdate+1)
-                GROUP  BY plan_hash_value, sql_id, force_matching_signature,
-                            DECODE(SIGN(end_interval_time+0-nvl(to_date('&v2','yymmddhh24miss'),sysdate+1)),-1,'PRE','POST')
+                GROUP  BY 
+                        dbid,plan_hash_value, sql_id, force_matching_signature,
+                        CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END
                 HAVING SUM(executions_delta) > 1)
-        GROUP  BY grp,plan_hash,&sql
+        GROUP  BY dbid,grp,plan_hash,&sql
     $IF DBMS_DB_VERSION.VERSION > 11 $THEN    
         UNION ALL
         SELECT  signature,
-                'POST',
+                'POST' grp,
+                '&dbid'+0 dbid,
                 MAX(sql_id) keep(dense_rank LAST ORDER BY ela * log(10, execs)) sql_id,
                 plan_hash,
                 count(distinct sql_id) sqls,
@@ -125,7 +175,7 @@ BEGIN OPEN :c FOR
                         SUM(io_cell_offload_returned_bytes) offload_out
                 FROM   gv$sqlstats
                 WHERE  &snap = 2
-                AND   (select dbid from v$database)='&dbid'
+                AND   (select /*+precompute_subquery*/ dbid from v$database)='&dbid'
                 AND   (&filter)
                 AND   ('&instance' is null or inst_id=0+'&instance')
                 AND    plan_hash_value > 0
@@ -161,7 +211,7 @@ BEGIN OPEN :c FOR
     ),
     txt AS(
         SELECT  sql_id,
-                coalesce(CASE WHEN (select dbid from v$database)='&dbid' THEN
+                coalesce(CASE WHEN (select dbid from v$database)=dbid THEN
                     extractvalue(dbms_xmlgen.getxmltype(replace(q'~
                         select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
                         from   gv$sql b
@@ -169,17 +219,19 @@ BEGIN OPEN :c FOR
                         and    rownum<2~',
                         '#sql#',sql_id)),
                     '//ROW/SQL_TEXT') END,
-                    extractvalue(dbms_xmlgen.getxmltype(replace(q'~
+                    extractvalue(dbms_xmlgen.getxmltype(replace(replace(q'~
                         select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
                         from   dba_hist_sqltext b
-                        where  dbid='&dbid'
+                        where  dbid=#dbid#
                         and    sql_id='#sql#'
                         and    rownum<2~',
-                        '#sql#',sql_id)),
+                        '#sql#',sql_id),'#dbid#',dbid)),
                     '//ROW/SQL_TEXT')) sql_text
         FROM   (
-            SELECT /*+no_merge*/ distinct sql_id 
-            FROM (SELECT max(sql_id) keep(dense_rank last order by grp) sql_id from r2 group by signature)
+            SELECT /*+no_merge*/ distinct dbid,sql_id 
+            FROM (SELECT max(sql_id) keep(dense_rank last order by grp) sql_id,
+                         max(dbid) keep(dense_rank last order by grp) dbid
+                  FROM r2 GROUP BY signature)
         )
     )
     SELECT /*+outline_leaf use_hash(r2 txt)*/
@@ -188,6 +240,9 @@ BEGIN OPEN :c FOR
         txt.sql_text
     FROM r2 LEFT JOIN txt ON(r2.sql_id=txt.sql_id)
     ORDER BY r2.seq;
+
+    DBMS_OUTPUT.PUT_LINE(title);
+    DBMS_OUTPUT.PUT_LINE(rpad('=',length(title),'='));
 END;
 /
 

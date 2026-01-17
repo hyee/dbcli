@@ -242,7 +242,7 @@ Events:
                     level 16: disables rowsets for sort row source
                     level 32: disables  table queue IN row source
                     level 512: disables rowsets for EVA functions
-                    level 20971520: disables “rowset to one row” in hash join probe side
+                    level 20971520: disables "rowset to one row" in hash join probe side
     65002: enable to free temp LOB spaces when no active temp lob in the session
     44951 TRACE NAME CONTEXT FOREVER, LEVEL 1024 : bug 6376915 causes high water (HW) enqueue contention when the database is busy handling large objects (LOB) and the database is configured to use automatic segments space management (ASSM)
     19119:  fix ORA-31011: XML Parsing Failed in xmlelement(invalid characters)

@@ -279,7 +279,7 @@ Examples:
                            SUM(avg_Wait) avg_wait
                     FROM   stat
                     GROUP  BY inst, tablespace_name, ROLLUP(file_name))  
-                WHERE UPPER(tablespace_or_file) LIKE upper(q'{%&V2%}')]]}，
+                WHERE UPPER(tablespace_or_file) LIKE upper(q'{%&V2%}')]]},
             
             dlm={[[/*grid={topic='DLM Stats',include_zero=true,height=0}*/
                 SELECT /*+no_expand*/ &inst1  inst, 

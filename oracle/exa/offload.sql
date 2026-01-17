@@ -56,7 +56,7 @@ Columnar Cache Debugging Tracing
     For tracing decompression code: 
         cellcli -e 'alter cell offloadgroupEvents = "trace[advcmp.advcmp_decomp.*] disk=highest"' 
     For tracing in kcfis layer 
-        alter session set events="trace[KCFIS] memory highest, disk highest“ 
+        alter session set events="trace[KCFIS] memory highest, disk highest" 
     For tracing in kcbl layer: 
         alter session set events '10357 trace name context forever, level 8' 
     For tracing in kds layer 

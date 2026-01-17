@@ -12,13 +12,14 @@
         &avg  : default={1}, avg={nullif(SUM(nvl(nullif(exec,0),parse)),0)}
         &phf1 : {
                      default={null} 
-                     phf={nvl(extractvalue(dbms_xmlgen.getxmltype(q'~
+                     phf={nvl(
+                        (select extractvalue(dbms_xmlgen.getxmltype(q'~
                            select nullif(to_char(regexp_substr(other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0') phf
                            from  dba_hist_sql_plan b
                            where b.dbid=~'||a.dbid||'
                            and   b.plan_hash_value='||a.plan_hash||'
                            and   b.other_xml is not null
-                           and   rownum<2'),'/ROWSET/ROW/PHF')+0,a.plan_hash)}
+                           and   rownum<2'),'/ROWSET/ROW/PHF')+0 from dual),a.plan_hash)}
                 }
         &phf2 : default={plan_hash} phf={max(plan_hash) keep(dense_rank last order by ela) top_plan}
         &phf3:  default={plan_hash} phf={plan_full}
@@ -59,7 +60,7 @@ select time,
        nullif(round(sum(rows#)/&avg,2),0) rows#,
        nullif(round(sum(fetches)/&avg,2),0) fetches,
        nullif(max(px_count),0) px
-FROM(
+from(
     select /*+outline_leaf*/
            to_char(max(tim),'&TIM') time,
            &BASE,plan_hash, &phf1 plan_full,
@@ -121,7 +122,9 @@ FROM(
                delta_flag,
                BITAND (NVL(flag, 0), 1) flag
          from &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
-        WHERE '&V1' in(sql_id,''||plan_hash_value,''||signature)) a
+        where '&V1' in(sql_id,''||plan_hash_value,''||signature)
+          and  end_interval_time between nvl(to_date('&starttime','YYMMDDHH24MISS'),sysdate-90) and nvl(to_date('&endtime','YYMMDDHH24MISS'),sysdate+1)
+    ) a      
     --WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
     group by dbid,snap_id,&BASE,plan_hash
     having sum(ela)>0)

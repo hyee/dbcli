@@ -51,7 +51,7 @@ FROM   TABLE(GV$(CURSOR(
                 'file#' || to_number(substr(key, 11, 4), 'XXXX') || ' block#' || to_number(utl_raw.reverse(substr(key, 17, 6)), 'XXXXXX')
            END object_name,
            num,
-           INST_LOCK_ID1 ID1，
+           INST_LOCK_ID1 ID1,
            INST_LOCK_ID1 ID2,
            SUBSTR(KEY, 1, 80) KEY
     FROM  (SELECT a.*, to_number(UTL_RAW.REVERSE(SUBSTR(KEY, 1, 8)), 'XXXXXXXX') num FROM v$rowcache_parent a) a
