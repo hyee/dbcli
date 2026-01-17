@@ -1,5 +1,5 @@
 /*  Export AWR repository or SQL Monitor reports into DATA PUMP.
-    For db version lower than 12c, the script requires SYSDBA privilege; for 12.1 onwards, requires DBA priviledge.
+    For db version lower than 12c, the script requires SYSDBA privilege; for 12.1 onwards, requires DBA privilege.
     
     Usage: @awrextr <directory_name> <begin_snap> <end_snap> [awr|sqlmon|both] [<dbid>]
     * directory_name: the directory name that can be found in all_directories, current schema must has the write access, and the path must not be symbolic link

@@ -2921,7 +2921,7 @@ exec :start_time := to_char(sysdate,'dd-mon-rr hh24:mi:ss');
  *
  * dba_hist_sqlstat sql statistics
  * psrv9: fixed error ORA-06502 while extracting other_xml. 
- *        Other_XML could be present on any line, not necessarity on id=1
+ *        Other_XML could be present on any line, not necessarily on id=1
  *
  * ------------------------- */
 PRO <a name="awr_stats_d"></a><details open><br/><summary id="summary2">Historical SQL Statistics - Delta (DBA_HIST_SQLSTAT)</summary>
@@ -12815,7 +12815,7 @@ REM   V3 .. enhanced features ; compare bind to column
 REM   V4 .. AWRSMA
 REM   V19C .19C features
 REM
-REM   more detail information : https://confluence.oraclecorp.com/confluence/display/~jinsoo.eo@oracle.com/SMA+log
+REM   more detailed information : https://confluence.oraclecorp.com/confluence/display/~jinsoo.eo@oracle.com/SMA+log
 REM
 
 set echo off  FEED OFF verify off heading on LINESIZE 600 pagesize 500 TI OFF TIMI OFF SERVEROUT ON SIZE UNL;
@@ -25943,9 +25943,9 @@ begin
      END IF;
      IF ( 1 in (:issue_blind_input ,:issue_blind_query ,:issue_inac_card_estim ,:issue_cbo ,:issue_error ,
                 :issue_improper_index ,:issue_MJ_CP ,:issue_blind_condition ,:issue_stats ,:issue_throw_away ) ) then
-        --  DBMS_OUTPUT.PUT_LINE('<a href="#PHV_ANALYSIS">PHV level Analysis</a> section has more <blue>detail information</blue> for the following category.');
+        --  DBMS_OUTPUT.PUT_LINE('<a href="#PHV_ANALYSIS">PHV level Analysis</a> section has more <blue>detailed information</blue> for the following category.');
             DBMS_OUTPUT.PUT_LINE('.');
-            DBMS_OUTPUT.PUT_LINE('The following category can have more detail information in <a href="#PHV_ANALYSIS"><blue>PHV level Analysis</blue></a>');
+            DBMS_OUTPUT.PUT_LINE('The following category can have more detailed information in <a href="#PHV_ANALYSIS"><blue>PHV level Analysis</blue></a>');
      end if;
      IF ( :ISSUE_HEAVY_OPERATION = 1) THEN
             DBMS_OUTPUT.PUT_LINE('.');

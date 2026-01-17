@@ -277,7 +277,7 @@ ash_raw as (
             sum(pga_)  over(partition by dbid,phv1,sql_exec,pid,stime) pga
     FROM   (SELECT a.*, --seq: if ASH and DASH have the same record, then use ASH as the standard
                    row_number() OVER(PARTITION BY dbid,stime,inst_id,sid ORDER BY AAS_,lv desc) seq,
-                   --sec_seq: multiple PX processes at the same second wille be treated as on second 
+                   --sec_seq: multiple PX processes at the same second will be treated as on second 
                    row_number() OVER(PARTITION BY dbid,phv1,sql_plan_line_id,operation,stime,qc_inst,qc_sid ORDER BY AAS_,lv desc,tm_delta_db_time desc) sec_seq,
                    nvl(case when sql_plan_line_id>65535 then 0 else sql_plan_line_id end,0) pid,
                    nvl(''||sql_exec_id_,'@'||qc_inst||','||qc_sid||','||qc_session_serial#)||','||to_char(sql_exec_start_,'yyyymmddhh24miss') sql_exec,

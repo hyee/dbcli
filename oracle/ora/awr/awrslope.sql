@@ -161,14 +161,22 @@ BEGIN OPEN :c FOR
     ),
     txt AS(
         SELECT  sql_id,
-                extractvalue(dbms_xmlgen.getxmltype(replace(q'~
-                    select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
-                    from   dba_hist_sqltext b
-                    where  dbid='&dbid'
-                    and    sql_id='#sql#'
-                    and    rownum<2~',
-                    '#sql#',sql_id)),
-                '//ROW/SQL_TEXT') sql_text
+                coalesce(CASE WHEN (select dbid from v$database)='&dbid' THEN
+                    extractvalue(dbms_xmlgen.getxmltype(replace(q'~
+                        select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
+                        from   gv$sql b
+                        where  sql_id='#sql#'
+                        and    rownum<2~',
+                        '#sql#',sql_id)),
+                    '//ROW/SQL_TEXT') END,
+                    extractvalue(dbms_xmlgen.getxmltype(replace(q'~
+                        select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
+                        from   dba_hist_sqltext b
+                        where  dbid='&dbid'
+                        and    sql_id='#sql#'
+                        and    rownum<2~',
+                        '#sql#',sql_id)),
+                    '//ROW/SQL_TEXT')) sql_text
         FROM   (
             SELECT /*+no_merge*/ distinct sql_id 
             FROM (SELECT max(sql_id) keep(dense_rank last order by grp) sql_id from r2 group by signature)

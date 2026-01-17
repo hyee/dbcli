@@ -1,5 +1,5 @@
 /*  Import AWR repository or SQL Monitor reports from DATA PUMP.
-    For db version lower than 12c, the script requires SYSDBA privilege; for 12.1 onwards, requires DBA priviledge.
+    For db version lower than 12c, the script requires SYSDBA privilege; for 12.1 onwards, requires DBA privilege.
     
     Usage: @awrload <directory_name> <dump_file> [<new_dbid>|<sqlmon_table>]
     * directory_name: the directory name that can be found in all_directories, current schema must has the read/write access, and the path must not be symbolic link

@@ -9,14 +9,14 @@ Examples:
     *  List the histogram: @@NAME SYS.OBJ$ NAME
     *  List the histogram from the stats table: @@NAME SYS.OBJ$ NAME -tab"system.stattab"
     *  List the histogram and test the est cardinality of scalar value : @@NAME SYS.OBJ$ NAME "obj$"
-    *  List the histogram and test the est cardinality of customized filter: @@NAME SYS.OBJ$ NAME "> 'obj$'" (space after the operator is requried)
+    *  List histogram and test est cardinality of customized filter: @@NAME SYS.OBJ$ NAME "> 'obj$'" (space after operator is required)
     *  List the histogram and test the est cardinality of bind variable: @@NAME SYS.OBJ$ NAME :1
     *  List the histogram and test the est cardinality of each EP value: @@NAME SYS.OBJ$ NAME -test
     *  List the histogram and test the act cardinality of each EP value: @@NAME SYS.OBJ$ NAME -real
     *  Change the low/high value of "NONE" histogram:  @@NAME sys.obj$ stime "1990-08-26 11:25:01" "2018-08-12 02:50:00"
-    *  Set number of buckets of "FREQUENCY" histogam: @@NAME sys.obj$ owner# 89 5
-    *  Remove an EP from histogam: @@NAME sys.obj$ owner# 89 0
-    *  Set number of buckets and repeats of "HYBRID" histogam: @@NAME obj object_name sun/misc/Lock 295 10
+    *  Set number of buckets of "FREQUENCY" histogram: @@NAME sys.obj$ owner# 89 5
+    *  Remove an EP from histogram: @@NAME sys.obj$ owner# 89 0
+    *  Set number of buckets and repeats of "HYBRID" histogram: @@NAME obj$ NAME sun/misc/Lock 295 10
 
 Notes: if input data type is not string/number/raw, the value should follow below format:
     *  DATE                    : YYYY-MM-DD HH24:MI:SS
@@ -165,9 +165,13 @@ DECLARE
                 m_loop := 15;
             END IF;
             FOR i IN 1 .. m_loop LOOP
-                m_n1 := trunc(m_n / (power(256, 15 - i)));
+                m_n1 := trunc(m_n / power(256, 15 - i));
                 IF m_n1 != 0 THEN
-                    m_vc := m_vc || chr(m_n1);
+                    BEGIN
+                        m_vc := m_vc || chr(m_n1);
+                    EXCEPTION WHEN OTHERS THEN
+                        NULL;
+                    END;
                 END IF;
                 m_n := m_n - (m_n1 * power(256, 15 - i));
             END LOOP;
@@ -419,7 +423,7 @@ DECLARE
     EXCEPTION
         WHEN OTHERS THEN
             IF SQLCODE IN (-942, -1031) THEN
-                raise_application_error(-20001, 'You dont have the access to "' || oname || '"."' || tab || '"!');
+                raise_application_error(-20001, 'You don''t have access to "' || oname || '"."' || tab || '"!');
             ELSE
                 target := SQLERRM || ': ' || test_stmt || test_val;
                 raise_application_error(-20001, target);
@@ -513,7 +517,8 @@ DECLARE
 
         CASE histogram
             WHEN 'HYBRID' THEN
-                pop_based := numbcks / srec.epc;
+                -- More accurate popular value threshold for HYBRID histogram
+                pop_based := GREATEST(numbcks / srec.epc, 1);
             WHEN 'HEIGHT BALANCED' THEN
                 pop_based := 1;
             ELSE
@@ -628,7 +633,7 @@ DECLARE
                 END IF;
             EXCEPTION WHEN OTHERS THEN
                 IF SQLCODE IN (-942, -1031) THEN
-                    raise_application_error(-20001, 'You dont have the access to "' || statown || '"."' || stattab || '"!');
+                    raise_application_error(-20001, 'You don''t have access to "' || statown || '"."' || stattab || '"!');
                 ELSE
                     raise;
                 END IF;
@@ -1016,21 +1021,30 @@ BEGIN
                 END IF;
                 adjcnt := rpcnt*adjnnull/notnulls;
             WHEN 'HYBRID' THEN
-                NULL;
                 $IF dbms_db_version.version>11 $THEN
                     max_v  := nullif('(' || nullif(srec.rpcnts(i), 0) || ')', '()');
                     
-                    bk_adj := nullif(srec.rpcnts(i), 0) * adjnnull / nullif(numbcks,0); --sample_size has excluded null values
-                    IF srec.rpcnts(i) < pop_based THEN
-                        bk_adj := greatest(bk_adj, adjnnull * densityn);
+                    -- Initialize rpcnt with density-based default value
+                    rpcnt := notnulls * densityn;
+                    
+                    -- Calculate sample-based cardinality
+                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(numbcks, 0); -- sample_size has excluded null values
+                    IF bk_adj IS NOT NULL THEN
+                        IF srec.rpcnts(i) >= pop_based THEN
+                            -- Popular value, use bucket size calculation
+                            rpcnt := bk_adj;
+                        ELSE
+                            -- Non-popular value, take maximum
+                            rpcnt := GREATEST(rpcnt, bk_adj);
+                        END IF;
                     END IF;
-                    adjcnt := nvl(bk_adj, rpcnt);
-
-                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(numbcks,0); --sample_size has excluded null values
-                    IF srec.rpcnts(i) < pop_based THEN
-                        bk_adj := greatest(bk_adj, notnulls * densityn);
-                    END IF;
-                    rpcnt := nvl(bk_adj, rpcnt);
+                    
+                    -- Calculate adjusted cardinality
+                    adjcnt := rpcnt * adjnnull / notnulls;
+                $ELSE
+                    -- Compatible with older versions, use density-based calculation
+                    rpcnt := notnulls * densityn;
+                    adjcnt := rpcnt * adjnnull / notnulls;
                 $END
             WHEN 'NONE' THEN
                 rpcnt := densityn * notnulls;

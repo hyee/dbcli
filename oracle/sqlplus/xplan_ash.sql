@@ -1191,7 +1191,7 @@ define rnd_thr = "10"
 define no_ord_on_px = "YES"
 
 /* In pre-11g there is no SQL_EXEC_START information available. By default the script now searches within the given timeframe (between SQL_EXEC_START and SQL_EXEC_END)
-   for the mininum sample time of the identified SQL_ID. If this switch is set to anything != YES then the given SQL_EXEC_START is used as is.
+   for the minimum sample time of the identified SQL_ID. If this switch is set to anything != YES then the given SQL_EXEC_START is used as is.
    This default behaviour allows to specify some rough start / end dates and the script takes care of finding the actual start in ASH data.
    Note that this means that multiple executions could be mixed up if you don't carefully define the SQL_EXEC_START date */
 define find_min_sample_10g = "YES"
@@ -14121,7 +14121,7 @@ undefine aas_size
 undefine wgs_size
 undefine tgs_size
 
-/* If no plan could be found, provide mininum information based on ASH about plan line activity */
+/* If no plan could be found, provide minimum information based on ASH about plan line activity */
 
 /* Get the previously saved buffer contents */
 
