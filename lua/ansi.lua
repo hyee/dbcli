@@ -393,23 +393,23 @@ function string.ulen(s,maxlen)
     if s=="" then return 0,0,s end
     if not s then return nil end
     if maxlen==0 then return 0,0,'' end
-    local s1,len1,len2=tostring(s)
-    len1=#s1
+    local s1=tostring(s)
+    local byte_len,print_len=#s1
     local is_ansi,is_unicode=s1:find('\27[',1,true),s1:sub(1,1024):find('[\127-\255]')
-    if (maxlen and maxlen>0 and len1>maxlen and is_ansi) or is_unicode then
-        len1,len2,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
-        len1,len2,s1=tonumber(len1) or 0,tonumber(len2) or 0,maxlen and s1 or s
+    if (maxlen and maxlen>0 and byte_len>maxlen and is_ansi) or is_unicode then
+        byte_len,print_len,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
+        byte_len,print_len,s1=tonumber(byte_len) or 0,tonumber(print_len) or 0,maxlen and s1 or s
         if is_unicode then
-            len1=#(is_ansi and s1:strip_ansi() or s1)
+            byte_len=#(is_ansi and s1:strip_ansi() or s1)
         end
     else
-        if (maxlen or 0)>0 and len1>maxlen then 
+        if (maxlen or 0)>0 and byte_len>maxlen then 
             s1=s1:sub(1,maxlen)
-            len1=#s1
+            byte_len=#s1
         end
-        len2=is_ansi and #s1:strip_ansi() or len1
+        print_len=is_ansi and #s1:strip_ansi() or byte_len
     end
-    return len1,len2,s1
+    return byte_len,print_len,s1
 end
 
 function ansi.strip_ansi(str,func)

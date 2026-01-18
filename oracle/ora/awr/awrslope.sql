@@ -139,7 +139,7 @@ BEGIN
                         CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END
                 HAVING SUM(executions_delta) > 1)
         GROUP  BY dbid,grp,plan_hash,&sql
-    $IF DBMS_DB_VERSION.VERSION > 11 $THEN    
+    $IF DBMS_DB_VERSION.VERSION > 11 AND &snap=2 $THEN    
         UNION ALL
         SELECT  signature,
                 'POST' grp,

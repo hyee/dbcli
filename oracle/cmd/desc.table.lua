@@ -164,8 +164,7 @@ return obj.object_type=='FIXED TABLE' and [[
                     THEN a.DATA_TYPE||'(' || DECODE(a.CHAR_USED, 'C', a.CHAR_LENGTH,a.DATA_LENGTH) || DECODE(a.CHAR_USED, 'C', ' CHAR') || ')' --
                     WHEN a.DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2')
                     THEN a.DATA_TYPE||'(' || A.CHAR_LENGTH || ')' --
-                    WHEN a.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
-                         a.DATA_TYPE||'['||a.DATA_LENGTH||' INLINE]'
+                    WHEN a.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN a.DATA_TYPE
                     WHEN a.DATA_TYPE = 'NUMBER' --
                     THEN (CASE WHEN nvl(a.DATA_SCALE, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
                               WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
@@ -181,8 +180,8 @@ return obj.object_type=='FIXED TABLE' and [[
                  $END
                  $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
                  ||CASE WHEN a.COLLATION != nvl(B.DEFAULT_COLLATION,a.COLLATION) THEN ' COLLATE '||a.COLLATION END
-                 $END         
-               as data_type,
+                 $END
+                 ||NVL2(l.cname,'['||trim(decode(l.in_row,'YES',l.max_inline||' INLINE','NOINLINE')||decode(l.compression,'NO',' NOCOMPRESS',' COMPRESS '||l.compression)||DECODE(l.cache,'YES',' CACHE',' NOCACHE')||']'),'')               AS data_type,
                DECODE(a.NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                (CASE
                    WHEN a.default_length > 0 THEN
@@ -281,6 +280,8 @@ return obj.object_type=='FIXED TABLE' and [[
         ON        (a.column_name=c.cname)
         LEFT JOIN (select /*+no_merge*/ column_name cname,SALT,INTEGRITY_ALG from all_encrypted_columns where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) d
         ON        (a.column_name=d.cname)
+        LEFT JOIN (select /*+no_merge*/ column_name cname,securefile,in_row,max_inline,cache,compression from all_lobs where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) l
+        ON        (a.column_name=l.cname)
         LEFT JOIN (
         $IF $$VERSION > 1101 AND ($$SELECT_CATALOG_ROLE OR $$SYSDBA) $THEN
             select /*+no_merge*/ column_name cname,REPLACE(FUNCTION_TYPE,' REDACTION') REDACTION

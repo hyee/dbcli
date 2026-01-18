@@ -153,8 +153,7 @@ return [[
                    x.NAME COLUMN_NAME,
                    CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','NCHAR','NVARCHAR','NVARCHAR2','RAW') --
                        THEN DATA_TYPE||'(' || DATA_LENGTH || ')' --
-                     WHEN DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
-                         DATA_TYPE||'['||DATA_LENGTH||' INLINE]'
+                     WHEN DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN DATA_TYPE
                      WHEN DATA_TYPE = 'NUMBER' --
                      THEN (CASE WHEN nvl(DATA_SCALE, DATA_PRECISION) IS NULL THEN DATA_TYPE
                               WHEN DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'

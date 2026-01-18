@@ -4,26 +4,25 @@ return {[[
                 COLUMN_ID NO#,
                 a.COLUMN_NAME NAME,
                 DATA_TYPE_OWNER || NVL2(DATA_TYPE_OWNER, '.', '') ||
-                CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2',RAW') --
-                    THEN DATA_TYPE||'(' || DECODE(c.CHAR_USED, 'C', c.CHAR_LENGTH,c.DATA_LENGTH) || DECODE(c.CHAR_USED, 'C', ' CHAR') || ')' --
-                    WHEN DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2')
-                    THEN DATA_TYPE||'(' || c.CHAR_LENGTH || ')' --
-                    WHEN C.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN
-                         DATA_TYPE||'['||C.DATA_LENGTH||' INLINE]'
-                    WHEN c.DATA_TYPE = 'NUMBER' --
-                    THEN (CASE WHEN nvl(c.DATA_scale, c.DATA_PRECISION) IS NULL THEN c.DATA_TYPE
+                CASE WHEN DATA_TYPE IN('CHAR','VARCHAR','VARCHAR2','RAW') --
+                     THEN DATA_TYPE||'(' || DECODE(c.CHAR_USED, 'C', c.CHAR_LENGTH,c.DATA_LENGTH) || DECODE(c.CHAR_USED, 'C', ' CHAR') || ')' --
+                     WHEN DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2') THEN DATA_TYPE||'(' || c.CHAR_LENGTH || ')' --
+                     WHEN C.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN DATA_TYPE
+                     WHEN c.DATA_TYPE = 'NUMBER' --
+                     THEN (CASE WHEN nvl(c.DATA_scale, c.DATA_PRECISION) IS NULL THEN c.DATA_TYPE
                               WHEN c.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||c.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
                               WHEN c.DATA_PRECISION IS NULL AND c.DATA_SCALE=0 THEN 'INTEGER'
                               ELSE c.DATA_TYPE||'(' || c.DATA_PRECISION ||')' END)
-                    $IF DBMS_DB_VERSION.VERSION > 22 $THEN
-                    WHEN c.DATA_TYPE = 'VECTOR' THEN c.VECTOR_INFO
-                    $END
-                    ELSE c.DATA_TYPE 
+                     $IF DBMS_DB_VERSION.VERSION > 22 $THEN
+                     WHEN c.DATA_TYPE = 'VECTOR' THEN c.VECTOR_INFO
+                     $END
+                     ELSE c.DATA_TYPE 
                 END
                  $IF DBMS_DB_VERSION.VERSION > 22 $THEN
                  ||rtrim(' '||trim('.' from decode(c.domain_owner,c.owner,'',c.domain_owner)||'.'||c.domain_name))
                  $END
-                as data_type,
+                 ||NVL2(l.cname,'['||trim(decode(l.in_row,'YES',l.max_inline||' INLINE','NOINLINE')||decode(l.compression,'NO',' NOCOMPRESS',' COMPRESS '||l.compression)||DECODE(l.cache,'YES',' CACHE',' NOCACHE')||']'),'')
+                AS data_type,
                 DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                 (CASE
                     WHEN default_length > 0 THEN
@@ -112,8 +111,9 @@ return {[[
                         ,  a.high_value),1,32) end high_value
          FROM   (select /*+no_merge*/ c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c where owner=:owner and table_name=:object_name) c,  
                 (select /*+no_merge*/ * from all_part_col_Statistics where owner=:owner and table_name=:object_name and partition_name=:object_subname) a,
-                (select /*+no_merge*/ * from all_tab_partitions  where table_owner=:owner and table_name=:object_name and partition_name=:object_subname) b
-         WHERE  a.owner=c.owner and a.table_name=c.table_name and a.column_name=c.column_name
+                (select /*+no_merge*/ * from all_tab_partitions  where table_owner=:owner and table_name=:object_name and partition_name=:object_subname) b,
+                (select /*+no_merge*/ column_name cname,securefile,in_row,max_inline,cache,compression from all_lob_partitions where table_owner=:owner and table_name=:object_name and partition_name=:object_subname) l
+         WHERE  a.owner=c.owner and a.table_name=c.table_name and a.column_name=c.column_name and a.column_name=l.cname(+)
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
          ORDER BY NO#]],
     [[

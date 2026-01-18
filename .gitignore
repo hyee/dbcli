@@ -2,6 +2,7 @@
 *.db
 *.swp
 .DS_Store
+.trae/
 data/init.cfg
 data/init.conf
 data/plugin.cfg

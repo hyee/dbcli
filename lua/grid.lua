@@ -59,14 +59,14 @@ end
 
 local linesize
 function grid.cut(row, format_func, format_str, is_head)
-    local l,siz
+    local byte_len,print_len
     if type(row) == "table" then
         local colbase = row.col_auto_size or grid.col_auto_size
         local cs = grid.colsize
         if cs then
             if colbase ~= 'auto' and colbase ~= 'trim' then
                 for i, _ in ipairs(cs) do
-                    l,siz,row[i] = tostring(row[i]):ulen(cs[i][1])
+                    byte_len,print_len,row[i] = tostring(row[i]):ulen(cs[i][1])
                 end
             end
             if is_head then
@@ -80,9 +80,9 @@ function grid.cut(row, format_func, format_str, is_head)
         end
         row = format_func(format_str, table.unpack(row))
     end
-    siz = type(format_func) == "number" and format_func or linesize
-    if #row > siz then
-        l,siz,row=row:ulen(siz)
+    print_len = type(format_func) == "number" and format_func or linesize
+    if #row > print_len then
+        byte_len,print_len,row=row:ulen(print_len)
     end
     return row .. env.ansi.get_color('NOR')
 end
@@ -249,7 +249,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
     if pivot > #rows then pivot = #rows end
     if pivot > 2 then sep = '' end
     local max_len = 0
-    local char_len, str_len, new_val
+    local byte_len, print_len, new_val
     local top_rows = {{}}
     local _, value
     local max_col_count = 12
@@ -268,20 +268,20 @@ function grid.show_pivot(rows, col_del, pivotsort)
     local function get_value(title, row_idx, col_idx)
         if not colinfo[col_idx] then colinfo[col_idx] = {column_name = title} end
         _, value = grid.format_column(true, type(title) == "table" and title or colinfo[col_idx], tonumber(rows[row_idx][col_idx]) or rows[row_idx][col_idx], row_idx - 1)
-        char_len, str_len, new_val = tostring(value or null_val):trim():ulen(max_col_size)
-        if wrap_width > 0 and str_len > wrap_width and not new_val:sub(1, 1024):find('\n', 1, true) then
-            value, char_len, str_len = grid.line_wrap(new_val, wrap_width)
+        byte_len, print_len, new_val = tostring(value or null_val):trim():ulen(max_col_size)
+        if wrap_width > 0 and print_len > wrap_width and not new_val:sub(1, 1024):find('\n', 1, true) then
+            value, byte_len, print_len = grid.line_wrap(new_val, wrap_width)
             new_val = table.concat(value, '\n')
         end
-        max_col_count = max_col_count < str_len and str_len or max_col_count
+        max_col_count = max_col_count < print_len and print_len or max_col_count
         return new_val
     end
 
     -- Build column keys and calculate max length
     for k, v in ipairs(title) do
         keys[v] = k
-        char_len, str_len, new_val = v:ulen(max_col_size)
-        max_len = max_len < str_len and str_len or max_len
+        byte_len, print_len, new_val = v:ulen(max_col_size)
+        max_len = max_len < print_len and print_len or max_len
         if vert_count then
             for i = 1, math.min(30, vert_count - 1) do
                 if not top_rows[i] then top_rows[i] = {} end
@@ -303,8 +303,8 @@ function grid.show_pivot(rows, col_del, pivotsort)
         local size
         local titles = {}
         for k, t in ipairs(title) do
-            char_len, str_len, new_val = grid.format_title(t):rtrim():ulen(max_col_size)
-            titles[k] = ("%s %-" .. (max_len + char_len - str_len) .. "s%s %s"):format(hor, new_val, nor, '=')
+            byte_len, print_len, new_val = grid.format_title(t):rtrim():ulen(max_col_size)
+            titles[k] = ("%s %-" .. (max_len + byte_len - print_len) .. "s%s %s"):format(hor, new_val, nor, '=')
         end
         local seq_size = #tostring(vert_count) + 3
         local rows_per_group = math.min(vert_count - 1, math.floor(1.0 * (width + seq_size) / (max_col_count + seq_size)))
@@ -347,8 +347,8 @@ function grid.show_pivot(rows, col_del, pivotsort)
     local head_col = pivot_sort == 'head' and tostring(title[1]):lower() or (pivot_sort ~= 'on' and pivot_sort ~= 'off') and pivot_sort or nil
     local _, value
     for k, v in ipairs(title) do
-        char_len, str_len, new_val = v:ulen(max_col_size)
-        local row = {("%s%-" .. (max_len + char_len - str_len) .. "s %s%s"):format(hor, grid.format_title(new_val) .. (v:lower() == head_col and ' =>' or ''), nor, sep)}
+        byte_len, print_len, new_val = v:ulen(max_col_size)
+        local row = {("%s%-" .. (max_len + byte_len - print_len) .. "s %s%s"):format(hor, grid.format_title(new_val) .. (v:lower() == head_col and ' =>' or ''), nor, sep)}
 
         for i = 2, pivot, 1 do
             row[#row + 1] = get_value(v, i, keys[v])
@@ -520,7 +520,7 @@ function grid:add(row)
     row_data[0] = header_idx
 
     local col_count = #result > 0 and #result[1] or #row_data
-    local row_size, char_len, str_len = 0
+    local row_size, byte_len, print_len = 0
     -- Run statement pattern for splitting lines
     local split_pattern = '[' .. (header_idx == 0 and '' or ' ') .. '\a\r\f\b\v]*\n[\a\r\f\b\v]*'
     -- Helper function to strip length based on autohide settings
@@ -562,9 +562,9 @@ function grid:add(row)
             col_width, colsize[col_idx][3] = strip_len(colsize[col_idx][3])
         -- Handle numeric values in body
         elseif is_number and header_idx > 0 then
-            char_len, col_width = 0, strip_len(tostring(val))
+            byte_len, col_width = 0, strip_len(tostring(val))
             if col_width > 0 then
-                char_len, col_width = tostring(val):ulen()
+                byte_len, col_width = tostring(val):ulen()
             else
                 val = ''
             end
@@ -582,7 +582,7 @@ function grid:add(row)
             val = val:convert_ansi()
             -- Handle header row
             if header_idx == 0 then
-                val, char_len = val:gsub('[\n\r]+', ''):gsub("([^|]+)%c*|%c*([^|]+)", function(a, b)
+                val, byte_len = val:gsub('[\n\r]+', ''):gsub("([^|]+)%c*|%c*([^|]+)", function(a, b)
                         local len1, len2, len3, len4
                         len1, len2, a = a:ulen(math.min(99, max_col_size))
                         len3, len4, b = b:ulen(math.min(99, max_col_size))
@@ -610,11 +610,11 @@ function grid:add(row)
                 for part in val:gsplit(split_pattern) do
                     part = part:gsub('%c', printables)
                     -- Deal with unicode chars
-                    char_len, str_len, part = part:ulen(max_col_size)
+                    byte_len, print_len, part = part:ulen(max_col_size)
                     line_parts[#line_parts + 1] = part
-                    unicode_size = unicode_size < char_len and char_len or unicode_size
-                    if str_len == 0 and part ~= '' then str_len = 1 end
-                    col_width = col_width < str_len and str_len or col_width
+                    unicode_size = unicode_size < byte_len and byte_len or unicode_size
+                    if print_len == 0 and part ~= '' then print_len = 1 end
+                    col_width = col_width < print_len and print_len or col_width
                 end
 
                 -- Handle separator pattern in body
@@ -1179,8 +1179,8 @@ end
 function grid.merge(tabs, is_print, prefix, suffix)
     -- Helper function to get string display width
     local function strip(str)
-        local char_len, str_len = str:ulen()
-        return str_len
+        local byte_len, print_len = str:ulen()
+        return print_len
     end
     local footer_pat = env.ansi.mask('UDL', '(.-)', 'NOR'):gsub('%[', '%%[')
     -- Redraw table with specified dimensions
@@ -1263,7 +1263,9 @@ function grid.merge(tabs, is_print, prefix, suffix)
             newtab[#newtab + 1] = line
             maxwidth = math.max(maxwidth, strip(line))
         end
+
         local result = {}
+        -- Process each tab in the list
         for i = 1, #tabs do
             local tab, sep, nexttab = tabs[i]
             if type(tab) == "table" and #tab > 0 then
@@ -1365,25 +1367,31 @@ function grid.merge(tabs, is_print, prefix, suffix)
                         end
                     end
 
+                    -- Check if table needs recursive formatting
                     if found then
                         result[#result + 1] = format_tables(tab, false)
                     else
+                        -- Format table with grid.tostring
                         local topic, footer, width, height, max_rows = tab.topic, tab.footprint, tab.width, tab.height, tab.max_rows
                         local bypass1, bypass2, auto_size1, auto_size2 = grid.autohide, tab.autohide or tab.bypassemptyrs, grid.col_auto_size, tab.autosize
+                        -- Apply temporary autohide and autosize settings
                         if auto_size2 then grid.col_auto_size = auto_size2 end
                         bypass2 = bypass2 == true and 'on' or bypass2 == false and 'off' or bypass2 or bypass1
                         grid.autohide = bypass2
                         grid._merge_mode = true
                         local _, output = grid.tostring(tab, true, tab.colsep, "", nil, tab.pivot, tab.pivotsort)
                         grid._merge_mode = nil
+                        -- Restore original settings
                         if auto_size2 then grid.col_auto_size = auto_size1 end
                         grid.autohide = bypass1
                         tab = {}
+                        -- Process output rows and apply grep filtering
                         for k, row in ipairs(output) do
                             local should_include, match_cnt = 1, 0
                             if type(row) == "table" then
                                 local is_body_row = not row[0] or row[0] > 0
                                 row = row.format_func(row.fmt, table.unpack(row))
+                                -- Apply grep highlighting to body rows
                                 if is_body_row and env.printer.grep_text then
                                     row, match_cnt = row:gsub(env.printer.grep_text, hl .. "%0" .. nor)
                                     if (match_cnt == 0 and not env.printer.grep_dir) or (match_cnt > 0 and env.printer.grep_dir) then
@@ -1394,6 +1402,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                             if should_include == 1 then tab[#tab + 1] = row end
                         end
 
+                        -- Restore table properties
                         tab.topic, tab.footprint, tab.width, tab.height, tab.max_rows = topic, footer, width, height, max_rows
                         if #tab > 0 then
                             result[#result + 1] = tab
