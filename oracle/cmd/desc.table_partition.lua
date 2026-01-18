@@ -8,11 +8,12 @@ return {[[
                      THEN DATA_TYPE||'(' || DECODE(c.CHAR_USED, 'C', c.CHAR_LENGTH,c.DATA_LENGTH) || DECODE(c.CHAR_USED, 'C', ' CHAR') || ')' --
                      WHEN DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2') THEN DATA_TYPE||'(' || c.CHAR_LENGTH || ')' --
                      WHEN C.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN DATA_TYPE
-                     WHEN c.DATA_TYPE = 'NUMBER' --
-                     THEN (CASE WHEN nvl(c.DATA_scale, c.DATA_PRECISION) IS NULL THEN c.DATA_TYPE
-                              WHEN c.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||c.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
-                              WHEN c.DATA_PRECISION IS NULL AND c.DATA_SCALE=0 THEN 'INTEGER'
-                              ELSE c.DATA_TYPE||'(' || c.DATA_PRECISION ||')' END)
+                     WHEN c.DATA_TYPE = 'NUMBER' THEN (
+                        CASE WHEN nvl(c.DATA_scale, c.DATA_PRECISION) IS NULL THEN c.DATA_TYPE
+                             WHEN c.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||c.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                             WHEN c.DATA_PRECISION IS NULL AND c.DATA_SCALE=0 THEN 'INTEGER'
+                             ELSE c.DATA_TYPE||'(' || c.DATA_PRECISION ||')' 
+                        END
                      $IF DBMS_DB_VERSION.VERSION > 22 $THEN
                      WHEN c.DATA_TYPE = 'VECTOR' THEN c.VECTOR_INFO
                      $END

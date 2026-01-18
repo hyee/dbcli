@@ -165,11 +165,12 @@ return obj.object_type=='FIXED TABLE' and [[
                     WHEN a.DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2')
                     THEN a.DATA_TYPE||'(' || A.CHAR_LENGTH || ')' --
                     WHEN a.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN a.DATA_TYPE
-                    WHEN a.DATA_TYPE = 'NUMBER' --
-                    THEN (CASE WHEN nvl(a.DATA_SCALE, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
-                              WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
-                              WHEN a.DATA_PRECISION IS NULL AND a.DATA_SCALE=0 THEN 'INTEGER'
-                              ELSE a.DATA_TYPE||'(' || a.DATA_PRECISION ||')' END)
+                    WHEN a.DATA_TYPE = 'NUMBER'THEN 
+                        CASE WHEN nvl(a.DATA_SCALE, a.DATA_PRECISION) IS NULL THEN a.DATA_TYPE
+                             WHEN a.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||a.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
+                             WHEN a.DATA_PRECISION IS NULL AND a.DATA_SCALE=0 THEN 'INTEGER'
+                             ELSE a.DATA_TYPE||'(' || a.DATA_PRECISION ||')' 
+                        END
                     $IF DBMS_DB_VERSION.VERSION > 22 $THEN
                     WHEN a.DATA_TYPE = 'VECTOR' THEN A.VECTOR_INFO
                     $END

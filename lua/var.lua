@@ -287,7 +287,7 @@ function var.print(name,desc)
             env.checkerr(obj,'Target variable[%s] does not exist!',name)
             desc = desc or var.desc[name]
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-                local char_len,byte_len=desc:ulen()
+                local byte_len,char_len=(desc or ''):ulen()
                 var.inputs[name]=db.resultset:print(obj,db.conn, 
                     desc and (desc..':\n'..string.rep('=',byte_len+1)),
                     verticals)

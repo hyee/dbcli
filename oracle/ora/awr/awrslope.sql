@@ -33,7 +33,7 @@
 ORA _sqlstat
 col Weight,avg_diff for pct3 break
 col avg_ela,cpu_time,io_time for usmhd2
-col buff,reads,writes,dxwrites,execs for tmb2
+col buff,reads,writes,dxwrites,execs,rows# for tmb1
 col io,offload_in,offload_out for kmg2
 col hv,sig_weight,plans,grps,all_ela,all_execs,seq,dbid noprint
 col signature,# break
@@ -96,7 +96,7 @@ BEGIN
                 signature,
                 grp,
                 dbid,
-                MAX(sql_id) keep(dense_rank LAST ORDER BY ela * log(10, execs)) sql_id,
+                MAX(sql_id) keep(dense_rank LAST ORDER BY ela * (1+log(20, execs))) sql_id,
                 plan_hash,
                 count(distinct sql_id) sqls,
                 SUM(execs) execs,
@@ -109,8 +109,9 @@ BEGIN
                 nullif(ROUND(SUM(writes) / SUM(execs),2),0) writes,
                 nullif(ROUND(SUM(dxwrites) / SUM(execs),2),0) dxwrites,
                 nullif(ROUND(SUM(io) / SUM(execs),2),0) io,
-                nullif(ROUND(SUM(offload_in) / SUM(execs),2),0) offload_in,
-                nullif(ROUND(SUM(offload_out) / SUM(execs),2),0) offload_out
+                nullif(ROUND(SUM(ofl_in) / SUM(execs),2),0) ofl_in,
+                nullif(ROUND(SUM(ofl_out) / SUM(execs),2),0) ofl_out,
+                nullif(ROUND(SUM(rows_processed) / SUM(execs),2),0) "ROWS#"
         FROM   (SELECT  /*+outline_leaf use_hash(s)*/
                         dbid,
                         CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END grp,
@@ -126,8 +127,9 @@ BEGIN
                         SUM(writereq) writes,
                         SUM(direct_writes) dxwrites,
                         SUM(cellio) io,
-                        SUM(oflin) offload_in,
-                        SUM(oflout) offload_out
+                        SUM(oflin) ofl_in,
+                        SUM(oflout) ofl_out,
+                        SUM(rows_processed) rows_processed
                 FROM    &awr$sqlstat
                 WHERE  plan_hash_value > 0
                 AND    (dbid=dbid1 and end_interval_time+0 between st1 and ed1 
@@ -137,14 +139,14 @@ BEGIN
                 GROUP  BY 
                         dbid,plan_hash_value, sql_id, force_matching_signature,
                         CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END
-                HAVING SUM(executions_delta) > 1)
+                HAVING SUM(executions_delta) > 0)
         GROUP  BY dbid,grp,plan_hash,&sql
     $IF DBMS_DB_VERSION.VERSION > 11 AND &snap=2 $THEN    
         UNION ALL
         SELECT  signature,
                 'POST' grp,
                 '&dbid'+0 dbid,
-                MAX(sql_id) keep(dense_rank LAST ORDER BY ela * log(10, execs)) sql_id,
+                MAX(sql_id) keep(dense_rank LAST ORDER BY ela * (1+log(20, execs))) sql_id,
                 plan_hash,
                 count(distinct sql_id) sqls,
                 SUM(execs) execs,
@@ -157,8 +159,9 @@ BEGIN
                 nullif(ROUND(SUM(writes) / SUM(execs),2),0) writes,
                 nullif(ROUND(SUM(dxwrites) / SUM(execs),2),0) dxwrites,
                 nullif(ROUND(SUM(io) / SUM(execs),2),0) io,
-                nullif(ROUND(SUM(offload_in) / SUM(execs),2),0) offload_in,
-                nullif(ROUND(SUM(offload_out) / SUM(execs),2),0) offload_out
+                nullif(ROUND(SUM(ofl_in) / SUM(execs),2),0) ofl_in,
+                nullif(ROUND(SUM(ofl_out) / SUM(execs),2),0) ofl_out,
+                nullif(ROUND(SUM(rows_processed) / SUM(execs),2),0) "ROWS#"
         FROM   (SELECT  plan_hash_value plan_hash,
                         sql_id,
                         nvl(nullif(force_matching_signature,0),plan_hash_value) signature,
@@ -171,8 +174,9 @@ BEGIN
                         SUM(delta_physical_write_requests) writes,
                         SUM(delta_direct_writes) dxwrites,
                         SUM(delta_io_interconnect_bytes) io,
-                        SUM(delta_cell_offload_elig_bytes) offload_in,
-                        SUM(io_cell_offload_returned_bytes) offload_out
+                        SUM(delta_cell_offload_elig_bytes) ofl_in,
+                        SUM(0) ofl_out,
+                        SUM(delta_rows_processed) rows_processed
                 FROM   gv$sqlstats
                 WHERE  &snap = 2
                 AND   (select /*+precompute_subquery*/ dbid from v$database)='&dbid'
@@ -180,7 +184,7 @@ BEGIN
                 AND   ('&instance' is null or inst_id=0+'&instance')
                 AND    plan_hash_value > 0
                 GROUP  BY plan_hash_value, sql_id, force_matching_signature
-                HAVING SUM(delta_execution_count) > 1)
+                HAVING SUM(delta_execution_count) > 0)
         GROUP  BY plan_hash,&sql
     $END
     ),
