@@ -6,7 +6,7 @@ local desc_sql={}
 
 function desc.desc(name,option)
     env.checkhelp(name)
-    set.set("autohide","on")
+    env.set.set("autohide","on")
     local rs,success,err
     local obj=db:check_obj(name,1)
     local sql=(name..' '..(option or '')):trim(';')
@@ -130,7 +130,7 @@ function desc.desc(name,option)
                 else
                     print('\n'..title..':\n'..string.rep('=',#title+1))
                 end
-                grid.print(result)
+                env.grid.print(result)
             end
         elseif db.C and db.C.dbmsoutput then
             db.C.dbmsoutput.getOutput({db,sql},true)

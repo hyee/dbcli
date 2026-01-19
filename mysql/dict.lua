@@ -11,7 +11,6 @@ local function reorg_dict(dict,rows,prefix)
     local source=dict[branch]
     local mysql=dict["mysql"]
     local counter=0
-    val=val or 1
     for _,row in ipairs(rows) do
         local name=prefix..(type(row)=='table' and row[1] or row):lower()
         local val=type(row)=='table' and row[2] or 1
@@ -81,7 +80,7 @@ function dicts.build_dict(typ,scope)
         table.sort(rows,function(a,b) return a[3]<b[3] end)
         for i,row in ipairs(rows) do row[1]=i end
         table.insert(rows,1,{'#','Category','Variable','Current Value'})
-        grid.print(rows)
+        env.grid.print(rows)
         return
     elseif typ=='public' then
         filter=[[WHERE lower(table_schema) IN ('information_schema', 'sys', 'mysql', 'performance_schema', 'metrics_schema', 'ndbinfo')]]
@@ -192,7 +191,7 @@ function dicts.build_dict(typ,scope)
             if rest then
                 --print(row)
                 local parents={words}
-                re.gsub(rest:gsub('[%[%]]','~'),p,function(s)
+                env.re.gsub(rest:gsub('[%[%]]','~'),p,function(s)
                     local len=#parents
                     local list={}
                     local pieces=s:gsub('[{~}]',''):split(' *| *')
@@ -289,7 +288,7 @@ function dicts.on_after_db_conn(instance,sql,props)
         current_dict_exists=os.exists(current_dict)
         if props.url~=url or props.user~=usr then
             console.completer:resetKeywords()
-            dicts.load_dict(found and current_dict or datapath,'all')
+            dicts.load_dict(current_dict_exists and current_dict or datapath,'all')
             dicts.cache_obj=nil
             url,usr=props.url,props.user
         end

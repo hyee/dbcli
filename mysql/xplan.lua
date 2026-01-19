@@ -366,7 +366,7 @@ function xplan.onload()
     env.set.init("AUTOPLAN","off",xplan.autoplan,"explain","Controls generating execution plan of the input SQLs",'xplan,analyze,exec,off')
     env.set.init("AUTOPLANFORMAT","tree",xplan.autoplan,"explain","Controls the output execution plan type when autoplan=on",'oracle,tree,row,json')
     env.event.snoop('BEFORE_DB_EXEC',xplan.before_db_exec)
-    env.event.snoop('BEFORE_DB_CONNECT',function() auto_generic=nil;env.set.force_set("autoplan",'off') end)
+    env.event.snoop('BEFORE_DB_CONNECT',function() env.set.force_set("autoplan",'off') end)
 end
 
 return xplan

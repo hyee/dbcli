@@ -36,10 +36,11 @@ function db2:connect(conn_str)
 
     conn_desc=conn_desc:gsub('^(/+)','')
     local server,port,alt,database=conn_desc:match('^([^:/%^]+)(:?%d*)(%^?[^/]*)/(.+)$')
+    local alt_addr,alt_port
     if database then
         if port=="" then port=':50000' end
         conn_desc=server..port..'/'..database
-        local alt_addr,alt_port=alt:gsub('[%s%^]+',''):match('([^:]+)(:*.*)')
+        alt_addr,alt_port=alt:gsub('[%s%^]+',''):match('([^:]+)(:*.*)')
     else
         database=conn_desc
     end
@@ -66,7 +67,7 @@ function db2:connect(conn_str)
 
     self:load_config(url,args)
     local prompt=(args.jdbc_alias or url):match('([^:/@]+)$')
-    if event then event("BEFORE_DB2_CONNECT",self,sql,args,result) end
+    if event then event("BEFORE_DB2_CONNECT",self,nil,args,result) end
     env.set_title("")
 
     self.super.connect(self,args)

@@ -13,10 +13,10 @@ end
 local p=true
 local function onread(err, chunk)
   if (chunk) then
-    printer.write(chunk)
+    env.printer.write(chunk)
     if p then
         p=false
-        printer.write("select * from dual;\n")
+        env.printer.write("select * from dual;\n")
         stdin:write("select * from dual;\n")
     end
   else

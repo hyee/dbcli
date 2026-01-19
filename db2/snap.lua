@@ -1,6 +1,4 @@
 local env=env
-local grid=env.getdb(),env.grid
-local cfg=env.set
 
 local snap=env.class(env.snapper)
 function snap:ctor()

@@ -175,11 +175,11 @@ BEGIN
                         SUM(delta_direct_writes) dxwrites,
                         SUM(delta_io_interconnect_bytes) io,
                         SUM(delta_cell_offload_elig_bytes) ofl_in,
-                        SUM(0) ofl_out,
+                        SUM(io_cell_offload_returned_bytes/greatest(1,executions)*delta_execution_count) ofl_out,
                         SUM(delta_rows_processed) rows_processed
                 FROM   gv$sqlstats
                 WHERE  &snap = 2
-                AND   (select /*+precompute_subquery*/ dbid from v$database)='&dbid'
+                AND    sys_context('userenv','dbid')='&dbid'
                 AND   (&filter)
                 AND   ('&instance' is null or inst_id=0+'&instance')
                 AND    plan_hash_value > 0
@@ -218,7 +218,7 @@ BEGIN
                 coalesce(CASE WHEN (select dbid from v$database)=dbid THEN
                     extractvalue(dbms_xmlgen.getxmltype(replace(q'~
                         select trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
-                        from   gv$sql b
+                        from   gv$sqlstats b
                         where  sql_id='#sql#'
                         and    rownum<2~',
                         '#sql#',sql_id)),

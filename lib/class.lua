@@ -14,7 +14,7 @@ local function newindex(self,k,v)
     rawset(self,k,v)
 end
 
-function class(super,init)
+local class=function (super,init)
     local this_class=setmetatable(init or {},{
         __newindex=newindex,
         __index   =function(self,k)

@@ -225,8 +225,9 @@ function lexer:read(data,file,seq)
 
     root.print_end=function(feed)
         local width=console:getScreenWidth()-10
+        local sep=""
         if lineno>0 then
-            local sep=('-'):rep(width)
+            sep=('-'):rep(width)
             print(sep)
         end
         if file then 

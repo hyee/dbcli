@@ -190,7 +190,7 @@ local function load_sql_text(sql_fulltext,pr,title,sql_id)
             end
             sql_text=table.concat(sql_text,'\n',1,math.min(33,ln))
         end
-        local text,data=grid.tostring({{sql_text}},false,'','')
+        local text,data=env.grid.tostring({{sql_text}},false,'','')
         pr(text..'\n',sql_fulltext,true)
     end
 end
@@ -687,7 +687,7 @@ local function load_binds(binds)
                     elseif b[1] and (att.dty=='12' or att.dty=='179' or att.dty=='180' or att.dty=='181' or att.dty=='231') then
                         local sets,idx,s={},0
                         b[1]:sub(1,14):gsub('..',function(s1)
-                            s,sep=tonumber(s1,16)
+                            local s,sep=tonumber(s1,16)
                             idx=idx+1
                             if idx<=2 then
                                 s,sep=s-100,'/'
@@ -753,7 +753,7 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
         end)
         table.insert(preds,1,{'Id','Type','Content'})
         title('Predicates/Line Stats')
-        pr(grid.tostring(preds))
+        pr(env.grid.tostring(preds))
         env.var.define_column('id','clear')
     end
     
@@ -825,12 +825,12 @@ local function print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)
         end)
 
         table.insert(outlines,1,{'Scope','Content'})
-        pr(grid.tostring(outlines))
+        pr(env.grid.tostring(outlines))
     end
 
     if #qb_hiers>0 then
         title('Query Block Hierachies')
-        pr(grid.tostring(qb_hiers))
+        pr(env.grid.tostring(qb_hiers))
     end
 end
 
@@ -918,7 +918,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
     local function pr(msg,shadow,force)
         --store rowset instead of screen output to avoid line chopping
         if type(shadow)=='table' then
-            shadow=grid.format_output(shadow)
+            shadow=env.grid.format_output(shadow)
         end
 
         text[#text+1]=type(shadow)=='string' and shadow or msg
@@ -1161,7 +1161,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
         if is_print~=false then
             if topic then title(topic) end
-            pr(grid.tostring(headers,true,'|'))
+            pr(env.grid.tostring(headers,true,'|'))
         else
             headers.topic=topic
             return headers
@@ -1707,82 +1707,82 @@ function unwrap.analyze_sqlmon(text,file,seq)
     load_plan_px_group()
 
     local plan_stats
-    local function load_plan_monitor()
-        local rwstats={}
-        local function process_rwstat(id,stat)
-            local meta=rwstats[stat._attr.group_id]
-            if not meta then 
-                meta={ids={}}
-                rwstats[stat._attr.group_id]=meta 
-            end
-            
-            local function process_rw(mt)
-                if meta[mt._attr.id] then
-                    local lid=mt.id or id
-                    local name=(meta[mt._attr.id].name):trim('.')
-                    local col_name=runtime_stats[name]
-                    if col_name then
-                        if col_name=='distrib' and dist_methods[mt[1]] then
-                            infos[id][col_name]=dist_methods[mt[1]]
-                        elseif col_name=='kv_type' and kv_types[mt[1]] then
-                            infos[id]['distrib']=kv_types[mt[1]]
-                        elseif col_name=='dop' then
-                            infos[id][col_name]=mt[1]
-                        elseif tonumber(mt[1]) then
-                            if tonumber(mt[1])>0 then
-                                infos[id][col_name]=(mt[col_name] or 0)+tonumber(mt[1])
-                            end
-                        else
-                            infos[id][col_name]=mt[1]
+    local rwstats={}
+    local function process_rwstat(id,stat)
+        local meta=rwstats[stat._attr.group_id]
+        if not meta then 
+            meta={ids={}}
+            rwstats[stat._attr.group_id]=meta 
+        end
+        
+        local function process_rw(mt)
+            if meta[mt._attr.id] then
+                local lid=mt.id or id
+                local name=(meta[mt._attr.id].name):trim('.')
+                local col_name=runtime_stats[name]
+                if col_name then
+                    if col_name=='distrib' and dist_methods[mt[1]] then
+                        infos[id][col_name]=dist_methods[mt[1]]
+                    elseif col_name=='kv_type' and kv_types[mt[1]] then
+                        infos[id]['distrib']=kv_types[mt[1]]
+                    elseif col_name=='dop' then
+                        infos[id][col_name]=mt[1]
+                    elseif tonumber(mt[1]) then
+                        if tonumber(mt[1])>0 then
+                            infos[id][col_name]=(mt[col_name] or 0)+tonumber(mt[1])
                         end
                     else
-                        local desc=(meta[mt._attr.id].desc or name)
-                        local num=number_fmt(mt[1],desc)
-                        if 'downgrade reason'==name:lower() and reasons[mt[1]] then
-                            num,desc=mt[1],reasons[mt[1]]
-                        end
-                        process_pred(preds,lid,'Other',num:rpad(10)..' -> '..desc)
-                        if name=='Total User Rows' then
-                            preds.ids[lid].rows=tonumber(mt[1])
-                        elseif name=='Total Bloom Filtered Rows' or name=='Total Min/Max Filtered Rows' then
-                            preds.ids[lid].saved=(preds.ids[lid].saved or 0)+tonumber(mt[1])
-                        elseif name=='Total Number of Rowsets' then
-                            infos[id].rowsets=tonumber(mt[1])
-                        elseif name=='Total Spilled Probe Rows' then
-                            infos[id].spills=tonumber(mt[1])
-                        end
+                        infos[id][col_name]=mt[1]
                     end
-                    mt.id=nil
                 else
-                    mt.id=id
-                    local sets=meta.ids[mt._attr.id]
-                    if not sets then
-                        sets={}
-                        meta.ids[mt._attr.id]=sets
+                    local desc=(meta[mt._attr.id].desc or name)
+                    local num=number_fmt(mt[1],desc)
+                    if 'downgrade reason'==name:lower() and reasons[mt[1]] then
+                        num,desc=mt[1],reasons[mt[1]]
                     end
-                    sets[#sets+1]=mt
+                    process_pred(preds,lid,'Other',num:rpad(10)..' -> '..desc)
+                    if name=='Total User Rows' then
+                        preds.ids[lid].rows=tonumber(mt[1])
+                    elseif name=='Total Bloom Filtered Rows' or name=='Total Min/Max Filtered Rows' then
+                        preds.ids[lid].saved=(preds.ids[lid].saved or 0)+tonumber(mt[1])
+                    elseif name=='Total Number of Rowsets' then
+                        infos[id].rowsets=tonumber(mt[1])
+                    elseif name=='Total Spilled Probe Rows' then
+                        infos[id].spills=tonumber(mt[1])
+                    end
                 end
-            end
-
-            local function process_meta(mt)
-                meta[mt._attr.id]=mt._attr
+                mt.id=nil
+            else
+                mt.id=id
                 local sets=meta.ids[mt._attr.id]
-                if sets then
-                    for k,v in ipairs(sets) do
-                        process_rw(v)
-                    end
-                    meta.ids[mt._attr.id]=nil   
+                if not sets then
+                    sets={}
+                    meta.ids[mt._attr.id]=sets
                 end
-            end
-
-            if stat.metadata then
-                for k,v in pair(stat.metadata.stat) do process_meta(v) end
-            end
-            if stat.stat then
-                for k,v in pair(stat.stat) do process_rw(v) end
+                sets[#sets+1]=mt
             end
         end
 
+        local function process_meta(mt)
+            meta[mt._attr.id]=mt._attr
+            local sets=meta.ids[mt._attr.id]
+            if sets then
+                for k,v in ipairs(sets) do
+                    process_rw(v)
+                end
+                meta.ids[mt._attr.id]=nil   
+            end
+        end
+
+        if stat.metadata then
+            for k,v in pair(stat.metadata.stat) do process_meta(v) end
+        end
+        if stat.stat then
+            for k,v in pair(stat.stat) do process_rw(v) end
+        end
+    end
+
+    local function load_plan_monitor()
         if hd.plan_monitor then
             for k,v in pairs(hd.plan_monitor._attr or {}) do
                 add_header(k,v)
@@ -1806,7 +1806,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
         for n,p in ipairs(plan_stats) do
             local info,pid=p._attr
-            local id,depth,position=tonumber(info.id),tonumber(info.depth),tonumber(info.position) or id
+            local id,depth,position=tonumber(info.id),tonumber(info.depth),tonumber(info.position) or pid
             info.id,infos[id]=id,info
             xid=xid<id and id or xid
             nid=nid>id and id or nid
@@ -1815,7 +1815,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
             if depth>0 then
                 if lvs[depth-1][position] then
                     position=position-1
-                    position=(not lvs[depth-1][position] and position) or 1+#lvs[depth-1]
+                    position=(not lvs[depth-1][position] and position) or (1+#lvs[depth-1])
                     info._cid.position=position
                 end
                 lvs[depth-1][position]=id
@@ -2576,7 +2576,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
     local function print_report()
         pr('\n')
-        pr(grid.merge({report_header,'|',{binds,'-',iostat}},'plain'))
+        pr(env.grid.merge({report_header,'|',{binds,'-',iostat}},'plain'))
 
         if #sqlstat<3 then
             env.var.define_column('Proc','noprint')
@@ -2589,18 +2589,18 @@ function unwrap.analyze_sqlmon(text,file,seq)
             else
                 sqlstat[2][from_start_idx]=first_start
             end
-            pr(grid.merge({sqlstat},'plain'))
+            pr(env.grid.merge({sqlstat},'plain'))
             env.var.define_column('Proc','clear')
         end
 
         local summary=print_header('Execution Plan Notes & Summary',false)
         if summary then
             summary.colsep='|'
-            pr(grid.merge({summary},'plain'))
+            pr(env.grid.merge({summary},'plain'))
         end
 
         if line_events then 
-            pr(grid.merge(line_events,'plain')) 
+            pr(env.grid.merge(line_events,'plain')) 
         end
 
         if lines and #lines>0 then
@@ -2616,13 +2616,13 @@ function unwrap.analyze_sqlmon(text,file,seq)
             
             lines.topic='Execution Plan Lines'
             lines.footprint='$HIB$[ '..(lines.status and (lines.status..' | ') or '')..'Pred: A=Access-cols, F=Filter-cols | Proj: B=Proj-avg-bytes, C=Proj-cols, K=Keys, R=Proj-rowsets ]$NOR$'
-            pr(grid.merge({lines},'plain'))
+            pr(env.grid.merge({lines},'plain'))
             env.set.set('colsep','default')
         end
         
         if skew_outputs then
             env.var.define_column('id','break')
-            pr(grid.merge({skew_outputs},'plain'))
+            pr(env.grid.merge({skew_outputs},'plain'))
             env.var.define_column('id','clear')
         end
 
@@ -2679,7 +2679,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
     local function pr(msg,shadow,force)
         --store rowset instead of screen output to avoid line chopping
         if type(shadow)=='table' then
-            shadow=grid.format_output(shadow)
+            shadow=env.grid.format_output(shadow)
         end
 
         text[#text+1]=type(shadow)=='string' and shadow or msg
@@ -2735,7 +2735,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
         if cnt>0 then
             titles.topic='SQL DETAIL REPORT PARAMETERS'
             titles.pivot,titles.pivotsort=1,'off'
-            pr(grid.merge({titles},'plain'))
+            pr(env.grid.merge({titles},'plain'))
         end
     end
     detail_report_parameters()
@@ -2776,7 +2776,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 infos[idx]={k,tonumber(v) and math.round(tonumber(v),2) or v}
             end
             title('$PROMPTCOLOR$Activity Histogram$NOR$')
-            pr(grid.merge({rows,'|',infos},'plain'))
+            pr(env.grid.merge({rows,'|',infos},'plain'))
         end
     end
     detail_activity_histogram()
@@ -2834,7 +2834,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             for i,row in ipairs(dim) do
                 dims[#dims+1]=row
                 if math.fmod(i,3)==0 then
-                    pr(grid.merge(dims,'plain'))
+                    pr(env.grid.merge(dims,'plain'))
                     dims={}
                 else
                     dims[#dims+1]='|'
@@ -2842,7 +2842,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
             end
             if #dims>0 then 
                 dims[#dims]=nil
-                pr(grid.merge(dims,'plain'))
+                pr(env.grid.merge(dims,'plain'))
             end
         end
     end
@@ -2874,7 +2874,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
         end
         if #rows>1 then
             title("$PROMPTCOLOR$SQL Profiles/SPM/Patches$NOR$")
-            pr(grid.merge({rows},'plain'))
+            pr(env.grid.merge({rows},'plain'))
         end
     end
     detail_spm()
@@ -2993,11 +2993,11 @@ function unwrap.analyze_sqldetail(text,file,seq)
         end
         if #infos<2 then return end
         title("$PROMPTCOLOR$EXECUTION PLAN SUMMARY$NOR$")
-        pr(grid.merge({infos},'plain'))
+        pr(env.grid.merge({infos},'plain'))
         if #sqlmons>1 then
-            pr(grid.merge({sqlmons},'plain'))
+            pr(env.grid.merge({sqlmons},'plain'))
         end
-        pr(grid.merge({avg,'|',total},'plain'))
+        pr(env.grid.merge({avg,'|',total},'plain'))
     end
     detail_plan_summary()
 
@@ -3037,8 +3037,8 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 top_events[#top_events+1]=line
             end
             top_ids.max_rows=math.max(5,#top_events-1)
-            grid.sort(top_ids,'-4',true)
-            grid.sort(top_events,'-3',true)
+            env.grid.sort(top_ids,'-4',true)
+            env.grid.sort(top_events,'-3',true)
             line_aas[phv]={lines=lines,top_ids=top_ids,top_events=top_events}
             
         end
@@ -3075,7 +3075,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
 
             if line_aas[phv] then
                 aas=line_aas[phv].lines
-                pr(grid.merge({line_aas[phv].top_ids,'|',line_aas[phv].top_events},'plain'))
+                pr(env.grid.merge({line_aas[phv].top_ids,'|',line_aas[phv].top_events},'plain'))
                 line_aas[phv]=nil
             end
 
@@ -3210,13 +3210,13 @@ function unwrap.analyze_sqldetail(text,file,seq)
                 p=c
             end
 
-            var.define_column("Est|Card,Est|Cost,IO|Cost",'for','tmb2')
-            pr(grid.merge({titles},'plain'))
+            env.var.define_column("Est|Card,Est|Cost,IO|Cost",'for','tmb2')
+            pr(env.grid.merge({titles},'plain'))
             if aas_func then aas_func() end
-            pr(grid.merge({rows},'plain'))
+            pr(env.grid.merge({rows},'plain'))
             binds=load_binds(binds)
             if binds then
-                pr(grid.merge({binds},'plain'))
+                pr(env.grid.merge({binds},'plain'))
             end
             print_suffix(preds,qbs,qb_transforms,outlines,pr,xid)          
          end
@@ -3228,7 +3228,7 @@ function unwrap.analyze_sqldetail(text,file,seq)
         pr('\n'..("="):rep(#sep:strip_ansi()+2))
         pr('|$REV$'..sep..'$NOR$|')
         pr(("="):rep(#sep:strip_ansi()+2))
-        pr(grid.merge({aas.top_ids,'|',aas.top_events},'plain'))
+        pr(env.grid.merge({aas.top_ids,'|',aas.top_events},'plain'))
     end
 
     text=table.concat(text,'\n')..'\n'
@@ -3399,7 +3399,7 @@ function unwrap.unwrap(obj,ext,prefix)
                         result[#result+1]=row
                     end
                 end
-                grid.merge({result},true)
+                env.grid.merge({result},true)
             else
                 load_report(func[2],text,obj)
             end

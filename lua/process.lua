@@ -5,7 +5,7 @@ local uv = require('uv')
 local handle, pid
 
 local function onexit(code, signal)
-    rint('exit',code,signal)
+    print('exit',code,signal)
 end
 
 local process=env.class(env.scripter)

@@ -578,7 +578,7 @@ function scripter:helper(_,cmd,search_key)
             desc=''
         end
     end
-    return desc or "No such command: "..cmd,cmd
+    return desc or ("No such command: "..cmd),cmd
 end
 
 function scripter:__onload()

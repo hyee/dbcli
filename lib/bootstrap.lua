@@ -1,4 +1,5 @@
 local _G=_ENV or _G
+local jit=_G.jit
 local _os=jit.os:lower()
 local ver=os.getenv("OSVERSION")
 local clock=os.clock()

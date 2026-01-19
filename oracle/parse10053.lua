@@ -551,15 +551,13 @@ local function extract_qb()
                 local root,name=data.root,qb:upper()
                 
                 local spd,prev_line
-                local function pr(l,c)
-                    root.print(l,c
-)                end
+                local function pr(l,c) root.print(l,c)end
                 local stack,seq,found={},{},{}
                 root.print_start('qb_'..name)
                 root.current_qb=nil
                 root.current_search_qb='(%W)('..qb:upper():escape()..')(%W)'
                 root.current_qb_formatter=env.ansi.convert_ansi('%1$UDL$%2$NOR$%3')
-                local full_text
+                local full_text,op
                 for line,lineno in root.range(root.start_line,root.end_line) do
                     full_text,line=line,line:sub(1,256):rtrim()
                     if line~='' then
@@ -711,7 +709,7 @@ local function extract_qbs()
                 end
                 table.insert(rows,1,{'Query Block Registry','Plan#','|','QB#','Line#','Query Transformations'})
                 if is_print==false then return rows end
-                grid.print(rows)
+                env.grid.print(rows)
                 if found then
                     print(('-'):rep(112))
                     print('* The $HIB$blue$NOR$ query blocks can be found in the execution plan, and the $HIR$red$NOR$ abbrs means the operations are bypassed.')
@@ -1371,7 +1369,7 @@ local function extract_jo()
                             end
                         end
                     end
-                    return grid.print(rows)
+                    return env.grid.print(rows)
                 end
 
                 local fmt='%s=%s'
@@ -1503,7 +1501,7 @@ local function extract_jo()
                 if mode=='qb' then
                     table.sort(rows,function(a,b) if a[#a]==b[#b] then return a[4]<b[4] else return a[#a]<b[#b] end end)
                     table.insert(rows,1,{'QB Name','JOs','Best JO#','Start Line','End Line','Cost','Card','DoP','SPD','Join Chain'})
-                    grid.print(rows)
+                    env.grid.print(rows)
                     if found then
                         print(('-'):rep(65))
                         print('* The query block in $HIB$blue$NOR$ means it exists in the exeuction plan.')
@@ -1513,9 +1511,9 @@ local function extract_jo()
                     env.checkerr(size>0,'Please input the valid QB name / JO# / table name.')
                     if  mode=='tree' or (mode=='jo' and size>1) then --list jo
                         table.insert(rows,1,{'QB Name','JO#','Best','Start Line','End Line','Cost','Card','DoP','JO SPD','Join Chain'})
-                        grid.sort(rows,4,true)
+                        env.grid.sort(rows,4,true)
                         if mode=='tree' then env.set.set('rowsep','-') end
-                        grid.print(rows)
+                        env.grid.print(rows)
                         if mode=='tree' then env.set.set('rowsep','back') end
                     elseif qb and size==1 and not jo then --display all QB details if only has one JO and jo# is not specified
                         root.print_start('jo_'..qb)
@@ -1974,7 +1972,7 @@ function parser:check_file(f,path,seq)
         rows[k+1]={k,v[1],v[2],v[4],v[3]}
     end
     print('Mutiple SQL traces are found:')
-    grid.print(rows)
+    env.grid.print(rows)
     print('\n')
     env.raise('Please open the file plus the specific seq among above list!')
 end

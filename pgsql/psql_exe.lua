@@ -50,7 +50,7 @@ function psql_exe:get_startup_cmd(args,is_native)
     local conn=db.connection_info
     --user db host/port to avoid proxy
     local props={'--pset=pager=off'}
-    for name,value in pairs{username=db.props.db_user,password=packer.unpack_str(conn.password),host=conn.db_host,port=conn.db_port,dbname=db.props.database} do
+    for name,value in pairs{username=db.props.db_user,password=env.packer.unpack_str(conn.password),host=conn.db_host,port=conn.db_port,dbname=db.props.database} do
         if name~='password' or self.boot_cmd:find('[\\/]gsql') then
             table.insert(props,1,'--'..name..'='..(env.IS_WINDOWS and value or value:gsub('%$','\\$')))
         else

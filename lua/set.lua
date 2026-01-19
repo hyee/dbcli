@@ -124,7 +124,6 @@ function cfg.init(name,defaultvalue,validate,class,desc,range,instance)
         range=range,
         org=defaultvalue,
         src=env.callee(),
-        abbr=abbr,
         base_name=name,
         instance=(type(instance)=="table" or type(instance)=="userdata") and instance
     },meta)
@@ -155,7 +154,7 @@ function cfg.remove(name)
     if not option then return end
     local src=env.callee()
     if src:gsub("#%d+","")~=option.src:gsub("#%d+","") then
-        env.raise("Cannot remove setting '%s' from %s, it was defined in file %s!",name,src,_CMDS[cmd].FILE)
+        env.raise("Cannot remove setting '%s' from %s, it was defined in file %s!",name,src,env._CMDS[name:upper()].FILE)
     end
     
     for k,v in ipairs(option.abbr) do

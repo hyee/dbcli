@@ -6,6 +6,30 @@ local db_core=env.class()
 local db_Types,__stmts,__source={},{},{}
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
 
+
+local proxy_type=nil
+local set_proxy=function(addr,port)
+    if not proxy_type then return end
+    if addr then
+        if proxy_type=='http' then
+            java.system:setProperty('https.proxyHost',addr)
+            java.system:setProperty('https.proxyPort',port)
+        else
+            java.system:setProperty('socksProxyHost',addr)
+            java.system:setProperty('socksProxyPort',port)
+        end
+    else
+        if proxy_type=='http' then
+            java.system:clearProperty('https.proxyHost')
+            java.system:clearProperty('https.proxyPort')
+        else
+            java.system:clearProperty('socksProxyHost')
+            java.system:clearProperty('socksProxyPort')
+        end
+        proxy_type=nil
+    end
+end
+
 local function is_closed(rs)
     if type(rs)~='userdata' or type(rs.isClosed)~="function" then return true end
     return rs:isClosed()
@@ -287,7 +311,7 @@ function ResultSet:rows(rs,count,null_value,is_close)
             end
         end
     end
-    rows.verticals=__stmts[res]
+    rows.verticals=__stmts[rs]
     if (is_close==true or count <0 ) then
         self:close(rs)
     end
@@ -404,7 +428,7 @@ end
 
 local sec2num
 function db_core.get_feed(sql,result)
-    if not ela_fmt and env.var then
+    if env.var then
         sec2num=env.var.format_function("smhd3")
     end
 
@@ -630,7 +654,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
     prefix=(prefix or ':')
 
     local func,typeid,value,varname,typename=1,2,2,3,4
-    sql,c=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
+    sql=sql:gsub('%f[%w_%$'..prefix..']'..prefix..'([%w_%$]+)',function(s)
             local k,s = s:upper(),prefix..s
             local v= params[k]
             if not v then return s end
@@ -762,11 +786,11 @@ function db_core:exec_cache(sql,args,description)
                 local idx=param[6] or param[2]
                 local method=param[4]
                 if method:find('setNull',1,true) and n~=nil and n~='' then
-                    if type(v)=='boolean' then
+                    if type(n)=='boolean' then
                         typ='setBoolean'
-                    elseif type(v)=="number" then
+                    elseif type(n)=="number" then
                         typ='setDouble'
-                    elseif type(v)=='string' and #v>32000 then
+                    elseif type(n)=='string' and #n>32000 then
                         typ='setStringForClob'
                     else
                         typ='setString'
@@ -936,7 +960,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         return rs
     end
 
-    if event then event("ON_DB_EXEC",{self,sql,args,result,params}) end
+    if event then event("ON_DB_EXEC",{self,sql,args,nil,params}) end
     for k,v in pairs(params) do
         if type(v) == "table" and v[is_output] == "#"  then
             if type(v[index]) == "table" then
@@ -1061,28 +1085,7 @@ function db_core:print_result(rs,sql,verticals)
     self.print_feed(sql,rs)
 end
 
-local proxy_type=nil
-function set_proxy(addr,port)
-    if not proxy_type then return end
-    if addr then
-        if proxy_type=='http' then
-            java.system:setProperty('https.proxyHost',addr)
-            java.system:setProperty('https.proxyPort',port)
-        else
-            java.system:setProperty('socksProxyHost',addr)
-            java.system:setProperty('socksProxyPort',port)
-        end
-    else
-        if proxy_type=='http' then
-            java.system:clearProperty('https.proxyHost')
-            java.system:clearProperty('https.proxyPort')
-        else
-            java.system:clearProperty('socksProxyHost')
-            java.system:clearProperty('socksProxyPort')
-        end
-        proxy_type=nil
-    end
-end
+
 --the connection is a table that contain the connection properties
 
 function db_core:connect(attrs,data_source)
@@ -1166,7 +1169,6 @@ function db_core:connect(attrs,data_source)
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")
     
     prep_test_connection = self.conn:prepareStatement(self.test_connection_sql)
-
     return self.conn,attrs
 end
 
@@ -1469,7 +1471,7 @@ function db_core:sql2file(filename,sql,method,ext,...)
     file:close()
     if cfg then cfg.set("SQLTIMEOUT",86400) end
     if type(result)=="table" then
-        for idx,rs1 in pairs(rs) do
+        for idx,rs1 in pairs(result) do
             if type(rs1)=="userdata" then
                 local file=filename..tostring(idx)
                 print("Start to extract result into "..file)

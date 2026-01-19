@@ -69,7 +69,7 @@ function info.desc(name,option)
             return
         end
     end
-    env.checkerr(os.exists(file),"Extracting the "..(option or 'description').." of `"..obj.object_type..'` is unsupported.')
+    env.raise("Extracting the "..(option or 'description').." of `"..obj.object_type..'` is unsupported.')
 end
 
 function info:onload()

@@ -158,7 +158,7 @@ function printer.onunload()
     if printer.hdl then
         pcall(printer.hdl.close,printer.hdl)
         printer.hdl=nil
-        printer.file=file
+        printer.file=nil
     end
 end
 
@@ -217,7 +217,7 @@ end
 function printer.clip(stmt)
     printer.tee('>CLIP',stmt)
 end 
-local str_buff=buffer.new()
+local str_buff=env.buffer.new()
 function printer.tee(file,stmt)
     env.checkhelp(file)
     if printer.tee_hdl then 

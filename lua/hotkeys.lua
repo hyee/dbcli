@@ -88,9 +88,9 @@ function hotkeys.call(event,_,x)
                         if idx then
                             idx=idx-1
                             local p=" + "
-                            if bit.band(idx,4)>0 then p=p.."CTRL-" end
-                            if bit.band(idx,2)>0 then p=p.."ALT-" end
-                            if bit.band(idx,1)>0 then p=p.."SHIFT-" end
+                            if env.bit.band(idx,4)>0 then p=p.."CTRL-" end
+                            if env.bit.band(idx,2)>0 then p=p.."ALT-" end
+                            if env.bit.band(idx,1)>0 then p=p.."SHIFT-" end
                             p=p..v.." + "
                             s=s:gsub(k,p)
                         end

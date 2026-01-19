@@ -2,7 +2,7 @@ local env=env
 local tester={}
 function tester.do_test(target)
     if target=="" then target=nil end
-    if not target or taget=="ALL" then
+    if not target or target=="ALL" then
         local list,keys={},{}
         for k,v in pairs(env) do
             if type(v)=="table" then

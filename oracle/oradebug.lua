@@ -303,7 +303,7 @@ end
 local function load_ext()
     if init or not oradebug.dict then return end
     init=true
-    traces={
+    local traces={
         SQL_TRACE={
             'Dump SQL Trace',
            [[1 oradebug event sql_trace[SQL: 32cqz71gd8wy3] {pgadep: exactdepth 0} plan_stat=all_executions,wait=true,bind=true
@@ -913,7 +913,7 @@ function oradebug.load_dict()
 end
 
 function oradebug.build_dict()
-    libs={NAME={},SCOPE={},FILTER={},ACTION={},COMPONENT={},HELP={HELP={}},_keys={}}
+    local libs={NAME={},SCOPE={},FILTER={},ACTION={},COMPONENT={},HELP={HELP={}},_keys={}}
     local lib_pattern='^%S+.- in library (.*):'
     local item_pattern
     local curr_lib,prefix,prev,prev_prefix
@@ -1105,7 +1105,7 @@ function oradebug.attach_sid(sid,inst)
     if not oradebug._inst then oradebug._inst=db.props.instance end
     if inst~=oradebug._inst and db.props.israc then
         oradebug._inst=inst
-        result=get_output("SETINST ".. inst,true)[1]
+        local result=get_output("SETINST ".. inst,true)[1]
         env.checkerr(not result:trim():find('^%u+%-%d+:'),result)
     end
     local result=get_output("SETORAPID ".. pid,true)[1]
@@ -1410,7 +1410,7 @@ end
 
 function oradebug.kill(sid)
     oradebug.attach_sid(sid)
-    result=get_output("event immediate crash",true)
+    local result=get_output("event immediate crash",true)
     print(table.concat(result,'\n'))
 end
 

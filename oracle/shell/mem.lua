@@ -345,7 +345,7 @@ for line in output('cat /proc/meminfo 2>/dev/null') do
     mem[name]=kb
 end
 --read HugePages from /proc/meminfo
-hugepage_total=math.ceil((tonumber(mem['HugePages_Total']) or 0)*(tonumber(mem['Hugepagesize']) or 0)/1024)
+local hugepage_total=math.ceil((tonumber(mem['HugePages_Total']) or 0)*(tonumber(mem['Hugepagesize']) or 0)/1024)
 local remain=hugepage_total
 for instance,info in pairs(dbs) do
     temp[1]=instance
@@ -405,7 +405,7 @@ if not tonumber(mem['MemTotal']) then
     return print('free -m')
 end
 
-fmt='%-20s   %11s   %11s   %13s   %10s   %10s   %10s'
+local fmt='%-20s   %11s   %11s   %13s   %10s   %10s   %10s'
 print(fmt:format('Main Mem','Total','Used/Active','Free/Inactive','Available','Cached','Buffers'))
 print(fmt:format('-----------','-----------','-----------','----------','----------','----------','----------'))
 print(fmt:format('Mem',

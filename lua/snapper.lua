@@ -78,7 +78,7 @@ function snapper:after_script()
     self.cmds,self.args=nil,nil
     self.db:close_cache('Internal_snapper')
     
-    if self.autosize then grid.col_auto_size=self.autosize end
+    if self.autosize then env.grid.col_auto_size=self.autosize end
     if self.var_context then
         env.var.import_context(table.unpack(self.var_context))
         self.var_context=nil
@@ -170,7 +170,7 @@ function snapper:run_sql(sql,main_args,cmds,files)
         for i=20,1,-1 do
             local pos="V"..i
             local str=main_args[1][pos]
-            if str and str ~= db_core.NOT_ASSIGNED then
+            if str and str ~= env.db_core.NOT_ASSIGNED then
                 if str:trim():find("%s") then
                     local command=env.parse_args(2,str)
                     if command and command[1] and env._CMDS[command[1]:upper()] then
@@ -379,9 +379,9 @@ function snapper:next_exec()
                 if not found_top then top_grp_idx=grp_idx end
 
                 result,groups=table.new(1,#rs1+10),{}
-                local autosize1,autosize2=props.autosize,grid.col_auto_size
-                if autosize1 then grid.col_auto_size=autosize1 end
-                local grid=grid.new(true)
+                local autosize1,autosize2=props.autosize,env.grid.col_auto_size
+                if autosize1 then env.grid.col_auto_size=autosize1 end
+                local grid=env.grid.new(true)
                 local idx,top_idx,counter={},{},0
                 local function make_index(row)
                     counter=0

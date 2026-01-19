@@ -320,7 +320,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
             if rows_per_group < 2 or math.fmod(i, rows_per_group) == 1 then start_idx, end_idx = #result, #result + #titles end
             for j, v in ipairs(titles) do
                 local idx = start_idx + j
-                new_val = top_rows[i] and top_rows[i][j] or get_value(t, i + 1, j)
+                new_val = top_rows[i] and top_rows[i][j] or get_value(v, i + 1, j)
                 empty_counts[idx] = (empty_counts[idx] or 0) + (new_val ~= '' and new_val ~= null_val and 1 or 0)
                 if not result[idx] then
                     result[idx] = {'|', i, '|', v, new_val}
@@ -1188,7 +1188,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
         local new_tab = {_is_drawed = true, topic = tab.topic or tab.title, footprint = tab.footprint or tab.bottom}
         local function push(line) new_tab[#new_tab + 1] = line end
         local actual_cols = strip(tab[#tab])
-        local h_fill = '|' .. space.rep(' ', cols - 2) .. '|'
+        local h_fill = '|' .. env.space.rep(' ', cols - 2) .. '|'
         local max_row_cnt = (tab.max_rows and tab.max_rows + 2 or rows) + 2
         if tab._is_drawed then
             local col_space = cols - actual_cols
@@ -1254,7 +1254,6 @@ function grid.merge(tabs, is_print, prefix, suffix)
         return new_tab
     end
 
-    local frame_list = {}
     local print_size = env.set and env.set.get('PRINTSIZE') or 512
     local function _merge(tabs, is_wrap)
         local newtab = {}
@@ -1300,7 +1299,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     else --sep=='-'
                         if (nexttab.height or 1)<=0 then
                             newtab.height=0
-                            height2=printsize
+                            height2=print_size
                         end
                         local maxlen = math.max(width1, width2)
                         tab, nexttab = redraw(tab, maxlen, height1), redraw(nexttab, maxlen, height2)

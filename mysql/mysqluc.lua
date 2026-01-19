@@ -80,10 +80,10 @@ function utils:get_startup_cmd(args,is_native)
     self.work_path,self.work_dir=self.work_dir,env._CACHE_PATH
     self:rebuild_commands(self.env['SQLPATH'])
     for k,v in ipairs(args) do
-        if args[i]:find("^--utildir=.+") then 
+        if v:find("^--utildir=.+") then 
             props[1]=v
             self.work_dir=v:match("=(.*+)")
-        elseif args[i]:find("^--width=.+") then
+        elseif v:find("^--width=.+") then
             props[2]=v
         else
             props[#props+1]=v

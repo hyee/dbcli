@@ -189,9 +189,9 @@ function tidb:parse_cursor(plan)
     if #adjust_list>0 and adjust then
         for i,row in ipairs(plan) do
             for j,idx in ipairs(adjust_list) do
-                col=table.remove(row,idx-j+1)
+                local col=table.remove(row,idx-j+1)
                 table.insert(row,col)
-                info=row.colinfo
+                local info=row.colinfo
                 if i==1 and info then
                     col=table.remove(info,idx-j+1)
                     table.insert(info,col)

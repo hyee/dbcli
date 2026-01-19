@@ -365,8 +365,8 @@ function output.getOutput(item,force)
                 else
                     db.props.error_obj,db.props.error_owner=nil
                 end
-            else
-                print(err)
+            --else
+            --    print(res)
             end
         end
         if autotrace=='off' and objtype~='SESSION' then return end
@@ -420,7 +420,7 @@ function output.getOutput(item,force)
         if not sqlerror and stats and #stats>0 then 
             local n,n1={},{}
             local idx,c,v=-1,0
-            grid.sort(stats,1)
+            env.grid.sort(stats,1)
             for k,v in pairs(fixed_stats) do
                 n1[type(v)=='table' and v[1] or v]={0,k,env.ansi.mask('HEADCOLOR','/')}
             end

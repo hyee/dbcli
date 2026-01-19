@@ -287,13 +287,13 @@ function var.print(name,desc)
             env.checkerr(obj,'Target variable[%s] does not exist!',name)
             desc = desc or var.desc[name]
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-                local byte_len,char_len=(desc or ''):ulen()
+                local byte_len=(desc or ''):ulen()
                 var.inputs[name]=db.resultset:print(obj,db.conn, 
                     desc and (desc..':\n'..string.rep('=',byte_len+1)),
                     verticals)
                 var.outputs[name]="#CURSOR"
             elseif type(obj)=='table' then
-                grid.print(obj,nil,nil,nil,nil,prefix,"\n")
+                env.grid.print(obj,nil,nil,nil,nil,name,"\n")
             elseif obj~=db_core.NOT_ASSIGNED then
                 print(obj)
             end
@@ -318,7 +318,7 @@ function var.print(name,desc)
                 var.outputs[name]="#CURSOR"
             elseif type(value)=='table' then
                 print('Variable "'..name..'":\n===================')
-                grid.print(value,nil,nil,nil,nil,prefix,'\n')
+                grid.print(value,nil,nil,nil,nil,name,'\n')
             else
                 list[#list+1]={var.desc[name] or name,value}
             end
@@ -716,7 +716,7 @@ function var.define_column(col,...)
     end
     if #formats>0 then
         obj.format=function(v,rownum,grid)
-            local org,is_number,v1,tmp=org
+            local org,is_number,v1,tmp=v
             for _,func in ipairs(formats) do
                 v,tmp=func(v,rownum,grid)
                 if tmp then is_number=true end

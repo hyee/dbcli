@@ -272,7 +272,7 @@ function dicts.test_grid()
     local rs4=db:internal_call([[select * from (select * from v$sysmetric order by 1) where rownum<=10]])
     local rs5=db:internal_call([[select * from v$waitstat]])
     
-    local merge=grid.merge
+    local merge=env.grid.merge
     rs1=db.resultset:rows(rs1,-1)
     rs2=db.resultset:rows(rs2,-1)
     rs3=db.resultset:rows(rs3,-1)
@@ -300,7 +300,7 @@ function dicts.set_dict(typ,scope)
         print(fmt:format('Level#2 Keywords',dict.subobjects,'(Tab-completion on <L1 Keyword>.<L2 Keyword>)'))
         print(fmt:format(' Cached Objects',dict.cache,"(Caches the current db's online dictionary that used for quick search(i.e.: desc/ora obj))"))
         print(fmt:format('    VPD Objects',dict.vpd,'(Used to auto-rewrite SQL for options "SET instance/container/dbid/schema")'))
-        checkhelp(typ)
+        env.checkhelp(typ)
     end
     typ=typ:lower()
     env.checkerr(typ=='public' or typ=='init' or typ=='param' or typ=='obj' or typ=='remap',"Invalid parameter!")

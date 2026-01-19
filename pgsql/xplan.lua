@@ -131,7 +131,7 @@ function xplan.explain(fmt,sql)
     if sql then
         fmt=fmt:lower()
         local c,_,fmts=fmt:find('^%((.*)%)$')
-        if not fmts then fmts=fmd end
+        if not fmts then fmt=fmts end
         fmts,c=fmts:gsub('%-?pgsql,?','')
         if c==0 then fmts,c=fmts:gsub('%-?pg,?','') end
         if c and c>0 then

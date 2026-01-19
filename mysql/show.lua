@@ -80,7 +80,7 @@ function show.run(...)
                         end
                     end
                     table.insert(rows,1,{"Variable Name","Session Value","Global Value"})
-                    return grid.print(rows)
+                    return env.grid.print(rows)
                 else
                     env.printer.set_grep(text:gsub('%%','.-'))
                 end

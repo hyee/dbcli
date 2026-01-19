@@ -1,5 +1,5 @@
 local env,loader,math,sleep_=env,loader,math,uv.sleep
-function sleep(second,is_not_breakable)
+local sleep=function(second,is_not_breakable)
     second=tonumber(second)
     env.checkhelp(second)
     if second <= 0 then return end

@@ -39,7 +39,7 @@ function help.help_topic(...)
                 if (topic[3] or ""):trim()~="" then
                     rows[2][1]=rows[2][1].."\n$PROMPTCOLOR$Examples: $NOR$\n========= "..(("\n"..topic[3]):gsub("\r?\n","\n  "))
                 end
-                grid.print(rows)
+                env.grid.print(rows)
             end
         end
     else
@@ -61,7 +61,7 @@ function help.help_topic(...)
             end
             table.sort(rows,function(a,b) return a[1]<b[1] end)
             table.insert(rows,1,{"Category#","Parent#","Category","Keywords"})
-            grid.print(rows)
+            env.grid.print(rows)
         elseif f then
             local rows={}
             for key,list in pairs(doc) do
@@ -73,7 +73,7 @@ function help.help_topic(...)
             end
             table.sort(rows,function(a,b) return a[1]<b[1] end)
             table.insert(rows,1,{"Name","Category",f=='S' and "Piece" or "URL"})
-            grid.print(rows)
+            env.grid.print(rows)
         else
             local cats={}
             for key,list in pairs(category) do
@@ -93,7 +93,7 @@ function help.help_topic(...)
                 end
                 table.sort(rows,function(a,b) return a[3]<b[3] end)
                 table.insert(rows,1,{"Category#","Parent#","Name","Category","URL"})
-                grid.print(rows)
+                env.grid.print(rows)
             else
                 local match=doc[keyword]
                 if not match then return help.help_offline('F',keyword) end
@@ -107,7 +107,7 @@ function help.help_topic(...)
                 if (match[6] or ""):trim()~="" then
                     rows[2][1]=rows[2][1].."\n\n$PROMPTCOLOR$Refer to$NOR$: "..match[6]
                 end
-                grid.print(rows)
+                env.grid.print(rows)
             end
         end
     end
@@ -120,7 +120,7 @@ function help:onload()
                               "?   <keyword> : Show help document of the SQL that matches the input keyword",
                               "help ...      : Query offline help documents"},"\n")
     self.helpdict=helpdict
-    set_command(nil,{"?","\\?"},"#Synonym for `help`",self.help_topic,false,9)
+    env.set_command(nil,{"?","\\?"},"#Synonym for `help`",self.help_topic,false,9)
     env.event.snoop("ON_HELP_NOTFOUND",function(...) self.help_offline(...) end)
 end
 

@@ -170,7 +170,7 @@ function decode_scanArray(s,startPos)
   assert(string.sub(s,startPos,startPos)=='[','decode_scanArray called but array does not start at position ' .. startPos .. ' in string:\n'..s )
   startPos = startPos + 1
   -- Infinite loop for array elements
-  local index = 1
+  local index,object = 1,nil
   repeat
     startPos = decode_scanWhitespace(s,startPos)
     assert(startPos<=stringLen,'JSON String ended unexpectedly scanning array.')

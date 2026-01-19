@@ -91,7 +91,7 @@ end
 
 function alias.set(name, cmd, write)
     if not name and write ~= false then
-        return exec_command("HELP", {"ALIAS"})
+        return env.exec_command("HELP", {"ALIAS"})
     end
     
     name = name:upper()
@@ -106,7 +106,7 @@ function alias.set(name, cmd, write)
         if type(text.text) == "function" then
             return print("Error: Command has been encrypted: " .. cmd)
         end
-        alias.set(cmd, packer.unpack_str(text.text))
+        alias.set(cmd, env.packer.unpack_str(text.text))
     elseif not cmd then
         if not alias.cmdlist[name] then return end
         if alias.cmdlist[name].active then
@@ -142,7 +142,7 @@ function alias.set(name, cmd, write)
         if cmd:sub(1, 5) ~= "FUNC:" then
             desc = cmd:gsub("%s+", " "):sub(1, 300)
         else
-            cmd = packer.unpack(cmd)
+            cmd = env.packer.unpack(cmd)
             desc = cmd
         end
         if type(desc) == "string" then desc = env.COMMAND_SEPS.match(desc) end

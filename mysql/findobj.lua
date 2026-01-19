@@ -84,7 +84,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         loaded=true
     end
     local item=cache_obj[name]
-    if not item and obj~="" then
+    if not item and name~="" then
         if not name:find('.',1,true) then name='%.'..name end
         local result=self:exec_cache(stmt,{obj=name},'Internal_FindObject')
         local obj=db.resultset:rows(result,-1,'')[2]

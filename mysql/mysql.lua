@@ -107,7 +107,7 @@ function mysql:connect(conn_str)
          serverTimezone='UTC',
          zeroDateTimeBehavior='convertToNull'
         },args)
-    if event then event("BEFORE_mysql_CONNECT",self,sql,args,result) end
+    if event then event("BEFORE_mysql_CONNECT",self,nil,args,nil) end
     env.set_title("")
     for k,v in pairs(args) do args[k]=tostring(v) end
     local data_source=java.new(jdbc_prefix..'.jdbc.MysqlDataSource')
@@ -173,7 +173,7 @@ function mysql:connect(conn_str)
         env.warn("You are connecting to a lower-vesion MySQL sever, some features may not support.")
     end
     self.connection_info=args
-    if event then event("AFTER_MYSQL_CONNECT",self,sql,args,result) end
+    if event then event("AFTER_MYSQL_CONNECT",self,nil,args,nil) end
     print("Database connected.")
 end
 

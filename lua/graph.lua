@@ -482,7 +482,7 @@ function graph:run_sql(sql,args,cmd,file)
     print("Result written to "..file)
     if env.IS_WINDOWS then
         os.shell(file)
-    elseif PLATFORM=="mac" then
+    elseif env.PLATFORM=="mac" then
         os.shell('open','"'..file..'"')
     else
         os.shell("xdg-open",'"'..file..'" 2>/dev/null')

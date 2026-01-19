@@ -399,7 +399,7 @@ FlameGraph.palettes={
     aqua   = function(_, v1, v2, v3) return rgb(50 +60*v1, 165+55*v1, 165+55*v1) end, 
     orange = function(_, v1, v2, v3) return rgb(190+65*v1, 90 +65*v1, 0) end, 
     hot    = function(_, v1, v2, v3) return rgb(205+50*v3 , 0  +230 * v1, 0+55 * v2) end, 
-    mem    = function(_, v1, v3, v3) return rgb(0         , 190+50  * v2, 0+210 * v1) end, 
+    mem    = function(_, v1, v2, v3) return rgb(0         , 190+50  * v2, 0+210 * v1) end, 
     io     = function(_, v1, v2, v3) return rgb(80 + 60*v1, 80 + 60 * v1, 190+55 * v2) end
 }
 
@@ -443,7 +443,7 @@ function FlameGraph.color_map(colors,func)
     if options.palette_map[func] then
         return options.palette_map[func]
     else
-        options.palette_map[func]=color(colors,nil,func)
+        options.palette_map[func]=FlameGraph.color(colors,nil,func)
         return options.palette_map[func]
     end
 end
@@ -453,7 +453,7 @@ function FlameGraph.write_palette()
     for k,v in pairs(options.palette_map) do keys[#keys+1]=k..'->'..v end
     table.sort(keys)
     local file=io.open(options.pal_file,'w')
-    file:write(table.concat('keys','\n')..'\n')
+    file:write(table.concat(keys,'\n')..'\n')
     file:close()
 end
 
@@ -1019,7 +1019,7 @@ function FlameGraph.BuildGraph(lines,args)
                         local d= args.negate and -delta or delta
                         local deltapct = ("%.2f"):format((100 * d) / (args.timemax * args.factor))
                         deltapct = d > 0 and ("+"..deltapct) or deltapct
-                        info = ("%s (%s %s, %s%%; %s%%)"):format(escaped_func,sample_text,countname,pct1,deltapct);
+                        info = ("%s (%s %s, %s%%; %s%%)"):format(escaped_func,sample_text,args.countname,pct1,deltapct);
                     end
                 end
                 --shallow clone

@@ -46,7 +46,7 @@ local env=setmetatable({},{
     end,
     __newindex=set_env
 })
-
+local debug_mode=os.getenv("DEBUG_MODE")
 local mt={}
 for k,v in pairs{
     __declared = {},
@@ -69,7 +69,7 @@ rawset(_G,'env',env)
 rawset(env,'globals',mt.__declared)
 setmetatable(_G,mt)
 
-local debug_mode=os.getenv("DEBUG_MODE")
+
 
 local function abort_thread()
     if coroutine.running () then
@@ -487,7 +487,9 @@ local function _exec_command(name,params)
         return env.warn("No such comand '%s'!",name)
     end
     if not cmd.FUNC then return end
-    printer.write(env.ansi.get_color("NOR"))
+    if env.printer then
+        env.printer.write(env.ansi.get_color("NOR"))
+    end
     local funs=type(cmd.FUNC)=="table" and cmd.FUNC or {cmd.FUNC}
     local args= cmd.OBJ and {1,cmd.OBJ,table.unpack(params)} or {1,table.unpack(params)}
     for _,func in ipairs(funs) do
@@ -868,7 +870,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
                 param,multi_cmd=param..' '..multi_cmd..' '..concat(curr_stmt,'\n'),nil
             end
             pipe_cmd=pipe_cmd..' '..param..' '..rest
-            return eval_line(pipe_cmd,exec,true,not_skip)
+            return env.eval_line(pipe_cmd,exec,true,not_skip)
         end
     end
 
@@ -1095,7 +1097,7 @@ function env.log_debug(name,...)
     if value=="ALL" or value==name then print_debug(table.unpack(args)) end
 end
 
-function set_debug(name,value)
+local function set_debug(name,value)
     value=value:upper()
     if env.grid then
         local rows=env.grid.new()
@@ -1241,7 +1243,7 @@ end
 
 function env.unload()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
-    local e,msg=pcall(env.init.unload,init.module_list,env)
+    local e,msg=pcall(env.init.unload,env.init.module_list,env)
     if not e then print(msg) end
     _CMDS.___ABBR___={}
     if env.jit and env.jit.flush then
@@ -1374,7 +1376,7 @@ function env.set_title(title,value,callee)
     local titles,status,sep,enabled="",{},"    "
 
     if not org_title then
-        org_title=uv.get_process_title() or ""
+        org_title=env.uv.get_process_title() or ""
         loader.originProcessTitle=org_title
     end
 
@@ -1432,13 +1434,13 @@ function env.set_title(title,value,callee)
         CURRENT_TITLE=titles
         titles=enabled=="on" and "DBCLI" or titles or ""
         local err,rtn=pcall(env.uv.set_process_title,titles)
-        if (not err or rtn~=0) and not env.IS_WINDOWS then
+        if (not err or rtn~=0) and not env.IS_WINDOWS and env.printer then
             if env.PLATFORM=='mac' then
-                printer.write( "\27]0;"..titles.."\7")
+                 env.printer.write( "\27]0;"..titles.."\7")
             else
                 local term=os.getenv("TERM")
-                if term and printer then
-                    printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
+                if term then
+                    env.printer.write("\27]2;"..titles.."\7\27[1K\27[1G")
                 end
             end
         end
@@ -1456,8 +1458,8 @@ function env.ask(question,range,default)
     local isValid,desc,value=true,question
     --env.printer.write(desc..': ')
     env.IS_ASKING=question
-    value,env.IS_ASKING=console:readLine(env.space..desc..": ",default and (ansi.get_color('HEADCOLOR')..default)),nil
-    value=value and ansi.strip_ansi(value:trim()) or ""
+    value,env.IS_ASKING=console:readLine(env.space..desc..": ",default and (env.ansi.get_color('HEADCOLOR')..default)),nil
+    value=value and env.ansi.strip_ansi(value:trim()) or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
     value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
@@ -1508,7 +1510,7 @@ function env.join_path(base,...)
         return p1 or p
     end)
     if env.uv then
-        path=path:gsub('^~',uv.os.homedir())
+        path=path:gsub('^~',env.uv.os.homedir())
     end
     if is_trim then
         path=path:gsub('[\\/]+$','')

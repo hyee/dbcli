@@ -74,7 +74,7 @@ function xplan.explain(fmt,sql)
     local args={}
     sql=sql:gsub("(:[%w_$]+)",function(s) args[s:sub(2)]=""; return s end)
     sql_id=sql_id or loader:computeSQLIdFromText(sql)
-    local is_tee=printer.tee_hdl
+    local is_tee=env.printer.tee_hdl
     try{function()
             if not tonumber(sql) then
                 sql1="Explain PLAN SET STATEMENT_ID='INTERNAL_DBCLI_CMD' INTO SYS.PLAN_TABLE$ FOR "..sql
@@ -249,14 +249,14 @@ function xplan.explain(fmt,sql)
     if e10053==true then
         db:internal_call("ALTER SESSION SET EVENTS='10053 trace name context off'")
         db:query(sql)
-        oracle.C.tracefile.get_trace('default','64')
+        env.oracle.C.tracefile.get_trace('default','64')
         db:internal_call("ALTER SESSION SET tracefile_identifier=''")
     else
         db:query(sql)
         if sqldiag then
             if not is_tee then env.printer.tee_after() end
         elseif prof==true then
-            oracle.C.sqlprof.extract_profile(nil,'plan',sqltext)
+            env.oracle.C.sqlprof.extract_profile(nil,'plan',sqltext)
         end
     end
     cfg.set("feed",feed,true)

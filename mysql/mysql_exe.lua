@@ -52,7 +52,7 @@ function mysql_exe:get_startup_cmd(args,is_native)
     if db.props.database~="" then
         props[#props+1]="--database="..db.props.database
     end
-    local pwd=packer.unpack_str(conn.password)
+    local pwd=env.packer.unpack_str(conn.password)
     if (pwd or "")~="" then
         props[#props+1]="--password="..(env.IS_WINDOWS and pwd or pwd:gsub('%$','\\$'))
     end
