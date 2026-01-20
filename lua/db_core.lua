@@ -659,7 +659,7 @@ function db_core:parse(sql,params,prefix,prep,vname)
             local v= params[k]
             if not v then return s end
             counter=counter+1;
-            local args,typ={}
+            local args,typ={},nil
             if type(v) =="table" and type(params[k][2])=='table' then
                 table.insert(params[k][2],counter)
                 typ=v[3]
@@ -726,7 +726,7 @@ end
 
 function db_core:exec_cache(sql,args,description)
     self:assert_connect()
-    local params,cache ={}
+    local params,cache={},nil
     for k,v in pairs(args or {}) do
         if type(k)=="string" then params[k:upper()] = v end
     end
@@ -781,7 +781,7 @@ function db_core:exec_cache(sql,args,description)
         prep,org,params=table.unpack(cache)
         for k,n in pairs(args) do
             k=type(k)=="string" and k:upper() or k
-            local param,typ=params[k]
+            local param,typ=params[k],nil
             if param and org[k]~=n and tostring(n):sub(1,1)~='#' then
                 local idx=param[6] or param[2]
                 local method=param[4]
@@ -852,7 +852,7 @@ function db_core.log_param(params)
 end
 
 local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
-local vertical_pattern,verticals=env.VERTICAL_PATTERN
+local vertical_pattern,verticals=env.VERTICAL_PATTERN,nil
 local DDL={CREATE=1,ALTER=1,DROP=1}
 
 function db_core:exec(sql,args,prep_params,src_sql,print_result)
@@ -869,7 +869,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         db_core.__start_clock=clock
     end
 
-    local params,prep={}
+    local params,prep={},nil
     args=type(args)=="table" and args or {args}
     for k,v in pairs(args) do
         if type(k)=="string" then
@@ -1227,7 +1227,7 @@ function db_core:get_value(sql,args,null_value)
     if not result or type(result)=="number" then
         return result
     elseif type(result)=='table' then
-        local rs,rtn={}
+        local rs,rtn={},nil
         for k,r in ipairs(result) do
             if type(r)=='userdata' then
                 self.resultset:fetch(r,self.conn,null_value)
@@ -1259,7 +1259,7 @@ function db_core:get_rows(sql,args,count,null_value)
     if not result or type(result)=="number" then
         return result
     elseif type(result)=='table' then
-        local rs,rtn={}
+        local rs,rtn={},nil
         for k,r in ipairs(result) do
             if type(r)=='userdata' then
                 rs[#rs+1]=self.resultset:rows(r,count or -1,null_value or '')

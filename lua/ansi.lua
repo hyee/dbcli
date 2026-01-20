@@ -1,7 +1,7 @@
 local rawget,env=rawget,env
 local ansi={}
 local cfg
-local reader,writer,str_completer,arg_completer,add=reader
+local reader=reader
 local terminal=reader:getTerminal()
 local isAnsiSupported=true
 local pcall,type,select,pairs,tonumber,table,tostring=pcall,type,select,pairs,tonumber,table,tostring
@@ -351,7 +351,7 @@ end
 
 function ansi.onload()
     env.set_command(nil,{"clear","cls","cl"},"Clear screen ",ansi.clear_screen,false,1)
-    writer=console:getOutput()
+    env.writer=console:getOutput()
     ansi.loaded=true
     --str_completer=java.require("jline.console.completer.StringsCompleter",true)
     --arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
@@ -394,7 +394,7 @@ function string.ulen(s,maxlen)
     if not s then return nil end
     if maxlen==0 then return 0,0,'' end
     local s1=tostring(s)
-    local byte_len,print_len=#s1
+    local byte_len,print_len=#s1,#s1
     local is_ansi,is_unicode=s1:find('\27[',1,true),s1:sub(1,1024):find('[\127-\255]')
     if (maxlen and maxlen>0 and byte_len>maxlen and is_ansi) or is_unicode then
         byte_len,print_len,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
@@ -442,12 +442,13 @@ function string.convert_ansi(str)
     return ansi.convert_ansi(str)
 end
 
-local grp1,grp2,grp3,grp3=table.new(10,0),table.new(10,0),table.new(10,0),table.new(10,0)
+local grp1,grp2,grp3,grp4=table.new(10,0),table.new(10,0),table.new(10,0),table.new(10,0)
 function string.from_ansi(str)
     if type(str)~='string' then return str,nil,nil,str end
     local str1=str:convert_ansi()
     if str1==str then return str end
-    local len,first,ed,ec,grp,last,curr=#str1
+    local len=#str1
+    local first,ed,ec,grp,last,curr
     for plain,color,cnt,start,stop in str1:gsplit(ansi.pattern) do
         if not start then
             if not grp then return str,first,last,str1 end

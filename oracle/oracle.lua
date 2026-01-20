@@ -228,7 +228,7 @@ function oracle:connect(conn_str)
     sqlplustr=sqlplustr:gsub("?%S+",'')
 
     prompt=prompt or args.jdbc_alias or url:gsub('.*@','')
-    if event then event("BEFORE_ORACLE_CONNECT",self,sql,args,result) end
+    if event then event("BEFORE_ORACLE_CONNECT",self,nil,args,nil) end
     env.set_title("")
     self.working_db_link=nil
     self.props={privs={}}
@@ -523,7 +523,7 @@ function oracle:connect(conn_str)
         --env.warn("Failed to pack '%s', the unpack result is nil!",self.conn_str)
     end
     env.login.capture(self,args.jdbc_alias or args.url,args)
-    if event then event("AFTER_ORACLE_CONNECT",self,sql,args,result) end
+    if event then event("AFTER_ORACLE_CONNECT",self,nil,args,nil) end
     print("Database connected.")
 end
 
@@ -646,7 +646,7 @@ function oracle:parse(sql,params)
         env.log_debug("parse","Block-Params:",table.dump(params))
         return prep,org_sql,params
     elseif counter>1 then
-        local inputs={}
+        local inputs,prep={}
         for k,v in pairs(params) do
             if type(v)=='string' and v:sub(1,1)=='#' and env.var.inputs[k] then
                 params[k],inputs[k]=env.var.inputs[k],v
@@ -819,7 +819,7 @@ function oracle:onload()
     self.public_props={
          driverClassName="oracle.jdbc.driver.OracleDriver",
          defaultRowPrefetch=tostring(cfg.get("FETCHSIZE")),
-         PROXY_USER_NAME=proxy_user,
+         --PROXY_USER_NAME=proxy_user,
          bigStringTryClob="true",
          processEscapes='false',
          ['oracle.jdbc.freeMemoryOnEnterImplicitCache']="false",

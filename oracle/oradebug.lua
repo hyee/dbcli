@@ -972,7 +972,7 @@ function oradebug.build_dict()
             p=p:trim()
             curr_lib=p
             sub[p]={}
-            prev,prev_prefix=nil
+            prev,prev_prefix=nil,nil
             keys[p:upper()]='Library'
         elseif curr_lib then
             local item,desc=line:match(item_pattern)

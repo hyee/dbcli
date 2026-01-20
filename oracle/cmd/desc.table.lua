@@ -281,7 +281,11 @@ return obj.object_type=='FIXED TABLE' and [[
         ON        (a.column_name=c.cname)
         LEFT JOIN (select /*+no_merge*/ column_name cname,SALT,INTEGRITY_ALG from all_encrypted_columns where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) d
         ON        (a.column_name=d.cname)
-        LEFT JOIN (select /*+no_merge*/ column_name cname,securefile,in_row,max_inline,cache,compression from all_lobs where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) l
+        LEFT JOIN (select /*+no_merge*/ column_name cname,securefile,in_row,
+                          $IF DBMS_DB_VERSION.VERSION>22 $THEN max_inline $ELSE TO_NUMBER(null) $END max_inline,
+                          cache,compression 
+                   from   all_lobs 
+                   where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) l
         ON        (a.column_name=l.cname)
         LEFT JOIN (
         $IF $$VERSION > 1101 AND ($$SELECT_CATALOG_ROLE OR $$SYSDBA) $THEN

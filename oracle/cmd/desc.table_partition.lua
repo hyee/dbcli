@@ -8,7 +8,7 @@ return {[[
                      THEN DATA_TYPE||'(' || DECODE(c.CHAR_USED, 'C', c.CHAR_LENGTH,c.DATA_LENGTH) || DECODE(c.CHAR_USED, 'C', ' CHAR') || ')' --
                      WHEN DATA_TYPE IN('NCHAR','NVARCHAR','NVARCHAR2') THEN DATA_TYPE||'(' || c.CHAR_LENGTH || ')' --
                      WHEN C.DATA_TYPE IN('NCLOB','CLOB','BLOB') THEN DATA_TYPE
-                     WHEN c.DATA_TYPE = 'NUMBER' THEN (
+                     WHEN c.DATA_TYPE = 'NUMBER' THEN
                         CASE WHEN nvl(c.DATA_scale, c.DATA_PRECISION) IS NULL THEN c.DATA_TYPE
                              WHEN c.DATA_SCALE > 0 THEN DATA_TYPE||'(' || NVL(''||c.DATA_PRECISION, '38') || ',' || DATA_SCALE || ')'
                              WHEN c.DATA_PRECISION IS NULL AND c.DATA_SCALE=0 THEN 'INTEGER'
@@ -113,7 +113,11 @@ return {[[
          FROM   (select /*+no_merge*/ c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c where owner=:owner and table_name=:object_name) c,  
                 (select /*+no_merge*/ * from all_part_col_Statistics where owner=:owner and table_name=:object_name and partition_name=:object_subname) a,
                 (select /*+no_merge*/ * from all_tab_partitions  where table_owner=:owner and table_name=:object_name and partition_name=:object_subname) b,
-                (select /*+no_merge*/ column_name cname,securefile,in_row,max_inline,cache,compression from all_lob_partitions where table_owner=:owner and table_name=:object_name and partition_name=:object_subname) l
+                (select /*+no_merge*/ column_name cname,securefile,in_row,
+                        $IF DBMS_DB_VERSION.VERSION>22 $THEN max_inline $ELSE TO_NUMBER(null) $END max_inline,
+                        cache,compression 
+                 from   all_lob_partitions 
+                 where  table_owner=:owner and table_name=:object_name and partition_name=:object_subname) l
          WHERE  a.owner=c.owner and a.table_name=c.table_name and a.column_name=c.column_name and a.column_name=l.cname(+)
          AND    a.owner=B.table_owner and a.table_name=B.table_name and a.partition_name=b.partition_name
          ORDER BY NO#]],

@@ -21,7 +21,7 @@ else
 end
 
 local function resolve(path) return (path:gsub("[\\/]+",fsep)) end
-local java_bin,java_ver,java_home=arg[1],tonumber(arg[2]) or 52
+local java_bin,java_ver,java_home=arg[1],tonumber(arg[2]) or 52,nil
 
 luv.set_process_title("DBCli - Initializing")
 local files={}

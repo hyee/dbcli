@@ -485,7 +485,7 @@ local function split(s,sep,plain,occurrence,case_insensitive)
 end
 
 local function comma_value(amount)
-    local formatted,k = amount
+    local formatted,k = amount,1
     while k~=0 do  
         formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
     end
@@ -556,7 +556,7 @@ function FlameGraph.BuildGraph(lines,args)
             --reverse if needed
             if args.stackreverse then reverse(stack) end
             table.insert(stack,1,'')
-            local sub,chain=stacks
+            local sub,chain=stacks,nil
             for depth,func in ipairs(stack) do
                 -- for chain graphs, annotate waker frames with "_[w]", for later
                 -- coloring. This is a hack, but has a precedent ("_[k]" from perf).

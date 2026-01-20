@@ -1,4 +1,4 @@
-local env,stategroup,statecode=env
+local env=env
 local db=env.getdb()
 local sqlstate={}
 function sqlstate.parse_error(info)

@@ -563,7 +563,7 @@ function string.chars(s,start)
     local i = start or 1
     if not s or i>#s then return nil end
     local function next()
-        local c,i1,p,is_multi = s:byte(i),i
+        local c,i1 = s:byte(i),i
         if not c then return end
         if c >= 0xC2 and c <= 0xDF then
             local c2 = s:byte(i + 1)

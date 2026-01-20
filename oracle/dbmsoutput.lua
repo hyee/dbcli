@@ -25,7 +25,7 @@ local switch_prefix="BeGin /*switch*/dbms_output."
 function output.setOutput(db)
     local flag=cfg.get("ServerOutput")
     cfg.force_set('autotrace','off')
-    sqlerror,timer=nil
+    sqlerror,timer=nil,nil
     local stmt=switch_prefix..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
@@ -333,7 +333,7 @@ local CODES={PACKAGE=1,FUNCTION=1,TRIGGER=1,VIEW=1,PROCEDURE=1,TYPE=1}
 function output.getOutput(item,force)
     if output.is_exec then return end
     if term then cfg.set('TERMOUT','on') end
-    local db,sql,sql_id=item[1],item[2]
+    local db,sql,sql_id=item[1],item[2],nil
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
 
@@ -347,7 +347,7 @@ function output.getOutput(item,force)
 
     if DDL[typ] then
         if (typ=='CREATE' or typ=='ALTER') and CODES[objtype] and objname then
-            local orgname,owner,cnt=objname,''
+            local orgname,owner,cnt=objname,'',nil
             if objname:find('.',2,true) then owner,objname=objname:match('^(.-)%.(.+)$') end
             local inputs={owner=owner,name=objname}
             for k,v in pairs(inputs) do
@@ -363,7 +363,7 @@ function output.getOutput(item,force)
                     cfg.set('feed','off')
                     env.grid.print(res)
                 else
-                    db.props.error_obj,db.props.error_owner=nil
+                    db.props.error_obj,db.props.error_owner=nil,nil
                 end
             --else
             --    print(res)
