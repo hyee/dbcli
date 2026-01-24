@@ -42,6 +42,9 @@ local stmt=[[
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('`','')
     bypass_error=tostring(bypass_error):lower()
+    if bypass_error~=nil and type(bypass_error)~='string' then
+        bypass_error=tostring(bypass_error)
+    end
     env.checkerr(bypass_error=='1' or bypass_error=='true' or name~="","Please input the object name/id!")
     if not loaded and not cache_obj then
         cache_obj=setmetatable({},{

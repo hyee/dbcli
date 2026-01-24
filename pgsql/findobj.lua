@@ -78,6 +78,9 @@ local stmt=[[
 function db:check_obj(obj_name,bypass_error,is_set_env)
     local name=obj_name:lower():gsub('"','')
     bypass_error=tostring(bypass_error):lower()
+    if bypass_error~=nil and type(bypass_error)~='string' then
+        bypass_error=tostring(bypass_error)
+    end
     env.checkerr(bypass_error=='1' or bypass_error=='true' or name~="","Please input the object name/id!")
     if cache_obj~=db.C.dict.cache_obj then cache_obj=db.C.dict.cache_obj end
     if not loaded and not cache_obj then
@@ -134,7 +137,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         local result=self:exec_cache(stmt,{obj=name},'Internal_FindObject')
         local obj=db.resultset:rows(result,-1,'')[2]
         if obj then
-            item={object_owner=obj[1],object_name=obj[2],object_type=obj[3],granted=obj[4],object_id=obj[5],object_class=obj[6]}
+            item={object_owner=obj[1],object_name=obj[2],object_fullname='"'..obj[1]..'"."'..obj[2]..'"',object_type=obj[3],granted=obj[4],object_id=obj[5],object_class=obj[6]}
         end
     end
 

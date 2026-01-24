@@ -182,7 +182,7 @@ return obj.object_type=='FIXED TABLE' and [[
                  $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 and DBMS_DB_VERSION.RELEASE>1 $THEN
                  ||CASE WHEN a.COLLATION != nvl(B.DEFAULT_COLLATION,a.COLLATION) THEN ' COLLATE '||a.COLLATION END
                  $END
-                 ||NVL2(l.cname,'['||trim(decode(l.in_row,'YES',l.max_inline||' INLINE','NOINLINE')||decode(l.compression,'NO',' NOCOMPRESS',' COMPRESS '||l.compression)||DECODE(l.cache,'YES',' CACHE',' NOCACHE')||']'),'')               AS data_type,
+                 ||NVL2(l.cname,'['||trim(decode(l.in_row,'YES',nvl(l.max_inline,a.data_length)||' INLINE','NOINLINE')||decode(l.compression,'NO',' NOCOMPRESS',' COMPRESS '||l.compression)||DECODE(l.cache,'YES',' CACHE',' NOCACHE')||']'),'')               AS data_type,
                DECODE(a.NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                (CASE
                    WHEN a.default_length > 0 THEN
@@ -281,9 +281,13 @@ return obj.object_type=='FIXED TABLE' and [[
         ON        (a.column_name=c.cname)
         LEFT JOIN (select /*+no_merge*/ column_name cname,SALT,INTEGRITY_ALG from all_encrypted_columns where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) d
         ON        (a.column_name=d.cname)
-        LEFT JOIN (select /*+no_merge*/ column_name cname,securefile,in_row,
-                          $IF DBMS_DB_VERSION.VERSION>22 $THEN max_inline $ELSE TO_NUMBER(null) $END max_inline,
-                          cache,compression 
+        LEFT JOIN (select /*+no_merge*/ column_name cname,in_row,cache,
+                   $IF DBMS_DB_VERSION.VERSION>22 $THEN max_inline $ELSE TO_NUMBER(null) $END max_inline,
+                   $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                       securefile,compression
+                   $ELSE
+                       'NO' securefile,'NO' compression
+                   $END 
                    from   all_lobs 
                    where '&object_type' like 'TABLE%' and owner=:owner and table_name=:object_name) l
         ON        (a.column_name=l.cname)

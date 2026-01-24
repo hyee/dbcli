@@ -175,6 +175,9 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
     end
     obj_name=obj_name:gsub('"+','"')
     local obj=obj_name:trim():upper()
+    if bypass_error~=nil and type(bypass_error)~='string' then
+        bypass_error=tostring(bypass_error)
+    end
     env.checkerr(bypass_error=='1' or obj~="","Please input the object name/id!")
 
     if cache_obj~=db.C.dict.cache_obj then cache_obj=nil end
@@ -234,6 +237,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
             loaded=loaded+1
             local item={
                 target=o.."."..n,
+                object_fullname='"'..o..'"."'..n..'"',
                 owner=o,
                 object_owner=o,
                 object_type=t,
@@ -259,6 +263,7 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         args.target,args.ignore=obj_name,bypass_error and (''..bypass_error) or "0"
         db:exec_cache(stmt,args,'Internal_FindObject')
         args.owner=args.object_owner
+        args.object_fullname='"'..args.owner..'"."'..args.object_name..'"'
     else
         args={}
     end

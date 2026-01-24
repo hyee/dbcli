@@ -25,7 +25,8 @@ oracle.module_list={
     "sqlcl",
     "pdb",
     "adb",
-    "parse10053"
+    "parse10053",
+    "loader"
 }
 
 local home,tns=env.uv.os.getenv("ORACLE_HOME"),env.uv.os.getenv("TNS_ADM") or env.uv.os.getenv("TNS_ADMIN")

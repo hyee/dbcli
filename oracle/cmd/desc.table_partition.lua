@@ -22,7 +22,7 @@ return {[[
                  $IF DBMS_DB_VERSION.VERSION > 22 $THEN
                  ||rtrim(' '||trim('.' from decode(c.domain_owner,c.owner,'',c.domain_owner)||'.'||c.domain_name))
                  $END
-                 ||NVL2(l.cname,'['||trim(decode(l.in_row,'YES',l.max_inline||' INLINE','NOINLINE')||decode(l.compression,'NO',' NOCOMPRESS',' COMPRESS '||l.compression)||DECODE(l.cache,'YES',' CACHE',' NOCACHE')||']'),'')
+                 ||NVL2(l.cname,'['||trim(decode(l.in_row,'YES',nvl(l.max_inline,a.data_length)||' INLINE','NOINLINE')||decode(l.compression,'NO',' NOCOMPRESS',' COMPRESS '||l.compression)||DECODE(l.cache,'YES',' CACHE',' NOCACHE')||']'),'')
                 AS data_type,
                 DECODE(NULLABLE, 'N', 'NOT NULL', '') NULLABLE,
                 (CASE
@@ -113,9 +113,13 @@ return {[[
          FROM   (select /*+no_merge*/ c.*,regexp_replace(data_type,'\(.+\)') dtype from all_tab_cols c where owner=:owner and table_name=:object_name) c,  
                 (select /*+no_merge*/ * from all_part_col_Statistics where owner=:owner and table_name=:object_name and partition_name=:object_subname) a,
                 (select /*+no_merge*/ * from all_tab_partitions  where table_owner=:owner and table_name=:object_name and partition_name=:object_subname) b,
-                (select /*+no_merge*/ column_name cname,securefile,in_row,
+                (select /*+no_merge*/ column_name cname,in_row,cache,
                         $IF DBMS_DB_VERSION.VERSION>22 $THEN max_inline $ELSE TO_NUMBER(null) $END max_inline,
-                        cache,compression 
+                        $IF DBMS_DB_VERSION.VERSION>10 $THEN
+                            securefile,compression
+                        $ELSE
+                            'NO' securefile,'NO' compression
+                        $END
                  from   all_lob_partitions 
                  where  table_owner=:owner and table_name=:object_name and partition_name=:object_subname) l
          WHERE  a.owner=c.owner and a.table_name=c.table_name and a.column_name=c.column_name and a.column_name=l.cname(+)

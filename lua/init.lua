@@ -42,7 +42,8 @@ local init={
         "lua/ilua",
         "lua/delta",
         "lua/lexer",
-        "lua/json_plan"
+        "lua/json_plan",
+        "lua/data_loader"
     }
 }
 local plugins={}
