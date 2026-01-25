@@ -365,6 +365,7 @@ public class Loader {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
             try (CSVWriter writer = new CSVWriter(fileName)) {
+                writer.setlogWriter(System.out);
                 writer.setAsyncMode(aync);
                 setExclusiveAndRemap(writer, excludes, remaps);
                 int result = writer.writeAll(rs, true);
@@ -377,6 +378,7 @@ public class Loader {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
             try (SQLWriter writer = new SQLWriter(fileName)) {
+                writer.setlogWriter(System.out);
                 writer.setAsyncMode(aync);
                 writer.setFileHead(header);
                 setExclusiveAndRemap(writer, excludes, remaps);
