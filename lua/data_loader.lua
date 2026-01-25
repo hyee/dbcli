@@ -10,18 +10,19 @@ function loader:ctor()
 
         Load options(case-insensitive):
         ===============================
-        * show [off|all|ddl|dml]            : Show DDL/DML statement only and do not load CSV file:  ddl=show DDL only, dml=show DML only, all=show both DDL and DML
+        * show off|all|ddl|dml              : Show DDL/DML statement only and do not load CSV file:  ddl=show DDL only, dml=show DML only, all=show both DDL and DML
         * show_ddl|ddl                      : Show DDL only and do not load CSV file
         * show_dml|dml                      : Show DML only and do not load CSV file
-        * create|new <off|on>               : Show DDL and create table from CSV (default: off)
+        * create|new  off|on                : Show DDL and create table from CSV (default: off)
         * scan_rows|scanrows|scan <number>  : Used together with show/show_ddl/create, number of rows to scan for column names (default: 200)
-        * column_size <auto|actual|maximum> : Used together with show/show_ddl/create, Column size strategy (default: auto)
-        * truncate <on|off>                 : Truncate table before loading (default: off)
-        * errors <number>                   : Number of errors to allow before stopping (default: -1, unlimited)
+        * column_size auto|actual|maximum   : Used together with show/show_ddl/create, Column size strategy (default: auto)
+        * truncate on|off                   : Truncate table before loading (default: off)
+        * errors <number>|-1                : Number of errors to allow before stopping, -1 as unlimited (default: 3000)
         * batch_rows|batchrows <number>     : Number of rows to batch per insert (default: 2048)
+        * bad_file|badfile auto|<filepath>  : Bad file path to store failed rows, auto as create at target csv folder(default: auto)
         * row_limit|rowlimit|limit <number> : Maximum number of rows to load (default: 0, unlimited)
-        * report_mb|report <number>         : Report progress every N MB loaded (default: 8)
-        * variable_format|var <?|:>         : Variable format used in DML statement (default: ?)
+        * report_mb|report <number>|-1      : Report progress every N MB loaded, -1 will suppress all messages (default: 8)
+        * variable_format|var ?|:           : Variable format used in DML statement (default: ?)
         * platform auto|<platform>          : Database platform used to generate DDL/DML statement(default: auto)
                                               Avail options: mysql, oracle, pgsql, sqlserver, db2, mssql, postgresql
         * map_column_names|mapcolumnnames   : Map CSV column names to table column names,column mappings are case-insensitive.
@@ -29,7 +30,7 @@ function loader:ctor()
         
         CSV format options(case-insensitive):
         =====================================
-        * has_header|header <on|off>                                : Whether the first row is a header row (default: on)
+        * has_header|header on|off                                  : Whether the first row is a header row (default: on)
         * encoding <charset>                                        : Character encoding of CSV file (default: "")
         * delimiter <chars>                                         : CSV delimiter character (default: ,)
         * enclosure <chars>                                         : CSV enclosure character (default: ")
@@ -98,7 +99,8 @@ function loader:load(target_table,src_csv,options)
         show={"off","all","ddl","dml"},
         create={"off","on"},
         truncate={"off","on"},
-        errors={-1},
+        errors={3000},
+        bad_file={"auto"},
         batch_rows={2048},
         has_header={"on","off"},
         row_limit={0},
@@ -141,6 +143,8 @@ function loader:load(target_table,src_csv,options)
         show_dml={"dml","ddl",name="show"},
         ddl={"ddl","ddl",name="show"},
         dml={"dml","ddl",name="show"},
+        badfile=names.bad_file,
+        bad=names.bad_file,
         skip=names.skip_rows,
         skiprows=names.skip_rows,
         skipcols=names.skip_columns,
@@ -204,6 +208,16 @@ function loader:load(target_table,src_csv,options)
                     env.checkerr(cols=="off" or cols=="auto","Invalid option \""..opt:upper().."\" value: "..(cols or "nil"))
                     push(val.name,cols)
                 end
+            elseif val.name=='bad_file' then
+                local fmt=next_token(nil,false)
+                env.checkerr(fmt and not names[fmt:lower()],"Invalid option \""..opt:upper().."\" value: "..(fmt or "nil"))
+                if fmt:lower()~='auto' then
+                    fmt=env.join_path(fmt)
+                    if not fmt:find('[\\/]') then
+                        fmt=env.join_path(env._CACHE_BASE,fmt)
+                    end
+                end
+                push(val.name,fmt,false)
             elseif val.name=="date_format" or val.name=="timestamp_format" or val.name=="timestamptz_format" then
                 local fmt=next_token(nil,false)
                 env.checkerr(fmt and not names[fmt:lower()],"Invalid option \""..opt:upper().."\" value: "..(fmt or "nil"))
@@ -259,8 +273,10 @@ function loader:load(target_table,src_csv,options)
 
     local db=self.db
     if db:is_connect() and db.check_obj then
-        local obj=db:check_obj(target_table,1)
-        if obj then
+        local validate=cfg.CREATE=='OFF' and cfg.show~='OFF'
+        local obj=db:check_obj(target_table,validate and 1 or 0)
+        env.checkerr(not validate or obj and obj.object_name,"Cannot find target object: "..target_table)
+        if obj and obj.object_name then
             target_table=obj.object_fullname or obj.object_name
             cfg.TARGET_TABLE=obj.target_table
             cfg.object_owner,cfg.object_name=obj.object_owner,obj.object_name

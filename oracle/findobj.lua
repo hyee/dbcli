@@ -263,7 +263,9 @@ function db:check_obj(obj_name,bypass_error,is_set_env)
         args.target,args.ignore=obj_name,bypass_error and (''..bypass_error) or "0"
         db:exec_cache(stmt,args,'Internal_FindObject')
         args.owner=args.object_owner
-        args.object_fullname='"'..args.owner..'"."'..args.object_name..'"'
+        if args.owner then
+            args.object_fullname='"'..args.owner..'"."'..args.object_name..'"'
+        end
     else
         args={}
     end
