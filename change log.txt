@@ -1,3 +1,4 @@
+2026-01-25: + oracle: new scripts 'show rollseg';new command 'load' that similar to SQLcl; update lib "opencsv"
 2026-01-20: + oracle: new scripts 'sys gcfreels';update lib "opencsv"
 2026-01-15: + oracle: new scripts 'ora sqlenv'; support describing SELECT statement and SQL_ID(SELECT)
 2026-01-11: + oracle: new scripts 'ora mvstat','show plsqlenv' 
