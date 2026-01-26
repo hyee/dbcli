@@ -2,6 +2,7 @@
     Ref: https://github.com/karlarao/scripts/tree/master/data_guard
     --[[
         @ALIAS: dataguard
+        @ver122 : 12.2={} defult={--}
     --]]
 ]]*/
 set feed off autohide on
@@ -82,9 +83,9 @@ WHERE  ROWNUM <= 30;
 
 PRO gv$managed_standby:
 PRO ===================
-SELECT inst_id,thread#, pid, role,client_pid, client_role,action,  sequence#, block#,block_count, delay_mins
-FROM   gv$dataguard_process
-where sequence#>0;
+&ver122 SELECT inst_id,thread#, pid, role,client_pid, client_role,action,  sequence#, block#,block_count, delay_mins
+&ver122 FROM   gv$dataguard_process
+&ver122 where sequence#>0;
 
 SELECT inst_id,thread#, process, pid, status, client_process, client_pid, sequence#, block#, delay_mins,active_agents, known_agents
 FROM   gv$managed_standby

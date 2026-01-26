@@ -17,11 +17,12 @@ function loader:ctor()
         * scan_rows|scanrows|scan <number>  : Used together with show/show_ddl/create, number of rows to scan for column names (default: 200)
         * column_size auto|actual|maximum   : Used together with show/show_ddl/create, Column size strategy (default: auto)
         * truncate on|off                   : Truncate table before loading (default: off)
-        * errors <number>|-1                : Number of errors to allow before stopping, -1 as unlimited (default: 3000)
+        * errors <number>|-1                : Number of errors to allow before stopping, -1 as unlimited (default: 100)
         * batch_rows|batchrows <number>     : Number of rows to batch per insert (default: 2048)
         * bad_file|badfile auto|<filepath>  : Bad file path to store failed rows, auto as create at target csv folder(default: auto)
         * row_limit|rowlimit|limit <number> : Maximum number of rows to load (default: 0, unlimited)
         * report_mb|report <number>|-1      : Report progress every N MB loaded, -1 will suppress all messages (default: 8)
+        * strict_mode|strict                : Strict number conversion to avoid overflow,such as number with decimal digits cannot cast to integer (default: off)
         * variable_format|var ?|:           : Variable format used in DML statement (default: ?)
         * platform auto|<platform>          : Database platform used to generate DDL/DML statement(default: auto)
                                               Avail options: mysql, oracle, pgsql, sqlserver, db2, mssql, postgresql
@@ -29,7 +30,7 @@ function loader:ctor()
           |mapnames (CSV_COL=TABLE_COL,...)   e.g.: map_column_names (ID=OBJECT_ID,NAME=OBJECT_NAME)
         
         CSV format options(case-insensitive):
-        =====================================
+        =====================================   
         * has_header|header on|off                                  : Whether the first row is a header row (default: on)
         * encoding <charset>                                        : Character encoding of CSV file (default: "")
         * delimiter <chars>                                         : CSV delimiter character (default: ,)
@@ -99,7 +100,7 @@ function loader:load(target_table,src_csv,options)
         show={"off","all","ddl","dml"},
         create={"off","on"},
         truncate={"off","on"},
-        errors={3000},
+        errors={100},
         bad_file={"auto"},
         batch_rows={2048},
         has_header={"on","off"},
@@ -108,6 +109,7 @@ function loader:load(target_table,src_csv,options)
         skip_columns={"auto"},
         scan_rows={200},
         report_mb={8},
+        trict_mode={"off","on"},
         variable_format={"?",":"},
         platform={"auto","oracle","mysql","pgsql","sqlserver","db2",'mssql','postgresql'},
         delimiter={","},
@@ -143,6 +145,7 @@ function loader:load(target_table,src_csv,options)
         show_dml={"dml","ddl",name="show"},
         ddl={"ddl","ddl",name="show"},
         dml={"dml","ddl",name="show"},
+        strict=names.trict_mode,
         badfile=names.bad_file,
         bad=names.bad_file,
         skip=names.skip_rows,

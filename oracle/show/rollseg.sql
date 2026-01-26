@@ -7,7 +7,7 @@ PRO TOP 50 SEGMENTS BY SEGMENT BYTES:
 PRO =================================
 SELECT * 
 FROM (
-    SELECT /*+OUTLINE_LEAF USE_HASH(s f e)
+    SELECT /*+OUTLINE_LEAF USE_HASH(s f e t)
             opt_param('_optimizer_sortmerge_join_enabled','false') 
             opt_param('optimizer_index_cost_adj' 1000)
             table_stats(SYS.X$KTFBFE SAMPLE BLOCKS=512)
@@ -36,10 +36,7 @@ FROM (
             f.blocks "FILE|BLOCKS",
             decode(f.autoextensible, 'YES', f.maxblocks, f.blocks) "MAX|BLOCKS",
             decode(f.autoextensible, 'YES', f.increment_by, 0) "INCREMENT|BYTES"
-    FROM   dba_rollback_segs s
-    JOIN   dba_data_files f
-    USING  (relative_fno, file_id, tablespace_name)
-    LEFT   JOIN (
+    FROM (
         SELECT /*+no_merge*/
                 segment_name,
                 tablespace_name,
@@ -49,22 +46,26 @@ FROM (
                 SUM(SUM(bytes)) over (partition by tablespace_name, file_id, relative_fno) file_bytes,
                 SUM(blocks) blocks,
                 COUNT(file_id) extents
-        FROM   dba_extents
-        WHERE  segment_type LIKE '%UNDO%'
+        FROM   dba_undo_extents
         GROUP  BY segment_name, tablespace_name, file_id, relative_fno) e
-    USING  (segment_name, tablespace_name, file_id, relative_fno)
-    LEFT JOIN TABLE(GV$(CURSOR(
-        SELECT userenv('instance') inst_id,
+    JOIN   dba_data_files f
+    USING  (tablespace_name, file_id, relative_fno)
+    FULL JOIN  (select segment_name,tablespace_name,status from dba_rollback_segs) s
+    USING  (segment_name, tablespace_name) 
+    LEFT JOIN (
+        SELECT r.inst_id,
                greatest(count(t.xidusn),max(r.xacts)) xacts,
                u.name segment_name,
                max(r.rssize) rssize,
                sum(t.used_urec) used_urec,
                sum(t.used_ublk) used_ublk 
-        FROM   v$rollstat r
-        JOIN   v$rollname u ON r.usn = u.usn
-        LEFT JOIN   v$transaction t ON t.xidusn = r.usn
-        GROUP  BY u.name
-    ))) t USING(segment_name)
-    ORDER BY "SEG|BYTES" DESC)
+        FROM   gv$rollstat r 
+        JOIN   v$rollname u 
+        ON     r.usn = u.usn
+        LEFT JOIN   gv$transaction t 
+        ON     t.xidusn = r.usn and t.inst_id=r.inst_id
+        GROUP  BY r.inst_id,u.name) t 
+    USING(segment_name)
+    ORDER BY "SEG|BYTES" DESC NULLS LAST)
 WHERE rownum<=50;
 
