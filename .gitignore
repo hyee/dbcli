@@ -3,6 +3,7 @@
 *.swp
 .DS_Store
 .trae/
+.github/
 data/init.cfg
 data/init.conf
 data/plugin.cfg

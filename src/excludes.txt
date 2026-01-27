@@ -3,6 +3,8 @@
 .ini
 .log
 .swp
+.trae
+.github
 \jre\
 \src\
 \cache\

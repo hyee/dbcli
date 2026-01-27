@@ -293,6 +293,7 @@ function loader:load(target_table,src_csv,options)
     if self.validate_options then
         self.validate_options(cfg)
     end
+
     env.checkerr(cfg.SHOW~='OFF' or env.set.get("readonly")=="off",'Operation not allowed in readonly mode.')
     db_loader.importCSVData(db.conn,target_table,file,cfg)
 end
