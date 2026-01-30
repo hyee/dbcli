@@ -16,10 +16,13 @@
 
 package com.zaxxer.nuprocess.osx;
 
-import static com.zaxxer.nuprocess.internal.LibC.WEXITSTATUS;
-import static com.zaxxer.nuprocess.internal.LibC.WIFEXITED;
-import static com.zaxxer.nuprocess.internal.LibC.WIFSIGNALED;
-import static com.zaxxer.nuprocess.internal.LibC.WTERMSIG;
+import com.sun.jna.Native;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
+import com.zaxxer.nuprocess.internal.BaseEventProcessor;
+import com.zaxxer.nuprocess.internal.LibC;
+import com.zaxxer.nuprocess.osx.LibKevent.Kevent;
+import com.zaxxer.nuprocess.osx.LibKevent.TimeSpec;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -28,13 +31,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-import com.sun.jna.ptr.IntByReference;
-import com.zaxxer.nuprocess.internal.BaseEventProcessor;
-import com.zaxxer.nuprocess.internal.LibC;
-import com.zaxxer.nuprocess.osx.LibKevent.Kevent;
-import com.zaxxer.nuprocess.osx.LibKevent.TimeSpec;
+import static com.zaxxer.nuprocess.internal.LibC.*;
 
 /**
  * @author Brett Wooldridge

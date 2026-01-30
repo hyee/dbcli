@@ -196,7 +196,10 @@ function loader:load(target_table,src_csv,options)
             env.checkerr(val,"Unrecognized option: "..opt:upper())
             if val.name=="map_column_names" then
                 local maps=next_token("%b()")
-                env.checkerr(maps and maps:sub(1,1)=="(" and maps:sub(-1,-1)==")","Invalid option \""..opt:upper().."\" value: "..(maps or "nil"))
+                if not maps then
+                    local next_=(next_token() or "nil")
+                    env.checkerr(maps,"Invalid option \""..opt:upper().."\" value: "..next_)
+                end
                 local mappings={}
                 for csv_col,table_col in maps:sub(2,-2):gmatch("%s*([^= ]+)%s*=%s*([^, ]+)") do
                     mappings[csv_col:upper()]=table_col
@@ -240,8 +243,6 @@ function loader:load(target_table,src_csv,options)
                         fmt=fmt:gsub(k,v)
                     end
                     fmt=fmt:gsub('z$','Z'):gsub('(x+)$',function(s) return '.'..s:upper() end)
-                else
-                    print(fmt)
                 end
                 push(val.name,fmt,false)
             elseif type(val[1])=="number" then
@@ -249,15 +250,16 @@ function loader:load(target_table,src_csv,options)
                 env.checkerr(num and tonumber(num),"Invalid option \""..opt:upper().."\" value: "..(num or "nil"))
                 push(val.name,tonumber(num))
             else
-                local option=next_token()
+                local option=next_token() or ""
                 if val.maps then
-                    if option and val.maps[option:upper()] then
+                    if val.maps[option:upper()] then
                         push(val.name,option)
                     else
-                        if not option or names[option] then
+                        if option=='' or names[option] then
                             push(val.name,val[2])
-                        elseif not option then
-                            break
+                            if option=='' then
+                                break
+                            end
                         end
                         opt=option
                         goto parse_opt

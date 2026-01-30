@@ -454,6 +454,8 @@ function table.dump(tbl,indent,maxdep,tabs)
         if type(t)~='table' or not t.__pairs then
             return indent..tostring(tbl)
         end
+    elseif type(tbl)~='table' then
+        return
     end
     for k,_ in pairs(tbl) do
         local k1=k

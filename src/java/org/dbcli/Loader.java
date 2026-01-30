@@ -3,6 +3,7 @@ package org.dbcli;
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.LuaTable;
+import com.naef.jnlua.debug.LuaMemoryDiagnostics;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVWriter;
 import com.opencsv.ResultSetHelperService;
@@ -74,7 +75,10 @@ public class Loader {
         } catch (Throwable e) {
 
         }
+        //LuaMemoryDiagnostics.enable();
+        //LuaMemoryDiagnostics.setTraceLevel(5);
         lua = LuaState.getMainLuaState();
+        //LuaMemoryDiagnostics.snapshot("app_start", lua);
         if (lua != null) console.setLua(lua);
         //Ctrl+D
         keyMap = console.reader.getKeys();
@@ -99,69 +103,6 @@ public class Loader {
         Throwable t = e.getCause();
         while (t != null && t.getCause() != null) t = t.getCause();
         return t == null ? e : new Throwable(t);
-    }
-
-
-    public static void loadLua(Loader loader, String[] args) throws Exception {
-        Thread.currentThread().setUncaughtExceptionHandler(caughtHanlder);
-        lua = new LuaState();
-        lua.pushGlobal("loader", loader);
-        console.isSubSystem = false;
-        console.setLua(lua);
-
-        String separator = File.separator;
-        String input = root + separator + "lua" + separator + "input.lua";
-        if (Console.writer != null) {
-            lua.pushGlobal("reader", console.reader);
-            lua.pushGlobal("writer", Console.writer);
-            lua.pushGlobal("terminal", console.terminal);
-            lua.pushGlobal("console", console);
-            lua.pushGlobal("WORK_DIR", root + separator);
-        }
-        StringBuilder sb = new StringBuilder();
-        String readline = "";
-        BufferedReader br = new BufferedReader(new FileReader(new File(input)));
-        while (br.ready()) {
-            readline = br.readLine();
-            sb.append(readline + "\n");
-        }
-        br.close();
-        //System.out.println(asb.toString());
-        lua.load(sb.toString(), input);
-        if (ReloadNextTime != null && ReloadNextTime.equals("_init_")) ReloadNextTime = null;
-        ArrayList<String> list = new ArrayList<>(args.length);
-        if (ReloadNextTime != null) list.add("set database " + ReloadNextTime);
-        for (int i = 0; i < args.length; i++) {
-            if (ReloadNextTime != null && (args[i].toLowerCase().contains(" database ") || args[i].toLowerCase().contains(" platform ")))
-                continue;
-            list.add(args[i]);
-        }
-        ReloadNextTime = null;
-        lua.call(list.toArray());
-        lua.close();
-        lua = null;
-        System.gc();
-        System.runFinalization();
-    }
-
-
-    public static void main(String[] args) throws Exception {
-        if (args.length == 1) {
-            Integer pid = null;
-            try {
-                pid = Integer.valueOf(args[0]);
-                FileDump.main(args);
-                return;
-            } catch (Exception e) {
-                if (pid != null) {
-                    e.printStackTrace();
-                    return;
-                }
-            }
-        }
-        Loader l = get();
-        while (ReloadNextTime != null) loadLua(l, args);
-        //console.threadPool.shutdown();
     }
 
     public static void addLibrary(String s, Boolean isReplace) throws Exception {
@@ -195,6 +136,15 @@ public class Loader {
 
     public void resetLua() {
         console.setLua(lua);
+        lua.cleanup();
+        System.gc();
+        lua.gc(LuaState.GcAction.COLLECT, 0);
+        /*
+        LuaMemoryDiagnostics.snapshot("app_end", lua);
+        LuaMemoryDiagnostics.printReport();
+        LuaMemoryDiagnostics.compare("app_start", "app_end");
+        LuaMemoryDiagnostics.printRecommendations();
+        LuaMemoryDiagnostics.snapshot("app_start", lua);*/
     }
 
     public void mkdir(String path) {

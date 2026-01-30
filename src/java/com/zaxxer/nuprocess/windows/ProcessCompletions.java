@@ -16,20 +16,6 @@
 
 package com.zaxxer.nuprocess.windows;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
 import com.sun.jna.Native;
 import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.ptr.PointerByReference;
@@ -38,6 +24,15 @@ import com.zaxxer.nuprocess.windows.NuWinNT.HANDLE;
 import com.zaxxer.nuprocess.windows.NuWinNT.ULONG_PTR;
 import com.zaxxer.nuprocess.windows.NuWinNT.ULONG_PTRByReference;
 import com.zaxxer.nuprocess.windows.WindowsProcess.PipeBundle;
+
+import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class ProcessCompletions implements Runnable {
     private static final int DEADPOOL_POLL_INTERVAL;

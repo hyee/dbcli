@@ -16,20 +16,17 @@
 
 package com.zaxxer.nuprocess.linux;
 
-import java.util.Iterator;
-import java.util.LinkedList;
-import java.util.List;
-
 import com.sun.jna.Native;
 import com.sun.jna.ptr.IntByReference;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.internal.BaseEventProcessor;
 import com.zaxxer.nuprocess.internal.LibC;
 
-import static com.zaxxer.nuprocess.internal.LibC.WIFEXITED;
-import static com.zaxxer.nuprocess.internal.LibC.WEXITSTATUS;
-import static com.zaxxer.nuprocess.internal.LibC.WIFSIGNALED;
-import static com.zaxxer.nuprocess.internal.LibC.WTERMSIG;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+
+import static com.zaxxer.nuprocess.internal.LibC.*;
 
 /**
  * @author Brett Wooldridge

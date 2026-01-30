@@ -83,14 +83,13 @@ function helper.env(target,depth)
         rows[1][siz],rows[2][siz]=name,value
     end
     local e=terminal.encoding(terminal)
-    
-    
-    
-    add("Memory.JVM.Used(MB)",math.floor((runtime:totalMemory()-runtime:freeMemory())/1024/1024))
-    add("Memory.LUA(MB)",env.uv and env.uv.resident_set_memory()/1024/1024 or math.floor(collectgarbage("count")/1024))
+    collectgarbage("collect")
+    local lua_mem=collectgarbage("count")*1024
+    add("Memory.JVM.Used(MB)",math.floor((runtime:totalMemory()-runtime:freeMemory()-lua_mem)/1024/1024))
+    add("Memory.LUA(MB)",math.floor(lua_mem/1024/1024))
     add("Memory.JVM.Free(MB)",math.floor(runtime:freeMemory()/1024/1024))
     if rows[2][1] and rows[2][2] then
-        add("Memory.Total(MB)",rows[2][1]+rows[2][2]+rows[2][3])
+        add("Memory.Total(MB)",rows[2][1]+rows[2][2])
     end
     add("TERM",console.terminal:getType())
     add("CodePoint",e)

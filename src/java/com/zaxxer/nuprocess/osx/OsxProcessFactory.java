@@ -16,13 +16,12 @@
 
 package com.zaxxer.nuprocess.osx;
 
-import java.nio.file.Path;
-
-import java.util.List;
-
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessFactory;
 import com.zaxxer.nuprocess.NuProcessHandler;
+
+import java.nio.file.Path;
+import java.util.List;
 
 public class OsxProcessFactory implements NuProcessFactory {
     /**

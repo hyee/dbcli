@@ -13,6 +13,7 @@ function sqlcl:ctor()
     self.support_redirect=false
 end
 
+
 function sqlcl:onload()
 end
 return sqlcl.new()

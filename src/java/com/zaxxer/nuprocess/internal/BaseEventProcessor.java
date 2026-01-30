@@ -16,6 +16,8 @@
 
 package com.zaxxer.nuprocess.internal;
 
+import com.sun.jna.ptr.IntByReference;
+
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,8 +25,6 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import com.sun.jna.ptr.IntByReference;
 
 /**
  * @author Brett Wooldridge
