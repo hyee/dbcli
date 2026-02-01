@@ -2,10 +2,12 @@ local loader=env.class()
 local env=env
 
 local db_loader=java.require("com.opencsv.DBLoader",true)
+local db_unloader=java.require("com.opencsv.DBUnloader",true)
 function loader:ctor()
-    self.command='load'
+    self.load_command='load'
+    self.unload_command='unload'
     self.db=env.getdb()
-    self.helps=[[
+    self.load_helps=[[
         Load data from a CSV file into a table. usage: @@NAME <target_table> <src_csv> [SET options]
 
         Load options(case-insensitive):
@@ -40,7 +42,64 @@ function loader:ctor()
         * skip_rows|skiprows|skip <number>                          : Number of rows to skip if CSV rows is not started from the first row (default: 0)
         * skip_columns|skipcols (column1,column2,...)|off|auto      : Columns to be skipped from loading (default: auto)
         
-        CSV Timestamp format options:
+        Timestamp format options:
+        =============================
+        * format :  Transform the blow 3 formats from Oracle format to Java format when values,if set as 'java' then no transformation will be taken.
+                    When format is 'oracle'(default), the formats will be replaced into Java format:
+                        * YYYY or yyyy or yy => yyyy or yy
+                        * MON or mon         => MMMM
+                        * MM or mm           => MM
+                        * DD or dd           => dd
+                        * HH or hh           => hh
+                        * HH24 or hh24       => HH
+                        * MI or mi           => mm
+                        * SS or ss           => ss
+                        * .ff or xff or xff3 => .SSS
+                        * .ff5 or xff6       => .SSSSS
+                        * TZH:TZM or tzh:tzm => XXX
+                        * TZR or tzr         => XXX
+                    You should set this option as 'java' firstly if you want to directly specify the Java formats.
+        * date_format|dateformat|date <format>                      : Date format string (default: auto)
+        * timestamp_format|timestampformat|timestamp <format>       : Timestamp format string (default: auto)
+        * timestamptz_format|timestamptzformat|timestamptz <format> : Timestamp with timezone format string (default: auto)
+        * locale <locale>                                           : Locale used to parse date/timestamp (default: "")
+    ]]
+
+    self.unload_helps=[[
+        Unload data from SELECT statement into CSV/SQL/JSON file. usage: @@NAME <savepath> <SQL_file>|"<SQL>" [SET <options>]
+
+        Unload options(case-insensitive):
+        ===============================
+        * file_format|file_type|type        : Target file type, can be CSV, SQL or JSON (default:CSV)
+        * batch_rows|batchrows <number>     : Number of rows prefeched from ResultSet (default: 2048)
+        * row_limit|rowlimit|limit <number> : Maximum number of rows to unload (default: 0, unlimited)
+        * report_mb|report <number>|-1      : Report progress every N MB loaded, -1 will suppress all messages (default: 8)
+        * has_header|header on|off          : Whether the first row is a header row (default: on)
+        * platform auto|<platform>          : Database platform used to generate DDL/DML statement(default: auto)
+                                              Avail options: mysql, oracle, pgsql, sqlserver, db2, mssql, postgresql
+        * map_column_names|mapcolumnnames   : Map CSV column names to table column names,column mappings are case-insensitive.
+          |mapnames (CSV_COL=TABLE_COL,...)   e.g.: map_column_names (ID=OBJECT_ID,NAME=OBJECT_NAME)
+        * skip_columns|skipcols             : Columns to be skipped from unloading (default: auto)
+          (column1,column2,...)|off|auto    
+        
+        JSON format options(case-insensitive):
+        =====================================
+        * JSON_ROW_TYPE|JSON_TYPE OBJECT|ARRAY                      : Number of spaces to indent for JSON output (default: OBJECT)
+                                                                      OBJECT: Each row is a JSON object.
+                                                                      ARRAY: Each row is a JSON array,the first row is the header row(controlled by HASH_HEADER).
+        * JSON_KEEP_NULLS|JSONKEEPNULLS ON|OFF                      : When JSON_ROW_TYPE is OBJECT, whether to keep null values in JSON output (default: on)
+        * JSON_NULL_VALUE|JSONNULLVALUE <value>                     : JSON null value (default: null)
+        
+                                                                      CSV format options(case-insensitive):
+        =====================================
+        * delimiter <chars>                                         : CSV delimiter character (default: ,)
+        * enclosure <chars>                                         : CSV enclosure character (default: ")
+        * escape <char>                                             : CSV escape character (default: \)
+        * unescape_newline|unescape                                 : Whether to unescape string "\n" and "\r" as CRLF for string column (default: off)
+        * skip_rows|skiprows|skip <number>                          : Number of rows to skip if CSV rows is not started from the first row (default: 0)
+        
+        
+        Timestamp format options:
         =============================
         * format :  Transform the blow 3 formats from Oracle format to Java format when values,if set as 'java' then no transformation will be taken.
                     When format is 'oracle'(default), the formats will be replaced into Java format:
@@ -64,11 +123,16 @@ function loader:ctor()
     ]]
 end
 
-
-function loader:load(target_table,src_csv,options)
-    env.checkhelp(src_csv)
-    local typ,file=os.exists(src_csv)
-    env.checkerr(typ=="file","Input CSV file %s does not exist.",src_csv)
+function loader:parse_options(src_file,options)
+    local typ,file=os.exists(src_file)
+    if not typ then
+        if not src_file:sub(1,128):find('[\\/]') then
+            file=env.join_path(env._CACHE_BASE,src_file)
+        else
+            file=env.resolve_file(src_file)
+        end
+    end
+    --env.checkerr(typ=="file","Target file %s does not exist.",src_file)
     local function next_token(pattern,lower)
         if options:sub(1,1)=='"' then
             local st,ed=(options..' '):find('"[^"]+"%s')
@@ -87,7 +151,7 @@ function loader:load(target_table,src_csv,options)
         end
     end
 
-    local cfg={TARGET_TABLE=target_table,CSV_FILE=file}
+    local cfg={TARGET_FILE=file}
     local function push(opt,value,upper)
         if type(value)=="string" then 
             value=value:trim()
@@ -97,6 +161,7 @@ function loader:load(target_table,src_csv,options)
     end
 
     local names={
+        file_format={"csv","sql","json"},
         show={"off","all","ddl","dml"},
         create={"off","on"},
         truncate={"off","on"},
@@ -111,6 +176,9 @@ function loader:load(target_table,src_csv,options)
         report_mb={8},
         trict_mode={"off","on"},
         variable_format={"?",":"},
+        json_row_type={"object","array"},
+        json_keep_nulls={"on","off"},
+        json_null_value={"null"},
         platform={"auto","oracle","mysql","pgsql","sqlserver","db2",'mssql','postgresql'},
         delimiter={","},
         enclosure={'"'},
@@ -138,8 +206,15 @@ function loader:load(target_table,src_csv,options)
     end
 
     push("platform",env.set.get("platform"))
+    for _,v in ipairs(names.file_format) do
+        if file:lower():find('.'..v,1,true) then
+            push('FILE_FORMAT',v)
+        end
+    end
 
     for n,v in pairs{
+        type=names.file_format,
+        file_type=names.file_format,
         new=names.create,
         show_ddl={"ddl","ddl",name="show"},
         show_dml={"dml","ddl",name="show"},
@@ -147,6 +222,10 @@ function loader:load(target_table,src_csv,options)
         dml={"dml","ddl",name="show"},
         strict=names.trict_mode,
         badfile=names.bad_file,
+        jsonrowtype=names.json_row_type,
+        json_type=names.json_row_type,
+        jsonkeepnulls=names.json_keep_nulls,
+        jsonnullvalue=names.json_null_value,
         bad=names.bad_file,
         skip=names.skip_rows,
         skiprows=names.skip_rows,
@@ -276,6 +355,13 @@ function loader:load(target_table,src_csv,options)
         env.checkerr(options=="","Unrecognized remaining options: "..options:upper())
     end
 
+    return cfg,typ
+end
+
+function loader:load(target_table,src_file,options)
+    env.checkhelp(src_file)
+    local cfg,typ=self:parse_options(src_file,options)
+    env.checkerr(typ=="file","Target file %s does not exist.",src_file)
     local db=self.db
     if db:is_connect() and db.check_obj then
         local validate=cfg.CREATE=='OFF' and cfg.show~='OFF'
@@ -297,11 +383,37 @@ function loader:load(target_table,src_csv,options)
     end
 
     env.checkerr(cfg.SHOW~='OFF' or env.set.get("readonly")=="off",'Operation not allowed in readonly mode.')
-    db_loader.importCSVData(db.conn,target_table,file,cfg)
+    db_loader.importCSVData(db.conn,target_table,cfg.TARGET_FILE,cfg)
+end
+
+function loader:unload(target_file,query,options)
+    env.checkhelp(query)
+    local cfg=self:parse_options(target_file,options)
+    local db=self.db
+    db:assert_connect()
+    local rs
+    if type(query)=="userdata" then
+        rs=query
+    else
+        local typ,file=os.exists(query)
+        if type=='file' then 
+            query=env.read_file(file)
+        end
+        query=env.COMMAND_SEPS.match(query)
+        local sql_type=db.get_command_type(query)
+        env.checkerr(sql_type=="SELECT" or sql_type=="WITH","Unload query must be a SELECT statement.")
+        rs=db:internal_call(query)
+    end
+    env.checkerr(type(rs)=="userdata" and rs.isClosed and not rs:isClosed(),tostring(rs).." must be an opened resultset.")
+    print("Parameters:")
+    print("===========")
+    print(table.dump(cfg))
+    db_unloader.exportToFile(rs,cfg.TARGET_FILE,cfg);
 end
 
 function loader:__onload()
-    env.set_command(self,self.command,self.helps,self.load,true,4)
+    env.set_command(self,self.load_command,self.load_helps,self.load,true,4)
+    env.set_command(self,self.unload_command,self.unload_helps,self.unload,true,4)
 end
 
 return loader

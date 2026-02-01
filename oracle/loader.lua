@@ -2,7 +2,6 @@ local env=env
 local loader=env.class(env.data_loader)
 function loader:ctor()
     self.db=env.getdb()
-    self.command="load"
 end
 
 function loader.init_options(options)

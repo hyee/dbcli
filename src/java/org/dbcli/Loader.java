@@ -4,10 +4,7 @@ import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.LuaTable;
 import com.naef.jnlua.debug.LuaMemoryDiagnostics;
-import com.opencsv.CSVReader;
-import com.opencsv.CSVWriter;
-import com.opencsv.ResultSetHelperService;
-import com.opencsv.SQLWriter;
+import com.opencsv.*;
 import org.jline.keymap.KeyMap;
 import org.jline.utils.OSUtils;
 import org.jline.utils.Status;
@@ -19,6 +16,7 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.*;
+import java.io.FileReader;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
@@ -417,7 +415,7 @@ public class Loader {
         if (obj instanceof Array || obj instanceof Struct) {
             try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
                 StringBuilder sb = new StringBuilder();
-                helper.object2String(sb, obj, "", ResultSetHelperService.DEFAULT_DATE_FORMAT, ResultSetHelperService.DEFAULT_DATE_FORMAT);
+                helper.object2String(sb, obj, "");
                 return sb.toString();
             }
         } else {
@@ -440,6 +438,18 @@ public class Loader {
         });
         t.setDaemon(true);
         t.start();
+    }
+
+    public int UnloadData(ResultSet rs, String fileName,Map options) throws Exception {
+        return AsyncCall(() -> {
+            {
+                try(DBUnloader unloader = new DBUnloader(options)) {
+                    return unloader.exportToFile(rs, fileName);
+                } catch (Exception e) {
+
+                }
+            }
+        });
     }
 
     public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Throwable {
