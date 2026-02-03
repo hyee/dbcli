@@ -1190,7 +1190,7 @@ function env.onload(...)
         env.set.init("SPACES",4,env.set_space,"core","Define the prefix spaces of a line","0-8")
         env.set.init("MOUSE",'off',env.set_option,"core","Enable to use mouse to navigate the cursor, and use SHIFT+Mouse to select text","on,off")
         env.set.init("BRACKETED_PASTE",'on',env.set_option,"core","Enable Bracketed Paste","on,off")
-        env.set.init("TRACEVM",function() return java.trace(-1) end,env.set_option,"core","Set JVM/JNI trace level(bitand). 1:trace/2:timing/4:disable JVM trace/8:disable JNI trace","0-16")
+        env.set.init("TRACEVM",function() return java.trace(-1) end,env.set_option,"core","Set JVM/JNI trace level(bitand). 1:trace/2:timing/4:disable JVM trace/8:disable JNI trace/16: trace GC","0-63")
         print_debug=print
     end
     if  env.ansi and env.ansi.define_color then

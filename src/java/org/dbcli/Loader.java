@@ -440,18 +440,6 @@ public class Loader {
         t.start();
     }
 
-    public int UnloadData(ResultSet rs, String fileName,Map options) throws Exception {
-        return AsyncCall(() -> {
-            {
-                try(DBUnloader unloader = new DBUnloader(options)) {
-                    return unloader.exportToFile(rs, fileName);
-                } catch (Exception e) {
-
-                }
-            }
-        });
-    }
-
     public LuaTable fetchCSV(final String CSVFileSource, final int rows) throws Throwable {
         ArrayList<String[]> list = (ArrayList<String[]>) asyncCall(() -> {
             ArrayList<String[]> ary = new ArrayList();
@@ -543,6 +531,20 @@ public class Loader {
             console.setEvents(null, null);
             this.stmt = null;
         }
+    }
+
+    volatile AutoCloseable workingObject =null;
+    public boolean doCall(AutoCloseable c,EventCallback callback) throws Throwable{
+        console.setEvents(q, new char[]{'q', 'Q'});
+        workingObject = c;
+        try(AutoCloseable target = c) {
+            callback.call(target);
+            return true;
+        } finally {
+            workingObject = null;
+            console.setEvents(null, null);
+        }
+
     }
 
     public Object asyncCall(Callable<Object> c) throws Throwable {
@@ -647,13 +649,18 @@ public class Loader {
                 }
 
                 if (rs != null && !rs.isClosed()) {
-                    ResultSetHelperService.abort();
                     rs.close();
+                    rs=null;
                 }
 
                 if (console.isRunning() && stmt != null && !stmt.isClosed()) {
                     stmt.cancel();
                     stmt = null;
+                }
+
+                if(workingObject!=null) {
+                    workingObject.close();
+                    workingObject=null;
                 }
             } catch (Exception err) {
                 //getRootCause(err).printStackTrace();

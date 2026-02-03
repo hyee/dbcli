@@ -1,9 +1,9 @@
-local loader=env.class()
+local this=env.class()
 local env=env
 
 local db_loader=java.require("com.opencsv.DBLoader",true)
 local db_unloader=java.require("com.opencsv.DBUnloader",true)
-function loader:ctor()
+function this:ctor()
     self.load_command='load'
     self.unload_command='unload'
     self.db=env.getdb()
@@ -123,7 +123,7 @@ function loader:ctor()
     ]]
 end
 
-function loader:parse_options(src_file,options)
+function this:parse_options(src_file,options)
     local typ,file=os.exists(src_file)
     if not typ then
         if not src_file:sub(1,128):find('[\\/]') then
@@ -358,7 +358,7 @@ function loader:parse_options(src_file,options)
     return cfg,typ
 end
 
-function loader:load(target_table,src_file,options)
+function this:load(target_table,src_file,options)
     env.checkhelp(src_file)
     local cfg,typ=self:parse_options(src_file,options)
     env.checkerr(typ=="file","Target file %s does not exist.",src_file)
@@ -383,10 +383,16 @@ function loader:load(target_table,src_file,options)
     end
 
     env.checkerr(cfg.SHOW~='OFF' or env.set.get("readonly")=="off",'Operation not allowed in readonly mode.')
-    db_loader.importCSVData(db.conn,target_table,cfg.TARGET_FILE,cfg)
+    local importer=db_loader.new(db.conn,cfg)
+    local proxy=java.proxy({
+        call=function(...)
+            local rows=importer:importCSVData(target_table,cfg.TARGET_FILE)
+        end
+    },"org.dbcli.EventCallback")
+    loader:doCall(importer,proxy)
 end
 
-function loader:unload(target_file,query,options)
+function this:unload(target_file,query,options)
     env.checkhelp(query)
     local cfg=self:parse_options(target_file,options)
     local db=self.db
@@ -396,7 +402,7 @@ function loader:unload(target_file,query,options)
         rs=query
     else
         local typ,file=os.exists(query)
-        if type=='file' then 
+        if typ=='file' then 
             query=env.read_file(file)
         end
         query=env.COMMAND_SEPS.match(query)
@@ -408,12 +414,19 @@ function loader:unload(target_file,query,options)
     print("Parameters:")
     print("===========")
     print(table.dump(cfg))
-    db_unloader.exportToFile(rs,cfg.TARGET_FILE,cfg);
+
+    local exporter=db_unloader.new(cfg)
+    local proxy=java.proxy({
+        call=function(...)
+            local rows=exporter:exportToFile(rs,cfg.TARGET_FILE)
+        end
+    },"org.dbcli.EventCallback")
+    loader:doCall(exporter,proxy)
 end
 
-function loader:__onload()
+function this:__onload()
     env.set_command(self,self.load_command,self.load_helps,self.load,true,4)
     env.set_command(self,self.unload_command,self.unload_helps,self.unload,true,4)
 end
 
-return loader
+return this
