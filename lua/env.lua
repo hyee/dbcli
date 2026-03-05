@@ -447,7 +447,7 @@ end
 function env.raise_error(...)
     local str=env.format_error(nil,...)
     if not str then print(debug.traceback()) end
-    return error('000-00000:'..(str or ''))
+    return error(str or '')
 end
 
 function env.raise(index,...)

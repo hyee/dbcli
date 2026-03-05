@@ -37,8 +37,8 @@ function this:ctor()
         * encoding <charset>                                        : Character encoding of CSV file (default: "")
         * delimiter <chars>                                         : CSV delimiter character (default: ,)
         * enclosure <chars>                                         : CSV enclosure character (default: ")
-        * escape <char>                                             : CSV escape character (default: \)
-        * unescape_newline|unescape                                 : Whether to unescape string "\n" and "\r" as CRLF for string column (default: off)
+        * escape_char <char>                                        : CSV escape character to escape <enclosure> (default: \)
+        * unescape_string|unescape                                  : Whether to unescape string "\n" and "\r" as CRLF for string column (default: off)
         * skip_rows|skiprows|skip <number>                          : Number of rows to skip if CSV rows is not started from the first row (default: 0)
         * skip_columns|skipcols (column1,column2,...)|off|auto      : Columns to be skipped from loading (default: auto)
         
@@ -94,8 +94,9 @@ function this:ctor()
         =====================================
         * delimiter <chars>                                         : CSV delimiter character (default: ,)
         * enclosure <chars>                                         : CSV enclosure character (default: ")
-        * escape <char>                                             : CSV escape character (default: \)
-        * unescape_newline|unescape                                 : Whether to unescape string "\n" and "\r" as CRLF for string column (default: off)
+        * escape_char <char>                                        : CSV escape character to escape <enclosure> (default: \)
+        * escape_string|escape on|off                               : Whether to escape string "\n" and "\r" as CRLF for string column (default: off)
+        * unescape_string|unescape                                  : Whether to unescape string "\n" and "\r" as CRLF for string column (default: on)
         * skip_rows|skiprows|skip <number>                          : Number of rows to skip if CSV rows is not started from the first row (default: 0)
         
         
@@ -139,13 +140,13 @@ function this:parse_options(src_file,options)
             env.checkerr(st,"Unrecognized options: "..options)
             local piece=options:sub(st,ed):trim():sub(2,-2):trim()
             options=options:sub(ed):trim()
-            return lower~=false and piece:lower() or piece
+            return lower~=false and piece:lower() or piece,piece
         else
             local st,ed=options:find('^'..(pattern or '%S+'))
             if st then
                 local piece=options:sub(st,ed)
                 options=options:sub(ed+1):trim()
-                return lower~=false and piece:lower() or piece
+                return lower~=false and piece:lower() or piece,piece
             end
             return nil
         end
@@ -182,8 +183,9 @@ function this:parse_options(src_file,options)
         platform={"auto","oracle","mysql","pgsql","sqlserver","db2",'mssql','postgresql'},
         delimiter={","},
         enclosure={'"'},
-        escape={[[\]]},
-        unescape_newline={"on","off"},
+        escape_char={[[\]]},
+        escape_string={"off","on"},
+        unescape_string={"on","off"},
         column_size={"auto","actual","maximum"},
         format={"oracle","java","mysql","pgsql","sqlserver","db2",'mssql','postgresql'},
         date_format={"auto"},
@@ -246,7 +248,8 @@ function this:parse_options(src_file,options)
         batchrows=names.batch_rows,
         report=names.report_mb,
         var=names.variable_format,
-        unescape=names.unescape_newline,
+        escape=names.escape_string,
+        unescape=names.unescape_string,
         locale={""}
     } do
         names[n]=v
@@ -265,18 +268,23 @@ function this:parse_options(src_file,options)
 
     if options and options:trim()~="" then
         options=options:trim()
-        local opt=next_token()
+        local opt,org=next_token()
         env.checkhelp(opt=='set' and true or nil)
         while true do
-            opt=next_token()
+            opt,org=next_token()
+            local name,value,low=(org or ""):match("^([^= ]+)%s*=%s*(.*)$")
+            if name then
+                opt,low=name:lower(),value:lower()
+            end
             ::parse_opt::
             if not opt then break end
             local val=names[opt]
             env.checkerr(val,"Unrecognized option: "..opt:upper())
             if val.name=="map_column_names" then
-                local maps=next_token("%b()")
+                local maps=not low and next_token("%b()") or low:match("^%b()$");
+                
                 if not maps then
-                    local next_=(next_token() or "nil")
+                    local next_=(low or "nil")
                     env.checkerr(maps,"Invalid option \""..opt:upper().."\" value: "..next_)
                 end
                 local mappings={}
@@ -285,16 +293,16 @@ function this:parse_options(src_file,options)
                 end
                 push(val.name,mappings)
             elseif val.name=="skip_columns" then
-                local cols=next_token("%b()")
+                local cols=not low and next_token("%b()") or low:match("^%b()$");
                 if cols then
                     push(val.name,cols)
                 else
-                    cols=next_token()
+                    cols=low
                     env.checkerr(cols=="off" or cols=="auto","Invalid option \""..opt:upper().."\" value: "..(cols or "nil"))
                     push(val.name,cols)
                 end
             elseif val.name=='bad_file' then
-                local fmt=next_token(nil,false)
+                local fmt=value or next_token(nil,false)
                 env.checkerr(fmt and not names[fmt:lower()],"Invalid option \""..opt:upper().."\" value: "..(fmt or "nil"))
                 if fmt:lower()~='auto' then
                     fmt=env.join_path(fmt)
@@ -304,7 +312,7 @@ function this:parse_options(src_file,options)
                 end
                 push(val.name,fmt,false)
             elseif val.name=="date_format" or val.name=="timestamp_format" or val.name=="timestamptz_format" then
-                local fmt=next_token(nil,false)
+                local fmt=value or next_token(nil,false)
                 env.checkerr(fmt and not names[fmt:lower()],"Invalid option \""..opt:upper().."\" value: "..(fmt or "nil"))
                 if cfg.FORMAT~='JAVA' then
                     fmt=fmt:lower()
@@ -325,11 +333,11 @@ function this:parse_options(src_file,options)
                 end
                 push(val.name,fmt,false)
             elseif type(val[1])=="number" then
-                local num=next_token()
+                local num=low or next_token()
                 env.checkerr(num and tonumber(num),"Invalid option \""..opt:upper().."\" value: "..(num or "nil"))
                 push(val.name,tonumber(num))
             else
-                local option=next_token() or ""
+                local option=low or next_token() or ""
                 if val.maps then
                     if val.maps[option:upper()] then
                         push(val.name,option)

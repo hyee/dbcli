@@ -23,7 +23,7 @@ SELECT * FROM &GV
                nvl2(z.flag,'TRUE','FALSE') OPT_ENV,
                trim(',' FROM
                    decode(bitand(ksppiflg / 256, 1), 1, 'SESSION,')||
-                   decode(bitand(ksppiflg / 65536, 3), 1, 'SYSTEM,', 2, 'DEFERRED,', 3, 'SYSTEM,')||
+                   decode(bitand(ksppiflg / 65536, 3), 1, 'IMMEDIATE,', 2, 'DEFERRED,', 3, 'IMMEDIATE,')||
                    decode(bitand(ksppiflg, 4),4,'',decode(bitand(ksppiflg / 65536, 3), 0, '', 'INSTANCE,'))||
                    decode(bitand(ksppiflg/ 524288, 1), 1, 'PDB,')) MODIFIABLE,
                decode(bitand(ksppiflg, 7),1,'TRUE',2,'ADJUSTED',4,'SYSTEM','FALSE') MODIFIED,

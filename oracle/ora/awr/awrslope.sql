@@ -34,7 +34,7 @@ ORA _sqlstat
 col Weight,avg_diff for pct3 break
 col avg_ela,cpu_time,io_time for usmhd2
 col buff,reads,writes,dxwrites,execs,rows# for tmb1
-col io,offload_in,offload_out for kmg2
+col io,ofl_in,ofl_out for kmg2
 col hv,sig_weight,plans,grps,all_ela,all_execs,seq,dbid noprint
 col signature,# break
 set autohide col
@@ -136,9 +136,8 @@ BEGIN
                      or dbid=dbid2 and end_interval_time+0 between st2 and ed2)
                 AND   (&filter)
                 AND   ('&instance' is null or instance_number=0+'&instance')
-                GROUP  BY 
-                        dbid,plan_hash_value, sql_id, force_matching_signature,
-                        CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END
+                GROUP  BY dbid,plan_hash_value, sql_id, force_matching_signature,
+                          CASE WHEN dbid=dbid1 and end_interval_time+0 between st1 and ed1 THEN 'PRE' ELSE 'POST' END
                 HAVING SUM(executions_delta) > 0)
         GROUP  BY dbid,grp,plan_hash,&sql
     $IF DBMS_DB_VERSION.VERSION > 11 AND &snap=2 $THEN    

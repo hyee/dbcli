@@ -163,7 +163,7 @@ function oracle:connect(conn_str)
             end
             if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
         end
-        if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
+        --if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
         
         sqlplustr,url=conn_str,url or conn_desc
         if url:find('?',1,true) then
@@ -472,7 +472,6 @@ function oracle:connect(conn_str)
             self:disconnect(false)
             return
         end
-        print(err)
         env.warn("Connecting with a limited user that cannot access many dba/gv$ views, some dbcli features may not work.")
     else
         self.props=props

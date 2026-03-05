@@ -621,11 +621,13 @@ final public class More {
                             case REPAINT:
                                 size.copy(terminal.getSize());
                                 display.clear();
+                                display(false);
                                 break;
                             case REPAINT_AND_DISCARD:
                                 message = null;
                                 size.copy(terminal.getSize());
                                 display.clear();
+                                display(false);
                                 break;
                             case HELP:
                                 help();
@@ -1417,7 +1419,11 @@ final public class More {
         }
         rows = size.getRows();
         cols = size.getColumns();
+        // 边界检查：确保最小尺寸，防止计算错误
+        if (rows < 1) rows = 1;
+        if (cols < 1) cols = 1;
         int width = cols - (printLineNumbers ? numWidth + 1 : 0) - 1;
+        if (width < 1) width = 1;
         int maxWidth = 0;
         AttributedStringBuilder asb = new AttributedStringBuilder();
         if (globalLineWidth > 0 && firstColumnToDisplay > globalLineWidth - width / 2) {
@@ -1475,7 +1481,9 @@ final public class More {
                     asb.append(spaces);
                     asb.append(curLine.columnSubSequence(off, off + width - padding));
                     toDisplay = asb.toAttributedString();
-                } else toDisplay = curLine.columnSubSequence(off, off + width);
+                } else {
+                    toDisplay = curLine.columnSubSequence(off, off + width);
+                }
                 curLine = null;
             } else {
                 if (terminalLine == 0 && offsetInLine > 0) {
@@ -1483,7 +1491,7 @@ final public class More {
                 }
                 toDisplay = curLine.columnSubSequence(0, width);
                 curLine = curLine.columnSubSequence(width, Integer.MAX_VALUE);
-                if (curLine.length() == 0) {
+                if (curLine.length() == 0 && !chopLongLines && firstColumnToDisplay == 0) {
                     curLine = null;
                 }
             }
@@ -1783,7 +1791,8 @@ final public class More {
                 status.close();
                 status.suspend();
             }
-            if (isEnterCA && fullScreen) {
+            // 只有在设置了 isEnterCA 标志且终端支持 enter_ca_mode 时才进入全屏模式
+            if (this.isEnterCA && fullScreen && terminal.getStringCapability(Capability.enter_ca_mode) != null) {
                 terminal.puts(Capability.enter_ca_mode);
             }
         }
@@ -1792,6 +1801,7 @@ final public class More {
             isStarted = false;
             if (this.isEnterCA) {
                 terminal.puts(Capability.exit_ca_mode);
+                this.isEnterCA = false;
             }
             status = Status.getStatus(terminal, false);
             if (status != null) {
@@ -1809,8 +1819,9 @@ final public class More {
         @Override
         public void resize(int rows, int columns) {
             int prevRows = this.rows;
+            int prevColumns = this.columns;
             super.resize(rows, columns);
-            if (prevRows != rows) {
+            if (prevRows != rows || prevColumns != columns) {
                 clear();
             }
         }
@@ -1821,9 +1832,12 @@ final public class More {
             resize(size.getRows(), size.getColumns());
             isStarted = true;
             if (!isEnterCA && fullScreen) {
-                terminal.puts(Capability.enter_ca_mode);
-                clear();
-                isEnterCA = true;
+                // 检查终端是否支持 enter_ca_mode
+                if (terminal.getStringCapability(Capability.enter_ca_mode) != null) {
+                    terminal.puts(Capability.enter_ca_mode);
+                    clear();
+                    isEnterCA = true;
+                }
             }
             if (cursorPos > 0 && prevBuff != null && prevOffset > 0) {
                 updateBuff("", 0);
@@ -1840,24 +1854,64 @@ final public class More {
 
         String prevBuff = null;
         int prevOffset;
+        private Boolean hasColumnAddress = null;
+
+        /**
+         * 检查终端是否支持 column_address 能力
+         */
+        private boolean hasColumnAddress() {
+            if (hasColumnAddress == null) {
+                hasColumnAddress = terminal.getStringCapability(Capability.column_address) != null;
+            }
+            return hasColumnAddress;
+        }
+
+        /**
+         * 移动光标到指定列，使用 column_address 或降级方案
+         */
+        private void moveCursorToColumn(int col) {
+            if (hasColumnAddress()) {
+                terminal.puts(Capability.column_address, col);
+            } else {
+                // 降级方案：使用回车+右移
+                terminal.puts(Capability.carriage_return);
+                if (col > 0) {
+                    for (int i = 0; i < col; i++) {
+                        terminal.puts(Capability.cursor_right);
+                    }
+                }
+            }
+        }
 
         public boolean updateBuff(final String currBuff, int offset) {
             if (offset > -1) prevOffset = offset;
             if (currBuff.equals(prevBuff)) {
-                if (offset > -1) terminal.puts(Capability.column_address, offset);
+                if (offset > -1) moveCursorToColumn(offset);
                 return true;
             }
             if (prevBuff != null && currBuff.startsWith(prevBuff)) {
                 terminal.writer().write(currBuff.substring(prevBuff.length()));
                 terminal.writer().flush();
             } else {
-                terminal.puts(InfoCmp.Capability.clr_bol);
-                terminal.puts(Capability.column_address, 0);
+                // Check if terminal supports clr_bol before using it
+                String clrBol = terminal.getStringCapability(InfoCmp.Capability.clr_bol);
+                if (clrBol != null) {
+                    terminal.puts(InfoCmp.Capability.clr_bol);
+                } else {
+                    // Fallback: use carriage return and spaces
+                    terminal.puts(Capability.carriage_return);
+                    int cols = terminal.getSize().getColumns();
+                    for (int i = 0; i < cols; i++) {
+                        terminal.writer().write(' ');
+                    }
+                    terminal.puts(Capability.carriage_return);
+                }
+                moveCursorToColumn(0);
                 terminal.writer().print(currBuff);
                 terminal.flush();
             }
 
-            if (prevOffset != currBuff.length() && prevOffset > 0) terminal.puts(Capability.column_address, prevOffset);
+            if (prevOffset != currBuff.length() && prevOffset > 0) moveCursorToColumn(prevOffset);
             cursorPos += currBuff.length() - (prevBuff == null ? 0 : prevBuff.length());
             prevBuff = currBuff;
             return false;

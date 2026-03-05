@@ -316,7 +316,7 @@ public class Loader {
                 writer.setlogWriter(System.out);
                 writer.setAsyncMode(aync);
                 setExclusiveAndRemap(writer, excludes, remaps);
-                int result = writer.writeAll(rs, true);
+                int result = writer.writeAll(rs);
                 return result - 1;
             }
         });
@@ -328,9 +328,9 @@ public class Loader {
             try (SQLWriter writer = new SQLWriter(fileName)) {
                 writer.setlogWriter(System.out);
                 writer.setAsyncMode(aync);
-                writer.setFileHead(header);
+                writer.setFileHeader(header);
                 setExclusiveAndRemap(writer, excludes, remaps);
-                int count = writer.writeAll2SQL(rs, "", 1500);
+                int count = writer.writeAll(rs);
                 return count;
             }
         });
@@ -357,9 +357,9 @@ public class Loader {
         setCurrentResultSet(rs);
         return (int) asyncCall(() -> {
             try (SQLWriter writer = new SQLWriter(SQLFileName)) {
-                writer.setFileHead(header);
+                writer.setFileHeader(header);
                 setExclusiveAndRemap(writer, excludes, remaps);
-                return writer.writeAll2SQL(CSVfileName, rs);
+                return writer.writeAll(CSVfileName, rs);
             }
         });
     }

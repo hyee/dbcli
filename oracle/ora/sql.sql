@@ -115,7 +115,7 @@ BEGIN
         dbms_lob.append(text,sql_text);
         dbms_lob.writeappend(text,1,' ');
         text   := regexp_replace(text,'^\s*/\*.*?\*/');
-        text   := regexp_replace(text,q'{([^0-9a-zA-Z'$_#]):("?)([0-9a-zA-Z$_#]+)\2([^0-9a-zA-Z'$_#])}','\1#!:\3!#\4');
+        text   := regexp_replace(text,q'{:("?)([0-9a-zA-Z$_#]+)\1([^0-9a-zA-Z'$_#])}','#!:\2!#\3');
         opname := upper(REGEXP_SUBSTR(text,'\w+'));
 
         FOR r IN (WITH qry AS
@@ -222,13 +222,13 @@ BEGIN
                     END IF;
             END CASE;
             SELECT XMLELEMENT("BIND",
-                      XMLELEMENT("inst", r.inst),
-                      XMLELEMENT("pos", r.pos#),
-                      XMLELEMENT("name", r.name),
-                      XMLELEMENT("value", nvl(str_val,r.value_string)),
-                      XMLELEMENT("dtype", dtype),
-                      XMLELEMENT("last_captured", r.last_captured),
-                      XMLELEMENT("src", r.src))
+                   XMLELEMENT("inst", r.inst),
+                   XMLELEMENT("pos", r.pos#),
+                   XMLELEMENT("name", r.name),
+                   XMLELEMENT("value", nvl(str_val,r.value_string)),
+                   XMLELEMENT("dtype", dtype),
+                   XMLELEMENT("last_captured", r.last_captured),
+                   XMLELEMENT("src", r.src))
             INTO   ELEM
             FROM   DUAL;
             BINDS := BINDS.APPENDCHILDXML('/*', ELEM);
