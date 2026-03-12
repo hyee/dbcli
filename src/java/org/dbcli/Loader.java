@@ -544,7 +544,6 @@ public class Loader {
             workingObject = null;
             console.setEvents(null, null);
         }
-
     }
 
     public Object asyncCall(Callable<Object> c) throws Throwable {

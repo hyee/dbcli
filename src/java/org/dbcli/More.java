@@ -1419,7 +1419,7 @@ final public class More {
         }
         rows = size.getRows();
         cols = size.getColumns();
-        // 边界检查：确保最小尺寸，防止计算错误
+        // Boundary check: ensure minimum size to prevent calculation errors
         if (rows < 1) rows = 1;
         if (cols < 1) cols = 1;
         int width = cols - (printLineNumbers ? numWidth + 1 : 0) - 1;
@@ -1791,7 +1791,7 @@ final public class More {
                 status.close();
                 status.suspend();
             }
-            // 只有在设置了 isEnterCA 标志且终端支持 enter_ca_mode 时才进入全屏模式
+            // Enter fullscreen mode only if isEnterCA flag is set and terminal supports enter_ca_mode
             if (this.isEnterCA && fullScreen && terminal.getStringCapability(Capability.enter_ca_mode) != null) {
                 terminal.puts(Capability.enter_ca_mode);
             }
@@ -1832,7 +1832,7 @@ final public class More {
             resize(size.getRows(), size.getColumns());
             isStarted = true;
             if (!isEnterCA && fullScreen) {
-                // 检查终端是否支持 enter_ca_mode
+                // Check if terminal supports enter_ca_mode
                 if (terminal.getStringCapability(Capability.enter_ca_mode) != null) {
                     terminal.puts(Capability.enter_ca_mode);
                     clear();
@@ -1857,7 +1857,7 @@ final public class More {
         private Boolean hasColumnAddress = null;
 
         /**
-         * 检查终端是否支持 column_address 能力
+         * Check if terminal supports column_address capability
          */
         private boolean hasColumnAddress() {
             if (hasColumnAddress == null) {
@@ -1867,13 +1867,13 @@ final public class More {
         }
 
         /**
-         * 移动光标到指定列，使用 column_address 或降级方案
+         * Move cursor to specified column using column_address or fallback method
          */
         private void moveCursorToColumn(int col) {
             if (hasColumnAddress()) {
                 terminal.puts(Capability.column_address, col);
             } else {
-                // 降级方案：使用回车+右移
+                // Fallback: use carriage return and cursor right
                 terminal.puts(Capability.carriage_return);
                 if (col > 0) {
                     for (int i = 0; i < col; i++) {
