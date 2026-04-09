@@ -607,7 +607,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
                     break
                 end
             end
-            env.raise_error(info.error)
+            env.raise(info.error)
         end
     end
     return obj

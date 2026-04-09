@@ -418,7 +418,7 @@ BEGIN
     OPEN :c FOR
         SELECT *
         FROM  XMLTABLE('/ROWSET/R' PASSING xml 
-              COLUMNS "Count" INT PATH 'CNT',
+              COLUMNS CURSORS INT PATH 'CNT',
                       PLAN_HASH INT PATH 'P',
                       PARSES INT PATH 'PS',
                       Reason  VARCHAR2(2000) PATH 'R',

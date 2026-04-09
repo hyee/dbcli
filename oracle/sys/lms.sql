@@ -1,4 +1,6 @@
-/*[[Show LMS info]]*/
+/*[[Show LMS info
+    ---
+]]*/
 SET FEED OFF
 COL ADDR,FLAG NOPRINT
 COL ACTUAL_RCV for tmb Head  "Actual|Msg Rcv"
@@ -28,11 +30,11 @@ COL PTOQ_TIME for msmhd2 Head  "Defer-Ping|Queue"
 COL FSCH_TIME for msmhd2 Head  "Flush Side|Channel"
 COL IPBAT_TIME for msmhd2 Head  "Embed Batch|Msg"
 COL RETRYQ_TIME for msmhd2 Head  "Retry|Queue"
-pro X$KJMSDP(PRIOR 1=RR):
-pro =====================
+pro X$KJMSDP(PRIOR 0=NORMAL 1=RR):
+pro ==============================
 SELECT  INST_ID INST,
-        PRIORITY "PRIOR",
-        SUM(PRIORITY_CHANGES) PRIOR_CHGS,
+        PRIORITY "PRIOR", --0 means realtime
+        --SUM(PRIORITY_CHANGES) PRIOR_CHGS,
         count(distinct spid) spids,
         count(1) threads,
         SUM(WAIT_TICKET) WAIT_TICKET,

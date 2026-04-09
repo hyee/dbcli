@@ -664,6 +664,7 @@ local function load_ext()
             [[oradebug lkdebug -a hashcount
               oradebug event trace [rac_enq] disk highest
               oradebug event trace [ksi] disk highest]]},
+            {' -e|E',"Change LMS priority",'oradebug lkdebug -E: change to RR  oradebug lkdebug -e:Change to normal'},  
             {'DLM locks','Dump RAC DLM locks',
             [[oradebug lkdebug -a convlock
               oradebug lkdebug -a convres

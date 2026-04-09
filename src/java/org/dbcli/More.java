@@ -107,7 +107,7 @@ final public class More {
     private final List<Path> syntaxFiles = new ArrayList<>();
     private boolean highlight = true;
     private boolean nanorcIgnoreErrors;
-
+    protected static String clrBol = null;
     public static String[] usage() {
         return new String[]{
                 "less -  file pager",
@@ -144,6 +144,7 @@ final public class More {
         this.display = new Play(terminal);
         this.bindingReader = new BindingReader(terminal.reader());
         this.currentDir = currentDir;
+        this.clrBol = terminal.getStringCapability(InfoCmp.Capability.clr_bol);
         Path lessrc = configPath != null ? configPath.getConfig("jlessrc") : null;
         boolean ignorercfiles = opts != null && opts.isSet("ignorercfiles");
         if (lessrc != null && !ignorercfiles) {
@@ -620,13 +621,11 @@ final public class More {
                                 break;
                             case REPAINT:
                                 size.copy(terminal.getSize());
-                                display.clear();
                                 display(false);
                                 break;
                             case REPAINT_AND_DISCARD:
                                 message = null;
                                 size.copy(terminal.getSize());
-                                display.clear();
                                 display(false);
                                 break;
                             case HELP:
@@ -1539,7 +1538,7 @@ final public class More {
             msg.append(":");
         }
         newLines.add(msg.toAttributedString());
-
+        display.clear();
         if (curPos == null) {
             display.update(newLines, -1);
         } else {
@@ -1818,10 +1817,8 @@ final public class More {
 
         @Override
         public void resize(int rows, int columns) {
-            int prevRows = this.rows;
-            int prevColumns = this.columns;
-            super.resize(rows, columns);
-            if (prevRows != rows || prevColumns != columns) {
+            if (this.rows != rows || this.columns != columns) {
+                super.resize(rows, columns);
                 clear();
             }
         }
@@ -1894,19 +1891,20 @@ final public class More {
                 terminal.writer().flush();
             } else {
                 // Check if terminal supports clr_bol before using it
-                String clrBol = terminal.getStringCapability(InfoCmp.Capability.clr_bol);
                 if (clrBol != null) {
+                    // clr_bol clears from line start to cursor; cursor stays at current column.
                     terminal.puts(InfoCmp.Capability.clr_bol);
+                    moveCursorToColumn(0);
                 } else {
-                    // Fallback: use carriage return and spaces
+                    // Fallback: overwrite the line with spaces then return to column 0.
+                    // Use the cached column count to avoid a live getSize() call that could
+                    // return a stale value after a resize and cause a spurious line wrap.
                     terminal.puts(Capability.carriage_return);
-                    int cols = terminal.getSize().getColumns();
-                    for (int i = 0; i < cols; i++) {
-                        terminal.writer().write(' ');
-                    }
+                    char[] chars = new char[columns];
+                    Arrays.fill(chars, ' ');
+                    terminal.writer().write(chars);
                     terminal.puts(Capability.carriage_return);
                 }
-                moveCursorToColumn(0);
                 terminal.writer().print(currBuff);
                 terminal.flush();
             }

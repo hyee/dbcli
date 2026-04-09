@@ -411,9 +411,6 @@ public final class Console {
     }
 
     public int getScreenHeight() {
-        if (OSUtils.IS_WINDOWS && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)) {
-            return terminal.getHeight();
-        }
         return terminal.getHeight() - titles.size();
     }
 
