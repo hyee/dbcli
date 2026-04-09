@@ -6,7 +6,7 @@
     <sqlmon_table>: The table name to store the SQL Monitor reports
     --[[
         @ARGS: 2
-        @CHECK_ACCESS_CDB: SYS.CDB_HIST_REPORTS_DETAILS/SYS.dbms_workload_repository={1}
+        @CHECK_ACCESS_CDB: SYS.dbms_workload_repository={1}
         @MODE: default={1} old={2}
     --]]
 ]]*/
@@ -21,7 +21,7 @@ DECLARE
     dump  BFILE;
     log   UTL_FILE.FILE_TYPE;
     len   NUMBER;
-    stage VARCHAR2(30) := 'DBCLI_AWR';
+    stage VARCHAR2(30) := 'AWR_STAGE';
     hdl   NUMBER;
     res   CLOB;
     job   VARCHAR2(128) := 'AWRLOAD_'||to_char(SYSDATE,'YYMMDDHH24MISS');
@@ -179,14 +179,27 @@ BEGIN
         $ELSE
             BEGIN
                 stage := CASE sys_context('userenv', 'con_name') WHEN 'CDB$ROOT' THEN 'C##' END || stage;
-            EXCEPTION WHEN OTHERS NULL;
+            EXCEPTION WHEN OTHERS THEN NULL;
             END;
             $IF DBMS_DB_VERSION.VERSION>17 and &MODE=1 $THEN
                 sys.dbms_workload_repository.load(schname => stage, dmpfile => file, dmpdir => dir, new_dbid => did);
             $ELSE
+                BEGIN
+                    EXECUTE IMMEDIATE 'DROP USER '||stage||' CASCADE';
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
+                BEGIN
+                    EXECUTE IMMEDIATE 'CREATE USER '||stage||' Identified by '||stage||'_a123 default tablespace sysaux';
+                    EXECUTE IMMEDIATE 'GRANT UNLIMITED TABLESPACE TO '||stage;
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
                 sys.dbms_swrf_internal.awr_load(schname  => stage,dmpfile  => file, dmpdir => dir);
                 sys.dbms_swrf_internal.move_to_awr(schname  => stage, new_dbid => did);
                 sys.dbms_swrf_internal.clear_awr_dbid;
+                BEGIN
+                    EXECUTE IMMEDIATE 'DROP USER '||stage||' CASCADE';
+                EXCEPTION WHEN OTHERS THEN NULL;
+                END;
             $END
         $END
         dbms_output.put_line('AWR repository is imported from ' || root || file || '.dmp');

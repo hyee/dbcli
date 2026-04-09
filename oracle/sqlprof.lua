@@ -66,7 +66,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         SELECT SQL_TEXT, v_sql_id
                         FROM   all_sqlset_statements a
                         WHERE  sql_id = v_sql_id
-                    $IF DBMS_DB_VERSION.VERSION>11 $THEN
+                    $IF DBMS_DB_VERSION.VERSION > 11 OR (DBMS_DB_VERSION.VERSION=11 AND DBMS_DB_VERSION.RELEASE=2) $THEN
                         UNION ALL
                         SELECT TO_CLOB(SQL_TEXT), v_sql_id
                         FROM   gv$sql_monitor a

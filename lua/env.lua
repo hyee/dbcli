@@ -424,7 +424,7 @@ function env.format_error(src,errmsg,...)
     end
     errmsg=errmsg:gsub("\n%s+at%s+.*$","")
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):rtrim()
-    if src then
+    if src and count==0 then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then
             name=name:upper():gsub("_",""):sub(1,3)
