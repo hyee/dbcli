@@ -312,6 +312,7 @@ Fix Controls:
     27261477:  fix ORA-12850 error when query gv$ views in RAC
     8893626,9195582: 0 to fix some index skip scan cost under-estimated issues
     9728438: 0 to disable parallel query downgrade to serial if no operations are expensive enough
+    28606162: 1 to set back the index default degree after create/rebuild index in parallel
 
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

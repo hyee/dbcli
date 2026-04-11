@@ -409,6 +409,7 @@ function env.format_error(src,errmsg,...)
     if not errmsg then return end
     errmsg=(tostring(errmsg) or "")
     local HIR,NOR,count="",""
+    local count=0
     if env.ansi and env.set and env.set.exists("ERRCOLOR") then
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=errmsg:strip_ansi()
@@ -424,7 +425,7 @@ function env.format_error(src,errmsg,...)
     end
     errmsg=errmsg:gsub("\n%s+at%s+.*$","")
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):rtrim()
-    if src and count==0 then
+    if src and (count or 0)==0 then
         local name,line=src:match("([^\\/]+)%#(%d+)$")
         if name then
             name=name:upper():gsub("_",""):sub(1,3)

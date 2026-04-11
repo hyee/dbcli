@@ -6,6 +6,7 @@
         sid    : When not specified then query current sid
         inst_id: When not specified then query local instance
         -f     : Customized filter. i.e. -f"value=6"
+        -rac   : specify together with <inst_id>
 
     Sample Output:
     ==============
@@ -29,11 +30,13 @@
        @CHECK_ACCESS_CTL: gv$session_fix_control={gv$session_fix_control}, default={(select userenv('instance') inst_id, a.* from v$session_fix_control a)}
        &FILTER: default={1=1}, f={}
        &V3    : default={&instance}
+       &RAC   : default={--} rac={}
    --]]
 ]]*/
 
 SELECT * 
-FROM TABLE(GV$(CURSOR(
+FROM &RAC TABLE(GV$(CURSOR
+(
     SELECT /*+outline_leaf leading(a) use_nl(b)*/ * 
     FROM (SELECT userenv('instance') inst,bugno,value sys_value
           FROM   v$system_fix_control
@@ -44,5 +47,6 @@ FROM TABLE(GV$(CURSOR(
     JOIN  v$session_fix_control b USING(bugno)
     WHERE b.session_id=0+nvl(:v2,userenv('sid'))
     AND   userenv('instance') = nvl(:V3, userenv('instance'))
-)))
+    &RAC ))
+)
 ORDER  BY regexp_substr(OPTIMIZER_FEATURE_ENABLE,'\d+\.\d+')+0 nulls first,bugno;
