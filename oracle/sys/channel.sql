@@ -41,7 +41,7 @@
 PRO data from ASH
 PRO =============
 SELECT *
-FROM   (SELECT *
+FROM   (SELECT distinct *
         FROM   &src1 --
                 SELECT /*+ordered use_nl(b)*/
                        instance_number inst, b.addr "Channel context",

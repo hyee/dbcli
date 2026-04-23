@@ -380,10 +380,11 @@ function scripter:get_script(cmd,args,print_args)
         for k,v in pairs(self.cmdlist) do
             keys[k]=type(v)=="table" and v.desc or nil
         end
-        if env.IS_ENV_LOADED then 
+        --print(table.dump(list))
+        --if env.IS_ENV_LOADED then
             console:setSubCommands(list)
             table.clear(list)
-        end
+        --end
     end
 
     if not cmd or cmd:match('^%s*$') then
@@ -493,6 +494,7 @@ function scripter:check_ext_file(cmd)
     return target_dir,c
 end
 
+
 function scripter:helper(_,cmd,search_key)
     local help,cmdlist=""
     help=('%sUsage: @@NAME %s \nAvailable commands:\n=================\n'):format(self.help_title,self.usage)
@@ -530,7 +532,7 @@ function scripter:helper(_,cmd,search_key)
             if (not search_key or found>0) and k:sub(1,2)~='./' and k:sub(1,1)~='_' then
                 if search_key or not (v.path or ""):find('[\\/]test[\\/]') then
                     local k1=k:gsub(',.+','')
-                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k1:lower().."$NOR$")
+                    desc=desc:gsub("([Uu]sage)(%s*:%s*)(@@NAME)","$USAGECOLOR$Usage:$NOR$ %3"):gsub("@@NAME","@@NAME "..k1.."$NOR$")
                     if desc and desc~="" then
                         table.insert(rows[1],k)
                         table.insert(rows[2],desc)
@@ -597,6 +599,7 @@ function scripter:__onload()
                         }
     end
     env.event.snoop("ON_SEARCH",function(dir) dir[#dir+1]=self.extend_dirs end)
+    --env.event.snoop("ON_ENV_LOADED",scripter.on_env_load,self)
     --env.uv.thread.new(function(o) if not o.cmdlist then o:run_script("-r") end end,self)
     if not self.cmdlist then self:run_script("-r") end
 end

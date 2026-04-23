@@ -174,7 +174,7 @@ BEGIN
                                 to_char(substr(trim(regexp_replace(SOURCE_STMT,'\s+',' ')),1,80))||CASE WHEN LENGTH(SOURCE_STMT)>80 THEN '...' END SOURCE_STMT,
                                 to_char(substr(trim(regexp_replace(DESTINATION_STMT,'\s+',' ')),1,80))||CASE WHEN LENGTH(DESTINATION_STMT)>80 THEN '...' END DESTINATION_STMT
                         FROM   all_rewrite_equivalences
-                        WHERE  name  in ('SQL_'||sq_id,sq_id,upper(sq_id));
+                        WHERE  name in ('SQL_'||sq_id,sq_id,upper(sq_id));
                 END;~' 
             USING src,get_text(lower(regexp_substr(src,'\w{13}$')),FALSE),stmt,own, IN OUT c;
         END IF;

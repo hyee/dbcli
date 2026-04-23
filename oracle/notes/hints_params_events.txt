@@ -248,6 +248,16 @@ Events:
     19119:  fix ORA-31011: XML Parsing Failed in xmlelement(invalid characters)
     10503: enables users to specify a character bind buffer length to avoid BIND_LENGTH_UPGRADEABLE.
            Depending on the length used, the character binds in the child cursor can all be created using the same bind length
+    "Disk file operations I/O": P1:
+         1  file creation
+         2  file open
+         3  file resize
+         4  file deletion
+         5  file close
+         6  wait for all aio requests to finish
+         7  write verification
+         8  wait for miscellaneous io (ftp, block dump, passwd file) 
+         9  read from snapshot files 
 
  
 dbms_stats.set_xxx_pref:

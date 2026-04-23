@@ -147,9 +147,9 @@ WITH ASH_V AS(
                         when current_obj# = 0 then 'Undo'
                         --when p1text ='idn' then 'v$db_object_cache hash#'||p1
                         --when c.class is not null then c.class
-                    end),''||current_obj#)  obj,
-                nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block,
-                SUBSTR(a.program,-6) PRO_,&unit c,&CPU CPU
+                    end),''||current_obj#)  obj
+              , nvl2(CURRENT_FILE#,CURRENT_FILE#||','||current_block#,'') block
+              , SUBSTR(a.program,-6) PRO_,&unit c,&CPU CPU
               , floor((sample_time+0-date'1970-1-1')*86400/&base) bucket#
               , lpad(sys_op_numtoraw(p1),16,'0') p1raw
               , lpad(sys_op_numtoraw(p2),16,'0') p2raw
@@ -178,35 +178,33 @@ WITH ASH_V AS(
         FROM &ash a) a
     WHERE &filter and (&more_filter))
 SELECT * FROM (
-    SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand 
-           */
-        &wall round(SUM(c)) Secs
-      , ROUND(sum(&base)) AAS
-      , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
-      &counter
-      &wall1 , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
-      &wall1 , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
-      &wall1 , &ev &wait
-      , &fields &IOS
-      , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
-      , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
-      , round(SUM(CASE WHEN wait_class ='Application'    THEN c ELSE 0 END)) "Application"
-      , round(SUM(CASE WHEN wait_class ='Concurrency'    THEN c ELSE 0 END)) "Concurrency"
-      , round(SUM(CASE WHEN wait_class ='Commit'         THEN c ELSE 0 END)) "Commit"
-      , round(SUM(CASE WHEN wait_class ='Configuration'  THEN c ELSE 0 END)) "Configuration"
-      , round(SUM(CASE WHEN wait_class ='Cluster'        THEN c ELSE 0 END)) "Cluster"
-      , round(SUM(CASE WHEN wait_class ='Idle'           THEN c ELSE 0 END)) "Idle"
-      , round(SUM(CASE WHEN wait_class ='Network'        THEN c ELSE 0 END)) "Network"
-      , round(SUM(CASE WHEN wait_class ='System I/O'     THEN c ELSE 0 END)) "System I/O"
-      , round(SUM(CASE WHEN wait_class ='Scheduler'      THEN c ELSE 0 END)) "Scheduler"
-      , round(SUM(CASE WHEN wait_class ='Administrative' THEN c ELSE 0 END)) "Administrative"
-      , round(SUM(CASE WHEN wait_class ='Queueing'       THEN c ELSE 0 END)) "Queueing"
-      , round(SUM(CASE WHEN wait_class ='Other'          THEN c ELSE 0 END)) "Other"
-      , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
-      , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
-    FROM ASH_V A
-    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,
-             a.u_id,&fields
+    SELECT /*+LEADING(a) USE_HASH(u) swap_join_inputs(u) no_expand */
+          &wall round(SUM(c)) Secs
+          , ROUND(sum(&base)) AAS
+          , LPAD(ROUND(RATIO_TO_REPORT(sum(c)) OVER () * 100)||'%',5,' ')||' |' "%This"
+          &counter
+          &wall1 , nvl2(qc_session_id,'PARALLEL','SERIAL') "Parallel?"
+          &wall1 , nvl(a.program#,(select username from &CHECK_ACCESS_USER where user_id=a.u_id)) program#
+          &wall1 , &ev &wait
+          , &fields &IOS
+          , round(SUM(CASE WHEN wait_class IS NULL AND CPU=0 THEN c ELSE 0 END+CPU)) "CPU"
+          , round(SUM(CASE WHEN wait_class ='User I/O'       THEN c ELSE 0 END)) "User I/O"
+          , round(SUM(CASE WHEN wait_class ='Application'    THEN c ELSE 0 END)) "Application"
+          , round(SUM(CASE WHEN wait_class ='Concurrency'    THEN c ELSE 0 END)) "Concurrency"
+          , round(SUM(CASE WHEN wait_class ='Commit'         THEN c ELSE 0 END)) "Commit"
+          , round(SUM(CASE WHEN wait_class ='Configuration'  THEN c ELSE 0 END)) "Configuration"
+          , round(SUM(CASE WHEN wait_class ='Cluster'        THEN c ELSE 0 END)) "Cluster"
+          , round(SUM(CASE WHEN wait_class ='Idle'           THEN c ELSE 0 END)) "Idle"
+          , round(SUM(CASE WHEN wait_class ='Network'        THEN c ELSE 0 END)) "Network"
+          , round(SUM(CASE WHEN wait_class ='System I/O'     THEN c ELSE 0 END)) "System I/O"
+          , round(SUM(CASE WHEN wait_class ='Scheduler'      THEN c ELSE 0 END)) "Scheduler"
+          , round(SUM(CASE WHEN wait_class ='Administrative' THEN c ELSE 0 END)) "Administrative"
+          , round(SUM(CASE WHEN wait_class ='Queueing'       THEN c ELSE 0 END)) "Queueing"
+          , round(SUM(CASE WHEN wait_class ='Other'          THEN c ELSE 0 END)) "Other"
+          , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
+          , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
+    FROM  ASH_V A
+    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,a.u_id,&fields
     ORDER BY 1 desc nulls last,secs DESC nulls last,&fields
 )
 WHERE ROWNUM <= 50;

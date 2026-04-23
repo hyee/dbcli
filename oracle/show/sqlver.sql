@@ -212,14 +212,17 @@ DECLARE
     ps     t;
     fl     t;
     ll     t;
+    bks    t;
     pares  PLS_INTEGER;
+    
     fld    VARCHAR2(30);
     lld    VARCHAR2(30);
     key    VARCHAR2(32767);
     val    VARCHAR2(32767);
     v      VARCHAR2(32767);
     phv    int;
-    calls  int;
+    calls  Int;
+    bcks   int;
     chd    VARCHAR2(4000);
     reason VARCHAR2(2000);
     memo   VARCHAR2(32767);
@@ -239,6 +242,7 @@ DECLARE
             lst(key) := substr(lst(key),1,32750)||','||chd;
             cnt(key) := cnt(key)+n;
             ps(key)  := ps(key)+calls;
+            bks(key) := bks(key)+bcks;
             fl(key)  := least(fl(key),fld);
             ll(key)  := greatest(ll(key),lld);
         ELSE
@@ -247,6 +251,7 @@ DECLARE
             ps(key)  := calls;
             fl(key)  := fld;
             ll(key)  := lld;
+            bks(key) := bcks;
         END IF;
         reason:=null;
         memo:=null;
@@ -266,6 +271,7 @@ BEGIN
                          AS c
                   FROM   (SELECT /*+use_hash(a b) outline_leaf*/
                                   child_number,
+                                  buckets,
                                   count(distinct inst_id) over() insts,
                                   inst_id,
                                   plan_hash_value phv,
@@ -281,9 +287,13 @@ BEGIN
                           FROM   (SELECT inst_id, 
                                          sql_id, 
                                          child_number,
+                                         buckets,
                                          rel reason,
                                          SYS_OP_COMBINED_HASH(regexp_replace(rel, '<(ChildNumber|size|ID)>.*?</\1>')) grp
                                   FROM (SELECT a.*,
+                                               (SELECT COUNT(1) 
+                                                FROM (select /*+merge*/ * from GV$SQL_CS_HISTOGRAM &sql_id) B
+                                                WHERE B.child_number=a.child_number) buckets,
                                                CASE WHEN instr(reason, 'ChildNode')>0 THEN reason ELSE to_clob('<ChildNode><ID>0</ID><reason>Common</reason>'
                                                 || decode(UNBOUND_CURSOR, 'Y', '<UNBOUND_CURSOR>Yes</UNBOUND_CURSOR>')
                                                 || decode(SQL_TYPE_MISMATCH, 'Y', '<SQL_TYPE_MISMATCH>Yes</SQL_TYPE_MISMATCH>')
@@ -367,13 +377,14 @@ BEGIN
                   WHERE  seq <=100)
              WHERE seq=1
              ORDER  BY c) LOOP
-        phv   := r.phv;
-        chd   := r.c;
-        n     := r.cnt;
-        fld   := r.first_load;
-        lld   := r.last_load;
-        calls := r.parses;
-        XML := xmltype('<R>' || regexp_substr(
+        phv    := r.phv;
+        chd    := r.c;
+        n      := r.cnt;
+        fld    := r.first_load;
+        lld    := r.last_load;
+        calls  := r.parses;
+        bcks   := r.buckets;
+        XML    := xmltype('<R>' || regexp_substr(
                                     regexp_replace(
                                         regexp_replace(r.reason, '<(ChildNumber|size)>.*?</\1>'),
                                         '(</?[a-zA-Z0-9_]+)[^<>/]*?(/?>)','\1\2'), 
@@ -412,6 +423,7 @@ BEGIN
             .appendChildXML('/R',XMLTYPE('<C>'||substr(regexp_replace(lst(key),'(.{80})','\1'||chr(10)),1,3900)||'</C>'))
             .appendChildXML('/R',XMLTYPE('<PS>'||ps(key)||'</PS>'))
             .appendChildXML('/R',XMLTYPE('<L>'||fl(key)||chr(10)||ll(key)||'</L>'))
+            .appendChildXML('/R',XMLTYPE('<BS>'||bks(key)||'</BS>'))
             .appendChildXML('/R',XMLTYPE('<CNT>'||cnt(key)||'</CNT>')));
         key := lst.next(key);
     END LOOP;
@@ -419,6 +431,7 @@ BEGIN
         SELECT *
         FROM  XMLTABLE('/ROWSET/R' PASSING xml 
               COLUMNS CURSORS INT PATH 'CNT',
+                      BUCKETS INT PATH 'BS',
                       PLAN_HASH INT PATH 'P',
                       PARSES INT PATH 'PS',
                       Reason  VARCHAR2(2000) PATH 'R',

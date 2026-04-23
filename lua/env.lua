@@ -417,11 +417,13 @@ function env.format_error(src,errmsg,...)
 
     env.log_debug("ERROR",errmsg)
     env.log_debug('ERROR',debug.traceback)
-    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u+%-%d%d%d%d%d)') or errmsg:find('Error Msg =') then
-        errmsg,count=errmsg:gsub('^.-(%u%u+%-%d%d%d%d%d)','%1') 
+    if errmsg:find('Exception%:') or errmsg:find(':%d+: (%u%u+%-%d%d%d+)') or errmsg:find('Error Msg =') or errmsg:find('Error Message =') then
+        errmsg,count=errmsg:gsub('^.-(%u%u+%-%d%d%d+)','%1') 
         if count==0 then
             errmsg=errmsg:gsub('^.*%s([^%: ]+Exception%:%s*)','%1'):gsub(".*[IS][OQL]+%w*Exception:%s*","")
         end
+    elseif errmsg:find('^(%u%u+%-%d%d%d+)') then
+        count = 1
     end
     errmsg=errmsg:gsub("\n%s+at%s+.*$","")
     errmsg=errmsg:gsub("^.*000%-00000%:%s*",""):rtrim()
@@ -862,7 +864,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
     
     local cmd,line_terminator
 
-    local rest,pipe_cmd,param = line:match('^%s*([^|]+)|%s*(%w+)(.*)$')
+    local rest,pipe_cmd,param = line:match('^%s*([^|]*)|%s*(%w+)(.*)$')
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
         if not rest:find('^!') and not rest:upper():find('^HOS') and (param:ltrim():find('^[/%+%.%-]') or not param:ltrim():find('^%W')) then 
             if param~='' then param='"'..env.COMMAND_SEPS.match(param:trim('"')):trim()..'"' end

@@ -504,9 +504,11 @@ Examples:
             [[SELECT * FROM &check_access_celldb
                  (SELECT inst_id inst,/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,autohide=true}*/
                          SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
-                         SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v,'cell physical write IO bytes eligible for offload',v)) "Offload",
-                         SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflOut",
-                         SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflEff",
+                         SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v,
+                                       'cell physical write IO bytes eligible for offload',v,
+                                       'cell XT granule bytes requested for predicate offload',v)) "Offload",
+                         SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v,'cell interconnect bytes returned by XT smart scan',v)) "OflOut",
+                         SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v,'cell interconnect bytes returned by XT smart scan',v)) "OflEff",
                          SUM(DECODE(n, 'cell IO uncompressed bytes', v)) "Unzip",
                          SUM(DECODE(n, 'HCC scan cell bytes compressed', v,'HCC scan rdbms bytes compressed',v)) "zip",
                          SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptRead",

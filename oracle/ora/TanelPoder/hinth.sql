@@ -13,7 +13,7 @@ SQL> ora hinth ign
 
 
   --[[
-    &filter: defaultr={UPPER(hi.name||' '|| hi.version ||' '||fh.path) LIKE UPPER('%&V1%')} f={}
+    &filter: defaultr={UPPER(hi.name||' '||hi.inverse||' '|| hi.version ||' '||fh.path) LIKE UPPER('%&V1%')} f={}
   ]]--
 ]]*/
 WITH feature_hierarchy AS
@@ -24,7 +24,7 @@ WITH feature_hierarchy AS
   CONNECT BY fh.parent_id = PRIOR f.sql_Feature
   START  WITH fh.sql_feature = 'QKSFM_ALL')
 SELECT /*+use_hash(hi fh)*/
-       hi.name, hi.version,
+       hi.name, hi.version,hi.inverse,
        TRIM('/' FROM Case when bitand(target_level,1)>0 THEN 'STATEMENT/' END||
                      Case when bitand(target_level,2)>0 THEN 'QUERY_BLOCK/' END||
                      Case when bitand(target_level,4)>0 THEN 'OBJECT/' END||

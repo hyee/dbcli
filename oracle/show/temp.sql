@@ -38,8 +38,8 @@ JOIN   (SELECT TS#,NAME TABLESPACE_NAME &cid FROM V$TABLESPACE) T1 USING(TABLESP
 JOIN   DBA_TABLESPACES T2 USING(TABLESPACE_NAME)
 ;
 
-PRO GV$TEMPSEG_USAGE:
-PRO =================
+PRO GV$TEMPSEG_USAGE(>1MB):
+PRO =======================
 WITH tmps AS (    
     SELECT /*+inline*/ sid,spid,username,tablespace,
            round(BLOCKS*(select value from v$parameter where name='db_block_size'), 2) bytes,
