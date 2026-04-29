@@ -410,7 +410,7 @@ BEGIN
             where owner = own
             and   table_name = nam;
         OPEN c2 FOR
-            SELECT /*+outline_leaf*/
+            SELECT /*+outline_leaf opt_param('optimizer_dynamic_sampling' 5)*/
                    t1.COLUMN_NAME,
                    decode(t1.DATA_TYPE,
                           'NUMBER',t1.DATA_TYPE || '(' || decode(t1.DATA_PRECISION, NULL, t1.DATA_LENGTH || ')', t1.DATA_PRECISION || ',' || t1.DATA_SCALE || ')'),
@@ -433,11 +433,11 @@ BEGIN
                    t1.DATA_DEFAULT "DEFAULT",
                    t.LAST_ANALYZED &notes
             FROM   &check_access_dba.tab_cols t1,&check_access_dba.tab_col_statistics t,
-                   (select /*+cardinality(1)*/ table_name,num_rows
+                   (select table_name,num_rows
                     from  &check_access_dba.tab_statistics t
-                    where owner = own 
-                    and   table_name = nam
-                    and   partition_name is null) t2
+                    where  owner = own 
+                    and    table_name = nam
+                    and    partition_name is null) t2
             WHERE  t2.table_name=t1.table_name
             AND    t1.table_name = nam
             AND    t1.owner = own

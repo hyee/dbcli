@@ -1,5 +1,5 @@
 env.var.define_column('OWNER,INDEX_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
-return {
+local rtn = {
     [[select /*INTERNAL_DBCLI_CMD*/ /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'current')*/ 
                DECODE(column_position,1,table_owner||'.'||table_name) table_name,
                column_position NO#,
@@ -35,3 +35,17 @@ return {
              (SELECT * FROM ALL_OBJECTS  WHERE OWNER = :owner AND OBJECT_NAME = :object_name) O
       WHERE  T.INDEX_NAME=O.OBJECT_NAME]]
 }
+
+if db.props.version>23.2 then
+    if db:check_access("SYS.V_$VECTOR_GRAPH_INDEX",true) then
+        env.table.insert(rtn,2,[[SELECT /*PIVOT*/ /*topic="Vector Index Info"*/ *
+            FROM   SYS.V_$VECTOR_GRAPH_INDEX a
+            WHERE  INDEX_OBJN = :object_id]])
+    end
+    if db:check_access("VECSYS.VECTOR$INDEX",true) then
+        env.table.insert(rtn,2,[[SELECT JSON_SERIALIZE(IDX_PARAMS returning varchar2 PRETTY) "Vector Index Info"
+        FROM   VECSYS.VECTOR$INDEX WHERE IDX_OBJN= :object_id]])
+    end
+end
+
+return rtn;

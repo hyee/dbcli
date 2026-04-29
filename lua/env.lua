@@ -575,10 +575,10 @@ function env.exec_command(cmd,params,is_internal,arg_text)
     if event and not is_internal then
         name,params,is_internal,arg_text=table.unpack((event("BEFORE_COMMAND",{name,params,is_internal,arg_text})))
     end
-
+    local clock=os.timer()
     local res={pcall(_exec_command,name,params,arg_text)}
     if not env then return end
-    local clock=math.floor((os.timer()-_THREADS._clock[index])*1e3)/1e3
+    clock=math.floor((os.timer()-clock)*1e3)/1e3
     if event and not is_internal then 
         event("AFTER_COMMAND",name,params,res[2],is_internal,arg_text,clock,res[1])
     end

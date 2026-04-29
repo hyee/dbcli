@@ -292,7 +292,7 @@ Examples:
         }
         &filter: default={} f={AND (&0)}
         &inst1: default={decode('&V1','0',''||inst_id,decode(count(distinct inst_id) over(),1,''||inst_id,'*'))}
-        &inst_filter: default={('&V1' IS NULL AND (&has_snap_cmd is null or inst_id=userenv('instance')) OR '&V1' in(''||INST_ID,'0','a'))}
+        &inst_filter: default={((&has_snap_cmd=1 and inst_id=userenv('instance')) OR (&has_snap_cmd=0 and nvl('&V1','a') in(''||INST_ID,'0','a')))}
         &secs : 11.2={WAIT_TIME_MICRO} default={seconds_in_wait*1e6}
         &sql1: {sql={[[
                     q'~SELECT /*grid={topic='Active SQLs',height=0,include_zero=true,order_by='-aas,-ela',per_second='off'}*/ * 

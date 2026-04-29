@@ -363,8 +363,9 @@ function oracle:connect(conn_str)
             set_param(q'["_fix_control"='30786641:1','22258300:1']');
             --ORA-12850 on gv$ views
             set_param(q'["_fix_control"='27261477:1','31069997:1']');
-            
-            
+            --wrong result for PL/SQL Open-FOR-SELECT on gv$ views
+            set_param(q'["_fix_control"='34701323:1']');
+            set_param(q'["_fix_control"='34993248:1']');
             IF vs < 18 THEN
                 did := get_param('select dbid from v$database');
             ELSE
