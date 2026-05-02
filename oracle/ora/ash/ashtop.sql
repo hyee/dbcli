@@ -204,7 +204,8 @@ SELECT * FROM (
           , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
           , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
     FROM  ASH_V A
-    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,a.u_id,&fields
+    GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,
+             a.u_id,&fields
     ORDER BY 1 desc nulls last,secs DESC nulls last,&fields
 )
 WHERE ROWNUM <= 50;

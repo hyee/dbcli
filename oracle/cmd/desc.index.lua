@@ -38,12 +38,33 @@ local rtn = {
 
 if db.props.version>23.2 then
     if db:check_access("SYS.V_$VECTOR_GRAPH_INDEX",true) then
-        env.table.insert(rtn,2,[[SELECT /*PIVOT*/ /*topic="Vector Index Info"*/ *
-            FROM   SYS.V_$VECTOR_GRAPH_INDEX a
-            WHERE  INDEX_OBJN = :object_id]])
+        env.table.insert(rtn,2,[[
+        SELECT  /*+topic="HNSW Index Info"*/
+                INST_ID "INST|ID",
+                INDEX_GRAPH_TYPE    "GRAPH|TYPE",
+                NUM_LAYERS          "NUM|LAYERS",
+                NUM_VECTORS         "NUM|VECTORS",
+                SPARSE_LAYER_VECTORS "SPARSE|VECTORS",
+                NUM_NEIGHBORS       "NUM|NEIGHBORS",
+                EF_CONSTRUCTION     "EF|CONSTRUCTION",
+                TOTAL_EDGES         "TOTAL|EDGES",
+                REF_COUNT           "REF|COUNT",
+                QUERY_DIST_COUNT    "QUERY|DIST_COUNT",
+                CREATION_DIST_COUNT "CREATION|DIST_COUNT",
+                PRUNED_NEIGHBORS    "PRUNED|NEIGHBORS",
+                NUM_SNAPSHOTS       "NUM|SNAPSHOTS",
+                MAX_SNAPSHOT        "MAX|SNAPSHOT",
+                dbms_xplan.FORMAT_SIZE(ALLOCATED_BYTES)     "ALLOC|BYTES",
+                dbms_xplan.FORMAT_SIZE(USED_BYTES)          "USED|BYTES",
+                COVERING_COLS       "COVERING|COLS"
+        FROM SYS.GV_$VECTOR_GRAPH_INDEX
+        WHERE INDEX_OBJN = :object_id
+    ]])
     end
     if db:check_access("VECSYS.VECTOR$INDEX",true) then
-        env.table.insert(rtn,2,[[SELECT JSON_SERIALIZE(IDX_PARAMS returning varchar2 PRETTY) "Vector Index Info"
+        env.table.insert(rtn,2,[[
+        SELECT JSON_SERIALIZE(IDX_PARAMS returning varchar2 PRETTY) "Vector Index Params",'|' "|",
+               JSON_SERIALIZE(IDX_AUXILIARY_TABLES returning varchar2 PRETTY) "Vector Auxiliary Tables"
         FROM   VECSYS.VECTOR$INDEX WHERE IDX_OBJN= :object_id]])
     end
 end
