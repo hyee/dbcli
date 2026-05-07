@@ -31,6 +31,7 @@
         @VER122: 12.2={} default={--}
         @VER:   11.2={} DEFAULT={--}
         @VER23: 23={-RESULT_CACHE_EXECUTIONS} DEFAULT={}
+        @ver18: 18={1} default={1e4}
         @check_access_hist: dba_hist_sqltext={} default={--}
         @check_access_bind: dba_hist_sqlbind={1} default={0} 
         @ARGS: 1
@@ -279,7 +280,7 @@ PRINT c;
 save txt last_sql_&V1..txt
 
 col MEM,OPTIMAL,ONEPASS,TEMP,LAST_TEMP FOR KMG2
-col ACTIVES FOR msmhd2
+col ACTIVES FOR usmhd2
 col OPTIMALS,ONEPASS,MULTIS FOR TMB2
 COL FLASH FOR PCT2
 
@@ -313,7 +314,7 @@ SELECT /*+use_hash(a b)*/ phv,
        OPERATION_TYPE,
        POLICY,
        Count(1) CNT,
-       NULLIF(MAX(ACTIVE_TIME*10),0) ACTIVES,
+       NULLIF(MAX(ACTIVE_TIME * &ver18),0) ACTIVES,
        MAX(LAST_MEMORY_USED) MEM,
        NULLIF(MAX(LAST_DEGREE),1) LAST_DOP,
        '|' "|",

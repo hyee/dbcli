@@ -2,12 +2,14 @@
 Refer to Tanel Poder's same script
     --[[
        @11g : 11.1={, pm.sql_id},10.0={}
+       @ver: 18={1} default={1e4}
     ]]--
 ]]*/
 
 set feed off printsize 1000
-col allocated,used,max_allocated,bytes,heap_bytes for kmg
+col allocated,used,max_allocated,bytes,heap_bytes,tempseg_size for kmg
 col pct for pct2
+col active_time for usmhd2
 PRO Memory info from session stats
 PRO ==============================
 SELECT inst, SID, NAME,  VALUE bytes
@@ -66,7 +68,7 @@ SELECT /*+no_expand use_hash(s p pm)*/
        ,pm.operation_type,
        pm.operation_id plan_line,
        pm.policy,
-       ROUND(pm.active_time / 1000000, 1) active_sec,
+       ROUND(pm.active_time * &ver, 1) active_time,
        round(pm.actual_mem_used / 1024 / 1024, 2) act_mb_used,
        round(pm.max_mem_used / 1024 / 1024, 2) max_mb_used,
        round(pm.work_area_size / 1024 / 1024, 2) work_area_mb,

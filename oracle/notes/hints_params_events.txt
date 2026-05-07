@@ -173,7 +173,11 @@ Parameters
             This can only be satisfied by having a very log sleep time, 
             the outcome of which is that log file sync is unnecessarily long.
     _lm_share_lock_opt: false to help reducing 'ges resource hash list' in some cases, also _ksi_clientlocks_enabled=false(11g value)
-    _in_memory_cdt: disable materilizing in-memory cdt(also including key-vector transformation)
+    _in_memory_cdt: materilizing in-memory cdt(also including key-vector transformation) ,relative parameters:
+            1. _in_memory_memory_threshold to limit the max memory for signle in-memory temp table is 40M
+            2. fix control 31545400:1 to fix "Parallel Query Downgrades to Serial For In-memory Cursor Duration Tables"
+            3. use parallel_force_local=true for the parallel query with in-memory cdt to avoid error
+
     _px_reuse_server_groups: reuse existing px server group for CDT
     _px_partition_scan_threshold: default as 64, when partitions>64*dop then use PX partition-wise scan instead of PX block interator
     _ktb_debug_flags: 2 - disable oustanding read events on SecureFile insertion, but increase the undo header lookups during cleanouts
@@ -228,6 +232,8 @@ Parameters
     _cursor_plan_unparse_enabled: false to disable storing access/filter predicates in awr plan table
     _lm_share_lock_restype: default 'L*N*Q*', set 'L*N*' to disable s-lock optimization to reduce 'latch: ges resource hash list'/'latch: ges cached resource lists'/'Row cache lock' from LMD process, or set _lm_share_lock_opt=false
     _mv_refresh_use_stats: set true to avoid HASH_SJ for MVIEW fast refresh mode(especially refresh on commit)
+    _px_shared_hash_join:  When enabled, the hash join builds a table in shared memory that can be accessed by parallel execution servers, 
+                           which is particularly beneficial when data is heavily partitioned or skewed(HASH JOIN BUFFERED -> HASH JOIN SHARED).
 
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
