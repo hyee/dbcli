@@ -37,8 +37,16 @@ local rtn = {
 }
 
 if db.props.version>23.2 then
+    local idx=#rtn-1
+    if db:check_access("VECSYS.VECTOR$INDEX",true) then
+        env.table.insert(rtn,idx,[[
+        SELECT JSON_SERIALIZE(IDX_PARAMS returning varchar2 PRETTY) "Vector Index Params",'|' "|",
+               JSON_SERIALIZE(IDX_AUXILIARY_TABLES returning varchar2 PRETTY) "Vector Auxiliary Tables"
+        FROM   VECSYS.VECTOR$INDEX WHERE IDX_OBJN= :object_id]])
+        idx = idx + 1
+    end
     if db:check_access("SYS.V_$VECTOR_GRAPH_INDEX",true) then
-        env.table.insert(rtn,2,[[
+        env.table.insert(rtn,idx,[[
         SELECT  /*+topic="HNSW Index Info"*/
                 INST_ID "INST|ID",
                 INDEX_GRAPH_TYPE    "GRAPH|TYPE",
@@ -58,14 +66,35 @@ if db.props.version>23.2 then
                 dbms_xplan.FORMAT_SIZE(USED_BYTES)          "USED|BYTES",
                 COVERING_COLS       "COVERING|COLS"
         FROM SYS.GV_$VECTOR_GRAPH_INDEX
-        WHERE INDEX_OBJN = :object_id
-    ]])
+        WHERE INDEX_OBJN = :object_id]])
+        idx = idx + 1
     end
-    if db:check_access("VECSYS.VECTOR$INDEX",true) then
-        env.table.insert(rtn,2,[[
-        SELECT JSON_SERIALIZE(IDX_PARAMS returning varchar2 PRETTY) "Vector Index Params",'|' "|",
-               JSON_SERIALIZE(IDX_AUXILIARY_TABLES returning varchar2 PRETTY) "Vector Auxiliary Tables"
-        FROM   VECSYS.VECTOR$INDEX WHERE IDX_OBJN= :object_id]])
+
+    if db.props.version>=23.26 and db:check_access("SYS.DBMS_VECTOR",true) then
+        env.table.insert(rtn,idx,[[
+        DECLARE
+            arr DBMS_OUTPUT.CHARARR;
+            siz PLS_INTEGER;
+            txt VARCHAR2(4000);
+        BEGIN
+            dbms_output.disable;
+            dbms_output.enable(NULL);
+            SYS.DBMS_VECTOR.GET_INDEX_STATUS(:owner,:object_name);
+            dbms_output.get_lines(arr, siz);
+            dbms_output.disable;
+            dbms_output.enable(NULL);
+            IF nvl(siz,0) = 0 THEN
+                RETURN;
+            END IF;
+
+            FOR i IN 1 .. siz LOOP
+                txt := txt || arr(i) || chr(10);
+            END LOOP;
+            OPEN :v_cur FOR
+                SELECT TRIM(txt) INDEX_STATUS FROM dual;
+        EXCEPTION WHEN OTHERS THEN NULL;
+        END;]])
+        idx = idx + 1
     end
 end
 

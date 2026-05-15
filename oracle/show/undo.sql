@@ -1,6 +1,14 @@
 /*[[Show Undo info
     --[[--
         @insts: 11.2={listagg(b.inst_id) within group(order by b.inst_id)} {default=to_char(wmsys.wm_concat(b.inst_id))}
+        @CHECK_ACCESS_PARAMETERS: {
+            sys.x$ksppi={
+               (SELECT ksppinm NAME,ksppity TYPE, ksppstdvl VALUE,ksppstdf isdefault,ksppdesc DESCRIPTION
+                FROM   sys.x$ksppcv y 
+                JOIN   sys.x$ksppi x 
+                USING(indx))}
+            default={(select '' name,0 type,'' value,'Y' isdefault,'' description from dual)}
+        }
     --]]--
 ]]*/
 col "Current|Undo Size,Exp Undo Size|For Retention,HWM|Roll Size" format kmg
@@ -10,6 +18,31 @@ col "Max|Used Size,BYTES,BLOCK_SIZE" format kmg
 col "Undo Size|/ Sec,ActiveS|/ Sec,Expired|/ Sec,Unexpired|/ Sec,Steal-Tries|/ Sec,Steal-Succ|/ Sec,Reused|/Sec" format kmg
 col "Total|Header Gets,Total|Header Waits,Total|Shrinks,Total|Extends" FOR TMB
 SET FEED OFF
+
+PRO Undo Parameters in Current Instance:
+PRO ====================================
+SELECT name,type,value,isdefault,description
+from   v$parameter
+where upper(name||'.'||description) LIKE '%UNDO%'
+OR  (name in('_ktb_debug_flags','_lm_drm_disable') AND bitand(0+value,2)=2 OR
+     name='_smu_debug_mode' AND value='33554432')
+UNION
+SELECT * 
+FROM   &CHECK_ACCESS_PARAMETERS
+WHERE name in('_enable_default_temp_threshold',
+              '_enable_default_undo_threshold',
+              '_gc_undo_affinity',
+              '_gc_undo_rdma_read',
+              '_offline_rollback_segments',
+              '_highthreshold_undoretention',
+              '_in_memory_undo',
+              '_rollback_segment_count',
+              '_temp_undo_disable_adg',
+              '_undo_autotune',
+              '_undo_block_compression'
+              )
+ORDER BY 1;
+
 
 PRO DBA_UNDO_EXTENTS:
 PRO =================
