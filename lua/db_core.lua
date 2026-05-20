@@ -1162,8 +1162,10 @@ function db_core:connect(attrs,data_source)
 
     for _,p in pairs(prop) do
         local rtn,props=pcall(p,self.conn)
-        for k,v in java.pairs(rtn and props or {}) do
-            self.properties[k]=v
+        if rtn and props then
+            for k,v in java.pairs(props) do
+                self.properties[k]=v
+            end
         end
     end
     pcall(self.conn.setReadOnly,self.conn,cfg.get("READONLY")=="on")

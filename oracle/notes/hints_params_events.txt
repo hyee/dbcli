@@ -234,7 +234,8 @@ Parameters
     _mv_refresh_use_stats: set true to avoid HASH_SJ for MVIEW fast refresh mode(especially refresh on commit)
     _px_shared_hash_join:  When enabled, the hash join builds a table in shared memory that can be accessed by parallel execution servers, 
                            which is particularly beneficial when data is heavily partitioned or skewed(HASH JOIN BUFFERED -> HASH JOIN SHARED).
-    _buddy_instance: set to 0 to reduce RMS0 process from blocking other sessions with event 'latch: shared pool' 
+    _buddy_instance: 0 to reduce RMS0 process from blocking other sessions with event 'latch: shared pool' 
+    _mutex_wait_scheme: set to 1 together with _mutex_spin_count=1000 to reduce mutex waits in some cases
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
     enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'
