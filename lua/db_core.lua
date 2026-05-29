@@ -490,7 +490,7 @@ end
 
    returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)
 ]]
-
+local system=java.system
 function db_core:call_sql_method(event_name,sql,method,...)
     if cfg.get("READONLY")=="on" then
         local root_cmd,sub_cmd=self.get_command_type(sql)
@@ -510,8 +510,10 @@ function db_core:call_sql_method(event_name,sql,method,...)
             env.raise('Command "'..root_cmd..sub_cmd..'" is disallowed in read-only mode!')
         end
     end
-
+    local clock=system:nanoTime()
     local res,obj=pcall(method,...)
+    clock=system:nanoTime()-clock
+    self.dbMicrosecs=math.round(clock/1000)
     if res==false then
         if event_name=='ON_SQL_ERROR' then
             env.log_debug("db","SQL:",sql)
@@ -944,7 +946,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     if is_not_prep then
         env.log_debug("db","SQL:",sql)
     end
-    exe=os.timer()-clock
+    exe,clock=self.dbMicrosecs*1e-6,os.timer()
     self.current_stmt=nil
     local is_output,index,typename=1,2,3
     local cleans={}
@@ -1019,7 +1021,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         if args[k]==db_core.NOT_ASSIGNED then args[k]=nil end
     end
 
-    ela=os.timer()-clock
+    ela=os.timer()-clock+exe
     if is_timing then 
         print(string.format("Elapsed: %.3f secs  Executed: %.3f secs\n",ela,exe))
     elseif db_core.__start_clock and (not is_not_prep or is_internal) then
@@ -1729,6 +1731,7 @@ function db_core:__onload()
     cfg.init("endtime","",self.set_time,"db.core","Specify the default end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries",nil,self)
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
+    env.set_command(self,"ping","ping network latency of current connection. Usage: @@NAME [<query>] <count> <interval>",self.ping,false,4)
     env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
     env.set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
     env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
@@ -1826,6 +1829,41 @@ end
 
 function db_core:__onunload()
     self:disconnect()
+end
+
+function db_core:ping(stmt,count,interval)
+    if tonumber(stmt) then
+        stmt,count,interval=nil,stmt,count
+    end
+    
+    stmt=type(stmt)=='string' and stmt or (env.set.get("PLATFORM")=='oracle' and 'select systimestamp from dual' or 'select 1')
+    count=tonumber(count) or 5
+    interval=tonumber(interval) or 0.5
+    
+    self:assert_connect()
+    local done,res,cache
+    local sys=java.system
+    for i=1,count do
+        env.sleep(interval)
+        done,res,cache=pcall(self.exec_cache,self,stmt,{})
+        local clock=self.dbMicrosecs
+        
+        if done and type(res)=='userdata' then
+            local rows=self.resultset:rows(res,2)
+            if #rows==2 then
+                done=rows[2][1]
+            else
+                done='OK'
+            end
+            res:close()
+        else
+            done=done and 'Success' or 'Error'
+        end
+        print(("Round #%-4d  |  Network Roundtrip Time(ms): %-6.2f  |  Result: %s"):format(i,clock*0.001,tostring(done)))
+    end
+    if type(cache)=='userdata' and cache.close then
+        pcall(cache.close,cache)
+    end
 end
 
 function db_core:compute_delta(rs2,rs1,groups,aggrs)

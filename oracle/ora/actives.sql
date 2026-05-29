@@ -194,7 +194,7 @@ BEGIN
                a.sq_id,
                plan_hash_value plan_hash,
                sql_child_number child,
-               decode(&wait_time,0,a.event,'ON CPU') event,
+               a.event||decode(&wait_time,0,null,'(ON CPU)') event,
                ROUND(greatest(nvl(&COST,0),wait_secs,nvl2(sq_id,last_call_et,0)),2) waited,
                &fields,substr(sql_text,1,200) sql_text
         FROM   s4 a
@@ -265,7 +265,7 @@ BEGIN
                    a.sql_id,
                    plan_hash_value plan_hash,
                    sql_child_number child,
-                   decode(&wait_time,0,a.event,'ON CPU') event,
+                   a.event||decode(&wait_time,0,null,'(ON CPU)') event,
                    ROUND(greatest(nvl(&COST,0),wait_secs,nvl2(sql_id,last_call_et,0)),2) waited,
                    &fields,sql_text
             FROM   s4 a,(SELECT spid,inst_id,addr from &CHECK_ACCESS_PRO) d

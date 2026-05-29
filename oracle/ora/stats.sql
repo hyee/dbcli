@@ -40,6 +40,7 @@ Get preferences/stats of the target object or compare stats. Usage: @@NAME {[own
        @notes2          : 18.1={t.notes} default={}
        @im              : 12.2={} default={--}
        @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
+       @plsqlstats      : 23.26={1} default={0}
        &t               : default={} t={}
        @check_access_sys: {
         sys.wri$_optstat_tab_history={
@@ -222,6 +223,10 @@ BEGIN
         exception when others then null;
         end;
     end loop;
+
+    $IF DBMS_DB_VERSION.VERSION>22 $THEN
+        
+    $END
     
     prefs := t('iotfrspeed', 'ioseektim', 'mbrc','sreadtim', 'mreadtim', 'cpuspeed', 'cpuspeednw',  'maxthr', 'slavethr');
     for i in 1..prefs.count loop

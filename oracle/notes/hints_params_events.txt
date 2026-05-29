@@ -235,7 +235,7 @@ Parameters
     _px_shared_hash_join:  When enabled, the hash join builds a table in shared memory that can be accessed by parallel execution servers, 
                            which is particularly beneficial when data is heavily partitioned or skewed(HASH JOIN BUFFERED -> HASH JOIN SHARED).
     _buddy_instance: 0 to reduce RMS0 process from blocking other sessions with event 'latch: shared pool' 
-    _mutex_wait_scheme: set to 1 together with _mutex_spin_count=1000 to reduce mutex waits in some cases
+    _mutex_wait_scheme: set to 1 together with _mutex_spin_count=1000 to reduce mutex waits in some cases. setting kernel.numa_balancing=0, vm.zone_reclaim_mode=0 and _enable_NUMA_support=false can also help to reduce the mutex/latch spikes.
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
     enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'
@@ -300,7 +300,7 @@ Hints:
     VECTOR_TRANSFORM([<qb>] FACT(<fact>) DIMENSION(<dim#1>) ...DIMENSION(<dim#n>)): Use key vector transformation
     pq_filter(serial/hash/random/none): Random:lef-skew handling; Hash:left-skew handling+caching; none:left,right both clumped,no skew handling; serial:_px_filter_parallelized=false
     system_stats(mbrc=<num> ioseektim=<num> iotfrspeed=<num>): change system stats for a specific sql, or simply change mbrc via _db_file_optimizer_read_count
-    tracing(strip,<plan line id>): elimiates the data output of specific row-source of the execution plan, mainly used for testing SQL performance
+    tracing(strip|dump,<plan line id>): elimiates the data output of specific row-source of the execution plan, mainly used for testing SQL performance
     _kks_reuse_ful_child_cursor: set to 3 to fix library cache lock issue since patch 35225536(19.22)
     
 Fix Controls:
