@@ -40,7 +40,6 @@ Get preferences/stats of the target object or compare stats. Usage: @@NAME {[own
        @notes2          : 18.1={t.notes} default={}
        @im              : 12.2={} default={--}
        @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
-       @plsqlstats      : 23.26={1} default={0}
        &t               : default={} t={}
        @check_access_sys: {
         sys.wri$_optstat_tab_history={
@@ -173,7 +172,9 @@ DECLARE
                 'SYS_FLAGS','1','0/1(DSC_SYS_FLAGS_DUBIOUS_DONE)',
                 'TABLE_CACHED_BLOCKS','1','0(AUTO_TABLE_CACHED_BLOCKS)/n',
                 'TRACE','0','0(disable),1(DBMS_OUTPUT_TRC),2(SESSION_TRC),4(TAB_TRC),8(IND_TRC),16(COL_TRC),32(AUTOST_TRC[sys.stats_target$_log]),...524288',
-                'WAIT_TIME_TO_UPDATE_STATS','15','15');
+                'WAIT_TIME_TO_UPDATE_STATS','15','15',
+                'DYNAMIC_STATS','ON','ON/OFF/CHOOSE  [for PL/SQL function]' 
+                );
 
 BEGIN
     IF :V2 IS NOT NULL OR :T IS NOT NULL THEN
@@ -205,11 +206,15 @@ BEGIN
 
     for i in 0..(prefs.count/3-1) loop
         begin
+            IF object_name IS NOT NULL THEN
             $IF DBMS_DB_VERSION.VERSION>10 $THEN
                 pval:=substr(dbms_stats.get_prefs(prefs(i*3+1),owner,object_name),1,35);
             $ELSE
-                pval:=substr(dbms_stats.get_param(prefs(i*3+1)),1,35);
+                NULL;
             $END
+            ELSE
+                pval:=substr(dbms_stats.get_param(prefs(i*3+1)),1,35);
+            END IF;
             len := length(pval);
             IF pval!=substr(prefs(i*3+2),1,35) THEN
                 pval := '$HIR$*'||substr(pval,1,34)||'$NOR$';

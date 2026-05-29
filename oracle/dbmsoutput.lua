@@ -531,11 +531,30 @@ function output.get_error_output(info)
     return info
 end
 
+function output.ping_begin(cmd)
+    cmd.ela_sql="select value from v$sess_time_model where stat_name='sql execute elapsed time' and sid="..cmd.db.props.sid
+    local done,value=pcall(cmd.db.get_value,cmd.db,cmd.ela_sql,{})
+    if done then
+        env.sleep(3)
+        cmd.value=cmd.db:get_value(cmd.ela_sql,{})
+    end
+end
+
+function output.ping_end(cmd)
+    if not cmd.value then return end
+    env.sleep(3)
+    local value=cmd.db:get_value(cmd.ela_sql,{})
+    local ela=0.001*(value-cmd.value)/cmd.count
+    cmd.msg=cmd.msg..('  |  Avg SQL Exec Time(ms): %.3f  |  Avg Network Roundtrip Time(ms): %.3f'):format(ela,cmd.latency-ela)
+end
+
 function output.onload()
     snoop("ON_SQL_ERROR",output.get_error_output,nil,40)
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
     snoop("BEFORE_DB_EXEC",output.capture_stats,nil,1)
     snoop("AFTER_DB_EXEC",output.getOutput,nil,99)
+    snoop("ON_PING_BEGIN",output.ping_begin)
+    snoop("ON_PING_END",output.ping_end)
     cfg.init('AUTOTRACE','off',function(name,value)
         if autotrace==value then return value end
         if value=='traceonly' or value=='trace' then

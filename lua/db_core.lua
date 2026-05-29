@@ -4,27 +4,27 @@ local read=reader
 local event=env.event and env.event.callback or nil
 local db_core=env.class()
 local db_Types,__stmts,__source={},{},{}
+local system=java.system
 db_core.NOT_ASSIGNED='__NO_ASSIGNMENT__'
-
 
 local proxy_type=nil
 local set_proxy=function(addr,port)
     if not proxy_type then return end
     if addr then
         if proxy_type=='http' then
-            java.system:setProperty('https.proxyHost',addr)
-            java.system:setProperty('https.proxyPort',port)
+            system:setProperty('https.proxyHost',addr)
+            system:setProperty('https.proxyPort',port)
         else
-            java.system:setProperty('socksProxyHost',addr)
-            java.system:setProperty('socksProxyPort',port)
+            system:setProperty('socksProxyHost',addr)
+            system:setProperty('socksProxyPort',port)
         end
     else
         if proxy_type=='http' then
-            java.system:clearProperty('https.proxyHost')
-            java.system:clearProperty('https.proxyPort')
+            system:clearProperty('https.proxyHost')
+            system:clearProperty('https.proxyPort')
         else
-            java.system:clearProperty('socksProxyHost')
-            java.system:clearProperty('socksProxyPort')
+            system:clearProperty('socksProxyHost')
+            system:clearProperty('socksProxyPort')
         end
         proxy_type=nil
     end
@@ -490,7 +490,7 @@ end
 
    returns: for the sql is a query stmt, then return the result set, otherwise return the affected rows(>=-1)
 ]]
-local system=java.system
+local nanoTime=java.system.nanoTime
 function db_core:call_sql_method(event_name,sql,method,...)
     if cfg.get("READONLY")=="on" then
         local root_cmd,sub_cmd=self.get_command_type(sql)
@@ -510,9 +510,9 @@ function db_core:call_sql_method(event_name,sql,method,...)
             env.raise('Command "'..root_cmd..sub_cmd..'" is disallowed in read-only mode!')
         end
     end
-    local clock=system:nanoTime()
+    local clock=nanoTime()
     local res,obj=pcall(method,...)
-    clock=system:nanoTime()-clock
+    clock=math.max(0,nanoTime()-clock-10000)
     self.dbMicrosecs=math.round(clock/1000)
     if res==false then
         if event_name=='ON_SQL_ERROR' then
@@ -853,7 +853,7 @@ function db_core.log_param(params)
     end
 end
 
-local collectgarbage,java_system,gc=collectgarbage,java.system,java.system.gc
+local collectgarbage,gc=collectgarbage,java.system.gc
 local vertical_pattern,verticals=env.VERTICAL_PATTERN,nil
 local DDL={CREATE=1,ALTER=1,DROP=1}
 
@@ -1216,7 +1216,7 @@ function db_core:clearStatements(is_force)
 
     if counter>1 then
         --collectgarbage("collect")
-        gc(java_system) 
+        gc(system) 
     end
 end
 
@@ -1731,7 +1731,7 @@ function db_core:__onload()
     cfg.init("endtime","",self.set_time,"db.core","Specify the default end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries",nil,self)
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
-    env.set_command(self,"ping","ping network latency of current connection. Usage: @@NAME [<query>] <count> <interval>",self.ping,false,4)
+    env.set_command(self,"ping","ping network latency of current connection. Usage: @@NAME [<count> <interval>] [<query>]",self.ping,false,4)
     env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
     env.set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
     env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
@@ -1831,39 +1831,64 @@ function db_core:__onunload()
     self:disconnect()
 end
 
-function db_core:ping(stmt,count,interval)
-    if tonumber(stmt) then
-        stmt,count,interval=nil,stmt,count
+function db_core:ping(...)
+    local args={...}
+    local stmt,count,interval
+    for i=#args,1,-1 do
+        if args[i] and not tonumber(args[i]) then
+            stmt=table.remove(args,i):trim()
+            break
+        end
     end
-    
-    stmt=type(stmt)=='string' and stmt or (env.set.get("PLATFORM")=='oracle' and 'select systimestamp from dual' or 'select 1')
-    count=tonumber(count) or 5
-    interval=tonumber(interval) or 0.5
+
+    count,interval=args[1],args[2]
+    stmt=type(stmt)=='string' and stmt or (env.set.get("PLATFORM")=='oracle' and 'begin null;end;' or "select 'OK'")
+    count=tonumber(count) or 30
+    interval=tonumber(interval) or 0.1
     
     self:assert_connect()
     local done,res,cache
     local sys=java.system
+    env.set.set("feed","off")
+    local total,v1,v2=0
+    local cmd={db=self,sql=stmt,count=count,interval=interval}
+    if event then event("ON_PING_BEGIN",cmd) end
     for i=1,count do
-        env.sleep(interval)
-        done,res,cache=pcall(self.exec_cache,self,stmt,{})
+        if interval>0 then env.sleep(interval) end
+        done,res,cache=pcall(self.exec_cache,self,stmt,{},"PingTest")
         local clock=self.dbMicrosecs
-        
+        total=total+clock
+        local msg=("Round #%-4d  |  Latency(ms): %-6.3f  |  Result: "):format(i,clock*0.001)
         if done and type(res)=='userdata' then
-            local rows=self.resultset:rows(res,2)
-            if #rows==2 then
-                done=rows[2][1]
+            local rows=self.resultset:rows(res,30)
+            if #rows==1 then
+                print(msg..'Success')
+            elseif #rows==2 and #rows[2]==1 then
+                if i==1 then
+                    v1=tonumber(rows[2][1])
+                elseif i==count then
+                    v2=tonumber(rows[2][1])
+                end
+                print(msg..rows[2][1])
             else
-                done='OK'
+                print(msg)
+                env.grid.print(rows)
+                print(('-'):rep(120))
             end
             res:close()
         else
-            done=done and 'Success' or 'Error'
+            print(msg..(done and 'Success' or 'Error'))
         end
-        print(("Round #%-4d  |  Network Roundtrip Time(ms): %-6.2f  |  Result: %s"):format(i,clock*0.001,tostring(done)))
     end
-    if type(cache)=='userdata' and cache.close then
-        pcall(cache.close,cache)
+    self:close_cache("PingTest")
+    cmd.latency=0.001/count*total
+    local msg=("\nAvg Latency including SQL time(ms): %-6.3f"):format(cmd.latency)
+    if v1 and v2 then
+        msg=msg..("  |  Start: %.2f  |  End: %.2f  |  Delta per Round: %.3f"):format(v1,v2,1.0*(v2-v1)/count)
     end
+    cmd.msg=msg
+    if event then event("ON_PING_END",cmd) end
+    print(cmd.msg)
 end
 
 function db_core:compute_delta(rs2,rs1,groups,aggrs)
