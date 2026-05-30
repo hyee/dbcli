@@ -512,7 +512,7 @@ function db_core:call_sql_method(event_name,sql,method,...)
     end
     local clock=nanoTime()
     local res,obj=pcall(method,...)
-    clock=math.max(0,nanoTime()-clock-10000)
+    clock=math.max(0,nanoTime()-clock-5000)
     self.dbMicrosecs=math.round(clock/1000)
     if res==false then
         if event_name=='ON_SQL_ERROR' then
@@ -1848,7 +1848,6 @@ function db_core:ping(...)
     
     self:assert_connect()
     local done,res,cache
-    local sys=java.system
     env.set.set("feed","off")
     local total,v1,v2=0
     local cmd={db=self,sql=stmt,count=count,interval=interval}
@@ -1888,6 +1887,9 @@ function db_core:ping(...)
     end
     cmd.msg=msg
     if event then event("ON_PING_END",cmd) end
+    if msg==cmd.msg then
+        cmd.msg=msg..('  |  Est SQL Exec Time(ms): %.2f  |  Est Network Roundtrip Time(ms): %.3f'):format(0.05,cmd.latency-0.05)
+    end
     print(cmd.msg)
 end
 

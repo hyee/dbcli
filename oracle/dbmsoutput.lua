@@ -532,17 +532,17 @@ function output.get_error_output(info)
 end
 
 function output.ping_begin(cmd)
-    cmd.ela_sql="select value from v$sess_time_model where stat_name='sql execute elapsed time' and sid="..cmd.db.props.sid
-    local done,value=pcall(cmd.db.get_value,cmd.db,cmd.ela_sql,{})
+    local done,value=pcall(cmd.db.get_value,cmd.db,"select stat_id from v$sess_time_model where stat_name='sql execute elapsed time' and rownum<2",{})
     if done then
-        env.sleep(3)
+        env.sleep(1)
+        cmd.ela_sql="select value from v$sess_time_model where stat_id="..value.." and sid="..cmd.db.props.sid
         cmd.value=cmd.db:get_value(cmd.ela_sql,{})
     end
 end
 
 function output.ping_end(cmd)
     if not cmd.value then return end
-    env.sleep(3)
+    env.sleep(1)
     local value=cmd.db:get_value(cmd.ela_sql,{})
     local ela=0.001*(value-cmd.value)/cmd.count
     cmd.msg=cmd.msg..('  |  Avg SQL Exec Time(ms): %.3f  |  Avg Network Roundtrip Time(ms): %.3f'):format(ela,cmd.latency-ela)
