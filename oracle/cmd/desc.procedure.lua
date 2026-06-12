@@ -34,7 +34,114 @@ return [[
         and    rownum<2;
 
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
-        OPEN cur for
+        OPEN cur for 
+        WITH args AS(
+            SELECT /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all')*/ 
+                   overload,
+                   SEQUENCE s,
+                   DATA_LEVEL l,
+                   POSITION p,
+                   lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
+                   CASE
+                       WHEN pls_type != data_type THEN
+                        pls_type
+                       WHEN type_subname IS NOT NULL THEN
+                        type_name || '.' || type_subname || '(' || DATA_TYPE || ')'
+                       WHEN type_name IS NOT NULL THEN
+                        type_owner||'.'||type_name || '(' || data_type || ')'
+                       WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) >0 AND nvl(data_scale, 0) = 0 THEN
+                        'INTEGER'
+                       WHEN data_type IN ('FLOAT',
+                                          'INTEGER',
+                                          'INT',
+                                          'BINARY_INTEGER',
+                                          'BINARY_FLOAT',
+                                          'BINARY_DOUBLE',
+                                          'PL/SQL BOOLEAN',
+                                          'PL/SQL RECORD') THEN
+                        data_type
+                       WHEN (t.data_type LIKE 'TIMESTAMP%' OR t.data_type LIKE 'INTERVAL DAY%' OR
+                            t.data_type LIKE 'INTERVAL YEAR%' OR t.data_type = 'DATE' OR
+                            (t.data_type = 'NUMBER' AND ((t.data_precision = 0) OR NVL(t.data_precision, -1) = -1) AND
+                            nvl(t.data_scale, -1) = -1)) THEN
+                        data_type
+                       ELSE
+                        data_type || --
+                        NULLIF('(' || TRIM(CASE
+                                               WHEN t.data_type IN ('VARCHAR', 'VARCHAR2', 'RAW', 'CHAR') THEN
+                                                DECODE((SELECT VALUE FROM nls_session_parameters WHERE PARAMETER = 'NLS_LENGTH_SEMANTICS'),
+                                                       'BYTE',
+                                                       DECODE(char_used, 'B', t.data_length || '', t.char_length || ' CHAR'),
+                                                       DECODE(char_used, 'B', t.data_length || ' BYTE', t.char_length || ' CHAR'))
+                                               WHEN t.data_type IN ('NVARCHAR2', 'NCHAR') AND nvl(t.data_length, -1) != -1 THEN
+                                                t.data_length / 2 || ''
+                                               WHEN ((t.data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1) AND (nvl(t.data_scale, -1) != -1)) THEN
+                                                '38,' || t.data_scale
+                                               WHEN (t.data_scale = 0 OR nvl(t.data_scale, -1) = -1) THEN
+                                                t.data_precision || ''
+                                               WHEN (t.data_precision != 0 AND t.data_scale != 0) THEN
+                                                t.data_precision || ',' || t.data_scale
+                                           END) || ')',
+                               '()')
+                       END data_type,
+                       IN_OUT,
+                       decode(t.defaulted, 'Y', 'Yes', 'No') defaulted,
+                       CHARACTER_SET_NAME charset,
+                       type_owner,
+                       type_name,
+                       type_subname
+                FROM   all_arguments t
+                WHERE  owner = own
+                AND    object_id = oid
+                AND    object_name = oname
+            $IF DBMS_DB_VERSION.VERSION <18 $THEN
+                )
+            $ELSE
+                AND    data_level= 0)
+        ,plsql(overload,s,l,p,argument,data_type,in_out,defaulted,CHARSET,type_owner,type_name,type_subname,lv) AS(
+            SELECT  /*+outline_leaf leading(r)*/
+                   r.overload,
+                   NVL2(s.attr_no, r.s + s.attr_no /100, r.s) s,
+                   NVL2(s.attr_no, r.l + 1, r.l) l,
+                   NVL(s.attr_no, r.p) p,
+                   NVL2(s.attr_no, lpad(' ', (r.l + 1) * 2)||s.attr_name, r.argument) argument,
+                   NVL2(s.attr_no, nullif(s.ATTR_TYPE_PACKAGE||'.','.')||s.ATTR_TYPE_NAME, r.data_type) data_type,
+                   NVL2(s.attr_no, ' ', r.in_out) in_out,
+                   NVL2(s.attr_no, NULL, r.defaulted) defaulted,
+                   NVL2(s.attr_no, s.CHARACTER_SET_NAME, r.charset),
+                   NVL2(s.attr_no, s.ATTR_TYPE_OWNER, r.type_owner),
+                   NVL2(s.attr_no, s.ATTR_TYPE_PACKAGE, r.type_name),
+                   NVL2(s.attr_no, s.ATTR_TYPE_NAME, r.type_subname),
+                   NVL2(s.attr_no, 2, 1)
+            FROM   args r, all_plsql_type_attrs s
+            WHERE  r.type_subname IS NOT NULL
+            AND    r.type_owner = s.owner(+)
+            AND    r.type_name = s.PACKAGE_NAME(+)
+            AND    r.type_subname = s.type_name(+)
+            UNION ALL
+            SELECT /*+outline_leaf leading(r)*/
+                     r.overload,
+                     r.s + s.attr_no /power(100,lv) s,
+                     r.l + 1,
+                     s.attr_no,
+                     lpad(' ', (r.l + 1) * 2)||s.attr_name,
+                     nullif(s.ATTR_TYPE_PACKAGE||'.','.')||s.ATTR_TYPE_NAME,
+                     ' ',
+                     NULL,
+                     s.CHARACTER_SET_NAME,
+                     s.ATTR_TYPE_OWNER,
+                     s.ATTR_TYPE_PACKAGE,
+                     s.ATTR_TYPE_NAME,
+                     lv + 1
+            FROM   plsql r, all_plsql_coll_types t, all_plsql_type_attrs s
+            WHERE  r.type_owner = t.owner
+            AND    r.type_name = t.PACKAGE_NAME
+            AND    r.type_subname = t.type_name
+            AND    t.ELEM_TYPE_owner = s.owner
+            AND    t.ELEM_TYPE_NAME = s.type_name
+            AND    t.ELEM_TYPE_PACKAGE = s.package_name
+        )
+        $END
             SELECT decode(p,'-','-',TRIM('.' FROM o || replace(p,' '))) no#, 
                    '|' "|",
                    Argument, 
@@ -42,61 +149,12 @@ return [[
                    IN_OUT, 
                    defaulted "Default?",
                    CHARSET
-            FROM   (SELECT /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all')*/ 
-                           overload,
-                           SEQUENCE s,
-                           DATA_LEVEL l,
-                           POSITION p,
-                           lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
-                           CASE
-                               WHEN pls_type != data_type THEN
-                                pls_type
-                               WHEN type_subname IS NOT NULL THEN
-                                type_name || '.' || type_subname || '(' || DATA_TYPE || ')'
-                               WHEN type_name IS NOT NULL THEN
-                                type_name || '(' || data_type || ')'
-                               WHEN data_type = 'NUMBER' AND NVL(t.data_precision, -1) >0 AND nvl(data_scale, 0) = 0 THEN
-                                'INTEGER'
-                               WHEN data_type IN ('FLOAT',
-                                                  'INTEGER',
-                                                  'INT',
-                                                  'BINARY_INTEGER',
-                                                  'BINARY_FLOAT',
-                                                  'BINARY_DOUBLE',
-                                                  'PL/SQL BOOLEAN',
-                                                  'PL/SQL RECORD') THEN
-                                data_type
-                               WHEN (t.data_type LIKE 'TIMESTAMP%' OR t.data_type LIKE 'INTERVAL DAY%' OR
-                                    t.data_type LIKE 'INTERVAL YEAR%' OR t.data_type = 'DATE' OR
-                                    (t.data_type = 'NUMBER' AND ((t.data_precision = 0) OR NVL(t.data_precision, -1) = -1) AND
-                                    nvl(t.data_scale, -1) = -1)) THEN
-                                data_type
-                               ELSE
-                                data_type || --
-                                NULLIF('(' || TRIM(CASE
-                                                       WHEN t.data_type IN ('VARCHAR', 'VARCHAR2', 'RAW', 'CHAR') THEN
-                                                        DECODE((SELECT VALUE FROM nls_session_parameters WHERE PARAMETER = 'NLS_LENGTH_SEMANTICS'),
-                                                               'BYTE',
-                                                               DECODE(char_used, 'B', t.data_length || '', t.char_length || ' CHAR'),
-                                                               DECODE(char_used, 'B', t.data_length || ' BYTE', t.char_length || ' CHAR'))
-                                                       WHEN t.data_type IN ('NVARCHAR2', 'NCHAR') AND nvl(t.data_length, -1) != -1 THEN
-                                                        t.data_length / 2 || ''
-                                                       WHEN ((t.data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1) AND (nvl(t.data_scale, -1) != -1)) THEN
-                                                        '38,' || t.data_scale
-                                                       WHEN (t.data_scale = 0 OR nvl(t.data_scale, -1) = -1) THEN
-                                                        t.data_precision || ''
-                                                       WHEN (t.data_precision != 0 AND t.data_scale != 0) THEN
-                                                        t.data_precision || ',' || t.data_scale
-                                                   END) || ')',
-                                       '()')
-                           END data_type,
-                           IN_OUT,
-                           decode(t.defaulted, 'Y', 'Yes', 'No') defaulted,
-                           CHARACTER_SET_NAME charset
-                    FROM   all_arguments t
-                    WHERE  owner = own
-                    AND    object_id = oid
-                    AND    object_name = oname) 
+            FROM  
+            $IF DBMS_DB_VERSION.VERSION <18 $THEN
+                  args
+            $ELSE
+                (select args.*,1 lv from args union select * from plsql)
+            $END
             MODEL PARTITION BY(0+overload o) DIMENSION BY(s, l) 
             MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
             RULES SEQUENTIAL ORDER(
@@ -172,9 +230,11 @@ return [[
                 111, 'REF',
                 112, 'CLOB',
                 113, 'BLOB', 114, 'BFILE', 115, 'CFILE',
+                119, 'JSON',
                 121, 'OBJECT',
                 122, 'TABLE',
                 123, 'VARRAY',
+                127, 'VECTOR',
                 178, 'TIME',
                 179, 'TIME WITH TIME ZONE',
                 180, 'TIMESTAMP',
@@ -184,8 +244,8 @@ return [[
                 183, 'INTERVAL DAY TO SECOND',
                 250, 'PL/SQL RECORD',
                 251, 'PL/SQL TABLE',
-                252, 'PL/SQL BOOLEAN',
-                'UNDEFINED') || 
+                252, 'BOOLEAN',
+                'UNKNOWN('||dtyp(i)||')') || 
                 CASE 
                     WHEN dtyp(i) =2 AND prec(i)>0 AND nvl(nullif(scal(i),0),prec(i)) NOT IN(38,-127) THEN '('||prec(i)||NULLIF(','||scal(i),',')||')'
                     WHEN dtyp(i)!=2 AND len(i) >0 THEN '('||len(i)||')' 

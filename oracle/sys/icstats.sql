@@ -8,13 +8,14 @@
     * RX Frame Err    : Similar to RX Align Err
     * RX Len Err      : Similar to RX Align Err
     * RX CRC Err      : Ethernet Card or Network Swich mode is incompatible, all should be Full-Duplex mode and the same network speed
-    *                   check speed and duplex mode: ethtool eth0
-    *                   set speed and duplex mode  : ethtool -s eth0 speed 10000 duplex full autoneg off
+    *                   check speed and duplex mode: ethtool eth9
+    *                   set speed and duplex mode  : ethtool -s eth9 speed 10000 duplex full autoneg off
     * RX Misses Err   : Package has not entered Ring Buffer due to the queue is full, could be lack of Right Buffer lack of CPU or the capacity of Ethernet Card
-    *                   check Ring Buffer: ethtool -g eth0
-    *                   set Ring Buffer: ethtool -G eth0 rx 4096 tx 4096 txqueuelen 10000 rxqueuelen 10000
-    *                   change sysctl: net.core.netdev_max_backlog=30000
-    *                   /etc/sysconfig/network-scripts/ifcfg-eth0: ETHTOOL_OPTS="-G eth0 rx 4096 tx 4096"
+    *                   check Ring Buffer: ethtool -g eth9 & ip link show eth9
+    *                   set Ring Buffer: ethtool -G eth9 rx 4096 tx 4096
+    *                   set queue length: ip link set eth9 qlen 10000
+    *                   change sysctl: net.core.netdev_max_backlog=10000
+    *                   /etc/sysconfig/network-scripts/ifcfg-eth9: ETHTOOL_OPTS="-G eth9 rx 4096 tx 4096"
     * RX OverRun Err  : Similar to RX Misses
     * RX Fifo Err     : Similar to RX Misses, but the queue is not full
     * RX Drops        : Package has entered Ring Buffer, but was dropped due to lack of kernel resource (Memory,Socket buffer,etc)
@@ -24,9 +25,46 @@
     * TX Heartbeat Err: Cable/plug/Switch issue
     * TX Aborter   Err: Similar to TX Heartbeat issue
     * TX TCP Seg Fails: TSO/MTU/driver issue
-    *                   check: ethtool -a eth0
-    *                   set : ethtool -A  eth0 tx off
-    * TX Carrier Err  : Similar to RX Align/Frame/Len errs           
+    *                   check: ethtool -a eth9
+    *                   set : ethtool -A  eth9 tx off
+    * TX Carrier Err  : Similar to RX Align/Frame/Len errs
+    
+    Work Flow:
+    ==========
+    RX: Sending Host
+         -> Sending network link
+           -> Network Switch
+             -> DB Server link cable
+                -> NIC Hardware RX Ring                  # ethtool -G rx 4096
+                    -> netdev backlog queue              # net.core.netdev_max_backlog=10000 / qlen=10000
+                      -> kernel softirq / protocol stack # grep BLOCK /proc/softirqs, net.core.netdev_budget=600, net.core.netdev_budget_usecs = 4000
+                        -> DB SDU
+    TX: DB SDU
+          -> Kernel protocal stack / softirq   # grep BLOCK /proc/softirqs, net.core.netdev_budget=600, net.core.netdev_budget_usecs = 4000
+            -> netdev TX queue                 # net.core.netdev_max_backlog=10000 / qlen=10000
+              -> NIC hardware TX Ring          # ethtool -G tx 4096
+                -> DB Server Link cable
+                  -> Network Switch
+                    -> Receiving Host
+
+    
+    Suggested parameters for 10G/25G network:
+    =========================================
+    * net.core.netdev_max_backlog = 10000
+    * net.core.tcp_max_syn_backlog = 8192       # TCP_MAX_SYN_BACKLOG
+    * net.core.somaxconn = 8192                 # "Connection reset by peer"
+    * net.ipv4.tcp_syncookies = 1               # default is 1
+    * grid LOCAL and SCAN listener.ora -> (QUEUESIZE = 8192)
+    * net.core.rmem_max = 16777216              # GLOBAL_RECEIVE_SIZE_MAX,will be overridden by net.ipv4.tcp_rmem.<max> for db connection
+    * net.core.rmem_default = 4194304           # will be overridden by net.ipv4.tcp_rmem.<default> for db connection
+    * net.core.wmem_max = 16777216              # GLOBAL_SEND_SIZE_MAX, will be overridden by net.ipv4.tcp_wmem.<max> for db connection
+    * net.core.wmem_default = 4194304           # will be overridden by net.ipv4.tcp_wmem.<default> for db connection
+    * net.ipv4.tcp_rmem = 8192 4194304 16777216 # <min> <default> <max>, consider <min> as <SDU>
+    * net.ipv4.tcp_wmem = 8192 4194304 16777216 # Be aware of the two <default> on OLTP system with many connections.
+    *                                           # The system will allocate processes*sum(rmem_default+wmem_default) memory as Network buffers
+    *                                           # In case of memory pressure, set rmem_default as 131072 and wmem_default as 16384
+    *                                           # you can also set RECV_BUF_SIZE/SEND_BUF_SIZE in listener.ora
+    * ETHTOOL_OPTS="-G <ethX> rx 4096 tx 4096"  #/etc/sysctl.d/99-net-backlog.conf
 
     --[[
         @check_access_nmon: {
@@ -37,6 +75,7 @@
                 FROM   TABLE(gv$(CURSOR((SELECT USERENV('instance') "Inst|Id",
                                i.KSNMONIF_IFNAME "IF|Name",
                                MAX(KSNMONIFSTS_TMSTMP+0) "Stats|Timestamp",
+                               max(count(1)) over(partition by i.KSNMONIF_IFNAME) "Num|Queues",
                                REGEXP_REPLACE(KSNMONIFSTS_NAME, 'queue_\d+\_', 'queue_') NAME,
                                NULLIF(SUM(KSNMONIFSTS_VALUE),0) VALUE
                         FROM   SYS.X$KSNMON_IF I, SYS.X$KSNMON_IFSTSALL S
@@ -78,6 +117,7 @@
                                   'tx_window_errors' "TX_Window|Errs",
                                   'tx_hwtstamp_skipped' "TX_HWTStamp|Skips",
                                   'tx_hwtstamp_timeouts' "TX_HWTStamp|Timeouts",
+                                  'collisions' "TX|Collsns",
                                   'tx_dma_out_of_sync' "TX_DMA|OutOfSync",
                                   'tx_tcp_seg_failed' "TX_TCP|Seg_Fails",
                                   'tx_tcp_seg_good' "TX_TCP|Seg_Goods",
@@ -91,12 +131,12 @@
                 PRO ============
                 SELECT NAME,&insts,MAX(ts) "Timestamp",any_value(comments) comments
                 FROM   TABLE(gv$(CURSOR(
-                  SELECT userenv('instance') inst_id,
-                         KSNMONSYSSTS_NAME NAME,
-                         KSNMONSYSSTS_VALUE VALUE,
-                         KSNMONSYSSTS_TMSTMP + 0 ts,
-                         KSNMONSYSSTS_DESC comments
-                  FROM   SYS.X$KSNMON_SYSSTS)))
+                    SELECT userenv('instance') inst_id,
+                           KSNMONSYSSTS_NAME NAME,
+                           KSNMONSYSSTS_VALUE VALUE,
+                           KSNMONSYSSTS_TMSTMP + 0 ts,
+                           KSNMONSYSSTS_DESC comments
+                    FROM   SYS.X$KSNMON_SYSSTS)))
                 GROUP BY NAME
                 ORDER BY 1;
             }
@@ -109,9 +149,11 @@
 SET FEED OFF SEP4K ON
 SET AUTOHIDE COL VERIFY OFF
 COL ADDR,INDX,CON_ID, NOPRINT
-COL BYTES_RECEIVED,BYTES_SENT,RX|BYTES,TX|BYTES,RX_QUEUE|BYTES,TX_QUEUE|BYTES FORMAT KMG
+COL BYTES_RECEIVED,BYTES_SENT,BYTES_RCV,RX|BYTES,TX|BYTES,RX_QUEUE|BYTES,TX_QUEUE|BYTES FORMAT KMG
 COL PACKETS_RECEIVED,PACKETS_SENT,RX|PACKS,TX|PACKS,RX_QUEUE|PACKS,TX_QUEUE|PACKS,RX_Packs|Multicast,TX_Packs|Multicast FORMAT TMB
+COL CURRENT_500B,AVERAGE_500B,MAX_500B,WAIT_TIME_500B,WAIT_TIME_SQUARED_500B,CURRENT_8K,AVERAGE_8K,MAX_8K,WAIT_TIME_8K,WAIT_TIME_SQUARED_8K FOR usmhd2
 COL PCT FOR PCT
+COL BYTES_RCV HEAD BYTES|RCV
 COL BYTES_RECEIVED HEAD RX|BYTES
 COL BYTES_SENT HEAD HEAD TX|BYTES
 COL PACKETS_RECEIVED HEAD RX|PACKS
@@ -127,6 +169,24 @@ COL SEND_FRAME_ERR HEAD TX_FRAME|ERRS
 COL SEND_CARRIER_LOST HEAD TX_CARRIER|LOST
 COL INST_ID HEAD INST
 
+VAR insts VARCHAR2(4000)
+BEGIN
+    SELECT LISTAGG('MAX(DECODE(INST_ID,'||inst_id||',VALUE)) "Inst#'||inst_id||'"',',')
+           WITHIN GROUP(ORDER BY INST_ID)
+    INTO   :insts
+    FROM   GV$INSTANCE;
+END;
+/
+PRO TCP Paramters:
+PRO ==============
+SELECT STAT_NAME,&insts,any_value(COMMENTS) comments
+FROM   GV$OSSTAT
+WHERE  REGEXP_LIKE(STAT_NAME,'(SEND|RECEIVE|TCP)_')
+AND    CUMULATIVE='NO'
+GROUP  BY STAT_NAME
+ORDER  BY 1;
+
+PRO 
 PRO Inter-Connect Stats:
 PRO ===================
 SELECT * FROM TABLE(GV$(CURSOR(
@@ -136,24 +196,6 @@ SELECT * FROM TABLE(GV$(CURSOR(
 )))
 ORDER BY inst_id,ip_addr;
 
-VAR insts VARCHAR2(4000)
-BEGIN
-    SELECT LISTAGG('MAX(DECODE(INST_ID,'||inst_id||',VALUE)) "Inst#'||inst_id||'"',',')
-           WITHIN GROUP(ORDER BY INST_ID)
-    INTO   :insts
-    FROM   GV$INSTANCE;
-END;
-/
-
-PRO 
-PRO TCP Paramters:
-PRO ==============
-SELECT STAT_NAME,&insts,any_value(COMMENTS) comments
-FROM   GV$OSSTAT
-WHERE  REGEXP_LIKE(STAT_NAME,'(SEND|RECEIVE|TCP)_')
-AND    CUMULATIVE='NO'
-GROUP  BY STAT_NAME
-ORDER  BY 1;
 
 &check_access_nmon
 
@@ -166,5 +208,5 @@ ORDER BY INST_ID,2;
 
 
 PRO Instance Pings:
-PRO ===================
+PRO ===============
 SELECT * FROM GV$INSTANCE_PING ORDER BY 1,2;

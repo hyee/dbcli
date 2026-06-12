@@ -265,6 +265,7 @@ Events:
          7  write verification
          8  wait for miscellaneous io (ftp, block dump, passwd file) 
          9  read from snapshot files 
+    10946 : includes level 65536 to revert the data style in dba_arguments back to 11g since Oracle 18c
 
  
 dbms_stats.set_xxx_pref:

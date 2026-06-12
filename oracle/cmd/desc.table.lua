@@ -119,6 +119,7 @@ return obj.object_type=='FIXED TABLE' and [[
                            101,'BINARY_DOUBLE',
                            105,'MLSLABEL',
                            106,'MLSLABEL',
+                           108,'OBJECT',
                            111,'REF',
                            112,'CLOB',
                            113,'BLOB',

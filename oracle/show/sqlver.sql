@@ -280,7 +280,7 @@ BEGIN
                                   reason,
                                   grp,
                                   min(first_load_time) over(partition by plan_hash_value,grp) first_load,
-                                  max(last_load_time)  over(partition by plan_hash_value,grp) last_load,
+                                  to_char(max(last_active_time)  over(partition by plan_hash_value,grp),'YYYY-MM-DD/HH24:MI:SS') last_load,
                                   sum(parse_calls)     over(partition by plan_hash_value,grp) parses,
                                   count(1)             over(partition by plan_hash_value,grp) cnt,
                                   row_number()         over(partition by plan_hash_value,grp order by child_number) seq
@@ -369,7 +369,7 @@ BEGIN
                                         optimizer_env_hash_value,
                                         parsing_schema_name schema,
                                         first_load_time,
-                                        last_load_time,
+                                        last_active_time,
                                         parse_calls
                                 FROM    gv$sql &sql_id) b
                           USING  (inst_id, sql_id, child_number)
@@ -436,7 +436,7 @@ BEGIN
                       PARSES INT PATH 'PS',
                       Reason  VARCHAR2(2000) PATH 'R',
                       MEMO VARCHAR2(4000) PATH 'M',
-                      LOAD_TIME VARCHAR2(80) PATH 'L',
+                      ACTIVE_TIME VARCHAR2(80) PATH 'L',
                       EXAMPLE_CURSORS VARCHAR(2000) PATH 'C')
         ORDER BY 1 DESC,REASON;
 END;
