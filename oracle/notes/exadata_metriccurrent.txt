@@ -500,7 +500,7 @@ cellcli -e "alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_iorm
 cellcli -e "alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_disable_lw_flash_wear_heuristic', 'TRUE')\""
 cellcli -e "alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_datasync_hd_busy_wait_us', 10000)\""
 cellcli -e "alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_flashcache_dsync_jobs', 8)\""
-cellcli -e "alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_dw_min_pcntg', 15)\""
+cellcli -e "alter cell events = \"immediate cellsrv.cellsrv_setparam('_cell_fc_dw_min_pcntg', 50)\""
 v=`date +'%Y%m%d%H%M'`
 cp /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora /opt/oracle/cell/cellsrv/deploy/config/cellinit.ora.$v
 echo "_cell_cache_thrashing_detection_tolerance=1">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
@@ -511,10 +511,12 @@ echo "_cell_iorm_lw_flash_idle_hd_util_threshold=30">>/opt/oracle/cell/cellsrv/d
 echo "_cell_fc_disable_lw_flash_wear_heuristic=TRUE">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_fc_datasync_hd_busy_wait_us=10000">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 echo "_cell_flashcache_dsync_jobs=8">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
-echo "_cell_fc_dw_min_pcntg=15">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
+echo "_cell_fc_dw_min_pcntg=20">>/opt/oracle/cell/cellsrv/deploy/config/cellinit.ora
 EOF
 dcli -g cells -l root -f setparams.sh
 dcli -g cells -l root sh setparams.sh
+
+_cell_fc_dw_min_pcntg -- how many flashcache space% are used for scan
 
 ====================================================
 FlashCache: cellcli -e 'alter cell events = "immediate cellsrv.cellsrv_flashcache(Reset,0,0,0)"'      -- or 0,0,1

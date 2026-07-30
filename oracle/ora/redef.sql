@@ -18,7 +18,7 @@ DECLARE
             org_table       VARCHAR2(128) := '@org_table'; --Table to be redefined
             new_table       VARCHAR2(128) := '@new_table'; --The interim table
             part_name       VARCHAR2(128) := '@part_name'; --Partition name of org_table
-            parallel_degree PLS_INTEGER  := 16;
+            parallel_degree PLS_INTEGER   := 16;
             options_flag    PLS_INTEGER;
             cnt             PLS_INTEGER;
             cols            VARCHAR2(32767):='@cols';--Can be null if all columns are equal

@@ -133,9 +133,9 @@ BEGIN
         END IF;
     ELSIF upper(target)='NSMTIO' THEN
         if lv = 0 then
-            execute immediate q'[alter session set events '10358 trace name context off:10384 trace name context off:trace[nsmtio] off']';
+            stmt :=  q'[alter session set events '10358 trace name context off:10384 trace name context off:trace[nsmtio] off']';
         else
-            execute immediate q'[alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk low']';
+            stmt :=  q'[alter session set events '10358 trace name context forever, level 2:10384 trace name context forever,level 16384:trace[nsmtio] disk low']';
         end if;
     ELSIF regexp_like(lower(target), '^sqlmon') THEN
         if instr(target,':')>0 then
@@ -148,7 +148,6 @@ BEGIN
         else
             stmt:= 'alter system set events ''sql_monitor'||target||' force=true''';
         end if;
-        execute immediate stmt;
     ELSIF regexp_like(target, '^[0-9a-z\|]+$') and length(target)>=13 and not regexp_like(target,'^\d+$') or regexp_like(lower(target), '^process\:') THEN
         IF NOT regexp_like(lower(target), '^process:') THEN 
             target:='[SQL:'||target||']';
@@ -180,6 +179,8 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN
             raise_application_error(-20001,sqlerrm||': '|| stmt);
         END;
+    ELSE
+        dbms_output.put_line('No statement executed: '||target);
     END IF;
 END;
 /

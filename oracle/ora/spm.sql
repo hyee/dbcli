@@ -16,10 +16,11 @@
             16: Allow SPM on the SQLs start with "/* SQL Analyze("
 
     Turn on AUTO SPM:
-        exec DBMS_SPM.CONFIGURE('AUTO_SPM_EVOLVE_TASK','ON');
-        exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_SOURCE','SQL_TUNING_SET');
+        exec DBMS_SPM.CONFIGURE('AUTO_SPM_EVOLVE_TASK','ON');  //OR AUTO
+        --exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_SOURCE','SQL_TUNING_SET');
         exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ACCEPT_PLANS','TRUE');
-        SELECT enabled FROM dba_autotask_schedule_control WHERE dbid=sys_context('userenv','con_dbid') AND task_name='Auto SPM Task';
+        --exec DBMS_AUTO_TASK_ADMIN.ENABLE(Client_Name => 'Auto STS Capture Task', Operation => NULL, Window_name => NULL);
+        SELECT enabled FROM dba_autotask_schedule_control WHERE dbid=sys_context('userenv','con_dbid') AND task_name IN('Auto SPM Task','Auto STS Capture Task');
 
     Turn off AUTO SPM:
         exec DBMS_SPM.CONFIGURE('AUTO_SPM_EVOLVE_TASK','OFF');

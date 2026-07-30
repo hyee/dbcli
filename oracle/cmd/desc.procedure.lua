@@ -38,10 +38,10 @@ return [[
         WITH args AS(
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all')*/ 
                    overload,
-                   SEQUENCE s,
+                   SEQUENCE*1e8 s,
                    DATA_LEVEL l,
                    POSITION p,
-                   lpad(' ', DATA_LEVEL * 2) || decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
+                   decode(0 + POSITION, 0, '(RETURNS)', Nvl(argument_name, '<Collection>')) Argument,
                    CASE
                        WHEN pls_type != data_type THEN
                         pls_type
@@ -69,18 +69,15 @@ return [[
                         data_type || --
                         NULLIF('(' || TRIM(CASE
                                                WHEN t.data_type IN ('VARCHAR', 'VARCHAR2', 'RAW', 'CHAR') THEN
-                                                DECODE((SELECT VALUE FROM nls_session_parameters WHERE PARAMETER = 'NLS_LENGTH_SEMANTICS'),
-                                                       'BYTE',
-                                                       DECODE(char_used, 'B', t.data_length || '', t.char_length || ' CHAR'),
-                                                       DECODE(char_used, 'B', t.data_length || ' BYTE', t.char_length || ' CHAR'))
+                                                 t.data_length||DECODE(char_used, 'B', ' BYTE',' CHAR')
                                                WHEN t.data_type IN ('NVARCHAR2', 'NCHAR') AND nvl(t.data_length, -1) != -1 THEN
-                                                t.data_length / 2 || ''
+                                                 t.data_length / 2 || ''
                                                WHEN ((t.data_type = 'NUMBER' AND NVL(t.data_precision, -1) = -1) AND (nvl(t.data_scale, -1) != -1)) THEN
-                                                '38,' || t.data_scale
+                                                 '38,' || t.data_scale
                                                WHEN (t.data_scale = 0 OR nvl(t.data_scale, -1) = -1) THEN
-                                                t.data_precision || ''
+                                                 t.data_precision || ''
                                                WHEN (t.data_precision != 0 AND t.data_scale != 0) THEN
-                                                t.data_precision || ',' || t.data_scale
+                                                 t.data_precision || ',' || t.data_scale
                                            END) || ')',
                                '()')
                        END data_type,
@@ -89,7 +86,8 @@ return [[
                        CHARACTER_SET_NAME charset,
                        type_owner,
                        type_name,
-                       type_subname
+                       type_subname,
+                       ' ' coll_type
                 FROM   all_arguments t
                 WHERE  owner = own
                 AND    object_id = oid
@@ -98,69 +96,86 @@ return [[
                 )
             $ELSE
                 AND    data_level= 0)
-        ,plsql(overload,s,l,p,argument,data_type,in_out,defaulted,CHARSET,type_owner,type_name,type_subname,lv) AS(
-            SELECT  /*+outline_leaf leading(r)*/
-                   r.overload,
-                   NVL2(s.attr_no, r.s + s.attr_no /100, r.s) s,
-                   NVL2(s.attr_no, r.l + 1, r.l) l,
-                   NVL(s.attr_no, r.p) p,
-                   NVL2(s.attr_no, lpad(' ', (r.l + 1) * 2)||s.attr_name, r.argument) argument,
-                   NVL2(s.attr_no, nullif(s.ATTR_TYPE_PACKAGE||'.','.')||s.ATTR_TYPE_NAME, r.data_type) data_type,
-                   NVL2(s.attr_no, ' ', r.in_out) in_out,
-                   NVL2(s.attr_no, NULL, r.defaulted) defaulted,
-                   NVL2(s.attr_no, s.CHARACTER_SET_NAME, r.charset),
-                   NVL2(s.attr_no, s.ATTR_TYPE_OWNER, r.type_owner),
-                   NVL2(s.attr_no, s.ATTR_TYPE_PACKAGE, r.type_name),
-                   NVL2(s.attr_no, s.ATTR_TYPE_NAME, r.type_subname),
-                   NVL2(s.attr_no, 2, 1)
-            FROM   args r, all_plsql_type_attrs s
-            WHERE  r.type_subname IS NOT NULL
-            AND    r.type_owner = s.owner(+)
-            AND    r.type_name = s.PACKAGE_NAME(+)
-            AND    r.type_subname = s.type_name(+)
+        ,plsql(overload,s,l,p,argument,data_type,in_out,defaulted,charset,type_owner,type_name,type_subname,coll_type,lv) AS(
+            SELECT  r.*,
+                    1 lv
+            FROM   args r
             UNION ALL
-            SELECT /*+outline_leaf leading(r)*/
-                     r.overload,
-                     r.s + s.attr_no /power(100,lv) s,
-                     r.l + 1,
-                     s.attr_no,
-                     lpad(' ', (r.l + 1) * 2)||s.attr_name,
-                     nullif(s.ATTR_TYPE_PACKAGE||'.','.')||s.ATTR_TYPE_NAME,
-                     ' ',
-                     NULL,
-                     s.CHARACTER_SET_NAME,
-                     s.ATTR_TYPE_OWNER,
-                     s.ATTR_TYPE_PACKAGE,
-                     s.ATTR_TYPE_NAME,
-                     lv + 1
-            FROM   plsql r, all_plsql_coll_types t, all_plsql_type_attrs s
-            WHERE  r.type_owner = t.owner
-            AND    r.type_name = t.PACKAGE_NAME
-            AND    r.type_subname = t.type_name
-            AND    t.ELEM_TYPE_owner = s.owner
-            AND    t.ELEM_TYPE_NAME = s.type_name
-            AND    t.ELEM_TYPE_PACKAGE = s.package_name
-        )
+            SELECT /*+outline_leaf leading(r) cardinality(r 3) push_pred(s) monitor*/
+                    r.overload,
+                    r.s + s.attr_no*1e8/power(100,r.lv) s,
+                    r.l + 1 l,
+                    s.attr_no p,
+                    s.attr_name argument ,
+                    CASE
+                       WHEN attr_type_name IN ('CHAR', 'VARCHAR', 'VARCHAR2', 'NCHAR', 'NVARCHAR', 'NVARCHAR2', 'RAW') THEN
+                        attr_type_name || '(' || LENGTH || ')' --
+                       WHEN attr_type_name = 'NUMBER' THEN
+                        (CASE
+                            WHEN nvl(scale, precision) IS NULL THEN
+                             attr_type_name
+                            WHEN scale > 0 THEN
+                             attr_type_name || '(' || NVL('' || precision, '38') || ',' || scale || ')'
+                            WHEN precision IS NULL AND scale = 0 THEN
+                             'INTEGER'
+                            ELSE
+                             attr_type_name || '(' || precision || ')'
+                        END)
+                       ELSE
+                        nullif(s.attr_type_package||'.','.')||s.attr_type_name
+                   END data_type,
+                    ' ' in_out,
+                    null defaulted,
+                    s.character_set_name,
+                    s.attr_type_owner,
+                    s.attr_type_package,
+                    s.attr_type_name,
+                    s.coll_type,
+                    r.lv + 1 lv
+            FROM   plsql r,
+                   LATERAL(
+                       SELECT /*+OUTLINE_LEAF leading(t s) use_nl(t s) push_pred(t) push_pred(s)*/ 
+                              s.*,t.coll_type||NULLIF('('||t.upper_bound||t.index_by||')','()') coll_type
+                       FROM   all_plsql_coll_types t, all_plsql_type_attrs s
+                       WHERE  t.elem_type_owner = s.owner
+                       AND    t.elem_type_name = s.type_name
+                       AND    t.elem_type_package = s.package_name
+                       AND    r.type_owner = t.owner
+                       AND    r.type_name = t.package_name
+                       AND    r.type_subname = t.type_name
+                       UNION ALL
+                       SELECT /*+OUTLINE_LEAF use_nl(t) push_pred(t)*/  
+                              t.*,'PL/SQL RECORD'
+                       FROM   all_plsql_type_attrs t
+                       WHERE  r.type_owner = t.owner
+                       AND    r.type_name = t.package_name
+                       AND    r.type_subname = t.type_name) s
+            WHERE r.type_subname IS NOT NULL
+            )
+            SEARCH DEPTH FIRST BY s SET ord
+            CYCLE s SET cycle TO 1 DEFAULT 0
         $END
-            SELECT decode(p,'-','-',TRIM('.' FROM o || replace(p,' '))) no#, 
-                   '|' "|",
-                   Argument, 
-                   data_type, 
-                   IN_OUT, 
-                   defaulted "Default?",
-                   CHARSET
-            FROM  
-            $IF DBMS_DB_VERSION.VERSION <18 $THEN
-                  args
-            $ELSE
-                (select args.*,1 lv from args union select * from plsql)
-            $END
-            MODEL PARTITION BY(0+overload o) DIMENSION BY(s, l) 
-            MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET) 
-            RULES SEQUENTIAL ORDER(
-                p [ANY,ANY] ORDER BY s = max(p) [s < cv(s), CV(l) - 1] || '.' || lpad(p [CV(), CV()],4),
-                p [9999,0]='-')
-            ORDER  BY o, s;
+        SELECT decode(p,'-','-',TRIM('.' FROM o || replace(p,' '))) no#, 
+               '|' "|",
+               lpad(' ', l * 2) || Argument Argument, 
+               data_type, 
+               IN_OUT, 
+               defaulted "Default?",
+               CHARSET
+        FROM  
+        $IF DBMS_DB_VERSION.VERSION <18 $THEN
+            (select a.*, s s_ from args a )
+        $ELSE
+            (select a.*, ord s_ from plsql a)
+        $END
+        MODEL PARTITION BY(0+overload o) DIMENSION BY(s_ s, l) 
+        MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET,coll_type) 
+        RULES SEQUENTIAL ORDER(
+            p [ANY,ANY] ORDER BY s = max(p) [s < cv(s), CV(l) - 1] || '.' || lpad(p [CV(), CV()],4),
+            p [9999E8,0]='-',
+            data_type[ANY,ANY] ORDER BY s  = CASE WHEN trim(coll_type[cv()+1,cv()+1]) IS NOT NULL THEN REGEXP_REPLACE(data_type[cv(),cv()],'\(.*?\)$')||' ['||coll_type[cv()+1,cv()+1]||']' ELSE data_type[cv(),cv()] END
+        )
+        ORDER  BY o, s;
         $ELSE
 
         BEGIN 
@@ -174,7 +189,7 @@ return [[
                        NVL(IN_OUT, 0) IN_OUT,
                        NVL(LEVEL#, 0) LEVEL#,
                        NVL(LENGTH, 0) LENGTH,
-                       NVL(PRECISION#, 0) PRECISION,
+                       NVL(precision#, 0) precision,
                        DECODE(TYPE#, 1, 0, 96, 0, NVL(SCALE, 0)) SCALE
                 FROM   SYS.ARGUMENT$ A
                 WHERE  OBJ# = 0+:id
@@ -270,7 +285,7 @@ return [[
                          WHEN a.data_type='NUMBER' AND a.data_length=22 AND a.data_precision>0 AND nvl(a.data_scale,0)=0 THEN 'INTEGER'      
                          WHEN a.data_type IN('FLOAT','INTEGER','INT','BINARY_FLOAT','BINARY_DOUBLE') THEN a.data_type
                          ELSE a.data_type || 
-                            CASE WHEN DATA_PRECISION>0 THEN '('||DATA_PRECISION||NULLIF(','||DATA_SCALE,',')||')'
+                            CASE WHEN DATA_precision>0 THEN '('||DATA_precision||NULLIF(','||DATA_SCALE,',')||')'
                                  WHEN DATA_LENGTH   >0 THEN '('||DECODE(CHAR_USED,'C',CHAR_LENGTH||' CHAR',DATA_LENGTH)||')'
                             END
                          END,b.dtype) DATA_TYPE,

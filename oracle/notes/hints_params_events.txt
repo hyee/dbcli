@@ -250,7 +250,7 @@ Events:
                     level 32: disables  table queue IN row source
                     level 512: disables rowsets for EVA functions
                     level 20971520: disables "rowset to one row" in hash join probe side
-    65002: enable to free temp LOB spaces when no active temp lob in the session
+    60025: enable to free temp LOB spaces when no active temp lob in the session
     44951 TRACE NAME CONTEXT FOREVER, LEVEL 1024 : bug 6376915 causes high water (HW) enqueue contention when the database is busy handling large objects (LOB) and the database is configured to use automatic segments space management (ASSM)
     19119:  fix ORA-31011: XML Parsing Failed in xmlelement(invalid characters)
     10503: enables users to specify a character bind buffer length to avoid BIND_LENGTH_UPGRADEABLE.
@@ -266,6 +266,7 @@ Events:
          8  wait for miscellaneous io (ftp, block dump, passwd file) 
          9  read from snapshot files 
     10946 : includes level 65536 to revert the data style in dba_arguments back to 11g since Oracle 18c
+    38028 : force degree on gatering stats(sometimes it's serial even degree is set in case of "small table") 
 
  
 dbms_stats.set_xxx_pref:

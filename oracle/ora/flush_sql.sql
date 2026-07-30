@@ -1,4 +1,4 @@
-/*[[Flush a SQL from out of shared pool, you can also rebuild related index to accomplish the same purpose. Usage: @@NAME <sql_id>
+/*[[Flush a SQL from out of shared pool, you can also rebuild related index to accomplish the same purpose. Usage: @@NAME <sql_id>|<force_matching_signature>
     --[[
         @version: 12.1={1} 11.1={0} 10.2.0.4={} 
         @ARGS: 1
@@ -11,10 +11,30 @@ DECLARE
     NAME    VARCHAR2(128);
     version VARCHAR2(3);
     sq_id   VARCHAR2(128) := :V1;
+    sign    NUMBER := regexp_substr(sq_id,'^\d+$');
     sq_text CLOB;
     cnt     PLS_INTEGER;
 BEGIN
     SELECT regexp_replace(version, '\..*') INTO version FROM v$instance;
+    IF sign IS NOT NULL THEN
+        IF version + 0 = 10 THEN
+            EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context forever']'; -- bug fix for 10.2.0.4 backport
+        END IF;
+        cnt := 0;
+        FOR R IN(SELECT DISTINCT address || ',' || hash_value hv
+                 FROM   v$sqlarea 
+                 WHERE  force_matching_signature = sign) LOOP
+            sys.dbms_shared_pool.unkeep(r.hv, flag => 'C');
+            sys.dbms_shared_pool.purge(r.hv, 'C',64);
+            sys.dbms_shared_pool.purge(r.hv, 'C');
+            cnt := cnt + 1;
+        END LOOP;
+        IF version + 0 = 10 THEN
+            EXECUTE IMMEDIATE q'[alter session set events '5614566 trace name context off']';
+        END IF;
+        dbms_output.put_line(cnt ||' SQLs purged.');
+        RETURN;
+    END IF;
     BEGIN
         SELECT address || ',' || hash_value,sql_fulltext
         INTO   name,sq_text

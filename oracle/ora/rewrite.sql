@@ -1,5 +1,5 @@
 /*[[
-    Tune or explain query rewrite on target materialized view. Usage: @@NAME {[-tune|-xplan] <mview_name> | -rw <sql_id>} <select statement>
+    Tune or explain query rewrite on target materialized view. Usage: @@NAME {[-tune|-xplan] <mview_name> <select statement>} | {-rw <sql_id> <select statement>}
     -xplan   : default,execute DBMS_MVIEW.EXPLAIN_REWRITE for target SQL with existing MVIEW
     -tune    : execute DBMS_ADVISOR.TUNE_MVIEW to generate the DDLs for relative MVIEW and MVIEW logs.
     -rw      : execute DBMS_ADVANCED_REWRITE.DECLARE_REWRITE_EQUIVALENCE in `general` mode to rewrite target SQL ID as the query.
@@ -15,10 +15,13 @@
                * if <select> is a SQL_Id then auto get SQL text
                * if <select> is NULL and target rewrite equivalance exists:
                  ** if `rewrite_modes` is different, then change the `rewrite_modes`
+    
+    You should set query_rewrite_integrity enforced=truested/STALE_TOLERATED to enable rewrite
     --[[
         @ARGS: 2
         &tune: xplan={0} tune={1} rewrite={2} rw={2} mv={2} disable={2} recursive={2} text={2} drop={2}
         &wrap: xplan={100} tune={180}
+        &tb  : default={0} t={1}
         &mode: rewrite={general} rw={general} mv={tune_mview} disable={disabled} recursive={recursive} text={text_match} drop={drop}
         @check_access_rewrite: SYS.DBMS_ADVANCED_REWRITE={1} DEFAULT={0}
     --]]
