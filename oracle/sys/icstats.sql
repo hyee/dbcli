@@ -36,12 +36,12 @@
            -> Network Switch
              -> DB Server link cable
                 -> NIC Hardware RX Ring                  # ethtool -G rx 4096
-                    -> netdev backlog queue              # net.core.netdev_max_backlog=10000 / qlen=10000
+                    -> netdev backlog queue              # net.core.netdev_max_backlog=100000 / qlen=10000
                       -> kernel softirq / protocol stack # grep BLOCK /proc/softirqs, net.core.netdev_budget=600, net.core.netdev_budget_usecs = 4000
                         -> DB SDU
     TX: DB SDU
           -> Kernel protocal stack / softirq   # grep BLOCK /proc/softirqs, net.core.netdev_budget=600, net.core.netdev_budget_usecs = 4000
-            -> netdev TX queue                 # net.core.netdev_max_backlog=10000 / qlen=10000
+            -> netdev TX queue                 # net.core.netdev_max_backlog=100000 / qlen=10000
               -> NIC hardware TX Ring          # ethtool -G tx 4096
                 -> DB Server Link cable
                   -> Network Switch
@@ -50,7 +50,7 @@
     
     Suggested parameters for 10G/25G network:
     =========================================
-    * net.core.netdev_max_backlog = 10000
+    * net.core.netdev_max_backlog = 100000
     * net.core.tcp_max_syn_backlog = 8192       # TCP_MAX_SYN_BACKLOG
     * net.core.somaxconn = 8192                 # "Connection reset by peer"
     * net.ipv4.tcp_syncookies = 1               # default is 1

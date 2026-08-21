@@ -108,7 +108,7 @@ function pgsql:connect(conn_str)
     self.props.isdba=tostring(info[9]):find('^t') and true or false
     self.connection_info=args
     if not self.props.db_version or tonumber(self.props.db_version:match("^%d+"))<5 then self.props.db_version=info[2]:match('^([%d%.]+)') end
-    if tonumber(self.props.db_version:match("^%d+%.%d"))<5 then
+    if self.props.db_version and tonumber(self.props.db_version:match("^%d+%.%d"))<5 then
         env.warn("You are connecting to a lower-vesion pgsql sever, some features may not support.")
     end
     env._CACHE_PATH=env.join_path(env._CACHE_BASE,self.props.database:lower():trim(),'')

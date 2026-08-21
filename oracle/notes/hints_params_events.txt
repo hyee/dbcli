@@ -41,12 +41,13 @@ Parameters
     _sql_plan_management_control: 4 - diagnose issues with SQL plan baselines of why it fails to use / 16 - Allow SPM on the SQLs start with "/* SQL Analyze("
     _optimizer_squ_bottomup: false to reduce parse time due to large PGA memory usage pending on function kkojnp(bug#22225899), but would change some hash join as FILTER
         Other relative parameters to optimize long parse time: 
-            _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq=false 
-            _fix_control 31360214/17442009/29487407/31195441 :1
+            _optimizer_multi_table_outerjoin/_optimizer_filter_pushdown/_optimizer_unnest_scalar_sq/_optimizer_squ_bottomup=false 
+            _fix_control 31360214/17442009/29487407/31195441/12587690 :1
             _optimizer_max_permutations =100/200/300
     _optimizer_filter_pushdown: false to prevent pl/sql function from pushing down to the predicates of inline view which results in over-executions.
             Other option: hint NO_ELIMINATE_OBY in inline view
-    _optimizer_multi_table_outerjoin: could result in scalar-subquery or plsql function to be over executed
+    _optimizer_multi_table_outerjoin: could result in scalar-subquery or plsql function to be over executed. 
+            Used to fix ora-1413 error for non-ANSI outer join, such as a,b both outer join c
     _column_tracking_level: when 3 then similar to dbms_stats.seed_column_usage, however can be set in session level, and :
         0  to avoid column group creation by dbms_stats
         1  to monitor column usage
@@ -312,6 +313,8 @@ Fix Controls:
     28498976/29450812/29304314/ 29385774/28234255/32302470: allow legacy or expansion some cases 
     20355502:  number of branches 2^<value> limit for legacy OR expansion(long parse time), for example the large inlist
     5400639:0, 8275054:0, 12335617:0: reduce parse time on huge OR-list/Inlist(possibly _optimizer_join_elimination_enabled in 11g) 
+    16954950:  reduce parse time relative to estimate table cost for partition pruning
+    12587690:  or _optimizer_multi_table_outerjoin, 0 to reduce parse time with many left outer joins
     25167306:  Enable direct path read(Smart Scan) in SQL called from PL/SQL(scheduler job), may also need to set _serial_direct_read=always
     6708183 :  allow dynamic sampling on table functions
     8619631 :  Allow hash aggregation for insert select except for plsql calls
@@ -332,6 +335,7 @@ Fix Controls:
     8893626,9195582: 0 to fix some index skip scan cost under-estimated issues
     9728438: 0 to disable parallel query downgrade to serial if no operations are expensive enough
     28606162: 1 to set back the index default degree after create/rebuild index in parallel
+    32408640: fix no Smart Scan issue in case of first rows mode
 
 Others:
    Bequeath dblink: create database link system connect to system identified by oracle using '(description=(address=(protocol=beq)(program=$ORACLE_HOME/bin/oracle))(CONNECT_DATA = (SERVICE = orcl)))';

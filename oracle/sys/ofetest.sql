@@ -1,10 +1,11 @@
-/*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>]
+/*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-t"<secs>"] [-f"<plan_filter>"|-k"<keyword>]
    Or: @@NAME <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>] <SQL_Text with EOF>
-    -batch: number of options to be tested for each batch
-    -env  : only test the parameters
-    -ofe  : only test the fix controls
-    -accu : test the options in accumulation mode, instead turning on/off one by one
-    -desc : test from high OFE to low OFE, instead of from low to high
+    -batch     : number of options to be tested for each batch
+    -env       : only test the parameters
+    -ofe       : only test the fix controls
+    -accu      : test the options in accumulation mode, instead turning on/off one by one
+    -desc      : test from high OFE to low OFE, instead of from low to high
+    -t"<secs>" : print the parse time if >= <secs> 
 
     Example: @@NAME g6px76dmjv1jy 10.2.0.4 12.1.0
              @@NAME g6px76dmjv1jy 11.2.0.4 -k"PARTITION RANGE SINGLE"
@@ -16,6 +17,7 @@
         &sep   : default={rowsep default} batch={rowsep - colsep |}
         &accu  : default={0} accu={1}
         &dir   : default={asc} desc={desc}
+        &time  : default={1} t={&0}
     --]]
 ]]*/
 set SQLTIMEOUT 7200 verify off feed off &sep
@@ -94,6 +96,18 @@ DECLARE
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
         dbms_lob.writeappend(sql_text, nvl(length(msg), 0) + 1, msg || chr(10));
+    END;
+
+    PROCEDURE test_ofe(c INT) IS
+        ts number;
+    BEGIN
+        EXECUTE IMMEDIATE 'alter session set '|| ofelist(c);
+        ts := dbms_utility.get_time;
+        EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||c);
+        ts := (dbms_utility.get_time - ts)/100;
+        if ts>=&time then
+            dbms_output.put_line('Parse time: '||ts||'s for '||ofelist(c));
+        end if;
     END;
 BEGIN
     IF length(buff)>20 AND regexp_like(buff,'\s') THEN
@@ -226,8 +240,7 @@ BEGIN
         IF new_ofe IS NOT NULL THEN
             old_ofe := ofeold(counter);
             BEGIN
-                EXECUTE IMMEDIATE 'alter session set '|| ofelist(counter);
-                EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||counter);
+                test_ofe(counter);
                 COMMIT;
             EXCEPTION WHEN OTHERS THEN
                 errcount := errcount + 1;

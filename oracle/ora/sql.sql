@@ -61,6 +61,7 @@ DECLARE
     BIND_VAL  SYS.ANYDATA;
     BIND_TYPE VARCHAR2(128);
     DTYPE     VARCHAR2(128);
+    VAL       VARCHAR2(128);
     STR_VAL   VARCHAR2(32767);
     CUR       SYS_REFCURSOR;
     NOT_NULL  BOOLEAN;
@@ -83,7 +84,7 @@ DECLARE
         ELSIF instr(value,'''')>0 THEN
             fmt := REPLACE(fmt,q'['%s']','q''!%s!''');
         END IF;
-        val := utl_lms.format_message(fmt,COALESCE(value,defaults,'NULL'));
+        val := utl_lms.format_message(fmt,COALESCE(CASE WHEN fmt LIKE 'YYYY-%' THEN replace(replace(value,'T',' '),'Z') ELSE value END,defaults,'NULL'));
         STR_VAL := val;
         text := regexp_replace(text,'#!'||name||'!#',val,1,occu,'i');
     END;

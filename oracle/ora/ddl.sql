@@ -130,7 +130,7 @@ BEGIN
         IF REGEXP_SUBSTR(obj_type,'[^ +]') in ('TABLE','ANALYTIC','HIERARCHY','ATTRIBUTE') THEN
             BEGIN
                 dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
-                NULL;
+                dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('COMMENT', part1, SCHEM));    
             EXCEPTION
                 WHEN OTHERS THEN
                     NULL;

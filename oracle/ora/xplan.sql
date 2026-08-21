@@ -7,7 +7,6 @@
     -10046         : execute SQL and get 10046 trace file
 
     --[[
-        
         @ARGS : 1
         &opt  : default={EXPLAIN_PLAN} exec={EXECUTE,GATHER_SQL_STATS} gather={GATHER_SQL_STATS} obj={COMPUTE_OBJECTS} diag={DIAGNOSE_SQL} 10046={3}
         &trace: default={0} o={1} c={2}

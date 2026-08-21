@@ -25,6 +25,12 @@ BEGIN
         l_err := sqlerrm;
     END;
 
+    l_list.extend;
+    l_list(l_list.count) := '$PROMPTCOLOR$[DBMS_RESULT_CACHE.STATUS]$NOR$';
+    l_list.extend;
+    l_list(l_list.count) := '  '||DBMS_RESULT_CACHE.STATUS;
+    l_list.extend;
+
     dbms_output.get_lines(l_arr, l_done);
     FOR i IN 2 .. l_done LOOP
         l_arr(i) := trim(l_arr(i));
