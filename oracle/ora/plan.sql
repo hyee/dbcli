@@ -4,6 +4,7 @@ Show execution plan. Usage: @@NAME [x|<plan_id>|<sql_id>] [<plan_hash>|<child#>|
 Options:
     -b    : show binding variables
     -d    : only show the plan from AWR views
+    -p    : only show the plan from sys.plan_table$
     -g    : only show the plan from GV$ views
     -s    : the plan with the simplest 'basic' format
     -ol   : show outline information
@@ -22,6 +23,7 @@ Options:
             default={0}, # Both
             d={2},       # Dictionary only
             g={1}        # GV only
+            p={4}        # plan_table      
           }
     &binds: default={}, b={PEEKED_BINDS}
     @check_access_aux: default={(26/8/12)-6}
@@ -356,14 +358,14 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &g_mbrc mbrc
                   FROM   sys.plan_table$ a
                   WHERE  '&v1' not in('&_sql_id')
-                  AND    &SRC = 0
+                  AND    &SRC IN (0,4)
                   AND    (plan_id,timestamp)=(
                       select /*+precompute_subquery*/ 
                              max(plan_id) keep(dense_rank last order by timestamp),
                              max(timestamp)
                       from   sys.plan_table$
                       where  nvl(upper('&V1'),'X') in(statement_id,''||plan_id,'X')
-                      AND    &SRC = 0
+                      AND    &SRC IN (0,4)
                       AND    '&v1' not in('&_sql_id'))) a
          )
   WHERE  seq = 1),

@@ -5,7 +5,8 @@
     -ofe       : only test the fix controls
     -accu      : test the options in accumulation mode, instead turning on/off one by one
     -desc      : test from high OFE to low OFE, instead of from low to high
-    -t"<secs>" : print the parse time if >= <secs> 
+    -t"<secs>" : print the parse time if >= <secs>
+    -xplan     : use I_PROCESS_SQL_CALLOUT instead of "alter session + explain plan mode"
 
     Example: @@NAME g6px76dmjv1jy 10.2.0.4 12.1.0
              @@NAME g6px76dmjv1jy 11.2.0.4 -k"PARTITION RANGE SINGLE"
@@ -17,7 +18,8 @@
         &sep   : default={rowsep default} batch={rowsep - colsep |}
         &accu  : default={0} accu={1}
         &dir   : default={asc} desc={desc}
-        &time  : default={1} t={&0}
+        &time  : default={1} t={}
+        &mode  : default={2} xplan={1}
     --]]
 ]]*/
 set SQLTIMEOUT 7200 verify off feed off &sep
@@ -49,7 +51,7 @@ DECLARE
     fmt       VARCHAR2(300);
     curr      VARCHAR2(128) := sys_context('userenv', 'current_schema');
     qry       VARCHAR2(4000) := q'{
-        SELECT 'ofe' typ,''||bugno name,''||value value,3 vtype,DESCRIPTION,
+        SELECT 'ofe' typ,''||bugno name,''||value value,2 vtype,DESCRIPTION,
                nvl2(optimizer_feature_enable,1,0) flag,
                0+regexp_replace(OPTIMIZER_FEATURE_ENABLE,'(\d+\.)(\d+)\.(\d?)\.?(\d?)\.?','\1\2\3\4') ofe
         FROM   v$session_fix_control
@@ -93,21 +95,182 @@ DECLARE
         ORDER  BY typ,ofe &dir,nvl(regexp_substr(name,'^\d+$')+0,0) &dir,decode(substr(name,1,1),'_',1,0);
     TYPE t_changes IS TABLE OF c%ROWTYPE;
     changes t_changes;
+
+    stmt    SYS.SQLSET_ROW;
+    bw      RAW(2000);
+    res     CLOB;
+    err     VARCHAR2(4000);
+    ecode   INT;
+    hints   VARCHAR(2000);
+    ctrl    VARCHAR2(32767);
+    PROCESS_CTRL_DTD CONSTANT VARCHAR2(4000) :=  
+        '<?xml version="1.0"?>
+         <!DOCTYPE process_ctrl [
+         <!ELEMENT process_ctrl (parameter*, outline_data?, hint_data?)>
+         <!ELEMENT parameter (#PCDATA)>
+         <!ELEMENT outline_data (hint+)>
+         <!ELEMENT hint_data (hint+)>
+         <!ELEMENT hint (#PCDATA)>
+         <!ATTLIST parameter name CDATA #IMPLIED>
+         ]>'; 
+    PROCESS_CTRL_BEGIN CONSTANT VARCHAR2(32) := '<process_ctrl><hint_data>';
+    PROCESS_CTRL_END   CONSTANT VARCHAR2(32) := '</hint_data></process_ctrl>';
+    $IF DBMS_DB_VERSION.VERSION>12 $THEN
+        PROCEDURE I_PROCESS_SQL_CALLOUT(
+            STMT         IN OUT SQLSET_ROW,
+            EXEC_USERID  IN PLS_INTEGER:=sys_context('USERENV','CURRENT_USERID'),
+            ACTION       IN BINARY_INTEGER,
+            TIME_LIMIT   IN POSITIVE,
+            CTRL_OPTIONS IN XMLTYPE:=null,
+            EXTRA_RESULT OUT CLOB,
+            ERR_CODE     OUT BINARY_INTEGER,
+            ERR_MESG     OUT VARCHAR2) IS
+            EXTERNAL NAME "kestsProcessSqlCallout"
+            WITH CONTEXT
+            PARAMETERS(CONTEXT     ,
+                       STMT        ,
+                       STMT         INDICATOR STRUCT,
+                       STMT         DURATION OCIDURATION,
+                       EXEC_USERID  UB4,
+                       ACTION       UB4,
+                       TIME_LIMIT   UB4,
+                       CTRL_OPTIONS,
+                       CTRL_OPTIONS INDICATOR SB2,
+                       EXTRA_RESULT OCILOBLOCATOR,
+                       EXTRA_RESULT INDICATOR SB2,
+                       ERR_CODE     SB4,
+                       ERR_CODE     INDICATOR SB2,
+                       ERR_MESG     OCISTRING,
+                       ERR_MESG     INDICATOR SB2)
+            LIBRARY SYS.DBMS_SQLTUNE_LIB;
+    $ELSE
+        PROCEDURE I_PROCESS_SQL_CALLOUT(
+            STMT         IN OUT SQLSET_ROW, 
+            ACTION       IN     BINARY_INTEGER, 
+            TIME_LIMIT   IN     POSITIVE,
+            CTRL_OPTIONS IN     XMLTYPE:=NULL,
+            EXTRA_RESULT OUT    CLOB,
+            ERR_CODE     OUT    BINARY_INTEGER,
+            ERR_MESG     OUT    VARCHAR2)
+          IS EXTERNAL NAME "kestsProcessSqlCallout" 
+          WITH CONTEXT
+          PARAMETERS (CONTEXT, 
+                      STMT, STMT INDICATOR STRUCT, STMT DURATION OCIDURATION,
+                      ACTION UB4,
+                      TIME_LIMIT UB4, 
+                      CTRL_OPTIONS, CTRL_OPTIONS INDICATOR SB2, 
+                      EXTRA_RESULT OCILOBLOCATOR, EXTRA_RESULT INDICATOR SB2,
+                      ERR_CODE SB4, ERR_CODE INDICATOR SB2,
+                      ERR_MESG OCISTRING, ERR_MESG INDICATOR SB2)
+          LIBRARY SYS.DBMS_SQLTUNE_LIB;   
+    $END
     PROCEDURE wr(msg VARCHAR2) IS
     BEGIN
         dbms_lob.writeappend(sql_text, nvl(length(msg), 0) + 1, msg || chr(10));
     END;
 
     PROCEDURE test_ofe(c INT) IS
-        ts number;
+        ts NUMBER;
+        n  VARCHAR2(30);
     BEGIN
-        EXECUTE IMMEDIATE 'alter session set '|| ofelist(c);
         ts := dbms_utility.get_time;
-        EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||c);
+        IF &mode = 2 THEN
+            --dbms_output.put_line(c||':'||ofelist(c));
+            EXECUTE IMMEDIATE 'alter session set '|| ofelist(c);
+            EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||c);
+        ELSE
+            --dbms_output.put_line(c||':'||ctrl);
+            I_PROCESS_SQL_CALLOUT(
+                stmt=>stmt,
+                action=>2,
+                time_limit=>1000,
+                ctrl_options=>xmltype(process_ctrl_dtd||process_ctrl_begin||ctrl ||process_ctrl_end),
+                extra_result=>res,
+                err_code=>ecode,
+                err_mesg=>err);
+            
+            IF stmt.sql_plan IS NULL THEN
+                RETURN;
+            END IF;
+            INSERT INTO SYS.PLAN_TABLE$
+                (STATEMENT_ID,
+                 PLAN_ID,
+                 TIMESTAMP,
+                 REMARKS,
+                 OPERATION,
+                 OPTIONS,
+                 OBJECT_NODE,
+                 OBJECT_OWNER,
+                 OBJECT_NAME,
+                 OBJECT_ALIAS,
+                 OBJECT_INSTANCE,
+                 OBJECT_TYPE,
+                 OPTIMIZER,
+                 SEARCH_COLUMNS,
+                 ID,
+                 PARENT_ID,
+                 DEPTH,
+                 POSITION,
+                 COST,
+                 CARDINALITY,
+                 BYTES,
+                 OTHER_TAG,
+                 PARTITION_START,
+                 PARTITION_STOP,
+                 PARTITION_ID,
+                 DISTRIBUTION,
+                 CPU_COST,
+                 IO_COST,
+                 TEMP_SPACE,
+                 ACCESS_PREDICATES,
+                 FILTER_PREDICATES,
+                 PROJECTION,
+                 TIME,
+                 QBLOCK_NAME,
+                 OTHER_XML)
+            SELECT /*+NO_MINITOR*/ 'OFE_'||c,
+                   c,
+                   SYSDATE,
+                   REMARKS,
+                   OPERATION,
+                   OPTIONS,
+                   OBJECT_NODE,
+                   OBJECT_OWNER,
+                   OBJECT_NAME,
+                   OBJECT_ALIAS,
+                   OBJECT_INSTANCE,
+                   OBJECT_TYPE,
+                   OPTIMIZER,
+                   SEARCH_COLUMNS,
+                   ID,
+                   PARENT_ID,
+                   DEPTH,
+                   POSITION,
+                   COST,
+                   CARDINALITY,
+                   BYTES,
+                   OTHER_TAG,
+                   PARTITION_START,
+                   PARTITION_STOP,
+                   PARTITION_ID,
+                   DISTRIBUTION,
+                   CPU_COST,
+                   IO_COST,
+                   TEMP_SPACE,
+                   ACCESS_PREDICATES,
+                   FILTER_PREDICATES,
+                   PROJECTION,
+                   TIME,
+                   QBLOCK_NAME,
+                   OTHER_XML
+            FROM   TABLE(stmt.sql_plan);
+            --dbms_output.put_line(ctrl||':'||sql%rowcount||':'||c);
+        END IF;
         ts := (dbms_utility.get_time - ts)/100;
         if ts>=&time then
             dbms_output.put_line('Parse time: '||ts||'s for '||ofelist(c));
         end if;
+        COMMIT;
     END;
 BEGIN
     IF length(buff)>20 AND regexp_like(buff,'\s') THEN
@@ -120,25 +283,25 @@ BEGIN
     ELSE
         BEGIN
             SELECT *
-            INTO   to_schema, buff
-            FROM   (SELECT parsing_schema_name, sql_fulltext
+            INTO   to_schema, buff, bw
+            FROM   (SELECT parsing_schema_name, sql_fulltext,bind_data br
                     FROM   gv$sqlarea
                     WHERE  sql_id = sq_id
                     AND    rownum < 2
                     UNION ALL
-                    SELECT parsing_schema_name, sql_text
+                    SELECT parsing_schema_name, sql_text,bind_data br
                     FROM   all_sqlset_statements
                     WHERE  sql_id = sq_id
                     AND    rownum < 2
                     UNION ALL
-                    SELECT parsing_schema_name, sql_text
+                    SELECT parsing_schema_name, sql_text,bind_data br
                     FROM   dba_hist_sqlstat
                     JOIN   dba_hist_sqltext
                     USING  (sql_id)
                     WHERE  sql_id = sq_id
                     AND    rownum < 2
                     UNION ALL
-                    SELECT username, TO_CLOB(sql_text)
+                    SELECT username, TO_CLOB(sql_text),null
                     FROM   gv$sql_monitor
                     WHERE  sql_id = sq_id
                     AND    IS_FULL_SQLTEXT = 'Y'
@@ -149,8 +312,10 @@ BEGIN
                 raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);
         END;
     END IF;
+
+    buff := regexp_replace(buff,'^\s*explain.*?for\s*','',1,1,'in');
+    stmt := SYS.SQLSET_ROW(sq_id,null,buff,null,bw,to_schema,'SYS_XPLAN',round(dbms_random.value(1e9,1e10)));
     sql_text := 'explain plan set statement_id=''OFE_@dbcli_stmt_id@'' INTO SYS.PLAN_TABLE$ for ';
-    buff := regexp_replace(buff,'^\s*explain.*?for\s*','',1,1,'i');
     dbms_lob.append(sql_text, buff);
 
     IF low_ofe IS NULL THEN
@@ -176,14 +341,14 @@ BEGIN
 
     DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IS NOT NULL;
     COMMIT;
-    EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
+    EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || high_ofe || '''';
     high_env := dbms_xmlgen.getxmltype(qry);
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_HIGH');
     COMMIT;
 
-    EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=SYS';
+    EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || low_ofe || '''';
     low_env := dbms_xmlgen.getxmltype(qry);
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
@@ -205,16 +370,35 @@ BEGIN
         counter := counter + 1;
         new_ofe := NULL;
         old_ofe := NULL;
+        ctrl    := NULL;
         FOR i IN 1 .. changes.count LOOP
+            hints := CASE WHEN '&dir'='desc' THEN changes(i).value_low ELSE changes(i).value_high END;
             IF changes(i).typ = 'ofe' THEN
-                old_ofe := '"_fix_control"=''' || changes(i).name || ':' || changes(i).value_low || '''';
-                new_ofe := '"_fix_control"=''' || changes(i).name || ':' || changes(i).value_high || '''';
+                IF ctrl IS NULL THEN
+                    ofedesc(counter) := changes(i).description;
+                    ctrl := ctrl ||'<hint><![CDATA[OPT_PARAM(''_fix_control'' '''|| changes(i).name || ':' || hints;
+                ELSE
+                    ctrl := ctrl || ',' || changes(i).name || ':' || hints;
+                END IF;
+
+                old_ofe := CASE WHEN new_ofe IS NULL THEN '"_fix_control"=' ELSE old_ofe||','||chr(10) END 
+                           || '''' || changes(i).name || ':' || changes(i).value_low||'''';
+                new_ofe := CASE WHEN new_ofe IS NULL THEN '"_fix_control"=' ELSE new_ofe||','||chr(10) END 
+                           || '''' || changes(i).name || ':' || changes(i).value_high||'''';
+
                 ofe_cnt := ofe_cnt + 1;
+                IF changes.count>i AND changes(i+1).typ='ofe' THEN
+                    GOTO WRITE_DESC;
+                ELSE
+                    ctrl    := ctrl ||''')]]></hint>';
+                END IF;
             ELSE
                 IF changes(i).vtype = 2 THEN
                     changes(i).value_low := '''' || changes(i).value_low || '''';
                     changes(i).value_high := '''' || changes(i).value_high || '''';
                 END IF;
+                hints   := CASE WHEN  changes(i).vtype IN(1,2) THEN ''''||hints||'''' ELSE hints END;
+                ctrl    := ctrl||'<hint><![CDATA[OPT_PARAM('''||changes(i).name||''' '||hints||')]]></hint>';
                 IF substr(changes(i).name,1,1)='_' THEN
                     changes(i).name := '"'||changes(i).name||'"';
                 END IF;
@@ -225,6 +409,8 @@ BEGIN
 
             ofelist(counter) := ofelist(counter) || new_ofe || chr(10);
             ofeold(counter)  := ofeold(counter)  || old_ofe || chr(10);
+
+            <<WRITE_DESC>>
             IF length(ofedesc(counter) || changes(i).description) < 3800 THEN
                 ofedesc(counter) := ofedesc(counter) || changes(i).description || chr(10);
             END IF;
@@ -241,14 +427,13 @@ BEGIN
             old_ofe := ofeold(counter);
             BEGIN
                 test_ofe(counter);
-                COMMIT;
             EXCEPTION WHEN OTHERS THEN
                 errcount := errcount + 1;
                 IF errcount <= 100 THEN
                     dbms_output.put_line('Unable to set '||replace(ofelist(ofelist.count),chr(10),' ')||' due to '||sqlerrm);
                 END IF;
             END;
-            IF :accu = 0 THEN
+            IF :accu = 0 AND &mode=2 THEN
                 BEGIN
                     EXECUTE IMMEDIATE 'alter session set '|| old_ofe;
                 EXCEPTION WHEN OTHERS THEN NULL;
@@ -259,7 +444,7 @@ BEGIN
     CLOSE c;
 
     dbms_output.put_line(counter||' OFE differences are tested.');
-
+    
     DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IN(
         SELECT /*+unnest*/ STATEMENT_ID 
         FROM (
