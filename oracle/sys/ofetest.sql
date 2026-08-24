@@ -1,5 +1,6 @@
 /*[[Test the execution plan changes by adjusting the new fix controls and session environments. Usage: @@NAME <sql_id> <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-t"<secs>"] [-f"<plan_filter>"|-k"<keyword>]
-   Or: @@NAME <low_OFE> [high_OFE] [-batch"<number>"] [-ofe|-env] [-f"<plan_filter>"|-k"<keyword>] <SQL_Text with EOF>
+   Or: @@NAME <low_OFE> [high_OFE] [<options>] <SQL_Text with EOF>
+   Or: @@NAME . [<options>] <SQL_Text with EOF> to test since 8i
     -batch     : number of options to be tested for each batch
     -env       : only test the parameters
     -ofe       : only test the fix controls
@@ -57,8 +58,19 @@ DECLARE
         FROM   v$session_fix_control
         WHERE  SESSION_ID=userenv('sid')
         AND    '&typ' IN('all','ofe')
-        AND    bugno NOT IN(16923858,25167306)
+        AND    bugno NOT IN(16923858,25167306,5475051)
         AND    (optimizer_feature_enable IS NOT NULL OR value>0)
+        UNION  ALL
+        SELECT 'ofe' typ,''||bugno name,''||decode('@ofe','@low_ofe',value,1-sign(value)) value,2 vtype,DESCRIPTION,
+               1 flag,
+               8 ofe
+        FROM   v$session_fix_control
+        WHERE  '@low_ofe'='8.0.0'
+        AND    SESSION_ID=userenv('sid')
+        AND    '&typ' IN('all','ofe')
+        AND    is_default=1
+        AND    nvl(optimizer_feature_enable,'8.0.0')='8.0.0'
+        AND    bugno NOT IN(5475051)
         UNION  ALL
         SELECT 'env',pi.ksppinm, NVL(kc.PVALUE_QKSCESEROW,cv.KSPPSTVL), ksppity,ksppdesc,1,0
         FROM   sys.x$ksppi pi ,sys.x$ksppcv cv,sys.X$QKSCESES kc
@@ -73,25 +85,27 @@ DECLARE
         AND    '&typ' IN('all','env')
         ORDER  BY 1,ofe &dir,2 &dir}';
     CURSOR c IS
-        SELECT /*+ordered use_hash(b)*/ 
-               typ,name,vtype,
-               CASE WHEN flag=0 AND '&dir'='asc'  THEN '1' ELSE value_high END value_high,
-               CASE WHEN flag=0 AND '&dir'='desc' THEN '1' ELSE value_low  END value_low,
-               a.description
-        FROM   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
-                       extractvalue(column_value, '/ROW/NAME') NAME,
-                       extractvalue(column_value, '/ROW/VTYPE') + 0 VTYPE,
-                       extractvalue(column_value, '/ROW/VALUE') value_high,
-                       extractvalue(column_value, '/ROW/FLAG')+0 flag,
-                       extractvalue(column_value, '/ROW/OFE')+0 ofe,
-                       regexp_replace(extractvalue(column_value, '/ROW/DESCRIPTION'), '\s+', ' ') description
-                FROM   TABLE(XMLSEQUENCE(extract(high_env, '/ROWSET/ROW')))) a
-        JOIN   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
-                       extractvalue(column_value, '/ROW/NAME') NAME,
-                       extractvalue(column_value, '/ROW/VALUE') value_low
-                FROM   TABLE(XMLSEQUENCE(extract(low_env, '/ROWSET/ROW')))) b
-        USING  (typ, NAME)
-        WHERE  nvl(value_high, '_') != nvl(value_low, '_') OR flag=0
+        SELECT * FROM (
+            SELECT /*+ordered use_hash(b)*/ 
+                   typ,name,vtype,ofe,
+                   CASE WHEN flag=0 AND '&dir'='asc'  THEN '1' ELSE value_high END value_high,
+                   CASE WHEN flag=0 AND '&dir'='desc' THEN '1' ELSE value_low  END value_low,
+                   a.description
+            FROM   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
+                           extractvalue(column_value, '/ROW/NAME') NAME,
+                           extractvalue(column_value, '/ROW/VTYPE') + 0 VTYPE,
+                           extractvalue(column_value, '/ROW/VALUE') value_high,
+                           extractvalue(column_value, '/ROW/FLAG')+0 flag,
+                           extractvalue(column_value, '/ROW/OFE')+0 ofe,
+                           regexp_replace(extractvalue(column_value, '/ROW/DESCRIPTION'), '\s+', ' ') description
+                    FROM   TABLE(XMLSEQUENCE(extract(high_env, '/ROWSET/ROW')))) a
+            JOIN   (SELECT extractvalue(column_value, '/ROW/TYP') typ,
+                           extractvalue(column_value, '/ROW/NAME') NAME,
+                           extractvalue(column_value, '/ROW/VALUE') value_low
+                    FROM   TABLE(XMLSEQUENCE(extract(low_env, '/ROWSET/ROW')))) b
+            USING  (typ, name)
+            WHERE  nvl(value_high, '_') != nvl(value_low, '_') OR flag=0
+            )
         ORDER  BY typ,ofe &dir,nvl(regexp_substr(name,'^\d+$')+0,0) &dir,decode(substr(name,1,1),'_',1,0);
     TYPE t_changes IS TABLE OF c%ROWTYPE;
     changes t_changes;
@@ -271,13 +285,18 @@ DECLARE
             dbms_output.put_line('Parse time: '||ts||'s for '||ofelist(c));
         end if;
         COMMIT;
+    EXCEPTION WHEN OTHERS THEN
+        errcount := errcount + 1;
+        IF errcount <= 100 THEN
+            dbms_output.put_line('Unable to set '||replace(ofelist(ofelist.count),chr(10),' ')||' due to '||sqlerrm);
+        END IF;
     END;
 BEGIN
     IF length(buff)>20 AND regexp_like(buff,'\s') THEN
         if high_ofe IS NOT NULL then 
             high_ofe := low_ofe;
         end if;
-        low_ofe   := sq_id;
+        low_ofe   := nvl(sq_id,'8.0.0');
         sq_id     := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(buff);
         to_schema := sys_context('userenv','current_schema');
     ELSE
@@ -340,17 +359,18 @@ BEGIN
     :sql_id := sq_id;
 
     DELETE SYS.PLAN_TABLE$ WHERE STATEMENT_ID IS NOT NULL;
+    qry:=replace(qry,'@low_ofe',low_ofe);
     COMMIT;
     EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || high_ofe || '''';
-    high_env := dbms_xmlgen.getxmltype(qry);
+    high_env := dbms_xmlgen.getxmltype(replace(qry,'@ofe',high_ofe));
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_HIGH');
     COMMIT;
 
     EXECUTE IMMEDIATE 'alter session set current_schema=SYS';
     EXECUTE IMMEDIATE 'alter session set optimizer_features_enable=''' || low_ofe || '''';
-    low_env := dbms_xmlgen.getxmltype(qry);
+    low_env := dbms_xmlgen.getxmltype(replace(qry,'@ofe',low_ofe));
     EXECUTE IMMEDIATE 'alter session set current_schema=' || to_schema;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE_LOW');
     COMMIT;
@@ -372,7 +392,7 @@ BEGIN
         old_ofe := NULL;
         ctrl    := NULL;
         FOR i IN 1 .. changes.count LOOP
-            hints := CASE WHEN '&dir'='desc' THEN changes(i).value_low ELSE changes(i).value_high END;
+            hints := CASE WHEN '&dir'='desc' and changes(i).ofe>8 THEN changes(i).value_low ELSE changes(i).value_high END;
             IF changes(i).typ = 'ofe' THEN
                 IF ctrl IS NULL THEN
                     ofedesc(counter) := changes(i).description;
@@ -407,6 +427,12 @@ BEGIN
                 env_cnt := env_cnt + 1;
             END IF;
 
+            IF '&dir'='desc' and changes(i).ofe>8 THEN
+                tmp_ofe := new_ofe;
+                new_ofe := old_ofe;
+                old_ofe := tmp_ofe;
+            END IF;
+
             ofelist(counter) := ofelist(counter) || new_ofe || chr(10);
             ofeold(counter)  := ofeold(counter)  || old_ofe || chr(10);
 
@@ -417,22 +443,9 @@ BEGIN
         END LOOP;
         ofedesc(counter) := NVL(REPLACE(TRIM(ofedesc(counter)),CHR(9)),' ');
 
-        IF '&dir'='desc' THEN
-            tmp_ofe          := ofelist(counter);
-            ofelist(counter) := ofeold(counter);
-            ofeold(counter)  := tmp_ofe;
-        END IF;
-
         IF new_ofe IS NOT NULL THEN
             old_ofe := ofeold(counter);
-            BEGIN
-                test_ofe(counter);
-            EXCEPTION WHEN OTHERS THEN
-                errcount := errcount + 1;
-                IF errcount <= 100 THEN
-                    dbms_output.put_line('Unable to set '||replace(ofelist(ofelist.count),chr(10),' ')||' due to '||sqlerrm);
-                END IF;
-            END;
+            test_ofe(counter);
             IF :accu = 0 AND &mode=2 THEN
                 BEGIN
                     EXECUTE IMMEDIATE 'alter session set '|| old_ofe;

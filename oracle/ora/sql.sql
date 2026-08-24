@@ -33,7 +33,8 @@
         @VER23: 23={-RESULT_CACHE_EXECUTIONS} DEFAULT={}
         @ver18: 18={1} default={1e4}
         @check_access_hist: dba_hist_sqltext={} default={--}
-        @check_access_bind: dba_hist_sqlbind={1} default={0} 
+        @check_access_bind: dba_hist_sqlbind={1} default={0}
+        @check_access_pdb : awrpdb={AWR_PDB_ACTIVE_SESS_HISTORY} default={DBA_HIST_ACTIVE_SESS_HISTORY}
         @ARGS: 1
         &V3  : default={} q={Q} l={L}
         &V2  : default={&instance}
@@ -102,7 +103,7 @@ BEGIN
            and   IS_FULL_SQLTEXT='Y'
            and   ROWNUM<2
            $end
-           &check_access_hist  union all select sql_text,q'[(select /*+full(a.AWR_CDB_ACTIVE_SESS_HISTORY.ash)*/ * from dba_hist_active_sess_history a where dbid='&dbid')]','instance_number' inst from dba_hist_sqltext src where sql_id='&v1' and ROWNUM<2
+           &check_access_hist  union all select sql_text,q'[(select /*+full(a.AWR_CDB_ACTIVE_SESS_HISTORY.ash)*/ * from &check_access_pdb a where dbid='&dbid')]','instance_number' inst from dba_hist_sqltext src where sql_id='&v1' and ROWNUM<2
       ) WHERE ROWNUM<2;
     EXCEPTION WHEN OTHERS THEN
         :src := 'gv$active_session_history';

@@ -286,7 +286,10 @@ BEGIN
    
     IF tsk IS NOT NULL THEN
         SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
-               MAX(attr3),MAX(attr1),nvl(MAX(fil),'1=1'),max(sq_id),max(sq_nid),max(sq_txt)
+               MAX(attr3),
+               MAX(attr1),
+               nvl(MAX(fil),'1=1'),
+               max(sq_id),max(sq_nid),max(sq_txt)
         INTO   sown,snam,fil,sq_id,sq_nid,sq_txt
         FROM (
             SELECT decode(type,'SQLSET',attr3) attr3,
@@ -364,7 +367,7 @@ BEGIN
               USING  (TASK_ID)
               WHERE  PARAMETER_VALUE != 'UNUSED'
               GROUP  BY task_id)
-            SELECT TASK_ID,
+            SELECT R.TASK_ID,
                    R.OWNER,
                    R.TASK_NAME,
                    NVL(R.SQLSET,R1.SQLSET) "SQL[SET]",
@@ -377,18 +380,22 @@ BEGIN
                    R.findings,
                    r.status,
                    r.execution_start,
-                   r.execution_end,
+                   (SELECT decode(count(1),
+                               0,nvl2(r.execution_end,'Ended - '||to_char(r.execution_end),'Not Started'),
+                               sum(sofar)||'/'||sum(totalwork)||' ('||round(sum(sofar)*100/greatest(sum(totalwork),1),2)||'%)')
+                    FROM   gv$advisor_progress a
+                    WHERE  a.task_id=r.task_id) execution_prog,
                    r.DESCRIPTION
             FROM   R
             LEFT   JOIN R1
-            USING  (TASK_ID)
+            ON     (r.task_id=r1.task_id)
             ORDER  BY execution_start DESC NULLS LAST;
     ELSIF eid IS NULL THEN
         m1 := 'TASK PARAMETERS FOR '||fulltask;
         OPEN c1 FOR
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                    PARAMETER_NAME,
-                   nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
+                   regexp_replace(nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE),'(.{50})','\1'||chr(10)) PARAMETER_VALUE,
                    PARAMETER_TYPE,
                    IS_DEFAULT,
                    IS_OUTPUT,
@@ -421,18 +428,20 @@ BEGIN
                        EXECUTION_END,
                        STATUS,
                        &ver  REQUESTED_DOP REQ_DOP, ACTUAL_DOP ACT_DOP,
+                       /*
                        DECODE(
                         EXECUTION_TYPE,'CONVERT SQLSET',
                         EXTRACTVALUE(dbms_xmlgen.getxmltype(
-                             'SELECT COUNT(1) X
+                             'SELECT --+leading(@sel$2 f@SEL$2 S@SEL$2 p@SEL$2) use_nl(@sel$2 t@sel$2)
+                                     COUNT(1) X
                               FROM   DBA_SQLSET_STATEMENTS
                               WHERE  sqlset_owner='''||sown||'''
                               AND    sqlset_name='''||snam||'''
-                              AND    ('||fil||')'),'//X')+0,
+                              AND    ('||fil||')'),'//X')+0,*/
                        (SELECT COUNT(1) 
                         FROM  DBA_ADVISOR_OBJECTS 
                         WHERE task_id=tid 
-                        AND   execution_name=a.execution_name)) objs,
+                        AND   execution_name=a.execution_name) objs,
                        (SELECT COUNT(1) 
                         FROM  DBA_ADVISOR_FINDINGS
                         WHERE task_id=tid 
@@ -473,7 +482,7 @@ BEGIN
         OPEN c1 FOR
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                    PARAMETER_NAME,
-                   nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
+                   regexp_replace(nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE),'(.{50})','\1'||chr(10)) PARAMETER_VALUE,
                    PARAMETER_TYPE,
                    IS_DEFAULT,
                    IS_OUTPUT,
@@ -507,7 +516,8 @@ BEGIN
                     WHERE  TASK_ID = tid
                     AND    EXECUTION_NAME in(pre,post)),
                 F AS(
-                    SELECT attr1 org_sql,
+                    SELECT /*+push_pred(s)*/
+                           attr1 org_sql,
                            coalesce(pre.sqln,sq_nid,attr1) prev_sql,
                            nvl(p1.phv,''||f.attr5) prev_phv,
                            coalesce(post.sqln,sq_nid,attr1) post_sql,
@@ -525,7 +535,8 @@ BEGIN
                     LEFT JOIN (SELECT R.*,&attr17 sqln FROM R WHERE EXECUTION_NAME=post) POST USING(ATTR1)
                     LEFT JOIN (SELECT S.* FROM S WHERE EXECUTION_NAME=pre) p1 USING(ATTR1)
                     LEFT JOIN (SELECT S.* FROM S WHERE EXECUTION_NAME=post) p2 USING(ATTR1)
-                    LEFT JOIN (SELECT /*+no_merge*/ DISTINCT
+                    LEFT JOIN (SELECT /*+no_merge*/ 
+                                     DISTINCT
                                      sql_id attr1,
                                      trim(regexp_replace(to_char(substr(sql_text,1,2500)),'\s+',' ')) sql_text
                                FROM  DBA_SQLSET_STATEMENTS 
