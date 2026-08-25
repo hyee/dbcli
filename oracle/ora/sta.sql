@@ -9,7 +9,7 @@
     -compile           : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix compile error
     -error             : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix runtime error/bad plan/bug
     -alt               : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to look for alternative plans
-    -report            : use DBMS_SQLDIAG.REPORT_SQL to generate the HTML report of target SQL (23c+) 
+    -report            : 23ai+ only. Specify together with <sql_i> execute DBMS_SQLDIAG.REPORT_SQL to generate the HTML report of target SQL
     --[[
         &exe_mode: async={0}, sync={1}
         &filter: default={1=1}, f={}
@@ -78,10 +78,14 @@ BEGIN
     sq_id := REPLACE(sq_id, tid);
     IF tid IS NULL AND sq_txt IS NOT NULL THEN 
         IF sq_id IS NOT NULL THEN
-            IF '&tsk' ='SQLHC_' AND dbms_db_version.version>22 THEN
-                execute immediate 'begin :1:=sys.dbms_sqldiag.report_sql(:2,:3);end;' using out sq_txt, sq_id, :v2;
-                :txt := sq_txt;
-                :fn  := 'SQLHC_'||sq_id||'.html';
+            IF '&tsk' ='SQLHC_' THEN
+                IF dbms_db_version.version>22 THEN
+                    execute immediate 'begin :1:=sys.dbms_sqldiag.report_sql(:2,:3);end;' using out sq_txt, sq_id, :v2;
+                    :txt := sq_txt;
+                    :fn  := 'SQLHC_'||sq_id||'.html';
+                ELSE
+                    raise_application_error(-20001,'The feature is supported only on 23ai+');
+                END IF;
                 return;
             END IF;
             BEGIN
@@ -191,9 +195,9 @@ BEGIN
             WITH r AS
              (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ 
                      A.*, 
-                     (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id and execution_name=a.last_execution) findings,
-                     (SELECT COUNT(1) FROM dba_advisor_actions WHERE task_id = a.task_id and execution_name=a.last_execution) actions,
-                     (SELECT decode(type,'SQL',attr3||' => '||attr1,nullif(attr3||'.'||attr1,'.')) 
+                     (SELECT /*+outline no_unnest*/ COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id and execution_name=a.last_execution) findings,
+                     (SELECT /*+outline no_unnest*/ COUNT(1) FROM dba_advisor_actions WHERE task_id = a.task_id and execution_name=a.last_execution) actions,
+                     (SELECT /*+outline no_unnest*/ decode(type,'SQL',attr3||' => '||attr1,nullif(attr3||'.'||attr1,'.')) 
                       FROM   dba_advisor_objects b
                       WHERE  task_id = a.task_id
                       AND    EXECUTION_NAME IS NULL
@@ -210,6 +214,7 @@ BEGIN
                      task_id,
                      MAX(DECODE(parameter_name, 'LOCAL_TIME_LIMIT', parameter_value+0,'TIME_LIMIT', parameter_value+0)) TIME_LIMIT,
                      MAX(DECODE(parameter_name, 'DEFAULT_EXECUTION_TYPE', parameter_value)) EXEC_TYPE,
+                     MAX(DECODE(parameter_name, 'SQLDIAG_PROBLEM_TYPE', parameter_value)) problem,
                      MAX(DECODE(parameter_name, 'MODE', parameter_value)) EXEC_MODE
               FROM   (SELECT TASK_ID FROM R) R
               JOIN   DBA_ADVISOR_PARAMETERS A
@@ -220,8 +225,15 @@ BEGIN
                    R.OWNER,
                    R.TASK_NAME,
                    R.SQLSET "SQL[SET]",
-                   r1.exec_type ,
+                   r1.EXEC_TYPE ,
                    r1.EXEC_MODE,
+                   decode(0+r1.PROBLEM,
+                          1,'PERFORMANCE',
+                          2,'WRONG RESULTS',
+                          3,'COMPILE ERROR',
+                          4,'EXECUTE ERROR',
+                          5,'EXPORT ALL PLANS',
+                          'SQL TUNING') problem,
                    R.findings,
                    R.actions,
                    r.status,
@@ -255,13 +267,15 @@ BEGIN
         OPEN c1 FOR
             SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
                    PARAMETER_NAME,
-                   nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE) PARAMETER_VALUE,
+                   regexp_replace(nvl(B.PARAMETER_VALUE, A.PARAMETER_VALUE),'(.{50})','\1'||chr(10)) PARAMETER_VALUE,
                    PARAMETER_TYPE,
                    IS_DEFAULT,
                    IS_OUTPUT,
                    IS_MODIFIABLE_ANYTIME IS_MDF,
                    DESCRIPTION
-            FROM   dba_advisor_def_parameters a
+            FROM   (SELECT *
+                    FROM   DBA_ADVISOR_DEF_PARAMETERS
+                    WHERE  ADVISOR_NAME=aname) a
             LEFT   JOIN (
                 SELECT * FROM (
                     SELECT A.*,ROW_NUMBER() OVER(PARTITION BY PARAMETER_NAME ORDER BY SEQ DESC) R
@@ -270,14 +284,13 @@ BEGIN
                          FROM   DBA_ADVISOR_EXEC_PARAMETERS
                          WHERE  TASK_ID = tid
                          AND    PARAMETER_VALUE != 'UNUSED'
-                         UNION ALL
+                         UNION
                          SELECT PARAMETER_NAME, PARAMETER_VALUE,tid
                          FROM   DBA_ADVISOR_PARAMETERS
                          WHERE  TASK_ID = tid
                          AND    PARAMETER_VALUE != 'UNUSED') A)
                 WHERE R=1) b
             USING  (PARAMETER_NAME)
-            WHERE  A.ADVISOR_NAME IN ('SQL Tuning Advisor','SQL Repair Advisor')
             UNION ALL
             SELECT TYPE,
                    ATTR1,

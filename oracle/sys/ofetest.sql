@@ -7,7 +7,8 @@
     -accu      : test the options in accumulation mode, instead turning on/off one by one
     -desc      : test from high OFE to low OFE, instead of from low to high
     -t"<secs>" : print the parse time if >= <secs>
-    -xplan     : use I_PROCESS_SQL_CALLOUT instead of "alter session + explain plan mode"
+    -xplan     : use I_PROCESS_SQL_CALLOUT to explain instead of "alter session + explain plan mode"
+    -exec      : use I_PROCESS_SQL_CALLOUT to execute+explain instead of "alter session + explain plan mode"
 
     Example: @@NAME g6px76dmjv1jy 10.2.0.4 12.1.0
              @@NAME g6px76dmjv1jy 11.2.0.4 -k"PARTITION RANGE SINGLE"
@@ -20,7 +21,7 @@
         &accu  : default={0} accu={1}
         &dir   : default={asc} desc={desc}
         &time  : default={1} t={}
-        &mode  : default={2} xplan={1}
+        &mode  : default={0} xplan={2} exec={1}
     --]]
 ]]*/
 set SQLTIMEOUT 7200 verify off feed off &sep
@@ -47,6 +48,7 @@ DECLARE
     ofelist   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     ofeold    SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     ofedesc   SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
+    ofeela    SYS.ODCISECOBJTABLE   := SYS.ODCISECOBJTABLE();
     counter   PLS_INTEGER := 0;
     to_schema VARCHAR2(128);
     fmt       VARCHAR2(300);
@@ -188,7 +190,7 @@ DECLARE
         n  VARCHAR2(30);
     BEGIN
         ts := dbms_utility.get_time;
-        IF &mode = 2 THEN
+        IF &mode = 0 THEN
             --dbms_output.put_line(c||':'||ofelist(c));
             EXECUTE IMMEDIATE 'alter session set '|| ofelist(c);
             EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', ''||c);
@@ -196,7 +198,7 @@ DECLARE
             --dbms_output.put_line(c||':'||ctrl);
             I_PROCESS_SQL_CALLOUT(
                 stmt=>stmt,
-                action=>2,
+                action=>&mode,
                 time_limit=>1000,
                 ctrl_options=>xmltype(process_ctrl_dtd||process_ctrl_begin||ctrl ||process_ctrl_end),
                 extra_result=>res,
@@ -281,6 +283,8 @@ DECLARE
             --dbms_output.put_line(ctrl||':'||sql%rowcount||':'||c);
         END IF;
         ts := (dbms_utility.get_time - ts)/100;
+        ofeela.extend;
+        ofeela(ofeela.count) := SYS.ODCISECOBJ(null,null,'OFE_'||c,ts);
         if ts>=&time then
             dbms_output.put_line('Parse time: '||ts||'s for '||ofelist(c));
         end if;
@@ -446,7 +450,7 @@ BEGIN
         IF new_ofe IS NOT NULL THEN
             old_ofe := ofeold(counter);
             test_ofe(counter);
-            IF :accu = 0 AND &mode=2 THEN
+            IF :accu = 0 AND &mode=0 THEN
                 BEGIN
                     EXECUTE IMMEDIATE 'alter session set '|| old_ofe;
                 EXCEPTION WHEN OTHERS THEN NULL;
@@ -583,10 +587,13 @@ BEGIN
                      bytes,
                      card           "Card",
                      total_card,
+                     0+b.objname "Ela(s)",
                      settings "Top 10 Settings",
                      description||CASE WHEN a.description like '%OFE_BASELINE_LOW%' THEN low_ofe WHEN a.description like '%OFE_BASELINE_HIGH%' THEN high_ofe END "Top 10 Descriptions"
-            FROM   finals a
+            FROM   finals a,
+                   table(ofeela) b
             WHERE  seq=1
+            AND    a.statement_id=b.objschema(+)
             ORDER  BY grp,decode(:accu,1,id,0),regexp_substr(statement_id,'\d+')+0,plan_hash,plan_hash2,cost,bytes,total_card,id) a;
     :msg := utl_lms.format_message('* Note: Run "ora plan <statement_id> -all" to query the detailed plan. ' || chr(10) ||
                                    '* Note: Totally %d options are tested, including %d fix controls and %d parameters. Please reconnect to reset all options to the defaults.',

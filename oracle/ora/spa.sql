@@ -330,7 +330,7 @@ BEGIN
              (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ 
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
-                     (SELECT COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
+                     (SELECT /*+no_unnest outline*/ COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
                      (SELECT decode(MAX(y.type),
                                 'SQL'   ,MAX(y.attr1||' -> '|| nvl(sqln,y.attr3)),
                                 'SQLSET',MAX(nullif(y.attr3||'.'||y.attr1,'.')),
@@ -380,11 +380,12 @@ BEGIN
                    R.findings,
                    r.status,
                    r.execution_start,
-                   (SELECT decode(count(1),
-                               0,nvl2(r.execution_end,'Ended - '||to_char(r.execution_end),'Not Started'),
-                               sum(sofar)||'/'||sum(totalwork)||' ('||round(sum(sofar)*100/greatest(sum(totalwork),1),2)||'%)')
+                   (SELECT nvl(to_char(r.execution_end),
+                                   decode(count(1),
+                                       0,'Not Started',
+                                       sum(sofar)||'/'||sum(totalwork)||' ('||round(sum(sofar)*100/greatest(sum(totalwork),1),2)||'%)'))
                     FROM   gv$advisor_progress a
-                    WHERE  a.task_id=r.task_id) execution_prog,
+                    WHERE  a.task_id=r.task_id) "EXECUTION_END|PROG",
                    r.DESCRIPTION
             FROM   R
             LEFT   JOIN R1
@@ -428,21 +429,18 @@ BEGIN
                        EXECUTION_END,
                        STATUS,
                        &ver  REQUESTED_DOP REQ_DOP, ACTUAL_DOP ACT_DOP,
-                       /*
                        DECODE(
                         EXECUTION_TYPE,'CONVERT SQLSET',
                         EXTRACTVALUE(dbms_xmlgen.getxmltype(
-                             'SELECT --+leading(@sel$2 f@SEL$2 S@SEL$2 p@SEL$2) use_nl(@sel$2 t@sel$2)
-                                     COUNT(1) X
-                              FROM   DBA_SQLSET_STATEMENTS
+                             'SELECT STATEMENT_COUNT
+                              FROM   DBA_SQLSET
                               WHERE  sqlset_owner='''||sown||'''
-                              AND    sqlset_name='''||snam||'''
-                              AND    ('||fil||')'),'//X')+0,*/
-                       (SELECT COUNT(1) 
+                              AND    sqlset_name='''||snam||''''),'//X')+0,
+                       (SELECT /*+outline no_unnest*/ COUNT(1) 
                         FROM  DBA_ADVISOR_OBJECTS 
                         WHERE task_id=tid 
-                        AND   execution_name=a.execution_name) objs,
-                       (SELECT COUNT(1) 
+                        AND   execution_name=a.execution_name)) objs,
+                       (SELECT /*+outline no_unnest*/ COUNT(1) 
                         FROM  DBA_ADVISOR_FINDINGS
                         WHERE task_id=tid 
                         AND   execution_name=a.execution_name) finds,
