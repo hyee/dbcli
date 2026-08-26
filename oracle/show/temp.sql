@@ -64,7 +64,7 @@ LEFT JOIN (
     SELECT sql_id,extractvalue(column_value,'/ROW/SQL_TEXT') sql_text
     FROM   (select /*+no_merge*/ distinct sql_id from tmps) a,
            TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'{
-               SELECT substr(regexp_replace(REPLACE(sql_text, chr(0)),'\s+',' '),1,2000) sql_text
+               SELECT /*+CURSOR_SHARING_FORCE*/ substr(regexp_replace(REPLACE(sql_text, chr(0)),'\s+',' '),1,2000) sql_text
                FROM   gv$sqlstats
                WHERE  sql_id = '}'||a.sql_id||'''
                AND    rownum<2'),'/ROWSET/ROW'))) ) b

@@ -24,7 +24,7 @@ objs AS (
   SELECT id1,b.*
   FROM   (select /*+no_merge*/ distinct id1 from b) d,
          XMLTABLE('/ROWSET/ROW' 
-                passing(dbms_xmlgen.getxmltype('select owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) 
+                passing(dbms_xmlgen.getxmltype('select /*+CURSOR_SHARING_FORCE*/ owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) 
                 columns owner VARCHAR2(128),
                         object_name VARCHAR2(128), 
                         subobject_name VARCHAR2(128)) b

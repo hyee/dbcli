@@ -3,6 +3,7 @@
    
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
+    -env           : load sql optimizer env as well
     -exec          : execute SQL instead of explain only
     -obj           : generate relative object list
     -10046         : execute SQL and get 10046 trace file
@@ -15,6 +16,8 @@
         &trace: default={0} o={1} c={2}
         &load: default={--} o={} c={} 10046={}
         &lv  : default={medium} low={low} high={high}
+        &env : default={0} env={1}
+        @con : 12.1={,con_dbid} default={}
     --]]
 ]]*/
 set verify off feed off
@@ -36,6 +39,7 @@ DECLARE
     sig     INT;
     stmt    SYS.SQLSET_ROW;
     bw      RAW(2000);
+    env     RAW(2000);
     xplan   VARCHAR2(300);
     err     VARCHAR2(32767);
     trace   VARCHAR2(200);
@@ -111,39 +115,41 @@ BEGIN
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT /*+NO_MINITOR OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv
-        INTO own,sq_text,sig,bw,phv
+        SELECT /*+NO_MINITOR OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv,env
+        INTO own,sq_text,sig,bw,phv,env
         FROM (
             SELECT * FROM (
-                SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br,plan_hash_value phv
+                SELECT parsing_schema_name nam, sql_fulltext txt, force_matching_signature sig, bind_data br,plan_hash_value phv,optimizer_env env
                 FROM   gv$sql a
                 WHERE  sql_id = sq_id
                 AND    nvl(id, child_number) IN (child_number, plan_hash_value)
                 ORDER  BY nvl2(bind_data,1,2),last_active_time desc
             ) WHERE rownum<2
             UNION ALL
-            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value
+            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value,optimizer_env
             FROM   all_sqlset_statements a
             WHERE  sql_id = sq_id
             AND    nvl(id, sqlset_id) IN (sqlset_id, plan_hash_value)
             UNION ALL
-            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value
+            SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value,optimizer_env
             FROM   dba_hist_sqltext
             JOIN  (SELECT *
-                   FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data,plan_hash_value
+                   FROM   (SELECT dbid &con, sql_id, parsing_schema_name, force_matching_signature, bind_data,plan_hash_value,optimizer_env_hash_value
                            FROM   dba_hist_sqlstat
                            WHERE  sql_id = sq_id
                            AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
                            ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC,decode(instance_number,userenv('instance'),1,2))
                    WHERE  rownum < 2)
-            USING  (dbid, sql_id)
+            USING  (dbid, sql_id &con)
+            LEFT JOIN   dba_hist_optimizer_env
+            USING  (dbid,optimizer_env_hash_value &con)
             WHERE  sql_id = sq_id
             UNION ALL
-            SELECT username,to_clob(sql_text),force_matching_signature,null,sql_plan_hash_value
+            SELECT username,to_clob(sql_text),force_matching_signature,null,sql_plan_hash_value,null
             FROM   gv$sql_monitor
             WHERE  sql_id = sq_id
             AND    sql_text IS NOT NULL
-            AND    IS_FULL_SQLTEXT='Y'
+            AND    is_full_sqltext='Y'
             AND    nvl(id,sql_exec_id) in(sql_exec_id,sql_plan_hash_value)
             AND    rownum < 2
         ) WHERE ROWNUM<2;
@@ -162,6 +168,9 @@ BEGIN
     END IF;
 
     stmt := SYS.SQLSET_ROW(sq_id,sig,sq_text,null,bw,own,'SYS_XPLAN',round(dbms_random.value(1e9,1e10)));
+    IF &env=1 THEN
+        stmt.optimizer_env := env;
+    END IF;
 
     IF bitand(&opt,5)>0 THEN
         ctrl:='<parameter name="mode">safe</parameter>';
@@ -237,7 +246,7 @@ BEGIN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -b -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -ol -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
             DELETE SYS.PLAN_TABLE$ WHERE PLAN_ID=SIG;
 
@@ -316,7 +325,7 @@ BEGIN
 
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -b -p '||sig;
+            xplan := 'ora plan -ol -p '||sig;
         END IF;
     ELSE 
         sig := -1;

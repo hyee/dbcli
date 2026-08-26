@@ -123,7 +123,7 @@ BEGIN
     IF dbms_db_version.version > 11 and &style=1 THEN
     OPEN :actives --don't materialize sess or v$sql will not use index. Use dynamic SQL to support older version
     FOR q'{WITH sess AS
-         (SELECT /*+inline no_parallel */ 
+         (SELECT /*+inline no_parallel*/ 
                 (select /*+index(o) */ 
                         object_name 
                  from &CHECK_ACCESS_OBJ o 
@@ -221,7 +221,7 @@ BEGIN
                     nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
               FROM (select /*+no_merge*/ distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                        SELECT /*+opt_param('_optim_peek_user_binds','false') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000) index(a)*/ 
+                        SELECT /*+CURSOR_SHARING_FORCE opt_param('_optim_peek_user_binds','false') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000) index(a)*/ 
                               (select c.owner  ||'.' || c.object_name 
                                from &CHECK_ACCESS_OBJ c 
                                where program_id>0

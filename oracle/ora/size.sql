@@ -77,7 +77,7 @@ BEGIN
             FROM lobs t,sys.obj$ o,dba_users u,
                 TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
                    q'[SELECT * FROM (
-                        SELECT /*+opt_param('optimizer_index_cost_adj',1) outline_leaf use_nl(a b) push_pred(b)*/
+                        SELECT /*+CURSOR_SHARING_FORCE opt_param('optimizer_index_cost_adj',1) outline_leaf use_nl(a b) push_pred(b)*/
                                decode('&OPT3','null',a.object_type,b.segment_type) T, &OPT3 P,
                                SUM(b.bytes) C1, SUM(b.EXTENTS) C2,
                                COUNT(1) C3, AVG(b.initial_extent) C4, AVG(nvl(b.next_extent, 0)) C5,

@@ -4,11 +4,12 @@
     -sync              : run in sync mode, otherwise run with dbms_scheduler
     <schema>           : target run-as-user, can be a number which points to specific child_number/snap_id/sqlset_id/plan_hash_value
     <secs>             : maximum run time in seconds, default as 7200
-    -perf              : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix performance issue
-    -wrong             : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix wrong result
-    -compile           : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix compile error
-    -error             : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to fix runtime error/bad plan/bug
-    -alt               : use DBMS_SQLDIAG.CREATE_DIAGNOSIS_TASK instead to look for alternative plans
+    -perf              : use DBMS_SQLDIAG.PROBLEM_TYPE_PERFORMANCE instead to fix performance issue
+    -wrong             : use DBMS_SQLDIAG.PROBLEM_TYPE_WRONG_RESULTS instead to fix wrong result
+    -compile           : use DBMS_SQLDIAG.PROBLEM_TYPE_COMPILATION_ERROR instead to fix compile error
+    -error             : use DBMS_SQLDIAG.PROBLEM_TYPE_EXECUTION_ERROR instead to fix runtime error/bad plan/bug
+    -alt               : use DBMS_SQLDIAG.PROBLEM_TYPE_ALT_PLAN_GEN instead to look for alternative plans
+    -internal          : 23ai+ only. Use DBMS_SQLDIAG.PROBLEM_TYPE_INT_COMP_ERROR instead to fix internal compilation error(such as ora-600)
     -report            : 23ai+ only. Specify together with <sql_i> execute DBMS_SQLDIAG.REPORT_SQL to generate the HTML report of target SQL
     --[[
         &exe_mode: async={0}, sync={1}
@@ -22,6 +23,7 @@
             compile={SRA_}
             error={SRA_}
             alt={SRA_}
+            internal={SRA_}
             report={SQLHC_}
         }
         &func1: {
@@ -31,6 +33,7 @@
             compile={dbms_sqldiag.create_diagnosis_task(problem_type=>dbms_sqldiag.problem_type_compilation_error,}
             error={dbms_sqldiag.create_diagnosis_task(problem_type=>dbms_sqldiag.problem_type_execution_error,}
             alt={dbms_sqldiag.create_diagnosis_task(problem_type=>dbms_sqldiag.problem_type_alt_plan_gen,}
+            internal={dbms_sqldiag.create_diagnosis_task(problem_type=>dbms_sqldiag.problem_type_int_comp_error,}
         }
         &func2: {
             default={dbms_sqltune.execute_tuning_task}
@@ -39,6 +42,7 @@
             compile={dbms_sqldiag.execute_diagnosis_task}
             error={dbms_sqldiag.execute_diagnosis_task}
             alt={dbms_sqldiag.execute_diagnosis_task}
+            internal={dbms_sqldiag.execute_diagnosis_task}
         }
         &func3: {
             default={dbms_sqltune.report_tuning_task}
@@ -47,6 +51,7 @@
             compile={dbms_sqldiag.report_diagnosis_task}
             error={dbms_sqldiag.report_diagnosis_task}
             alt={dbms_sqldiag.report_diagnosis_task}
+            internal={dbms_sqldiag.report_diagnosis_task}
         }
     --]]
 ]]*/
@@ -228,11 +233,12 @@ BEGIN
                    r1.EXEC_TYPE ,
                    r1.EXEC_MODE,
                    decode(0+r1.PROBLEM,
-                          1,'PERFORMANCE',
-                          2,'WRONG RESULTS',
-                          3,'COMPILE ERROR',
-                          4,'EXECUTE ERROR',
-                          5,'EXPORT ALL PLANS',
+                          SYS.DBMS_SQLDIAG.PROBLEM_TYPE_PERFORMANCE,'PERFORMANCE',
+                          SYS.DBMS_SQLDIAG.PROBLEM_TYPE_WRONG_RESULTS,'WRONG RESULTS',
+                          SYS.DBMS_SQLDIAG.PROBLEM_TYPE_COMPILATION_ERROR,'COMPILE ERROR',
+                          SYS.DBMS_SQLDIAG.PROBLEM_TYPE_EXECUTION_ERROR,'EXECUTE ERROR',
+                          SYS.DBMS_SQLDIAG.PROBLEM_TYPE_ALT_PLAN_GEN,'EXPORT ALL PLANS',
+                          6,'INTERNAL ERROR',
                           'SQL TUNING') problem,
                    R.findings,
                    R.actions,

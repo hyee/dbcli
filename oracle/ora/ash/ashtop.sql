@@ -206,6 +206,6 @@ SELECT * FROM (
     FROM  ASH_V A
     GROUP BY &wall1 nvl2(qc_session_id,'PARALLEL','SERIAL'),a.program#,&ev,
              a.u_id,&fields
-    ORDER BY 1 desc nulls last,secs DESC nulls last,&fields
+    ORDER BY 1 desc nulls last,secs DESC nulls last,aas desc,&fields
 )
 WHERE ROWNUM <= 50;

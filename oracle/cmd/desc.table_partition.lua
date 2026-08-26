@@ -130,7 +130,7 @@ return {[[
                            I.*,I.INDEX_OWNER OWNER,nvl(c.LOCALITY,'GLOBAL') LOCALITY,
                            nullif(SUBPARTITIONING_TYPE,'NONE')||EXTRACTVALUE(dbms_xmlgen.getxmltype(q'[
                                     SELECT MAX('(' || TRIM(',' FROM sys_connect_by_path(column_name, ',')) || ')') V
-                                    FROM   (SELECT /*+no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i1.owner|| ''' and NAME = '''||i.index_name||q'[')
+                                    FROM   (SELECT /*+CURSOR_SHARING_FORCE no_merge*/* FROM all_subpart_key_columns WHERE owner=']'||i1.owner|| ''' and NAME = '''||i.index_name||q'[')
                                     START  WITH column_position = 1
                                     CONNECT BY PRIOR column_position = column_position - 1]'),'//V') SUBPART_BY
                     FROM   ALL_IND_PARTITIONS I,ALL_PART_INDEXES C,
