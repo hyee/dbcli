@@ -4,6 +4,9 @@
         @@NAME                                          : show all SPA tasks
         @@NAME -f"<filter>"                             : filter on dba_advisor_tasks
         @@NAME <task>                                   : show details of target task
+        @@name -sql  <sql_id>                           : Show sql execution stats
+        @@name -sign <sql_id>                           : Show sql execution stats relative to the same force_matching_signature
+        @@name -plan <plan_hash_value>                  : Show sql execution stats relative to target plan hash value
         @@NAME <task> create <sqlset> [-f"<filter>"]    : create SPA task from sqlset
         @@NAME <task> alter <param_name> [<param_value>]: alter task parameter
         @@NAME <task> drop                              : drop SPA task
@@ -19,6 +22,7 @@
                                                             -diff     : order by abs(diff)
                                                             -regress  : order by regression
                                                             -improve  : order by improvement
+                                                            -phv      : compare by plan_hash_value
                                                             <keyword> : filter with specific keyword
                                                             htm|html  : generate HTML report for target comparison analysis report
                                                             txt|text  : generate TEXT report for target comparison analysis report
@@ -32,15 +36,60 @@
         @ver   : 18.1={} default={--}
         @attr17: 12.1={attr17} default={null}
         @attr11: 12.1={attr11} default={null}
-        &ord1  : default={"Weight"} diff={greatest(diff,1/nullif(diff,0))} regress={diff} improve={1/nullif(diff,0)}
+        &ord1  : {
+            weight={abs(attr9-attr8)*attr10*log(10,greatest(diff,1/diff))} 
+            diff={greatest(diff,1/nullif(diff,0))} 
+            regress={sign(attr9-attr8)*abs(attr9-attr8)*attr10*diff} 
+            improve={sign(attr8-attr9)*abs(attr9-attr8)*attr10/diff}
+        }
+        &sq    : default={0} sql={1} plan={2} sign={3}
+        &phv   : default={0} phv={1}
+        &pfilter : default={1=1} regress={s.avg_ela*1.2<a.avg_ela} improve={a.avg_ela*1.2<s.avg_ela}
+        &qb    : {
+            default={
+                SELECT sq sq 
+                FROM   dual
+                UNION
+                SELECT attr1
+                FROM   dba_advisor_objects
+                WHERE  sid=0
+                AND    attr1 IS NOT NULL
+                AND    &attr17=sq
+                AND    type='SQL'}
+            plan={
+                SELECT attr1 sq
+                FROM   dba_advisor_objects
+                WHERE  attr1 IS NOT NULL
+                AND    type='SQL'
+                AND    attr5=sq
+                UNION
+                SELECT sql_id
+                FROM   dba_advisor_sqlstats
+                WHERE  plan_hash_value=sq
+            }
+            sig={
+                SELECT sq sq 
+                FROM   dual
+                UNION
+                SELECT a.sql_id
+                FROM   dba_sqlset_statements a,
+                       dba_sqlset_statements b
+                WHERE  b.sql_id=sq
+                AND    a.force_matching_signature=b.force_matching_signature
+                AND    a.sqlset_id=b.sqlset_id
+                AND    a.sqlset_owner=b.sqlset_owner
+                AND    a.sqlset_name=b.sqlset_name
+            }
+        }
         &sync  : default={0} sync={1}
     --]]--
 ]]*/
 
 set verify off feed off
-col prev_cost,post_cost,sort_value for K0
-col weight,cpu for pct2
-col ela,avg_ela for usmhd2
+col weight,cpu,io for pct3
+col ela,avg_ela,prev_cost,post_cost,parse,avg|ela,src_avg,spa_avg for usmhd2
+col buffs,exec,avg|fetches,avg|rows#,avg|buffs,avg|reads,direct|writes,read|req,write|req for tmb2
+col read|bytes,write|bytes,inter|bytes for kmg2
 var m1 VARCHAR2(300)
 var m2 VARCHAR2(300)
 var c1 refcursor
@@ -53,6 +102,7 @@ DECLARE
     rs         CLOB;
     tsk        VARCHAR2(128) := replace(upper(:v1),'"');
     op         VARCHAR2(128) := upper(:v2);
+    sq         VARCHAR2(13)  := CASE WHEN &sq=2 THEN  regexp_substr(:v1,'^\d+$') ELSE regexp_substr(:v1,'^.{13}$') END;
     v3         VARCHAR2(128) := replace(upper(:v3),'"');
     v4         VARCHAR2(128) := replace(upper(:v4),'"');
     v5         VARCHAR2(128) := :v5;
@@ -163,6 +213,79 @@ DECLARE
     EXCEPTION WHEN OTHERS THEN NULL;
     END;
 BEGIN
+    IF &sq > 0 THEN
+        IF sq IS NULL THEN
+            raise_application_error(-20001,'Please input target SQL Id');
+        END IF;
+
+        SELECT COUNT(1)
+        INTO   sid
+        FROM   DBA_ADVISOR_SQLSTATS
+        WHERE  sql_id = sq
+        AND    rownum < 2;
+
+        OPEN c1 FOR
+            WITH s AS(
+                SELECT /*+MATERIALIZE CARDINALITY(1)*/ *
+                FROM (&qb)
+            )
+            SELECT 'SQLSET' SOURCE_TYPE,
+                   SQLSET_OWNER||'.'||SQLSET_NAME SOURCE_NAME,
+                   SQL_ID ACT_SQL,
+                   PLAN_HASH_VALUE PLAN_HASH,
+                   EXECUTIONS EXEC,
+                   ELAPSED_TIME ELA,
+                   ROUND(CPU_TIME/NULLIF(ELAPSED_TIME,0),4) "CPU",
+                   NULL IO,
+                   NULL PARSE,
+                   '|' "|",
+                   ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2) "AVG|ELA",
+                   ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2) "AVG|BUFFS",
+                   ROUND(DISK_READS/GREATEST(EXECUTIONS,1),2) "AVG|READS",
+                   ROUND(DIRECT_WRITES/GREATEST(EXECUTIONS,1),2) "Direct|Writes",
+                   ROUND(FETCHES/GREATEST(EXECUTIONS,1),2) "AVG|FETCHES",
+                   ROUND(ROWS_PROCESSED/GREATEST(EXECUTIONS,1),2) "AVG|ROWS#",
+                   NULL "READ|REQ",
+                   NULL "WRITE|REQ",
+                   NULL "READ|BYTES",
+                   NULL "WRITE|BYTES",
+                   NULL "INTER|BYTES"
+            FROM   s,dba_sqlset_statements
+            WHERE  sql_id = s.sq
+            UNION ALL
+            SELECT 'SPA EXEC' SOURCE_TYPE,
+                   t.TASK_ID||'->'||t.EXECUTION_NAME SOURCE_NAME,
+                   NVL(&ATTR17,SQL_ID),
+                   PLAN_HASH_VALUE PLAN_HASH,
+                   NVL(0+o.attr10,TESTEXEC_TOTAL_EXECS) EXEC,
+                   ELAPSED_TIME*NVL(0+o.attr10,TESTEXEC_TOTAL_EXECS)/greatest(EXECUTIONS,1) ELA,
+                   ROUND(CPU_TIME/NULLIF(ELAPSED_TIME,0),4) CPU,
+                   ROUND(USER_IO_TIME/NULLIF(ELAPSED_TIME,0),4) IO,
+                   PARSE_TIME PARSE,
+                    '|' "|",
+                   ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2) "AVG|ELA",
+                   ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2) BUFFS,
+                   ROUND(DISK_READS/GREATEST(EXECUTIONS,1),2) READS,
+                   ROUND(DIRECT_WRITES/GREATEST(EXECUTIONS,1),2) DXWRITES,
+                   ROUND(FETCHES/GREATEST(EXECUTIONS,1),2),
+                   ROUND(ROWS_PROCESSED/GREATEST(EXECUTIONS,1),2) ROWS_,
+                   ROUND(PHYSICAL_READ_REQUESTS/GREATEST(EXECUTIONS,1),2) READ_REQ,
+                   ROUND(PHYSICAL_WRITE_REQUESTS/GREATEST(EXECUTIONS,1),2) WRITE_REQ,
+                   ROUND(PHYSICAL_READ_BYTES/GREATEST(EXECUTIONS,1),2) READ_BYTES,
+                   ROUND(PHYSICAL_WRITE_BYTES/GREATEST(EXECUTIONS,1),2) WRITE_BYTES,
+                   ROUND(IO_INTERCONNECT_BYTES/GREATEST(EXECUTIONS,1),2) INTER_BYTES
+            FROM   s,
+                   DBA_ADVISOR_SQLSTATS T,
+                   DBA_ADVISOR_OBJECTS  O
+            WHERE  t.sql_id = s.sq
+            AND    t.task_id=o.task_id
+            AND    t.execution_name=o.execution_name
+            AND    t.object_id=o.object_id
+            AND    t.sql_id=o.attr1
+            AND    o.type='SQL';
+        GOTO END_BLOCK;
+    END IF;
+
     tsk := nullif(tsk,''||tid);
     dbms_output.enable(null);
     IF tid IS NOT NULL OR tsk IS NOT NULL THEN
@@ -291,7 +414,9 @@ BEGIN
                MAX(attr3),
                MAX(attr1),
                nvl(MAX(fil),'1=1'),
-               max(sq_id),max(sq_nid),max(sq_txt)
+               max(sq_id),
+               max(sq_nid),
+               max(sq_txt)
         INTO   sown,snam,fil,sq_id,sq_nid,sq_txt
         FROM (
             SELECT decode(type,'SQLSET',attr3) attr3,
@@ -305,19 +430,19 @@ BEGIN
             AND    EXECUTION_NAME IS NULL
             AND    TYPE IN('SQLSET','SQL')
             UNION ALL
-            SELECT MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value)),
-                   MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)),
-                   MAX(DECODE(parameter_name, 'BASIC_FILTER', parameter_value)),
+            SELECT MAX(DECODE(parameter_name,'SQLSET', owner, 'SQLSET_OWNER', parameter_value)),
+                   MAX(DECODE(parameter_name,'SQLSET', parameter_value, 'SQLSET_NAME', parameter_value)),
+                   MAX(DECODE(parameter_name,'BASIC_FILTER', parameter_value)),
                    null,null,null
             FROM   dba_advisor_exec_parameters
             JOIN   dba_advisor_executions
-            USING  (task_id,task_name,execution_name)
+            USING  (owner,task_id,task_name,execution_name,owner)
             WHERE  TASK_ID = tid
             AND    execution_id=eid
             AND    parameter_value!='UNUSED'
             UNION ALL
-            SELECT MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value)),
-                   MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)),
+            SELECT MAX(DECODE(parameter_name,'SQLSET', owner, 'SQLSET_OWNER', parameter_value)),
+                   MAX(DECODE(parameter_name,'SQLSET', parameter_value, 'SQLSET_NAME', parameter_value)),
                    MAX(DECODE(parameter_name, 'BASIC_FILTER', parameter_value)),
                    null,null,null
             FROM   dba_advisor_parameters
@@ -331,8 +456,8 @@ BEGIN
             WITH r AS
              (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ 
                      A.*, 
-                     (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id) execs,
-                     (SELECT /*+no_unnest outline*/ COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id) findings,
+                     (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id and owner=a.owner) execs,
+                     (SELECT /*+no_unnest outline*/ COUNT(1) FROM dba_advisor_findings WHERE task_id = a.task_id and owner=a.owner) findings,
                      (SELECT decode(MAX(y.type),
                                 'SQL'   ,MAX(y.attr1||' -> '|| nvl(sqln,y.attr3)),
                                 'SQLSET',MAX(nullif(y.attr3||'.'||y.attr1,'.')),
@@ -348,8 +473,9 @@ BEGIN
                              FROM   dba_advisor_objects y 
                              WHERE  type in('SQLSET','SQL') 
                              AND    execution_name IS NULL) y
-                      USING (task_id)
-                      WHERE  task_id = a.task_id) SQLSET
+                      USING (owner,task_id)
+                      WHERE  task_id = a.task_id
+                      AND    owner = a.owner) SQLSET
               FROM   (SELECT task_id, advisor_name, owner, task_name, execution_start, execution_end, status,DESCRIPTION
                       FROM   dba_advisor_tasks a
                       WHERE  (&FILTER)
@@ -364,9 +490,9 @@ BEGIN
                      MAX(DECODE(parameter_name, 'CELL_SIMULATION_ENABLED', parameter_value)) SIM_EXADATA,
                      MAX(DECODE(parameter_name, 'LOCAL_TIME_LIMIT', parameter_value)) SQL_LIMIT,
                      NULLIF(MAX(DECODE(parameter_name, 'SQLSET_OWNER', parameter_value))||'.'||MAX(DECODE(parameter_name, 'SQLSET_NAME', parameter_value)),'.') SQLSET
-              FROM   (SELECT TASK_ID FROM R) R
+              FROM   (SELECT OWNER,TASK_ID FROM R) R
               JOIN   DBA_ADVISOR_PARAMETERS
-              USING  (TASK_ID)
+              USING  (OWNER,TASK_ID)
               GROUP  BY task_id)
             SELECT R.TASK_ID,
                    R.OWNER,
@@ -376,7 +502,7 @@ BEGIN
                    R1.FULLDML        "EXECUTE|FULL DML",
                    R1.COMP           "COMPARE|RESULT",
                    R1.SIM_EXADATA    "SIMULATE|EXDATA",
-                   R1.SQL_LIMIT      "Per-SQL|LIMIT",
+                   R1.SQL_LIMIT      "SQL|TIMEOUT",
                    r.execs,
                    R.findings,
                    r.status,
@@ -403,12 +529,11 @@ BEGIN
                    IS_OUTPUT,
                    IS_MODIFIABLE_ANYTIME IS_MDF,
                    DESCRIPTION
-            FROM   dba_advisor_def_parameters a
+            FROM   (SELECT * FROM dba_advisor_def_parameters WHERE ADVISOR_NAME = 'SQL Performance Analyzer') a
             FULL   JOIN (SELECT PARAMETER_NAME, PARAMETER_VALUE
                          FROM   DBA_ADVISOR_PARAMETERS
                          WHERE  TASK_ID = tid) b
             USING  (PARAMETER_NAME)
-            WHERE  A.ADVISOR_NAME = 'SQL Performance Analyzer'
             UNION ALL
             SELECT TYPE,
                    ATTR1,
@@ -432,12 +557,13 @@ BEGIN
                        (SELECT parameter_value
                         FROM   DBA_ADVISOR_EXEC_PARAMETERS B
                         WHERE  B.task_id=tid
+                        AND    B.owner=a.owner
                         AND    B.execution_name=a.execution_name
-                        AND    B.parameter_name='LOCAL_TIME_LIMIT') "Per-SQL|LIMIT", 
-                      
+                        AND    B.parameter_name='LOCAL_TIME_LIMIT') "SQL|TIMEOUT", 
                        (SELECT /*+outline no_unnest*/ COUNT(1) 
                         FROM  DBA_ADVISOR_FINDINGS
-                        WHERE task_id=tid 
+                        WHERE task_id=tid
+                        AND   owner=a.owner
                         AND   execution_name=a.execution_name) finds,
                        (SELECT CASE WHEN A.EXECUTION_TYPE LIKE 'COMPARE%' THEN
                                    MAX(DECODE(n,'COMPARISON_METRIC',v||': ')) ||
@@ -447,7 +573,8 @@ BEGIN
                                    'PLAN_FILTER: '||MAX(DECODE(n,'PLAN_FILTER',v))
                                END
                         FROM  (SELECT TASK_ID,execution_name,parameter_name n,parameter_value v from DBA_ADVISOR_EXEC_PARAMETERS) B 
-                        WHERE task_id=tid 
+                        WHERE task_id=tid
+                        AND   owner=a.owner
                         AND   execution_name=a.execution_name
                         ) ATTR1,
                        ERROR_MESSAGE
@@ -468,6 +595,7 @@ BEGIN
         FROM   dba_advisor_exec_parameters A,DBA_ADVISOR_EXECUTIONS b
         WHERE  a.task_id = tid
         AND    b.task_id = tid
+        AND    a.owner=b.owner
         AND    a.EXECUTION_NAME=b.EXECUTION_NAME
         AND    b.EXECUTION_ID=eid;
 
@@ -481,13 +609,12 @@ BEGIN
                    IS_OUTPUT,
                    IS_MODIFIABLE_ANYTIME IS_MDF,
                    DESCRIPTION
-            FROM   dba_advisor_def_parameters a
+            FROM   (SELECT * FROM dba_advisor_def_parameters WHERE ADVISOR_NAME = 'SQL Performance Analyzer') a
             FULL   JOIN (SELECT PARAMETER_NAME, PARAMETER_VALUE
                          FROM   dba_advisor_exec_parameters
                          WHERE  TASK_ID = tid
                          AND    EXECUTION_NAME=nam) b
             USING  (PARAMETER_NAME)
-            WHERE  A.ADVISOR_NAME = 'SQL Performance Analyzer'
             ORDER  BY PARAMETER_NAME;
 
         m2 := 'TYPE: ['||typ||']      SORT: ['||ord||']      TOP: [50]';
@@ -496,44 +623,68 @@ BEGIN
                 WITH R AS(
                     SELECT rownum "#",a.*
                     FROM (
-                        SELECT 
-                               f.*,
+                        SELECT f.*,
                                &attr17 sqln,
-                               round(f.attr9/nullif(f.attr8,0),2) diff,
-                               round(ratio_to_report(abs(attr9-attr8)*attr10) over(),8) "Weight"
-                        FROM   dba_advisor_objects f
-                        WHERE  TASK_ID = tid
-                        AND    EXECUTION_NAME=nam
-                        AND    ATTR1 IS NOT NULL
-                        AND   (substr(key,1,1)!='%' OR upper(attr1||'~'||'~'||&attr17||'~'||attr5||'~'||&attr11) LIKE key)
-                        ORDER BY &ord1 DESC NULLS LAST) a
+                               attr5 prev_phv,
+                               round(ratio_to_report(&ord1) over(),8) "Weight"
+                        FROM (
+                            SELECT f.*,nullif(round(f.attr9/nullif(f.attr8,0),8),0) diff
+                            FROM   dba_advisor_objects f
+                            WHERE  TASK_ID = tid
+                            AND    EXECUTION_NAME=nam
+                            AND    TYPE='SQL'
+                            AND    ATTR1 IS NOT NULL
+                            AND   (substr(key,1,1)!='%' OR upper(attr1||'@'||'@'||&attr17||'@'||attr5||'@'||&attr11) LIKE key)
+                        ) f 
+                        WHERE &ord1>0
+                        ORDER BY "Weight" DESC NULLS LAST) a
                     WHERE rownum<=50)
-                SELECT /*+outline_leaf leading(f) use_nl(p1 p2 s)
-                          push_pred(p1) push_pred(p2) push_pred(s) use_hash(pre post)
+                SELECT /*+outline_leaf leading(f) use_nl(pre post s)
+                          push_pred(pre) push_pred(post) push_pred(s)
                           */
                        "#",  
                        attr1 org_sql,
                        coalesce(pre.sqln,sq_nid,attr1) prev_sql,
-                       nvl(p1.phv,''||f.attr5) prev_phv,
+                       nvl(pre.phv,''||f.attr5) prev_phv,
                        coalesce(post.sqln,sq_nid,attr1) post_sql,
-                       nvl(p2.phv,''||f.attr5) post_phv,
+                       nvl(post.phv,''||f.attr5) post_phv,
                        '|' "|",
                        f.attr10 execs,
                        f.attr8 prev_cost,
                        f.attr9 post_cost,
-                       f.diff,
+                       round(greatest(f.diff,1/f.diff)*sign(f.attr9-f.attr8),3) diff,
                        f."Weight",
                        '|' "*",
                        nvl(sq_txt,substr(sql_text,1,200)) sql_text
                 FROM r f
-                LEFT JOIN (SELECT R.*,&attr17 sqln FROM dba_advisor_objects r WHERE TASK_ID = tid AND EXECUTION_NAME=pre) PRE USING(ATTR1)
-                LEFT JOIN (SELECT R.*,&attr17 sqln FROM dba_advisor_objects r WHERE TASK_ID = tid AND EXECUTION_NAME=post) POST USING(ATTR1)
-                LEFT JOIN (SELECT ''||attr1 attr1,case when nvl(plan_hash_value,0)=0 and elapsed_time is null then 'ERROR' else ''||plan_hash_value end phv FROM dba_advisor_sqlstats WHERE TASK_ID = tid AND EXECUTION_NAME=pre) p1 USING(ATTR1)
-                LEFT JOIN (SELECT ''||attr1 attr1,case when nvl(plan_hash_value,0)=0 and elapsed_time is null then 'ERROR' else ''||plan_hash_value end phv FROM dba_advisor_sqlstats WHERE TASK_ID = tid AND EXECUTION_NAME=post) p2 USING(ATTR1)
+                LEFT JOIN (SELECT o.*,&attr17 sqln,
+                                  case when nvl(s.plan_hash_value,0)=0 and s.elapsed_time is null then 'ERROR' else ''||s.plan_hash_value end phv
+                           FROM   dba_advisor_objects o,
+                                  dba_advisor_sqlstats s
+                           WHERE  o.TASK_ID = tid 
+                           AND    o.EXECUTION_NAME=pre
+                           AND    o.type='SQL'
+                           AND    s.TASK_ID = tid
+                           AND    s.EXECUTION_NAME=pre
+                           AND    o.object_id=s.object_id
+                           AND    o.attr1=s.sql_id
+                           ) PRE USING(OWNER,ATTR1)
+                LEFT JOIN (SELECT o.*,&attr17 sqln,
+                                  case when nvl(s.plan_hash_value,0)=0 and s.elapsed_time is null then 'ERROR' else ''||s.plan_hash_value end phv
+                           FROM   dba_advisor_objects o,
+                                  dba_advisor_sqlstats s
+                           WHERE  o.TASK_ID = tid 
+                           AND    o.EXECUTION_NAME=post
+                           AND    o.type='SQL'
+                           AND    s.TASK_ID = tid
+                           AND    s.EXECUTION_NAME=post
+                           AND    o.object_id=s.object_id
+                           AND    o.attr1=s.sql_id
+                           ) POST USING(OWNER,ATTR1)
                 LEFT JOIN (SELECT DISTINCT
-                                 sql_id attr1,
+                                 s.sql_id attr1,
                                  trim(regexp_replace(to_char(substr(sql_text,1,2500)),'\s+',' ')) sql_text
-                           FROM  DBA_SQLSET_STATEMENTS 
+                           FROM  DBA_SQLSET_STATEMENTS s
                            WHERE sqlset_owner=sown
                            AND   sqlset_name=snam) s USING(attr1)
                 ORDER BY "#";
@@ -547,7 +698,7 @@ BEGIN
                          '|' "|",
                          executions execs,
                          elapsed_time ela,
-                         elapsed_time/nullif(executions,0) avg_ela,
+                         elapsed_time/GREATEST(EXECUTIONS,1) avg_ela,
                          round(cpu_time/nullif(elapsed_time,0),4) cpu,
                          '|' "*",
                          trim(regexp_replace(to_char(substr(sql_text,1,200)),'\s+',' ')) sql_text
@@ -559,6 +710,64 @@ BEGIN
                 ) WHERE ROWNUM<=50','@ord@',ord);
             --dbms_output.put_line(stmt);
             OPEN c2 FOR stmt USING sown,snam,key,key,key;
+        ELSIF typ = 'TEST EXECUTE' and &phv=1 THEN
+            OPEN c2 FOR
+                SELECT /*+outline leading(a) use_nl(s) push_pred(s)*/
+                       a.*,
+                       '|' "|",
+                       s.s.sql_text
+                FROM (
+                    SELECT /*+outline_leaf use_hash(a s) parallel(8)*/
+                           ROUND(ratio_to_report(LOG(2,GREATEST(a.avg_ela/s.avg_ela,s.avg_ela/a.avg_ela))*ABS(a.avg_ela-s.avg_ela)*a.exec) OVER(),5) "Weight",
+                           s.signatures,
+                           s.sqls,
+                           s.top_sql，
+                           phv src_phv,
+                           a.phv_n spa_phv,
+                           '|' "|",
+                           a.exec,
+                           a.avg_ela*a.exec ela,
+                           ROUND(s.avg_ela,3) src_avg,
+                           ROUND(a.avg_ela,3) spa_avg,
+                           ROUND(GREATEST(a.avg_ela/s.avg_ela,s.avg_ela/a.avg_ela)*sign(a.avg_ela-s.avg_ela),2) diff
+                    FROM   (SELECT decode(a.attr5,'0',a.attr1,a.attr5) phv,
+                                   b.plan_hash_value phv_n,
+                                   SUM(attr10) exec,
+                                   SUM(b.elapsed_time) / SUM(GREATEST(b.executions, 1)) avg_ela
+                            FROM   dba_advisor_objects a, dba_advisor_sqlstats b
+                            WHERE  a.TYPE = 'SQL'
+                            AND    a.object_id = b.object_id
+                            AND    a.attr1 = b.sql_id
+                            AND    a.task_id = tid
+                            AND    b.task_id = tid
+                            AND    a.execution_name=nam
+                            AND    b.execution_name=nam
+                            AND  （b.plan_hash_value=0 OR ''||b.plan_hash_value!=a.attr5)
+                            AND    a.attr5 is not null
+                            GROUP  BY decode(a.attr5,'0',a.attr1,a.attr5),b.plan_hash_value) a
+                    JOIN   (SELECT --+outline leading(a.f a.s a.p)
+                                   decode(plan_hash_value,0,sql_id,''||plan_hash_value) phv, 
+                                   SUM(elapsed_time) / SUM(executions) avg_ela, SUM(executions) EXEC,
+                                   MAX(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time) top_sql,
+                                   COUNT(DISTINCT sql_id) sqls,
+                                   COUNT(DISTINCT force_matching_signature) signatures
+                            FROM   dba_sqlset_statements a
+                            WHERE  executions > 0
+                            AND    sqlset_owner=sown 
+                            AND    sqlset_name=snam
+                            GROUP  BY decode(plan_hash_value,0,sql_id,''||plan_hash_value)) s
+                    USING  (phv)
+                    WHERE &pfilter
+                    ORDER BY "Weight" DESC NULLS LAST) a
+                LEFT JOIN (SELECT DISTINCT
+                                 s.sql_id,
+                                 trim(regexp_replace(to_char(substr(sql_text,1,2500)),'\s+',' ')) sql_text
+                           FROM  DBA_SQLSET_STATEMENTS s
+                           WHERE sqlset_owner=sown
+                           AND   sqlset_name=snam) s
+                ON(a.top_sql=s.sql_id)
+                WHERE rownum<=50
+                ORDER BY "Weight" DESC NULLS LAST;
         ELSE
             ord := CASE WHEN typ like 'EXPLAIN%' THEN 'ela' ELSE ord end;
             OPEN c2 FOR replace(q'~
@@ -568,25 +777,28 @@ BEGIN
                          sql_id org_sql_id,
                          phv org_plan,
                          coalesce(sqln,:sq_id,sql_id) act_sql_id,
-                         plan_hash_value plan_hash,
+                         b.plan_hash_value plan_hash,
                          '|' "|",
-                         decode(EXECUTION_TYPE,'EXPLAIN PLAN',execs,executions) execs,
-                         decode(EXECUTION_TYPE,'EXPLAIN PLAN',ela,elapsed_time) ela,
-                         decode(EXECUTION_TYPE,'EXPLAIN PLAN',ela/nullif(execs,0),elapsed_time/nullif(executions,0)) avg_ela,
-                         round(decode(EXECUTION_TYPE,'EXPLAIN PLAN',cpu/nullif(ela,0),cpu_time/nullif(elapsed_time,0)),4) cpu,
+                         decode(EXECUTION_TYPE,'EXPLAIN PLAN',execs,0+a.attr10) execs,
+                         decode(EXECUTION_TYPE,'EXPLAIN PLAN',ela,b.elapsed_time*a.attr10/greatest(b.executions,1)) ela,
+                         round(decode(EXECUTION_TYPE,'EXPLAIN PLAN',ela/nullif(execs,0),b.elapsed_time/greatest(b.executions,1)),2) avg_ela,
+                         round(decode(EXECUTION_TYPE,'EXPLAIN PLAN',cpu/nullif(ela,0),b.cpu_time/nullif(b.elapsed_time,0)),5) cpu,
                          '|' "*",
                          nvl(:sq_txt,trim(regexp_replace(to_char(substr(sql_text,1,200)),'\s+',' '))) sql_text
                     FROM  (
-                        SELECT a.*,attr1 sql_id,&attr17 sqln 
-                        FROM DBA_ADVISOR_OBJECTS A
+                        SELECT a.*,attr1 sql_id,attr5 phv,&attr17 sqln 
+                        FROM  DBA_ADVISOR_OBJECTS A
                         WHERE task_id=:tid
-                        AND   EXECUTION_NAME=:nam) A
-                    RIGHT JOIN (
+                        AND   EXECUTION_NAME=:nam
+                        AND   type='SQL'
+                        AND  (substr(:1,1,1)!='%' OR upper(attr1||'@'||'@'||&attr17||'@'||attr5||'@'||&attr11) like :1)
+                        ) A
+                    LEFT JOIN (
                         SELECT * 
                         FROM   DBA_ADVISOR_SQLSTATS
                         WHERE  task_id=:tid
                         AND    EXECUTION_NAME=:nam)  B
-                    USING (sql_id)
+                    USING (sql_id,object_id)
                     LEFT JOIN (
                         SELECT * 
                         FROM  (SELECT /*+outline leading(a.f a.s a.p)*/
@@ -596,13 +808,12 @@ BEGIN
                                       executions execs,
                                       cpu_time cpu,
                                       sql_text,
-                                      ROW_NUMBER() OVER(PARTITION BY sql_id order by elapsed_time desc) seq
+                                      ROW_NUMBER() OVER(PARTITION BY sql_id,plan_hash_value order by elapsed_time desc) seq
                                FROM   DBA_SQLSET_STATEMENTS  
                                WHERE  sqlset_owner=:sown AND sqlset_name=:snam)
-                        WHERE seq=1) s USING(sql_id)
-                    WHERE (substr(:1,1,1)!='%' OR upper(sql_id||'/'||sqln||'/'||phv||'/'||plan_hash_value) like :1 OR upper(sql_text) like :1)
+                        WHERE seq=1) s USING(sql_id,phv)
                     ORDER BY "Weight" DESC NULLS LAST
-                ) WHERE ROWNUM<=50~','@ord@',ord) USING sq_nid,sq_txt,tid,nam,tid,nam,sown,snam,key,key,key;
+                ) WHERE ROWNUM<=50~','@ord@',ord) USING sq_nid,sq_txt,tid,nam,key,key,tid,nam,sown,snam;
         END IF;
 
         IF KEY IN('HTML','HTM','TEXT','ACTIVE') THEN
@@ -619,6 +830,8 @@ BEGIN
             report_end;
         END IF;
     END IF;
+
+    <<END_BLOCK>>
     :c1 := c1;
     :c2 := c2;
     :fn := fname;

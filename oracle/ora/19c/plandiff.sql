@@ -84,25 +84,32 @@ BEGIN
         raise_application_error(-20001, 'Please input the plan hash values in number format!');
     END IF;
 
-    FOR r IN (SELECT 1 flag, sql_id, plan_hash_value phv, SYS.CURSOR_CACHE_OBJECT(sql_id, child_number) obj
-              FROM   gv$sql_plan
+    FOR r IN (
+        SELECT * FROM (
+              SELECT 1 flag, sql_id, plan_hash_value phv, SYS.CURSOR_CACHE_OBJECT(sql_id, child_number) obj,
+                     row_number() over(partition by plan_hash_value order by elapsed_time desc) rnk
+              FROM   v$sql_plan
               WHERE  plan_hash_value IN (phv1, phv2)
               AND    id = 1
               UNION ALL
-              SELECT 2, sql_id, plan_hash_value, SYS.AWR_OBJECT(sql_id, dbid,con_dbid, plan_hash_value) obj
+              SELECT 2, sql_id, plan_hash_value, SYS.AWR_OBJECT(sql_id, dbid,con_dbid, plan_hash_value) obj,
+                     row_number() over(partition by plan_hash_value order by timestamp desc) rnk
               FROM   dba_hist_sql_plan
               WHERE  plan_hash_value IN (phv1, phv2)
               AND    id = 1
               UNION ALL
-              SELECT 3, sql_id, plan_hash_value, SYS.SQLSET_OBJECT(sqlset_owner, sqlset_name, sql_id, plan_hash_value) obj
+              SELECT 3, sql_id, plan_hash_value, SYS.SQLSET_OBJECT(sqlset_owner, sqlset_name, sql_id, plan_hash_value) obj,
+                     row_number() over(partition by plan_hash_value order by timestamp desc) rnk
               FROM   dba_sqlset_plans
               WHERE  plan_hash_value IN (phv1, phv2)
               AND    id = 1
               UNION ALL
-              SELECT 4, sql_id, plan_hash_value, SYS.SQLSET_OBJECT(task_name, execution_name, sql_id, plan_id) obj
+              SELECT 4, sql_id, plan_hash_value, SYS.ADVISOR_OBJECT(task_name, execution_name, sql_id, plan_id) obj,
+                     row_number() over(partition by plan_hash_value order by timestamp desc) rnk
               FROM   dba_advisor_sqlplans
               WHERE  plan_hash_value IN (phv1, phv2)
-              AND    id = 1) LOOP
+              AND    id = 1)
+        WHERE rnk=1) LOOP
         IF r.phv = phv1 AND src IS NULL THEN
             src := r.obj;
         ELSIF r.phv = phv2 AND target IS NULL THEN

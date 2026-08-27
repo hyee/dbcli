@@ -5,6 +5,7 @@
     -c [-low|-high]: generate compiler trace(10053)
     -env           : load sql optimizer env as well
     -exec          : execute SQL instead of explain only
+    -monitor       : together with -exec, add hint "monitor"
     -obj           : generate relative object list
     -10046         : execute SQL and get 10046 trace file
     -nobase        : bypass possible SQL Plan Baseline
@@ -17,6 +18,7 @@
         &load: default={--} o={} c={} 10046={}
         &lv  : default={medium} low={low} high={high}
         &env : default={0} env={1}
+        &mon : default={0} monitor={1}
         @con : 12.1={,con_dbid} default={}
     --]]
 ]]*/
@@ -168,11 +170,9 @@ BEGIN
     END IF;
 
     stmt := SYS.SQLSET_ROW(sq_id,sig,sq_text,null,bw,own,'SYS_XPLAN',round(dbms_random.value(1e9,1e10)));
-    IF &env=1 THEN
+    IF &env=1 and &mon=1 THEN
         stmt.optimizer_env := env;
-    END IF;
-
-    IF bitand(&opt,5)>0 THEN
+    ELSIF bitand(&opt,5)>0 THEN
         ctrl:='<parameter name="mode">safe</parameter>';
     END IF;
 
@@ -196,7 +196,15 @@ BEGIN
     --SELECT value into siz
     --FROM   v$parameter where name='sort_area_size';
     --execute immediate 'alter session set sort_area_size='||round(65536+1024*1024*512*dbms_random.value);
-    --ctrl := q'~<hint_data><hint><![CDATA[OPTIMIZER_FEATURES_ENABLE('10.2.0.4')]]></hint></hint_data>~';
+
+    IF bitand(&opt + &base,1)=1 THEN 
+        ctrl := q'~<hint_data><hint><![CDATA[monitor]]></hint></hint_data>~';
+    END IF;
+    /*
+    IF bitand(&opt + &base,5)>0 THEN
+        ctrl := ctrl||'<parameter name="mode">safe</parameter>';
+    END IF;*/
+
     I_PROCESS_SQL_CALLOUT(stmt=>stmt,
                           action=>&opt + &base,
                           time_limit=>86400,
@@ -234,11 +242,12 @@ BEGIN
               WHERE  plan_hash_value=fixctl
               AND    parsing_schema_name=stmt.parsing_schema_name
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
+              AND    instr(sql_fulltext,substr(stmt.sql_text,1,512)) > 0
               AND    program_id=0
-              AND    force_matching_signature=stmt.force_matching_signature
-              AND    (stmt.module IS NULL OR module=stmt.module)
-              AND    (stmt.action IS NULL OR action=stmt.action)
-              ORDER  BY sign(instr(sql_fulltext,regexp_replace(to_char(substr(stmt.sql_text,1,512)),'^\s+|\s+$'))) desc,
+              AND    upper(ltrim(substr(sql_text,1,128))) not like 'EXPLAIN%'
+              ORDER  BY decode(nvl(action,' '),stmt.action,1,2),
+                        decode(force_matching_signature,stmt.force_matching_signature,1,2),
+                        sign(instr(sql_fulltext,substr(stmt.sql_text,1,512))) desc,
                         last_load_time desc,child_number desc)
         WHERE rownum<2;
 
@@ -246,7 +255,7 @@ BEGIN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -ol -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -ol -b -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
         ELSE
             DELETE SYS.PLAN_TABLE$ WHERE PLAN_ID=SIG;
 
@@ -325,7 +334,7 @@ BEGIN
 
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -ol -p '||sig;
+            xplan := 'ora plan -ol -b -p '||sig;
         END IF;
     ELSE 
         sig := -1;

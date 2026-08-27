@@ -223,6 +223,7 @@ BEGIN
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
               AND    program_id=0
               AND    (stats.optimizer_cost IS NULL OR stats.optimizer_cost=optimizer_cost)
+              AND    upper(ltrim(substr(sql_text,1,128))) not like 'EXPLAIN%'
               ORDER  BY decode(force_matching_signature,stats.force_matching_signature,1,2),
                         instr(sql_fulltext,regexp_replace(to_char(substr(sq_text,1,512)),'^\s+|\s+$')) desc,
                         last_load_time desc,child_number desc)

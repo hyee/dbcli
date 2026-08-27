@@ -35,7 +35,11 @@ BEGIN
         raise_application_error(-20001,'Please specify the object name!');
     END IF;
     IF obj_type in('VIEW','SYNONYM') THEN
-        for r in(select column_id,column_name from &CHECK_ACCESS_COLS where owner=schem and table_name=regexp_replace(part1,'^G?V_?','GV_') order by column_id) loop
+        for r in(select column_id,column_name 
+                 from &CHECK_ACCESS_COLS 
+                 where owner=schem 
+                 and   table_name=regexp_replace(part1,'^G?V_?\$', 'GV_$')
+                 order by column_id) loop
             cols:=cols||case when r.column_id>1 then ',' end||r.column_name;
             if mod(r.column_id,10)=0 then
                 cols:=cols||chr(10)||'        ';
@@ -43,7 +47,7 @@ BEGIN
         end loop;
 
         IF cols IS NOT NULL THEN
-            cols:='CREATE OR REPLACE VIEW '||schem||'.'||regexp_replace(part1,'^G?V_?','GV_')||'('||trim(',' from cols)||') AS '||chr(10);
+            cols:='CREATE OR REPLACE VIEW '||schem||'.'||regexp_replace(part1,'^G?V_?\$', 'GV_$')||'('||trim(',' from cols)||') AS '||chr(10);
         END IF;
 
         BEGIN
@@ -51,7 +55,7 @@ BEGIN
                 vw := 'SELECT * FROM '||schem||'.'||part1;
                 &ver..expand_sql_text(vw,txt);
             $ELSE*/
-                name := regexp_replace(part1,'^G?V_?','GV');
+                name := regexp_replace(part1,'^G?V_?\$','GV$');
                 EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
                     INTO vw,txt USING name;
             --$END
@@ -130,12 +134,21 @@ BEGIN
         IF REGEXP_SUBSTR(obj_type,'[^ +]') in ('TABLE','ANALYTIC','HIERARCHY','ATTRIBUTE') THEN
             BEGIN
                 dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('INDEX', part1, SCHEM));
+            EXCEPTION
+                WHEN OTHERS THEN
+                    NULL;
+            END;
+        END IF;
+
+        IF REGEXP_SUBSTR(obj_type,'[^ +]') in ('TABLE','VIEW') THEN
+            BEGIN
                 dbms_lob.append(txt,dbms_metadata.GET_DEPENDENT_DDL('COMMENT', part1, SCHEM));    
             EXCEPTION
                 WHEN OTHERS THEN
                     NULL;
             END;
         END IF;
+
         DBMS_METADATA.SET_TRANSFORM_PARAM(v_default, 'DEFAULT');
         txt := regexp_replace(txt, '\(' || chr(9), '(' || chr(10) || chr(9), 1, 1);
         IF REGEXP_SUBSTR(obj_type,'[^ +]') NOT IN('TRIGGER','FUNCTION','PROCEDURE','PACKAGE') THEN
