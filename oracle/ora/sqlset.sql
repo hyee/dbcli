@@ -1,12 +1,13 @@
 /*[[
 Show/Operate SQL Tuning Sets. Usage: @@NAME <sqlset> [create|load|drop|spa [<sql_id>|-f"<filter>"]]
-    @@NAME <sqlset> [<filter>]             : list matched SQLs from target sqlse
-    @@NAME <sqlset> create [<description>] : create target sqlset
-    @@NAME <sqlset> ref     <description>  : create reference to target sqlset
-    @@NAME <sqlset> unref   <ref id>       : remove reference from target sqlset
-    @@NAME <sqlset> scan    <filter>       : scan matched SQLs before loading into target sqlset
-    @@NAME <sqlset> load    <filter>       : load matched SQLs into target sqlset
-    @@NAME <sqlset> drop   [<filter>]      : drop targt sqlset
+    @@NAME <sqlset> [<filter>]                              : list matched SQLs from target sqlse
+    @@NAME <sqlset> create ["<description>"]                : create target sqlset
+    @@NAME <sqlset> ref     "<description>"                 : create reference to target sqlset
+    @@NAME <sqlset> unref   <ref id>                        : remove reference from target sqlset
+    @@NAME <sqlset> scan    "<filter>"                      : scan matched SQLs before loading into target sqlset
+    @@NAME <sqlset> load    "<filter>""                     : load matched SQLs into target sqlset
+    @@NAME <sqlset> load <bid> <eid> [<dbid>] [-f"<filter>"]: load from awr snapshot 
+    @@NAME <sqlset> drop   [<filter>]                       : drop targt sqlset
 
 Parameters:
     <sqlset>: SQLSET_ID or SQLSET_NAME
@@ -20,6 +21,7 @@ Parameters:
         @last_exec: 12.2={last_exec_start_time last_exec,} default={}
         &filter   : default={filter IS NULL or upper(filter) in(upper(sql_id),''||plan_hash_value,parsing_schema_name)} f={}
         &f        : default={0} f={1}
+        @db       : 12.2={,dbid=>did} default={}
     --]]--
 ]]*/
 
@@ -33,12 +35,16 @@ DECLARE
     sqlset  VARCHAR2(128):=replace(upper(:V1),'"');
     sid     PLS_INTEGER  :=regexp_substr(sqlset,'^\d+$'); 
     v2      VARCHAR2(128):=:V2;
-    v3      VARCHAR2(128):=:V3;
-    v4      VARCHAR2(128):=:V4;
+    v3      VARCHAR2(512):=:V3;
+    v4      VARCHAR2(512):=:V4;
+    bid     INT := regexp_substr(v3,'^\d+$'); 
+    eid     INT := regexp_substr(v4,'^\d+$'); 
+    did     INT := nvl(regexp_substr(:v5,'^\d+$'),&dbid); 
     op      VARCHAR2(128):=upper(V2);
     usr     VARCHAR2(128):=sys_context('userenv','current_schema');
     fullset VARCHAR2(128);
-    filter  VARCHAR2(2000);
+    tmp     VARCHAR2(2000);
+    filter  VARCHAR2(32767);
     stmt    VARCHAR2(30000);
     active  PLS_INTEGER := 0;
     c       SYS_REFCURSOR;
@@ -101,6 +107,10 @@ BEGIN
     sqlset := nullif(sqlset,''||sid);
     dbms_output.enable(null);
     <<BOF>>
+    filter := 'command_type in (1, 2, 3, 6, 7, 9, 47, 170, 189) AND force_matching_signature > 0 AND plan_hash_value > 0';
+    filter := filter ||' AND substr(sql_text,1,256) NOT LIKE ''%/*+%dbms_stats%''';
+    filter := filter ||' AND NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze|AUTO_INDEX:ddl)\W'')';
+
     IF coalesce(sqlset,op,''||sid) IS NULL THEN
         OPEN c FOR 
             SELECT decode(nvl(r,1),1,id) sqlset_id,
@@ -169,12 +179,13 @@ BEGIN
         op     := null;
         sid    := null;
         GOTO BOF;
-    ELSIF op IN ('SCAN','LOAD') THEN
+    ELSIF op IN ('SCAN','LOAD') AND (bid IS NULL OR eid IS NULL) THEN
         check_sqlset;
-        filter := sql_filter(V3,V4);
-        IF filter IS NULL THEN
+        tmp := sql_filter(V3,V4);
+        IF tmp IS NULL THEN
             raise_application_error(-20001,'Please specify the predicates for filtering the matched SQLs');
         END IF;
+        filter := filter ||' AND ('||tmp||')';
 
         stmt := 'SELECT %s source,
                         sql_id,
@@ -187,12 +198,7 @@ BEGIN
                         to_char(substr(sql_text,1,512)) sql_text
                  FROM  (%s) s
                  NATURAL LEFT JOIN T
-                 WHERE ('||filter||')
-                 AND   command_type in (1, 2, 3, 6, 7, 9, 47, 170, 189)
-                 AND   substr(sql_text,1,256) NOT LIKE ''%/*+%dbms_stats%''
-                 AND   force_matching_signature > 0
-                 AND   plan_hash_value > 0
-                 AND   NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze|AUTO_INDEX:ddl)\W'')';
+                 WHERE '||filter;
         stmt := replace(replace('
         WITH t AS(select /*+materialize opt_estimate(query_block rows=0)*/ 1 from v$sqlarea where 1=2)
         SELECT /*+monitor opt_param(''_fix_control'' ''26552730:0'')*/
@@ -340,11 +346,27 @@ BEGIN
             FROM   TABLE(sets);
     ELSE
         check_sqlset;
+        IF op='LOAD' AND bid IS NOT NULL AND eid IS NOT NULL THEN
+            IF :f= 1 THEN
+                filter := filter || ' AND ('||filter||')';
+            END IF;
+            OPEN c FOR
+                SELECT value(p) val
+                FROM   TABLE(sys.dbms_sqltune.select_workload_repository(begin_snap=>bid,end_snap=>eid &db,basic_filter=>filter)) p;
+            sys.dbms_sqltune.load_sqlset(
+                    sqlset_owner=>usr,
+                    sqlset_name=>sqlset,
+                    populate_cursor=>c,
+                    load_option=>'MERGE');
+            CLOSE c;
+            dbms_output.put_line('SQLs were loaded from AWR repository from '||bid||' to '||eid||' of DB '||did);
+        END IF;
         dbms_output.put_line('SQL Tuning Set '||fullset||':');
         dbms_output.put_line(rpad('=',80,'='));
         OPEN c FOR replace(q'#
             SELECT a.* FROM (
-                SELECT sql_seq seq,
+                SELECT /*+outline leading(a.f a.s a.p)*/
+                       sql_seq seq,
                        priority "PRIOR",
                        sql_id,
                        plan_hash_value plan_hash,
@@ -355,11 +377,11 @@ BEGIN
                        executions execs,
                        elapsed_time/nullif(executions,0) avg_ela,
                        &last_exec
-                       trim(regexp_replace(to_char(substr(sql_text,1,200)),'\s+',' ')) sql_text
-                FROM   &check_access_dba.sqlset_statements
+                       trim(regexp_replace(to_char(substr(sql_text,1,300)),'\s+',' ')) sql_text
+                FROM   &check_access_dba.sqlset_statements a
                 WHERE  sqlset_id=:sid
                 AND    (@filter@)
-                ORDER  BY sql_seq DESC) a
+                ORDER  BY elapsed_time DESC) a
             WHERE rownum<=50#','@filter@',nvl(sql_filter(v2,v3),'1=1')) using sid;
     END IF;
     :c := c;
