@@ -6,7 +6,6 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
-local action
 local default_args={
     enable=enabled,
     cdbid=-1,
@@ -30,7 +29,7 @@ function output.setOutput(db)
     local stmt=switch_prefix..(flag=="on" and "enable(null)" or "disable()")..";end;"
     pcall(function() (db or env.getdb()):internal_call(stmt) end)
 end
-output.action_sql=[[begin sys.dbms_application_info.set_action(:action);end;]]
+
 output.trace_sql=[[select /*INTERNAL_DBCLI_CMD dbcli_ignore*/ name,value from sys.v_$mystat join sys.v_$statname using(STATISTIC#) where value>0]]
 output.trace_sql_after=([[
     DECLARE/*INTERNAL_DBCLI_CMD dbcli_ignore*/
@@ -86,8 +85,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
         l_enable VARCHAR2(3)  := :enable;
         l_trace  VARCHAR2(30) := lower(:autotrace);
         l_sql_id VARCHAR2(15) := :sql_id; 
-        l_tmp_id VARCHAR2(15) := :sql_id;
-        l_action VARCHAR2(50) := :action;
+        l_tmp_id VARCHAR2(15) := :sql_id; 
         l_child  PLS_INTEGER  := :child;
         l_secs   PLS_INTEGER  := :secs;
         l_size   PLS_INTEGER;
@@ -134,7 +132,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                             select max(child_number) 
                             from   sys.v_$sql 
                             where  sql_id=:1 
-                            and    last_active_time>=sysdate-numtodsinterval(:2,''second'')
+                            and    last_active_time>=sysdate-numtodsinterval(:2,''second'') 
                             and    rownum<2'
                         into l_cid using l_tmp_id,l_secs;
                         IF l_cid IS NOT NULL THEN
@@ -200,7 +198,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
                                        from   sys.v_$sql b
                                        where  b.sql_id=a.sql_id
                                        and    parsing_schema_name=sys_context('userenv','current_schema')
-                                       and    last_active_time>=sysdate-numtodsinterval(:2,''second'') 
+                                       and    last_active_time>=SYSDATE-numtodsinterval(:2,'second')
                                        and    rownum < 2!'
                               || CASE WHEN DBMS_DB_VERSION.VERSION>11 THEN ' AND A.CHILD_ADDRESS=B.CHILD_ADDRESS)' ELSE ')' END;
                     BEGIN
@@ -335,10 +333,9 @@ local CODES={PACKAGE=1,FUNCTION=1,TRIGGER=1,VIEW=1,PROCEDURE=1,TYPE=1}
 function output.getOutput(item,force)
     if output.is_exec then return end
     if term then cfg.set('TERMOUT','on') end
-    local db,sql,sql_id,action_id=item[1],item[2],nil
+    local db,sql,sql_id=item[1],item[2],nil
     if not db or not sql then return end
     local typ,objtype,objname=db.get_command_type(sql)
-    action_id,action=action or '',nil
 
     if force~=true and DML[typ] and not env.is_main_thread() and autotrace=='off' and not sql:sub(1,1024):upper():find('SERVEROUTPUT',1,true) then
         if not db:is_internal_call(sql) then
@@ -380,7 +377,7 @@ function output.getOutput(item,force)
         output.is_exec=true
         sql_id=sql_id or loader:computeSQLIdFromText(sql)
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
-            args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id,action=action_id}
+            args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id}
             --db:query([[select /*dbcli_ignore INTERNAL_DBCLI_CMD*/ * from v$open_cursor where sid=userenv('sid') and cursor_type like '%OPEN%' and upper(SQL_TEXT） like '%SELECT%']])
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
             if not done then
@@ -398,7 +395,6 @@ function output.getOutput(item,force)
         args.child=tonumber(args1.last_child) or ''
         args.autotrace=(sql:sub(1,64):find(switch_prefix,1,true)==1 or objtype=='SESSION') and 'switch' or autotrace
         args.cdbid=tonumber(db.props.container_dbid) or -1
-        args.action=action_id
         args.secs,timer=timer and math.min(30,math.ceil(clock-timer)) or 3,clock
         local done,err=pcall(db.exec_cache,db,output.stmt,args,'Internal_GetDBMSOutput')
         if not done then
@@ -515,14 +511,6 @@ function output.capture_stats(info)
     if sql and sql:find('%s') and not db:is_internal_call(sql) then
         if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
             output.is_exec=true
-            --[[
-            if db.props and db.props.sid then
-                action=db.props.instance..'.'..db.props.sid..'.'..os.timer()
-                if not pcall(db.exec_cache,db,output.action_sql,{action=action},'Internal_SetAction') then
-                    action=nil
-                end
-            end
-            --]]
             local done,result=pcall(db.exec_cache,db,output.trace_sql,{},'Internal_GetSQLSTATS')
             if done then 
                 output.prev_stats=result
