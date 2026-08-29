@@ -16,19 +16,21 @@
         @@NAME <task> test [<ename>] [<degree>] [-sync] : run new execution task with specific concurrenct degree in async mode
         @@NAME <task> explain|xplan  [<ename>]  [-sync] : run new explain plan task in async mode
         @@NAME <task> diff <exec1> <exec2> [<ename>]    : run new compare task to compare 2 specific executions in async mode
-                                                          <exec1>/<exec2>: the pre/post execution names or IDs for the comparison
-                                                          <ename>        : the new execution name for the task
-        @@NAME <task> <ename> [<parameters>]            : show details of target executions, following with below parameters:
-                                                            -diff     : order by abs(diff)
-                                                            -regress  : order by regression
-                                                            -improve  : order by improvement
-                                                            -phv      : group by plan_hash_value
-                                                            -diffplan : only list the plan change cases
-                                                          <keyword> : filter with specific keyword
-                                                          error     : list execution errors
-                                                          htm|html  : generate HTML report for target comparison analysis report
-                                                          txt|text  : generate TEXT report for target comparison analysis report
-                                                          active    : generate ACTIVE report for target comparison analysis report
+                                                              <exec1>/<exec2>   : the pre/post execution names or IDs for the comparison
+                                                              <ename>           : the new execution name for the task
+                                                              -metric"<formula>": i.e, "disk_reads+buffer_get*3000", "buffer_gets"  
+        @@NAME <task> <ename> [<parameters>]            : show details of target executions, following with below options:
+                                                              -diff     : order by abs(diff)
+                                                              -regress  : order by regression
+                                                              -improve  : order by improvement
+                                                              -phv      : group by plan_hash_value
+                                                              -diffplan : only list the plan change cases
+                                                            other parameters:
+                                                              <keyword> : filter with specific keyword
+                                                              error     : list execution errors
+                                                              htm|html  : generate HTML report for target comparison analysis report
+                                                              txt|text  : generate TEXT report for target comparison analysis report
+                                                              active    : generate ACTIVE report for target comparison analysis report
     Variables:
         <task> : can be either task_id or task_name
         <ename>: can be either execution_id or execution_name
@@ -48,33 +50,44 @@
         &sq       : default={0} sql={1} plan={2} sign={3}
         &base     : default={lists} phv={plans}
         &diffplan : default={1=1} diffplan={prev_phv!=post_phv}
+        &calc     : default={} metric={}
         &qb       : {
             default={
-                SELECT sq sq 
-                FROM   dual
+                SELECT attr1 sq,task_id tid,execution_name ename,object_id oid
+                FROM   dba_advisor_objects
+                WHERE  sid=1
+                AND    attr1=sq
+                AND    type='SQL'
                 UNION
-                SELECT attr1
+                SELECT sq,null,null,null FROM DUAL
+                UNION
+                SELECT attr1,task_id,execution_name,object_id
                 FROM   dba_advisor_objects
                 WHERE  sid=0
                 AND    attr1 IS NOT NULL
                 AND    &attr17=sq
                 AND    type='SQL'}
             plan={
-                SELECT attr1 sq
+                SELECT attr1 sq,task_id tid,execution_name ename,object_id oid
                 FROM   dba_advisor_objects
                 WHERE  attr1 IS NOT NULL
                 AND    type='SQL'
                 AND    attr5=sq
                 UNION
-                SELECT sql_id
+                SELECT sql_id sq,null,null,null
                 FROM   dba_advisor_sqlstats
                 WHERE  plan_hash_value=sq
             }
-            sig={
-                SELECT sq sq 
-                FROM   dual
+            sign={
+                SELECT attr1 sq,task_id tid,execution_name ename,object_id oid
+                FROM   dba_advisor_objects
+                WHERE  sid=1
+                AND    attr1=sq
+                AND    type='SQL'
                 UNION
-                SELECT a.sql_id
+                SELECT sq,null,null,null FROM DUAL
+                UNION
+                SELECT a.sql_id,null,null,null
                 FROM   dba_sqlset_statements a,
                        dba_sqlset_statements b
                 WHERE  b.sql_id=sq
@@ -131,7 +144,7 @@ BEGIN
 END;
 /
 /*
-    dba_advisor_objects:
+    dba_advisor_objects for type='SQL':
         attr1 : original sql id, same to ADV_SQL_ID
         attr3 : owner
         attr5 : plan_hash_value of pre execution, for TEST EXECUTION, it's the phv from dba_sqlset_statements, for COMPARE performance it's the phv of the first execution set
@@ -184,6 +197,7 @@ DECLARE
     tmp_name   VARCHAR2(128);
     params     VARCHAR2(2000);
     stmt       VARCHAR2(30000);
+    calc       VARCHAR2(2000);
 
     PROCEDURE parse_name(name VARCHAR2,own VARCHAR2:=NULL) IS
     BEGIN
@@ -277,10 +291,11 @@ BEGIN
 
         OPEN c1 FOR
             WITH s AS(
-                SELECT /*+MATERIALIZE CARDINALITY(1)*/ *
+                SELECT /*+MATERIALIZE CARDINALITY(3)*/ *
                 FROM (&qb)
             )
-            SELECT 'SQLSET' SOURCE_TYPE,
+            SELECT /*+no_merge(s) merge(t) leading(s t.s) index_ss(t.s)*/
+                   'SQLSET' SOURCE_TYPE,
                    SQLSET_OWNER||'.'||SQLSET_NAME SOURCE_NAME,
                    null "OBJ#",
                    SQL_ID ACT_SQL,
@@ -304,11 +319,12 @@ BEGIN
                    NULL "READ|BYTES",
                    NULL "WRITE|BYTES",
                    NULL "INTER|BYTES"
-            FROM   s,dba_sqlset_statements
+            FROM   (select distinct sq from s) s,dba_sqlset_statements t
             WHERE  sql_id = s.sq
             UNION ALL
-            SELECT 'SPA EXEC' SOURCE_TYPE,
-                   t.TASK_ID||'->'||t.EXECUTION_NAME SOURCE_NAME,
+            SELECT /*+outline_leaf merge(o) leading(s o.a) use_nl(o.a) no_merge(t) push_pred(t)*/
+                   'SPA EXEC' SOURCE_TYPE,
+                   o.TASK_ID||'->'||o.EXECUTION_NAME SOURCE_NAME,
                    o.object_id,
                    NVL(&ATTR17,SQL_ID),
                    PLAN_HASH_VALUE PLAN_HASH,
@@ -318,7 +334,7 @@ BEGIN
                    ELAPSED_TIME*NVL(0+o.attr10,TESTEXEC_TOTAL_EXECS)/greatest(EXECUTIONS,1) ELA,
                    ROUND(CPU_TIME/NULLIF(ELAPSED_TIME,0),4) CPU,
                    ROUND(USER_IO_TIME/NULLIF(ELAPSED_TIME,0),4) IO,
-                   (SELECT listagg(decode(bitand(o.attr7,power(2,rownum-1)),0,'',decode(power(2,rownum-1),
+                   (SELECT listagg(decode(bitand(o.attr7,power(2,rownum-1)),
                         1,'NONE',
                         2,'IMPROVE',
                         3,'REGRESS',
@@ -333,10 +349,15 @@ BEGIN
                         2048,'NEWSQL',
                         4096,'ZEROROWS',
                         8192,'DIFFROWS',
-                        16384,'MISEST', --misestimate
-                        32768,'SPM_CAND' --SPM candidate
-                    )),',') WITHIN GROUP(order by 1) 
-                    FROM dual connect by rownum<=16) flags,
+                        16384,'ADAPXPL',
+                        32768,'DIFFDATA',
+                        65536,'MISEST', --misestimate
+                        131072,'SPM_CAND', --SPM candidate
+                        262144,'PASS_DML_CHECK',
+                        524288,'FAIL_DML_CHECK',
+                        1048576,'UNKNOWN_DML_COST'
+                    ),',') WITHIN GROUP(order by 1) 
+                    FROM dual connect by power(2,rownum-1)<=o.attr7) flags,
                     '|' "|",
                    ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2) "AVG|ELA",
                    ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2) BUFFS,
@@ -350,14 +371,17 @@ BEGIN
                    ROUND(PHYSICAL_WRITE_BYTES/GREATEST(EXECUTIONS,1),2) WRITE_BYTES,
                    ROUND(IO_INTERCONNECT_BYTES/GREATEST(EXECUTIONS,1),2) INTER_BYTES
             FROM   s,
-                   DBA_ADVISOR_SQLSTATS T,
-                   DBA_ADVISOR_OBJECTS  O
-            WHERE  t.sql_id = s.sq
-            AND    t.task_id=o.task_id
-            AND    t.execution_name=o.execution_name
-            AND    t.object_id=o.object_id
-            AND    t.sql_id=o.attr1
-            AND    o.type='SQL';
+                   DBA_ADVISOR_OBJECTS  O,
+                   DBA_ADVISOR_SQLSTATS T
+            WHERE  o.type='SQL'
+            AND    o.object_id=s.oid
+            AND    o.task_id=s.tid
+            AND    o.execution_name=s.ename
+            AND    t.sql_id(+) = o.attr1
+            AND    t.task_id(+)=o.task_id
+            AND    t.execution_name(+)=o.execution_name
+            AND    t.object_id(+)=o.object_id
+            AND    t.sql_id(+)=o.attr1;
         GOTO END_BLOCK;
     END IF;
 
@@ -388,11 +412,11 @@ BEGIN
             execution_type => 'CONVERT SQLSET',
             execution_name => 'CONVERT_SQLSET');
         dbms_sqlpa.set_analysis_task_parameter(tsk,'COMPARISON_METRIC','ELAPSED_TIME');
-        RETURN;
+        GOTO END_BLOCK;
     ELSIF op = 'DROP' THEN
         sys.dbms_sqlpa.drop_analysis_task(tsk);
         dbms_output.put_line('SQL Performance Analyzer task is dropped: '||fulltask);
-        RETURN;
+        GOTO END_BLOCK;
     ELSIF op = 'ALTER' THEN
         IF v3 IS NULL THEN
             dbms_output.put_line('Please specify the parameter name and value.');
@@ -400,6 +424,7 @@ BEGIN
             dbms_sqlpa.set_analysis_task_parameter(tsk,v3,v4);
             dbms_output.put_line('Parameter '||v3||' is set as '||v4||'.'||chr(10));
         END IF;
+        GOTO END_BLOCK;
     ELSIF op in ('COMPARE','DIFF') THEN
         IF v3 IS NULL OR V4 IS NULL THEN
             raise_application_error(-20001,'Please specify the pre and post execution name for the comparison.');
@@ -413,16 +438,35 @@ BEGIN
         ename    := 'DIFF_'||sid||'_'||eid;
         dop    := 1;
         check_exec(v5,NULL);
-        ename    := sys.dbms_sqlpa.execute_analysis_task(
+
+        calc  := nvl(trim('&calc'),trim('&metric'));
+
+        SELECT nvl(MAX(decode(execution_type,'EXPLAIN PLAN','OPTIMIZER_COST')),calc)
+        INTO   calc
+        FROM   dba_advisor_executions
+        WHERE  task_id=tid
+        AND    execution_name in(pre,post);
+
+        BEGIN
+            EXECUTE IMMEDIATE '
+                SELECT SUM('||CALC||')
+                FROM   dba_sqlset_statements
+                WHERE  rownum<1';
+        EXCEPTION WHEN OTHERS THEN
+            raise_application_error(-20001,'Invalid comparison metric formula: '||calc);
+        END;
+        ename := sys.dbms_sqlpa.execute_analysis_task(
             task_name       => tsk,
             execution_type  => op,
             execution_name  => v5,
             execution_params=> sys.dbms_advisor.arglist(
-                'execution_name1', pre, 
-                'execution_name2', post));
+                'EXECUTION_NAME1', pre, 
+                'EXECUTION_NAME2', post,
+                'COMPARISON_METRIC',calc));
         check_exec(ename);
         key := 'HTML';
-        dbms_output.put_line('Execution '||ename||'('||eid||') of task '||tsk||' is completed with default COMPARISON_METRIC.');
+        dbms_output.put_line('Execution '||ename||'('||eid||') of task '||tsk||' is completed with metric "'||calc||'"');
+        GOTO END_BLOCK;
     ELSIF op IN ('EXEC','EXECUTE','TEST','XPLAN','EXPLAIN') THEN
         check_exec(trim('.' from v3),null);
         dop := regexp_substr(v4,'^\d+$');
@@ -459,6 +503,7 @@ BEGIN
                 enabled    => true);
             dbms_output.put_line('Execution '||ename||' of task '||tsk||' is running in background job '||snam);
         END IF;
+        GOTO END_BLOCK;
     ELSIF op ='STOP' THEN
         check_exec(v3);
         IF estatus NOT IN('INTERRUPTED','EXECUTING') THEN
@@ -602,6 +647,7 @@ BEGIN
                    R1.COMP           "COMPARE|RESULT",
                    R1.SIM_EXADATA    "SIMULATE|EXDATA",
                    R1.SQL_LIMIT      "SQL|TIMEOUT",
+                   (select attr2 from dba_advisor_objects where task_id=tid and execution_name is null and type='SQLSET') "SQLSET|SQLs",
                    R.execs,
                    R.errs,
                    r.status,
@@ -657,7 +703,7 @@ BEGIN
                                            0,'Not Started',
                                            sum(sofar)||'/'||sum(totalwork)||' ('||round(sum(sofar)*100/greatest(sum(totalwork),1),2)||'%)')
                                    END)
-                        FROM   v$advisor_progress r
+                        FROM   gv$advisor_progress r
                         WHERE  a.task_id=r.task_id
                         AND    r.start_time>=a.execution_start) "EXECUTION_END(PROG)",
                        STATUS,
@@ -863,7 +909,8 @@ BEGIN
                                AND   ('CONVERT_SQLSET' IN (pre,post) OR '&metric'='OPTIMIZER_COST')
                                GROUP BY SQL_ID,plan_hash_value) s 
                     USING(attr1,prev_phv)
-                    WHERE upper(attr1||','||f.sql_nid||','||p1.sqln||','||p2.sqln||','||prev_phv||','||f.attr5||','||p1.phv||','||p2.phv) LIKE key
+                    WHERE key IN('HTML','HTM','TEXT','ACTIVE')
+                    OR    upper(attr1||','||f.sql_nid||','||p1.sqln||','||p2.sqln||','||prev_phv||','||f.attr5||','||p1.phv||','||p2.phv) LIKE key
                 ), lists AS(
                     SELECT org_sql,
                            prev_sql,

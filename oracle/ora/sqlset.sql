@@ -1,5 +1,5 @@
 /*[[
-Show/Operate SQL Tuning Sets. Usage: @@NAME <sqlset> [create|load|drop|spa [<sql_id>|-f"<filter>"]]
+Show/Operate SQL Tuning Sets. Usage: @@NAME <sqlset> [create|load|drop [<sql_id>|-f"<filter>"]]
     @@NAME <sqlset> [<filter>]                              : list matched SQLs from target sqlse
     @@NAME <sqlset> create ["<description>"]                : create target sqlset
     @@NAME <sqlset> ref     "<description>"                 : create reference to target sqlset
