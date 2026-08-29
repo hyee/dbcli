@@ -23,6 +23,7 @@
                                                               -diff     : order by abs(diff)
                                                               -regress  : order by regression
                                                               -improve  : order by improvement
+                                                              -parse    : order by parse_time
                                                               -phv      : group by plan_hash_value
                                                               -diffplan : only list the plan change cases
                                                             other parameters:
@@ -42,9 +43,10 @@
         @attr11: 12.1={attr11} default={null}
         &ord1  : {
             weight={"Total|_Time"} 
-            diff={"Total|_Time"*log(2,abs("Metric|Diff"))} 
-            regress={sign(-"Metric|Diff")*"Total|Execs"*log(2,abs("Metric|Diff"))} 
-            improve={sign("Metric|Diff")*"Total|Execs"*log(2,abs("Metric|Diff"))}
+            diff={abs("Metric|Diff")*log(2,greatest(2,metric_gap))} 
+            regress={"Metric|Diff"*log(2,greatest(2,metric_gap))*-1} 
+            improve={"Metric|Diff"*log(2,greatest(2,metric_gap))}
+            parse={parse*log(10,"Total|Execs")}
         }
         &rule     : default={1=1} regress={prev_metric*1.2 < post_metric} improve={post_metric*1.2 < prev_metric}
         &sq       : default={0} sql={1} plan={2} sign={3}
@@ -55,18 +57,11 @@
             default={
                 SELECT attr1 sq,task_id tid,execution_name ename,object_id oid
                 FROM   dba_advisor_objects
-                WHERE  sid=1
-                AND    attr1=sq
+                WHERE  sq in(attr1,&attr17)
                 AND    type='SQL'
                 UNION
                 SELECT sq,null,null,null FROM DUAL
-                UNION
-                SELECT attr1,task_id,execution_name,object_id
-                FROM   dba_advisor_objects
-                WHERE  sid=0
-                AND    attr1 IS NOT NULL
-                AND    &attr17=sq
-                AND    type='SQL'}
+                }
             plan={
                 SELECT attr1 sq,task_id tid,execution_name ename,object_id oid
                 FROM   dba_advisor_objects
@@ -81,8 +76,7 @@
             sign={
                 SELECT attr1 sq,task_id tid,execution_name ename,object_id oid
                 FROM   dba_advisor_objects
-                WHERE  sid=1
-                AND    attr1=sq
+                WHERE  sq in(attr1,&attr17)
                 AND    type='SQL'
                 UNION
                 SELECT sq,null,null,null FROM DUAL
@@ -103,7 +97,7 @@
 ]]*/
 
 set verify off feed off autohide col
-col org_sql noprint
+col metric_gap noprint
 col weight,cpu,io for pct3
 col ela,avg_ela,pre,post,prev_avg,post_avg,parse,avg|ela,avg1,avg2,src_ela,Prev|_Avg,Post|_Avg,Total|_Time for usmhd2
 col metric,Prev|Metric,Post|Metric,Total|Execs,Metric|Diff,cost,diff,buffs,exec,avg|fetches,avg|rows#,avg|buffs,avg|reads,direct|writes,read|req,write|req for tmb2
@@ -647,7 +641,7 @@ BEGIN
                    R1.COMP           "COMPARE|RESULT",
                    R1.SIM_EXADATA    "SIMULATE|EXDATA",
                    R1.SQL_LIMIT      "SQL|TIMEOUT",
-                   (select attr2 from dba_advisor_objects where task_id=tid and execution_name is null and type='SQLSET') "SQLSET|SQLs",
+                   (select attr2 from dba_advisor_objects where task_id=r1.task_id and execution_name is null and type='SQLSET') "SQLSET|SQLs",
                    R.execs,
                    R.errs,
                    r.status,
@@ -780,24 +774,27 @@ BEGIN
         m2 := 'TYPE: ['||typ||']      METRIC: [&metric]      TOP: [50]';
         IF key LIKE '%ERROR%' THEN
             OPEN c2 FOR
-                SELECT max(cnt) errs,
-                       trim(chr(10) from listagg(decode(mod(rnk,4),1,chr(10))||sql_id,',') within group(order by rnk)) sample_sqls,
-                       message
+                SELECT * 
                 FROM (
-                    SELECT /*+outline_leaf leading(f) push_pred(o)*/
-                           trim(substr(f.message,1,256)) message,
-                           count(1) over(partition by trim(substr(f.message,1,256))) cnt,
-                           o.attr1 sql_id,
-                           row_number() over(partition by trim(substr(f.message,1,256)) order by o.attr1 nulls last) rnk
-                    FROM   dba_advisor_findings f,dba_advisor_objects o
-                    WHERE  f.owner=o.owner(+)
-                    AND    f.task_id=o.task_id(+)
-                    AND    f.execution_name=o.execution_name(+)
-                    AND    f.object_id=o.object_id(+)
-                    AND    f.type='ERROR')
-                WHERE rnk<=12
-                GROUP BY message
-                ORDER BY errs DESC;
+                    SELECT max(cnt) errs,
+                           trim(chr(10) from listagg(decode(mod(rnk,4),1,chr(10))||sql_id,',') within group(order by rnk)) sample_sqls,
+                           message
+                    FROM (
+                        SELECT /*+outline_leaf leading(f) push_pred(o)*/
+                               trim(substr(f.message,1,256)) message,
+                               count(1) over(partition by trim(substr(f.message,1,256))) cnt,
+                               o.attr1 sql_id,
+                               row_number() over(partition by trim(substr(f.message,1,256)) order by o.attr1 nulls last) rnk
+                        FROM   dba_advisor_findings f,dba_advisor_objects o
+                        WHERE  f.owner=o.owner(+)
+                        AND    f.task_id=o.task_id(+)
+                        AND    f.execution_name=o.execution_name(+)
+                        AND    f.object_id=o.object_id(+)
+                        AND    f.type='ERROR')
+                    WHERE rnk<=12
+                    GROUP BY message
+                    ORDER BY errs DESC
+                ) WHERE rownum<=100;
         ELSIF typ like 'CONVERT%' THEN
             stmt := replace(replace(q'~
                 SELECT * FROM (
@@ -844,9 +841,9 @@ BEGIN
                 ), detail AS(
                     SELECT /*+outline_leaf leading(f) use_hash(p1 p2 s)*/
                            attr1 org_sql,
-                           coalesce(p1.sqln,decode(pre,'CONVERT_SQLSET',attr1),f.sql_nid,attr1) prev_sql,
+                           decode(pre,'CONVERT_SQLSET',null,coalesce(p1.sqln,f.sql_nid,attr1)) prev_sql,
                            coalesce(''||p1.phv,prev_phv) prev_phv,
-                           coalesce(p2.sqln,decode(post,'CONVERT_SQLSET',attr1),f.sql_nid,attr1) post_sql,
+                           decode(post,'CONVERT_SQLSET',null,coalesce(p2.sqln,f.sql_nid,attr1)) post_sql,
                            coalesce(''||p2.phv,prev_phv) post_phv,
                            s.sign,
                            nvl(p2.parse_time,p1.parse_time) parse,
@@ -862,7 +859,7 @@ BEGIN
                                       plan_hash_value phv,
                                       s.parse_time,
                                       nullif(round(elapsed_time/greatest(executions,1),2),0) avg_ela,
-                                      nullif(&metric,0) metric
+                                      nullif((&metric)/greatest(executions,1),0) metric
                                FROM   dba_advisor_objects o,
                                       dba_advisor_sqlstats s
                                WHERE  o.TASK_ID = tid
@@ -880,7 +877,7 @@ BEGIN
                                       plan_hash_value phv,
                                       nullif(round(elapsed_time/greatest(executions,1),2),0) avg_ela,
                                       s.parse_time,
-                                      nullif(&metric,0) metric
+                                      nullif((&metric)/greatest(executions,1),0) metric
                                FROM   dba_advisor_objects o,
                                       dba_advisor_sqlstats s
                                WHERE  o.TASK_ID = tid
@@ -896,7 +893,7 @@ BEGIN
                     LEFT JOIN (SELECT --+outline leading(s.f s.s s.p) no_expand
                                      sql_id attr1,
                                      max(force_matching_signature) sign,
-                                     nullif(SUM(&metric),0) metric,
+                                     nullif(SUM(&metric)/greatest(SUM(executions),1),0) metric,
                                      plan_hash_value prev_phv,
                                      SUM(elapsed_time) ela,
                                      nullif(round(SUM(elapsed_time)/greatest(SUM(executions),1),2),0) avg_ela,
@@ -925,6 +922,7 @@ BEGIN
                            post_avg "Post|_Avg",
                            &hide prev_metric "Prev|Metric",
                            &hide post_metric "Post|Metric",
+                           abs(post_metric-prev_metric)*execs metric_gap,
                            round(greatest(post_metric/prev_metric,prev_metric/post_metric),8)*sign(prev_metric-post_metric) "Metric|Diff"
                     FROM   detail
                     WHERE (&rule)
@@ -945,6 +943,7 @@ BEGIN
                            nullif(round(sum(execs*post_avg)/sum(execs),2),0) "Post|_Avg",
                            &hide nullif(round(sum(execs*prev_metric)/sum(execs),2),0) "Prev|Metric",
                            &hide nullif(round(sum(execs*post_metric)/sum(execs),2),0) "Post|Metric",
+                           abs(sum(execs*post_metric)-sum(execs*prev_metric)) metric_gap,
                            round(greatest(sum(execs*post_metric)/sum(execs*prev_metric),sum(execs*prev_metric)/sum(execs*post_metric)),8)
                             *sign(sum(execs*prev_metric)-sum(execs*post_metric)) "Metric|Diff"
                     FROM detail

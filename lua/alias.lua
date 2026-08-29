@@ -67,13 +67,13 @@ function alias.make_command(name, args, is_print)
             if i==#args and v~='' then
                 v=v:gsub(vertical_pattern,function(s) is_pivot='\\G'..s;return '' end)
             end
-            if v:find("%s") and not v:find('"') then v = '"' .. v .. '"' end
+            --if v:find("%s") and not v:find('"') then v = '"' .. v .. '"' end
             alias.args[i] = v
             alias.rest[i] = v
         end
         target = target:gsub("%$(%d%w*)%[(.-)%]", alias.parser)
-        target = target:gsub("%f[%w%$%%]%$([%d%*]%w*)", alias.parser)
-        target = target:gsub("[%$%%](%$[%d%*])", "%1")..is_pivot
+        target = target:gsub("%f[%w%$]%$([%d%*]%w*)", alias.parser)
+        target = target:gsub("[%$](%$[%d%*])", "%1")..is_pivot
         --if env.COMMAND_SEPS.match(target)==target then target=target..env.COMMAND_SEPS[1] end
         if is_print ~= false and type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ ' .. target)
