@@ -11,7 +11,7 @@
         @@NAME <task> alter <param_name> [<param_value>]: alter task parameter
         @@NAME <task> drop                              : drop SPA task
         @@NAME <task> stop   <ename>                    : stop  the running SPA execution
-        @@NAME <task> pause  <ename>                    : pause therunning SPA execution
+        @@NAME <task> pause  <ename>                    : pause the running SPA execution
         @@NAME <task> resume <ename>            [-sync] : resume the paused SPA execution
         @@NAME <task> test [<ename>] [<degree>] [-sync] : run new execution task with specific concurrenct degree in async mode
         @@NAME <task> explain|xplan  [<ename>]  [-sync] : run new explain plan task in async mode
@@ -40,7 +40,6 @@
         &filter: default={1=1}, f={}
         @ver   : 18.1={} default={--}
         @attr17: 12.1={attr17} default={null}
-        @attr11: 12.1={attr11} default={null}
         &ord1  : {
             weight={"Total|_Time"} 
             diff={abs("Metric|Diff")*log(2,greatest(2,metric_gap))} 
@@ -142,7 +141,7 @@ END;
         attr1 : original sql id, same to ADV_SQL_ID
         attr3 : owner
         attr5 : plan_hash_value of pre execution, for TEST EXECUTION, it's the phv from dba_sqlset_statements, for COMPARE performance it's the phv of the first execution set
-        attr7 : object flags. 1:improve 2:regress 4:unchanged 8:xpldiff 16:error 32:skipped 64:pending 128:INFOFND 256:unsupported 512:timeout 1024:misssql 2048:newsql 4086:zerorows 8192:diffrows 
+        attr7 : object flags. 1:improve 2:regress 4:unchanged 8:xpldiff 16:error 32:skipped 64:pending 128:INFOFND 256:unsupported 512:timeout 1024:misssql 2048:newsql 4096:zerorows 8192:diffrows 
         attr8 : availble on COMPARE PERFORMNACE only, the avg metric value of the first set
                   for comparing EXPLAIN plan, it's the optimizer costs
                   otherwise it's the avg SQL execution metric such as elapsed_time based on the COMPARISON_METRIC parameter
@@ -300,23 +299,24 @@ BEGIN
                    ELAPSED_TIME ELA,
                    ROUND(CPU_TIME/NULLIF(ELAPSED_TIME,0),4) "CPU",
                    NULL IO,
-                   NULL flags,
                    '|' "|",
-                   ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2) "AVG|ELA",
-                   ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2) "AVG|BUFFS",
-                   ROUND(DISK_READS/GREATEST(EXECUTIONS,1),2) "AVG|READS",
-                   ROUND(DIRECT_WRITES/GREATEST(EXECUTIONS,1),2) "Direct|Writes",
-                   ROUND(FETCHES/GREATEST(EXECUTIONS,1),2) "AVG|FETCHES",
-                   ROUND(ROWS_PROCESSED/GREATEST(EXECUTIONS,1),2) "AVG|ROWS#",
+                   NULLIF(ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2),0) "AVG|ELA",
+                   NULLIF(ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2),0) "AVG|BUFFS",
+                   NULLIF(ROUND(DISK_READS/GREATEST(EXECUTIONS,1),2),0) "AVG|READS",
+                   NULLIF(ROUND(DIRECT_WRITES/GREATEST(EXECUTIONS,1),2),0) "Direct|Writes",
+                   NULLIF(ROUND(FETCHES/GREATEST(EXECUTIONS,1),2),0) "AVG|FETCHES",
+                   NULLIF(ROUND(ROWS_PROCESSED/GREATEST(EXECUTIONS,1),2),0) "AVG|ROWS#",
                    NULL "READ|REQ",
                    NULL "WRITE|REQ",
                    NULL "READ|BYTES",
                    NULL "WRITE|BYTES",
-                   NULL "INTER|BYTES"
+                   NULL "INTER|BYTES",
+                   NULL flags,
+                   NULL mesg
             FROM   (select distinct sq from s) s,dba_sqlset_statements t
             WHERE  sql_id = s.sq
             UNION ALL
-            SELECT /*+outline_leaf merge(o) leading(s o.a) use_nl(o.a) no_merge(t) push_pred(t)*/
+            SELECT /*+outline_leaf merge(o) leading(s o.a) use_nl(o.a) no_merge(t) no_merge(m) push_pred(t) push_pred(m)*/
                    'SPA EXEC' SOURCE_TYPE,
                    o.TASK_ID||'->'||o.EXECUTION_NAME SOURCE_NAME,
                    o.object_id,
@@ -328,10 +328,22 @@ BEGIN
                    ELAPSED_TIME*NVL(0+o.attr10,TESTEXEC_TOTAL_EXECS)/greatest(EXECUTIONS,1) ELA,
                    ROUND(CPU_TIME/NULLIF(ELAPSED_TIME,0),4) CPU,
                    ROUND(USER_IO_TIME/NULLIF(ELAPSED_TIME,0),4) IO,
+                    '|' "|",
+                   NULLIF(ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2),0) "AVG|ELA",
+                   NULLIF(ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2),0) BUFFS,
+                   NULLIF(ROUND(DISK_READS/GREATEST(EXECUTIONS,1),2),0) READS,
+                   NULLIF(ROUND(DIRECT_WRITES/GREATEST(EXECUTIONS,1),2),0) DXWRITES,
+                   NULLIF(ROUND(FETCHES/GREATEST(EXECUTIONS,1),2),0),
+                   NULLIF(ROUND(ROWS_PROCESSED/GREATEST(EXECUTIONS,1),2),0) ROWS_,
+                   NULLIF(ROUND(PHYSICAL_READ_REQUESTS/GREATEST(EXECUTIONS,1),2),0) READ_REQ,
+                   NULLIF(ROUND(PHYSICAL_WRITE_REQUESTS/GREATEST(EXECUTIONS,1),2),0) WRITE_REQ,
+                   NULLIF(ROUND(PHYSICAL_READ_BYTES/GREATEST(EXECUTIONS,1),2),0) READ_BYTES,
+                   NULLIF(ROUND(PHYSICAL_WRITE_BYTES/GREATEST(EXECUTIONS,1),2),0) WRITE_BYTES,
+                   NULLIF(ROUND(IO_INTERCONNECT_BYTES/GREATEST(EXECUTIONS,1),2),0) INTER_BYTES,
                    (SELECT listagg(decode(bitand(o.attr7,power(2,rownum-1)),
-                        1,'NONE',
-                        2,'IMPROVE',
-                        3,'REGRESS',
+                        1,'IMPROVE',
+                        2,'REGRESS',
+                        4,'UNCHANGE',
                         8,'XPLDIFF',
                         16,'ERROR',
                         32,'SKIPPED',
@@ -352,21 +364,11 @@ BEGIN
                         1048576,'UNKNOWN_DML_COST'
                     ),',') WITHIN GROUP(order by 1) 
                     FROM dual connect by power(2,rownum-1)<=o.attr7) flags,
-                    '|' "|",
-                   ROUND(ELAPSED_TIME/GREATEST(EXECUTIONS,1),2) "AVG|ELA",
-                   ROUND(BUFFER_GETS/GREATEST(EXECUTIONS,1),2) BUFFS,
-                   ROUND(DISK_READS/GREATEST(EXECUTIONS,1),2) READS,
-                   ROUND(DIRECT_WRITES/GREATEST(EXECUTIONS,1),2) DXWRITES,
-                   ROUND(FETCHES/GREATEST(EXECUTIONS,1),2),
-                   ROUND(ROWS_PROCESSED/GREATEST(EXECUTIONS,1),2) ROWS_,
-                   ROUND(PHYSICAL_READ_REQUESTS/GREATEST(EXECUTIONS,1),2) READ_REQ,
-                   ROUND(PHYSICAL_WRITE_REQUESTS/GREATEST(EXECUTIONS,1),2) WRITE_REQ,
-                   ROUND(PHYSICAL_READ_BYTES/GREATEST(EXECUTIONS,1),2) READ_BYTES,
-                   ROUND(PHYSICAL_WRITE_BYTES/GREATEST(EXECUTIONS,1),2) WRITE_BYTES,
-                   ROUND(IO_INTERCONNECT_BYTES/GREATEST(EXECUTIONS,1),2) INTER_BYTES
+                   trim(regexp_replace(substr(m.message,1,512),'\s+',' ')) mesg
             FROM   s,
                    DBA_ADVISOR_OBJECTS  O,
-                   DBA_ADVISOR_SQLSTATS T
+                   DBA_ADVISOR_SQLSTATS T,
+                   DBA_ADVISOR_FINDINGS m
             WHERE  o.type='SQL'
             AND    o.object_id=s.oid
             AND    o.task_id=s.tid
@@ -375,7 +377,11 @@ BEGIN
             AND    t.task_id(+)=o.task_id
             AND    t.execution_name(+)=o.execution_name
             AND    t.object_id(+)=o.object_id
-            AND    t.sql_id(+)=o.attr1;
+            AND    o.task_id=m.task_id(+)
+            AND    o.execution_name=m.execution_name(+)
+            AND    o.owner=m.owner(+)
+            AND    o.object_id=m.object_id(+)
+            AND    m.type(+) IN('PROBLEM','ERROR');
         GOTO END_BLOCK;
     END IF;
 
@@ -385,15 +391,14 @@ BEGIN
         check_task(CASE WHEN op='CREATE' THEN usr END);
     END IF;
     IF op = 'CREATE' THEN
-        IF tid IS NOT NULL THEN
-            raise_application_error(-20001,'Invalid new task name: '||tid);
-        END IF;
-        
-        IF tid IS NOT NULL THEN
+        IF tsk IS NULL THEN
+            raise_application_error(-20001,'Task name cannot be null');
+        ELSIF tid IS NOT NULL THEN
             raise_application_error(-20001,'Target task already exists: '||fulltask);
         ELSIF v3 IS NULL THEN
             raise_application_error(-20001,'Please specify the source sqlset name');
         END IF;
+        
         parse_name(v3);
         dbms_output.put_line('SQL Performance Analyzer task is created: '||user||'.'||
             dbms_sqlpa.create_analysis_task(
@@ -415,6 +420,17 @@ BEGIN
         IF v3 IS NULL THEN
             dbms_output.put_line('Please specify the parameter name and value.');
         ELSE
+            IF v3='COMPARISON_METRIC' THEN
+            BEGIN
+                EXECUTE IMMEDIATE '
+                    SELECT SUM('||v4||')
+                    FROM   dba_sqlset_statements
+                    WHERE  rownum<1';
+            EXCEPTION WHEN OTHERS THEN
+                raise_application_error(-20001,'Invalid comparison metric formula: '||v4);
+            END;
+            END IF;
+
             dbms_sqlpa.set_analysis_task_parameter(tsk,v3,v4);
             dbms_output.put_line('Parameter '||v3||' is set as '||v4||'.'||chr(10));
         END IF;
@@ -429,7 +445,6 @@ BEGIN
         pre    := ename;
         check_exec(v4);
         post   := ename;
-        ename    := 'DIFF_'||sid||'_'||eid;
         dop    := 1;
         check_exec(v5,NULL);
 
@@ -469,7 +484,7 @@ BEGIN
         FROM (
             SELECT parameter_name N,
                    decode(parameter_name,
-                        'TEST_EXECUTE_DOP'，nvl(''||dop,parameter_value),
+                        'TEST_EXECUTE_DOP',nvl(''||dop,parameter_value),
                         'LOCAL_TIME_LIMIT',replace(parameter_value,'UNUSED','1'),
                         parameter_value) V
             FROM   dba_advisor_parameters
@@ -495,7 +510,7 @@ BEGIN
                 job_type   => 'PLSQL_BLOCK',
                 job_action => stmt,
                 enabled    => true);
-            dbms_output.put_line('Execution '||ename||' of task '||tsk||' is running in background job '||snam);
+            dbms_output.put_line('Execution '||nvl(ename,v3)||' of task '||tsk||' is running in background job '||snam);
         END IF;
         GOTO END_BLOCK;
     ELSIF op ='STOP' THEN
@@ -558,7 +573,7 @@ BEGIN
                    null,null,null
             FROM   dba_advisor_exec_parameters
             JOIN   dba_advisor_executions
-            USING  (owner,task_id,task_name,execution_name,owner)
+            USING  (owner,task_id,task_name,execution_name)
             WHERE  TASK_ID = tid
             AND    execution_id=eid
             AND    parameter_value!='UNUSED'
@@ -578,7 +593,7 @@ BEGIN
                 SELECT *
                 FROM   dba_sqlset
                 WHERE  upper(owner)=upper(sown)
-                AND    upper(name)=(snam)
+                AND    upper(name)=upper(snam)
                 ORDER  by instr(name,snam) desc,instr(owner,sown) desc
             )
             WHERE rownum<2;
@@ -641,7 +656,7 @@ BEGIN
                    R1.COMP           "COMPARE|RESULT",
                    R1.SIM_EXADATA    "SIMULATE|EXDATA",
                    R1.SQL_LIMIT      "SQL|TIMEOUT",
-                   (select attr2 from dba_advisor_objects where task_id=r1.task_id and execution_name is null and type='SQLSET') "SQLSET|SQLs",
+                   (select attr2 from dba_advisor_objects s where s.task_id=r1.task_id and execution_name is null and type='SQLSET' and rownum<2) "SQLSET|SQLs",
                    R.execs,
                    R.errs,
                    r.status,
@@ -721,10 +736,10 @@ BEGIN
                                ELSE 
                                    'PLAN_FILTER: '||MAX(DECODE(n,'PLAN_FILTER',v))
                                END
-                        FROM  (SELECT TASK_ID,execution_name,parameter_name n,parameter_value v from DBA_ADVISOR_EXEC_PARAMETERS) B 
-                        WHERE task_id=tid
-                        AND   owner=a.owner
-                        AND   execution_name=a.execution_name
+                        FROM  (SELECT owner,task_id,execution_name,parameter_name n,parameter_value v from DBA_ADVISOR_EXEC_PARAMETERS) B 
+                        WHERE b.task_id=tid
+                        AND   b.owner=a.owner
+                        AND   b.execution_name=a.execution_name
                         ) ATTR1,
                        ERROR_MESSAGE
                 FROM   DBA_ADVISOR_EXECUTIONS A
@@ -785,8 +800,11 @@ BEGIN
                                count(1) over(partition by trim(substr(f.message,1,256))) cnt,
                                o.attr1 sql_id,
                                row_number() over(partition by trim(substr(f.message,1,256)) order by o.attr1 nulls last) rnk
-                        FROM   dba_advisor_findings f,dba_advisor_objects o
-                        WHERE  f.owner=o.owner(+)
+                        FROM   dba_advisor_findings f,
+                               dba_advisor_objects o
+                        WHERE  f.task_id=tid
+                        AND    f.execution_name=ename
+                        AND    f.owner=o.owner(+)
                         AND    f.task_id=o.task_id(+)
                         AND    f.execution_name=o.execution_name(+)
                         AND    f.object_id=o.object_id(+)
@@ -918,10 +936,10 @@ BEGIN
                            '|' "|",
                            execs "Total|Execs",
                            ela "Total|_Time",
-                           prev_avg "Prev|_Avg",
                            post_avg "Post|_Avg",
-                           &hide prev_metric "Prev|Metric",
+                           prev_avg "Prev|_Avg",
                            &hide post_metric "Post|Metric",
+                           &hide prev_metric "Prev|Metric",
                            abs(post_metric-prev_metric)*execs metric_gap,
                            round(greatest(post_metric/prev_metric,prev_metric/post_metric),8)*sign(prev_metric-post_metric) "Metric|Diff"
                     FROM   detail
@@ -939,14 +957,14 @@ BEGIN
                            '|' "|",
                            sum(execs) "Total|Execs",
                            sum(ela)   "Total|_Time",
-                           nullif(round(sum(execs*prev_avg)/sum(execs),2),0) "Prev|_Avg",
                            nullif(round(sum(execs*post_avg)/sum(execs),2),0) "Post|_Avg",
-                           &hide nullif(round(sum(execs*prev_metric)/sum(execs),2),0) "Prev|Metric",
+                           nullif(round(sum(execs*prev_avg)/sum(execs),2),0) "Prev|_Avg",
                            &hide nullif(round(sum(execs*post_metric)/sum(execs),2),0) "Post|Metric",
+                           &hide nullif(round(sum(execs*prev_metric)/sum(execs),2),0) "Prev|Metric",
                            abs(sum(execs*post_metric)-sum(execs*prev_metric)) metric_gap,
                            round(greatest(sum(execs*post_metric)/sum(execs*prev_metric),sum(execs*prev_metric)/sum(execs*post_metric)),8)
                             *sign(sum(execs*prev_metric)-sum(execs*post_metric)) "Metric|Diff"
-                    FROM detail
+                    FROM   detail
                     WHERE (&rule)
                     AND   (&diffplan)
                     GROUP BY prev_phv,post_phv
@@ -974,22 +992,23 @@ BEGIN
                 ORDER BY "Weight" DESC NULLS LAST;
         END IF;
 
-        IF KEY IN('HTML','HTM','TEXT','ACTIVE') THEN
-            fname := 'spa_'||tid||'_'||eid||'.';
-            report_start;
-            IF key IN ('TEXT','TXT') or DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE<14 THEN
-                fname := fname ||'txt';
-                key   := 'TEXT';
-            ELSE
-                fname := fname ||'html';
-                key   := regexp_replace(key,'^HTM$','HTML');
-            END IF;
-            frs := sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>tsk,task_owner=>usr,section=>'ALL',level=>'ALL',type=>key);
-            report_end;
-        END IF;
     END IF;
 
     <<END_BLOCK>>
+    IF KEY IN('HTML','HTM','TEXT','ACTIVE') AND tsk IS NOT NULL THEN
+        fname := 'spa_'||tid||'_'||nvl(eid,ename)||'.';
+        report_start;
+        IF key IN ('TEXT','TXT') or DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE<14 THEN
+            fname := fname ||'txt';
+            key   := 'TEXT';
+        ELSE
+            fname := fname ||'html';
+            key   := regexp_replace(key,'^HTM$','HTML');
+        END IF;
+        frs := sys.DBMS_SQLPA.REPORT_ANALYSIS_TASK(task_name=>tsk,task_owner=>usr,execution_name=>ename,section=>'ALL',level=>'ALL',type=>key);
+        report_end;
+    END IF;
+
     :c1 := c1;
     :c2 := c2;
     :fn := fname;

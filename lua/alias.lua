@@ -183,9 +183,9 @@ function alias.helper()
     local active
     for k, v in pairs(alias.cmdlist) do
         if not env._CMDS[k]['FILE']:match("alias") then
-            active = 'No'
+            active = false
         else
-            active = 'Yes'
+            active = true
         end
         alias.cmdlist[k].active = active
         table.insert(rows, {k, active, tostring(alias.cmdlist[k].desc)})

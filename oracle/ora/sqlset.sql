@@ -5,9 +5,9 @@ Show/Operate SQL Tuning Sets. Usage: @@NAME <sqlset> [create|load|drop [<sql_id>
     @@NAME <sqlset> ref     "<description>"                 : create reference to target sqlset
     @@NAME <sqlset> unref   <ref id>                        : remove reference from target sqlset
     @@NAME <sqlset> scan    "<filter>"                      : scan matched SQLs before loading into target sqlset
-    @@NAME <sqlset> load    "<filter>""                     : load matched SQLs into target sqlset
+    @@NAME <sqlset> load    "<filter>"                      : load matched SQLs into target sqlset
     @@NAME <sqlset> load <bid> <eid> [<dbid>] [-f"<filter>"]: load from awr snapshot 
-    @@NAME <sqlset> drop   [<filter>]                       : drop targt sqlset
+    @@NAME <sqlset> drop   ["<filter>""]                    : drop targt sqlset
 
 Parameters:
     <sqlset>: SQLSET_ID or SQLSET_NAME
@@ -17,7 +17,7 @@ Parameters:
               * <sql_id> [<plan_hash_value>]
               * -f"<customized predicates>"
     --[[
-        @check_access_dba: dba_sqlset_statements={dba_} default={all}
+        @check_access_dba: dba_sqlset_statements={dba_} default={all_}
         @last_exec: 12.2={last_exec_start_time last_exec,} default={}
         &filter   : default={filter IS NULL or upper(filter) in(upper(sql_id),''||plan_hash_value,parsing_schema_name)} f={}
         &f        : default={0} f={1}
@@ -108,8 +108,7 @@ BEGIN
     dbms_output.enable(null);
     <<BOF>>
     filter := 'command_type in (1, 2, 3, 6, 7, 9, 47, 170, 189) AND force_matching_signature > 0 AND plan_hash_value > 0';
-    filter := filter ||' AND substr(sql_text,1,256) NOT LIKE ''%/*+%dbms_stats%''';
-    filter := filter ||' AND NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|SQL Analyze|AUTO_INDEX:ddl)\W'')';
+    filter := filter ||' AND NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|dbms_stats|SQL Analyze|AUTO_INDEX:ddl\W'',''i'')';
 
     IF coalesce(sqlset,op,''||sid) IS NULL THEN
         OPEN c FOR 
@@ -118,7 +117,7 @@ BEGIN
                    decode(nvl(r,1),1,name) sqlset_name,
                    decode(nvl(r,1),1,created) created,
                    decode(nvl(r,1),1,last_modified) modified,
-                   decode(nvl(r,1),1,description) descritpion,
+                   decode(nvl(r,1),1,description) description,
                    ref_id,
                    ref_date,
                    ref_description
@@ -279,7 +278,7 @@ BEGIN
         ) 
         WHERE seq=1
         ORDER BY elapsed_time desc nulls last','@schema',usr),'@sid',sid);
-        --dbms_output.put_line(stmt);
+        dbms_output.put_line(stmt);
         OPEN c FOR stmt;
         LOOP
             FETCH c 
@@ -348,7 +347,7 @@ BEGIN
         check_sqlset;
         IF op='LOAD' AND bid IS NOT NULL AND eid IS NOT NULL THEN
             IF :f= 1 THEN
-                filter := filter || ' AND ('||filter||')';
+                filter := filter || ' AND ('||:filter||')';
             END IF;
             OPEN c FOR
                 SELECT value(p) val
