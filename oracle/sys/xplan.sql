@@ -1,5 +1,6 @@
 /*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
     The script will call DBMS_SQLTUNE_INTERNAL.I_PROCESS_SQL_CALLOUT instead of "EXPLAIN PLAN" or "EXECUTE IMMEDIATE" so that the bind variables can be applied.
+    When the SQL has bind_data, the "Bind Info" grid will list every bind variable with the data type, the peeked value (from the generated plan) and the value stored in bind_data, both decoded into readable format. The character set ID (csid) of peeked binds is resolved into the character set name via NLS_CHARSET_NAME (blank for non-character types).
    
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
@@ -24,6 +25,7 @@
 ]]*/
 set verify off feed off
 var cur REFCURSOR;
+var bd REFCURSOR "Bind Info"
 var xplan VARCHAR2(300);
 col ela for usmhd2
 col cpu for pct2
@@ -33,6 +35,7 @@ col bytes,NEXT_KB for kmg2
 
 DECLARE
     cur     SYS_REFCURSOR;
+    binds   SYS_REFCURSOR;
     own     VARCHAR2(128):=regexp_substr(:v2,'^\S+$');
     id      INT:=regexp_substr(own,'^\d+$');
     sq_text CLOB:=trim(:V1);
@@ -255,7 +258,7 @@ BEGIN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -ol -b -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||replace(sq_nid,'#',' ');
         ELSE
             DELETE SYS.PLAN_TABLE$ WHERE PLAN_ID=SIG;
 
@@ -334,14 +337,73 @@ BEGIN
 
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -ol -b -p '||sig;
+            xplan := 'ora plan -p '||sig;
         END IF;
-    ELSE 
-        sig := -1;
+
+        OPEN binds FOR
+            WITH bd AS (
+                SELECT /*+INLINE*/ b.position pos,b.datatype_string,name,
+                       CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
+                            WHEN b.datatype_string LIKE 'DATE%'      AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
+                            ELSE b.value_string
+                       END captured_value
+                FROM   TABLE(dbms_sqltune.extract_binds(bw)) b),
+            pk AS (
+                SELECT /*+INLINE*/ DISTINCT
+                       nvl(name,':'||pos) name,pos,
+                       CASE dty WHEN 1  THEN 'VARCHAR2' WHEN 2 THEN 'NUMBER' WHEN 12 THEN 'DATE'
+                                WHEN 96 THEN 'CHAR' WHEN 23 THEN 'RAW' WHEN 112 THEN 'CLOB' WHEN 113 THEN 'BLOB'
+                                WHEN 180 THEN 'TIMESTAMP' WHEN 181 THEN 'TIMESTAMP WITH TIME ZONE'
+                                WHEN 231 THEN 'TIMESTAMP WITH LOCAL TIME ZONE'
+                                ELSE 'DTYPE '||to_char(dty) END datatype,
+                       CASE WHEN csid>0 THEN '['||csid||']'||nvl(nls_charset_name(csid),'Unknown') END charset,
+                       CASE WHEN dty IN (1,9,96) THEN utl_raw.cast_to_varchar2(hextoraw(hval))
+                            WHEN dty IN (2,3,29)      THEN to_char(utl_raw.cast_to_number(hextoraw(hval)))
+                            WHEN dty IN (12,180,181,231) THEN
+                                 to_char(100*(to_number(substr(hval,1,2),'XX')-100)
+                                        + (to_number(substr(hval,3,2),'XX')-100),'fm0000')||'-'||
+                                 to_char(to_number(substr(hval,5,2),'XX'),'fm00')||'-'||
+                                 to_char(to_number(substr(hval,7,2),'XX'),'fm00')||' '||
+                                 to_char(to_number(substr(hval,9,2),'XX')-1,'fm00')||':'||
+                                 to_char(to_number(substr(hval,11,2),'XX')-1,'fm00')||':'||
+                                 to_char(to_number(substr(hval,13,2),'XX')-1,'fm00')||
+                                 CASE WHEN dty!=12 AND length(hval)>=22 THEN '.'||to_number(substr(hval,15,8),'XXXXXXXX') END
+                            ELSE hval
+                       END peeked_value
+                FROM   TABLE(stmt.sql_plan) p
+                ,      XMLTABLE('/*/peeked_binds/bind' PASSING XMLTYPE(p.other_xml)
+                       COLUMNS name VARCHAR2(128)  PATH '@nam',
+                               pos  INT            PATH '@pos',
+                               dty  INT            PATH '@dty',
+                               csid INT            PATH '@csi',
+                               hval VARCHAR2(4000) PATH '.') b
+                WHERE  p.other_xml IS NOT NULL)
+            SELECT pos "#",name,datatype,charset,peeked_value,captured_value
+            FROM  (SELECT pos,
+                          nvl(pk.name,nvl(bd.name,':'||pos)) name,
+                          nvl(bd.datatype_string,pk.datatype) datatype,
+                          pk.charset,
+                          pk.peeked_value,
+                          bd.captured_value
+                   FROM   pk
+                   FULL   JOIN bd USING(pos))
+            ORDER  BY pos,name;
+    ELSIF bw IS NOT NULL THEN
+        OPEN binds FOR
+            SELECT b.position,
+                   nvl(name,':'||b.position) name,
+                   b.datatype_string,
+                   NULL charset,
+                   NULL peeked_value,
+                   CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
+                        WHEN b.datatype_string LIKE 'DATE%'     AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
+                        ELSE b.value_string
+                   END captured_value
+            FROM   TABLE(dbms_sqltune.extract_binds(bw)) b
+            ORDER  BY b.position;
     END IF;
 
     IF sq_text IS NOT NULL THEN
-        
         IF bitand(&opt,3)>0 THEN
             OPEN cur FOR
                 SELECT /*+NO_MINITOR*/ 
@@ -398,9 +460,11 @@ BEGIN
     END IF;
     :xplan   := xplan;
     :cur     := cur;
+    :bd      := binds;
 END;
 /
 
-&xplan 
+&xplan
+print bd
 print cur
 &load loadtrace default 256
