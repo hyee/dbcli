@@ -6,6 +6,7 @@ Options:
     -d    : only show the plan from AWR views
     -p    : only show the plan from sys.plan_table$
     -g    : only show the plan from GV$ views
+    -v    : only show the plan from dba_advisor_sqlplans
     -s    : the plan with the simplest 'basic' format
     -ol   : show outline information
     -adv  : the plan with the 'advanced' format
@@ -21,9 +22,10 @@ Options:
     &DF: default={ALLSTATS PARALLEL COST PARTITION REMOTE &LAST -PROJECTION -ALIAS}, basic={BASIC}, adv={advanced}, all={ALLSTATS ALL outline alias}
     &SRC: {
             default={0}, # Both
-            d={2},       # Dictionary only
             g={1}        # GV only
-            p={4}        # plan_table      
+            d={2},       # Dictionary only
+            p={4}        # plan_table
+            v={8}        # dba_advisor_sqlplans
           }
     &binds: default={}, b={PEEKED_BINDS}
     @check_access_aux: default={(26/8/12)-6}
@@ -56,21 +58,21 @@ Options:
                          &d_mbrc mbrc
                   FROM   &check_access_pdb.sql_plan a
                   WHERE  a.sql_id = '&v1'
-                  AND    &SRC != 1
+                  AND    &SRC IN (0,2)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.plan_hash_value = coalesce('&v2'+0,(
                      select --+precompute_subquery index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
                      from &check_access_pdb.sqlstat c 
                      where sql_id='&v1' 
-                     AND   &SRC != 1
+                     AND   &SRC IN (0,2)
                      AND  dbid=a.dbid
                      AND   '&v1' not in('X','&_sql_id')),(
                      select /*+precompute_subquery*/ 
                             max(plan_hash_value) keep(dense_rank last order by timestamp) 
                      from &check_access_pdb.sql_plan 
                      where sql_id='&v1'
-                     AND   &SRC != 1
+                     AND   &SRC IN (0,2)
                      AND    '&v1' not in('X','&_sql_id')
                      AND  dbid=a.dbid))} 
            default={0}
@@ -97,13 +99,13 @@ Options:
                          &g_mbrc mbrc
                   FROM   dba_advisor_sqlplans a
                   WHERE  a.sql_id = '&v1'
-                  AND    &SRC = 0
+                  AND    &SRC IN (0,8)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    (a.task_id,a.plan_hash_value) = (
                         select /*+precompute_subquery*/ max(task_id),max(plan_hash_value) keep(dense_rank last order by task_id,timestamp) 
                         from   dba_advisor_sqlplans 
                         where  sql_id='&v1'
-                        AND    &SRC = 0
+                        AND    &SRC IN (0,8)
                         AND    '&v1' not in('X','&_sql_id')
                         and    plan_hash_value=nvl('&v2'+0,plan_hash_value))}
            default={}
@@ -131,7 +133,7 @@ Options:
                          &g_mbrc mbrc
                   FROM   sys.sql$text st,sys.sqlobj$plan a,(select plan_id p,signature,name from sys.sqlobj$) o
                   WHERE  '&v1' in(st.sql_handle,o.name)
-                  AND    &SRC = 0
+                  AND    &SRC IN (0)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    a.signature = st.signature
                   AND    a.signature = o.signature
@@ -140,7 +142,7 @@ Options:
                         select max(plan_id) keep(dense_rank last order by timestamp) 
                         from   sys.sqlobj$plan b 
                         where  b.signature=a.signature
-                        AND    &SRC = 0
+                        AND    &SRC IN (0)
                         AND   '&v1' not in('X','&_sql_id'))))
            }
            default={}
@@ -181,7 +183,7 @@ BEGIN
                                               'GV$SQL_BIND_CAPTURE' SRC
                                        FROM   gv$sql_bind_capture a
                                        WHERE  sql_id = '&v1'
-                                       AND    &SRC!=2
+                                       AND    &SRC IN (0,1)
                                        $IF &check_access_ab=1 $THEN
                                        UNION ALL
                                        SELECT MAX(LAST_CAPTURED) OVER(PARTITION BY DBID,SNAP_ID,INSTANCE_NUMBER)||DBID||':'|| SNAP_ID || ':' || INSTANCE_NUMBER,
@@ -198,7 +200,7 @@ BEGIN
                                               'DBA_HIST_SQLBIND' SRC
                                        FROM   &check_access_pdb.sqlbind a
                                        WHERE  sql_id = '&v1'
-                                       AND    &SRC!=1
+                                       AND    &SRC IN (0,2)
                                        AND    dbid=&dbid
                                        $END
                                        ) a) a)
@@ -301,7 +303,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   WHERE  a.sql_id = '&v1'
                   AND   ('&v1' != '&_sql_id' or nvl('&V2'+0,1)>0 or inst_id=userenv('instance'))
                   AND    '&v1' !='X'
-                  AND    &SRC != 2
+                  AND    &SRC IN (0,1)
                   AND    nvl(abs('&V2'+0),-1) in(plan_hash_value,child_number,-1)
                   UNION ALL
                   SELECT /*+no_expand*/ id,
@@ -323,7 +325,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                          &g_mbrc mbrc
                   FROM   all_sqlset_plans a
                   WHERE  a.sql_id = '&v1'
-                  AND    &SRC = 0
+                  AND    &SRC IN (0)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    (sqlset_id,a.plan_hash_value) = (
                         select /*+precompute_subquery*/ 
@@ -331,7 +333,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                                max(plan_hash_value) keep(dense_rank last order by sqlset_id,timestamp) 
                         from   all_sqlset_plans 
                         where  sql_id='&V1'
-                        AND    &SRC = 0
+                        AND    &SRC IN (0)
                         AND    '&v1' not in('X','&_sql_id')
                         and    plan_hash_value=nvl('&V2'+0,plan_hash_value))
                   &check_access_awr

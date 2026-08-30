@@ -2,12 +2,12 @@
 Show/Operate SQL Tuning Sets. Usage: @@NAME <sqlset> [create|load|drop [<sql_id>|-f"<filter>"]]
     @@NAME <sqlset> [<filter>]                              : list matched SQLs from target sqlse
     @@NAME <sqlset> create ["<description>"]                : create target sqlset
-    @@NAME <sqlset> ref     "<description>"                 : create reference to target sqlset
-    @@NAME <sqlset> unref   <ref id>                        : remove reference from target sqlset
+    @@NAME <sqlset> ref     "<description>"                 : create reference to target sqlset  (dba_sqlset_references)
+    @@NAME <sqlset> unref   <ref id>                        : remove reference from target sqlset(dba_sqlset_references)
     @@NAME <sqlset> scan    "<filter>"                      : scan matched SQLs before loading into target sqlset
     @@NAME <sqlset> load    "<filter>"                      : load matched SQLs into target sqlset
     @@NAME <sqlset> load <bid> <eid> [<dbid>] [-f"<filter>"]: load from awr snapshot 
-    @@NAME <sqlset> drop   ["<filter>""]                    : drop targt sqlset
+    @@NAME <sqlset> drop   ["<filter>"]                     : drop targt sqlset
 
 Parameters:
     <sqlset>: SQLSET_ID or SQLSET_NAME
@@ -22,6 +22,7 @@ Parameters:
         &filter   : default={filter IS NULL or upper(filter) in(upper(sql_id),''||plan_hash_value,parsing_schema_name)} f={}
         &f        : default={0} f={1}
         @db       : 12.2={,dbid=>did} default={}
+        @ver18    : 18.1={} default={--}
     --]]--
 ]]*/
 
@@ -172,7 +173,9 @@ BEGIN
             sys.dbms_sqltune.remove_sqlset_reference(
                 sqlset_owner=>usr,
                 sqlset_name =>sqlset,
-                reference_id=>v3);
+                reference_id=>v3
+                &ver18 ,force_remove=>1
+                );
         END IF;
         sqlset := null;
         op     := null;
@@ -278,7 +281,7 @@ BEGIN
         ) 
         WHERE seq=1
         ORDER BY elapsed_time desc nulls last','@schema',usr),'@sid',sid);
-        dbms_output.put_line(stmt);
+        --dbms_output.put_line(stmt);
         OPEN c FOR stmt;
         LOOP
             FETCH c 

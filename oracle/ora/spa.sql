@@ -20,12 +20,14 @@
                                                               <ename>           : the new execution name for the task
                                                               -metric"<formula>": i.e, "disk_reads+buffer_get*3000", "buffer_gets"  
         @@NAME <task> <ename> [<parameters>]            : show details of target executions, following with below options:
-                                                              -diff     : order by abs(diff)
-                                                              -regress  : order by regression
-                                                              -improve  : order by improvement
-                                                              -parse    : order by parse_time
-                                                              -phv      : group by plan_hash_value
-                                                              -diffplan : only list the plan change cases
+                                                              -diff        : order by abs(diff)
+                                                              -regress     : order by regression
+                                                              -improve     : order by improvement
+                                                              -parse       : order by parse_time
+                                                              -phv         : group by plan_hash_value
+                                                              -diffplan    : only list the plan change cases
+                                                              -avg         : order by avg time
+                                                              -exclude"<n> ：exclude top n
                                                             other parameters:
                                                               <keyword> : filter with specific keyword
                                                               error     : list execution errors
@@ -40,11 +42,14 @@
         &filter: default={1=1}, f={}
         @ver   : 18.1={} default={--}
         @attr17: 12.1={attr17} default={null}
+        &avg   : default={1} avg={("Total|Execs"*nvl2("Metric|Diff",1,-1))}
+        &ex    : default={0} exclude={}
         &ord1  : {
-            weight={"Total|_Time"} 
-            diff={log(1.2,abs("Metric|Diff"))*log(2,2+metric_gap)} 
-            regress={log(1.2,abs("Metric|Diff"))*log(2,2+metric_gap)} 
-            improve={log(1.2,abs("Metric|Diff"))*log(2,2+metric_gap)}
+            weight={"Total|_Time"}
+            avg={"Total|_Time"/&avg}
+            diff={metric_gap*log(2,2+"Total|Execs")*abs("Metric|Diff")} 
+            regress={metric_gap*log(2,2+"Total|Execs")*abs("Metric|Diff")} 
+            improve={metric_gap*log(2,2+"Total|Execs")*abs("Metric|Diff")}
             parse={parse*log(2,2+"Total|Execs")}
         }
         &rule     : default={1=1} regress={prev_metric*1.1 < post_metric} improve={post_metric*1.1 < prev_metric}
@@ -54,7 +59,8 @@
         &calc     : default={} metric={}
         &qb       : {
             default={
-                SELECT attr1 sq,task_id tid,execution_name ename,object_id oid,count(distinct attr1) over() sqls
+                SELECT --+ no_expand
+                       attr1 sq,task_id tid,execution_name ename,object_id oid,count(distinct attr1) over() sqls
                 FROM   dba_advisor_objects
                 WHERE  sq in(attr1,&attr17)
                 AND    task_id=nvl(tid,task_id)
@@ -63,20 +69,23 @@
                 SELECT sq,null,null,null,null FROM DUAL
                 }
             plan={
-                SELECT attr1 sq,task_id tid,execution_name ename,object_id oid,count(distinct attr1) over() sqls
+                SELECT --+ no_expand
+                       attr1 sq,task_id tid,execution_name ename,object_id oid,count(distinct attr1) over() sqls
                 FROM   dba_advisor_objects
                 WHERE  attr1 IS NOT NULL
                 AND    type='SQL'
                 AND    task_id=nvl(tid,task_id)
                 AND    attr5=sq
                 UNION
-                SELECT sql_id sq,null,null,null,null
+                SELECT --+ no_expand
+                       sql_id sq,null,null,null,null
                 FROM   dba_advisor_sqlstats
                 WHERE  plan_hash_value=sq
                 AND    task_id=nvl(tid,task_id)
             }
             sign={
-                SELECT attr1 sq,task_id tid,execution_name ename,object_id oid,count(distinct attr1) over() sqls
+                SELECT --+ no_expand
+                       attr1 sq,task_id tid,execution_name ename,object_id oid,count(distinct attr1) over() sqls
                 FROM   dba_advisor_objects
                 WHERE  sq in(attr1,&attr17)
                 AND    type='SQL'
@@ -101,14 +110,15 @@
 
 set verify off feed off autohide col
 col metric_gap noprint
-col weight,cpu,io for pct3
-col ela,avg_ela,pre,post,prev_avg,post_avg,parse,avg|ela,avg1,avg2,src_ela,Prev|_Avg,Post|_Avg,Total|_Time for usmhd2
+col Metric|Weight,cpu,io for pct3
+col ela,avg_ela,src_avg,parse,avg|ela,avg1,avg2,src_ela,Prev|_Avg,Post|_Avg,Total|_Time for usmhd2
 col metric,Prev|Metric,Post|Metric,Total|Execs,Metric|Diff,cost,diff,buffs,exec,avg|fetches,avg|rows#,avg|buffs,avg|reads,direct|writes,read|req,write|req for tmb2
 col read|bytes,write|bytes,inter|bytes for kmg2
 var m1 VARCHAR2(300)
 var m2 VARCHAR2(300)
 var c1 refcursor
 var c2 refcursor
+var c3 refcursor "Running SQLs"
 var fn VARCHAR2(30);
 var fc CLOB;
 var metric VARCHAR2(300)
@@ -158,6 +168,7 @@ END;
 DECLARE
     c1         SYS_REFCURSOR;
     c2         SYS_REFCURSOR;
+    c3         SYS_REFCURSOR;
     rs         CLOB;
     tsk        VARCHAR2(128) := replace(upper(:v1),'"');
     op         VARCHAR2(128) := upper(:v2);
@@ -439,7 +450,7 @@ BEGIN
         dbms_sqlpa.execute_analysis_task(
             task_name      => tsk,
             execution_type => 'CONVERT SQLSET',
-            execution_name => 'CONVERT_SQLSET');
+            execution_name => 'BASELINE');
         dbms_sqlpa.set_analysis_task_parameter(tsk,'COMPARISON_METRIC','ELAPSED_TIME');
         GOTO END_BLOCK;
     ELSIF op = 'DROP' THEN
@@ -641,7 +652,6 @@ BEGIN
              (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ 
                      A.*, 
                      (SELECT COUNT(1) FROM dba_advisor_executions where task_id = a.task_id and owner=a.owner) execs,
-                     (SELECT /*+no_unnest outline*/ COUNT(1) FROM dba_advisor_findings WHERE type='ERROR' AND task_id = a.task_id and owner=a.owner) errs,
                      (SELECT decode(MAX(y.type),
                                 'SQL'   ,MAX(y.attr1||' -> '|| nvl(sqln,y.attr3)),
                                 'SQLSET',MAX(nullif(y.attr3||'.'||y.attr1,'.')),
@@ -664,9 +674,14 @@ BEGIN
                       WHERE  (&FILTER)
                       AND    advisor_name LIKE 'SQL Performance%'
                       ORDER  BY execution_start DESC NULLS LAST) A
-              WHERE  ROWNUM <= 50),
-            r1 AS
-             (SELECT task_id,
+              WHERE  ROWNUM <= 50
+            ), f AS (
+              SELECT /*+materialize*/ task_id,count(1) errs
+              FROM   dba_advisor_findings
+              WHERE  type='ERROR'
+              GROUP  BY task_id
+            ), r1 AS (
+              SELECT task_id,
                      MAX(DECODE(parameter_name, 'TEST_EXECUTE_DOP', parameter_value)) DOP,
                      MAX(DECODE(parameter_name, 'EXECUTE_FULLDML', parameter_value)) FULLDML,
                      MAX(DECODE(parameter_name, 'COMPARE_RESULTSET', parameter_value)) COMP,
@@ -677,7 +692,8 @@ BEGIN
               JOIN   DBA_ADVISOR_PARAMETERS
               USING  (OWNER,TASK_ID)
               GROUP  BY task_id)
-            SELECT R.TASK_ID,
+            SELECT /*+use_hash(f) use_hash(r1) outline_leaf*/ 
+                   R.TASK_ID,
                    R.OWNER,
                    R.TASK_NAME,
                    NVL(R.SQLSET,R1.SQLSET) "SQL[SET]",
@@ -688,7 +704,7 @@ BEGIN
                    R1.SQL_LIMIT      "SQL|TIMEOUT",
                    --(select attr2 from dba_advisor_objects s where s.task_id=r1.task_id and execution_name is null and type='SQLSET' and rownum<2) "SQLSET|SQLs",
                    R.execs,
-                   R.errs,
+                   f.errs,
                    r.status,
                    r.execution_start,
                    (SELECT nvl(to_char(r.execution_end),
@@ -702,6 +718,8 @@ BEGIN
             FROM   R
             LEFT   JOIN R1
             ON     (r.task_id=r1.task_id)
+            LEFT   JOIN F
+            ON     (r.task_id=f.task_id)
             ORDER  BY execution_start DESC NULLS LAST;
     ELSIF eid IS NULL THEN
         m1 := 'TASK PARAMETERS FOR '||fulltask;
@@ -728,6 +746,7 @@ BEGIN
             WHERE  TASK_ID = tid
             AND    EXECUTION_NAME IS NULL
             ORDER  BY PARAMETER_NAME;
+
         IF nvl(op,'x') !='ALTER' THEN
             m2 := 'EXECUTIONS FOR '||usr||'.'||tsk;
             OPEN c2 FOR
@@ -775,6 +794,34 @@ BEGIN
                 FROM   DBA_ADVISOR_EXECUTIONS A
                 WHERE  task_id = tid
                 ORDER  BY EXECUTION_START DESC;
+
+            SELECT MAX(execution_name)
+            INTO   ename
+            FROM   dba_advisor_executions
+            WHERE  task_id=tid
+            AND    status='EXECUTING';
+
+            IF ename IS NOT NULL THEN
+                OPEN c3 FOR
+                    SELECT /*+outline_leaf leading(o b) push_pred(b)*/
+                           o.object_id obj#,
+                           o.attr1 src_sql,
+                           round(sum(b.elapsed_time)/sum(greatest(b.executions,1)),2) src_avg,
+                           max(trim(regexp_replace(to_char(substr(b.sql_text,1,512)),'\s+',' '))) sql_text
+                    FROM   dba_advisor_objects o,
+                           dba_sqlset_statements b
+                           /*gv$advisor_progress p,
+                           gv$session s*/
+                    WHERE  o.task_id=tid
+                    AND    o.execution_name=ename
+                    AND    bitand(o.attr7,64)>0
+                    AND    o.type='SQL'
+                    AND    o.attr1=b.sql_id(+)
+                    AND    o.attr5=b.plan_hash_value(+)
+                    AND    b.sqlset_id(+)=setid
+                    GROUP BY o.object_id,o.attr1
+                    ORDER BY o.object_id desc;
+            END IF;
         END IF;
     ELSE
         key := CASE WHEN key IS NULL THEN '%' WHEN KEY IN('HTML','HTM','TEXT','TXT','ACTIVE') THEN KEY ELSE '%'||key||'%' END;
@@ -927,7 +974,7 @@ BEGIN
                            AND    s.EXECUTION_NAME(+)=post
                            AND    o.object_id=s.object_id(+)
                            AND    o.attr1=s.sql_id(+)) p2,
-                          (SELECT --+leading(s.f s.s s.p) use_nl(s.m s.c) no_expand
+                          (SELECT --+leading(s.f s.s s.p) use_nl(s.m s.c s.p s.t) no_expand
                                  sql_id attr1,
                                  max(force_matching_signature) sign,
                                  nullif(SUM(&metric)/greatest(SUM(executions),1),0) metric,
@@ -999,10 +1046,11 @@ BEGIN
                        '|' "|",
                        s.sql_text
                 FROM (
-                    SELECT RATIO_TO_REPORT(&ord1) OVER() "Weight",
-                           a.*
-                    FROM   &base a
-                    ORDER  BY "Weight" DESC NULLS LAST
+                    SELECT a.*,ratio_to_report(&ord1) over() "Metric|Weight"
+                    FROM (
+                        SELECT row_number() over(ORDER BY &ord1 DESC NULLS LAST) "#",a.*
+                        FROM   &base a) a
+                    WHERE "#" > &ex
                 ) a, (
                     SELECT /*+merge(s) leading(s.s)*/
                            sql_id src_sql,
@@ -1011,11 +1059,10 @@ BEGIN
                     WHERE  sqlset_owner=sown
                     AND    sqlset_name=snam
                     AND    sqlset_id=setid
-                    GROUP  BY sql_id
-                    ) s
+                    GROUP  BY sql_id) s
                 WHERE a.src_sql=s.src_sql
-                AND   rownum <=50
-                ORDER BY "Weight" DESC NULLS LAST;
+                AND   rownum<=50
+                ORDER BY "#";
         END IF;
 
     END IF;
@@ -1037,6 +1084,7 @@ BEGIN
 
     :c1 := c1;
     :c2 := c2;
+    :c3 := c3;
     :fn := fname;
     :fc := frs;
     :m1 := m1;
@@ -1046,4 +1094,6 @@ END;
 
 print c1 "&m1"
 print c2 "&m2"
+
+print c3
 save fc fn
