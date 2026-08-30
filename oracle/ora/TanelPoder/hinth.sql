@@ -28,7 +28,9 @@ SELECT /*+use_hash(hi fh)*/
        TRIM('/' FROM Case when bitand(target_level,1)>0 THEN 'STATEMENT/' END||
                      Case when bitand(target_level,2)>0 THEN 'QUERY_BLOCK/' END||
                      Case when bitand(target_level,4)>0 THEN 'OBJECT/' END||
-                     Case when bitand(target_level,8)>0 THEN 'JOIN' END) Support_levels,
+                     Case when bitand(target_level,8)>0 THEN 'JOIN/' END||
+                     Case when bitand(property,16)>0 THEN 'CBO' END) --CBO can be impacted by ignore_optim_embedded_hints 
+       Support_levels,
        nvl(fh.description,hi.sql_feature) description,
        REGEXP_REPLACE(replace(fh.path,'QKSFM_'), '^ -> ', '') "Hint Path (QKSFM_*)"
 FROM   v$sql_hint hi, feature_hierarchy fh
