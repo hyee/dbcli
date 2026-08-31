@@ -1,32 +1,40 @@
-/*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<child_num>|<snap_id>|<phv>]} | {[<schema>] <sql_text>}
+/*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-monitor|-10046|-obj|-nobase] {<sql_id> [<child_num>|<snap_id>|<phv>]} | {[<schema>] <sql_text>}
     The script will call dbms_sqlpa.remote_process_sql instead of "EXPLAIN PLAN" or "EXECUTE IMMEDIATE" so that the bind variables can be applied.
-   
+    When the SQL has bind_data, the "Bind Info" grid will list every bind variable with the data type (including precision/length from the peeked bind metadata), the declared max length, the peeked value (from the generated plan) and the value stored in bind_data, both decoded into readable format. The character set ID (csid) of peeked binds is resolved into the character set name via NLS_CHARSET_NAME (blank for non-character types). Values that cannot be decoded are shown as "(0x) <hex>".
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
     -exec          : execute SQL instead of explain only
+    -monitor       : add "monitor" hint while -exec
     -10046         : execute SQL and get 10046 trace file
+    -obj           : generate relative object list
+    -nobase        : bypass possible SQL Plan Baseline(mapped to action EXPLAIN_PLAN_NOBASELINE)
     --[[
         @ARGS : 1
         &opt  : default={EXPLAIN_PLAN} exec={EXECUTE,GATHER_SQL_STATS} gather={GATHER_SQL_STATS} obj={COMPUTE_OBJECTS} diag={DIAGNOSE_SQL} 10046={3}
+        &base : default={} nobase={,EXPLAIN_PLAN_NOBASELINE}
         &trace: default={0} o={1} c={2}
         &load : default={--} o={} c={} 10046={}
         &lv   : default={medium} low={low} high={high}
+        &mon  : default={0} monitor={1}
         @O121 : 12.1={} default={--}
         @O122 : 12.2={} default={--}
         @O181 : 18.1={} default={--}
+        @con  : 12.1={,con_dbid} default={}
     --]]
 ]]*/
 set verify off feed off
 var cur REFCURSOR;
+var bd REFCURSOR "Bind Info";
 var xplan VARCHAR2(300);
 col ela for usmhd2
 col cpu for pct2
-col val,xplan_cost,exec_cost for k0
+col val,xplan_cost,first_row,all_rows for k0
 col buff,reads,dxwrites,rows#,blocks,extents for tmb2
 col bytes,NEXT_KB for kmg2
 
 DECLARE
     cur     SYS_REFCURSOR;
+    binds   SYS_REFCURSOR;
     action  VARCHAR2(100):=:opt;
     con     VARCHAR2(128);
     own     VARCHAR2(128):=regexp_substr(:v2,'^\S+$');
@@ -34,6 +42,7 @@ DECLARE
     sq_text CLOB:=trim(:V1);
     sq_id   VARCHAR2(20):= regexp_substr(sq_text,'^\S{10,20}$');
     sq_nid  VARCHAR2(20);
+    sq_cn   INT;
     sig     INT;
     bw      RAW(2000);
     xplan   VARCHAR2(300);
@@ -50,7 +59,9 @@ DECLARE
     siz     INT;
     rdata   NUMBER;
     rtype   NUMBER;
-    extra   CLOB;
+    extra   VARCHAR2(32767);
+    l_other VARCHAR2(32767);
+    oxml    VARCHAR2(32767);
     stats   V$SQL%ROWTYPE;
     PROCEDURE pr(nam VARCHAR2,val VARCHAR2) IS
     BEGIN
@@ -86,13 +97,13 @@ BEGIN
             SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value
             FROM   dba_hist_sqltext
             JOIN  (SELECT *
-                   FROM   (SELECT dbid, sql_id, parsing_schema_name, force_matching_signature, bind_data,plan_hash_value
+                   FROM   (SELECT dbid &con, sql_id, parsing_schema_name, force_matching_signature, bind_data,plan_hash_value
                            FROM   dba_hist_sqlstat
                            WHERE  sql_id = sq_id
                            AND    nvl(id, snap_id) IN (snap_id, plan_hash_value)
-                           ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC)
+                           ORDER  BY decode(dbid, sys_context('userenv', 'dbid'), 1, 2),nvl2(bind_data,1,2), snap_id DESC,decode(instance_number,userenv('instance'),1,2))
                    WHERE  rownum < 2)
-            USING  (dbid, sql_id)
+            USING  (dbid, sql_id &con)
             WHERE  sql_id = sq_id
             AND    sql_text IS NOT NULL
             UNION ALL
@@ -107,6 +118,7 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
         raise_application_error(-20001,'Cannot find SQL Text for SQL Id: '||sq_id);
     END;
+
     ELSE
         IF sq_text LIKE '%/' THEN
             sq_text := trim(trim('/' from sq_text));
@@ -134,6 +146,19 @@ BEGIN
     ELSIF action='GATHER_SQL_STATS' THEN
         ctrl:='<parameter name="sharing">"1"</parameter><parameter name="approximate">"OTNFSLVRH_"</parameter>';
     END IF;
+    action := action||'&base';
+    -- process_ctrl DTD: <!ELEMENT process_ctrl (parameter*, outline_data?, hint_data?)>
+    -- so every <parameter> must be placed before <hint_data>
+    --ctrl := ctrl||'<parameter name="mode">safe</parameter>';
+    IF &mon=1 AND action LIKE '%EXECUTE%' THEN
+        ctrl := ctrl||q'~<hint_data><hint><![CDATA[monitor]]></hint></hint_data>~';
+    /*    
+    ELSIF action like '%EXPLAIN%' THEN
+        ctrl := '<parameter name="EXECUTE_FULLDML">''true''</parameter>';
+        sq_text := 'EXPLAIN PLAN FOR '||sq_text;
+        action := 'EXECUTE';*/
+    END IF;
+
     st := SYSDATE;
     --SELECT value into siz
     --FROM   v$parameter where name='sort_area_size';
@@ -148,7 +173,7 @@ BEGIN
             bind_data => bw,
             bind_list => null,
             action => action,
-            time_limit => 3600,
+            time_limit => 86400,
             plan_hash1 => phv1,
             buffer_gets => stats.buffer_gets,
             cpu_time => stats.cpu_time,
@@ -162,7 +187,7 @@ BEGIN
             err_mesg => err,
             trace_flags => 0,
             extra_res => extra,
-            other_xml => stats.sql_fulltext,
+            other_xml => l_other,
             physical_read_requests => stats.physical_read_requests,
             physical_write_requests => stats.physical_write_requests,
             physical_read_bytes => stats.physical_read_bytes,
@@ -176,6 +201,7 @@ BEGIN
             &O122 ,param_xml=>null
             &O181 ,result_data_checksum=>rdata,result_type_checksum=>rtype
             );
+
     dbms_output.put_line('=============================================================================================================');
     pr('plan_hash1',phv1);
     pr('plan_hash2',phv2);
@@ -196,10 +222,9 @@ BEGIN
     &O121 pr('con_name',con);
     &O181 pr('result_data_checksum',rdata);
     &O181 pr('result_type_checksum',rtype);
-    pr('other_xml',stats.sql_fulltext);
+    pr('other_xml',l_other);
     pr('err_code',sig);
     pr('err_mesg',err);
-    pr('extra_res',extra);
     --execute immediate 'alter session set sort_area_size='||siz;
     IF trace IS NOT NULL THEN
         EXECUTE IMMEDIATE replace(trace,'@','off');
@@ -214,45 +239,61 @@ BEGIN
 
     IF phv2 is not null THEN
         xplan := 'ORG_PHV: '||phv||'  ->  ACT_PHV: '||phv2;
-        SELECT MAX(sql_id||' #'||child_number)
-        INTO   sq_nid
-        FROM (SELECT sql_id,child_number
-              FROM   v$sql
+
+        SELECT max(sql_id),max(child_number)
+        INTO   sq_nid,sq_cn
+        FROM (SELECT s.sql_id,child_number
+              FROM   v$sql s
               WHERE  plan_hash_value=phv2
               AND    parsing_schema_name=own
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
               AND    program_id=0
               AND    (stats.optimizer_cost IS NULL OR stats.optimizer_cost=optimizer_cost)
-              AND    upper(ltrim(substr(sql_text,1,128))) not like 'EXPLAIN%'
+              AND    upper(ltrim(substr(s.sql_text,1,128))) not like 'EXPLAIN%'
+              AND    instr(s.sql_fulltext,regexp_replace(to_char(substr(sq_text,1,512)),'^\s+|\s+$')) > 0
               ORDER  BY decode(force_matching_signature,stats.force_matching_signature,1,2),
-                        instr(sql_fulltext,regexp_replace(to_char(substr(sq_text,1,512)),'^\s+|\s+$')) desc,
                         last_load_time desc,child_number desc)
         WHERE rownum<2;
-        dbms_output.put_line(sq_nid);
 
         IF sq_nid IS NOT NULL THEN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -b -g '||replace(sq_nid,'#','-')||CASE WHEN px>0 THEN ' -all -projection' else ' -ol' END;
+            xplan := 'ora plan -g '||sq_nid||' '||sq_cn;
         ELSE
-            DELETE SYS.PLAN_TABLE$
-            WHERE  PLAN_ID=phv2;
             dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -b -p '||phv2;
+            dbms_output.put_line('Warning: the new cursor cannot be located in v$sql, displaying the plan by SQL Id + plan hash.');
+            xplan := 'ora plan -g '||sq_id||' '||phv2;
         END IF;
-    ELSE 
-        sig := -1;
+    END IF;
+
+    IF bw IS NOT NULL THEN
+        OPEN binds FOR
+            SELECT b.position,
+                   nvl(name,':'||b.position) name,
+                   count(*) over(partition by b.position) occurrences,
+                   b.datatype_string,
+                   NULL maxlen,
+                   NULL charset,
+                   NULL peeked_value,
+                   CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
+                        WHEN b.datatype_string LIKE 'DATE%'     AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
+                        ELSE b.value_string
+                   END captured_value
+            FROM   TABLE(dbms_sqltune.extract_binds(bw)) b
+            ORDER  BY b.position;
     END IF;
 
     :xplan   := xplan;
     :cur     := cur;
+    :bd      := binds;
 END;
 /
 
-&xplan 
+&xplan
+print bd
 print cur
 &load loadtrace default 256

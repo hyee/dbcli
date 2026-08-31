@@ -514,21 +514,22 @@ BEGIN
     wr('=========');
     dbms_lob.append(sql_text, buff);
     wr(chr(10)||chr(10));
-    FOR r IN (WITH plans AS
-                  (SELECT STATEMENT_ID,
-                          NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
-                          MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
-                          MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2
-                   FROM   SYS.PLAN_TABLE$ q
-                   WHERE  STATEMENT_ID IS NOT NULL
-                   GROUP  BY STATEMENT_ID)
-              SELECT MIN(STATEMENT_ID) id, 
-                     MIN(ID) seq, 
-                     plan_hash, 
-                     plan_hash2
-              FROM   PLANS
-              GROUP  BY plan_hash, plan_hash2
-              ORDER  BY seq) LOOP
+    FOR r IN (
+        WITH plans AS
+              (SELECT STATEMENT_ID,
+                      NVL(regexp_substr(STATEMENT_ID, '\d+') + 0, 0) ID,
+                      MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash,
+                      MAX(nvl2(other_xml,regexp_substr(to_char(substr(other_xml,1,2000)), '"plan_hash_2">(\d+)', 1, 1, 'i', 1),'')) + 0 plan_hash2
+               FROM   SYS.PLAN_TABLE$ q
+               WHERE  STATEMENT_ID IS NOT NULL
+               GROUP  BY STATEMENT_ID)
+          SELECT MIN(STATEMENT_ID) id, 
+                 MIN(ID) seq, 
+                 plan_hash, 
+                 plan_hash2
+          FROM   PLANS
+          GROUP  BY plan_hash, plan_hash2
+          ORDER  BY seq) LOOP
         qry := 'PLAN_HASH_VALUE: ' || r.plan_hash || '    PLAN_HASH_VALUE_2: ' || r.plan_hash2;
         wr(qry);
         wr(lpad('=', length(qry), '='));

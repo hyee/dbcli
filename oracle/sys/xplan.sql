@@ -1,6 +1,6 @@
 /*[[explain/trace/execute SQL. Usage: @@NAME [-o|-c|-exec|-10046|-obj] {<sql_id> [<schema>|<child_num>|<snap_id>|<phv>]} | <sql_text>
     The script will call DBMS_SQLTUNE_INTERNAL.I_PROCESS_SQL_CALLOUT instead of "EXPLAIN PLAN" or "EXECUTE IMMEDIATE" so that the bind variables can be applied.
-    When the SQL has bind_data, the "Bind Info" grid will list every bind variable with the data type, the peeked value (from the generated plan) and the value stored in bind_data, both decoded into readable format. The character set ID (csid) of peeked binds is resolved into the character set name via NLS_CHARSET_NAME (blank for non-character types).
+    When the SQL has bind_data, the "Bind Info" grid will list every bind variable with the data type (including precision/length from the peeked bind metadata), the declared max length, the peeked value (from the generated plan) and the value stored in bind_data, both decoded into readable format. The character set ID (csid) of peeked binds is resolved into the character set name via NLS_CHARSET_NAME (blank for non-character types). Values that cannot be decoded are shown as "(0x) <hex>".
    
     -o [-low|-high]: generate optimizer trace
     -c [-low|-high]: generate compiler trace(10053)
@@ -247,6 +247,7 @@ BEGIN
               AND    parsing_user_id=sys_context('userenv','CURRENT_USERID')
               AND    instr(sql_fulltext,substr(stmt.sql_text,1,512)) > 0
               AND    program_id=0
+              AND    (stmt.optimizer_cost IS NULL OR stmt.optimizer_cost=optimizer_cost)
               AND    upper(ltrim(substr(sql_text,1,128))) not like 'EXPLAIN%'
               ORDER  BY decode(nvl(action,' '),stmt.action,1,2),
                         decode(force_matching_signature,stmt.force_matching_signature,1,2),
@@ -258,7 +259,7 @@ BEGIN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||replace(sq_nid,'#',' ');
+            xplan := 'ora plan -g '||replace(sq_nid,'#');
         ELSE
             DELETE SYS.PLAN_TABLE$ WHERE PLAN_ID=SIG;
 
@@ -342,7 +343,7 @@ BEGIN
 
         OPEN binds FOR
             WITH bd AS (
-                SELECT /*+INLINE*/ b.position pos,b.datatype_string,name,
+                SELECT /*+INLINE*/ b.position pos,nvl(name,':'||b.position) name,b.datatype_string,
                        CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
                             WHEN b.datatype_string LIKE 'DATE%'      AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
                             ELSE b.value_string
@@ -350,16 +351,35 @@ BEGIN
                 FROM   TABLE(dbms_sqltune.extract_binds(bw)) b),
             pk AS (
                 SELECT /*+INLINE*/ DISTINCT
-                       nvl(name,':'||pos) name,pos,
-                       CASE dty WHEN 1  THEN 'VARCHAR2' WHEN 2 THEN 'NUMBER' WHEN 12 THEN 'DATE'
-                                WHEN 96 THEN 'CHAR' WHEN 23 THEN 'RAW' WHEN 112 THEN 'CLOB' WHEN 113 THEN 'BLOB'
-                                WHEN 180 THEN 'TIMESTAMP' WHEN 181 THEN 'TIMESTAMP WITH TIME ZONE'
-                                WHEN 231 THEN 'TIMESTAMP WITH LOCAL TIME ZONE'
-                                ELSE 'DTYPE '||to_char(dty) END datatype,
+                       nvl(nvl(name,name2),':'||pos) name,pos,
+                       CASE WHEN dtystr IS NOT NULL THEN dtystr
+                            WHEN dty IN (1,9) THEN 'VARCHAR2('||nvl(len,nvl(maxlen,mxl))||')'
+                            WHEN dty = 2      THEN CASE WHEN nvl(scl,scal)=-127 THEN 'FLOAT'
+                                                        WHEN pre=38 AND nvl(nvl(scl,scal),0)=0 THEN 'INTEGER'
+                                                        ELSE 'NUMBER('||nvl(pre,38)||','||nvl(nvl(scl,scal),0)||')' END
+                            WHEN dty = 96     THEN 'CHAR('||nvl(len,nvl(maxlen,mxl))||')'
+                            WHEN dty = 23     THEN 'RAW('||nvl(len,nvl(maxlen,mxl))||')'
+                            WHEN dty = 12     THEN 'DATE'
+                            WHEN dty = 100    THEN 'BINARY_FLOAT'
+                            WHEN dty = 101    THEN 'BINARY_DOUBLE'
+                            WHEN dty = 119    THEN 'JSON'
+                            WHEN dty = 127    THEN 'VECTOR'
+                            WHEN dty = 178    THEN 'TIME'
+                            WHEN dty = 179    THEN 'TIME WITH TIME ZONE'
+                            WHEN dty = 182    THEN 'INTERVAL YEAR TO MONTH'
+                            WHEN dty = 183    THEN 'INTERVAL DAY TO SECOND'
+                            WHEN dty = 180    THEN 'TIMESTAMP'
+                            WHEN dty = 181    THEN 'TIMESTAMP WITH TIME ZONE'
+                            WHEN dty = 231    THEN 'TIMESTAMP WITH LOCAL TIME ZONE'
+                            WHEN dty = 112    THEN 'CLOB'
+                            WHEN dty = 113    THEN 'BLOB'
+                            ELSE 'DTYPE '||to_char(dty) END datatype,
+                       nvl(maxlen,mxl) maxlen,
                        CASE WHEN csid>0 THEN '['||csid||']'||nvl(nls_charset_name(csid),'Unknown') END charset,
-                       CASE WHEN dty IN (1,9,96) THEN utl_raw.cast_to_varchar2(hextoraw(hval))
-                            WHEN dty IN (2,3,29)      THEN to_char(utl_raw.cast_to_number(hextoraw(hval)))
-                            WHEN dty IN (12,180,181,231) THEN
+                       CASE WHEN dty IN (1,9,96) AND csid=2000 THEN utl_i18n.raw_to_char(hextoraw(hval),'AL16UTF16')
+                            WHEN dty IN (1,9,96) THEN utl_raw.cast_to_varchar2(hextoraw(hval))
+                            WHEN dty IN (2,3,29) THEN to_char(utl_raw.cast_to_number(hextoraw(hval)))
+                            WHEN dty IN (12,179,180,181,231) THEN
                                  to_char(100*(to_number(substr(hval,1,2),'XX')-100)
                                         + (to_number(substr(hval,3,2),'XX')-100),'fm0000')||'-'||
                                  to_char(to_number(substr(hval,5,2),'XX'),'fm00')||'-'||
@@ -367,21 +387,36 @@ BEGIN
                                  to_char(to_number(substr(hval,9,2),'XX')-1,'fm00')||':'||
                                  to_char(to_number(substr(hval,11,2),'XX')-1,'fm00')||':'||
                                  to_char(to_number(substr(hval,13,2),'XX')-1,'fm00')||
-                                 CASE WHEN dty!=12 AND length(hval)>=22 THEN '.'||to_number(substr(hval,15,8),'XXXXXXXX') END
-                            ELSE hval
+                                 CASE WHEN dty!=12 AND length(hval)>=22
+                                      THEN '.'||lpad(to_char(to_number(rpad(substr(hval,15,8),8,'0'),'XXXXXXXX')),9,'0') END||
+                                 CASE WHEN dty IN (179,181) AND length(hval)>=26
+                                      THEN ' '||to_char(to_number(substr(hval,23,2),'XX')-20,'fmS99') END||
+                                 CASE WHEN dty IN (179,181) AND length(hval)>=26
+                                      THEN ':'||lpad(to_number(substr(hval,25,2),'XX')-60,2,'0') END
+                            ELSE '(0x) '||hval
                        END peeked_value
                 FROM   TABLE(stmt.sql_plan) p
                 ,      XMLTABLE('/*/peeked_binds/bind' PASSING XMLTYPE(p.other_xml)
-                       COLUMNS name VARCHAR2(128)  PATH '@nam',
-                               pos  INT            PATH '@pos',
-                               dty  INT            PATH '@dty',
-                               csid INT            PATH '@csi',
-                               hval VARCHAR2(4000) PATH '.') b
+                       COLUMNS name   VARCHAR2(128)  PATH '@nam',
+                               name2  VARCHAR2(128)  PATH '@name',
+                               pos    INT            PATH '@pos',
+                               dty    INT            PATH '@dty',
+                               csid   INT            PATH '@csi',
+                               dtystr VARCHAR2(128)  PATH '@dtystr',
+                               maxlen INT            PATH '@maxlen',
+                               mxl    INT            PATH '@mxl',
+                               len    INT            PATH '@len',
+                               pre    INT            PATH '@pre',
+                               scl    INT            PATH '@scl',
+                               scal   INT            PATH '@scal',
+                               hval   VARCHAR2(4000) PATH '.') b
                 WHERE  p.other_xml IS NOT NULL)
-            SELECT pos "#",name,datatype,charset,peeked_value,captured_value
+            SELECT pos "#",name,occurrences,datatype,maxlen,charset,peeked_value,captured_value
             FROM  (SELECT pos,
-                          nvl(pk.name,nvl(bd.name,':'||pos)) name,
+                          nvl(pk.name,bd.name) name,
+                          count(*) over(partition by nvl(pk.name,':'||pos)) occurrences,
                           nvl(bd.datatype_string,pk.datatype) datatype,
+                          pk.maxlen,
                           pk.charset,
                           pk.peeked_value,
                           bd.captured_value
@@ -392,7 +427,9 @@ BEGIN
         OPEN binds FOR
             SELECT b.position,
                    nvl(name,':'||b.position) name,
+                   count(*) over(partition by b.position) occurrences,
                    b.datatype_string,
+                   NULL maxlen,
                    NULL charset,
                    NULL peeked_value,
                    CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
