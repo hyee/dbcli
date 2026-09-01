@@ -23,25 +23,25 @@
 ]]*/
 set digits 3
 
-SELECT COALESCE(:V3,:INSTANCE,'A') INST_ID,CATEGORY,metric_name,
-       case when unit like '%\% %' escape '\' or metric_name like '%Average%' then avg(current_) else sum(current_) end current_,
-       case when unit like '%\% %' escape '\' or metric_name like '%Average%' then avg(awr_avg)  else sum(awr_avg)  end awr_avg,
+SELECT coalesce(:V3,:INSTANCE,'A') inst_id,category,metric_name,
+       CASE WHEN unit LIKE '%\% %' ESCAPE '\' OR metric_name LIKE '%Average%' THEN avg(current_) ELSE sum(current_) END current_,
+       CASE WHEN unit LIKE '%\% %' ESCAPE '\' OR metric_name LIKE '%Average%' THEN avg(awr_avg)  ELSE sum(awr_avg)  END awr_avg,
        sum(current_)*100/nullif(sum(awr_avg),0) "Ratio(%)",unit
 FROM (
-    SELECT /*+no_merge*/ INSTANCE_NUMBER INST_ID,metric_name, median(average) awr_avg, '| '||metric_unit unit
+    SELECT /*+no_merge*/ instance_number inst_id,metric_name, median(average) awr_avg, '| '||metric_unit unit
     FROM   dba_hist_sysmetric_summary
-    WHERE  BEGIN_TIME<=NVL(to_date(NVL(:V2,:ENDTIME),'yymmddhh24mi'),sysdate+1)
-    AND    END_TIME>=NVL(to_date(NVL(:V1,:STARTTIME),'yymmddhh24mi'),sysdate-7)
-    AND    INSTANCE_NUMBER=COALESCE(0+:V3,INSTANCE_NUMBER)
+    WHERE  begin_time<=nvl(to_date(nvl(:V2,:ENDTIME),'yymmddhh24mi'),sysdate+1)
+    AND    end_time>=nvl(to_date(nvl(:V1,:STARTTIME),'yymmddhh24mi'),sysdate-7)
+    AND    instance_number=coalesce(0+:V3,instance_number)
     AND    group_id=2
-    GROUP  BY INSTANCE_NUMBER,metric_name, metric_unit) d 
+    GROUP  BY instance_number,metric_name, metric_unit) d 
     LEFT JOIN
-   (SELECT /*+no_merge*/ c.inst_id,c.metric_name,a.INTERNAL_METRIC_CATEGORY CATEGORY,c.average current_
-    FROM   v$alert_types a, V$THRESHOLD_TYPES b, gv$sysmetric_summary c
-    WHERE  a.reason_id = b.ALERT_REASON_ID
+   (SELECT /*+no_merge*/ c.inst_id,c.metric_name,a.internal_metric_category category,c.average current_
+    FROM   v$alert_types a, v$threshold_types b, gv$sysmetric_summary c
+    WHERE  a.reason_id = b.alert_reason_id
     AND    b.metrics_id = c.metric_id
     AND    b.metrics_group_id = c.group_id
-    AND    c.group_id = 2) V USING(INST_ID,metric_name)
-WHERE NVL(current_,0)+awr_avg>1e-3
-GROUP BY CATEGORY,metric_name,unit
-ORDER BY "Ratio(%)" desc nulls last
+    AND    c.group_id = 2) v USING(inst_id,metric_name)
+WHERE nvl(current_,0)+awr_avg>1e-3
+GROUP BY category,metric_name,unit
+ORDER BY "Ratio(%)" DESC NULLS LAST

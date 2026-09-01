@@ -19,12 +19,12 @@ DECLARE
     tab   VARCHAR2(512) := upper(regexp_substr(:V3,'^\D.*$'));
     root  VARCHAR2(2000);
     dump  BFILE;
-    log   UTL_FILE.FILE_TYPE;
+    log   utl_file.file_type;
     len   NUMBER;
     stage VARCHAR2(30) := 'AWR_STAGE';
     hdl   NUMBER;
     res   CLOB;
-    job   VARCHAR2(128) := 'AWRLOAD_'||to_char(SYSDATE,'YYMMDDHH24MISS');
+    job   VARCHAR2(128) := 'AWRLOAD_'||to_char(sysdate,'YYMMDDHH24MISS');
     own   VARCHAR2(128);
     own1  VARCHAR2(128);
     tab1  VARCHAR2(128);
@@ -32,9 +32,9 @@ DECLARE
     b     INT;
     r     VARCHAR2(300);
 BEGIN
-    SELECT MAX(directory_name), MAX(directory_path)
+    SELECT max(directory_name), max(directory_path)
     INTO   dir, root
-    FROM   ALL_DIRECTORIES
+    FROM   all_directories
     WHERE  upper(directory_name) = upper(dir);
     IF dir IS NULL THEN
         raise_application_error(-20001, 'Cannot access directory: ' || :V1);
@@ -61,7 +61,7 @@ BEGIN
         root := root || CASE WHEN root LIKE '%/%' THEN '/' ELSE '\' END;
     END IF;
     
-    <<CHECK_FILE>>
+    <<check_file>>
     dump := bfilename(dir, file||'.dmp');
     BEGIN 
         sys.dbms_lob.fileopen(dump);
@@ -70,7 +70,7 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
         IF regexp_like(file,'\.dmp$') THEN
             file := regexp_replace(file,'\.dmp$');
-            GOTO CHECK_FILE;
+            GOTO check_file;
         ELSE
             raise_application_error(-20001, 'Cannot access file: ' || root || file || '.dmp');
         END IF;
@@ -84,8 +84,8 @@ BEGIN
     END;
     
     IF instr(file,'sqlmon')>0 THEN
-        hdl := null;
-        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+        hdl := NULL;
+        $IF dbms_db_version.version>11 $THEN
             own := upper(regexp_substr(file,'_\d+_\d+_(\D.*)$',1,1,'i',1));
             IF own IS NULL THEN
                 raise_application_error(-20001,'Cannot find schema name in file name:'||file);
@@ -102,21 +102,21 @@ BEGIN
                 tab  := regexp_substr('[^.+]',1,2);
             END IF;
             own1:= regexp_replace(own1,'^SYS$','SYSTEM');
-            hdl := sys.dbms_datapump.open(operation   => 'IMPORT',
+            hdl := sys.dbms_datapump.OPEN(operation   => 'IMPORT',
                                           job_mode    => 'TABLE',
                                           job_name    => job,
                                           version     => '12');
             
             BEGIN
                 sys.dbms_datapump.add_file(handle    => hdl,
-                                           filetype  => sys.dbms_datapump.KU$_FILE_TYPE_DUMP_FILE,
+                                           filetype  => sys.dbms_datapump.ku$_file_type_dump_file,
                                            filename  => file||'.dmp',
                                            directory => dir);
                 sys.dbms_datapump.add_file(handle    => hdl,
-                                           filetype  => sys.dbms_datapump.KU$_FILE_TYPE_LOG_FILE,
+                                           filetype  => sys.dbms_datapump.ku$_file_type_log_file,
                                            filename  => file||'_imp.log',
                                            directory => dir);
-                IF own != own1 and own!='SYSTEM' THEN
+                IF own != own1 AND own!='SYSTEM' THEN
                     sys.dbms_datapump.metadata_remap(hdl,'REMAP_SCHEMA',own,own1);
                     own := own1;
                 END IF;
@@ -137,12 +137,12 @@ BEGIN
                 IF tab IS NOT NULL AND (tab!='AWR_DUMP_REPORTS' OR own!=own1) THEN
                     len  := 128;
                     tab1 := tab||'_DETAILS';
-                    $IF DBMS_DB_VERSION.VERSION<12 OR (DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE=1) $THEN
+                    $IF dbms_db_version.version<12 OR (dbms_db_version.version=12 AND dbms_db_version.release=1) $THEN
                         len := 30;
-                        IF LENGTH(TAB1)>30 THEN
+                        IF length(tab1)>30 THEN
                             tab1 := tab||'_DTL';
                         END IF;
-                        IF LENGTH(TAB1)>30 THEN
+                        IF length(tab1)>30 THEN
                             raise_application_error(-20001,'Identifier is too long: '||tab1);
                         END IF;
                     $END
@@ -174,14 +174,14 @@ BEGIN
             END;
         $END
     ELSE
-        $IF DBMS_DB_VERSION.VERSION>18 $THEN
+        $IF dbms_db_version.version>18 $THEN
             sys.dbms_workload_repository.awr_imp(dmpfile => file, dmpdir => dir, new_dbid => did);
         $ELSE
             BEGIN
                 stage := CASE sys_context('userenv', 'con_name') WHEN 'CDB$ROOT' THEN 'C##' END || stage;
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
-            $IF DBMS_DB_VERSION.VERSION>17 and &MODE=1 $THEN
+            $IF dbms_db_version.version>17 AND &MODE=1 $THEN
                 sys.dbms_workload_repository.load(schname => stage, dmpfile => file, dmpdir => dir, new_dbid => did);
             $ELSE
                 BEGIN

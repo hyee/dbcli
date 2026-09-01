@@ -30,59 +30,59 @@ SET AUTOHIDE COL FEED OFF
 
 WITH segs AS(
     SELECT owner,object_name,
-           decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,'* ('||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))||' segs)') "Partition",
-           nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,
+           decode(grouping_id(subobject_name),0,subobject_name,'* ('||count(DISTINCT nvl(subobject_name,' '))||' segs)') "Partition",
+           nullif(sum(table_scans_delta/&unit),0) scans,
            nullif(&imscans,0) imscans,
-           nullif(SUM(LOGICAL_READS_DELTA/&unit),0) logi_reads,
-           nullif(SUM(BUFFER_BUSY_WAITS_DELTA/&unit),0) busy_waits,
-           nullif(SUM(GC_BUFFER_BUSY_DELTA/&unit),0) gc_busy,
-           nullif(SUM(PHYSICAL_READ_REQUESTS_DELTA/&unit),0) phy_rreqs,
+           nullif(sum(logical_reads_delta/&unit),0) logi_reads,
+           nullif(sum(buffer_busy_waits_delta/&unit),0) busy_waits,
+           nullif(sum(gc_buffer_busy_delta/&unit),0) gc_busy,
+           nullif(sum(physical_read_requests_delta/&unit),0) phy_rreqs,
            nullif(&opt_reads,0) opt_reads,
-           nullif(SUM(PHYSICAL_READS_DELTA/&unit),0) phy_reads,
-           nullif(ROUND(SUM(PHYSICAL_READS_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_READS_DELTA),0),4),0)  dx_reads,
-           nullif(SUM(GC_CR_BLOCKS_RECEIVED_DELTA/&unit),0) cr_blocks,
-           nullif(SUM(DB_BLOCK_CHANGES_DELTA/&unit),0) blk_chgs,
+           nullif(sum(physical_reads_delta/&unit),0) phy_reads,
+           nullif(round(sum(physical_reads_direct_delta)/nullif(sum(physical_reads_delta),0),4),0)  dx_reads,
+           nullif(sum(gc_cr_blocks_received_delta/&unit),0) cr_blocks,
+           nullif(sum(db_block_changes_delta/&unit),0) blk_chgs,
            nullif(&im_chgs,0) im_chgs,
-           nullif(SUM(PHYSICAL_WRITE_REQUESTS_DELTA/&unit),0) phy_wreqs,
-           nullif(SUM(PHYSICAL_WRITES_DELTA/&unit),0) phy_writes,
-           nullif(ROUND(SUM(PHYSICAL_WRITES_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_WRITES_DELTA),0),4),0) dx_writes,
-           nullif(SUM(GC_CU_BLOCKS_RECEIVED_DELTA/&unit),0) cu_blocks,
+           nullif(sum(physical_write_requests_delta/&unit),0) phy_wreqs,
+           nullif(sum(physical_writes_delta/&unit),0) phy_writes,
+           nullif(round(sum(physical_writes_direct_delta)/nullif(sum(physical_writes_delta),0),4),0) dx_writes,
+           nullif(sum(gc_cu_blocks_received_delta/&unit),0) cu_blocks,
            nullif(&gc_grants,0) gc_grants,
            nullif(&pop_cus,0) pop_cus,
            nullif(&repop_cus,0) repop_cus,
-           nullif(SUM(ITL_WAITS_DELTA/&unit),0) itl_waits,
-           nullif(SUM(ROW_LOCK_WAITS_DELTA/&unit),0) lock_waits,
-           nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows,
-           nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space
-           &12c ,nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
-    from (select a.*, 
-                 row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
-         from (
-            select /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
-            FROM &check_access_pdb.Seg_stat_obj b
-            JOIN &check_access_pdb.Seg_stat c USING (dbid,obj#,dataobj#)
-            JOIN (select dbid,snap_id,instance_number,
+           nullif(sum(itl_waits_delta/&unit),0) itl_waits,
+           nullif(sum(row_lock_waits_delta/&unit),0) lock_waits,
+           nullif(sum(chain_row_excess_delta/&unit),0) chain_rows,
+           nullif(max(decode(r,1,space_used_total)),0) space
+           &12c ,nullif(max(decode(r,1,im_membytes)),0) im_mem
+    FROM (SELECT a.*, 
+                 row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r 
+         FROM (
+            SELECT /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
+            FROM &check_access_pdb.seg_stat_obj b
+            JOIN &check_access_pdb.seg_stat c USING (dbid,obj#,dataobj#)
+            JOIN (SELECT dbid,snap_id,instance_number,
                          greatest(1,round(86400*((end_interval_time+0)-
-                            case when begin_interval_time+0>= to_date(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
-                                 then begin_interval_time+0 
-                            end))) s
-                  from &check_access_pdb.snapshot
-                  where end_interval_time between to_timestamp(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
-                  and   to_timestamp(coalesce('&V4', to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
+                            CASE WHEN begin_interval_time+0>= to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
+                                 THEN begin_interval_time+0 
+                            END))) s
+                  FROM &check_access_pdb.snapshot
+                  WHERE end_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
+                  AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
             USING(dbid,instance_number,snap_id)
             WHERE dbid=&dbid
             AND   &filter
             ) a)
-    GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
+    GROUP BY owner,object_name,ROLLUP(subobject_name)
 )
 SELECT * FROM(
-    SELECT Ratio_to_report(&v2) over()*2 "Weight",
+    SELECT ratio_to_report(&v2) OVER()*2 "Weight",
            '|' "|",
-           A.*
-    FROM segs A
-    ORDER BY &v2 desc nulls last)
+           a.*
+    FROM segs a
+    ORDER BY &v2 DESC NULLS LAST)
 WHERE ROWNUM<=50
-AND   nvl("Partition",'x') not like '%(1 segs)%'
+AND   nvl("Partition",'x') NOT LIKE '%(1 segs)%'
 ORDER BY 1 DESC;
 
 col Statistics break ~
@@ -92,55 +92,55 @@ BEGIN
         WITH segs AS(
             SELECT /*+MATERIALIZE*/ 
                    owner,object_name,
-                   decode(COUNT(DISTINCT nvl(SUBOBJECT_NAME,' ')),1,max(obj#)) obj#,
-                   decode(grouping_id(SUBOBJECT_NAME),0,SUBOBJECT_NAME,''||COUNT(DISTINCT nvl(SUBOBJECT_NAME,' '))) segments,
-                   nullif(SUM(TABLE_SCANS_DELTA/&unit),0) scans,
+                   decode(count(DISTINCT nvl(subobject_name,' ')),1,max(obj#)) obj#,
+                   decode(grouping_id(subobject_name),0,subobject_name,''||count(DISTINCT nvl(subobject_name,' '))) segments,
+                   nullif(sum(table_scans_delta/&unit),0) scans,
                    nullif(&imscans,0) imscans,
-                   nullif(SUM(LOGICAL_READS_DELTA/&unit),0) logi_reads,
-                   nullif(SUM(BUFFER_BUSY_WAITS_DELTA/&unit),0) busy_waits,
-                   nullif(SUM(GC_BUFFER_BUSY_DELTA/&unit),0) gc_busy,
-                   nullif(SUM(PHYSICAL_READ_REQUESTS_DELTA/&unit),0) phy_rreqs,
+                   nullif(sum(logical_reads_delta/&unit),0) logi_reads,
+                   nullif(sum(buffer_busy_waits_delta/&unit),0) busy_waits,
+                   nullif(sum(gc_buffer_busy_delta/&unit),0) gc_busy,
+                   nullif(sum(physical_read_requests_delta/&unit),0) phy_rreqs,
                    nullif(&opt_reads,0) opt_reads,
-                   nullif(SUM(PHYSICAL_READS_DELTA/&unit),0) phy_reads,
-                   nullif(ROUND(SUM(PHYSICAL_READS_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_READS_DELTA),0),4),0)  dx_reads,
-                   nullif(SUM(GC_CR_BLOCKS_RECEIVED_DELTA/&unit),0) cr_blocks,
-                   nullif(SUM(DB_BLOCK_CHANGES_DELTA/&unit),0) blk_chgs,
+                   nullif(sum(physical_reads_delta/&unit),0) phy_reads,
+                   nullif(round(sum(physical_reads_direct_delta)/nullif(sum(physical_reads_delta),0),4),0)  dx_reads,
+                   nullif(sum(gc_cr_blocks_received_delta/&unit),0) cr_blocks,
+                   nullif(sum(db_block_changes_delta/&unit),0) blk_chgs,
                    nullif(&im_chgs,0) im_chgs,
-                   nullif(SUM(PHYSICAL_WRITE_REQUESTS_DELTA/&unit),0) phy_wreqs,
-                   nullif(SUM(PHYSICAL_WRITES_DELTA/&unit),0) phy_writes,
-                   nullif(ROUND(SUM(PHYSICAL_WRITES_DIRECT_DELTA)/NULLIF(SUM(PHYSICAL_WRITES_DELTA),0),4),0) dx_writes,
-                   nullif(SUM(GC_CU_BLOCKS_RECEIVED_DELTA/&unit),0) cu_blocks,
+                   nullif(sum(physical_write_requests_delta/&unit),0) phy_wreqs,
+                   nullif(sum(physical_writes_delta/&unit),0) phy_writes,
+                   nullif(round(sum(physical_writes_direct_delta)/nullif(sum(physical_writes_delta),0),4),0) dx_writes,
+                   nullif(sum(gc_cu_blocks_received_delta/&unit),0) cu_blocks,
                    nullif(&gc_grants,0) gc_grants,
                    nullif(&pop_cus,0) pop_cus,
                    nullif(&repop_cus,0) repop_cus,
-                   nullif(SUM(ITL_WAITS_DELTA/&unit),0) itl_waits,
-                   nullif(SUM(ROW_LOCK_WAITS_DELTA/&unit),0) lock_waits,
-                   nullif(SUM(CHAIN_ROW_EXCESS_DELTA/&unit),0) chain_rows,
-                   nullif(MAX(decode(r,1,SPACE_USED_TOTAL)),0) space
-                   &12c ,nullif(MAX(decode(r,1,IM_MEMBYTES)),0) im_mem
-            from (select a.*, 
-                         row_number() over(PARTITION BY dbid, obj#, dataobj# ORDER BY SPACE_USED_TOTAL DESC) r 
-                 from (
-                    select /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
-                    FROM &check_access_pdb.Seg_stat_obj b
-                    JOIN &check_access_pdb.Seg_stat c USING (dbid,obj#,dataobj#)
-                    JOIN (select dbid,snap_id,instance_number,
+                   nullif(sum(itl_waits_delta/&unit),0) itl_waits,
+                   nullif(sum(row_lock_waits_delta/&unit),0) lock_waits,
+                   nullif(sum(chain_row_excess_delta/&unit),0) chain_rows,
+                   nullif(max(decode(r,1,space_used_total)),0) space
+                   &12c ,nullif(max(decode(r,1,im_membytes)),0) im_mem
+            FROM (SELECT a.*, 
+                         row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r 
+                 FROM (
+                    SELECT /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
+                    FROM &check_access_pdb.seg_stat_obj b
+                    JOIN &check_access_pdb.seg_stat c USING (dbid,obj#,dataobj#)
+                    JOIN (SELECT dbid,snap_id,instance_number,
                                  greatest(1,round(86400*((end_interval_time+0)-
-                                    case when begin_interval_time+0>= to_date(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
-                                         then begin_interval_time+0 
-                                    end))) s
-                          from &check_access_pdb.snapshot
-                          where end_interval_time between to_timestamp(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
-                          and   to_timestamp(coalesce('&V4', to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
+                                    CASE WHEN begin_interval_time+0>= to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
+                                         THEN begin_interval_time+0 
+                                    END))) s
+                          FROM &check_access_pdb.snapshot
+                          WHERE end_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
+                          AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
                     USING(dbid,instance_number,snap_id)
                     WHERE dbid=&dbid
                     AND   &filter
                     ) a)
-            GROUP BY owner,object_name,rollup(SUBOBJECT_NAME)
-            HAVING grouping_id(SUBOBJECT_NAME)=&flag)
+            GROUP BY owner,object_name,ROLLUP(subobject_name)
+            HAVING grouping_id(subobject_name)=&flag)
         SELECT n "Statistics",v "Value",p "Weight", owner,object_name,obj#,segments
         FROM (
-            SELECT a.*,round(ratio_to_report(v) over(PARTITION BY n),4) p
+            SELECT a.*,round(ratio_to_report(v) OVER(PARTITION BY n),4) p
             FROM (
                 SELECT r,
                        decode(r,
@@ -190,9 +190,9 @@ BEGIN
                                       21,pop_cus,
                                       22,repop_cus),2),0) v,
                         owner,object_name,obj#,segments
-                FROM (select rownum r from dual connect by rownum<=22) a, segs) a
+                FROM (SELECT ROWNUM r FROM dual CONNECT BY ROWNUM<=22) a, segs) a
         WHERE v>0)
     WHERE p>=0.08
-    ORDER BY R,p DESC;
+    ORDER BY r,p DESC;
 END;
 /

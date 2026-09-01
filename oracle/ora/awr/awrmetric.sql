@@ -67,44 +67,44 @@ grid {
                        stat_name,
                        CASE
                            WHEN stat_name = 'gc cr block receive time' THEN
-                               ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'gc cr blocks received', VALUE)) OVER(PARTITION BY service_name), 0), 2)
+                               round(value / nullif(max(decode(stat_name, 'gc cr blocks received', value)) OVER(PARTITION BY service_name), 0), 2)
                                WHEN stat_name = 'gc current block receive time' THEN
-                               ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'gc current blocks received', VALUE)) OVER(PARTITION BY service_name), 0), 2)
+                               round(value / nullif(max(decode(stat_name, 'gc current blocks received', value)) OVER(PARTITION BY service_name), 0), 2)
                            WHEN stat_name LIKE '%time%' AND stat_name != 'DB time' OR stat_name = 'DB CPU' THEN
-                               ROUND(VALUE / NULLIF(MAX(DECODE(stat_name, 'DB time', VALUE)) OVER(PARTITION BY service_name), 0), 4)
+                               round(value / nullif(max(decode(stat_name, 'DB time', value)) OVER(PARTITION BY service_name), 0), 4)
                            ELSE
-                               VALUE
+                               value
                        END val
                 FROM   (SELECT nvl(service_name, '--TOTAL--') service_name,
-                               nvl2(service_name,listagg(decode(r,1,instance_number),',') within group(order by instance_number),'') insts,
+                               nvl2(service_name,listagg(decode(r,1,instance_number),',') WITHIN GROUP(ORDER BY instance_number),'') insts,
                                stat_name,
-                               round(SUM(flag * VALUE / secs * CASE
+                               round(sum(flag * value / secs * CASE
                                              WHEN stat_name LIKE 'physical%' THEN
-                                              (SELECT 0 + VALUE
+                                              (SELECT 0 + value
                                                FROM   dba_hist_parameter b
                                                WHERE  a.dbid = b.dbid
                                                AND    b.parameter_name = 'db_block_size'
-                                               AND    rownum < 2)
-                                             WHEN stat_name like 'gc %time' THEN
+                                               AND    ROWNUM < 2)
+                                             WHEN stat_name LIKE 'gc %time' THEN
                                                10000
                                              ELSE
                                                1
                                          END),
-                                     2) VALUE
-                        FROM    (select a.*,row_number() over(partition by stat_name,instance_number order by 1) r 
-                                 from (SELECT * FROM DBA_HIST_SERVICE_STAT NATURAL JOIN(&snaps)) a
+                                     2) value
+                        FROM    (SELECT a.*,row_number() OVER(PARTITION BY stat_name,instance_number ORDER BY 1) r 
+                                 FROM (SELECT * FROM dba_hist_service_stat NATURAL JOIN(&snaps)) a
                                  WHERE dbid=:dbid ) a
                         GROUP  BY stat_name, ROLLUP(service_name)
-                        HAVING round(SUM(flag * VALUE / secs), 2) > 0) a)
-        PIVOT(MAX(val)
+                        HAVING round(sum(flag * value / secs), 2) > 0) a)
+        PIVOT(max(val)
         FOR    stat_name IN('logons cumulative' logons,
                             'physical reads' phyrds,
                             'physical writes' phywrs,
                             'redo size' redo,
-                            'DB time' DBTIM,
-                            'sql execute elapsed time' SQL,
+                            'DB time' dbtim,
+                            'sql execute elapsed time' sql,
                             'user I/O wait time' io,
-                            'DB CPU' CPU,
+                            'DB CPU' cpu,
                             'parse time elapsed' parse,
                             'concurrency wait time' cc,
                             'application wait time' app,
@@ -115,44 +115,44 @@ grid {
                             'execute count' exec,
                             'user commits' commits,
                             'user rollbacks' rollbacks,
-                            'workarea executions - optimal' OPTIMAL,
+                            'workarea executions - optimal' optimal,
                             'workarea executions - multipass' multipass,
                             'workarea executions - onepass' onepass))
-        ORDER  BY DBTIM DESC
+        ORDER  BY dbtim DESC
     ]],
     '-', 
     {   
         [[ grid={topic="DBA_HIST_IOSTAT_FUNCTION"}
-            SELECT  FUNCTION_NAME,
-                    NULLIF(ROUND(LATENCY, 2), 0) AVG_WAIT,
-                    ROUND(IOS,2) IOS_WAIT,
-                    ROUND(MBPS, 2) MBPS,
-                    ROUND(IOPS, 2) IOPS,
-                    RATIO_TO_REPORT(IOPS) OVER() "%",
-                    ROUND(SMALLS / NULLIF(IOPS, 0), 4) SMALLS,
-                    ROUND(LARGES / NULLIF(IOPS, 0), 4) LARGES,
-                    ROUND(READS / NULLIF(IOPS, 0), 4) READS,
-                    ROUND(WRITES / NULLIF(IOPS, 0), 4) WRITES
-            FROM   (SELECT  nvl(FUNCTION_NAME,'--TOTAL--') FUNCTION_NAME,
-                            SUM(WAIT_TIME * 1e3 * flag) / nullif(SUM(NUMBER_OF_WAITS * flag), 0) LATENCY,
-                            SUM(NUMBER_OF_WAITS * flag / secs) IOS,
-                            SUM((SMALL_READ_MEGABYTES + LARGE_READ_MEGABYTES + SMALL_WRITE_MEGABYTES + LARGE_WRITE_MEGABYTES) * 1024 * 1024 * flag / secs) MBPS,
-                            SUM((SMALL_READ_REQS + SMALL_WRITE_REQS + LARGE_READ_REQS + LARGE_WRITE_REQS) * flag / secs) IOPS,
-                            SUM((SMALL_READ_REQS + SMALL_WRITE_REQS) * flag / secs) SMALLS,
-                            SUM((LARGE_READ_REQS + LARGE_WRITE_REQS) * flag / secs) LARGES,
-                            SUM((SMALL_READ_REQS + LARGE_READ_REQS) * flag / secs) READS,
-                            SUM((SMALL_WRITE_REQS + LARGE_WRITE_REQS) * flag / secs) WRITES
+            SELECT  function_name,
+                    nullif(round(latency, 2), 0) avg_wait,
+                    round(ios,2) ios_wait,
+                    round(mbps, 2) mbps,
+                    round(iops, 2) iops,
+                    ratio_to_report(iops) OVER() "%",
+                    round(smalls / nullif(iops, 0), 4) smalls,
+                    round(larges / nullif(iops, 0), 4) larges,
+                    round(reads / nullif(iops, 0), 4) reads,
+                    round(writes / nullif(iops, 0), 4) writes
+            FROM   (SELECT  nvl(function_name,'--TOTAL--') function_name,
+                            sum(wait_time * 1e3 * flag) / nullif(sum(number_of_waits * flag), 0) latency,
+                            sum(number_of_waits * flag / secs) ios,
+                            sum((small_read_megabytes + large_read_megabytes + small_write_megabytes + large_write_megabytes) * 1024 * 1024 * flag / secs) mbps,
+                            sum((small_read_reqs + small_write_reqs + large_read_reqs + large_write_reqs) * flag / secs) iops,
+                            sum((small_read_reqs + small_write_reqs) * flag / secs) smalls,
+                            sum((large_read_reqs + large_write_reqs) * flag / secs) larges,
+                            sum((small_read_reqs + large_read_reqs) * flag / secs) reads,
+                            sum((small_write_reqs + large_write_reqs) * flag / secs) writes
                     FROM    (SELECT * FROM dba_hist_iostat_function NATURAL JOIN(&snaps)) a
-                    WHERE  DBID=:DBID
-                    GROUP  BY ROLLUP(FUNCTION_NAME))
-            WHERE  GREATEST(MBPS, IOPS) > 0
-            ORDER  BY IOPS DESC
+                    WHERE  dbid=:DBID
+                    GROUP  BY ROLLUP(function_name))
+            WHERE  greatest(mbps, iops) > 0
+            ORDER  BY iops DESC
         ]],
         '-',
         [[grid={topic="DBA_HIST_SYSTEM_EVENT (Per Second)"}
             WITH time_model AS
-             (SELECT hs1.*, SUM(p.value) over(PARTITION BY hs1.dbid, hs1.snap_id) cpu_count
-              FROM   (select * from dba_hist_sys_time_model NATURAL JOIN(&snaps)) hs1, dba_hist_parameter p
+             (SELECT hs1.*, sum(p.value) OVER(PARTITION BY hs1.dbid, hs1.snap_id) cpu_count
+              FROM   (SELECT * FROM dba_hist_sys_time_model NATURAL JOIN(&snaps)) hs1, dba_hist_parameter p
               WHERE  hs1.dbid=:dbid
               AND    hs1.snap_id = p.snap_id(+)
               AND    hs1.instance_number = p.instance_number(+)
@@ -161,32 +161,32 @@ grid {
               AND    hs1.stat_name IN ('DB time', 'DB CPU', 'background cpu time')),
             db_time AS
              (SELECT /*+materialize*/
-                      SUM(VALUE * flag) db_time
+                      sum(value * flag) db_time
               FROM   time_model
               WHERE  stat_name = 'DB time')
             SELECT '- * ON CPU *' event,
                    NULL wait_class,
-                   MAX(cpu_count) counts,
+                   max(cpu_count) counts,
                    NULL timeouts,
-                   SUM(VALUE * flag/secs)  waited,
-                   round(SUM(VALUE * flag) / max(db_time)*100,2) "% DB",
-                   round(SUM(VALUE * flag/secs) / MAX(cpu_count), 2) avg_wait
+                   sum(value * flag/secs)  waited,
+                   round(sum(value * flag) / max(db_time)*100,2) "% DB",
+                   round(sum(value * flag/secs) / max(cpu_count), 2) avg_wait
             FROM   time_model a,db_time
             WHERE  stat_name != 'DB time'
             UNION ALL
             SELECT *
             FROM   (SELECT nvl(event_name, '- Wait Class: ' || nvl(wait_class, 'All')) event,
                            nvl2(event_name, wait_class, ''),
-                           SUM(total_Waits * flag/secs) counts,
-                           SUM(total_timeouts * flag) / nullif(SUM(total_Waits * flag), 0) timeouts,
-                           round(SUM(time_waited_micro * flag/secs), 2)  waited,
-                           round(SUM(time_waited_micro * flag) / (SELECT db_time FROM db_time b)*100,2) db_time,
-                           round(SUM(time_waited_micro * flag) / nullif(SUM(total_Waits * flag), 0), 2) avg_wait
+                           sum(total_waits * flag/secs) counts,
+                           sum(total_timeouts * flag) / nullif(sum(total_waits * flag), 0) timeouts,
+                           round(sum(time_waited_micro * flag/secs), 2)  waited,
+                           round(sum(time_waited_micro * flag) / (SELECT db_time FROM db_time b)*100,2) db_time,
+                           round(sum(time_waited_micro * flag) / nullif(sum(total_waits * flag), 0), 2) avg_wait
                     FROM   (SELECT *
                             FROM   dba_hist_system_event NATURAL JOIN(&snaps)
                             WHERE  wait_class != 'Idle') a
                     GROUP  BY ROLLUP(wait_class, event_name)
-                    HAVING SUM(time_waited_micro * flag) > 0
+                    HAVING sum(time_waited_micro * flag) > 0
                     ORDER  BY grouping_id(wait_class, event_name) DESC, abs(waited) DESC)
             WHERE  ROWNUM <= 30
         ]],
@@ -196,26 +196,26 @@ grid {
         [[grid={topic="DBA_HIST_SYSMETRIC_SUMMARY"}
             SELECT * 
             FROM (
-                SELECT  METRIC_NAME,
-                        ROUND(MAX(maxval/div),2) "Max",
-                        ROUND(median(AVERAGE/div),2) "Mid",
-                        replace(INITCAP(regexp_substr(TRIM(METRIC_UNIT),'^\S+')),'Bytes','Megabytes') UNIT
-                FROM (SELECT METRIC_NAME,METRIC_UNIT,
-                             case when instr(METRIC_UNIT,'%')>0 THEN MAX(MAXVAL) ELSE 
-                                SUM(AVERAGE)+MAX(MAXVAL-AVERAGE)+(SUM(MAXVAL-AVERAGE)-MAX(MAXVAL-AVERAGE))/SQRT(COUNT(1)) END maxval,
-                             case when instr(METRIC_UNIT,'%')>0 THEN AVG(AVERAGE) ELSE SUM(AVERAGE) END AVERAGE,
-                             case when upper(trim(METRIC_UNIT)) like 'BYTE%' then 1024*1024 else 1 end div
+                SELECT  metric_name,
+                        round(max(maxval/div),2) "Max",
+                        round(median(average/div),2) "Mid",
+                        replace(initcap(regexp_substr(trim(metric_unit),'^\S+')),'Bytes','Megabytes') unit
+                FROM (SELECT metric_name,metric_unit,
+                             CASE WHEN instr(metric_unit,'%')>0 THEN max(maxval) ELSE 
+                                sum(average)+max(maxval-average)+(sum(maxval-average)-max(maxval-average))/sqrt(count(1)) END maxval,
+                             CASE WHEN instr(metric_unit,'%')>0 THEN avg(average) ELSE sum(average) END average,
+                             CASE WHEN upper(trim(metric_unit)) LIKE 'BYTE%' THEN 1024*1024 ELSE 1 END div
                       FROM   dba_hist_sysmetric_summary a 
                       JOIN   (&snaps)  b
-                      ON     a.snap_id between minid+1 and maxid
+                      ON     a.snap_id BETWEEN minid+1 AND maxid
                       AND    a.dbid=b.dbid
                       AND    a.instance_number=b.instance_number
-                      AND    a.metric_name not like '% Per Txn'
+                      AND    a.metric_name NOT LIKE '% Per Txn'
                       AND    a.dbid=:dbid
                       WHERE  group_id=2
-                      GROUP BY METRIC_NAME,METRIC_UNIT,A.SNAP_ID,TRUNC(BEGIN_TIME,'MI'))
-                GROUP BY METRIC_NAME,METRIC_UNIT)
+                      GROUP BY metric_name,metric_unit,a.snap_id,trunc(begin_time,'MI'))
+                GROUP BY metric_name,metric_unit)
             WHERE "Mid">0
-            ORDER BY UNIT,"Mid" desc]]
+            ORDER BY unit,"Mid" DESC]]
     }
 }

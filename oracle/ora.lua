@@ -57,7 +57,7 @@ function ora:validate_accessable(name,options,values)
                     if ispdb then
                         rtn,c=pcall(db.get_value,db,'select /*BYPASS_DBCLI_REWRITE*/ /*+INDEX(A)*/ count(1) from awr_pdb_snapshot a where dbid=&dbid and rownum<2')
                     end
-                    if c==0 then
+                    if not rtn or c==0 then
                         check_flag=4
                         expect_name='non-PDB'
                         expect='PDB mode'
@@ -69,8 +69,12 @@ function ora:validate_accessable(name,options,values)
                 elseif obj:upper()~="DEFAULT" then
                     local is_accessed=db:check_access(obj,1)
                     if is_accessed and check_container then --check whether target view has record
-                        local rtn,c=pcall(db.get_rows,db,'select /*INTERNAL_DBCLI_CMD*/ 1 from '..obj..' where rownum<2')
-                        is_accessed=#c>1 
+                        local rtn,c=pcall(db.get_rows,db,'select /*INTERNAL_DBCLI_CMD*/ count(1) from '..obj..' where rownum<2')
+                        if rtn and c>0 then
+                            is_accessed=#c>1
+                        else
+                            is_accessed=false
+                        end
                     end
                     if not is_accessed then
                         default=nil

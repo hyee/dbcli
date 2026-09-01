@@ -34,9 +34,9 @@ set feed off printsize 3000 pipequery off
 WITH sql_plan_data AS
  (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 11)*/ *
   FROM   (SELECT a.*,
-                 dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id desc) seq
+                 dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id DESC) seq
           FROM   (SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ *
-                  FROM TABLE(GV$(CURSOR(
+                  FROM TABLE(gv$(CURSOR(
                       SELECT id,position pos,
                              decode(parent_id,-1,id-1,parent_id) parent_id,
                              child_number    ha,
@@ -46,11 +46,11 @@ WITH sql_plan_data AS
                              sql_id,
                              nvl(plan_hash_value,0) plan_hash_value,
                              userenv('instance') inst_id,
-                             object#,OBJECT_NAME
+                             object#,object_name
                       FROM   v$sql_plan_statistics_all a
                       WHERE  userenv('instance')=nvl(:instance,userenv('instance'))
                       AND    a.sql_id = '&V1'
-                      AND    a.plan_hash_value = case when nvl(lengthb('&V2'),0) >6 then '&V2'+0 else plan_hash_value end)))
+                      AND    a.plan_hash_value = CASE WHEN nvl(lengthb('&V2'),0) >6 THEN '&V2'+0 ELSE plan_hash_value END)))
                   UNION ALL
                   SELECT id,position pos,
                          decode(parent_id,-1,id-1,parent_id) parent_id,
@@ -61,10 +61,10 @@ WITH sql_plan_data AS
                          sql_id,
                          nvl(plan_hash_value,0) plan_hash_value,
                          &cid dbid,
-                         object#,OBJECT_NAME
+                         object#,object_name
                   FROM   &dplan a
                   WHERE  a.sql_id = '&V1'
-                  AND    a.plan_hash_value = case when nvl(lengthb('&V2'),0) >6 then '&V2'+0 else plan_hash_value end
+                  AND    a.plan_hash_value = CASE WHEN nvl(lengthb('&V2'),0) >6 THEN '&V2'+0 ELSE plan_hash_value END
                   ) a)
   WHERE  seq = 1),
 hierarchy_data AS
@@ -72,13 +72,13 @@ hierarchy_data AS
   FROM   sql_plan_data
   START  WITH id = 0
   CONNECT BY PRIOR id = parent_id
-  ORDER  SIBLINGS BY pos desc,id DESC),
+  ORDER  siblings BY pos DESC,id DESC),
 ordered_hierarchy_data AS
  (SELECT id,
          parent_id AS pid,
          nvl(plan_hash_value,0) AS phv,
-         row_number() over(PARTITION BY plan_hash_value ORDER BY rownum DESC) AS OID,
-         MAX(id) over(PARTITION BY plan_hash_value) AS maxid
+         row_number() OVER(PARTITION BY plan_hash_value ORDER BY ROWNUM DESC) AS oid,
+         max(id) OVER(PARTITION BY plan_hash_value) AS maxid
   FROM   hierarchy_data),
 qry AS
  (SELECT DISTINCT sql_id sq,
@@ -88,40 +88,40 @@ qry AS
          coalesce(child_number, plan_hash_value,0) plan_hash,
          inst_id
   FROM   sql_plan_data),
-ash_detail as (
-    SELECT H.*,costs SECS
+ash_detail AS (
+    SELECT h.*,costs secs
     FROM (
-        SELECT h.*,decode(row_number() over(partition by SQL_PLAN_LINE_ID,sql_exec,sample_time+0 order by costs desc),1,&unit,0) AAS
+        SELECT h.*,decode(row_number() OVER(PARTITION BY sql_plan_line_id,sql_exec,sample_time+0 ORDER BY costs DESC),1,&unit,0) aas
         FROM (
-            select h.*,
+            SELECT h.*,
                    nvl(sql_id,'<Parsing>') sql_id_,
                    nvl(event,'ON CPU')||decode(in_parse,'Y',' [PARSE]') ev,
-                   nvl(trim(case 
-                        when current_obj# < -1 then
+                   nvl(trim(CASE 
+                        WHEN current_obj# < -1 THEN
                             'Temp I/O'
-                        when current_obj# > 0 then 
+                        WHEN current_obj# > 0 THEN 
                              ''||current_obj#
-                        when p2text='id1' then
+                        WHEN p2text='id1' THEN
                              ''||p2
-                        when p3text in('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') then 
+                        WHEN p3text IN('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') THEN 
                              ''||trunc(p3/power(16,8))
-                        when p3text like '%namespace' and p3>power(16,8)*4294950912 then
+                        WHEN p3text LIKE '%namespace' AND p3>power(16,8)*4294950912 THEN
                             'Undo'
-                        when p3text like '%namespace' and p3>power(16,8) then 
+                        WHEN p3text LIKE '%namespace' AND p3>power(16,8) THEN 
                              ''||trunc(p3/power(16,8))
-                        when p3text like '%namespace' then 
+                        WHEN p3text LIKE '%namespace' THEN 
                             'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
-                        when p1text like 'cache id' then 
-                            (select parameter from v$rowcache where cache#=p1 and rownum<2)
-                        when event like 'latch%' and p2text='number' then 
-                            (select name from v$latchname where latch#=p2 and rownum<2)
-                        when p3text='class#' then
-                            (select class from (SELECT class, ROWNUM r from v$waitstat) where r=p3 and rownum<2)
-                        when p1text ='file#' and p2text='block#' then 
+                        WHEN p1text LIKE 'cache id' THEN 
+                            (SELECT parameter FROM v$rowcache WHERE cache#=p1 AND ROWNUM<2)
+                        WHEN event LIKE 'latch%' AND p2text='number' THEN 
+                            (SELECT name FROM v$latchname WHERE latch#=p2 AND ROWNUM<2)
+                        WHEN p3text='class#' THEN
+                            (SELECT class FROM (SELECT class, ROWNUM r FROM v$waitstat) WHERE r=p3 AND ROWNUM<2)
+                        WHEN p1text ='file#' AND p2text='block#' THEN 
                             'file#'||p1||' block#'||p2
-                        when p3text in('block#','block') then 
-                            'file#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_FILE(p3)||' block#'||DBMS_UTILITY.DATA_BLOCK_ADDRESS_BLOCK(p3)    
-                        when px_flags > 65536 then
+                        WHEN p3text IN('block#','block') THEN 
+                            'file#'||dbms_utility.data_block_address_file(p3)||' block#'||dbms_utility.data_block_address_block(p3)    
+                        WHEN px_flags > 65536 THEN
                             decode(trunc(mod(px_flags/65536, 32)),
                                    1,'[PX]Executing-Parent-DFO',     
                                    2,'[PX]Executing-Child-DFO',
@@ -141,124 +141,124 @@ ash_detail as (
                                   16,'[PX]Aborting-Transaction',
                                   17,'[QC]Executing-Child-DFO',
                                   18,'[QC]Executing-Parent-DFO')
-                        when current_obj# = 0 then 'Undo'
+                        WHEN current_obj# = 0 THEN 'Undo'
                         --when p1text ='idn' then 'v$db_object_cache hash#'||p1
                         --when c.class is not null then c.class
-                    end),''||current_obj#) curr_obj#,
+                    END),''||current_obj#) curr_obj#,
                    nvl(wait_class,'ON CPU') wl,
-                   least(coalesce(tm_delta_db_time,DELTA_TIME,&unit*1e6),coalesce(tm_delta_time,DELTA_TIME,&unit*1e6),&unit*2e6) * 1e-6 costs,
+                   least(coalesce(tm_delta_db_time,delta_time,&unit*1e6),coalesce(tm_delta_time,delta_time,&unit*1e6),&unit*2e6) * 1e-6 costs,
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec
-            from   &ASH h
-            WHERE  '&V1' in(sql_id,top_level_sql_id)
-            AND    sample_time BETWEEN NVL(to_date(nvl('&V3',:STARTTIME),'YYMMDDHH24MISS'),SYSDATE-7) 
-                                   AND NVL(to_date(nvl('&V4',:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)) H) H) ,
-ash as(SELECT b.*,
-              ROUND(SUM(AAS) OVER(PARTITION BY SQL_ID,SQL_PLAN_LINE_ID,&OBJ)*100/SUM(AAS) OVER(PARTITION BY SQL_PLAN_LINE_ID),1) tenv
-       FROM (select /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
+            FROM   &ASH h
+            WHERE  '&V1' IN(sql_id,top_level_sql_id)
+            AND    sample_time BETWEEN nvl(to_date(nvl('&V3',:STARTTIME),'YYMMDDHH24MISS'),sysdate-7) 
+                                   AND nvl(to_date(nvl('&V4',:ENDTIME),'YYMMDDHH24MISS'),sysdate+1)) h) h) ,
+ash AS(SELECT b.*,
+              round(sum(aas) OVER(PARTITION BY sql_id,sql_plan_line_id,&OBJ)*100/sum(aas) OVER(PARTITION BY sql_plan_line_id),1) tenv
+       FROM (SELECT /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
              FROM   qry a,ash_detail b 
              WHERE  a.phv = nvl(nullif(b.sql_plan_hash_value,0),a.phv)
              AND    a.sq=b.sql_id_
-             AND    ('&V2' is null or nvl(lengthb('&V2'),0) >6 or not regexp_like('&V2','^\d+$') or '&V2'+0 in(QC_SESSION_ID,SESSION_ID))
+             AND    ('&V2' IS NULL OR nvl(lengthb('&V2'),0) >6 OR NOT regexp_like('&V2','^\d+$') OR '&V2'+0 IN(qc_session_id,session_id))
        ) b),
 ash_base AS(
    SELECT /*+materialize no_expand*/ 
-           nvl(SQL_PLAN_LINE_ID,0) ID,
-           sum(AAS)||'('||round(100*ratio_to_report(sum(AAS)) over())||'%)' px_hits,
-           CEIL(SUM(secs)) secs,
-           COUNT(DISTINCT sql_exec) exes,
-           ROUND(COUNT(DECODE(wl, 'ON CPU', AAS))*100/ SUM(AAS), 1) "CPU",
-           ROUND(COUNT(CASE WHEN wl IN ('User I/O','System I/O') THEN AAS END) * 100 / SUM(AAS), 1) "IO",
-           ROUND(COUNT(DECODE(wl, 'Cluster', AAS)) * 100 / SUM(AAS), 1) "CL",
-           ROUND(COUNT(DECODE(wl, 'Concurrency', AAS)) * 100 / SUM(AAS), 1) "CC",
-           ROUND(COUNT(DECODE(wl, 'Application', AAS)) * 100 / SUM(AAS), 1) "APP",
-           ROUND(COUNT(CASE WHEN wl NOT IN ('ON CPU','User I/O','System I/O','Cluster','Concurrency','Application') THEN AAS END) * 100 / SUM(AAS), 1) oth,
-           MAX(&OBJ||'('||tenv||'%)') KEEP(dense_rank LAST ORDER BY tenv) top_event
+           nvl(sql_plan_line_id,0) id,
+           sum(aas)||'('||round(100*ratio_to_report(sum(aas)) OVER())||'%)' px_hits,
+           ceil(sum(secs)) secs,
+           count(DISTINCT sql_exec) exes,
+           round(count(decode(wl, 'ON CPU', aas))*100/ sum(aas), 1) "CPU",
+           round(count(CASE WHEN wl IN ('User I/O','System I/O') THEN aas END) * 100 / sum(aas), 1) "IO",
+           round(count(decode(wl, 'Cluster', aas)) * 100 / sum(aas), 1) "CL",
+           round(count(decode(wl, 'Concurrency', aas)) * 100 / sum(aas), 1) "CC",
+           round(count(decode(wl, 'Application', aas)) * 100 / sum(aas), 1) "APP",
+           round(count(CASE WHEN wl NOT IN ('ON CPU','User I/O','System I/O','Cluster','Concurrency','Application') THEN aas END) * 100 / sum(aas), 1) oth,
+           max(&OBJ||'('||tenv||'%)') KEEP(dense_rank LAST ORDER BY tenv) top_event
     FROM   ash
-    GROUP  BY nvl(SQL_PLAN_LINE_ID,0)),
+    GROUP  BY nvl(sql_plan_line_id,0)),
 ash_agg AS
  (SELECT /*+materialize*/ 
          top_item,
-         to_char(MAX(execs)) execs,
-         nvl(trim(dbms_xplan.FORMAT_TIME_S(ceil(SUM(secs)))),' ') secs,
+         to_char(max(execs)) execs,
+         nvl(trim(dbms_xplan.format_time_s(ceil(sum(secs)))),' ') secs,
          nvl(trim(dbms_xplan.format_number(sum(io_reqs))),' ') io_reqs,
          nvl(trim(dbms_xplan.format_size(sum(io_bytes))),' ') io_bytes,
-         to_char(SUM(aas0)) aas,
-         listagg(CASE WHEN r <= 7 AND c0 = 1 THEN id || '(' || aas || '%)' END, ',') within GROUP(ORDER BY aas DESC) Plan_lines,
-         listagg(CASE WHEN r1 <= 5 AND c1 = 1 THEN SUBSTR(OBJ1, 1, 32) || '(' || aas1 || '%)' END, ',') within GROUP(ORDER BY aas1 DESC,OBJ1 DESC) wait_objects
-  FROM   (SELECT OBJ top_item,
-                 OBJ1,
-                 nvl(ID, 0) ID,
-                 MAX(execs) execs,
-                 AAS,
+         to_char(sum(aas0)) aas,
+         listagg(CASE WHEN r <= 7 AND c0 = 1 THEN id || '(' || aas || '%)' END, ',') WITHIN GROUP(ORDER BY aas DESC) plan_lines,
+         listagg(CASE WHEN r1 <= 5 AND c1 = 1 THEN substr(obj1, 1, 32) || '(' || aas1 || '%)' END, ',') WITHIN GROUP(ORDER BY aas1 DESC,obj1 DESC) wait_objects
+  FROM   (SELECT obj top_item,
+                 obj1,
+                 nvl(id, 0) id,
+                 max(execs) execs,
+                 aas,
                  aas1,
-                 SUM(aas0)  aas0,
-                 SUM(secs) secs,
+                 sum(aas0)  aas0,
+                 sum(secs) secs,
                  sum(io_reqs) io_reqs,
                  sum(io_bytes) io_bytes,
-                 row_number() OVER(PARTITION BY OBJ, ID ORDER BY 1) c0,
-                 row_number() OVER(PARTITION BY OBJ, OBJ1 ORDER BY 1) c1,
-                 dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas DESC,ID) r,
-                 dense_Rank() OVER(PARTITION BY OBJ ORDER BY aas1 DESC,OBJ1 DESC) r1
+                 row_number() OVER(PARTITION BY obj, id ORDER BY 1) c0,
+                 row_number() OVER(PARTITION BY obj, obj1 ORDER BY 1) c1,
+                 dense_rank() OVER(PARTITION BY obj ORDER BY aas DESC,id) r,
+                 dense_rank() OVER(PARTITION BY obj ORDER BY aas1 DESC,obj1 DESC) r1
           FROM   (SELECT secs,
-                         nvl(SQL_PLAN_LINE_ID,0) ID,
+                         nvl(sql_plan_line_id,0) id,
                          &OBJ obj,
                          &OBJ1 obj1,
-                         DELTA_READ_IO_REQUESTS+DELTA_WRITE_IO_REQUESTS io_reqs,
-                         DELTA_INTERCONNECT_IO_BYTES io_bytes,
+                         delta_read_io_requests+delta_write_io_requests io_reqs,
+                         delta_interconnect_io_bytes io_bytes,
                          aas aas0,
-                         COUNT(DISTINCT sql_exec) over(PARTITION BY &OBJ) execs,
-                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, SQL_PLAN_LINE_ID)*100/nullif(SUM(AAS) OVER(PARTITION BY &OBJ),0),1) aas,
-                         ROUND(SUM(AAS) OVER(PARTITION BY &OBJ, &OBJ1)*100/nullif(SUM(AAS) OVER(PARTITION BY &OBJ),0),1) aas1
+                         count(DISTINCT sql_exec) OVER(PARTITION BY &OBJ) execs,
+                         round(sum(aas) OVER(PARTITION BY &OBJ, sql_plan_line_id)*100/nullif(sum(aas) OVER(PARTITION BY &OBJ),0),1) aas,
+                         round(sum(aas) OVER(PARTITION BY &OBJ, &OBJ1)*100/nullif(sum(aas) OVER(PARTITION BY &OBJ),0),1) aas1
                   FROM   ash a)
-          GROUP  BY OBJ, ID, aas, OBJ1, aas1)
+          GROUP  BY obj, id, aas, obj1, aas1)
   GROUP  BY top_item
-  ORDER  BY AAS+0 DESC),
+  ORDER  BY aas+0 DESC),
 ash_width AS
- (SELECT greatest(MAX(LENGTH(top_item)),9) c1, 
-         greatest(MAX(LENGTH(execs)),5) c2, 
-         greatest(nvl(MAX(LENGTH(secs)),0),4) c3, 
-         greatest(MAX(LENGTH(aas)),4) c4, 
-         greatest(MAX(LENGTH(Plan_lines)),18) c5, 
-         greatest(MAX(LENGTH(wait_objects)),18) c6,
-         greatest(MAX(LENGTH(io_reqs)),7) c7,
-         greatest(MAX(LENGTH(io_bytes)),8) c8,
+ (SELECT greatest(max(length(top_item)),9) c1, 
+         greatest(max(length(execs)),5) c2, 
+         greatest(nvl(max(length(secs)),0),4) c3, 
+         greatest(max(length(aas)),4) c4, 
+         greatest(max(length(plan_lines)),18) c5, 
+         greatest(max(length(wait_objects)),18) c6,
+         greatest(max(length(io_reqs)),7) c7,
+         greatest(max(length(io_bytes)),8) c8,
          count(1) cnt
   FROM ash_agg),
-plan_agg as(
+plan_agg AS(
   SELECT /*+materialize*/ 
-         sql_id_,decode(sql_id_,'&V1',''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_) PLAN_HASH,
-         COUNT(DISTINCT SQL_EXEC) EXECS,
-         nvl(trim(dbms_xplan.format_time_s(SUM(SECS))),' ') secs,
-         SUM(AAS) AAS,
-         ROUND(COUNT(DECODE(wl, 'ON CPU', AAS))*100/ SUM(AAS), 1) "CPU",
-         ROUND(COUNT(CASE WHEN wl IN ('User I/O','System I/O') THEN AAS END) * 100 / SUM(AAS), 1) "IO",
-         ROUND(COUNT(DECODE(wl, 'Cluster', AAS)) * 100 / SUM(AAS), 1) "CL",
-         ROUND(COUNT(DECODE(wl, 'Concurrency', AAS)) * 100 / SUM(AAS), 1) "CC",
-         ROUND(COUNT(DECODE(wl, 'Application', AAS)) * 100 / SUM(AAS), 1) "APP",
-         ROUND(COUNT(CASE WHEN wl NOT IN ('ON CPU','User I/O','System I/O','Cluster','Concurrency','Application') THEN AAS END) * 100 / SUM(AAS), 1) oth,
-         nvl(trim(dbms_xplan.format_number(SUM(DELTA_READ_IO_REQUESTS+DELTA_WRITE_IO_REQUESTS))),' ') io_reqs,
-         nvl(trim(dbms_xplan.format_size(SUM(DELTA_INTERCONNECT_IO_BYTES))),' ') io_bytes,
-         listagg(CASE WHEN r <= 4 AND c0 = 1 THEN item END, ' / ') within GROUP(ORDER BY tenv DESC) top_event
+         sql_id_,decode(sql_id_,'&V1',''||sql_plan_hash_value,'=> '||sql_id_) plan_hash,
+         count(DISTINCT sql_exec) execs,
+         nvl(trim(dbms_xplan.format_time_s(sum(secs))),' ') secs,
+         sum(aas) aas,
+         round(count(decode(wl, 'ON CPU', aas))*100/ sum(aas), 1) "CPU",
+         round(count(CASE WHEN wl IN ('User I/O','System I/O') THEN aas END) * 100 / sum(aas), 1) "IO",
+         round(count(decode(wl, 'Cluster', aas)) * 100 / sum(aas), 1) "CL",
+         round(count(decode(wl, 'Concurrency', aas)) * 100 / sum(aas), 1) "CC",
+         round(count(decode(wl, 'Application', aas)) * 100 / sum(aas), 1) "APP",
+         round(count(CASE WHEN wl NOT IN ('ON CPU','User I/O','System I/O','Cluster','Concurrency','Application') THEN aas END) * 100 / sum(aas), 1) oth,
+         nvl(trim(dbms_xplan.format_number(sum(delta_read_io_requests+delta_write_io_requests))),' ') io_reqs,
+         nvl(trim(dbms_xplan.format_size(sum(delta_interconnect_io_bytes))),' ') io_bytes,
+         listagg(CASE WHEN r <= 4 AND c0 = 1 THEN item END, ' / ') WITHIN GROUP(ORDER BY tenv DESC) top_event
   FROM  ( SELECT  s.*,
                   obj||'('||tenv||'%)' item,
-                  row_number() OVER(PARTITION BY SQL_PLAN_HASH_VALUE,OBJ,tenv ORDER BY 1) c0,
-                  dense_Rank() OVER(PARTITION BY SQL_PLAN_HASH_VALUE ORDER BY tenv DESC) r
+                  row_number() OVER(PARTITION BY sql_plan_hash_value,obj,tenv ORDER BY 1) c0,
+                  dense_rank() OVER(PARTITION BY sql_plan_hash_value ORDER BY tenv DESC) r
           FROM  (
              SELECT s.*,&OBJ obj,
-                    ROUND(100*SUM(AAS) OVER(PARTITION BY sql_id_,SQL_PLAN_HASH_VALUE,&OBJ)/SUM(AAS) OVER(PARTITION BY SQL_PLAN_HASH_VALUE),1) tenv
+                    round(100*sum(aas) OVER(PARTITION BY sql_id_,sql_plan_hash_value,&OBJ)/sum(aas) OVER(PARTITION BY sql_plan_hash_value),1) tenv
              FROM   ash_detail s) s
         ) 
-  GROUP  BY sql_id_,decode(sql_id_,'&V1',''||SQL_PLAN_HASH_VALUE,'=> '||sql_id_)
+  GROUP  BY sql_id_,decode(sql_id_,'&V1',''||sql_plan_hash_value,'=> '||sql_id_)
 ),
 
-plan_width as (
-  SELECT greatest(MAX(LENGTH(PLAN_HASH)+1),9) c1, 
-         greatest(MAX(LENGTH(execs)),5) c2, 
-         greatest(nvl(MAX(LENGTH(secs)),0),4) c3, 
-         greatest(MAX(LENGTH(aas)),4) c4, 
-         greatest(MAX(LENGTH(io_reqs)),7) c7,
-         greatest(MAX(LENGTH(io_bytes)),8) c8,
-         greatest(MAX(LENGTH(top_event)),10) c9, 
+plan_width AS (
+  SELECT greatest(max(length(plan_hash)+1),9) c1, 
+         greatest(max(length(execs)),5) c2, 
+         greatest(nvl(max(length(secs)),0),4) c3, 
+         greatest(max(length(aas)),4) c4, 
+         greatest(max(length(io_reqs)),7) c7,
+         greatest(max(length(io_bytes)),8) c8,
+         greatest(max(length(top_event)),10) c9, 
          count(1) cnt
   FROM plan_agg
 ),
@@ -267,37 +267,37 @@ ash_data AS(
     SELECT /*+materialize no_expand no_merge(a) no_merge(b)*/*
     FROM   ordered_hierarchy_data a
     LEFT   JOIN ash_base b
-    USING  (ID)
+    USING  (id)
 ) ,
 xplan AS
- (SELECT rownum r,plan_table_output output
+ (SELECT ROWNUM r,plan_table_output output
   FROM   qry, TABLE(dbms_xplan.display('&src1',NULL,format,'&cid='||inst_id||' and plan_hash_value=' || plan_hash || ' and sql_id=''' || sq ||'''')) a
   WHERE  flag = 2
   UNION ALL
-  SELECT rownum r,a.*
+  SELECT ROWNUM r,a.*
   FROM   qry,
          TABLE(dbms_xplan.display('gv$sql_plan_statistics_all',NULL,format,'child_number=' || plan_hash || ' and sql_id=''' || sq ||''' and inst_id=' || inst_id)) a
   WHERE  flag = 1),
 xplan_data AS
  (SELECT CASE
-            WHEN output like 'Plan hash value%' THEN
-                 output ||'   from '||COALESCE('&V3',:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||COALESCE('&V4',:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
-            WHEN output like '---%' THEN
+            WHEN output LIKE 'Plan hash value%' THEN
+                 output ||'   from '||coalesce('&V3',:STARTTIME,to_char(sysdate-90,'YYMMDDHH24MI'))||' to '||coalesce('&V4',:ENDTIME,to_char(sysdate,'YYMMDDHH24MI'))
+            WHEN output LIKE '---%' THEN
                  output || rpad('-', decode(:simple,0,0,sevent)+csize+spx_hit+ssec+sexe+31, '-')
             WHEN id1=-2 THEN
                  regexp_replace(output, '\|','|'  || lpad('Ord |', csize)--
-                 ||LPAD('Execs',sexe)
-                 ||LPAD('AAS',spx_hit)
-                 ||LPAD('Time|',ssec)
+                 ||lpad('Execs',sexe)
+                 ||lpad('AAS',spx_hit)
+                 ||lpad('Time|',ssec)
                  ||' CPU%  IO%  CL%  CC% APP% OTH%|'
-                 ||decode(:simple,0,'',RPAD(' Top &title',sevent-1)||'|'),1,2)
-            WHEN id is not null THEN
+                 ||decode(:simple,0,'',rpad(' Top &title',sevent-1)||'|'),1,2)
+            WHEN id IS NOT NULL THEN
                  regexp_replace(output, '\|','|' || lpad(oid || ' |', csize)
-                 ||LPAD(exes, sexe)
-                 ||LPAD(px_hits,spx_hit)
-                 ||LPAD(secs||'|', ssec)
-                 ||LPAD(CPU,5)||LPAD(IO,5)||LPAD(CL,5)||LPAD(cc,5)||LPAD(app,5)||LPAD(oth,5)||'|'
-                 ||decode(:simple,0,'',RPAD(' '||top_event,sevent-1)||'|'),1,2)
+                 ||lpad(exes, sexe)
+                 ||lpad(px_hits,spx_hit)
+                 ||lpad(secs||'|', ssec)
+                 ||lpad(cpu,5)||lpad(io,5)||lpad(cl,5)||lpad(cc,5)||lpad(app,5)||lpad(oth,5)||'|'
+                 ||decode(:simple,0,'',rpad(' '||top_event,sevent-1)||'|'),1,2)
             ELSE
                  output
          END output,
@@ -305,34 +305,34 @@ xplan_data AS
   FROM (SELECT /*+ ordered use_nl(o) */
                x.r,
                o.id,
-               nvl2(o.id,o.id,r-min(nvl2(o.id,r,null)) over()) id1,
-               greatest(max(LENGTHB(nvl(''||maxid,' '))) over () + 3, 6) as csize,
-               greatest(max(LENGTHB(nvl(''||secs,' '))) over () + 1, 5)+1 as ssec,
-               greatest(max(LENGTHB(nvl(''||px_hits,' '))) over () + 1, 7) as spx_hit,
-               greatest(max(LENGTHB(nvl(''||exes,' '))) over () + 1, 5) as sexe,
-               greatest(max(LENGTHB(nvl(top_event,' '))) over () + 2, 11) as sevent,
+               nvl2(o.id,o.id,r-min(nvl2(o.id,r,NULL)) OVER()) id1,
+               greatest(max(lengthb(nvl(''||maxid,' '))) OVER () + 3, 6) AS csize,
+               greatest(max(lengthb(nvl(''||secs,' '))) OVER () + 1, 5)+1 AS ssec,
+               greatest(max(lengthb(nvl(''||px_hits,' '))) OVER () + 1, 7) AS spx_hit,
+               greatest(max(lengthb(nvl(''||exes,' '))) OVER () + 1, 5) AS sexe,
+               greatest(max(lengthb(nvl(top_event,' '))) OVER () + 2, 11) AS sevent,
                x.output AS output,
                o.pid,
                o.oid,
                o.maxid,
-               regexp_replace(nvl(cpu,0),'^0$',' ') CPU,
+               regexp_replace(nvl(cpu,0),'^0$',' ') cpu,
                regexp_replace(nvl(io,0),'^0$',' ') io,
                regexp_replace(nvl(cc,0),'^0$',' ') cc,
                regexp_replace(nvl(cl,0),'^0$',' ') cl,
                regexp_replace(nvl(app,0),'^0$',' ') app,
                regexp_replace(nvl(oth,0),'^0$',' ') oth,
                regexp_replace(nvl(px_hits,0),'^0$',' ') px_hits,
-               decode(nvl(secs,0),0,' ',regexp_replace(trim(dbms_xplan.FORMAT_TIME_S(secs)),'^00:')) secs,
+               decode(nvl(secs,0),0,' ',regexp_replace(trim(dbms_xplan.format_time_s(secs)),'^00:')) secs,
                regexp_replace(nvl(exes,0),'^0$',' ') exes,
                nvl(top_event,' ') top_event,
                p.phv,
-              COUNT(*) over() AS rc
+              count(*) OVER() AS rc
       FROM   (SELECT DISTINCT phv FROM ordered_hierarchy_data) p
       CROSS  JOIN xplan x
       LEFT JOIN ash_data o
       ON     (nvl(nullif(o.phv,0),p.phv) = p.phv AND o.id = to_number(regexp_substr(x.output, '^\|[-\* ]*([0-9]+) \|',1,1,'i',1)))) a
- order by r)
-SELECT output from xplan_data
+ ORDER BY r)
+SELECT output FROM xplan_data
 
 UNION ALL
 SELECT NULL FROM ash_width WHERE cnt>0
@@ -347,10 +347,10 @@ UNION ALL
 SELECT  '|'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'|'
 FROM    ash_width WHERE cnt>0
 UNION ALL
-select * from (
-SELECT  '|'||rpad(top_item,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(Plan_lines,c5,' ')||'|'||rpad(wait_objects,c6,' ')||'|'
+SELECT * FROM (
+SELECT  '|'||rpad(top_item,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(plan_lines,c5,' ')||'|'||rpad(wait_objects,c6,' ')||'|'
 FROM    ash_width,ash_agg WHERE cnt>0
-ORDER BY 0+AAS DESC
+ORDER BY 0+aas DESC
 )
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'+'
@@ -370,8 +370,8 @@ SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'
 FROM    plan_width WHERE cnt>0
 UNION  ALL
 SELECT * FROM (
-SELECT  '|'||rpad(decode(''||plan_hash,(select ''||phv from qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(nvl(top_event,' '),c9,' ')||'|'
-FROM    plan_agg,plan_width WHERE cnt>0 order by 0+aas desc)
+SELECT  '|'||rpad(decode(''||plan_hash,(SELECT ''||phv FROM qry),'*',' ')||plan_hash,c1,' ')||'|'||lpad(execs,c2,' ')||'|'||rpad(secs,c3,' ')||'|'||lpad(aas,c4,' ')||'|'||lpad(cpu,4,' ')||'|'||lpad(io,4,' ')||'|'||lpad(cc,4,' ')||'|'||lpad(cl,4,' ')||'|'||lpad(app,4,' ')||'|'||lpad(oth,4,' ')||'|'||lpad(io_reqs,c7,' ')||'|'||lpad(io_bytes,c8,' ')||'|'||rpad(nvl(top_event,' '),c9,' ')||'|'
+FROM    plan_agg,plan_width WHERE cnt>0 ORDER BY 0+aas DESC)
 UNION ALL
 SELECT  '+'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c9,'-')||'+'
 FROM    plan_width WHERE cnt>0;

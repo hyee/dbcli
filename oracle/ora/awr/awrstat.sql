@@ -33,16 +33,16 @@ col ela,ELA(Avg),cost/io format usmhd2
 col iowait,cpuwait,ccwait,clwait,apwait,plsql,Flash% for pct1
 Col buff,read,avg_read,write,cellio,oflin,oflout format kmg
 set autohide col
-select time,
+SELECT time,
        &BASE,
        plan_full,&phf2,
        sum(exec)   exec,
        sum(parse)  parse,
        sum(invalids) invalid,
        max(vers)  vers,
-       count(1)    SEENS,
-       sum(ela)    ELA,
-       round(sum(ela)/greatest(SUM(exec),1),2) "ELA(Avg)",
+       count(1)    seens,
+       sum(ela)    ela,
+       round(sum(ela)/greatest(sum(exec),1),2) "ELA(Avg)",
        sum(iowait)/nullif(sum(ioreqs),0) "Cost/IO",
        nullif(sum(iowait)/sum(ela),0) iowait,
        nullif(sum(cpuwait)/sum(ela),0) cpuwait,
@@ -60,15 +60,15 @@ select time,
        nullif(round(sum(rows#)/&avg,2),0) rows#,
        nullif(round(sum(fetches)/&avg,2),0) fetches,
        nullif(max(px_count),0) px
-from(
-    select /*+outline_leaf*/
+FROM(
+    SELECT /*+outline_leaf*/
            to_char(max(tim),'&TIM') time,
            &BASE,plan_hash, &phf1 plan_full,
            sum(exec)   exec,
            sum(parse)  parse,
            max(vers)  vers,
-           count(1)    SEENS,
-           sum(ela)    ELA,
+           count(1)    seens,
+           sum(ela)    ela,
            sum(iowait) iowait,
            sum(ioreqs) ioreqs,
            sum(cpuwait) cpuwait,
@@ -87,46 +87,43 @@ from(
            sum(oflout) oflout,
            sum(rows#) rows#,
            sum(fetches) fetches,
-           sum(PLSQL) PLSQL,
+           sum(plsql) plsql,
            sum(invalids) invalids
-    from(
-        select a.end_interval_time tim,
+    FROM(
+        SELECT a.end_interval_time tim,
                a.&BASE,
                dbid,
                a.plan_hash_value plan_hash,
-               a.executions EXEC,
+               a.executions+CASE WHEN flag_=1 AND first_value(flag_) over(partition by dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end exec,
                a.version_count vers,
                a.parse_calls parse,
-               nvl(MIN(decode(executions,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
-                   MAX(decode(parse_calls,0,null,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap_id,
+               nvl(min(decode(executions,0,NULL,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),
+                   max(decode(parse_calls,0,NULL,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN UNBOUNDED PRECEDING AND 0 PRECEDING)) snap_id,
                round(a.elapsed_time,2) ela,
                a.iowait,
-               ROUND(a.cpu_time,2) cpuwait,
-               ROUND(a.ccwait,2) ccwait,
-               ROUND(a.clwait,2) clwait,
-               ROUND(a.apwait,2) apwait,
+               round(a.cpu_time,2) cpuwait,
+               round(a.ccwait,2) ccwait,
+               round(a.clwait,2) clwait,
+               round(a.apwait,2) apwait,
                a.ioreqs,
                a.px_servers_execs px_count,
-               PLSEXEC_TIME+JAVEXEC_TIME PLSQL,
+               plsexec_time+javexec_time plsql,
                cellio,oflin,oflout,
-               greatest(disk_reads,phyread) READ,
+               greatest(disk_reads,phyread) read,
                optread,
-               nvl(phywrite,0)+nvl(direct_writes*512*1024,0) WRITE,
+               nvl(phywrite,0)+nvl(direct_writes*512*1024,0) write,
                buffer_gets buff,
                a.rows_processed rows#,
                a.fetches,
                readreq,
                phyread,
-               invalidations invalids,
-               SUM(executions) over(partition by &BASE,plan_hash_value) execs_,
-               delta_flag,
-               BITAND (NVL(flag, 0), 1) flag
-         from &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
-        where '&V1' in(sql_id,''||plan_hash_value,''||signature)
-          and  end_interval_time between nvl(to_date('&starttime','YYMMDDHH24MISS'),sysdate-90) and nvl(to_date('&endtime','YYMMDDHH24MISS'),sysdate+1)
+               invalidations invalids
+         FROM &awr$sqlstat  a --/* only capture sqls with the full set of execution stats */ BITAND (NVL(flag, 0), 1) = 0
+        WHERE '&V1' IN(sql_id,''||plan_hash_value,''||signature)
+          AND  end_interval_time BETWEEN nvl(to_date('&starttime','YYMMDDHH24MISS'),sysdate-90) AND nvl(to_date('&endtime','YYMMDDHH24MISS'),sysdate+1)
     ) a      
     --WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
-    group by dbid,snap_id,&BASE,plan_hash
-    having sum(ela)>0)
- group by time,&BASE,plan_full,&phf3
- order by 1 desc
+    GROUP BY dbid,snap_id,&BASE,plan_hash
+    HAVING sum(ela)>0)
+ GROUP BY time,&BASE,plan_full,&phf3
+ ORDER BY 1 DESC

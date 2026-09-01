@@ -31,73 +31,73 @@ PRO ASH Network Summary(Estimated)
 PRO ==============================
 SELECT  machine,event,aas,latency,max_latency,avg_bytes,max_bytes &ver ,top_1_sql,top_2_sql,top_3_sql
 FROM (
-    select a.*,row_number() over(partition by gid order by aas desc) rnk
-        &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),1) over(partition by machine,event order by nvl2(sql_id,1,2),aas desc) top_1_sql
-        &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),2) over(partition by machine,event order by nvl2(sql_id,1,2),aas desc) top_2_sql
-        &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),3) over(partition by machine,event order by nvl2(sql_id,1,2),aas desc) top_3_sql
-    from (
-        select machine,event,count(1) aas,
-               PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY nvl2(event,time_waited,wait_time)/nvl2(event,1,2)) latency,
-               PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY p2) avg_bytes,
+    SELECT a.*,row_number() OVER(PARTITION BY gid ORDER BY aas DESC) rnk
+        &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),1) OVER(PARTITION BY machine,event ORDER BY nvl2(sql_id,1,2),aas DESC) top_1_sql
+        &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),2) OVER(PARTITION BY machine,event ORDER BY nvl2(sql_id,1,2),aas DESC) top_2_sql
+        &ver ,nth_value(nvl2(sql_id,sql_id||'('||aas||')',''),3) OVER(PARTITION BY machine,event ORDER BY nvl2(sql_id,1,2),aas DESC) top_3_sql
+    FROM (
+        SELECT machine,event,count(1) aas,
+               percentile_cont(0.5) WITHIN GROUP(ORDER BY nvl2(event,time_waited,wait_time)/nvl2(event,1,2)) latency,
+               percentile_cont(0.5) WITHIN GROUP(ORDER BY p2) avg_bytes,
                max(nvl2(event,time_waited,wait_time)/nvl2(event,1,2)) max_latency,max(p2) max_bytes,grouping_id(sql_id) gid, nvl(sql_id,top_level_sql_id) sql_id
-        from  &ash
-        where p2text='#bytes' 
-        and   nvl(wait_class,'Network')='Network'
-        and   IN_SQL_EXECUTION='Y'
-        and   upper(machine||','||event||','||sql_id) like upper('%&V1%')
-        and   (event is not null or nvl2(event,time_waited,wait_time) between 30 and 1e7)
+        FROM  &ash
+        WHERE p2text='#bytes' 
+        AND   nvl(wait_class,'Network')='Network'
+        AND   in_sql_execution='Y'
+        AND   upper(machine||','||event||','||sql_id) LIKE upper('%&V1%')
+        AND   (event IS NOT NULL OR nvl2(event,time_waited,wait_time) BETWEEN 30 AND 1e7)
         --and   (current_obj#<1 or event is not null)
-        and   sample_time BETWEEN &snap AND NVL(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),SYSDATE+1)
-        group by machine,event,rollup((sql_id,top_level_sql_id))) a)
+        AND   sample_time BETWEEN &snap AND nvl(to_date(nvl(:V3,:ENDTIME),'YYMMDDHH24MISS'),sysdate+1)
+        GROUP BY machine,event,ROLLUP((sql_id,top_level_sql_id))) a)
 WHERE gid  = 1
 AND   rnk <= 50
-ORDER BY aas desc;
+ORDER BY aas DESC;
 
 var c1 refcursor "Global Network Wait Events"
 var c2 refcursor "Client Network Wait Events"
 DECLARE
-   did int := :dbid;
-   c   sys_refcursor;
+   did INT := :dbid;
+   c   SYS_REFCURSOR;
 BEGIN
     OPEN :c1 FOR
     $IF &src=0 $THEN
-        SELECT EVENT,
-               ROUND(SUM(TIME_WAITED_MICRO_FG)/SUM(TOTAL_WAITS_FG),2) latency, 
-               sum(TOTAL_WAITS_FG) waits,
-               SUM(TIME_WAITED_MICRO_FG) "Time",
-               ratio_to_report(SUM(TIME_WAITED_MICRO_FG)) over() "Time%"
+        SELECT event,
+               round(sum(time_waited_micro_fg)/sum(total_waits_fg),2) latency, 
+               sum(total_waits_fg) waits,
+               sum(time_waited_micro_fg) "Time",
+               ratio_to_report(sum(time_waited_micro_fg)) OVER() "Time%"
         FROM   gv$system_event
-        WHERE (wait_class='Network' OR wait_class!='Idle' AND event like 'SQL*Net%')
-        AND   TOTAL_WAITS_FG>0
-        GROUP BY EVENT
+        WHERE (wait_class='Network' OR wait_class!='Idle' AND event LIKE 'SQL*Net%')
+        AND   total_waits_fg>0
+        GROUP BY event
         ORDER BY 1;
         OPEN c FOR
             SELECT * FROM (
-                SELECT s.machine,e.EVENT,ROUND(SUM(TIME_WAITED_MICRO)/SUM(TOTAL_WAITS),2) latency, 
-                       sum(TOTAL_WAITS) waits,
-                       SUM(TIME_WAITED_MICRO) "Time",
-                       ratio_to_report(SUM(TIME_WAITED_MICRO)) over() "Time%"
-                FROM   gv$session_event e join gv$session s USING(inst_id,sid)
-                WHERE (e.wait_class='Network' OR e.wait_class!='Idle' AND e.event like 'SQL*Net%')
-                AND   TOTAL_WAITS>0
-                and   upper(s.machine||','||e.event) like upper('%&V1%')
-                GROUP BY s.machine,e.EVENT
-                ORDER BY "Time" desc)
+                SELECT s.machine,e.event,round(sum(time_waited_micro)/sum(total_waits),2) latency, 
+                       sum(total_waits) waits,
+                       sum(time_waited_micro) "Time",
+                       ratio_to_report(sum(time_waited_micro)) OVER() "Time%"
+                FROM   gv$session_event e JOIN gv$session s USING(inst_id,sid)
+                WHERE (e.wait_class='Network' OR e.wait_class!='Idle' AND e.event LIKE 'SQL*Net%')
+                AND   total_waits>0
+                AND   upper(s.machine||','||e.event) LIKE upper('%&V1%')
+                GROUP BY s.machine,e.event
+                ORDER BY "Time" DESC)
             WHERE ROWNUM<=30;
     $ELSE
-        SELECT event,ROUND(SUM(micro)/nullif(SUM(cnt),0),2) latency,sum(cnt) waits,SUM(micro) "Time",ratio_to_report(SUM(micro)) over() "Time%"
+        SELECT event,round(sum(micro)/nullif(sum(cnt),0),2) latency,sum(cnt) waits,sum(micro) "Time",ratio_to_report(sum(micro)) OVER() "Time%"
         FROM (
-            SELECT EVENT_NAME event,
-                   TIME_WAITED_MICRO_FG-lag(TIME_WAITED_MICRO_FG) over(partition by instance_number,startup_time,EVENT_NAME &ver12 ORDER BY SNAP_ID) micro,
-                   TOTAL_WAITS_FG-lag(TOTAL_WAITS_FG) over(partition by instance_number,startup_time,EVENT_NAME &ver12 ORDER BY SNAP_ID) cnt
+            SELECT event_name event,
+                   time_waited_micro_fg-lag(time_waited_micro_fg) OVER(PARTITION BY instance_number,startup_time,event_name &ver12 ORDER BY snap_id) micro,
+                   total_waits_fg-lag(total_waits_fg) OVER(PARTITION BY instance_number,startup_time,event_name &ver12 ORDER BY snap_id) cnt
             FROM   dba_hist_system_event a
             JOIN   dba_hist_snapshot b
             USING  (instance_number,snap_id,dbid )
-            WHERE (wait_class='Network' OR wait_class!='Idle' AND EVENT_NAME like 'SQL*Net%')
-            AND   TOTAL_WAITS_FG>0
-            AND   end_interval_time+0 BETWEEN &snap AND NVL(to_date(nvl('&V3','&ENDTIME'),'YYMMDDHH24MISS'),SYSDATE+1)
+            WHERE (wait_class='Network' OR wait_class!='Idle' AND event_name LIKE 'SQL*Net%')
+            AND   total_waits_fg>0
+            AND   end_interval_time+0 BETWEEN &snap AND nvl(to_date(nvl('&V3','&ENDTIME'),'YYMMDDHH24MISS'),sysdate+1)
             AND   dbid=did)
-        GROUP by EVENT 
+        GROUP BY event 
         ORDER BY 1;
     $END
     :c2 := c;

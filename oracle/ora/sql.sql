@@ -85,7 +85,7 @@ DECLARE
         ELSIF instr(value,'''')>0 THEN
             fmt := REPLACE(fmt,q'['%s']','q''!%s!''');
         END IF;
-        val := utl_lms.format_message(fmt,COALESCE(CASE WHEN fmt LIKE 'YYYY-%' THEN replace(replace(value,'T',' '),'Z') ELSE value END,defaults,'NULL'));
+        val := utl_lms.format_message(fmt,COALESCE(CASE WHEN fmt LIKE '%YYYY-%' THEN replace(replace(value,'T',' '),'Z') ELSE value END,defaults,'NULL'));
         STR_VAL := val;
         text := regexp_replace(text,'#!'||name||'!#',val,1,occu,'i');
     END;
@@ -117,7 +117,7 @@ BEGIN
         dbms_lob.createtemporary(text,true);
         dbms_lob.append(text,sql_text);
         dbms_lob.writeappend(text,1,' ');
-        text   := regexp_replace(text,'^\s*/\*.*?\*/');
+        text   := regexp_replace(text,'^\s*/\*.*?\*/','','in');
         text   := regexp_replace(text,q'{:("?)([0-9a-zA-Z$_#]+)\1([^0-9a-zA-Z'$_#])}','#!:\2!#\3');
         opname := upper(REGEXP_SUBSTR(text,'\w+'));
 
@@ -184,7 +184,7 @@ BEGIN
                 WHEN 'BINARY_DOUBLE' THEN
                     repl('TO_BINARY_DOUBLE(%s)',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSBDOUBLE(BIND_VAL) END);
                 WHEN 'BINARY_FLOAT' THEN
-                    repl('TO_BINARY_FLOAT(%s)',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSNUMBER(BIND_VAL) END);
+                    repl('TO_BINARY_FLOAT(%s)',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSBFLOAT(BIND_VAL) END);
                 WHEN 'VARCHAR' THEN
                     repl('''%s''',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSVARCHAR(BIND_VAL) END);
                 WHEN 'VARCHAR2' THEN
@@ -196,16 +196,16 @@ BEGIN
                 WHEN 'NVARCHAR2' THEN
                     repl('TO_NCHAR(''%s'')',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSNVARCHAR2(BIND_VAL) END);
                 WHEN 'CLOB' THEN
-                    repl('TO_CLOB(%s)','');
+                    NULL;
                 WHEN 'BLOB' THEN
-                    repl('TO_BLOB(%s)','');
+                    NULL;
                 WHEN 'DATE' THEN
                     repl(q'[TO_DATE('%s','YYYY-MM-DD HH24:MI:SS')]',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSDATE(BIND_VAL) END);
                 WHEN 'TIMESTAMP' THEN
                     repl(q'[TO_TIMESTAMP('%s','YYYY-MM-DD HH24:MI:SSxff')]',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSTIMESTAMP(BIND_VAL) END);
-                WHEN 'TIMESTAMP (TZ)' THEN
+                WHEN 'TIMESTAMP WITH TIME ZONE' THEN
                     repl(q'[TO_TIMESTAMP_TZ('%s','YYYY-MM-DD HH24:MI:SSxff TZH:TZM')]',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSTIMESTAMPTZ(BIND_VAL) END);
-                WHEN 'TIMESTAMP (LTZ)' THEN
+                WHEN 'TIMESTAM WITH LOCAL TIME ZONE' THEN
                     repl(q'[TO_TIMESTAMP_TZ('%s','YYYY-MM-DD HH24:MI:SSxff TZH:TZM')]',CASE WHEN NOT_NULL THEN ANYDATA.ACCESSTIMESTAMPLTZ(BIND_VAL) END);
                 WHEN 'RAW' THEN
                     repl(q'[HEXTORAW('%s')]',RAWTOHEX(CASE WHEN NOT_NULL THEN ANYDATA.ACCESSRAW(BIND_VAL) END));

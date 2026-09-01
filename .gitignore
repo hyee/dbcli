@@ -3,6 +3,8 @@
 *.swp
 .DS_Store
 .trae/
+.qoder/
+.workbuddy/
 .github/
 data/init.cfg
 data/init.conf

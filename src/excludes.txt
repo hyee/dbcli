@@ -4,7 +4,10 @@
 .log
 .swp
 .trae
+.trae-cn
 .qoder
+.qoder-cn
+.idea
 .workbuddy
 .github
 \jre\
@@ -27,6 +30,7 @@ rwp.lua
 \bc\
 \emviewers\
 \23.1.plsql\
+\26.3.plsql\
 xmlparserv2.jar
 db2jcc4.jar
 db2jcc_license_cu.jar

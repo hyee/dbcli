@@ -323,13 +323,13 @@ end
 
 local echo_stack={}
 function scripter.set_echo(name,value)
-    local current_thead,_,level=env.register_thread()
-    if level>1 then current_thead=env.RUNNING_THREADS[level-1] end
+    local current_thread,_,level=env.register_thread()
+    if level>1 then current_thread=env.RUNNING_THREADS[level-1] end
     value=value:lower()
     if value=="on" then
-        echo_stack[current_thead]=true
+        echo_stack[current_thread]=true
     else
-        echo_stack[current_thead]=nil
+        echo_stack[current_thread]=nil
     end
     return value
 end
@@ -345,7 +345,7 @@ function scripter:run_sql(sql,args,cmds)
         env.raise("Database connection is not defined!")
     end
     --self.db:assert_connect()
-    local current_thead,_,level=env.register_thread()
+    local current_thread,_,level=env.register_thread()
 
     local ary=env.var.backup_context()
     var.import_context(args)
@@ -355,7 +355,7 @@ function scripter:run_sql(sql,args,cmds)
     end
     local _args,_parms={},{}
     for line in sql:gsplit("[\n\r]+") do
-        if echo_stack[current_thead] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
+        if echo_stack[current_thread] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
             local stack={self.db,line,_args,_parms}
             var.before_db_exec(stack)
             print(stack[2]) 

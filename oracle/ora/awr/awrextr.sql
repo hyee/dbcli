@@ -16,7 +16,7 @@ DECLARE
     root VARCHAR2(512);
     expr VARCHAR2(512);
     dump BFILE;
-    log  UTL_FILE.FILE_TYPE;
+    log  utl_file.file_type;
     len  NUMBER;
     std  DATE;
     edd  DATE;
@@ -25,17 +25,17 @@ DECLARE
     did  INT := :V4;
     hdl  NUMBER;
     res  CLOB;
-    job  VARCHAR2(128) := 'AWREXTR_'||to_char(SYSDATE,'YYMMDDHH24MISS');
+    job  VARCHAR2(128) := 'AWREXTR_'||to_char(sysdate,'YYMMDDHH24MISS');
     own  VARCHAR2(128);
     val  VARCHAR2(30);
     a    INT;
     b    INT;
     r    VARCHAR2(300);
 BEGIN
-    dbms_output.enable(null);
-    SELECT MAX(directory_name), MAX(directory_path)
+    dbms_output.ENABLE(NULL);
+    SELECT max(directory_name), max(directory_path)
     INTO   dir, root
-    FROM   ALL_DIRECTORIES
+    FROM   all_directories
     WHERE  upper(directory_name) = upper(dir);
     IF dir IS NULL THEN
         raise_application_error(-20001, 'Cannot access directory: ' || :V1);
@@ -70,8 +70,8 @@ BEGIN
     END IF;
 
     IF did IS NULL THEN
-        SELECT MAX(dbid) INTO did FROM V$DATABASE;
-        $IF DBMS_DB_VERSION.VERSION>11 $THEN
+        SELECT max(dbid) INTO did FROM v$database;
+        $IF dbms_db_version.version>11 $THEN
             did := sys_context('userenv', 'con_dbid');
         $END
     END IF;
@@ -82,24 +82,24 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN NULL;END;
     
     IF &awr IN(0,1) THEN
-        SELECT MIN(snap_id), MAX(snap_id)
+        SELECT min(snap_id), max(snap_id)
         INTO   st, ed
-        FROM   SYS.DBA_HIST_SNAPSHOT
-        JOIN   SYS.DBA_HIST_WR_CONTROL
+        FROM   sys.dba_hist_snapshot
+        JOIN   sys.dba_hist_wr_control
         USING  (dbid)
         WHERE  dbid = did
         AND    (edd IS NOT NULL OR snap_id IN (st, ed))
-        AND    (edd IS NULL OR end_interval_time+0 between std and edd);
+        AND    (edd IS NULL OR end_interval_time+0 BETWEEN std AND edd);
 
         IF st IS NULL OR ed IS NULL OR st = ed THEN
-            $IF DBMS_DB_VERSION.VERSION>11 $THEN
+            $IF dbms_db_version.version>11 $THEN
                 IF sys_context('userenv', 'con_id')>1 AND did=sys_context('userenv', 'con_dbid') THEN
-                    SELECT UPPER(NVL(MAX(value),'FALSE')) 
+                    SELECT upper(nvl(max(value),'FALSE')) 
                     INTO   val
                     FROM   v$parameter
                     WHERE  name='awr_pdb_autoflush_enabled';
                     
-                    IF VAL!='TRUE' THEN
+                    IF val!='TRUE' THEN
                         raise_application_error(-20001, 'No such snapshots, please make sure parameter awr_pdb_autoflush_enabled=true to enable AWR PDB level flushing, or connect to container CDB$ROOT.');
                     END IF;
                 END IF;
@@ -120,14 +120,14 @@ BEGIN
             raise_application_error(-20001, 'File already exists: ' || root || file || '.dmp');
         END IF;
         BEGIN
-        $IF DBMS_DB_VERSION.VERSION>17 $THEN
+        $IF dbms_db_version.version>17 $THEN
             sys.dbms_workload_repository.extract(dmpfile => file, dmpdir => dir, dbid => did, bid => st, eid => ed);
         $ELSE
             sys.dbms_swrf_internal.awr_extract(dmpfile => file, dmpdir => dir, dbid => did, bid => st, eid => ed);
         $END
         EXCEPTION WHEN OTHERS THEN
-            IF sqlcode not in(-31623) THEN
-                raise;
+            IF sqlcode NOT IN(-31623) THEN
+                RAISE;
             END IF;
         END;
         dbms_output.put_line('AWR repository is extracted into ' || root || file || '.dmp');
@@ -146,7 +146,7 @@ BEGIN
             EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS AS SELECT * FROM SYS.CDB_HIST_REPORTS '||expr;
             EXECUTE IMMEDIATE 'CREATE TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS AS SELECT * FROM SYS.CDB_HIST_REPORTS_DETAILS '||expr;
         EXCEPTION WHEN OTHERS THEN
-            IF SQLCODE!=-955 THEN
+            IF sqlcode!=-955 THEN
                 RAISE;
             END IF;
         END;
@@ -156,20 +156,20 @@ BEGIN
             sys.dbms_datapump.stop_job(hdl, 1, 0, 10);
             sys.dbms_datapump.detach(job);
         EXCEPTION WHEN OTHERS THEN END;
-        hdl := null;
+        hdl := NULL;
         BEGIN
-            hdl := sys.dbms_datapump.open(operation   => 'EXPORT',
+            hdl := sys.dbms_datapump.OPEN(operation   => 'EXPORT',
                                           job_mode    => 'TABLE',
                                           job_name    => job,
                                           version     => '12');
             file := 'sqlmon_'||did||'_'||st||'_'||ed||'_'||lower(own)||'.dmp';
             sys.dbms_datapump.add_file(handle    => hdl,
-                                       filetype  => sys.dbms_datapump.KU$_FILE_TYPE_DUMP_FILE,
+                                       filetype  => sys.dbms_datapump.ku$_file_type_dump_file,
                                        filename  => file,
                                        directory => dir,
                                        reusefile => 1);
             sys.dbms_datapump.add_file(handle    => hdl,
-                                       filetype  => sys.dbms_datapump.KU$_FILE_TYPE_LOG_FILE,
+                                       filetype  => sys.dbms_datapump.ku$_file_type_log_file,
                                        filename  => replace(file,'.dmp','.log'),
                                        directory => dir,
                                        reusefile => 1);
@@ -195,7 +195,7 @@ BEGIN
                 EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS PURGE';
                 EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS_DETAILS PURGE';
             EXCEPTION WHEN OTHERS THEN NULL; END;
-            raise;
+            RAISE;
         END;
         BEGIN
             EXECUTE IMMEDIATE 'DROP TABLE '||own||'.AWR_DUMP_REPORTS PURGE';

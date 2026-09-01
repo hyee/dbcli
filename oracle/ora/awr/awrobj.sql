@@ -40,10 +40,10 @@ DECLARE
 BEGIN
     stmt := q'~
         WITH plans AS(
-            SELECT A.*
+            SELECT a.*
             FROM   &plan a
-            WHERE  UPPER('&V1') IN(a.OBJECT_NAME,''||a.object#,a.OBJECT_OWNER||'.'||a.OBJECT_NAME)
-            AND    A.DBID='&dbid'
+            WHERE  upper('&V1') IN(a.object_name,''||a.object#,a.object_owner||'.'||a.object_name)
+            AND    a.dbid='&dbid'
         )
         SELECT a.dbid,
                a.id,
@@ -55,9 +55,9 @@ BEGIN
                a.object_name,
                a.options,
                a.operation,
-               substr(A.PREDS||NVL2(b.sql_id,'Join  Filter: '||NVL(b.ACCESS_PREDICATES,b.FILTER_PREDICATES),''),1,3500) join_preds
+               substr(a.preds||nvl2(b.sql_id,'Join  Filter: '||nvl(b.access_predicates,b.filter_predicates),''),1,3500) join_preds
         FROM (
-            SELECT row_number() over(partition by dbid,sq_id,plan_hash_value,id order by flag) seq_,
+            SELECT row_number() OVER(PARTITION BY dbid,sq_id,plan_hash_value,id ORDER BY flag) seq_,
                    a.dbid,
                    a.id,
                    parent_,
@@ -70,7 +70,7 @@ BEGIN
                    a.object_name,
                    a.options,a.operation,
                    CASE WHEN prefix = 'Table' AND flag=1 THEN
-                            DECODE(b_options,
+                            decode(b_options,
                                     'FULL SCAN',
                                     'FFS',
                                     'RANGE SCAN',
@@ -81,9 +81,9 @@ BEGIN
                                     'RSD',
                                     'TO ROWIDS',
                                     'BITMAP',
-                                    b_options)||'('||NVL(b_SEARCH_COLUMNS,0) || '): ' || b_object_name
+                                    b_options)||'('||nvl(b_search_columns,0) || '): ' || b_object_name
                         WHEN prefix = 'Index' AND flag=1 THEN
-                            DECODE(a.options,
+                            decode(a.options,
                                     'FULL SCAN',
                                     'FFS',
                                     'RANGE SCAN',
@@ -94,34 +94,34 @@ BEGIN
                                     'RSD',
                                     'TO ROWIDS',
                                     'BITMAP',
-                                    a.options)||'('||NVL(a.SEARCH_COLUMNS,0) || '): ' || b_object_name
-                   ELSE a.OPTIONS END OP,
-                   REPLACE(CASE WHEN a.ACCESS_PREDICATES IS NOT NULL THEN nvl(prefix,'Table')||' Access: '||substr(a.ACCESS_PREDICATES,1,800)||chr(10) END ||
-                           CASE WHEN a.FILTER_PREDICATES IS NOT NULL THEN nvl(prefix,'Table')||' Filter: '||substr(a.FILTER_PREDICATES,1,800)||chr(10) END ||
-                           CASE WHEN b_ACCESS_PREDICATES IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Access: '||substr(b_ACCESS_PREDICATES,1,800)||chr(10) END ||
-                           CASE WHEN b_FILTER_PREDICATES IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Filter: '||substr(b_FILTER_PREDICATES,1,800)||chr(10) END
-                        ,'"') PREDS
+                                    a.options)||'('||nvl(a.search_columns,0) || '): ' || b_object_name
+                   ELSE a.options END op,
+                   replace(CASE WHEN a.access_predicates IS NOT NULL THEN nvl(prefix,'Table')||' Access: '||substr(a.access_predicates,1,800)||chr(10) END ||
+                           CASE WHEN a.filter_predicates IS NOT NULL THEN nvl(prefix,'Table')||' Filter: '||substr(a.filter_predicates,1,800)||chr(10) END ||
+                           CASE WHEN b_access_predicates IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Access: '||substr(b_access_predicates,1,800)||chr(10) END ||
+                           CASE WHEN b_filter_predicates IS NOT NULL AND flag=1 THEN decode(prefix,'Index','Table','Index')||' Filter: '||substr(b_filter_predicates,1,800)||chr(10) END
+                        ,'"') preds
             FROM (
                 SELECT  /*+outline_leaf use_hash(a b) */
-                        A.*,
+                        a.*,
                         least(b.parent_id,a.parent_id) parent_,
                         decode(a.plan_hash_value,0,a.sql_id) sq_id,
-                        nvl(max(0+nvl2(b.other_xml,nullif(to_char(regexp_substr(b.other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0'),'')) over(partition by a.dbid,a.plan_hash_value),a.plan_hash_value) plan_full,
-                        b.ACCESS_PREDICATES B_ACCESS_PREDICATES,
-                        b.FILTER_PREDICATES B_FILTER_PREDICATES,
-                        b.options B_OPTIONS,
-                        B.object_name B_object_name,
-                        B.SEARCH_COLUMNS B_SEARCH_COLUMNS,
+                        nvl(max(0+nvl2(b.other_xml,nullif(to_char(regexp_substr(b.other_xml,'plan_hash_full".*?(\d+)',1,1,'n',1)),'0'),'')) OVER(PARTITION BY a.dbid,a.plan_hash_value),a.plan_hash_value) plan_full,
+                        b.access_predicates b_access_predicates,
+                        b.filter_predicates b_filter_predicates,
+                        b.options b_options,
+                        b.object_name b_object_name,
+                        b.search_columns b_search_columns,
                         CASE WHEN a.id!=b.id
                             AND  b.id BETWEEN a.id - 1 AND a.id + 1
-                            AND  nvl(a.OBJECT_ALIAS,' ')=nvl(b.OBJECT_ALIAS,' ')
-                            AND  nvl(a.QBLOCK_NAME,' ')=nvl(b.QBLOCK_NAME,' ')
-                            AND (a.prefix='Index' AND B.options like '%INDEX ROWID%' AND
-                                 b.depth=a.depth-1 and (a.parent_id=b.id or a.parent_id!=b.id-1)
-                              OR a.prefix='Table' AND B.operation like 'INDEX%' AND
-                                 b.depth=a.depth+1 and (b.parent_id=a.id or b.parent_id!=a.id-1))
-                        THEN 1 ELSE 2 END FLAG
-                FROM (SELECT /*+NO_MERGE*/ A.*,CASE WHEN OPERATION LIKE 'INDEX%' THEN 'Index' WHEN options LIKE '%INDEX ROWID%' THEN 'Table' END prefix FROM  plans a) a
+                            AND  nvl(a.object_alias,' ')=nvl(b.object_alias,' ')
+                            AND  nvl(a.qblock_name,' ')=nvl(b.qblock_name,' ')
+                            AND (a.prefix='Index' AND b.options LIKE '%INDEX ROWID%' AND
+                                 b.depth=a.depth-1 AND (a.parent_id=b.id OR a.parent_id!=b.id-1)
+                              OR a.prefix='Table' AND b.operation LIKE 'INDEX%' AND
+                                 b.depth=a.depth+1 AND (b.parent_id=a.id OR b.parent_id!=a.id-1))
+                        THEN 1 ELSE 2 END flag
+                FROM (SELECT /*+NO_MERGE*/ a.*,CASE WHEN operation LIKE 'INDEX%' THEN 'Index' WHEN options LIKE '%INDEX ROWID%' THEN 'Table' END prefix FROM  plans a) a
                 JOIN &plan b
                 ON   b.dbid = a.dbid
                 AND  a.sql_id = b.sql_id
@@ -133,116 +133,116 @@ BEGIN
         AND  a.plan_hash = b.plan_hash_value
         AND  a.parent_=b.id
         AND  regexp_like(b.operation,'HASH|NESTED|MERGE')
-        AND  NVL(b.ACCESS_PREDICATES,b.FILTER_PREDICATES) IS NOT NULL
+        AND  nvl(b.access_predicates,b.filter_predicates) IS NOT NULL
         WHERE seq_=1~';
     xml := dbms_xmlgen.getxmltype(stmt);
     stmt :=q'~
         WITH ops AS(
             SELECT *
-            FROM XMLTABLE('/ROWSET/ROW' PASSING :xml 
-                COLUMNS DBID INT PATH 'DBID',
-                        ID INT PATH 'ID',
-                        SORTTYPE VARCHAR2(30) PATH 'SORTTYPE',
-                        SQ_ID    VARCHAR2(30) PATH 'SQ_ID',
-                        PLAN_FULL INT PATH 'PLAN_FULL',
-                        PLAN_HASH INT PATH 'PLAN_HASH',
-                        OBJ INT PATH 'OBJ',
-                        OBJECT_NAME VARCHAR2(30) PATH 'OBJECT_NAME',
-                        OPERATION VARCHAR2(300) PATH 'OPERATION',
-                        OPTIONS VARCHAR2(300) PATH 'OPTIONS',
-                        OP VARCHAR2(300) PATH 'OP',
-                        PREDS VARCHAR2(4000) PATH 'JOIN_PREDS'
+            FROM xmltable('/ROWSET/ROW' PASSING :xml 
+                COLUMNS dbid INT PATH 'DBID',
+                        id INT PATH 'ID',
+                        sorttype VARCHAR2(30) PATH 'SORTTYPE',
+                        sq_id    VARCHAR2(30) PATH 'SQ_ID',
+                        plan_full INT PATH 'PLAN_FULL',
+                        plan_hash INT PATH 'PLAN_HASH',
+                        obj INT PATH 'OBJ',
+                        object_name VARCHAR2(30) PATH 'OBJECT_NAME',
+                        operation VARCHAR2(300) PATH 'OPERATION',
+                        options VARCHAR2(300) PATH 'OPTIONS',
+                        op VARCHAR2(300) PATH 'OP',
+                        preds VARCHAR2(4000) PATH 'JOIN_PREDS'
             )
         ),~';
     IF '&typ' ='d' THEN
         stmt := stmt||q'~@qry@
                 FROM  (
-                      SELECT b.*,plan_full,a.plan_hash,a.op,trim(chr(10) from PREDS) preds
-                      FROM  (select /*+no_merge*/ distinct dbid,plan_hash,plan_full,coalesce(op,operation,options) op,PREDS from ops where plan_hash>0) a
-                      JOIN  &check_access_pdb.Sqlstat b
+                      SELECT b.*,plan_full,a.plan_hash,a.op,trim(chr(10) FROM preds) preds
+                      FROM  (SELECT /*+no_merge*/ DISTINCT dbid,plan_hash,plan_full,coalesce(op,operation,options) op,preds FROM ops WHERE plan_hash>0) a
+                      JOIN  &check_access_pdb.sqlstat b
                       ON     a.dbid=b.dbid
                       AND    a.plan_hash=b.plan_hash_value
                       AND    b.dbid='&dbid'
                       UNION  ALL
-                      SELECT b.*,0,0,a.op,null
-                      FROM  (select /*+no_merge*/ distinct dbid,sq_id,coalesce(op,operation,options) op from ops where sq_id IS NOT NULL) a
-                      JOIN  &check_access_pdb.Sqlstat b
+                      SELECT b.*,0,0,a.op,NULL
+                      FROM  (SELECT /*+no_merge*/ DISTINCT dbid,sq_id,coalesce(op,operation,options) op FROM ops WHERE sq_id IS NOT NULL) a
+                      JOIN  &check_access_pdb.sqlstat b
                       ON     a.dbid=b.dbid
                       AND    a.sq_id=b.sql_id
                       AND    b.dbid='&dbid'
                       AND    b.plan_hash_value=0) hs
                 JOIN &check_access_pdb.snapshot s USING(dbid,snap_id,instance_number)
-                WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
-                AND   to_timestamp(coalesce('&V4', to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';
+                WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
+                AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';
     ELSE
         stmt := stmt||q'~@qry@
                 FROM  (
-                      SELECT b.*,elapsed_time elapsed_time_delta,executions executions_delta,&dbid dbid,plan_full,a.plan_hash,a.op,trim(chr(10) from PREDS) preds
-                      FROM  (select /*+no_merge*/ distinct dbid,plan_hash,plan_full,coalesce(op,operation,options) op,PREDS from ops where plan_hash>0) a
-                      JOIN  gv$Sqlstats b
+                      SELECT b.*,elapsed_time elapsed_time_delta,executions executions_delta,&dbid dbid,plan_full,a.plan_hash,a.op,trim(chr(10) FROM preds) preds
+                      FROM  (SELECT /*+no_merge*/ DISTINCT dbid,plan_hash,plan_full,coalesce(op,operation,options) op,preds FROM ops WHERE plan_hash>0) a
+                      JOIN  gv$sqlstats b
                       ON     a.plan_hash=b.plan_hash_value
                       UNION  ALL
-                      SELECT b.*,elapsed_time elapsed_time_delta,executions executions_delta,&dbid dbid,0,0,a.op,null
-                      FROM  (select /*+no_merge*/ distinct dbid,sq_id,coalesce(op,operation,options) op from ops where sq_id IS NOT NULL) a
-                      JOIN   gv$Sqlstats b
+                      SELECT b.*,elapsed_time elapsed_time_delta,executions executions_delta,&dbid dbid,0,0,a.op,NULL
+                      FROM  (SELECT /*+no_merge*/ DISTINCT dbid,sq_id,coalesce(op,operation,options) op FROM ops WHERE sq_id IS NOT NULL) a
+                      JOIN   gv$sqlstats b
                       ON     a.sq_id=b.sql_id
                       AND    b.plan_hash_value=0) hs
-                WHERE nvl(hs.last_active_time,sysdate) BETWEEN to_date(coalesce('&V3', to_char(SYSDATE - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
-                AND   to_date(coalesce('&V4', to_char(SYSDATE+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';        
+                WHERE nvl(hs.last_active_time,sysdate) BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
+                AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';        
     END IF;
 
     OPEN :C1 FOR replace(stmt,'@qry@',q'~
-        Stats AS (
-            SELECT max(&phf) keep(dense_rank last order by total_ela) top_plan,
-                   count(distinct plan_hash) "Plans",
-                   max(sql_id) keep(dense_rank last order by total_ela) top_sql,
-                   count(distinct sql_id) "SQLs",
+        stats AS (
+            SELECT max(&phf) KEEP(dense_rank LAST ORDER BY total_ela) top_plan,
+                   count(DISTINCT plan_hash) "Plans",
+                   max(sql_id) KEEP(dense_rank LAST ORDER BY total_ela) top_sql,
+                   count(DISTINCT sql_id) "SQLs",
                    sum(total_ela) total_ela,
-                   ratio_to_report(sum(total_ela)) over() weight,
+                   ratio_to_report(sum(total_ela)) OVER() weight,
                    sum(execs) execs,
                    round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela,
-                   op,max(PREDS) PREDS
+                   op,max(preds) preds
             FROM (
                 SELECT /*+outline_leaf ordered use_hash(hs s) opt_param('_optimizer_cartesian_enabled' 'false')  opt_param('_optimizer_mjc_enabled' 'false') */
                        hs.sql_id,dbid &con,
-                       SUM(elapsed_time_delta) TOTAL_ELA,
-                       SUM(executions_delta) execs,
-                       plan_full,plan_hash,op,PREDS~')
+                       sum(elapsed_time_delta) total_ela,
+                       sum(executions_delta) execs,
+                       plan_full,plan_hash,op,preds~')
         || q'~
-                GROUP  BY hs.sql_id, dbid &con,plan_full,plan_hash,op,PREDS)
+                GROUP  BY hs.sql_id, dbid &con,plan_full,plan_hash,op,preds)
             WHERE trim(preds) IS NOT NULL
-            GROUP BY op,PREDS)
-        SELECT * FROM Stats
-        ORDER  BY 0+decode(nvl(lower('&V2'),'total'),'total',total_ela,'ela',avg_ela,'exe',execs,'sqls',"SQLs",0) DESC NULLS LAST,total_ela desc~'
-    USING XML;
+            GROUP BY op,preds)
+        SELECT * FROM stats
+        ORDER  BY 0+decode(nvl(lower('&V2'),'total'),'total',total_ela,'ela',avg_ela,'exe',execs,'sqls',"SQLs",0) DESC NULLS LAST,total_ela DESC~'
+    USING xml;
 
     OPEN :C2 FOR replace(stmt,'@qry@',q'~
-        Stats AS (
+        stats AS (
             SELECT &phf,dbid &con, 
-                   max(sql_id) keep(dense_rank last order by total_ela) sql_id,
-                   count(distinct sql_id) ids,
+                   max(sql_id) KEEP(dense_rank LAST ORDER BY total_ela) sql_id,
+                   count(DISTINCT sql_id) ids,
                    sum(total_ela) total_ela,
-                   ratio_to_report(sum(total_ela)) over() weight,
+                   ratio_to_report(sum(total_ela)) OVER() weight,
                    sum(execs) execs,
                    round(sum(total_ela)/greatest(sum(execs),1),2) avg_ela
             FROM (
                 SELECT /*+outline_leaf ordered use_hash(hs s) opt_param('_optimizer_cartesian_enabled' 'false')  opt_param('_optimizer_mjc_enabled' 'false') */
                        hs.sql_id,dbid &con,
-                       SUM(elapsed_time_delta) TOTAL_ELA,
-                       SUM(executions_delta) execs,
+                       sum(elapsed_time_delta) total_ela,
+                       sum(executions_delta) execs,
                        plan_full,plan_hash~')
         || q'~
                 GROUP  BY hs.sql_id, dbid &con,plan_full,plan_hash)
-            GROUP BY &phf,dbid &con,case when plan_hash=0 THEN sql_id END)
+            GROUP BY &phf,dbid &con,CASE WHEN plan_hash=0 THEN sql_id END)
         SELECT &phf,id plan#,sql_id top_sql_id,ids "SQLs",obj,
                coalesce(op,operation||' '||options) operation,total_ela,weight,avg_ela,execs,
-               substr(regexp_replace(trim(to_char(SUBSTR(sql_text, 1, 500))),'[[:space:][:cntrl:]]+',' '),1,200) text
+               substr(regexp_replace(trim(to_char(substr(sql_text, 1, 500))),'[[:space:][:cntrl:]]+',' '),1,200) text
         FROM  ops a
         JOIN  stats b USING(dbid,&phf)
         LEFT JOIN &check_access_pdb.sqltext USING(dbid &con,sql_id)
         WHERE sql_id=nvl(a.sq_id,sql_id)
         ORDER  BY 0+decode(sorttype,'total',total_ela,'ela',avg_ela,'exe',execs,0) DESC NULLS LAST,
                   decode(sorttype,'sql',sql_id,'text',text)~'
-    USING XML;
+    USING xml;
 END;
 /

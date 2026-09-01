@@ -66,53 +66,53 @@ col iowait,cpu,clwait,apwait,plsql,ccwait,pct format pct1
 col reads,writes,mem,cellio,oflin,oflout,buff format kmg
 col execs,FETCHES,loads,parses,rows,PX format tmb
 set autohide col
-WITH qry as (SELECT nvl(upper(NVL(:V1,:INSTANCE)),'A') inst,
+WITH qry AS (SELECT nvl(upper(nvl(:V1,:INSTANCE)),'A') inst,
                     nullif(lower(:V2),'a') sqid,
                     to_timestamp(coalesce(:V3,:starttime,to_char(sysdate-7,'YYMMDDHH24MI')),'YYMMDDHH24MI') st,
                     to_timestamp(coalesce(:V4,:endtime,to_char(sysdate+1,'YYMMDDHH24MI')),'YYMMDDHH24MI') ed
-             FROM Dual)
+             FROM dual)
 SELECT pct,
        &grp, 
        plan_hash, &sqls
        last_call,
        execs,
-       FETCHES,
+       fetches,
        parses,
        seens,
        ela_total,ela_avg,avgio "Cost/IO",&field
        iowait,cpu,ccwait,clwait,apwait,plsql,
        &ver cellio,oflin,oflout,
        reads,writes,buff,
-       RWS "ROWS",
-       PX,
-       EXTRACTVALUE(DBMS_XMLGEN.GETXMLTYPE(q'~SELECT trim(substr(regexp_replace(to_char(SUBSTR(sql_text, 1, 500)),'[[:space:][:cntrl:]]+',' '),1,200)) text FROM &check_access_pdb.SQLTEXT WHERE SQL_ID='~'||regexp_substr(a.top_sql,'\w+')||''' and dbid='||a.dbid||' and rownum<2'),'//TEXT') SQL_TEXT
-FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
-               ratio_to_report(val) over() pct
+       rws "ROWS",
+       px,
+       extractvalue(dbms_xmlgen.getxmltype(q'~SELECT trim(substr(regexp_replace(to_char(substr(sql_text, 1, 500)),'[[:space:][:cntrl:]]+',' '),1,200)) text FROM &check_access_pdb.sqltext WHERE sql_id='~'||regexp_substr(a.top_sql,'\w+')||''' and dbid='||a.dbid||' and rownum<2'),'//TEXT') sql_text
+FROM   (SELECT a.*, row_number() OVER(ORDER BY val DESC NULLS LAST) r,
+               ratio_to_report(val) OVER() pct
         FROM (
             SELECT &grp,top_sql,dbid,
                    plan_hash,
                    to_char(lastest,'MM-DD"|"HH24:MI') last_call,
                    execs,
-                   LOADs,
+                   loads,
                    parses,
                    seens,
                    sqls,
                    mem / exe1 mem,
                    ela ela_total,
                    ela_avg,
-                   CPU / ela CPU,
+                   cpu / ela cpu,
                    iowait/nullif(ioreqs,0) avgio,
                    nullif(round(iowait / ela,3),0) iowait,
                    nullif(round(ccwait / ela,3),0) ccwait,
                    nullif(round(clwait / ela,3),0) clwait,
                    nullif(round(apwait / ela,3),0) apwait,
-                   nullif(round(PLSQL / ela,3),0) PLSQL,
-                   nullif(READ / exe1,0) READS,
+                   nullif(round(plsql / ela,3),0) plsql,
+                   nullif(read / exe1,0) reads,
                    nullif(buff / exe1,0) buff,
-                   nullif(WRITE / exe1,0) WRITES,
-                   nullif(FETCH / exe1,0) FETCHES,
-                   nullif(RWS / exe1,0) rws,
-                   nullif(PX / exe1,0) PX,
+                   nullif(write / exe1,0) writes,
+                   nullif(FETCH / exe1,0) fetches,
+                   nullif(rws / exe1,0) rws,
+                   nullif(px / exe1,0) px,
                    nullif(oflin/exe1,0) oflin,
                    nullif(oflout/exe1,0) oflout,
                    nullif(cellio/exe1,0) cellio,
@@ -121,42 +121,41 @@ FROM   (SELECT a.*, row_number() over(order by val desc nulls last) r,
                            &grp,
                            max(dbid) dbid,
                            max(sql_id) KEEP(dense_rank LAST ORDER BY elapsed_time_total) top_sql,
-                           count(distinct sql_id) sqls,
+                           count(DISTINCT sql_id) sqls,
                            plan_hash_value plan_hash,
-                           count(1) SEENS,
-                           MAX(begin_interval_time) lastest,
-                           SUM(executions) execs,
-                           SUM(LOADS) LOADs,
-                           SUM(PARSE_CALLS) parses,
-                           AVG(sharable_mem/1024/ 1024) mem,
-                           SUM(elapsed_time) ela,
-                           round(SUM(elapsed_time)/nullif(decode(SUM(executions),0,floor(sum(PARSE_CALLS)/greatest(sum(px_servers_execs),1)),sum(executions)),0),2) ela_avg,
-                           SUM(cpu_time ) CPU,
-                           SUM(iowait) iowait,
-                           SUM(ioreqs) ioreqs,
-                           SUM(CCWAIT) ccwait,
-                           SUM(CLWAIT) clwait,
-                           SUM(apwait) apwait,
-                           SUM(PLSEXEC_TIME+JAVEXEC_TIME) PLSQL,
-                           SUM(cellio) cellio,
-                           SUM(oflin) oflin,
-                           sign(SUM(oflin))*SUM(oflout) oflout,
-                           SUM(greatest(disk_reads,phyread)) READ,
-                           SUM(nvl(phywrite,0)+nvl(direct_writes*512*1024,0)) WRITE,
+                           count(1) seens,
+                           max(begin_interval_time) lastest,
+                           sum(execs) execs,
+                           sum(loads) loads,
+                           sum(parse_calls) parses,
+                           avg(sharable_mem/1024/ 1024) mem,
+                           sum(elapsed_time) ela,
+                           round(sum(elapsed_time)/nullif(decode(sum(execs),0,floor(sum(parse_calls)/greatest(sum(px_servers_execs),1)),sum(execs)),0),2) ela_avg,
+                           sum(cpu_time ) cpu,
+                           sum(iowait) iowait,
+                           sum(ioreqs) ioreqs,
+                           sum(ccwait) ccwait,
+                           sum(clwait) clwait,
+                           sum(apwait) apwait,
+                           sum(plsexec_time+javexec_time) plsql,
+                           sum(cellio) cellio,
+                           sum(oflin) oflin,
+                           sign(sum(oflin))*sum(oflout) oflout,
+                           sum(greatest(disk_reads,phyread)) read,
+                           sum(nvl(phywrite,0)+nvl(direct_writes*512*1024,0)) write,
                            sum(buffer_gets) buff,
-                           SUM(FETCHES) FETCH,
-                           SUM(ROWS_PROCESSED) RWS,
-                           SUM(PX_SERVERS_EXECS) PX,
+                           sum(fetches) FETCH,
+                           sum(rows_processed) rws,
+                           sum(px_servers_execs) px,
                            decode('&avg',
                                   'avg',
-                                  greatest(SUM(executions),0,1),
+                                  greatest(sum(execs),0,1),
                                   1) exe1
-                   FROM  (SELECT s.*, SUM(executions) over(partition by &grp, plan_hash_value) execs_
+                    FROM (SELECT s.*, executions+CASE WHEN flag_=1 AND first_value(flag_) over(partition by dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end execs
                           FROM   qry,&&awr$sqlstat s
-                          WHERE  (qry.sqid = &grp or qry.sqid is null)
+                          WHERE  (qry.sqid = &grp OR qry.sqid IS NULL)
                           AND    (&filter)
-                          AND    s.end_interval_time between qry.st and ed
-                          AND    (qry.inst in('A','0') or qry.inst= ''||s.instance_number))
-                   WHERE execs_>0 and delta_flag>0 OR execs_=0 AND delta_flag=0
+                          AND    s.end_interval_time BETWEEN qry.st AND ed
+                          AND    (qry.inst IN('A','0') OR qry.inst= ''||s.instance_number))
                     GROUP  BY &grp, plan_hash_value)) a)a
 WHERE  r <= 50

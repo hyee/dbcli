@@ -20,6 +20,7 @@
         @O122 : 12.2={} default={--}
         @O181 : 18.1={} default={--}
         @con  : 12.1={,con_dbid} default={}
+        @CHECK_USER: ADVISOR={}
     --]]
 ]]*/
 set verify off feed off
