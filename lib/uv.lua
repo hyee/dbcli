@@ -57,7 +57,9 @@ function uv.async_read(path, maxsize, callback,...)
     local args={...}
     local len=#args
     local function res(err,text)
-        if fd then u.fs_close(fd, noop) end
+        if fd then
+            u.fs_close(fd,nil)
+        end
         args[len+1],args[len+2]=err or false,text
         local done,result=pcall(callback,table.unpack(args))
         if not done then
@@ -102,7 +104,7 @@ function uv.async_read(path, maxsize, callback,...)
             u.fs_read(fd, math.min(maxsize,4*1024*1024), 0, onChunk)
         end
     end
-    
+
     u.fs_open(path, "r", 438 --[[ 0666 ]], function (err, result)
         if err then return res(err) end
         fd = result
@@ -121,10 +123,11 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
     local filenames=table.new(1024,0)
     local dirs={}
     local fullname,name
+    local opened=0
     if ext=='' then ext=nil end
     if ext and ext~='*' and ext:sub(1,1)~='.' then ext='.'..ext:lower() end
     depth=tonumber(depth) or 99
-
+    filenames.opened=0
     if type(path)=="table" then
         local paths={}
         for index,subdir in ipairs(path) do
@@ -174,6 +177,11 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
         end
         filenames[#filenames+1]=file
         if read_func and typ=='file' then
+            if opened>512 then
+                uv.run()
+                opened=0
+            end
+            opened=opened+1
             uv.async_read(file.fullname,tonumber(read_func) or tonumber(is_allow) or 4*1024*1024,set_text,#filenames)
         end
     end

@@ -80,8 +80,13 @@ local function abort_thread()
 end
 
 _G['TRIGGER_EVENT']=function(key_event,key_name)
-    local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','issift'}
-    --for i,j in ipairs(event) do event[j],event[i]=key_event[i] end
+    local event={'keydown','keycode','uchar','isfunc','repeat','isalt','isctrl','isshift'}
+    if type(key_event)=='table' or type(key_event)=='userdata' then
+        for i,j in ipairs(event) do
+            local v=key_event[i]
+            if v~=nil then event[j],event[i]=v,v end
+        end
+    end
     event.name=tostring(key_name)
     env.safe_call(env.event and env.event.callback,5,"ON_KEY_EVENT",event,key_event)
     return event.isbreak and 2 or 0
@@ -408,8 +413,7 @@ end
 function env.format_error(src,errmsg,...)
     if not errmsg then return end
     errmsg=(tostring(errmsg) or "")
-    local HIR,NOR,count="",""
-    local count=0
+    local HIR,NOR,count="","",0
     if env.ansi and env.set and env.set.exists("ERRCOLOR") then
         HIR,NOR=env.ansi.get_color(env.set.get("ERRCOLOR")),env.ansi.get_color('NOR')
         errmsg=errmsg:strip_ansi()
@@ -483,11 +487,13 @@ function env.checkhelp(arg)
 end
 
 local co_stacks={}
+local co_busy=setmetatable({}, {__mode='k'})
+
 local function _exec_command(name,params)
     local result
     local cmd=_CMDS[name:upper()]
     if not cmd then
-        return env.warn("No such comand '%s'!",name)
+        return env.warn("No such command '%s'!",name)
     end
     if not cmd.FUNC then return end
     if env.printer then
@@ -498,13 +504,17 @@ local function _exec_command(name,params)
     for _,func in ipairs(funs) do
         local co,_,index=env.register_thread()
         co=co_stacks[index+1]
-        if not co or coroutine.status(co)=='dead' then
+        if not co or coroutine.status(co)~='suspended' or co_busy[co] then
             co=coroutine.create(
-                function(f) 
-                    while f do 
-                        f=coroutine.yield(f[1](table.unpack(f,2))) 
-                    end 
+                function(f)
+                    while f do
+                        co_busy[co]=true
+                        local r=f[1](table.unpack(f,2))
+                        co_busy[co]=false
+                        f=coroutine.yield(r)
+                    end
                 end)
+            co_busy[co]=false
         end
         env.register_thread(co)
         args[1]=func
@@ -520,7 +530,7 @@ local function _exec_command(name,params)
         end
     end
 
-    if not result[1] then error('000-00000:') end
+    if not result or not result[1] then error('000-00000:') end
     
     return table.unpack(result)
 end
@@ -601,10 +611,10 @@ local prompt_stack={_base="SQL",default=0}
 --env.prompt_stack=prompt_stack
 function env.set_prompt(class,default,is_default,level)
     if default then
+        if env.ansi then default=env.ansi.convert_ansi(default) end
         if not env._SUBSYSTEM  then 
             default=(default==default:lower() or default==default:upper()) and default:upper() or default
         end
-        if env.ansi then default=env.ansi.convert_ansi(default) end
     end
 
     local new='manual'
@@ -734,7 +744,7 @@ function env.parse_args(cmd,rest,is_cross_line)
                         --begin a quote string, if its previous char is not a space, then bypass
                         is_quote_string,piece = true,piece..quote
                     elseif piece=='' and (char=='[' or char=='{') then
-                        local scope=(rest:sub(i)..' '):match('^%b'..char..(char=='[' and ']' or ']')..'%s')
+                        local scope=(rest:sub(i)..' '):match('^%b'..char..(char=='[' and ']' or '}')..'%s')
                         if scope then
                             args[#args+1],scope_index,piece=scope,i+#scope,''
                             --if enclosed with [[...]] then only get the inner content
@@ -801,7 +811,11 @@ function env.force_end_input(exec,is_internal)
 end
 
 local function _eval_line(line,exec,is_internal,not_skip)
-    if type(line)~='string' or line:gsub('%s+','')=='' then
+    if type(line)~='string' then
+        print('unexpected line: ['..type(line)..']'..toString(line))
+        return
+    end
+    if line:gsub('%s+','')=='' then
         if env._SUBSYSTEM and not dbcli_current_item.skip_subsystem and line:gsub('%s+','')=='' then
             line='\1'
         else
@@ -836,7 +850,7 @@ local function _eval_line(line,exec,is_internal,not_skip)
             end
         end
 
-        line=line:gsub('^[%s%z\128-\255 \t]+','')
+        line=line:gsub('^[%s%z`\239\187\191 \t]+','')
         if line:match('^([^%w])') then
             local cmd=""
             for i=math.min(#line,5),1,-1 do
@@ -1015,7 +1029,7 @@ function env.safe_call(func,...)
     if not func then return end
     local res,rtn=pcall(func,...)
     if not res then
-        return env.warn(tostring(rtn):gsub(env.WORK_DIR,""))
+        return env.warn(tostring(rtn):replace(env.WORK_DIR,""))
     end
     return rtn
 end
@@ -1465,7 +1479,7 @@ function env.ask(question,range,default)
     value=value and env.ansi.strip_ansi(value:trim()) or ""
 
     value=value:gsub('\\([0-9]+)',function(x) return string.char(tonumber(x)) end)
-    value=value:gsub('(0x[0-9a-f][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
+    value=value:gsub('(0x[0-9a-fA-F][0-9a-fA-F]?)',function(x) return string.char(tonumber(string.format("%d",x))) end)
    
     if value=="" then
         if env.isInterrupted then

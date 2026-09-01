@@ -182,14 +182,23 @@ public final class Console {
             public void call(Object... c) {
                 increaseCancelSeq();
                 if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
+                    long[] keyData = new long[8];
+                    if (c[0] instanceof long[]) {
+                        System.arraycopy((long[]) c[0], 0, keyData, 0, keyData.length);
+                    } else {
+                        keyData[2] = '\3';
+                    }
                     lua.getGlobal("TRIGGER_EVENT");
-                    Integer r = (Integer) (lua.call(c)[0]);
-                    if (r == 2) ((long[]) c[0])[0] = 2;
+                    Object r = lua.call(keyData, c.length > 1 ? String.valueOf(c[1]) : "CTRL+C")[0];
+                    if (r instanceof Number && ((Number) r).intValue() == 2) {
+                        ((long[]) c[0])[0] = 2;
+                    }
                 } else if (event != null) {
                     if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
                     else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
-                if (titles.size() > 0)
+
+                if (titles.size() > 0) {
                     new Thread(() -> {
                         try {
                             Thread.sleep(1000);
@@ -198,6 +207,7 @@ public final class Console {
                         reader.redrawLine();
                         if (status != null) setStatus("flush", null);
                     }).start();
+                }
             }
         };
         Interrupter.listen(this, callback);
