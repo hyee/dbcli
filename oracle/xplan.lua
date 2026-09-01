@@ -88,6 +88,7 @@ function xplan.explain(fmt,sql)
             end
         end,
         function(err)
+            cfg.set("feed",feed,true)
             if type(err)=="string" and err:find("ORA-00942",1,true) then
                 env.raise("Unable to EXPLAIN the SQL due to the inaccessibility of its depending objects, please make sure you've switched to the correct schema.")
             else
@@ -240,7 +241,7 @@ function xplan.explain(fmt,sql)
                      else plan_table_output[cv()]
                  end)
         order  by r]]
-    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id):gsub('@mbrc@',db.props.mbrc)
+    sql=sql:gsub('@fmt@',fmt):gsub('@sql@',sql_id):gsub('@mbrc@',db.props.mbrc or 8)
     sql=sql:gsub('@proj@',db.props.version>11.1 and 
           [[nullif(regexp_count(projection,'\[[A-Z0-9,]+\](,|$)'),0) proj,nvl2(access_predicates,0+regexp_substr(projection,'#keys=(\d+)',1,1,'i',1),null) keys,0+regexp_substr(projection,'rowset=(\d+)',1,1,'i',1) rowsets]] 
       or  [[(select nullif(count(1),0) from dual connect by regexp_substr(projection,'\[[A-Z0-9,]+\](,|$)',1,level) is not null) proj,nullif(0,0) keys,nullif(0,0) rowsets]])

@@ -390,8 +390,8 @@ function snapper:next_exec()
                         top_idx[counter]=row[k] or ""
                     end
 
-                    counter=0        
-                    for k,_ in pairs(grp_idx) do
+                    counter=0
+                    for k,_ in pairs(idx) do
                         counter=counter+1
                         idx[counter]=row[k] or ""
                     end

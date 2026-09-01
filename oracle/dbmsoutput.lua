@@ -1,5 +1,5 @@
 local env,loader=env,loader
-local snoop,cfg,default_db=env.event.snoop,env.set,env.db
+local snoop,cfg=env.event.snoop,env.set
 local flag = 1
 local term,sqlerror,timer
 local output={}
@@ -116,7 +116,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             END IF;
         end;
     BEGIN
-        IF l_trace NOT IN('on','statistics','traceonly','switch') AND l_child IS NOT NULL THEN
+        IF l_trace NOT IN('on','traceonly','switch') AND l_child IS NULL THEN
             begin
                 execute immediate q'[
                     select /*+opt_param('_optimizer_generate_transitive_pred' 'false') opt_param('_optimizer_transitivity_retain' 'false')*/ 
@@ -172,7 +172,7 @@ output.stmt=([[/*INTERNAL_DBCLI_CMD dbcli_ignore*/
             dbms_output.enable(null);
         END IF;
 
-        IF l_trace NOT IN('off','statistics','sql_id','switch') THEN
+        IF l_trace NOT IN('off','traceonly','sql_id','switch') THEN
             IF dbms_db_version.version>11 THEN
                 l_fmt := l_fmt||' +METRICS +REPORT -ADAPTIVE';
             ELSIF dbms_db_version.version>10 THEN
@@ -376,7 +376,7 @@ function output.getOutput(item,force)
         local args,stats
         output.is_exec=true
         sql_id=sql_id or loader:computeSQLIdFromText(sql)
-        if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
+        if autotrace =='traceonly' or autotrace=='on' then
             args={stats='#CURSOR',last_sql_id='#VARCHAR',last_child='#NUMBER',sql_id=sql_id}
             --db:query([[select /*dbcli_ignore INTERNAL_DBCLI_CMD*/ * from v$open_cursor where sid=userenv('sid') and cursor_type like '%OPEN%' and upper(SQL_TEXT） like '%SELECT%']])
             local done,err=pcall(db.exec_cache,db,output.trace_sql_after,args,'Internal_GetSQLSTATS_Next')
@@ -509,7 +509,7 @@ function output.capture_stats(info)
     if term then cfg.set('TERMOUT','off') end
     local db,sql=info[1],info[2]
     if sql and sql:find('%s') and not db:is_internal_call(sql) then
-        if autotrace =='traceonly' or autotrace=='on' or autotrace=='statistics' then
+        if autotrace =='traceonly' or autotrace=='on'  then
             output.is_exec=true
             local done,result=pcall(db.exec_cache,db,output.trace_sql,{},'Internal_GetSQLSTATS')
             if done then 
