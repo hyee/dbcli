@@ -259,7 +259,7 @@ BEGIN
             xplan :='|  '||xplan||'  |  ORG_SQL: '||sq_id||'  ->  ACT_SQL: '||sq_nid||'  |';
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||replace(sq_nid,'#');
+            xplan := 'ora plan -g -report '||replace(sq_nid,'#');
         ELSE
             DELETE SYS.PLAN_TABLE$ WHERE PLAN_ID=SIG;
 
@@ -338,12 +338,13 @@ BEGIN
 
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -p '||sig;
+            xplan := 'ora plan -p -report '||sig;
         END IF;
 
         OPEN binds FOR
             WITH bd AS (
-                SELECT /*+INLINE*/ b.position pos,nvl(name,':'||b.position) name,b.datatype_string,
+                SELECT DISTINCT
+                       b.position pos,nvl(name,':'||b.position) name,b.datatype_string,
                        CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
                             WHEN b.datatype_string LIKE 'DATE%'      AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
                             ELSE b.value_string
@@ -411,10 +412,9 @@ BEGIN
                                scal   INT            PATH '@scal',
                                hval   VARCHAR2(4000) PATH '.') b
                 WHERE  p.other_xml IS NOT NULL)
-            SELECT pos "#",name,occurrences,datatype,maxlen,charset,peeked_value,captured_value
+            SELECT pos "#",name,datatype,maxlen,charset,peeked_value,captured_value
             FROM  (SELECT pos,
                           nvl(pk.name,bd.name) name,
-                          count(*) over(partition by nvl(pk.name,':'||pos)) occurrences,
                           nvl(bd.datatype_string,pk.datatype) datatype,
                           pk.maxlen,
                           pk.charset,
@@ -425,19 +425,16 @@ BEGIN
             ORDER  BY pos,name;
     ELSIF bw IS NOT NULL THEN
         OPEN binds FOR
-            SELECT b.position,
+            SELECT DISTINCT
+                   b.position,
                    nvl(name,':'||b.position) name,
-                   count(*) over(partition by b.position) occurrences,
                    b.datatype_string,
-                   NULL maxlen,
-                   NULL charset,
-                   NULL peeked_value,
                    CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
                         WHEN b.datatype_string LIKE 'DATE%'     AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
                         ELSE b.value_string
                    END captured_value
             FROM   TABLE(dbms_sqltune.extract_binds(bw)) b
-            ORDER  BY b.position;
+            ORDER  BY 1;
     END IF;
 
     IF sq_text IS NOT NULL THEN
@@ -468,29 +465,14 @@ BEGIN
                 ORDER  BY R;
         ELSIF bitand(&opt,4)=4 THEN
             OPEN cur FOR
-                SELECT /*+NO_EXPAND NO_MINITOR*/ 
-                       object_id,owner,object_name,subobject_name part_name,type,
-                       COUNT(1) SEGS,
-                       SUM(BYTES) BYTES,
-                       SUM(BLOCKS) BLOCKS,
-                       SUM(EXTENTS) EXTENTS,
-                       MAX(NEXT_EXTENT) NEXT_KB,
-                       MAX(TABLESPACE_NAME) TBS,
-                       MAX(SEGMENT_SUBTYPE) KEEP(DENSE_RANK LAST ORDER BY TABLESPACE_NAME) TBS_TYPE
-                FROM (
-                    SELECT /*+opt_estimate(query,rows=5)*/ 
-                           0+EXTRACTVALUE(VALUE(P), '/object/num') object_id,
-                           NVL(EXTRACTVALUE(VALUE(P), '/object/owner'), 'N/A') owner,
-                           EXTRACTVALUE(VALUE(P), '/object/name') object_name,
-                           EXTRACTVALUE(VALUE(P), '/object/type') TYPE
-                    FROM   TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(sq_text), '//object'))) P) A
-                JOIN DBA_OBJECTS B
-                USING (OBJECT_ID,OWNER,OBJECT_NAME)
-                JOIN  (SELECT A.*,SEGMENT_NAME OBJECT_NAME FROM DBA_SEGMENTS A) C
-                USING (OWNER,OBJECT_NAME)
-                WHERE (B.SUBOBJECT_NAME IS NULL OR c.PARTITION_NAME=B.SUBOBJECT_NAME)
-                GROUP  BY object_id,owner,object_name,subobject_name,type
-                ORDER  BY owner,object_name;
+                SELECT /*+opt_estimate(query,rows=5)*/ 
+                       0+EXTRACTVALUE(VALUE(P), '/object/num') object_id,
+                       NVL(EXTRACTVALUE(VALUE(P), '/object/owner'), 'N/A') owner,
+                       EXTRACTVALUE(VALUE(P), '/object/name') object_name,
+                       EXTRACTVALUE(VALUE(P), '/object/type') type,
+                       0+EXTRACTVALUE(VALUE(P), '/object/qksol_id') "qksol_id",
+                       EXTRACTVALUE(VALUE(P), '/object/ref_source') "ref_source"
+                FROM   TABLE(XMLSEQUENCE(EXTRACT(XMLTYPE(sq_text), '//object'))) p;
         ELSE
             dbms_output.put_line(sq_text);
         END IF;

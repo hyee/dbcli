@@ -152,9 +152,9 @@ BEGIN
     --ctrl := ctrl||'<parameter name="mode">safe</parameter>';
     IF &mon=1 AND action LIKE '%EXECUTE%' THEN
         ctrl := ctrl||q'~<hint_data><hint><![CDATA[monitor]]></hint></hint_data>~';
-    /*    
+    /*
     ELSIF action like '%EXPLAIN%' THEN
-        ctrl := '<parameter name="EXECUTE_FULLDML">''true''</parameter>';
+        ctrl := '<process_ctrl><parameter name="mode">SAFE</parameter><parameter name="execute_fulldml">TRUE</parameter></process_ctrl>';
         sq_text := 'EXPLAIN PLAN FOR '||sq_text;
         action := 'EXECUTE';*/
     END IF;
@@ -260,31 +260,28 @@ BEGIN
             dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
-            xplan := 'ora plan -g '||sq_nid||' '||sq_cn;
+            xplan := 'ora plan -g -report '||sq_nid||' '||sq_cn;
         ELSE
             dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line(xplan);
             dbms_output.put_line(lpad('=',length(xplan),'='));
             dbms_output.put_line('Warning: the new cursor cannot be located in v$sql, displaying the plan by SQL Id + plan hash.');
-            xplan := 'ora plan -g '||sq_id||' '||phv2;
+            xplan := 'ora plan -g -report '||sq_id||' '||phv2;
         END IF;
     END IF;
 
     IF bw IS NOT NULL THEN
         OPEN binds FOR
-            SELECT b.position,
+            SELECT DISTINCT
+                   b.position,
                    nvl(name,':'||b.position) name,
-                   count(*) over(partition by b.position) occurrences,
                    b.datatype_string,
-                   NULL maxlen,
-                   NULL charset,
-                   NULL peeked_value,
                    CASE WHEN b.datatype_string LIKE 'TIMESTAM%' AND b.value_anydata IS NOT NULL THEN substr(anydata.accesstimestamp(b.value_anydata),1,32)
                         WHEN b.datatype_string LIKE 'DATE%'     AND b.value_anydata IS NOT NULL THEN to_char(anydata.accessdate(b.value_anydata),'yyyy-mm-dd hh24:mi:ss')
                         ELSE b.value_string
                    END captured_value
             FROM   TABLE(dbms_sqltune.extract_binds(bw)) b
-            ORDER  BY b.position;
+            ORDER  BY 1;
     END IF;
 
     :xplan   := xplan;

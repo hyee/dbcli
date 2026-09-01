@@ -1148,8 +1148,10 @@ function oradebug.profile(sid,samples,interval,event)
             if math.fmod(counter_,30) == 0 then
                 print('Executing oradebug short_stack round #'..counter_)
             end
-            --out_[#out_+1]=sqlplus:get_last_line('oradebug short_stack')
-            sqlplus:execute('oradebug short_stack',false,nil)
+            local ok=pcall(sqlplus.execute,sqlplus,'oradebug short_stack',false,nil)
+            if not ok or not sqlplus.process then
+                db.async_coroutine=nil  -- ★ 子进程异常立即停止采样，避免无限阻塞
+            end
         end
         local done,err=pcall(env.eval_line,stmt,true,true,true)
         db.async_coroutine=nil

@@ -321,7 +321,7 @@ BEGIN
                     '#PARAM#',CASE WHEN is_url1 THEN 'com.oracle.bigdata.credential.name='||credential END||'
                     com.oracle.bigdata.csv.skip.header=1
                     com.oracle.bigdata.fileformat='||CASE WHEN keyword IN('json','xml') THEN 'textfile' when keyword='dmp' THEN 'datapump' ELSE keyword END||'
-                    com.oracle.bigdata.buffersize=2048
+                    com.oracle.bigdata.buffersize=10240
                     com.oracle.bigdata.compressiontype='||CASE WHEN ext=keyword THEN 'none' ELSE 'detect' END||'
                     com.oracle.bigdata.csv.rowformat.fields.terminator='''||CASE WHEN keyword IN('json','xml') THEN '\n' ELSE ',' END||'''
                     com.oracle.bigdata.dateformat=auto

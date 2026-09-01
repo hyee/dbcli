@@ -566,8 +566,8 @@ public class Loader {
         }
     }
 
-    Object tempResult = null;
-    Throwable err = null;
+    volatile Object tempResult = null;
+    volatile Throwable err = null;
 
     public void asyncExecuteStatement(final Statement p, String sql) {
         isAsync = true;
@@ -575,7 +575,8 @@ public class Loader {
         err = null;
         Thread t = new Thread(() -> {
             try {
-                tempResult = asyncCall(() -> setStatement(p, sql));
+                Object r = setStatement(p, sql);  // setStatement 自带 'q' 取消注册与同步锁，可直接调用
+                tempResult = r;
             } catch (Throwable e) {
                 err = e;
             } finally {

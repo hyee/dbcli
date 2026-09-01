@@ -941,6 +941,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
             func(is_query~=nil)
             env.sleep(0.003,true)
         end
+         self.async_coroutine=nil
     else 
         is_query=self:call_sql_method('ON_SQL_ERROR',sql,loader.setStatement,loader,prep,tmp_sql) 
     end
