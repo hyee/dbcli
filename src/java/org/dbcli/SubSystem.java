@@ -36,6 +36,9 @@ public class SubSystem {
     volatile String prevPrompt;
     volatile Boolean isCache = false;
     volatile int determinPromptCount = 12;
+    //Silence fallback (ms): while awaiting completion, an unterminated trailing line followed by this much quiet is treated as an unrecognized idle prompt instead of hanging; 0 disables it (batch interval mode).
+    volatile long idleTimeout = 200L;
+    volatile long lastOutputTs = 0L;
     //return null means the process is terminated
     volatile CountDownLatch lock = new CountDownLatch(1);
     volatile CountDownLatch responseLock = null;
@@ -197,6 +200,8 @@ public class SubSystem {
     public String execute(String command, Boolean isPrint, Boolean isBlockInput) throws Exception {
         try {
             determinPromptCount = 12;
+            idleTimeout = 200L;
+            lastOutputTs = 0L;
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
@@ -242,7 +247,8 @@ public class SubSystem {
         } finally {
             running = false;
             ctrlCCount.set(0);
-            isWaiting = isBlockInput == null;
+            //After execute returns the subprocess is idle (prompt seen) or gone; don't leave it flagged as still-waiting.
+            isWaiting = false;
         }
     }
 
@@ -254,11 +260,13 @@ public class SubSystem {
             isBreak = false;
             killRequested = false;
             ctrlCCount.set(0);
+            lastOutputTs = 0L;
             long current;
             command = command.replaceAll("[\r\n]+$", "") + "\n";
             final byte[] c;
             if (interval <= 0) {
                 determinPromptCount = Math.min(Math.max(100, count), 1000);
+                idleTimeout = 0L;
                 lastLine = null;
                 if (!isBreak) System.out.println("    Start to execute, please wait...");
                 StringBuilder builder = new StringBuilder();
@@ -287,6 +295,7 @@ public class SubSystem {
                     if (i % 10 == 0)
                         System.out.println("    Executing " + command.substring(0, c.length - 1) + ": round #" + i);
 
+                    lastOutputTs = 0L;
                     write(c);
                     responseLock = new CountDownLatch(1);
                     if (prep != null) {
@@ -324,6 +333,7 @@ public class SubSystem {
             if (prep != null) prep.close();
             responseLock = null;
             determinPromptCount = 12;
+            idleTimeout = 200L;
             isWaiting = false;
             running = false;
             ctrlCCount.set(0);
@@ -392,17 +402,41 @@ public class SubSystem {
                 boolean isPrompt;
                 while (!isEOF) try {
                     Thread.sleep(counter == 1 ? 1L : 8L);
+                    //Silence fallback: keyed on lastChar!='\n' (not sb.length) so it still fires after an unrecognized prompt was flushed and sb emptied; a mid-command pause after a complete line (lastChar=='\n') won't trigger it.
+                    long ts = lastOutputTs;
+                    if (process != null && running && idleTimeout > 0L && ts != 0L && lastChar != '\n'
+                            && System.currentTimeMillis() - ts >= idleTimeout && writeLock.tryLock()) {
+                        //Re-read lastOutputTs under the lock; onStdout may have delivered new output (resetting the window) since the check above.
+                        try (Closeable clo = writeLock::unlock) {
+                            long ts2 = lastOutputTs;
+                            if (ts2 != 0L && System.currentTimeMillis() - ts2 >= idleTimeout) {
+                                if (sb.length() > 0) {
+                                    lastPrompt = sb.toString();
+                                    sb.setLength(0);
+                                }
+                                currLine = null;
+                                counter = 0;
+                                isWaiting = false;
+                                lastOutputTs = 0L;
+                                CountDownLatch rl = responseLock;
+                                (rl != null ? rl : lock).countDown();
+                            }
+                        } catch (Throwable e1) {
+                        }
+                        continue;
+                    }
                     if (lastChar != '\n' && sb.length() > 0) {
                         NuProcess pr = process;
                         if (pr == null) break;
-                        if (pr.hasPendingWrites() || !writeLock.tryLock()) continue;
+                        if (!writeLock.tryLock()) continue;
                         try (Closeable clo = writeLock::unlock) {
                             if (currLine != null) line = currLine;
                             else {
                                 line = sb.toString();
                                 currLine = line;
                             }
-                            isPrompt = !pr.hasPendingWrites() && p.matcher(line).find();
+                            //hasPendingWrites() is the STDIN write queue, not pending stdout; stdout activity is already tracked by counter being reset on every onStdout chunk.
+                            isPrompt = p.matcher(line).find();
                             if (counter > 0) {
                                 if (isPrompt) {
                                     counter = counter + 1;
@@ -447,15 +481,20 @@ public class SubSystem {
 
         @Override
         public void onStderr(ByteBuffer buffer, boolean closed) {
-            if (process != null) onStdout(buffer, closed);
-            else {
+            if (process != null) {
+                //Route stderr through onStdout; only EOF clears isWaiting/releases latches, so mid-command stderr won't fake an idle prompt.
+                onStdout(buffer, closed);
+            } else {
                 byte[] bytes = new byte[buffer.remaining()];
                 buffer.get(bytes);
                 System.out.println(new String(bytes, Charset.defaultCharset()));
+                if (closed) {
+                    isWaiting = false;
+                    CountDownLatch rl = responseLock, lk = lock;
+                    if (rl != null) rl.countDown();
+                    if (lk != null) lk.countDown();
+                }
             }
-            isWaiting = false;
-            //Only release the latch at stderr EOF, so a mid-command stderr write won't truncate captured output.
-            if (closed) lock.countDown();
         }
 
 
@@ -469,6 +508,7 @@ public class SubSystem {
                 counter = 0;
                 isEOF = closed;
                 isWaiting = true;
+                lastOutputTs = System.currentTimeMillis();
 
                 if (isBreak) {
                     sb.setLength(0);
@@ -488,6 +528,13 @@ public class SubSystem {
                     String line = sb.toString();
                     sb.setLength(0);
                     print(line);
+                }
+                //stdout EOF: release any pending execute/executeInterval await here, not solely via onExit->close().
+                if (closed) {
+                    isWaiting = false;
+                    CountDownLatch rl = responseLock, lk = lock;
+                    if (rl != null) rl.countDown();
+                    if (lk != null) lk.countDown();
                 }
             } catch (Exception e1) {
                 e1.printStackTrace();

@@ -531,7 +531,7 @@ BEGIN
                         dbms_cloud.$OP2$_object(:credential,trim('/' from :target)||CASE WHEN t1(i) IS NOT NULL THEN '/'||t1(i) END,trim('/' from :dest)$OP3$);
                     END LOOP;
                 END;~',
-                '$OP1$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'download' ELSE 'upload' END),
+                --'$OP1$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'download' ELSE 'upload' END),
                 '$OP2$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'get'      ELSE 'put'    END),
                 '$OP3$',CASE WHEN is_url1!=is_url2 THEN ',file_name=>t1(i)' 
                              WHEN regexp_like(CASE WHEN is_url1 THEN dest   ELSE target END,'\.\w+$') THEN '' 
