@@ -243,6 +243,11 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         Kernel32.SetConsoleMode(console, mode);
     }
 
+    //Restore the exact console mode captured at startup, so a native child given the real console (e.g. sqlplus) gets cooked line-input and command history.
+    public void restoreConsoleMode() {
+        setConsoleMode(inConsole, originalInConsoleMode);
+    }
+
     final Size size = new Size();
     final CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
 

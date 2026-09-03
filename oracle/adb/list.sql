@@ -38,7 +38,7 @@ DECLARE
     target       VARCHAR2(1000) := CASE WHEN instr(nvl(:V2,'x'),'/')=0 THEN :V1 ELSE NVL(:V2,:V1) END;
     credential   VARCHAR2(1000) := CASE WHEN :V1=target THEN :credential ELSE :V1 END;
     ext          VARCHAR2(128);
-    base_owner   VARCHAR(128);
+    base_owner   VARCHAR2(128);
     base_table   VARCHAR2(256):=upper(CASE WHEN target=:V1 THEN :V2 WHEN keyword=:V3 THEN '' ELSE :V3 END);
     is_url1      BOOLEAN := FALSE;
     is_url2      BOOLEAN := FALSE;
@@ -224,11 +224,20 @@ BEGIN
         IF lower(keyword) IN('csv','json','xml','dmp','orc','avro','parquet','pq') THEN
             keyword := lower(keyword);
             dest    := keyword;
+            --the 2nd argument is the file type(base_table omitted), not a table name
+            IF base_table=upper(keyword) THEN
+                base_table := NULL;
+                keyword    := NULL;
+            END IF;
         ELSIF nvl(base_table,upper(keyword))=upper(keyword) AND lower(keyword)!=dest THEN
             base_table := upper(keyword);
             keyword    := null;
         END IF;
-        dest := regexp_substr(dest,'(csv|json|xml|parquet|pq|avro|orc|dmp)(.gz|.gzip|.bz2|.z|.zl|.zip)?$',1,1,'i',1);
+        dest := regexp_substr(dest,'(csv|json|xml|parquet|pq|avro|orc|dmp)(\.gz|\.gzip|\.bz2|\.z|\.zl|\.zip)?$',1,1,'i',1);
+        --normalize the 'pq' alias to the real Oracle format name 'parquet'
+        IF ext='pq' THEN ext := 'parquet'; END IF;
+        IF keyword='pq' THEN keyword := 'parquet'; END IF;
+        IF dest='pq' THEN dest := 'parquet'; END IF;
         IF base_table IS NOT NULL THEN
             base_table:=replace(base_table,'"');
             IF keyword IS NULL THEN

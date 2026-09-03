@@ -75,6 +75,7 @@ public final class Console {
     protected volatile Status status;
     public Timer timer = new Timer(this);
     private Size prevSize = null;
+    private Attributes originalAttributes = null;
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -121,6 +122,8 @@ public final class Console {
                     .signalHandler(Terminal.SignalHandler.SIG_IGN)
                     .build();
         }
+        //Capture the pristine (cooked) terminal state before dbcli ever enters raw mode; restored when handing the console to a native child.
+        this.originalAttributes = terminal.getAttributes();
         Interrupter interrupter = new Interrupter();
         Interrupter.reset();
         Interrupter.handler = terminal.handle(Terminal.Signal.INT, interrupter);
@@ -576,8 +579,13 @@ public final class Console {
                 status.hide();
                 status.suspend();
             }
-            terminal.echo(true);
             terminal.pause();
+            //Restore the original cooked terminal mode so a native child (e.g. sqlplus) gets standard line editing and command history.
+            if (terminal instanceof WinSysTerminal) {
+                ((WinSysTerminal) terminal).restoreConsoleMode();
+            } else {
+                terminal.setAttributes(originalAttributes);
+            }
         } else {
             if (isBroken()) {
                 System.exit(0);

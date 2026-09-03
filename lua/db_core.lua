@@ -1693,7 +1693,8 @@ function db_core:__onload()
     if jars==nil or #jars==0 then
         jars=os.list_dir(self.root_dir,"jar")
     end
-    for _,file in pairs(jars) do
+
+    for _,file in ipairs(jars) do
         java.loader:addPath(type(file)=="string" and file or file.fullname)
     end
 

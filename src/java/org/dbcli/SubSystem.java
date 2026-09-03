@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
@@ -38,6 +39,9 @@ public class SubSystem {
     //return null means the process is terminated
     volatile CountDownLatch lock = new CountDownLatch(1);
     volatile CountDownLatch responseLock = null;
+    volatile boolean running = false;
+    volatile boolean killRequested = false;
+    final AtomicInteger ctrlCCount = new AtomicInteger(0);
 
     public SubSystem() {
         Native.setProtected(true);
@@ -76,11 +80,31 @@ public class SubSystem {
             Interrupter.listen(this, new EventCallback() {
                 @Override
                 public void call(Object... o) {
-                    isBreak = true;
-                    CountDownLatch lk = lock, rl = responseLock;
-                    if (lk != null) lk.countDown();
-                    if (rl != null) rl.countDown();
-                    if (lastPrompt == null) lastPrompt = prevPrompt;
+                    if (!running) {
+                        //Idle or interactive relay: keep the original break-out behavior.
+                        isBreak = true;
+                        CountDownLatch lk = lock, rl = responseLock;
+                        if (lk != null) lk.countDown();
+                        if (rl != null) rl.countDown();
+                        if (lastPrompt == null) lastPrompt = prevPrompt;
+                        ctrlCCount.set(0);
+                        return;
+                    }
+                    //Busy running a command: never fake completion, count strikes instead.
+                    if (killRequested) return;
+                    int n = ctrlCCount.incrementAndGet();
+                    if (n >= 3) {
+                        ctrlCCount.set(0);
+                        killRequested = true;
+                        Console.writer.add("Killing the subprocess...\n");
+                        Console.writer.flush();
+                        CountDownLatch lk = lock, rl = responseLock;
+                        if (lk != null) lk.countDown();
+                        if (rl != null) rl.countDown();
+                    } else {
+                        Console.writer.add("Command still running. Press CTRL+C again (" + n + "/3) to kill the subprocess.\n");
+                        Console.writer.flush();
+                    }
                 }
             });
         } catch (Exception e) {
@@ -177,6 +201,8 @@ public class SubSystem {
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
+            killRequested = false;
+            ctrlCCount.set(0);
             if (isBlockInput == null) {
                 responseLock = new CountDownLatch(1);
                 isCache = true;
@@ -191,11 +217,20 @@ public class SubSystem {
                 write((command.replaceAll("[\r\n]+$", "") + "\n").getBytes());
             }
             if (isBlockInput == null) {
+                running = true;
                 responseLock.await();
+                running = false;
+                if (killRequested) {
+                    close();
+                    return null;
+                }
                 responseLock = null;
                 return null;
             } else if (isBlockInput) {
+                running = true;
                 lock.await();
+                running = false;
+                if (killRequested) close();
             } else {
                 waitCompletion(true);
             }
@@ -205,6 +240,8 @@ public class SubSystem {
             Loader.getRootCause(e).printStackTrace();
             throw e;
         } finally {
+            running = false;
+            ctrlCCount.set(0);
             isWaiting = isBlockInput == null;
         }
     }
@@ -215,6 +252,8 @@ public class SubSystem {
             this.lastPrompt = null;
             isWaiting = true;
             isBreak = false;
+            killRequested = false;
+            ctrlCCount.set(0);
             long current;
             command = command.replaceAll("[\r\n]+$", "") + "\n";
             final byte[] c;
@@ -231,7 +270,10 @@ public class SubSystem {
                 if (!isBreak) {
                     lock = new CountDownLatch(1);
                     System.out.println("    Fetching output, please wait...");
+                    running = true;
                     lock.await();
+                    running = false;
+                    if (killRequested) close();
                 }
             } else {
                 c = command.getBytes();
@@ -259,8 +301,14 @@ public class SubSystem {
                             }
                         }
                     }
+                    running = true;
                     responseLock.await();
+                    running = false;
                     responseLock = null;
+                    if (killRequested) {
+                        close();
+                        break;
+                    }
                     if (result != null) print(String.join("/", result) + '\n');
 
                     current -= System.currentTimeMillis();
@@ -277,6 +325,8 @@ public class SubSystem {
             responseLock = null;
             determinPromptCount = 12;
             isWaiting = false;
+            running = false;
+            ctrlCCount.set(0);
         }
     }
 
@@ -311,11 +361,12 @@ public class SubSystem {
         }
     }
 
-    public void close() {
+    public synchronized void close() {
         Interrupter.listen(this, null);
         isEOF = true;
         isWaiting = false;
         isBreak = true;
+        running = false;
         if (process == null) return;
         process.destroy(true);
         process = null;

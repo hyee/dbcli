@@ -1,5 +1,5 @@
 local db,var=env.getdb(),env.var
-local credential,bucket=''
+local credential,bucket='',''
 
 local adb=env.class(db.C.ora)
 function adb:ctor()
@@ -23,7 +23,10 @@ end
 
 function adb.set_credential(name,value)
     if (name=='CREDENTIAL' and credential or bucket)~=value then
-        db:assert_connect()
+        if not db:is_connect() then
+            if env.IS_ENV_LOADED then db:assert_connect() end
+            return
+        end
         if value~='' and name=='CREDENTIAL' then 
             value=db:get_value([[select max(credential_name) from user_credentials where upper(credential_name)=upper(:1) and enabled='TRUE']],{value})
             if value=='' then
@@ -48,7 +51,7 @@ function adb.set_credential(name,value)
     return value
 end
 
-function adb.set_param(db) 
+function adb.set_param() 
     if var.outputs['CREDENTIAL']==nil then var.setInputs('CREDENTIAL',credential) end;
     if var.outputs['OBJBUCKET']==nil then var.setInputs('OBJBUCKET',bucket) end;
 end 

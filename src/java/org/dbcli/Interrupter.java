@@ -3,12 +3,12 @@ package org.dbcli;
 import org.jline.terminal.Terminal;
 
 import java.awt.event.ActionEvent;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 public class Interrupter implements Terminal.SignalHandler {
     public static Terminal.SignalHandler handler;
-    static HashMap<Object, EventCallback> map = new HashMap<>();
+    static ConcurrentHashMap<Object, EventCallback> map = new ConcurrentHashMap<>();
 
     public static void listen(Object name, EventCallback c) {
         //System.out.println(name.toString()+(c==null?"null":c.toString()));
