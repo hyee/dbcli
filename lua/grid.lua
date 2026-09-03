@@ -39,7 +39,7 @@ local function toNum(v)
 end
 
 function grid.set_param(name, value)
-    if (name == "TITLEDEL" or name == "ROWDEL") and #value > 1 then
+    if (name == "HEADDEL" or name == "ROWDEL") and #value > 1 then
         return print("The value should be only one char!")
     elseif name == "COLWRAP" and value > 0 and value < 30 then
         return print("The value cannot be less than 30 !")
@@ -58,6 +58,14 @@ function grid.format_title(v)
 end
 
 local linesize
+
+
+local function effective_linesize()
+    if linesize then return linesize end
+    local ls = grid.linesize or 0
+    if ls <= 10 then ls = getWidth(console) end
+    return ls - #env.space - 1
+end
 function grid.cut(row, format_func, format_str, is_head)
     local byte_len,print_len
     if type(row) == "table" then
@@ -80,8 +88,8 @@ function grid.cut(row, format_func, format_str, is_head)
         end
         row = format_func(format_str, table.unpack(row))
     end
-    print_len = type(format_func) == "number" and format_func or linesize
-    if #row > print_len then
+    print_len = type(format_func) == "number" and format_func or effective_linesize()
+    if print_len > 0 and #row > print_len then
         byte_len,print_len,row=row:ulen(print_len)
     end
     return row .. env.ansi.get_color('NOR')
@@ -193,37 +201,73 @@ function grid.sort(rows, cols, bypass_head)
 end
 
 function grid.line_wrap(text,width)
-    width=math.max(1,width-30)
-    local len,result,pos,pos1,c,p=#text,{},1
+    width=math.max(1,width)
+    local len=#text
+    local usize,csize=0,0
+
+    -- Delimiter byte set (was pt="|)]}, =" with linear pt:find)
     local pt="|)]}, ="
-    local usize,csize,l1,l2=0,0
-    local function size(line)
-        l1, l2 = line:ulen()
-        usize=usize<l1 and l1 or usize
-        csize=csize<l2 and l2 or csize
-        return line
+    local is_delim={}
+    for i=1,#pt do is_delim[pt:byte(i)]=true end
+
+    local function unit_at(b)
+        local b1=text:byte(b)
+        if b1==27 and text:byte(b+1)==91 then      -- '\27['
+            local e=b+2
+            while e<=len do
+                local c=text:byte(e)
+                e=e+1
+                if c and c>=0x40 and c<=0x7E then break end
+            end
+            return e,0
+        end
+        if b1<0x80 then return b+1,1 end            -- ASCII: width always 1, skip ulen
+        local n=b1<0xE0 and 2 or (b1<0xF0 and 3 or 4)
+        for i=b+1,b+n-1 do                          -- validate UTF-8 continuation bytes
+            local bi=text:byte(i)
+            if not (bi and bi>=0x80 and bi<0xC0) then n=1 break end
+        end
+        local _,pw=text:sub(b,b+n-1):ulen()         -- non-ASCII: need real display width
+        return b+n,pw
+    end
+
+    -- Advance from b while accumulated display width <= width, return next unit start
+    local function cut(b)
+        local ws=0
+        while b<=len do
+            local nb,pw=unit_at(b)
+            if ws+pw>width then
+                -- At least one unit per line so pos always advances
+                if ws==0 then b=nb end
+                break
+            end
+            ws=ws+pw
+            b=nb
+        end
+        return b
     end
 
     local lines={}
+    local pos=1
     while true do
-        result[#result+1]=text:sub(pos,pos+width-1)
-        pos=pos+width
-        pos1=pos
-        local ln=0
-        while true do
-            pos1=pos1+1
-            c=p or text:sub(pos1,pos1)
-            p=text:sub(pos1+1,pos1+1)
-            if c=='' or (pt:find(c,1,true) and (p=='' or not pt:find(p,1,true))) then
-                ln=ln+1
-                result[#result+1]=text:sub(pos,pos1)
-                lines[#lines+1]=size(table.concat(result,''))
-                clear(result)
-                pos=pos1+1
-                break
+        local npos=cut(pos)
+        -- Merge a trailing delimiter (not followed by another delimiter) into this line
+        if npos<=len then
+            local b1=text:byte(npos)
+            if b1<0x80 and is_delim[b1] then
+                local b2=text:byte(npos+1)
+                if not (b2 and b2<0x80 and is_delim[b2]) then
+                    npos=npos+1
+                end
             end
         end
-        if len<pos then break end
+        local line=text:sub(pos,npos-1)
+        lines[#lines+1]=line
+        local l1,l2=line:ulen()
+        if usize<l1 then usize=l1 end
+        if csize<l2 then csize=l2 end
+        pos=npos
+        if pos>len then break end
     end
     return lines,usize,csize
 end
@@ -371,7 +415,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
             if result[i + 1] then
                 local k, v = '* ' .. result[i + 1][1], result[i + 1][2]
                 if type(v) == "string" then
-                    v:gsub('[%s\r\n\t]+$', ''):gsub('\r?\n', function() k = k .. '\n.' end)
+                    v = v:gsub('[%s\r\n\t]+$', ''):gsub('\r?\n', function() k = k .. '\n.' end)
                 end
                 table.insert(result[i], k)
                 table.insert(result[i], v)
@@ -484,7 +528,6 @@ local printables={
     ['\30']='\\30',
     ['\31']='\\31'
 }
-local empty={}
 -- Add a row to the grid and process column information
 -- @param row table Row data to add
 -- @return table result The updated grid data
@@ -531,6 +574,8 @@ function grid:add(row)
         end
         return #str, str
     end
+    -- Reusable scratch buffer for multi-line cell splitting, scoped to this add() call
+    local empty = {}
     -- Process each column in the row
     for col_idx = 1, col_count do
         local val = row_data[col_idx]
@@ -552,8 +597,8 @@ function grid:add(row)
             val, start_pos, end_pos = val:from_ansi()
         end
 
-        -- Format column value
-        is_number, formatted_val = grid.format_column(self.include_head, self.colinfo[col_idx], val, #result, self, header_idx, row_data)
+        local rownum = header_idx == 0 and 0 or #result + (self.include_head and 0 or 1)
+        is_number, formatted_val = grid.format_column(self.include_head, self.colinfo[col_idx], val, rownum, self, header_idx, row_data)
 
         if tostring(val) ~= tostring(formatted_val) then val = formatted_val end
         if start_pos or end_pos then val = (start_pos or '') .. val .. (end_pos or '') end
@@ -1014,7 +1059,8 @@ function grid:wellform(col_del, row_del)
         if v[0] == 0 then
             -- Center align header values
             for col, value in ipairs(v) do
-                local pad = colsize[col][1] - #value
+                local _, plen = value:ulen()
+                local pad = colsize[col][1] - plen
                 if pad >= 2 then
                     if colsize[col][1] <= 40 or pad == 2 then
                         v[col] = v[col]:cpad(colsize[col][1])
@@ -1265,7 +1311,8 @@ function grid.merge(tabs, is_print, prefix, suffix)
 
         local result = {}
         -- Process each tab in the list
-        for i = 1, #tabs do
+        local i = 1
+        while i <= #tabs do
             local tab, sep, nexttab = tabs[i]
             if type(tab) == "table" and #tab > 0 then
                 local seq = i + 1
@@ -1327,6 +1374,7 @@ function grid.merge(tabs, is_print, prefix, suffix)
                     result[#result + 1] = tab
                 end
             end
+            i = i + 1
         end
         if #result == 1 then return result[1] end
         newtab = {_is_drawed = true}

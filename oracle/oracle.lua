@@ -150,9 +150,9 @@ function oracle:connect(conn_str)
 
         url=conn_desc or url
 
-        if conn_desc == nil or pwd=='' and isdba then
+        if (conn_desc == nil or pwd=='' ) and isdba then
             local idx,two_task=conn_str:find("/",1,true),os.getenv("TWO_TASK")
-            if idx and not conn_str:find("@",1,true) or pwd=='' then
+            if idx and (not conn_str:find("@",1,true) or pwd=='') then
                 if idx~=1 and two_task then
                     conn_str=(url or conn_str)..'@'..two_task..(isdba and (' as '..isdba) or '')
                     return self:connect(conn_str)
@@ -563,7 +563,6 @@ function oracle:parse(sql,params)
         elseif type(v)=="string" and #v>32000 then
             typ='CLOB'
         else
-            --print(tostring(v))
             typ='VARCHAR'
         end
         if v==nil then
@@ -587,7 +586,7 @@ function oracle:parse(sql,params)
         end
     end
 
-    if sql_type=='EXPLAIN' or #binds>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL") then
+    if sql_type=='EXPLAIN' or (#binds>0 and (sql_type=="DECLARE" or sql_type=="BEGIN" or sql_type=="CALL")) then
         local s0,s1,s2,index,typ,siz={},{},{},1,nil,#binds
         params={}
 
@@ -637,7 +636,7 @@ function oracle:parse(sql,params)
                 prep[p[func]](prep,p[inIdx],p[value])
             end
             params[v]={'#',p[outIdx],p[typename],p[func],p[value],p[inIdx]~=0 and p[inIdx] or nil}
-            local name=self.db_types:getTyeName(p[typeid])
+            local name=self.db_types:getTypeName(p[typeid])
             env.log_debug("parse","Param Out#"..k..'('..p[vname]..')',':'..p[outIdx]..'='..name)
             if name=='OPAQUE' then
                 prep['registerOutParameter'](prep,p[outIdx],p[typeid],"SYS.ANYDATA")

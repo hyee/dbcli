@@ -6,6 +6,7 @@ local output={}
 local prev_transaction
 local enabled='on'
 local autotrace='off'
+local db=env.getdb()
 local default_args={
     enable=enabled,
     cdbid=-1,
@@ -553,6 +554,7 @@ function output.onload()
     snoop("AFTER_ORACLE_CONNECT",output.setOutput)
     snoop("BEFORE_DB_EXEC",output.capture_stats,nil,1)
     snoop("AFTER_DB_EXEC",output.getOutput,nil,99)
+    snoop("AFTER_COMMAND",function() if(db and db.props and env.var) then env.var.inputs['_SQL_ID'],env.var.outputs['_SQL_ID']=db.props.last_sql_id or '',nil end end)
     snoop("ON_PING_BEGIN",output.ping_begin)
     snoop("ON_PING_END",output.ping_end)
     cfg.init('AUTOTRACE','off',function(name,value)

@@ -91,7 +91,8 @@ BEGIN
     OPEN :c FOR
     WITH r AS(
         SELECT  /*+opt_param('_fix_control' '26552730:0') 
-                opt_param('_no_or_expansion' 'true') 
+                opt_param('_no_or_expansion' 'true')
+                opt_param('parallel_execution_enabled', 'false')
                 opt_param('_optimizer_cbqt_or_expansion' 'off')*/
                 signature,
                 grp,
@@ -112,8 +113,7 @@ BEGIN
                 nullif(round(sum(ofl_in) / sum(execs),2),0) ofl_in,
                 nullif(round(sum(ofl_out) / sum(execs),2),0) ofl_out,
                 nullif(round(sum(rows_processed) / sum(execs),2),0) "ROWS#"
-        FROM   (SELECT  /*+outline_leaf use_hash(s)*/
-                        dbid,
+        FROM   (SELECT  dbid,
                         CASE WHEN dbid=dbid1 AND end_interval_time+0 BETWEEN st1 AND ed1 THEN 'PRE' ELSE 'POST' END grp,
                         plan_hash_value plan_hash,
                         sql_id,
@@ -131,7 +131,7 @@ BEGIN
                         sum(oflout) ofl_out,
                         sum(rows_processed) rows_processed
                 FROM (SELECT a.*,
-                             a.executions+CASE WHEN flag_=1 AND first_value(flag_) over(partition by dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end exec
+                             a.executions+CASE WHEN flag_=1 AND first_value(flag_) over(PARTITION BY dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end exec
                       FROM   &awr$sqlstat a
                       WHERE  plan_hash_value > 0
                       AND   (dbid=dbid1 AND end_interval_time+0 BETWEEN st1 AND ed1 OR 
@@ -218,14 +218,16 @@ BEGIN
         SELECT  sql_id,
                 coalesce(CASE WHEN (SELECT dbid FROM v$database)=dbid THEN
                     extractvalue(dbms_xmlgen.getxmltype(replace(q'~
-                        SELECT trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
+                        SELECT --+cursor_sharing_force
+                               trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
                         FROM   gv$sqlstats b
                         WHERE  sql_id='#sql#'
                         AND    ROWNUM<2~',
                         '#sql#',sql_id)),
                     '//ROW/SQL_TEXT') END,
                     extractvalue(dbms_xmlgen.getxmltype(replace(replace(q'~
-                        SELECT trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
+                        SELECT --+cursor_sharing_force
+                               trim(to_char(substr(regexp_replace(sql_text,'\s+',' '),1,300))) sql_text
                         FROM   dba_hist_sqltext b
                         WHERE  dbid=#dbid#
                         AND    sql_id='#sql#'

@@ -20,6 +20,7 @@ return [[
         v_seq   PLS_INTEGER:=-1;
         v_type  VARCHAR2(300);
         v_pos   VARCHAR2(30);
+        tname   VARCHAR2(128) := :object_name;
         oname   VARCHAR2(128) := nvl(:object_subname, :object_name);
         own     VARCHAR2(128) := :owner;
         oid     INT           := :object_id;
@@ -36,7 +37,7 @@ return [[
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for 
         WITH args AS(
-            SELECT /*+opt_param('optimizer_dynamic_sampling' 5) opt_param('container_data' 'all')*/ 
+            SELECT /*+opt_param('container_data' 'all') opt_param('parallel_execution_enabled', 'false')*/ -- ADB-- ORA-00600: internal error code, arguments: [evaopn2.h:kaf_qeeCol]
                    overload,
                    SEQUENCE*1e8 s,
                    DATA_LEVEL l,
@@ -155,20 +156,23 @@ return [[
             SEARCH DEPTH FIRST BY s SET ord
             CYCLE s SET cycle TO 1 DEFAULT 0
         $END
-        SELECT decode(p,'-','-',TRIM('.' FROM o || replace(p,' '))) no#, 
+        ,base as(
+        $IF DBMS_DB_VERSION.VERSION <18 $THEN
+            select /*+materialzie*/ a.*, s s_ from args a 
+        $ELSE
+            select /*+materialzie*/ a.*, ord s_ from plsql a
+        $END
+        )
+        SELECT /*+opt_param('_fix_control' '10182051:0,26552730:0,31945701:0,32108311:0,33926164:0,34092979:0,34970514:0,35495824:0,33792497:0,36554842:0,36283175:0,31720959:0,36004220:0,36635255:0,36675198:0,36868551:0,37400112:0,37626161:0,37668482:0')*/
+                decode(p,'-','-',TRIM('.' FROM o || replace(p,' '))) no#, 
                '|' "|",
                lpad(' ', l * 2) || Argument Argument, 
                data_type, 
                IN_OUT, 
                defaulted "Default?",
                CHARSET
-        FROM  
-        $IF DBMS_DB_VERSION.VERSION <18 $THEN
-            (select a.*, s s_ from args a )
-        $ELSE
-            (select a.*, ord s_ from plsql a)
-        $END
-        MODEL PARTITION BY(0+overload o) DIMENSION BY(s_ s, l) 
+        FROM  base
+        MODEL PARTITION BY(to_number(0+overload) o) DIMENSION BY(to_number(s_) s, to_number(l) l) 
         MEASURES(CAST(p AS VARCHAR2(30)) p, Argument, data_type, IN_OUT, defaulted, CHARSET,coll_type) 
         RULES SEQUENTIAL ORDER(
             p [ANY,ANY] ORDER BY s = max(p) [s < cv(s), CV(l) - 1] || '.' || lpad(p [CV(), CV()],4),
@@ -176,8 +180,7 @@ return [[
             data_type[ANY,ANY] ORDER BY s  = CASE WHEN trim(coll_type[cv()+1,cv()+1]) IS NOT NULL THEN REGEXP_REPLACE(data_type[cv(),cv()],'\(.*?\)$')||' ['||coll_type[cv()+1,cv()+1]||']' ELSE data_type[cv(),cv()] END
         )
         ORDER  BY o, s;
-        $ELSE
-
+    $ELSE
         BEGIN 
             EXECUTE IMMEDIATE '
                 SELECT /*+index(a) opt_param(''_optim_peek_user_binds'',''false'') no_expand*/ 

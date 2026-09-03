@@ -736,13 +736,12 @@ local function get_output(cmd,is_comment)
     cmd='oradebug '..cmd
     if is_comment==nil then print('Running command: '..cmd) end
     local out=sqlplus:get_lines(cmd)
-    env.checkerr(not out:find('^ORA-01031'),"Insufficient privileges for non-SYSDBA user.")
-    if is_comment==false then 
-        if out then print(out) end
+    env.checkerr(out,"Unable to capture output from SQL*Plus, the session may have been terminated.")
+    env.checkerr(not out:find('^ORA%-01031'),"Insufficient privileges for non-SYSDBA user.")
+    if is_comment==false then
+        print(out)
     end
-    if not out then 
-        return get_output(cmd) 
-    elseif is_comment~=nil then
+    if is_comment~=nil then
         sqlplus:call_process('bye',true)
     end
     return out:gsub('%z',''):split('\n\r?')
@@ -1440,7 +1439,7 @@ function oradebug.run(action,args)
         else
             get_output(cmd,false)
         end
-        if action=='SETORAPID' or action=='SETORAPID' or action=='SETOSPID' then
+        if action=='SETORAPID' or action=='SETOSPID' then
             oradebug._pid=cmd
         elseif action=='SETMYPID' then
             oradebug._pid=oradebug.setmypid

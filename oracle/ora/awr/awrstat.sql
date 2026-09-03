@@ -94,7 +94,7 @@ FROM(
                a.&BASE,
                dbid,
                a.plan_hash_value plan_hash,
-               a.executions+CASE WHEN flag_=1 AND first_value(flag_) over(partition by dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end exec,
+               a.executions+CASE WHEN flag_=1 AND first_value(flag_) over(PARTITION BY dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end exec,
                a.version_count vers,
                a.parse_calls parse,
                nvl(min(decode(executions,0,NULL,snap_id)) OVER(PARTITION BY sql_id,plan_hash_value ORDER BY snap_id RANGE BETWEEN 0 FOLLOWING AND UNBOUNDED FOLLOWING),

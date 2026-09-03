@@ -39,8 +39,12 @@ end
 function system:get_lines(cmd,interval,count,prep)
     interval,count=tonumber(interval),tonumber(count)
     if interval and count then
-        return self:call('getLinesInterval',cmd,math.ceil(interval),math.ceil(count),prep)
+        local out=self:call('getLinesInterval',cmd,math.ceil(interval),math.ceil(count),prep)
+        --Java getLinesInterval closes prep in its finally; close again to cover call()'s process==nil early-return (JDBC close is idempotent)
+        if prep then prep:close() end
+        return out
     else
+        if prep then prep:close() end --getLines doesn't take prep; close here so the caller's statement isn't leaked
         return self:call('getLines',cmd)
     end
 end
@@ -152,7 +156,7 @@ function system:call_process(cmd,is_native)
             env.log_debug("subsystem","Environment: \n"..table.dump(self.env))
         end
 
-        if (do_redirect or not is_native) and self.support_redirect or (is_native and not self.support_redirect) then
+        if ((do_redirect or not is_native) and self.support_redirect) or (is_native and not self.support_redirect) then
             --print(table.concat(self.startup_cmd," "))
             if not self.process then
                 env.printer.write("Connecting to "..self.name.."...")

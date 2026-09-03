@@ -90,7 +90,7 @@ var c refcursor "Top Segments by Statistics(threshold = 8%)"
 BEGIN
     OPEN :c FOR 
         WITH segs AS(
-            SELECT /*+MATERIALIZE*/ 
+            SELECT /*+MATERIALIZE opt_param('parallel_execution_enabled', 'false')*/ 
                    owner,object_name,
                    decode(count(DISTINCT nvl(subobject_name,' ')),1,max(obj#)) obj#,
                    decode(grouping_id(subobject_name),0,subobject_name,''||count(DISTINCT nvl(subobject_name,' '))) segments,

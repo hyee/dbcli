@@ -52,7 +52,7 @@ function db_Types:set(typeName,value,conn)
     end
 end
 
-function db_Types:getTyeName(typeID)
+function db_Types:getTypeName(typeID)
     return self[typeID] and self[typeID].name
 end
 
@@ -222,10 +222,11 @@ function ResultSet:getHeads(rs)
 end
 
 function ResultSet:get(column_id,data_type,rs,conn)
+    local org_id=column_id
     if type(column_id) == "string" then
         local cols=self[rs] or self:getHeads(rs)
         column_id=cols[column_id:upper()]
-        env.checkerr(column_id,"Unable to detect column '"..column_id.."' in db metadata!")
+        env.checkerr(column_id,"Unable to detect column '"..org_id.."' in db metadata!")
         data_type=cols[column_id].data_type
     end
     return db_Types:get(column_id,data_type,rs,conn)
@@ -246,8 +247,7 @@ function ResultSet:fetch(rs,conn,null_value)
     local result=table.new(size,2)
     for i=1,size,1 do
         local value=self:get(i,cols[i].data_type,rs,conn)
-        value=type(value)=="string" and value or value
-        result[i]=value or null_value or ""
+        result[i]=value~=nil and value or null_value or ""
     end
 
     return result
@@ -262,8 +262,13 @@ function ResultSet:close(rs)
     --release the resultsets if they have been closed(every 1 min)
     if  self.__clock then
         if clock-self.__clock > 60 then
-            for k,v in pairs(self) do
-                if is_closed(k) then self[k]=nil end
+            local attrs=getmetatable(self).__index
+            for k,v in pairs(attrs) do
+                if type(k)=='userdata' and is_closed(k) then
+                    attrs[k]=nil
+                    __stmts[k]=nil
+                    __source[k]=nil
+                end
             end
             self.__clock=clock
         end
@@ -410,7 +415,7 @@ local excluded_keywords={
 
 local _command_pieces={}
 function db_core.get_command_type(sql)
-    local piece=sql:sub(1,256)
+    local piece=sql:sub(1,128)
     if _command_pieces[piece] then return table.unpack(_command_pieces[piece]) end
     local list={}
     for word in sql:sub(1,1024):gsub("%s*/%*.-%*/%s*",' '):gmatch('%a[%w_%#%$%."`]+') do
@@ -421,7 +426,7 @@ function db_core.get_command_type(sql)
         end
     end
     for i=#list+1,3 do list[i]='' end
-    if #piece>=256 then
+    if #piece>=128 then
         _command_pieces[piece]=list
     end
     return table.unpack(list)
@@ -540,7 +545,10 @@ function db_core:call_sql_method(event_name,sql,method,...)
         event(event_name,info)
         local showline,found=cfg.get("SQLERRLINE"),false
         if info and info.error and info.error~="" then
-            __stmts[select(1,...)]=nil
+            for i=1,select('#',...) do
+                local p=select(i,...)
+                if __stmts[p]~=nil then __stmts[p]=nil end
+            end
             if  info.sql and (not self:is_internal_call(info.sql)) then
                 if showline~='off' and ((info.position or 0) > 1 or info.col or info.row) then
                     info.row,info.col=tonumber(info.row),tonumber(info.col)
@@ -717,13 +725,11 @@ function db_core:parse(sql,params,prefix,prep,vname)
     return prep,sql,binds
 end
 
-local current_stmt
-
 function db_core:abort_statement()
     --print('abort_stmt')
-    if self.current_stmt then
-        self.current_stmt:cancel()
-        self.current_stmt=nil
+    if self.current_statement then
+        self.current_statement:cancel()
+        self.current_statement=nil
     end
 end
 
@@ -826,7 +832,7 @@ function db_core:close_cache(description)
             if is_connect and type(cache[1])=='userdata' then
                 pcall(cache[1].close,cache[1])
             end
-            self.__preparedCaches={}
+            self.__preparedCaches={__list={}}
         end
     elseif is_connect then
         self:exec_cache('close',nil,description)
@@ -913,13 +919,12 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         else
             prep:setEscapeProcessing(false)
         end
-        local str = tostring(prep)
         caches=__stmts[prep] or {}
         caches.verticals=verticals
         caches.count,__stmts[prep]=0,caches
         prep:setFetchSize(cfg.get("FETCHSIZE"))
         prep:setQueryTimeout(cfg.get("SQLTIMEOUT"))
-        self.current_stmt=prep
+        self.current_statement=prep
         self.log_param(params)
     else
         local desc ="PreparedStatement"..(args._description or "")
@@ -949,7 +954,6 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
         env.log_debug("db","SQL:",sql)
     end
     exe,clock=self.dbMicrosecs*1e-6,os.timer()
-    self.current_stmt=nil
     local is_output,index,typename=1,2,3
     local cleans={}
     local function process_result(rs,is_print)
@@ -1224,7 +1228,7 @@ end
 
 --
 function db_core:query(sql,args,prep_params)
-    local result = self:exec(sql,args,prep_params,nil,true)
+    self:exec(sql,args,prep_params,nil,true)
 end
 
 --if the result contains more than 1 columns, then return an array, otherwise return the value of the 1st column
@@ -1238,7 +1242,9 @@ function db_core:get_value(sql,args,null_value)
             if type(r)=='userdata' then
                 self.resultset:fetch(r,self.conn,null_value)
                 rtn=self.resultset:fetch(r,self.conn,null_value)
-                rs[#rs+1]=#rtn==1 and rtn[1] or rtn
+                if rtn ~= nil then
+                    rs[#rs+1]=type(rtn)=='table' and #rtn==1 and rtn[1] or rtn
+                end
             else
                 rtn=r
             end
@@ -1257,7 +1263,7 @@ function db_core:get_value(sql,args,null_value)
     if type(rtn)~="table" then
         return rtn
     end
-    return rtn and #rtn==1 and rtn[1] or rtn
+    return #rtn==1 and rtn[1] or rtn
 end
 
 function db_core:get_rows(sql,args,count,null_value)
@@ -1422,7 +1428,7 @@ local function set_param(name,value)
         env.checkerr(#value==1,'CSV separator can only be one char!')
         cparse.DEFAULT_SEPARATOR=value:byte()
         return value
-    elseif name=='PROMPTEXP' or name=='INTERNAL'then
+    elseif name=='PROMPTEXP' or name=='INTERNAL' then
         return value:lower()
     end
 
@@ -1475,7 +1481,6 @@ function db_core:sql2file(filename,sql,method,ext,...)
     local file=io.open(filename,"w")
     env.checkerr(file,"File "..filename.." cannot be accessed because it is being used by another process!")
     file:close()
-    if cfg then cfg.set("SQLTIMEOUT",86400) end
     if type(result)=="table" then
         for idx,rs1 in pairs(result) do
             if type(rs1)=="userdata" then
@@ -1677,7 +1682,7 @@ function db_core:__onload()
             jars=os.list_dir(libdir,"jar")
         elseif type(libdir)=="table" then
             jars=libdir
-            for i=#jars,-1 do
+            for i=#jars,1,-1 do
                 if not os.exists(jars[i]) then
                     table.remove(jars,i)
                 end

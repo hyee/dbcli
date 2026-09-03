@@ -98,7 +98,6 @@ function dicts.on_before_db_exec(item)
         {'DBID',dbid and dbid>0 and dbid or default_dbid or ""},
         {'CON_ID',container and container>=0 and container  or ""},
         {'SCHEMA',usr},
-        {'_SQL_ID',db.props.last_sql_id or ''},
         {'G_MBRC',db.props.mbrc or 0.271},
         {'D_MBRC',db.props.d_mbrc or db.props.mbrc or 0.271},
         {'cdbmode',cdbmode~='off' and cdbmode or ''}

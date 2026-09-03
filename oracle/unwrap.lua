@@ -2633,8 +2633,8 @@ function unwrap.analyze_sqlmon(text,file,seq)
     if seq and sql_id then
         file=file..'_'..sql_id
     end
-    print("\nSQL Monitor report in text  written to "..env.save_data(file..'.txt',text:strip_ansi()))
-    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text:convert_ansi()))
+    print("\nSQL Monitor report in text  written to "..env.save_data(file..'.txt',text:strip_ansi(),8*1024*1024))
+    print("SQL Monitor report in color written to "..env.save_data(file..'.ans',text:convert_ansi(),8*1024*1024))
     if seq then
         if sqlstat[2] then 
             sqlstat[2][1]=tostring(seq):lpad(3)..': '..sql_id

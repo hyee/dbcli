@@ -6,8 +6,11 @@ local comment = "(.-)[\n\r\b\t%s]*$"
 function alias.rehash()
     for k, v in pairs(alias.cmdlist) do
         if v.active then
-            globalcmds[k] = nil
-            env.remove_command(k)
+            local info = globalcmds[k]
+            if info and info.FUNC == alias.run_command then
+                globalcmds[k] = nil
+                env.remove_command(k)
+            end
         end
     end
     
@@ -58,13 +61,18 @@ function alias.make_command(name, args, is_print)
     if alias.cmdlist[name] and env._CMDS[name] and env._CMDS[name].FUNC == alias.run_command then
         local target = alias.cmdlist[name].text
         if type(target) == "function" then target = target(alias) end
+        if type(target) ~= "string" then return end
         target = target .. " $*"
-        alias.args = args
+        --Snapshot shared state so nested/recursive invocations (e.g. ssh.lua calling
+        --make_command while another expansion is in progress) do not corrupt each other.
+        local saved_args, saved_rest = alias.args, alias.rest
+        alias.args = {}
         alias.rest = {}
         local is_pivot=''
+        local nargs=#args
         for i = 1, 99 do
-            local v = alias.args[i] or ""
-            if i==#args and v~='' then
+            local v = args[i] or ""
+            if i==nargs and v~='' then
                 v=v:gsub(vertical_pattern,function(s) is_pivot='\\G'..s;return '' end)
             end
             --if v:find("%s") and not v:find('"') then v = '"' .. v .. '"' end
@@ -74,11 +82,19 @@ function alias.make_command(name, args, is_print)
         target = target:gsub("%$(%d%w*)%[(.-)%]", alias.parser)
         target = target:gsub("%f[%w%$]%$([%d%*]%w*)", alias.parser)
         target = target:gsub("[%$](%$[%d%*])", "%1")..is_pivot
-        --if env.COMMAND_SEPS.match(target)==target then target=target..env.COMMAND_SEPS[1] end
+        alias.args, alias.rest = saved_args, saved_rest
         if is_print ~= false and type(alias.cmdlist[name].text) == "string" and not target:find('[\n\r]') then
             print('$ ' .. target)
         end
-        return target
+        local info = alias.cmdlist[name]
+        local head, rest = target:match('^(%S+)%s*(.*)')
+        return target, {
+            [1] = head or target,
+            [2] = rest or '',
+            desc = info and info.desc,
+            text = target,
+            name = name,
+        }
     end
 end
 
@@ -106,12 +122,24 @@ function alias.set(name, cmd, write)
         if type(text.text) == "function" then
             return print("Error: Command has been encrypted: " .. cmd)
         end
-        alias.set(cmd, env.packer.unpack_str(text.text))
+
+        local plain = env.packer.unpack_str(text.text)
+        if type(plain) ~= "string" or plain == "" then
+            return print("Error: Failed to read alias content: " .. cmd)
+        end
+        local ok, encrypted = pcall(env.packer.pack_str, plain)
+        if not ok or type(encrypted) ~= "string" or encrypted == plain then
+            return print("Error: Failed to encrypt alias '" .. cmd .. "' (content may contain ']]')")
+        end
+        alias.set(cmd, encrypted)
     elseif not cmd then
         if not alias.cmdlist[name] then return end
         if alias.cmdlist[name].active then
-            globalcmds[name] = nil
-            env.remove_command(name)
+            local info = globalcmds[name]
+            if info and info.FUNC == alias.run_command then
+                globalcmds[name] = nil
+                env.remove_command(name)
+            end
         end
         alias.cmdlist[name] = nil
         os.remove(alias.command_dir .. name:lower() .. ".alias")
@@ -123,13 +151,17 @@ function alias.set(name, cmd, write)
         end
         cmd = env.COMMAND_SEPS.match(cmd)
         if not cmd or cmd:trim() == "" then return end
-        local sub_cmd = env.parse_args(2, cmd)[1]:upper()
+        local parsed = env.parse_args(2, cmd)
+        local sub_cmd = parsed[1] and parsed[1]:upper() or ""
 
         
         if write ~= false then
             os.remove(alias.command_dir .. name:lower() .. ".alias")
             os.remove(alias.db_dir .. name:lower() .. ".alias")
-            local f = io.open(alias.db_dir .. name:lower() .. ".alias", "w")
+            local f, ferr = io.open(alias.db_dir .. name:lower() .. ".alias", "w")
+            if not f then
+                return print("Error: Cannot write alias file: " .. tostring(ferr))
+            end
             f:write(cmd)
             f:close()
         end
@@ -142,8 +174,18 @@ function alias.set(name, cmd, write)
         if cmd:sub(1, 5) ~= "FUNC:" then
             desc = cmd:gsub("%s+", " "):sub(1, 300)
         else
-            cmd = env.packer.unpack(cmd)
-            desc = cmd
+            local func = env.packer.unpack(cmd)
+            cmd = func
+            if type(func) == "function" then
+                local ok, result = pcall(func)
+                if ok and type(result) == "string" then
+                    desc = result:gsub("%s+", " "):sub(1, 300)
+                else
+                    desc = "#encrypted#"
+                end
+            else
+                desc = "#encrypted#"
+            end
         end
         if type(desc) == "string" then desc = env.COMMAND_SEPS.match(desc) end
         alias.cmdlist[name].desc = desc
@@ -156,8 +198,11 @@ function alias.set(name, cmd, write)
             alias.cmdlist[name].active = true
         end
 
-        if alias.cmdlist[name].active then
-            env._CMDS[name].ALIAS_TO=desc:match('%S+'):upper()
+        if alias.cmdlist[name].active and type(desc) == "string" then
+            local first_word = desc:match('%S+')
+            if first_word then
+                env._CMDS[name].ALIAS_TO = first_word:upper()
+            end
         end
     end
 end
@@ -182,10 +227,11 @@ function alias.helper()
     local grid, rows = env.grid, {{"Name", "Active?", "Command"}}
     local active
     for k, v in pairs(alias.cmdlist) do
-        if not env._CMDS[k]['FILE']:match("alias") then
-            active = false
-        else
+        local info = env._CMDS[k]
+        if info and info.FILE and info.FILE:match("alias") then
             active = true
+        else
+            active = false
         end
         alias.cmdlist[k].active = active
         table.insert(rows, {k, active, tostring(alias.cmdlist[k].desc)})
@@ -198,36 +244,21 @@ function alias.helper()
 end
 
 function alias.load_db_aliases(db_name)
-    alias.db_dir = env.join_path(alias.command_dir, db_name, '')
-    loader:mkdir(alias.db_dir)
+    if db_name and db_name ~= "" then
+        alias.db_dir = env.join_path(alias.command_dir, db_name, '')
+        loader:mkdir(alias.db_dir)
+    end
     alias.rehash()
 end
 
-function alias.rewrite(command)
-    local cmd, args = table.unpack(command)
-    local name = cmd:upper()
-    if alias.cmdlist[name] then
-        local line = alias.make_command(name, args)
-        if line then
-            command[1], command[2] = env.eval_line(line, false,true)
-            if (command[4] or "") ~= "" then
-                command[4] = line:sub(#command[1]+1):rtrim();
-            end
-        end
-    end
-    return command
-end
-
 function alias.onload()
-    --alias.rehash()
-    env.event.snoop('BEFORE_COMMAND',alias.rewrite,nil,80)
-    --env.event.snoop('ON_ENV_LOADED',alias.rehash,nil,1)
     loader:mkdir(alias.command_dir)
     env.event.snoop('ON_DB_ENV_LOADED', alias.load_db_aliases, nil, 1)
     env.set_command{obj = nil, cmd = "alias",
         help_func = alias.helper,
         call_func = alias.set,
         is_multiline = '__SMART_PARSE__', parameters = 3, color = "PROMPTCOLOR"}
+    alias.rehash()
 end
 
 return alias

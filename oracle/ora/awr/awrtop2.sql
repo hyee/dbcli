@@ -151,7 +151,7 @@ FROM   (SELECT a.*, row_number() OVER(ORDER BY val DESC NULLS LAST) r,
                                   'avg',
                                   greatest(sum(execs),0,1),
                                   1) exe1
-                    FROM (SELECT s.*, executions+CASE WHEN flag_=1 AND first_value(flag_) over(partition by dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end execs
+                    FROM (SELECT s.*, executions+CASE WHEN flag_=1 AND first_value(flag_) over(PARTITION BY dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end execs
                           FROM   qry,&&awr$sqlstat s
                           WHERE  (qry.sqid = &grp OR qry.sqid IS NULL)
                           AND    (&filter)

@@ -36,9 +36,8 @@ public class SubSystem {
     volatile Boolean isCache = false;
     volatile int determinPromptCount = 12;
     //return null means the process is terminated
-    CountDownLatch lock = new CountDownLatch(1);
+    volatile CountDownLatch lock = new CountDownLatch(1);
     volatile CountDownLatch responseLock = null;
-    ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue(1);
 
     public SubSystem() {
         Native.setProtected(true);
@@ -78,10 +77,10 @@ public class SubSystem {
                 @Override
                 public void call(Object... o) {
                     isBreak = true;
-                    if (lock != null) lock.countDown();
-                    if (responseLock != null) responseLock.countDown();
+                    CountDownLatch lk = lock, rl = responseLock;
+                    if (lk != null) lk.countDown();
+                    if (rl != null) rl.countDown();
                     if (lastPrompt == null) lastPrompt = prevPrompt;
-                    queue.clear();
                 }
             });
         } catch (Exception e) {
@@ -103,7 +102,7 @@ public class SubSystem {
     }
 
     public Boolean isPending() {
-        return process.hasPendingWrites();
+        return process != null && process.hasPendingWrites();
     }
 
     StringBuffer buff = new StringBuffer(1024);
@@ -173,7 +172,6 @@ public class SubSystem {
 
     public String execute(String command, Boolean isPrint, Boolean isBlockInput) throws Exception {
         try {
-            queue.clear();
             determinPromptCount = 12;
             this.isPrint = isPrint;
             this.lastPrompt = null;
@@ -184,7 +182,7 @@ public class SubSystem {
                 isCache = true;
             } else if (isBlockInput != null && isBlockInput) {
                 lock = new CountDownLatch(1);
-                isCache = false;
+                if (isPrint) isCache = false;
             } else if (!isCache) {
                 isCache = true;
             }
@@ -213,7 +211,6 @@ public class SubSystem {
 
     public String executeInterval(String command, long interval, int count, Boolean isPrint, PreparedStatement prep) throws Exception {
         try {
-            queue.clear();
             this.isPrint = isPrint;
             this.lastPrompt = null;
             isWaiting = true;
@@ -323,8 +320,9 @@ public class SubSystem {
         process.destroy(true);
         process = null;
         lastPrompt = null;
-        if (responseLock != null) responseLock.countDown();
-        lock.countDown();
+        CountDownLatch rl = responseLock, lk = lock;
+        if (rl != null) rl.countDown();
+        if (lk != null) lk.countDown();
         threadPool.shutdownNow();
     }
 
@@ -344,24 +342,27 @@ public class SubSystem {
                 while (!isEOF) try {
                     Thread.sleep(counter == 1 ? 1L : 8L);
                     if (lastChar != '\n' && sb.length() > 0) {
-                        if (process.hasPendingWrites() || !writeLock.tryLock()) continue;
+                        NuProcess pr = process;
+                        if (pr == null) break;
+                        if (pr.hasPendingWrites() || !writeLock.tryLock()) continue;
                         try (Closeable clo = writeLock::unlock) {
                             if (currLine != null) line = currLine;
                             else {
                                 line = sb.toString();
                                 currLine = line;
                             }
-                            isPrompt = !process.hasPendingWrites() && p.matcher(line).find();
+                            isPrompt = !pr.hasPendingWrites() && p.matcher(line).find();
                             if (counter > 0) {
                                 if (isPrompt) {
                                     counter = counter + 1;
-                                    if (counter >= determinPromptCount || responseLock != null) {
+                                    CountDownLatch rl = responseLock;
+                                    if (counter >= determinPromptCount || rl != null) {
                                         sb.setLength(0);
                                         lastPrompt = line;
                                         isWaiting = false;
                                         counter = 0;
                                         currLine = null;
-                                        (responseLock != null ? responseLock : lock).countDown();
+                                        (rl != null ? rl : lock).countDown();
                                     }
                                 } else counter = 0;
                             } else if (isPrompt) {
@@ -383,14 +384,8 @@ public class SubSystem {
 
         @Override
         public boolean onStdinReady(ByteBuffer buffer) {
-            byte[] c = queue.poll();
-            if (c == null || isBreak) {
-                buffer.flip();
-                return false;
-            }
-            buffer.put(c);
             buffer.flip();
-            return true;
+            return false;
         }
 
         @Override
@@ -408,7 +403,8 @@ public class SubSystem {
                 System.out.println(new String(bytes, Charset.defaultCharset()));
             }
             isWaiting = false;
-            lock.countDown();
+            //Only release the latch at stderr EOF, so a mid-command stderr write won't truncate captured output.
+            if (closed) lock.countDown();
         }
 
 
@@ -428,7 +424,8 @@ public class SubSystem {
                     return;
                 }
                 for (byte c : bytes) {
-                    lastChar = (char) c;
+                    //Mask to unsigned byte; (char)c would sign-extend bytes>=0x80 and corrupt non-ASCII output.
+                    lastChar = (char) (c & 0xFF);
                     sb.append(lastChar);
                     if (lastChar == '\n') {
                         lastLine = sb.toString();

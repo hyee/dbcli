@@ -5,7 +5,7 @@ DECLARE
     sq VARCHAR2(8000);
 BEGIN
     sq:=q'[
-       (SELECT --+merge leading(s) use_hash(s h) no_expand
+       (SELECT --+merge leading(s) use_hash(s h) no_expand opt_param('parallel_execution_enabled', 'false')
                h.*,begin_interval_time,end_interval_time,
                begin_interval_time + 0 begin_time,
                end_interval_time + 0 end_time,
@@ -33,7 +33,7 @@ BEGIN
                decode(delta_flag, 0, plsexec_time_total, plsexec_time_delta) plsexec_time,
                decode(delta_flag, 0, javexec_time_total, javexec_time_delta) javexec_time
                @11g@
-        FROM   (SELECT h.*,decode(bitand(nvl(flag, 0),1),1,1,sign(elapsed_time_delta)) delta_flag FROM @source_sqlstat h /*where BITAND(NVL(flag, 0), 1) = 0*/) h, @source_snapshot s
+        FROM   (SELECT /*+merge*/ h.*,decode(bitand(nvl(flag, 0),1),1,1,sign(elapsed_time_delta)) delta_flag FROM @source_sqlstat h) h, @source_snapshot s
         WHERE  delta_flag > 0
         AND    s.snap_id = h.snap_id
         AND    s.dbid = h.dbid

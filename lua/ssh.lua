@@ -211,11 +211,14 @@ function ssh:exec(line)
         return
     end
     cmd=cmd:lower()
-    local alias=env.alias.make_command(cmd,env.parse_args(99,args or ""),false)
+    --Bug D fix: env.alias.make_command now returns (expanded_string, info_table).
+    --The info_table carries .desc and the split [1]=cmd / [2]=args, matching the
+    --contract this call-site originally assumed.
+    local _,alias_info=env.alias.make_command(cmd,env.parse_args(99,args or ""),false)
     if self.cmds[cmd] then
         self.cmds[cmd](self,args)
-    elseif alias and tostring(alias.desc):lower():match("ssh") then
-        return env.exec_command(alias[1],alias[2],true,cmd.." "..args)
+    elseif alias_info and tostring(alias_info.desc or ''):lower():match("ssh") then
+        return env.exec_command(alias_info[1],alias_info[2],true,cmd.." "..(args or ""))
     else
         self:run_command((line:gsub("^%$","",1)))
     end

@@ -120,7 +120,7 @@ local base_color={
     ITA     ={"\27[3m","Turn on  Italic Or Inverse",'font-style:italic'}, 
     BKP     ={'\27[?2004h',"Turn on bracketed paste",nil,1},
     UBKP    ={'\27[?2004l',"Turn off bracketed paste",nil,1},
-    CLR     ={"\27C\27[3J","Clear the screen",nil,1},
+    CLR     ={"\27[2J\27[H\27[3J","Clear the screen",nil,1},
     HOME    ={"\27[H","Send cursor to home position",nil,1},
     REF     ={"\27[2J;H" , "Clear screen and home cursor",nil,1},
     KILLBL  ={"\27[0J","Clear from cursor to end of screen",nil,1},
@@ -182,13 +182,16 @@ else
 end
 
 ansi.ansi_mode=os.getenv("ANSICON_DEF") or "jline"
-ansi.escape="%f[\\]\\[eE](%[[%d;]*[mMK])"
-ansi.pattern="\27%[[%d;]*[mK]"
+ansi.escape="%f[\\]\\[eE](%[[%d;]*[A-Za-z])"
+ansi.pattern="\27%[[%d;]*[A-Za-z]"
 
 local console_color=os.getenv("CONSOLE_COLOR")
+
 if isAnsiSupported and console_color and console_color~='NA' then
+    local fg_idx, bg_idx = console_color:sub(2), console_color:sub(1,1)
+    local fg_entry, bg_entry = default_color[fg_idx], default_color[bg_idx]
+    local fg,bg = fg_entry and fg_entry[2] or '', bg_entry and bg_entry[1] or ''
     ansi.ansi_default=console_color
-    local fg,bg=default_color[console_color:sub(2)][2] or '',default_color[console_color:sub(1,1)][1] or ''
     --if bg and fg and env.IS_WINDOWS then
     --    base_color['NOR'][1]=base_color['NOR'][1]..base_color[fg][1]..base_color[bg][1]
     --end
@@ -413,8 +416,7 @@ function string.ulen(s,maxlen)
 end
 
 function ansi.strip_ansi(str,func)
-    local e,s=pcall(_strip_ansi,str,func)
-    return s
+    return _strip_ansi(str,func)
 end
 
 function string.strip_ansi(str)

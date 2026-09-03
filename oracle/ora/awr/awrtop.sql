@@ -101,7 +101,7 @@ FROM (SELECT ROWNUM r,
                    sum(s.parse_calls) parse,
                    sum(s.px_servers_execs) px_count
             FROM (SELECT s.*, 
-                         executions+CASE WHEN flag_=1 AND first_value(flag_) over(partition by dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end execs,
+                         executions+CASE WHEN flag_=1 AND first_value(flag_) over(PARTITION BY dbid,instance_number,sql_id,plan_hash_value,instance_start ORDER BY snap_id RANGE BETWEEN 1 FOLLOWING AND 1 FOLLOWING) IS NULL then 1 else 0 end execs,
                          qry.typ
                   FROM   qry,&&awr$sqlstat s
                   WHERE  (&filter)

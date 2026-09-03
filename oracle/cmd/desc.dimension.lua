@@ -11,7 +11,7 @@ return {
       AND    o.object_name=:object_name]],
     [[
     WITH attrs1 AS
-     (SELECT /*+outline_leaf*/
+     (SELECT /*+outline_leaf opt_param('parallel_execution_enabled', 'false')*/
                l.level_name,
                a.attribute_name,
                detailobj_name src_table,

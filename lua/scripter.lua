@@ -351,9 +351,10 @@ function scripter:run_sql(sql,args,cmds)
     var.import_context(args)
     
     if env.is_main_thread() then
-        cfg.set("define","on","verify","on","SQLTERMINATOR","DEFAULT","ONERREXIT","ON")
+        cfg.doset("define","on","verify","on","SQLTERMINATOR","DEFAULT","ONERREXIT","ON")
     end
     local _args,_parms={},{}
+    self._backup_context=ary
     for line in sql:gsplit("[\n\r]+") do
         if echo_stack[current_thread] or (echo_stack[env.RUNNING_THREADS[1]] and level==2) then
             local stack={self.db,line,_args,_parms}
@@ -366,6 +367,7 @@ function scripter:run_sql(sql,args,cmds)
     if env.pending_command() then
         env.force_end_input()
     end
+    self._backup_context=nil
     env.var.import_context(ary)
 end
 
@@ -557,9 +559,10 @@ function scripter:helper(_,cmd,search_key)
             table.insert(rows[1],'_Undocumented_')
             table.insert(rows[2],undocs)
         end
-        env.set.set("PIVOT",-1,"PIVOTSORT","ON","HEADSEP",":")
         env.checkerr(#rows[1]>0,'No result for the specific input.')
+        env.set.doset("PIVOT",-1,"PIVOTSORT","ON","HEADSEP",":")
         help=help..grid.tostring(rows)
+        env.set.doset("HEADSEP","BACK")
         return help
     end
     cmd = cmd:upper()

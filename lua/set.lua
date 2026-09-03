@@ -4,7 +4,7 @@ local maxvalsize=20
 local file='setting.dat'
 local root_cmd
 local rawget,rawset=rawget,rawset
-cfg._backup=nil
+cfg._backup_stack={}
 cfg._plugins=table.strong()
 local cmds={}
 
@@ -46,14 +46,16 @@ function cfg.show_cfg(name)
         end
     else
         if name then table.insert(rows[1],2,"Source") end
+        local ansi=env.ansi and env.ansi.mask
         for k,v in pairs(cfg) do
             if type(v)=="table" and k==k:upper() and v.src and (name or (v.desc and not v.desc:find('^#'))) then
                 local value,default=v.value,v.default
                 if type(value)=="function" then value=value() end
                 if type(default)=="function" then default=default() end
+                local mask=k:find('COLOR$') and mask
                 table.insert(rows,{
                     name and table.concat(v.abbr,', ') or k,
-                    mask and mask(k,value) or #tostring(value)<=30 and tostring(value) or tostring(value):sub(1,27)..'...',
+                    mask and mask(value) or #tostring(value)<=30 and tostring(value) or tostring(value):sub(1,27)..'...',
                     mask and mask(default,default) or #tostring(default)<=30 and tostring(default) or tostring(default):sub(1,27)..'...',
                     v.class,v.range or '*',
                     v.desc})
@@ -204,7 +206,7 @@ function cfg.set(name,value,backup,isdefault)
             if not value or not (value>=lower and value<=upper) then
                 return print("Invalid value for '"..name.."', it should be "..range)
             end
-        elseif range:find(",") then
+        elseif type(range)=='string' and range:find(",") then
             local match=0
             local v=value:lower()
             for k in range:gmatch('([^,%s]+)') do
@@ -263,7 +265,7 @@ function cfg.doset(...)
             if rtn[1]==true then break end
         end
         local value=cfg.set(args[i],args[i+1],true)
-        if value and idx==2 then
+        if value~=nil and idx==2 then
             cfg._p=env.load_data(file)
             cfg._p[args[i]:upper()]=value
             if args[i+1] and args[i+1]:upper()=="DEFAULT" then
@@ -276,7 +278,10 @@ end
 
 function cfg.force_set(item,value)
     cfg.set(item,value,false)
-    if cfg._backup and cfg._backup[item:upper()] then cfg._backup[item:upper()]=cfg[item:upper()] end
+    if cfg._backup_stack and #cfg._backup_stack>0 then
+        local backup=cfg._backup_stack[#cfg._backup_stack]
+        if backup[item:upper()] then backup[item:upper()]=cfg[item:upper()] end
+    end
 end
 
 function cfg.restore(name)
@@ -288,7 +293,12 @@ function cfg.restore(name)
             if v.value~=cfg.get(k) and k~="PROMPT" then
                 env.log_debug("set","Restoring",k)
                 cfg.doset(k,v.value)
-                cfg[k]=v
+                local item=cfg.exists(k)
+                if item then
+                    for field,val in pairs(v) do
+                        if field~="value" then rawset(item,field,val) end
+                    end
+                end
             end
         end
         return
@@ -318,25 +328,24 @@ end
 function cfg.capture_before_cmd(command)
     if #env.RUNNING_THREADS>1 then return end
     local cmd=env._CMDS[command[1]]
-    if not cmds[command[1]] and not cmds[cmd.ALIAS_TO] and command[1]~='HELP' then
+    if cmd and not cmds[command[1]] and not cmds[cmd.ALIAS_TO] and command[1]~='HELP' then
         env.log_debug("set","taking full backup",command[1])
-        cfg._backup=cfg.backup()
-    else
-        cfg._backup=nil
+        cfg._backup_stack=cfg._backup_stack or {}
+        table.insert(cfg._backup_stack,cfg.backup())
     end
 end
 
 function cfg.capture_after_cmd(cmd,args)
     if #env.RUNNING_THREADS>1 then return end
-    if cfg._backup then
+    if cfg._backup_stack and #cfg._backup_stack>0 then
         env.log_debug("set","taking full reset")
-        cfg.restore(cfg._backup)
+        local backup=table.remove(cfg._backup_stack)
+        cfg.restore(backup)
     end
-    cfg._backup=nil
 end
 
 function cfg.reset_backup()
-    cfg._backup=nil
+    cfg._backup_stack={}
 end
 
 function cfg.on_env_load()

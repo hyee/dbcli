@@ -367,7 +367,9 @@ function env.get_command_by_source(list)
             name=name=="default" and env.callee():match("([^\\/]+)#") or name
             if v.FILE:lower():match('[\\/]'..name:lower()..'#') then
                 local sub=1
-                if name=='alias' then
+                --Bug I fix: env.alias may not be loaded yet (e.g. called during early
+                --bootstrap or from a minimal env). Guard against nil to avoid crash.
+                if name=='alias' and env.alias and env.alias.cmdlist then
                     sub = env.alias.cmdlist[k]
                     sub = sub and sub.desc or 1
                 end

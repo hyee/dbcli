@@ -25,7 +25,7 @@
     --]]
 ]]*/
 
-var c refcursor "List of recent 100 matched objects&ops"
+var c refcursor "List of recent 100 matched objects for &ops"
 col bytes for tmb
 set feed off verify off
 DECLARE
@@ -167,7 +167,7 @@ BEGIN
         END IF;
     END IF;
 
-    IF &f = 0 AND op not in ('view','ddl') THEN
+    IF &f = 0 AND op not in ('view','ddl','unload') THEN
         keyword := REPLACE(REPLACE(keyword, '%', '.*'), '_', '.');
         IF op != 'list' AND keyword IS NULL THEN
             raise_application_error(-20001, 'Please specify the regexp_like string as the file filter.');

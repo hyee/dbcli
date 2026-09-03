@@ -14,7 +14,6 @@ function sqlplus:ctor()
     self.support_redirect=false
 end
 
-
 function sqlplus:after_process_created()
     self.work_dir=self.work_path
     print(self:get_last_line("select * from(&prompt_sql);"))
@@ -86,7 +85,7 @@ function sqlplus:get_startup_cmd(args,is_native)
             props[#props+1]=arg
         end
         table.remove(args,1)
-        if args[1] and arg=="-c" or arg=='-m' or arg=='-r' then
+        if args[1] and (arg=="-c" or arg=='-m' or arg=='-r') then
             props[#props+1]=args[1]
             table.remove(args,1)
         end
@@ -97,7 +96,7 @@ function sqlplus:get_startup_cmd(args,is_native)
     local props_=self.db.props
     local container,schema=props_.container_name,props_.curr_schema
     local changes={}
-    if container and props_.curr_service and props_.curr_service~='SYS$USERS' and props_.curr_service~=props.service_name then
+    if container and props_.curr_service and props_.curr_service~='SYS$USERS' and props_.curr_service~=props_.service_name then
         changes[1]='container='..container
     end
     if schema and schema~=props_.db_user then

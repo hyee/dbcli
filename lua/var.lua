@@ -8,6 +8,10 @@ local global_outputs=table.strong{}
 var.desc,var.global_context,var.columns=table.strong{},table.strong{},table.strong{}
 var.inputs,var.outputs,var.global_outputs=table.strong{},table.strong{},global_outputs
 
+var._backup_stack={}
+var._inputs_backup_stack={}
+var._outputs_backup_stack={}
+var._columns_backup_stack={}
 var.cmd1,var.cmd2,var.cmd3,var.cmd4='DEFINE','DEF','VARIABLE','VAR'
 var.types={
     REFCURSOR =  'CURSOR',
@@ -192,7 +196,7 @@ function var.update_text(item,pos,params)
 
     callback("ON_SUBSTITUTION",item)
 
-    if cfg.get("define")~='on' or not item[pos] then return end
+    if cfg.get("define")~='on' or not item[pos] then return org_txt end
     pos,params=pos or 1,params or {}
     local count=1
     local function repl(s,s2,s3)
@@ -220,7 +224,7 @@ function var.update_text(item,pos,params)
     count=1
     while count>0 do
         count=0
-        if type(item[pos]=='string') then item[pos]=item[pos]:gsub(var_pattern,repl) end
+        if type(item[pos])=='string' then item[pos]=item[pos]:gsub(var_pattern,repl) end
     end
 
     if org_txt then return item[1] end
@@ -362,25 +366,33 @@ function var.capture_before_cmd(cmd,args)
     end
     if not allow_cmds[sub] then
         env.log_debug("var","Backup variables")
-        if not var._prevent_restore then
-            var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=var.backup_context()
-        end
-    else
-        var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil
+        local g,i,o,c=var.backup_context()
+        table.insert(var._backup_stack,g)
+        table.insert(var._inputs_backup_stack,i)
+        table.insert(var._outputs_backup_stack,o)
+        table.insert(var._columns_backup_stack,c)
     end
+    --for VAR/DEF/SET/ENV/COL commands, do nothing: don't take backup, don't clear the stack
 end
 
 function var.capture_after_cmd(cmd)
     if #env.RUNNING_THREADS>1 then return end
-    if var._backup and not var._prevent_restore then
+    if #var._backup_stack>0 and not var._prevent_restore then
         env.log_debug("var","Reset variables")
+        local backup=var._backup_stack[#var._backup_stack]
+        local inputs_backup=var._inputs_backup_stack[#var._inputs_backup_stack]
+        local outputs_backup=var._outputs_backup_stack[#var._outputs_backup_stack]
+        local columns_backup=var._columns_backup_stack[#var._columns_backup_stack]
         for k,v in pairs(global_outputs) do
             if var.inputs[k] then
-                var._inputs_backup[k]=var.inputs[k]
+                inputs_backup[k]=var.inputs[k]
             end
         end
-        var.import_context(var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup)
-        var._backup,var._inputs_backup,var._outputs_backup,var._columns_backup=nil,nil,nil,nil
+        var.import_context(backup,inputs_backup,outputs_backup,columns_backup)
+        table.remove(var._backup_stack)
+        table.remove(var._inputs_backup_stack)
+        table.remove(var._outputs_backup_stack)
+        table.remove(var._columns_backup_stack)
     end
 end
 
