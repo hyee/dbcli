@@ -7,7 +7,7 @@
 # Also works with MinGW and Cygwin on Windows.
 # Please check msvcbuild.bat for building with MSVC on Windows.
 #
-# Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
+# Copyright (C) 2005-2026 Mike Pall. See Copyright Notice in luajit.h
 ##############################################################################
 
 MAJVER=  2
@@ -70,7 +70,7 @@ CCWARN= -Wall
 # as dynamic mode.
 #
 # Mixed mode creates a static + dynamic library and a statically linked luajit.
-BUILDMODE= mixed
+#BUILDMODE= mixed
 #
 # Static mode creates a static library and a statically linked luajit.
 #BUILDMODE= static
@@ -227,6 +227,8 @@ TARGET_XCFLAGS= $(TARGET_LFSFLAGS) -U_FORTIFY_SOURCE
 TARGET_XLDFLAGS=
 #remove -static-libgcc for MacOS
 TARGET_XLIBS= -lm -static-libgcc
+
+#TARGET_XLIBS= -lm 
 TARGET_TCFLAGS= $(CCOPTIONS) $(TARGET_XCFLAGS) $(TARGET_FLAGS) $(TARGET_CFLAGS)
 TARGET_ACFLAGS= $(CCOPTIONS) $(TARGET_XCFLAGS) $(TARGET_FLAGS) $(TARGET_CFLAGS)
 TARGET_ASFLAGS= $(ASOPTIONS) $(TARGET_XCFLAGS) $(TARGET_FLAGS) $(TARGET_CFLAGS)
@@ -303,9 +305,6 @@ endif
 ifneq (,$(INSTALL_LJLIBD))
   TARGET_XCFLAGS+= -DLUA_LJDIR=\"$(INSTALL_LJLIBD)\"
 endif
-ifeq (,$(shell $(TARGET_CC) -o /dev/null -c -x c /dev/null -fno-strict-float-cast-overflow 2>/dev/null || echo 1))
-  TARGET_XCFLAGS+= -fno-strict-float-cast-overflow
-endif
 
 ##############################################################################
 # Target system detection.
@@ -328,15 +327,17 @@ ifeq (Darwin,$(TARGET_SYS))
   endif
   TARGET_STRIP+= -x
   TARGET_XCFLAGS+= -DLUAJIT_UNWIND_EXTERNAL
-  TARGET_XSHLDFLAGS= -dynamiclib -single_module -undefined dynamic_lookup -fPIC
+  TARGET_XSHLDFLAGS= -dynamiclib -single_module -undefined dynamic_lookup -fPIC  
+#  TARGET_XSHLDFLAGS= -dynamiclib -undefined dynamic_lookup -fPIC
   TARGET_DYNXLDOPTS=
-  TARGET_XSHLDFLAGS+= -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
+  TARGET_XSHLDFLAGS+=  -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
 else
 ifeq (iOS,$(TARGET_SYS))
   TARGET_STRIP+= -x
-  TARGET_XSHLDFLAGS= -dynamiclib -single_module -undefined dynamic_lookup -fPIC
+  TARGET_XSHLDFLAGS= -dynamiclib -single_module -undefined dynamic_lookup -fPIC  
+#  TARGET_XSHLDFLAGS= -dynamiclib -undefined dynamic_lookup -fPIC
   TARGET_DYNXLDOPTS=
-  TARGET_XSHLDFLAGS+= -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
+  TARGET_XSHLDFLAGS+=  -compatibility_version $(MAJVER).$(MINVER) -current_version $(MAJVER).$(MINVER).255
   ifeq (arm64,$(TARGET_LJARCH))
     TARGET_XCFLAGS+= -fno-omit-frame-pointer
   endif
@@ -359,6 +360,9 @@ else
   ifeq (GNU/kFreeBSD,$(TARGET_SYS))
     TARGET_XLIBS+= -ldl
   endif
+  ifeq (GNU,$(TARGET_SYS))
+    TARGET_XLIBS+= -ldl
+  endif
 endif
 endif
 endif
@@ -374,7 +378,7 @@ ifneq ($(HOST_SYS),$(TARGET_SYS))
     HOST_XCFLAGS+= -DLUAJIT_OS=LUAJIT_OS_OSX
   else
   ifeq (iOS,$(TARGET_SYS))
-    HOST_XCFLAGS+= -DLUAJIT_OS=LUAJIT_OS_OSX -DTARGET_OS_IPHONE=1
+    HOST_XCFLAGS+= -DLUAJIT_OS=LUAJIT_OS_OSX -DLUAJIT_TARGET_IPHONE=1
   else
     HOST_XCFLAGS+= -DLUAJIT_OS=LUAJIT_OS_OTHER
   endif
@@ -444,6 +448,14 @@ endif
 ifneq (,$(findstring LJ_ABI_PAUTH 1,$(TARGET_TESTARCH)))
   DASM_AFLAGS+= -D PAUTH
   TARGET_ARCH+= -DLJ_ABI_PAUTH=1
+endif
+ifneq (,$(findstring LJ_ABI_BRANCH_TRACK 1,$(TARGET_TESTARCH)))
+  DASM_AFLAGS+= -D BRANCH_TRACK
+  TARGET_ARCH+= -DLJ_ABI_BRANCH_TRACK=1
+endif
+ifneq (,$(findstring LJ_ABI_SHADOW_STACK 1,$(TARGET_TESTARCH)))
+  DASM_AFLAGS+= -D SHADOW_STACK
+  TARGET_ARCH+= -DLJ_ABI_SHADOW_STACK=1
 endif
 DASM_AFLAGS+= -D VER=$(subst LJ_ARCH_VERSION_,,$(filter LJ_ARCH_VERSION_%,$(subst LJ_ARCH_VERSION ,LJ_ARCH_VERSION_,$(TARGET_TESTARCH))))
 ifeq (Windows,$(TARGET_SYS))
@@ -532,6 +544,7 @@ LIB_VMDEFP= $(LIB_VMDEF)
 LUAJIT_O= luajit.o
 LUAJIT_A= libluajit.a
 LUAJIT_SO= libluajit$(NODOTABIVER).so
+#LUAJIT_SO= libluajit.so
 LUAJIT_T= luajit
 
 ALL_T= $(LUAJIT_T) $(LUAJIT_A) $(LUAJIT_SO) $(HOST_T)

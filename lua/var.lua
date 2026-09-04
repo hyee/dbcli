@@ -652,6 +652,7 @@ function var.define_column(col,...)
             env.checkerr(arg,'Format:  COL[UMN] <column> FOR[MAT] [KMB|TMB|ITV|SMHD|<format>] JUS[TIFY] [LEFT|L|RIGHT|R].')
             if f:find('^A%d+') then
                 local siz=tonumber(arg:match("%d+"))
+                env.checkerr(siz and siz <100,'Column size should be a number that less than 100');
                 obj.format_dir='%-'..math.min(99,siz)..'s'
                 func=function(v) return tostring(v) and obj.format_dir:format(tostring(v):sub(1,siz)) or v end
             elseif f:find("^HEAD") then

@@ -54,7 +54,9 @@ For Example:
 
 And sometimes you may run into below exception when try to execute `dbcli.sh`:
     `"luajit" cannot be opened because the developer cannot be verified`
-The solution is to disable the restriction: `sudo spctl --master-disable`
+Try below solutions to disable the restriction: 
+* `sudo spctl --master-disable`
+* `sudo xattr -d com.apple.quarantine <dbcli_directory>/lib/mac/*;sudo xattr -d com.apple.quarantine <dbcli_directory>/lib/mac-arm/*`
 
 ### Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.

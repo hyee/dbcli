@@ -1,3 +1,4 @@
+2026-09-05: * public: update lib `LuaJIT-2.1` 
 2026-05-29: + public: new command "ping" 
 2026-05-15: + oracle: new script 'show vmem'
 2026-05-03: + oracle: new script 'sys ofediff'
