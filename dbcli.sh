@@ -103,7 +103,7 @@ if [[ $found < 2 ]]; then
     fi
 fi
 
-unset _JAVA_OPTIONS JAVA_HOME DYLD_FALLBACK_LIBRARY_PATH DYLD_LIBRARY_PATH
+unset _JAVA_OPTIONS JAVA_TOOL_OPTIONS JAVA_HOME DYLD_FALLBACK_LIBRARY_PATH DYLD_LIBRARY_PATH
 
 JAVA_BIN="$(echo "$_java"|sed 's|/[^/]*$||')"
 JAVA_ROOT="$(echo "$JAVA_BIN"|sed 's|/[^/]*$||')"
@@ -139,6 +139,19 @@ fi
 
 
 trap '' TSTP &>/dev/null
+
+# On macOS, files extracted from a downloaded zip are flagged by Gatekeeper with
+# the com.apple.quarantine attribute, so that 'luajit' and the bundled dylibs
+# are blocked by the security policy. Clear the flags once under ./lib/$os.
+if [[ "$os" = mac* ]] && xattr ./lib/$os/luajit 2>/dev/null | grep -q quarantine ; then
+    echo "Clearing macOS quarantine flags under ./lib/$os ..."
+    xattr -dr com.apple.quarantine ./lib/$os 2>/dev/null
+    if xattr ./lib/$os/luajit 2>/dev/null | grep -q quarantine ; then
+        echo "  Failed to clear the quarantine flags automatically (permission denied)."
+        echo "  Please run manually:  sudo xattr -dr com.apple.quarantine \"$(pwd)/lib\""
+        echo "  Or click 'Allow Anyway' for luajit in System Settings > Privacy & Security, then re-run dbcli.sh"
+    fi
+fi
 
 chmod  +x ./lib/$os/luajit &>/dev/null
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"

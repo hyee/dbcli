@@ -98,7 +98,7 @@ function string.case_insensitive_pattern(pattern)
     return p
 end
 
-local allspace={
+local other_spaces={
     '\xa3\xa0',--
     '\xc2\x85',   --0x85
     '\xc2\xa0',   --0xa0

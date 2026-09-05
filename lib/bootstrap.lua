@@ -63,10 +63,15 @@ scan("lib","jar")
 local other_lib=os.getenv("OTHER_LIB")
 local other_options={}
 if other_lib then
-    for param in other_lib:gmatch("%S*") do
+    -- Format: [<extra classpath jars>];<JVM options>, the ';' separator is optional
+    local cp, args = other_lib:match('^(.-);(.*)$')
+    if not args then cp, args = '', other_lib end
+    for param in cp:gmatch('%S+') do
+        files[#files+1]=param
+    end
+    for param in args:gmatch('%S+') do
         other_options[#other_options+1]=param
     end
-    files[#files+1]=table.remove(other_options,1)
 end
 local jars=table.concat(files,psep)
 
@@ -113,9 +118,7 @@ local options ={'-server',
                 '-Djava.security.egd=file:/dev/./urandom',
                 '-Dsecurerandom.source=file:/dev/./urandom',
                 --'-Djava.awt.headless=true',
-                java_ver>52 and '--release=8' or nil,
                 java_ver>52 and java_ver<61 and '--illegal-access=permit' or nil,
-                java_ver>52 and '-Djdk.module.illegalAccess=deny' or nil,
                 java_ver>52 and '--add-opens=java.sql/java.sql=ALL-UNNAMED' or nil ,
                 java_ver>52 and '--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED' or nil ,
                 java_ver>52 and '--add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED' or nil ,
@@ -124,12 +127,10 @@ local options ={'-server',
                 java_ver>52 and '--add-opens=java.base/java.io=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-opens=java.base/jdk.internal=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-exports=java.base/jdk.internal.org.objectweb.asm.util=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
                 java_ver>52 and '--enable-native-access=ALL-UNNAMED' or nil,
                 java_ver>52 and '--add-modules=jdk.unsupported' or nil,
-                java_ver>64 and '--illegal-native-access=allow' or nil,
+                java_ver>67 and '--illegal-native-access=allow' or nil,
                 java_ver>64 and '-XX:UseSVE=0' or nil,
                 '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
                 '-Djava.class.path='..jars,
@@ -139,8 +140,11 @@ local params={}
 for i=1,siz do
     local param = options[i]
     if param then
-        params[#params+1]=param 
+        params[#params+1]=param
     end
+end
+for i=1,#other_options do
+    params[#params+1]=other_options[i]
 end
 
 javavm = require("javavm",true)

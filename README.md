@@ -54,9 +54,11 @@ For Example:
 
 And sometimes you may run into below exception when try to execute `dbcli.sh`:
     `"luajit" cannot be opened because the developer cannot be verified`
-Try below solutions to disable the restriction: 
-* `sudo spctl --master-disable`
-* `sudo xattr -d com.apple.quarantine <dbcli_directory>/lib/mac/*;sudo xattr -d com.apple.quarantine <dbcli_directory>/lib/mac-arm/*`
+This happens because macOS Gatekeeper marks all files extracted from a downloaded zip with the `com.apple.quarantine` attribute, and `luajit` plus the bundled dylibs under `lib/mac*` are not signed/notarized. Clear the flags with one command (use `sudo` only when the directory is owned by another user):
+    `xattr -dr com.apple.quarantine <dbcli_directory>`
+Then run `./dbcli.sh` again. Alternatives:
+* Run `./dbcli.sh` and click `Allow Anyway` when prompted, or open `System Settings > Privacy & Security`, find the blocked message about `luajit`, and click `Allow Anyway`. Starting from version 2026-09, `dbcli.sh` also clears the quarantine flags under `lib/<os>` automatically on first run.
+* `sudo spctl --master-disable` is no longer recommended: it has no effect on macOS 15 (Sequoia) and later, and turning off Gatekeeper globally weakens the whole system.
 
 ### Configure environment
 Before running dbcli, make sure that you have installed JRE 1.8+ in your local PC. If you are using the version of "With-JRE" branch, this step can be skipped.

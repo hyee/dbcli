@@ -1,7 +1,7 @@
 package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
-import jdk.internal.org.objectweb.asm.ClassReader;
+import org.objectweb.asm.ClassReader;
 
 import java.io.*;
 import java.lang.instrument.ClassFileTransformer;
