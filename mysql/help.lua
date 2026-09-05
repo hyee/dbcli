@@ -46,7 +46,8 @@ function help.help_topic(...)
         doc=env.load_data(helpdict,true)
         local category=doc._categories
         doc._categories=nil
-        like=like[1]:gsub('%%','.-')
+        --like[1] is a SQL LIKE pattern; park its '%' before escape() so the keyword itself stays literal
+        like=like[1]:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')
         if keyword=="C" or keyword=="CONTENTS" then
             local rows={}
             for key,list in pairs(category) do

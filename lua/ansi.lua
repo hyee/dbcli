@@ -390,37 +390,8 @@ local function _strip_ansi(str,func)
                end)
 end
 
-local ulen=console.ulen
---returns byte length, char length, and final string after limiting the max length
-function string.ulen(s,maxlen)
-    if s=="" then return 0,0,s end
-    if not s then return nil end
-    if maxlen==0 then return 0,0,'' end
-    local s1=tostring(s)
-    local byte_len,print_len=#s1,#s1
-    local is_ansi,is_unicode=s1:find('\27[',1,true),s1:sub(1,1024):find('[\127-\255]')
-    if (maxlen and maxlen>0 and byte_len>maxlen and is_ansi) or is_unicode then
-        byte_len,print_len,s1=ulen(console,s1,tonumber(maxlen) or 0):match("(%d+):(%d+):(.*)")
-        byte_len,print_len,s1=tonumber(byte_len) or 0,tonumber(print_len) or 0,maxlen and s1 or s
-        if is_unicode then
-            byte_len=#(is_ansi and s1:strip_ansi() or s1)
-        end
-    else
-        if (maxlen or 0)>0 and byte_len>maxlen then 
-            s1=s1:sub(1,maxlen)
-            byte_len=#s1
-        end
-        print_len=is_ansi and #s1:strip_ansi() or byte_len
-    end
-    return byte_len,print_len,s1
-end
-
 function ansi.strip_ansi(str,func)
     return _strip_ansi(str,func)
-end
-
-function string.strip_ansi(str)
-    return ansi.strip_ansi(str)
 end
 
 function ansi.strip_len(str,siz)
@@ -428,21 +399,18 @@ function ansi.strip_len(str,siz)
     return len2
 end
 
-function string.strip_len(str,siz)
-    return ansi.strip_len(str,siz)
-end
-
 local function cv(all,code)
     return ansi.mask(code,nil,true) or all
 end
 
 function ansi.convert_ansi(str)
-    return str and str:gsub("(%$(%u+)%$)",cv):gsub(ansi.escape,"\27%1")
+    return type(str)=='string' and str:gsub("(%$(%u+)%$)",cv):gsub(ansi.escape,"\27%1") or str
 end
 
-function string.convert_ansi(str)
-    return ansi.convert_ansi(str)
-end
+string.strip_ansi=ansi.strip_ansi
+string.strip_len=ansi.strip_len
+string.convert_ansi=ansi.convert_ansi
+
 
 local grp1,grp2,grp3,grp4=table.new(10,0),table.new(10,0),table.new(10,0),table.new(10,0)
 function string.from_ansi(str)

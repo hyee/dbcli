@@ -1,11 +1,10 @@
-local env,select,table,pcall,cfg=env,select,table,pcall,env.set
-local writer,reader,console=writer,reader,console
+local env,select,table,pcall=env,select,table,pcall
+local writer,console=writer,console
 local out=writer
-local jwriter=jwriter
 local event
 local printer={rawprint=print}
 local io=io
-local NOR,BOLD="",""
+local NOR=""
 local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
 
@@ -14,8 +13,24 @@ local grep_fmt="%1"
 local more_text={lines=0}
 local termout='on'
 local getWidth = console.getBufferWidth
-local terminal=terminal
 local in_tab
+printer.grid_title_lines=0
+
+--shared accumulator for printer.print's per-line indenting. out_buf is created in
+--onload; until then, and on a LuaJIT without the buffer library, out_parts holds the
+--pieces instead. Both arms measured the same speed.
+local out_buf,out_parts,out_k=nil,{},0
+
+--gsub('\n','') copies the whole string just to return a count; a plain find does not
+local function count_nl(s)
+    local c,p=0,1
+    while true do
+        p=s:find('\n',p,true)
+        if not p then return c end
+        c=c+1
+        p=p+1
+    end
+end
 
 function printer.set_termout(name,value)
     termout=value
@@ -42,7 +57,7 @@ end
 
 function printer.set_more(stmt)
     env.checkhelp(stmt)
-    local typ,file=os.exists(stmt,'txt')
+    local _,file=os.exists(stmt,'txt')
     if file then
         local text=env.load_data(file,false)
         env.checkerr(text,"Cannot read file: "..file)
@@ -66,7 +81,7 @@ function printer.more(output)
         if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
         pcall(console.less,console,table.concat(more_text,'\n'),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
     else
-        local stack,lines=output:gsub('\n',"")
+        local lines=count_nl(output)
         if output.convert_ansi then output=output:convert_ansi() end
         pcall(console.less,console,output,0,#(env.space),lines)
     end
@@ -86,12 +101,14 @@ local function flush_buff(text,lines)
 end
 
 function printer.print(...)
-    local output,found,ignore,column,columns,rows={}
+    local output,found,ignore,column,columns={}
+    local n=0
     --if not env.set then return end
     for i=1,select('#',...) do
         local v=select(i,...)
         if type(v)~="string" or not (v:find('^__BYPASS_') or v:find('^__PRINT_COLUMN_')) then 
-            output[i]=tostring(v)
+            n=n+1
+            output[n]=tostring(v)
         elseif v:find('^__PRINT_COLUMN_') then
             columns,column={},getWidth(console)
         else
@@ -102,21 +119,79 @@ function printer.print(...)
     output=table.concat(output,' ')
     local _
     if output.convert_ansi then output=output:convert_ansi() end
-    output,rows=output:gsub("([^\n\r]*)([\n\r]*)",function(s,sep)
+    --one gsub pass costs a full length-proportional copy even when nothing matches,
+    --so the indent/grep/column work is a single byte scan into the shared accumulator
+    out_k=0
+    if out_buf then out_buf:reset() end
+    local len,pos=#output,1
+    while pos<=len do
+        local s,sep
+        local b=output:byte(pos)
+        if b==10 or b==13 then
+            local e=pos+1
+            while e<=len do
+                b=output:byte(e)
+                if b~=10 and b~=13 then break end
+                e=e+1
+            end
+            s,sep='',output:sub(pos,e-1)
+            pos=e
+        else
+            local e=pos+1
+            while e<=len do
+                b=output:byte(e)
+                if b==10 or b==13 then break end
+                e=e+1
+            end
+            s=output:sub(pos,e-1)
+            local e2=e
+            while e2<=len do
+                b=output:byte(e2)
+                if b~=10 and b~=13 then break end
+                e2=e2+1
+            end
+            sep=e2>e and output:sub(e,e2-1) or ''
+            pos=e2
+        end
+
+        --a filtered-out line drops its separator too, which is what returning '' did
+        local keep=true
         if printer.grep_text and not ignore then
             s,found=s:gsub(printer.grep_text,grep_fmt)
             if not (found>0 and not printer.grep_dir or printer.grep_dir and found==0) then
-                return ''
+                keep=false
             elseif s.convert_ansi then
                 s=s:convert_ansi()
             end
         end
-        if column then
-            _,_,columns[#columns+1]=s:ulen(column)
-            columns[#columns+1]=sep
+        if keep then
+            if column then
+                _,_,columns[#columns+1]=s:ulen(column)
+                columns[#columns+1]=sep
+            end
+            if #s>32768 then s=s:sub(1,32768) end
+            if out_buf then
+                if s~='' then out_buf:put(NOR,env.space,s) end
+                if sep~='' then out_buf:put(sep) end
+            else
+                if s~='' then
+                    out_k=out_k+3
+                    out_parts[out_k-2],out_parts[out_k-1],out_parts[out_k]=NOR,env.space,s
+                end
+                if sep~='' then
+                    out_k=out_k+1
+                    out_parts[out_k]=sep
+                end
+            end
         end
-        return (s=='' and '' or (NOR..env.space..s:sub(1,32768)))..sep
-    end)
+    end
+    if out_buf then
+        output=out_buf:get()
+    else
+        output=table.concat(out_parts,'',1,out_k)
+        --release the pieces, otherwise out_parts pins the largest output ever printed
+        for i=1,out_k do out_parts[i]=nil end
+    end
 
     if ignore or output~="" or not printer.grep_text then
         if termout=='on' and not printer.is_more then 
@@ -134,9 +209,12 @@ function printer.print(...)
         end
     end
 
-    if ignore~='__BYPASS_GREP__' and termout=='on' and more_text.lines<=32767 then
+    --tee_to_file already appended this line to more_text while a tee/clip handle is open
+    if ignore~='__BYPASS_GREP__' and not printer.tee_hdl and termout=='on' and more_text.lines<=32767 then
         more_text[#more_text+1]=output
-        more_text.lines=more_text.lines+rows+1
+        --count real newlines (+1 for the entry itself), the same rule tee_to_file uses
+        local newlines=count_nl(output)
+        more_text.lines=more_text.lines+newlines+1
         if more_text.lines>32767 then
             table.remove(more_text,1)
         end
@@ -201,7 +279,8 @@ function printer.set_grep(keyword)
     if keyword:len()>1 and keyword:sub(1,1)=="-" then
         keyword,printer.grep_dir=keyword:sub(2),true
     end
-    printer.grep_text=keyword:escape('*i'):gsub('%%','.*')
+    --'%%%%' matches the doubled '%' that escape() produces for a user-typed '%'; a single '%' is an escape and must survive
+    printer.grep_text=keyword:escape('*i'):gsub('%%%%','.*')
 end
 
 function printer.grep(keyword,stmt)
@@ -214,19 +293,29 @@ function printer.grep_after()
     printer.grep_text,printer.grep_dir=nil,nil
 end
 
+local str_buff
 function printer.clip(stmt)
+    env.checkhelp(stmt)
+    --created on first use and then kept: get() empties the buffer, so a later clip reuses it
+    env.checkerr(env.buffer,"The clip command requires LuaJIT's string.buffer, which is not available.")
+    str_buff=str_buff or env.buffer.new()
     printer.tee('>CLIP',stmt)
 end 
-local str_buff=env.buffer.new()
 function printer.tee(file,stmt)
     env.checkhelp(file)
     if printer.tee_hdl then 
         return env.warn("Another Tee file handler exists, ignored.")
     end
     local mode='w'
-    if not stmt then 
-        file,stmt='',file 
-    elseif file:sub(1,1)=='+' then
+    if not stmt then
+        --a lone '+' or '.' is a documented target, not a statement to run
+        if file=='+' or file=='.' then
+            stmt=''
+        else
+            file,stmt='',file
+        end
+    end
+    if file:sub(1,1)=='+' then
         mode,file='a+',file:sub(2)
     elseif file:sub(-1)=='+' then
         mode,file='a+',file:sub(1,#file-1)
@@ -247,7 +336,6 @@ function printer.tee(file,stmt)
             end,
             close=function()
                 local str=str_buff:get()
-                str_buff:free()
                 local done=loader:copyToClipboard(str)
                 printer.rawprint(env.space..(done and "Output is copied to clipboard." or "Unable to copy the output to clipboard due to unsupported in current terminal."));
             end
@@ -278,7 +366,7 @@ function printer.before_command(command)
     end
     line,lines=line:gsub('\n','\n'..env.MTL_PROMPT)
     line=env.PRI_PROMPT..line
-    if printer.hdl then pcall(printer.hdl.write,printer.hdl,line.."\n") end
+    if printer.hdl then pcall(printer.hdl.write,printer.hdl,strip_ansi(line).."\n") end
     flush_buff(line,lines+1)
 end
 
@@ -295,7 +383,8 @@ function printer.after_command()
         printer.get_last_output()
     end
 
-    if more_text.lines>0 then
+    --before_command skipped the reset for a nested command, so more_text still belongs to the command that owns it
+    if more_text.lines>0 and #env.RUNNING_THREADS<=1 then
         flush_buff(table.concat(more_text,'\n'), more_text.lines)
     end
     printer.is_more=false
@@ -404,8 +493,11 @@ local font='font-size:8pt;font-family:Courier New,Courier,Consolas,Roboto Mono,S
 function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
     local str=type(row)~="table" and row or format_func(format_str, table.unpack(row))
     local space=env.space
-    more_text[#more_text+1]=space..str:rtrim()
-    more_text.lines=more_text.lines+1
+    local text=space..str:rtrim()
+    more_text[#more_text+1]=text
+    --str may carry embedded newlines, so count them; +1 is the line itself
+    local newlines=count_nl(text)
+    more_text.lines=more_text.lines+newlines+1
     if more_text.lines<=10 then
         if printer.grid_title_lines <0 and tonumber(row[0]) and tonumber(row[0])==0 then
             printer.grid_title_lines=-99
@@ -465,7 +557,7 @@ function printer.tee_to_file(row,rowidx, format_func, format_str,include_head)
         for idx,cell in ipairs(row) do
             if idx>1 then hdl:write(",") end
             if type(cell)=="string" then
-                cell=strip_ansi(cell):gsub('"','""')
+                cell=strip_ansi(cell)
                 if row[0]==0 then cell=cell:trim() end
                 hdl:write(to_csv(cell))
             elseif cell~=nil then
@@ -491,7 +583,8 @@ function printer.view_buff(file)
 end
 
 function printer.set_editor(name,editor)
-    local ed=os.find_extension(editor)
+    --raises when the editor cannot be found, which is how a bad EDITOR value gets rejected
+    os.find_extension(editor)
     return editor
 end
 
@@ -509,7 +602,7 @@ function printer.edit_buffer(file,default_file,text)
     end
 
     if env.IS_WINDOWS then
-        os.shell(editor,f)
+        os.shell(editor,'"'..f..'"')
     else
         if ed=='vi' or ed=='vim' then 
             editor=ed..' -c ":set nowrap" -n +' 
@@ -526,17 +619,17 @@ _G.rawprint=printer.rawprint
 function printer.onload()
     if env.ansi then
         NOR = env.ansi.string_color('NOR') 
-        BOLD= env.ansi.string_color('UDL') 
         strip_ansi=env.ansi.strip_ansi
         grep_fmt=env.ansi.convert_ansi("$GREPCOLOR$%1$NOR$")
     end
+    --nil when LuaJIT's string.buffer is unavailable; printer.print falls back to out_parts
+    if env.buffer then out_buf=env.buffer.new() end
     event=env.event
     if env.event then
         env.event.snoop('BEFORE_COMMAND',printer.before_command,nil,90)
         env.event.snoop('AFTER_COMMAND',printer.after_command,nil,90)
         env.event.snoop('ON_PRINT_GRID_ROW',printer.tee_to_file,nil,90)
     end
-    BOLD=BOLD..'%1'..NOR
     local tee_help=[[
     Write command output to target file,'+' means append mode. Usage: @@NAME {+|.|[+]<file>} <other command> (support pipe(|) operation)
         or <other command>|@@NAME {+|.|[+]<file>}

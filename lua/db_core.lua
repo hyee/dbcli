@@ -1512,22 +1512,48 @@ db_core.source_objs={
     DEFINER=1,
     EVENT=1}
 
-function db_core.check_completion(cmd,other_parts)
+function db_core.check_completion(cmd,other_parts,stmt)
     --alter package xxx compile ...
-    local match,typ,index=env.COMMAND_SEPS.match(other_parts)
+    --`other_parts` is the newly typed line, `stmt` the previously accumulated
+    --lines. Probe only the tail first: COMMAND_SEPS.match inspects just the last
+    --32 bytes, so a suffix of the statement gives the identical index without
+    --rebuilding the whole text. Most lines of a big multi-line statement carry no
+    --terminator, so this keeps the per-line cost O(tail) instead of O(statement)
+    --and turns an N-line paste from quadratic into linear time.
+    local probe=other_parts
+    if stmt and #probe<32 then
+        local i=#stmt
+        if i==0 then
+            probe='\n'..probe
+        else
+            while #probe<32 and i>=1 do
+                probe=stmt[i]..'\n'..probe
+                i=i-1
+            end
+        end
+    end
+    local _,_,index=env.COMMAND_SEPS.match(probe)
     if index==0 then return false,other_parts end
-    if index==1 and typ~=';' then return true,match end
-    local action,obj=db_core.get_command_type(cmd..' '..other_parts)
+
+    local prev=""
+    if stmt then prev=table.concat(stmt,'\n')..'\n' end
+    local full=prev..other_parts
+    local match,typ,idx=env.COMMAND_SEPS.match(full)
+    local tail=#prev+1
+    if idx==1 and typ~=';' then return true,match:sub(tail) end
+    --get_command_type only inspects the first 1024 bytes, so slice the head to
+    --avoid copying a multi-MB statement that is about to be terminated anyway.
+    local action,obj=db_core.get_command_type(cmd..' '..full:sub(1,1024))
     local inline=action=="WITH" and (obj=='FUNCTION' or obj=='PROCEDURE')
-    if index==1 and action~="SELECT" and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
+    if idx==1 and action~="SELECT" and (db_core.source_objs[cmd] or db_core.source_objs[obj:upper()]) then
         if inline then 
             if match:match('%s+[eE][nN][dD]%s*;%s*[sS][Ee][Ll][eE][cC][tT]%s+') then
-                return true,match
+                return true,match:sub(tail)
             else
                 return false,other_parts
             end
         elseif action=='WITH' then
-            return true,match
+            return true,match:sub(tail)
         end
         local pattern=db_core.source_obj_pattern
         if not pattern then return false,other_parts end
@@ -1535,14 +1561,14 @@ function db_core.check_completion(cmd,other_parts)
         
         for _,pattern in ipairs(patterns) do
             if match:sub(-128):match(pattern..'$') then
-                return true,match
+                return true,match:sub(tail)
             end
         end
         return false,other_parts
     end
 
     if inline then match=match:gsub('[%s;/]+$','') end
-    return true,match
+    return true,match:sub(tail)
 end
 
 function db_core:resolve_expsql(sql)
@@ -1822,13 +1848,20 @@ function db_core:__onload()
     env.set_command{obj=self,cmd="grid", 
                     help_func=grid_desc,
                     call_func=self.grid_print,
-                    is_multiline=function(cmd,rest)
-                        if not rest:find('^%s*{') and not rest:find('^%s*%[') then return true,rest end
+                    is_multiline=function(cmd,other_parts,stmt)
+                        --`other_parts` is the new line, `stmt` the accumulated lines.
+                        --Rebuild the text here (grid configs are small) and keep the
+                        --original contract: the stored value is the part after the
+                        --previously accumulated prefix.
+                        local prev=""
+                        if stmt then prev=table.concat(stmt,'\n')..'\n' end
+                        local rest=prev..other_parts
+                        if not rest:find('^%s*{') and not rest:find('^%s*%[') then return true,rest:sub(#prev+1) end
                         local part=rest:match('^%s*(%b{})') or rest:match('^%s*(%b[])')
                         if part then
-                            return true,part
+                            return true,part:sub(#prev+1)
                         else
-                            return false,rest
+                            return false,rest:sub(#prev+1)
                         end
                     end,
                     parameters=2,

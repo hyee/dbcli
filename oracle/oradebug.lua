@@ -50,16 +50,17 @@ local cache={}
 function oradebug.find_func(key,is_print)
     load_functions()
     local rows
+    local k_lower=key:lower()
     if is_print~=false then
         rows=grid.new()
         rows:add{'Function','Description'}
-    elseif cache[key:lower()] then
-        return cache[key:lower()]
+    elseif cache[k_lower] then
+        return cache[k_lower]
     end
-    local prefix=functions[key:lower():sub(1,2)]
+    local prefix=functions[k_lower:sub(1,2)]
     if not prefix then
         if is_print==false then
-            cache[key:lower()]=''
+            cache[k_lower]=''
             return ''
         else
             env.raise('No function is found for the input keyword: %s', key)
@@ -67,17 +68,18 @@ function oradebug.find_func(key,is_print)
     end
 
     local k,v=key,prefix[key]
-    if not v then k,v=key:lower(),prefix[key:lower()] end
+    if not v then k,v=k_lower,prefix[key:lower()] end
     if v then
         if is_print~=false then
             rows:add{k,v}
         else
-            cache[key:lower()]=' ($PROMPTSUBCOLOR$'..v..'$NOR$)'
-            return cache[key:lower()]
+            cache[k]=' ($PROMPTSUBCOLOR$'..v..'$NOR$)'
+            return cache[k]
         end
     end
     
-    key=key:lower():gsub('%%','.-')
+    --'%' is the user's wildcard, so park it before escape() and restore it as '.-' afterwards
+    key=k_lower:gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')
 
     local candidates={}
     for k,v in pairs(prefix) do
@@ -85,7 +87,7 @@ function oradebug.find_func(key,is_print)
             local n,c,l=k:match(key),1
             if not n then
                 for i=#k,#k,-1 do --for i=#k,3,-1 do
-                    n,c=key:match(k:sub(1,i)),1+(#k-i)*2
+                    n,c=k_lower:match(k:sub(1,i)),1+(#k-i)*2
                     if n and i~=k then
                         l,k=#n,n..'$HIR$'..k:sub(i+1)
                         n=k
@@ -103,13 +105,13 @@ function oradebug.find_func(key,is_print)
         table.sort(candidates,function(a,b) return a[5]<b[5] or a[5]==b[5] and a[2]>b[2] end)
         for k,v in ipairs(candidates) do
             if is_print==false and k==1 then
-                cache[key]=' ($COMMANDCOLOR$['..v[3]..'$COMMANDCOLOR$]$PROMPTSUBCOLOR$'..v[4]..'...$NOR$)'
-                return cache[key]
+                cache[k_lower]=' ($COMMANDCOLOR$['..v[3]..'$COMMANDCOLOR$]$PROMPTSUBCOLOR$'..v[4]..'...$NOR$)'
+                return cache[k_lower]
             end
             rows:add{v[1]..'$NOR$',v[4]}
         end
     elseif is_print==false then
-        cache[key]=''
+        cache[k_lower]=''
         return ''
     elseif #rows.data<2 then
         env.raise('No function is found for the input keyword')

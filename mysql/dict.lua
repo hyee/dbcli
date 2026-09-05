@@ -52,7 +52,8 @@ function dicts.build_dict(typ,scope)
     local dict,path,doc,helppath,_categories,filter
     if typ=='param' then
         path=current_dict_exists and current_dict or datapath
-        scope=(scope or ''):lower():gsub('%%','.-')
+        --'%' is the user's wildcard, so park it before escape() and restore it as '.-' afterwards
+        scope=(scope or ''):lower():gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')
         env.checkhelp(scope~='')
         env.checkerr(os.exists(path),'Offline dictionary is unavailable.')
         local dict=dicts.load_dict(path,false).keywords

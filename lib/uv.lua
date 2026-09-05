@@ -179,9 +179,9 @@ function os.list_dir(path,ext,depth,read_func,filter,is_skip_binary)
         if read_func and typ=='file' then
             if opened>512 then
                 uv.run()
-                opened=0
+                opened*=0
             end
-            opened=opened+1
+            opened+=1
             uv.async_read(file.fullname,tonumber(read_func) or tonumber(is_allow) or 4*1024*1024,set_text,#filenames)
         end
     end

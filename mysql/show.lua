@@ -29,11 +29,13 @@ function show.run(...)
         if greps[c] then
             local text=(args[i+1] or ""):upper()
             if text~="" and not text:find("^LIKE") and not text:find("^WHERE") then
-                if k:upper()=='VAR' or k:upper()=='STATUS' then
+                --c is the resolved command, so every spelling (var/va/variables) picks the same branch
+                if c=='VARIABLES' or c=='STATUS' then
                     local vars=db:get_rows("SHOW SESSION "..c..";SHOW GLOBAL "..c)
                     local names={}
                     local rows={}
-                    local key=args[i+1]:gsub('%%','.-'):lower()
+                    --'%' is the user's wildcard, so park it before escape() and restore it as '.-' afterwards
+                    local key=args[i+1]:lower():gsub('%%','\1\2\3'):escape():gsub('\1\2\3','.-')
                     for idx,dict in ipairs(vars) do
                         table.remove(dict,1)
                         for i,row in ipairs(dict) do
@@ -82,7 +84,8 @@ function show.run(...)
                     table.insert(rows,1,{"Variable Name","Session Value","Global Value"})
                     return env.grid.print(rows)
                 else
-                    env.printer.set_grep(text:gsub('%%','.-'))
+                    --set_grep already escapes magic chars and turns '%' into '.*'; pre-converting it here broke that
+                    env.printer.set_grep(text)
                 end
                 break
             end

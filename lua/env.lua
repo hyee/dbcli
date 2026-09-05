@@ -225,11 +225,8 @@ function env.check_cmd_end(cmd,other_parts,stmt)
     elseif not _CMDS[cmd].MULTI then
         return true,other_parts and env.COMMAND_SEPS.match(other_parts)
     elseif type(_CMDS[cmd].MULTI)=="function" then
-        if type(stmt)=='table' then
-            prev=concat(stmt,'\n')..'\n'
-        end
-        local done,part=_CMDS[cmd].MULTI(cmd,prev..other_parts)
-        return done,part:sub(#prev+1)
+
+        return _CMDS[cmd].MULTI(cmd,other_parts,stmt)
     elseif _CMDS[cmd].MULTI=='__SMART_PARSE__' then
         return env.smart_check_end(cmd,other_parts,_CMDS[cmd].ARGS,stmt)
     end
@@ -654,13 +651,17 @@ function env.set_prompt(class,default,is_default,level)
         env.PRI_PROMPT=(default or "").."> "
     end
 
-    env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(#env.PRI_PROMPT)
+    --Floor the continuation/echo indent to env.space: an empty or invisible main
+    --prompt (PRI_PROMPT=="") would otherwise make MTL_PROMPT=="", so multi-line
+    --continuation lines and printer.lua's command echo lose their indentation, and
+    --CURRENT_PROMPT==MTL_PROMPT would wrongly read as "still in a multi-line command".
+    env.CURRENT_PROMPT,env.MTL_PROMPT=env.PRI_PROMPT,(" "):rep(math.max(#env.PRI_PROMPT,#env.space))
     if env.CURRENT_PROMPT=='TIMING> ' then
         local current,isRoot=coroutine.running()
         if isRoot then
             local clock=math.floor((os.timer()-_THREADS._clock[1])*1e3)/1e3
             env.CURRENT_PROMPT=string.format('%06.2f',clock)..'> '
-            env.MTL_PROMPT="%P "
+            env.MTL_PROMPT=(" "):rep(#env.CURRENT_PROMPT)
             _THREADS._clock[1]=os.timer()
         end 
     end
@@ -718,69 +719,110 @@ function env.parse_args(cmd,rest,is_cross_line)
         end
         args[#args+1]=rest
     elseif rest then
-        local piece,char=""
+        local piece=""
         local quote='"'
-        local is_quote_string = false
-        local count=#args
-        local scope_index=0
-        for i=1,#rest,1 do
-            if i>=scope_index then
-                char=rest:sub(i,i)
-                if char=='<' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
-                    rest=rest:sub(i+#terminator_str):trim()
-                    if piece~="" then args[#args+1],piece=piece,"" end
-                    args[#args+1]=rest
-                    break
+        local is_quote_string=false
+        local count=0
+        local n=#rest
+        local i=1
+        --Batch-extract each argument with find+sub instead of appending one char
+        --at a time: the old `piece=piece..char` re-copied the whole argument on
+        --every character, so a single long quoted/plain argument (e.g. a big
+        --`set v "<huge text>"`) was O(n^2). Scanning to the next decision char
+        --keeps it O(n); terminator/scope/count-break behavior is unchanged.
+        local just_ended,end_char,end_i=false
+        while i<=n do
+            local char=rest:sub(i,i)
+            just_ended=false
+            --(A) heredoc terminator, checked in both states before accumulation
+            if char=='<' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
+                rest=rest:sub(i+#terminator_str):trim()
+                if piece~="" then args[#args+1]=piece end
+                args[#args+1]=rest
+                piece=""
+                break
+            end
+            if is_quote_string then
+                --(B) inside quotes: batch to the next '"' (or '<' when heredoc is set)
+                local stop
+                if terminator then stop=rest:find('[<"]',i) else stop=rest:find('"',i,true) end
+                if stop and stop>i then
+                    piece=piece..rest:sub(i,stop-1); i=stop; char=rest:sub(i,i)
+                elseif not stop then
+                    piece=piece..rest:sub(i); i=n+1
                 end
-                
-                if is_quote_string then--if the parameter starts with quote
-                    piece = piece .. char
-                    if char == quote and (rest:sub(i+1,i+1):match("%s") or #rest==i) and not piece:match('".+" *%. *".+"') then
-                        --end of a quote string if next char is a space
-                        local piece1=piece:gsub('^"(.*)"$','%1')
-                        args[#args+1]=piece1:find('[^\\]"') and piece or piece1
-                        piece,is_quote_string='',false
-                    end
-                else
-                    if char==quote then
-                        --begin a quote string, if its previous char is not a space, then bypass
-                        is_quote_string,piece = true,piece..quote
-                    elseif piece=='' and (char=='[' or char=='{') then
-                        local scope=(rest:sub(i)..' '):match('^%b'..char..(char=='[' and ']' or '}')..'%s')
-                        if scope then
-                            args[#args+1],scope_index,piece=scope,i+#scope,''
-                            --if enclosed with [[...]] then only get the inner content
-                            if scope:sub(1,2)=='[[' and scope:sub(-3,-2)==']]' then
-                                args[#args]=scope:sub(3,-4)..scope:sub(-1)
-                            end
-                        else
-                            piece = char
-                        end
-                    elseif not char:match("%s") then
-                        piece = piece ..char
-                    elseif piece ~= '' then
-                        args[#args+1],piece=piece,''
-                    end
-                end
-
-                if count ~= #args then
-                    count=#args
-                    local name=args[count]:upper()
-                    local is_multi_cmd=char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
-                    if count>=arg_count-2 or is_multi_cmd then--the last parameter
-                        piece=rest:sub(i+1):ltrim()
-                        local piece1=piece:gsub('^"(.*)"$','%1')
-                        if not piece1:find('[^\\]"') then piece=piece1 end
-                        if terminator and piece:find(terminator_str,1,true)==1 then
-                            piece=piece:sub(#terminator_str+1):ltrim()
-                        end
-                        if is_multi_cmd and _CMDS[name].ARGS==1 then
-                            args[count],piece=args[count]..' '..piece,''
-                        elseif piece~='' then
-                            args[count+1],piece=piece,''
-                        end
+                if i<=n then
+                    if char=='<' and terminator and rest:sub(i,i+#terminator_str-1)==terminator_str then
+                        rest=rest:sub(i+#terminator_str):trim()
+                        if piece~="" then args[#args+1]=piece end
+                        args[#args+1]=rest
+                        piece=""
                         break
+                    elseif char==quote then
+                        piece=piece..quote
+                        if (rest:sub(i+1,i+1):match("%s") or n==i) and not piece:match('".+" *%. *".+"') then
+                            local piece1=piece:gsub('^"(.*)"$','%1')
+                            args[#args+1]=piece1:find('[^\\]"') and piece or piece1
+                            piece,is_quote_string='',false
+                            just_ended,end_char,end_i=true,quote,i
+                        end
+                        i=i+1
+                    else
+                        piece=piece..char; i=i+1   --'<' that is not the terminator: ordinary char
                     end
+                end
+            else
+                if char==quote then
+                    is_quote_string,piece=true,piece..quote; i=i+1        --(C) open quote
+                elseif piece=='' and (char=='[' or char=='{') then          --(D) balanced scope
+                    local scope=(rest:sub(i)..' '):match('^%b'..char..(char=='[' and ']' or '}')..'%s')
+                    if scope then
+                        args[#args+1]=scope
+                        if scope:sub(1,2)=='[[' and scope:sub(-3,-2)==']]' then
+                            args[#args]=scope:sub(3,-4)..scope:sub(-1)
+                        end
+                        end_i=i; i=i+#scope
+                        just_ended,end_char=true,char
+                    else
+                        piece=char; i=i+1
+                    end
+                elseif not char:match("%s") then                            --(E) plain token: batch
+                    local stop
+                    if terminator then stop=rest:find('[%s"<]',i) else stop=rest:find('[%s"]',i) end
+                    if stop and stop>i then
+                        piece=piece..rest:sub(i,stop-1); i=stop
+                    elseif not stop then
+                        piece=piece..rest:sub(i); i=n+1
+                    else
+                        piece=piece..char; i=i+1                            --stray '<': ordinary char
+                    end
+                elseif piece~='' then                                       --(F) whitespace ends token
+                    args[#args+1]=piece; piece=''
+                    just_ended,end_char,end_i=true,char,i
+                    i=i+1
+                else
+                    i=i+1                                                   --(G) skip whitespace
+                end
+            end
+
+            --(H) last-parameter check, unchanged from the old loop
+            if just_ended then
+                count=#args
+                local name=args[count]:upper()
+                local is_multi_cmd=end_char~=quote and is_cross_line==true and _CMDS[name] and _CMDS[name].MULTI
+                if count>=arg_count-2 or is_multi_cmd then
+                    piece=rest:sub(end_i+1):ltrim()
+                    local piece1=piece:gsub('^"(.*)"$','%1')
+                    if not piece1:find('[^\\]"') then piece=piece1 end
+                    if terminator and piece:find(terminator_str,1,true)==1 then
+                        piece=piece:sub(#terminator_str+1):ltrim()
+                    end
+                    if is_multi_cmd and _CMDS[name].ARGS==1 then
+                        args[count],piece=args[count]..' '..piece,''
+                    elseif piece~='' then
+                        args[count+1],piece=piece,''
+                    end
+                    break
                 end
             end
         end
@@ -817,8 +859,8 @@ local function _eval_line(line,exec,is_internal,not_skip)
         print('unexpected line: ['..type(line)..']'..toString(line))
         return
     end
-    if line:gsub('%s+','')=='' then
-        if env._SUBSYSTEM and not dbcli_current_item.skip_subsystem and line:gsub('%s+','')=='' then
+    if not line:find('%S') then
+        if env._SUBSYSTEM and not dbcli_current_item.skip_subsystem and not line:find('%S') then
             line='\1'
         else
             if is_internal and multi_cmd then return env.force_end_input(exec,is_internal) end
@@ -878,10 +920,12 @@ local function _eval_line(line,exec,is_internal,not_skip)
         return multi_cmd
     end
     
-    local cmd,line_terminator
-
-    local rest,pipe_cmd,param = line:match('^%s*([^|]*)|%s*(%w+)(.*)$')
+    local cmd,line_terminator,rest,pipe_cmd,param
+    if line:find('|',1,true) then
+        rest,pipe_cmd,param=(' '..line):match('^(.-[^|]+)|%s*(%w+)([^|]*)$')
+    end
     if pipe_cmd and _CMDS[pipe_cmd:upper()] and _CMDS[pipe_cmd:upper()].ISPIPABLE==true then
+        rest=rest:ltrim()
         if not rest:find('^!') and not rest:upper():find('^HOS') and (param:ltrim():find('^[/%+%.%-]') or not param:ltrim():find('^%W')) then 
             if param~='' then param='"'..env.COMMAND_SEPS.match(param:trim('"')):trim()..'"' end
             if param:gsub('%s+','')=='""' then param='' end
@@ -1054,7 +1098,7 @@ function env.set_endmark(name,value)
     local vertical_pattern=env.VERTICAL_PATTERN
     local zero,G='\0','\\G'
     env.COMMAND_SEPS.match=function(s)
-        local s1,s2=s:sub(1,-33),s:sub(-32)
+        local s2=s:sub(-32)
         local idx,c,r,r1=0
         for i=1,1 do
             if i==2 and not idx then break end
@@ -1076,7 +1120,12 @@ function env.set_endmark(name,value)
                 end
             end
         end
-        return (s1..s2):rtrim(),r,idx
+        --When no terminator is found the tail s2 is left untouched, so s1..s2
+        --would rebuild the whole input verbatim. Return s:rtrim() directly to
+        --skip two full-string copies (sub(1,-33) + concat) on every line, which
+        --is the dominant per-line cost when a large statement is fed line by line.
+        if idx==0 then return s:rtrim(),r,idx end
+        return (s:sub(1,-33)..s2):rtrim(),r,idx
     end
     return value
 end

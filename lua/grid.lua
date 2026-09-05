@@ -95,31 +95,77 @@ function grid.cut(row, format_func, format_str, is_head)
     return row .. env.ansi.get_color('NOR')
 end
 
-local s_format = "%s%%s%s"
+--string.format pads a %Ns spec by byte count, but a grid column is sized in display
+--columns, so a cell whose bytes and columns differ has to be padded here instead.
+--The two only differ when the cell holds a byte >=0x7f or an ESC, which makes the
+--scan for those two the entire fast path.
+local function needs_pad(s)
+    return s:find("[\27\127-\255]") ~= nil
+end
+
+local fmt_spec_cache, fmt_spec_count = {}, 0
 function grid.fmt(format, ...)
-    local idx, v, lpad, rpad, pad = 0, nil
-    local args = {...}
-    local fmt = format:gsub("(%%(-?)(%d*)s)",
-        function(g, flag, siz)
+    --{arg index, pad goes after, width} for every sized %s spec, in match order,
+    --plus .fmt: the format string to actually run
+    local specs = fmt_spec_cache[format]
+    if not specs then
+        specs = {}
+        local idx, init, pos, pieces = 0, 1, 1
+        while true do
+            local s, e, _, flag, siz = format:find("(%%(-?)(%d*)s)", init)
+            if not s then break end
             idx = idx + 1
-            if siz == "" then return g end
-            v = args[idx]
-            if not v or type(v) ~= "string" then return g end
-            siz=tonumber(siz)
-            lpad, rpad, pad = "", "", ""
-            local l1,l2=tostring(v):ulen()
-            if l1~=l2 or siz>99 then
-                pad = reps(" ", siz-l2)
-                if flag ~= "-" and siz<99 then
-                    lpad = pad
-                else
-                    rpad = pad
+            if siz ~= "" then
+                siz = tonumber(siz)
+                specs[#specs + 1] = {idx, flag == "-" or siz >= 99, siz}
+                if siz > 99 then
+                    --string.format rejects a width above 99, so the padding has to
+                    --move onto the cell and the spec shrink to a bare %s. Which side
+                    --it goes on is fixed by the spec, so this needs no row data.
+                    if pieces then
+                        pieces[#pieces + 1] = format:sub(pos, s - 1)
+                    else
+                        pieces = {format:sub(1, s - 1)}
+                    end
+                    pieces[#pieces + 1] = "%s"
+                    pos = e + 1
+                elseif pieces then
+                    pieces[#pieces + 1] = format:sub(pos, e)
+                    pos = e + 1
                 end
-                return s_format:format(lpad, rpad)
+            elseif pieces then
+                pieces[#pieces + 1] = format:sub(pos, e)
+                pos = e + 1
             end
-            return g
-        end)
-    return fmt:format(...)
+            init = e + 1
+        end
+        specs.fmt = pieces and table.concat(pieces) .. format:sub(pos) or format
+        fmt_spec_count = fmt_spec_count + 1
+        --a grid builds its format strings once and reuses them for every row, so the
+        --cache normally holds a handful of entries; the cap only bounds the one-off
+        --formats that wellform computes inline
+        if fmt_spec_count > 64 then fmt_spec_cache, fmt_spec_count = {}, 1 end
+        fmt_spec_cache[format] = specs
+    end
+
+    if #specs == 0 then return specs.fmt:format(...) end
+
+    local args = {...}
+    for _, spec in ipairs(specs) do
+        local idx, pad_after, siz = spec[1], spec[2], spec[3]
+        local v = args[idx]
+        if type(v) == "string" and (siz > 99 or needs_pad(v)) then
+            local byte_len, print_len = v:ulen()
+            if byte_len ~= print_len or siz > 99 then
+                --ulen never reports more display columns than bytes, so a cell of
+                --width 99 or less is already at least siz bytes wide once padded and
+                --%Ns adds nothing on top
+                local pad = reps(" ", siz - print_len)
+                args[idx] = pad_after and v .. pad or pad .. v
+            end
+        end
+    end
+    return specs.fmt:format(table.unpack(args, 1, select('#', ...)))
 end
 
 function grid.sort(rows, cols, bypass_head)
@@ -503,12 +549,12 @@ local printables={
     ['\5']='\\5',
     ['\6']='\\6',
     ['\7']='\\7',
-    ['\8']='\\8',
+    ['\8']='\\b',
     ['\9']='    ',
     ['\10']='\10',
-    ['\11']='\\11',
-    ['\12']='\\12',
-    ['\13']='\\13',
+    ['\11']='\\v',
+    ['\12']='\\f',
+    ['\13']='',
     ['\14']='\\14',
     ['\15']='\\15',
     ['\16']='\\16',
@@ -771,17 +817,19 @@ function grid:add(row)
                         val = row_data[col_idx]
                     end
                     local size = line_count - #val
+                    --a column MAXCOLS dropped has no colsize entry, hence no separator
+                    local col_sep = colsize[col_idx] and colsize[col_idx][3]
                     for j = 1, size do
                         if header_idx == 0 then
                             local orig = val[1]
-                            if #orig > 0 and orig == colsize[col_idx][3] then
+                            if #orig > 0 and orig == col_sep then
                                 if (col_idx == 1 or row_data[col_idx - 1][size - j + 1]:trim() == '') and (type(row_data[col_idx + 1]) ~= 'table' or row_data[col_idx + 1][size - j + 1]:trim() == '') then
                                     table.insert(val, 1, '')
                                 else
-                                    table.insert(val, 1, colsize[col_idx][3] or '')
+                                    table.insert(val, 1, col_sep or '')
                                 end
                             else
-                                table.insert(val, 1, colsize[col_idx][3] or '')
+                                table.insert(val, 1, col_sep or '')
                             end
                         else
                             val[#val + 1] = ""
@@ -1057,8 +1105,10 @@ function grid:wellform(col_del, row_del)
         -- Adjust title style (center)
         local separator_format
         if v[0] == 0 then
-            -- Center align header values
-            for col, value in ipairs(v) do
+            -- Center align header values. A row keeps every column even when MAXCOLS drops
+            -- the tail, so colsize -- not the row -- is what bounds the displayed columns.
+            for col = 1, cols do
+                local value = v[col]
                 local _, plen = value:ulen()
                 local pad = colsize[col][1] - plen
                 if pad >= 2 then
@@ -1524,6 +1574,7 @@ function grid.onload()
         set(k, grid[v.name], grid.set_param, "grid", v.desc, v.range)
     end
     env.ansi.define_color("HEADCOLOR", "BRED;HIW", "ansi.grid", "Define grid title's color, type 'ansi' for more available options")
+
 end
 
 grid.finalize='N/A'

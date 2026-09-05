@@ -726,8 +726,14 @@ public final class Console {
             if ((Boolean) result[0]) {
                 if (result.length > 1 && !secondPrompt.equals(result[1])) {
                     String prompt = (String) result[1];
-                    if (prompt == null || prompt.length() != promptWidth && prompt.trim().equals("")) {
-                        prompt = String.format("%" + promptWidth + "s", " ");
+                    //The continuation indent must never collapse to zero: when the main
+                    //prompt is empty/invisible promptWidth==0, so MTL_PROMPT is "" and
+                    //String.format("%0s"," ") is also "", leaving continuation lines with
+                    //no indent -- an absorbing state, since promptWidth stays 0. Floor it
+                    //to the default second-prompt width (see secondPrompt = "    ").
+                    final int width = promptWidth > 0 ? promptWidth : 4;
+                    if (prompt == null || (prompt.length() != width && prompt.trim().equals(""))) {
+                        prompt = String.format("%" + width + "s", " ");
                     }
                     if (!prompt.equals(secondPrompt)) {
                         secondPrompt = prompt;
@@ -779,11 +785,11 @@ public final class Console {
         private final AttributedStringBuilder process(final String buffer, final int index) {
             char c;
             boolean found;
-            if (!enabled) asb.append(buffer);
+            if (!enabled) asb.append(index > 0 ? buffer.substring(index) : buffer);
             else {
                 final int n = buffer.length();
                 if (n > 2048) {
-                    asb.append(buffer);
+                    asb.append(index > 0 ? buffer.substring(index) : buffer);
                     return asb;
                 }
                 for (int i = index; i < n; i++) {
