@@ -1222,7 +1222,13 @@ function env.onload(...)
             env.jit.util=require("jit.util")
             err,env.buffer=pcall(require,"string.buffer")
             if not err then env.buffer=nil end
-            env.jit.opt.start(3,"maxsnap=4096","maxmcode=1024")
+            env.jit.opt.start(
+                "maxtrace=10000",   
+                "maxrecord=8000",   
+                "hotloop=5",       
+                "maxside=200",     
+                "maxsnap=1000"
+            )
             clear=table.clear
         elseif v=='ffi' then
             env.ffi=require("ffi")
@@ -1234,6 +1240,33 @@ function env.onload(...)
     if not init then error(err) end
     env.init=init()
     env.init.init_path(env)
+
+    --Windows: conhost grants one command-history buffer per attached process, capped by
+    --NumberOfHistoryBuffers (default 4). dbcli's own process chain consumes most of them,
+    --so a handed-over child (HOST '!cmd', subsystem '-n') attaches with no free buffer and
+    --its UP/DOWN/F7 history recall silently fails. Raise the cap once at startup, before any
+    --child is spawned, so every child inherits a usable buffer (child-side setting is too late).
+    if env.IS_WINDOWS and env.ffi then --and tostring(terminal):find('^WinSysTerminal')
+        pcall(function()
+            local ffi=env.ffi
+            ffi.cdef[[
+            typedef struct { unsigned int cbSize; unsigned int HistoryBufferSize; unsigned int NumberOfHistoryBuffers; unsigned int dwFlags; } CONSOLE_HISTORY_INFO;
+            int GetConsoleHistoryInfo(CONSOLE_HISTORY_INFO*);
+            int SetConsoleHistoryInfo(const CONSOLE_HISTORY_INFO*);
+            ]]
+            local hi=ffi.new("CONSOLE_HISTORY_INFO")
+            hi.cbSize=ffi.sizeof("CONSOLE_HISTORY_INFO")
+            --Windows Terminal runs the app on a ConPTY pseudoconsole whose GetConsoleHistoryInfo
+            --returns a non-zero dwFlags; SetConsoleHistoryInfo rejects any non-zero dwFlags with
+            --ERROR_INVALID_PARAMETER(87), so the cap raise silently fails there (conhost returns
+            --dwFlags=0 and succeeds). Zero it before Set so the raise takes effect in both hosts.
+            if ffi.C.GetConsoleHistoryInfo(hi)~=0 and hi.NumberOfHistoryBuffers<32 then
+                hi.dwFlags=0
+                hi.NumberOfHistoryBuffers=32
+                ffi.C.SetConsoleHistoryInfo(hi)
+            end
+        end)
+    end
    
     os.setlocale('',"all")
     env.set_command(nil,"EXIT","#Exit environment, including variables, modules, etc",env.exit,false,1)

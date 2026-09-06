@@ -99,6 +99,7 @@ end
 local tns_admin_param=('TNS_ADMIN=([^&]+)'):case_insensitive_pattern()
 --local resolver=java.require("org.dbcli.OracleEZConnectResolver")
 function oracle:connect(conn_str)
+    env.checkhelp(conn_str)
     local args,usr,pwd,conn_desc,url,isdba,server,server_sep,proxy_user,params,_
     local sqlplustr
     local driver=env.set.get('driver')

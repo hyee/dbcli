@@ -76,6 +76,7 @@ public final class Console {
     public Timer timer = new Timer(this);
     private Size prevSize = null;
     private Attributes originalAttributes = null;
+    private Attributes savedAttributes = null;
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -580,17 +581,13 @@ public final class Console {
                 status.suspend();
             }
             terminal.pause();
-            //Restore the original cooked terminal mode so a native child (e.g. sqlplus) gets standard line editing and command history.
-            if (terminal instanceof WinSysTerminal) {
-                ((WinSysTerminal) terminal).restoreConsoleMode();
-            } else {
-                terminal.setAttributes(originalAttributes);
-            }
+
         } else {
             if (isBroken()) {
                 System.exit(0);
                 return;
             }
+
             terminal.resume();
             terminal.echo(false);
             if (status != null) {
@@ -726,15 +723,6 @@ public final class Console {
             if ((Boolean) result[0]) {
                 if (result.length > 1 && !secondPrompt.equals(result[1])) {
                     String prompt = (String) result[1];
-                    //The continuation indent must never collapse to zero: when the main
-                    //prompt is empty/invisible promptWidth==0, so MTL_PROMPT is "" and
-                    //String.format("%0s"," ") is also "", leaving continuation lines with
-                    //no indent -- an absorbing state, since promptWidth stays 0. Floor it
-                    //to the default second-prompt width (see secondPrompt = "    ").
-                    final int width = promptWidth > 0 ? promptWidth : 4;
-                    if (prompt == null || (prompt.length() != width && prompt.trim().equals(""))) {
-                        prompt = String.format("%" + width + "s", " ");
-                    }
                     if (!prompt.equals(secondPrompt)) {
                         secondPrompt = prompt;
                         reader.setVariable(SECONDARY_PROMPT_PATTERN, secondPrompt);

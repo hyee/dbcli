@@ -126,62 +126,159 @@ local other_spaces={
     '\xe3\x80\x80',   --0x3000
     '\xef\xbb\xbf',   --0xfeff
 }
-local ext_spaces={}
-local function exp_pattern(sep)
-    local ary
-    if sep then
-        if not ext_spaces[sep] then
-            ext_spaces[sep]={}
-            for i=1,#sep do ext_spaces[sep][byte(sep,i)]=true end
-        end
-        ary=ext_spaces[sep]
+--byte classes for the trim scans, indexed byte+1 so a lookup stays on the array
+--part: 0 not a space, 1 one of the seven ASCII spaces, 2/3 lead of a 2/3-byte
+--space from other_spaces, 4 a continuation byte of one. mb2/mb3 pack a sequence
+--into one number, so confirming a lead really starts a space is one lookup
+local spaces,mb2,mb3={},{},{}
+for i=1,256 do spaces[i]=0 end
+--the seven ASCII spaces, not p<=32: that also eats the C0 controls, so a leading
+--ESC would strip the escape off an ANSI colour sequence
+for _,b in ipairs{0,9,10,11,12,13,32} do spaces[b+1]=1 end
+for i=1,#other_spaces do
+    local s,n=other_spaces[i],#other_spaces[i]
+    local b1,b2=byte(s,1),byte(s,2)
+    spaces[b1+1]=(n==2) and 2 or 3
+    if n==2 then mb2[b1*256+b2]=true
+    else mb3[(b1*256+b2)*256+byte(s,3)]=true end
+    for j=2,n do
+        local b=byte(s,j)+1
+        if spaces[b]==0 then spaces[b]=4 end
     end
-    return ary
 end
 
-local function rtrim(s,sep)
-    local ary,f=exp_pattern(sep)
-    if type(s)=='string' then
-        local len=#s
-        for i=len,1,-1 do
-            local p=byte(s,i)
-            if f then
-                f=nil
-            elseif p==160 and (byte(s,i-1)==194 or byte(s,i-1)==163) then
-                f=true
-            elseif p>32 and not (ary and ary[p]) then
-                return i==len and s or sub(s,1,i)
-            elseif i==1 then
-                return ''
-            end
-        end
+local ext_spaces,ext_count={},0
+--sep is a set of single bytes, so a multi-byte sep trims each of its bytes on its
+--own rather than the sequence they spell
+local function exp_pattern(sep)
+    local sp=ext_spaces[sep]
+    if not sp then
+        sp={}
+        for i=1,#sep do sp[byte(sep,i)]=true end
+        if ext_count>64 then ext_spaces,ext_count={},0 end
+        ext_count=ext_count+1
+        ext_spaces[sep]=sp
     end
-    return s
+    return sp
+end
+
+--length of the space starting at i, 0 when p is not a space lead
+local function fwlen(s,i,p)
+    local n=spaces[p+1]
+    if n==2 then
+        local q=byte(s,i+1)
+        if q and mb2[p*256+q] then return 2 end
+    elseif n==3 then
+        local q,r=byte(s,i+1),byte(s,i+2)
+        if r and mb3[(p*256+q)*256+r] then return 3 end
+    end
+    return 0
+end
+
+--length of the space ending at i, 0 when p is not its last byte. A backward scan
+--lands on the continuation bytes, so walk back to the lead and require it to end
+--exactly on i, which is also what rejects a lead byte standing on its own
+local function bwlen(s,i,p)
+    if spaces[p+1]~=4 then return 0 end
+    local j=i
+    while spaces[byte(s,j)+1]==4 do
+        j=j-1
+        if j<1 then return 0 end
+    end
+    local q=byte(s,j)
+    local d=spaces[q+1]
+    if j+d-1~=i then return 0 end
+    if d==2 then
+        if mb2[q*256+p] then return 2 end
+    elseif mb3[(q*256+byte(s,j+1))*256+p] then return 3 end
+    return 0
+end
+
+--the scans are inlined into all three entry points instead of shared: the call
+--costs 5ns, a sixth of a trim on a grid cell. Only the multi-byte branch is
+--factored out, and 90% of calls never leave ASCII so it stays cold
+local function rtrim(s,sep)
+    if type(s)~='string' then return s end
+    local sp=sep and exp_pattern(sep)
+    local len=#s
+    local i=len
+    while i>=1 do
+        local p=byte(s,i)
+        local n=1
+        if p==32 then --the pad byte, settled without touching spaces
+        elseif p>32 then
+            if p>=128 then
+                local m=bwlen(s,i,p)
+                if m>0 then n=m
+                elseif not (sp and sp[p]) then break end
+            elseif not (sp and sp[p]) then break end
+        elseif spaces[p+1]~=1 and not (sp and sp[p]) then break end
+        i=i-n
+    end
+    if i==len then return s end
+    return i<1 and '' or sub(s,1,i)
 end
 
 local function ltrim(s,sep)
-    local ary,f=exp_pattern(sep)
-    if type(s)=='string' then
-        local len=#s
-        for i=1,len do
-            local p=s:byte(i)
-            if f then
-                f=nil
-            elseif (p==194 or p==163) and byte(s,i+1)==160 then
-                f=true
-            elseif p>32 and not (ary and ary[p]) then
-                return i==1 and s or sub(s,i)
-            elseif i==len then
-                return ''
-            end
-        end
+    if type(s)~='string' then return s end
+    local sp=sep and exp_pattern(sep)
+    local len=#s
+    local i=1
+    while i<=len do
+        local p=byte(s,i)
+        local n=1
+        if p==32 then --the pad byte, settled without touching spaces
+        elseif p>32 then
+            if p>=128 then
+                local m=fwlen(s,i,p)
+                if m>0 then n=m
+                elseif not (sp and sp[p]) then break end
+            elseif not (sp and sp[p]) then break end
+        elseif spaces[p+1]~=1 and not (sp and sp[p]) then break end
+        i=i+n
     end
-    return s
+    if i==1 then return s end
+    return i>len and '' or sub(s,i)
 end
 
 string.ltrim,string.rtrim=ltrim,rtrim
+--one pass over both ends and one sub; rtrim(ltrim(s,sep),sep) scans and copies
+--twice, which is the whole cost on a long value
 function string.trim(s,sep)
-    return rtrim(ltrim(s,sep),sep)
+    if type(s)~='string' then return s end
+    local sp=sep and exp_pattern(sep)
+    local len=#s
+    local i=1
+    while i<=len do
+        local p=byte(s,i)
+        local n=1
+        if p==32 then --the pad byte, settled without touching spaces
+        elseif p>32 then
+            if p>=128 then
+                local m=fwlen(s,i,p)
+                if m>0 then n=m
+                elseif not (sp and sp[p]) then break end
+            elseif not (sp and sp[p]) then break end
+        elseif spaces[p+1]~=1 and not (sp and sp[p]) then break end
+        i=i+n
+    end
+    if i>len then return '' end
+    local j=len
+    while j>=i do
+        local p=byte(s,j)
+        local n=1
+        if p==32 then --the pad byte, settled without touching spaces
+        elseif p>32 then
+            if p>=128 then
+                local m=bwlen(s,j,p)
+                if m>0 then n=m
+                elseif not (sp and sp[p]) then break end
+            elseif not (sp and sp[p]) then break end
+        elseif spaces[p+1]~=1 and not (sp and sp[p]) then break end
+        j=j-n
+    end
+    if i==1 and j==len then return s end
+    return sub(s,i,j)
 end
 
 
