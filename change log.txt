@@ -1,3 +1,6 @@
+2026-09-06: * public: update lib `luv` to v1.52-1. 
+                      It should be the last version for this project newer version cannot support centos 6 and win7.
+                      the source code is backup as `./src/luv.zip`
 2026-09-05: * public: update lib `LuaJIT-2.1` 
             * public: support Java 26
 2026-05-29: + public: new command "ping" 
