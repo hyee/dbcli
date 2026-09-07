@@ -394,10 +394,6 @@ function ansi.strip_ansi(str,func)
     return _strip_ansi(str,func)
 end
 
-function ansi.strip_len(str,siz)
-    local len1,len2= ansi.strip_ansi(str):ulen(siz)
-    return len2
-end
 
 local function cv(all,code)
     return ansi.mask(code,nil,true) or all
@@ -408,7 +404,6 @@ function ansi.convert_ansi(str)
 end
 
 string.strip_ansi=ansi.strip_ansi
-string.strip_len=ansi.strip_len
 string.convert_ansi=ansi.convert_ansi
 
 

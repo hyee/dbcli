@@ -175,6 +175,10 @@ BEGIN
         $END
     ELSE
         $IF dbms_db_version.version>18 $THEN
+            BEGIN
+                EXECUTE IMMEDIATE 'BEGIN DBMS_WORKLOAD_REPOSITORY.MODIFY_AWREXP_SETTINGS(INCLUDE_SQLMON_OPTION => ''ALL_EXP_IN_CURRENT_SESSION'');END;';
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
             sys.dbms_workload_repository.awr_imp(dmpfile => file, dmpdir => dir, new_dbid => did);
         $ELSE
             BEGIN

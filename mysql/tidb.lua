@@ -105,7 +105,7 @@ function tidb:build_json(plan)
             if lname=='id' then
                 spaces,id=col:rtrim():match('^(.-)(%w%w%w.*)')
                 if spaces then
-                    local _,len=spaces:ulen()
+                    local _,len=spaces:ansi_cut()
                     depth=len/2+2
                     if spaces=='' and i>2 then
                         is_cte=id:rtrim():find('^CTE%_%d+$') and true or false
@@ -266,7 +266,7 @@ function tidb:parse_plan(plan)
             for j,n in ipairs(header) do
                 if i==2 then rows[1][j]=n.name end
                 if j==1 then
-                    bytes,chars=line:match('^.- %d+'):ulen()
+                    bytes,chars=line:match('^.- %d+'):ansi_cut()
                     bytes=bytes-chars
                     row[j]=line:sub(n.start,n.stop+bytes)
                 else

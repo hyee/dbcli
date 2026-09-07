@@ -581,13 +581,26 @@ public final class Console {
                 status.suspend();
             }
             terminal.pause();
-
+            //Save the current console mode before restoring to original mode for native child
+            if (terminal instanceof WinSysTerminal) {
+               ((WinSysTerminal) terminal).saveConsoleMode();
+               ((WinSysTerminal) terminal).restoreOrgConsoleMode();
+            } else {
+                savedAttributes=terminal.getAttributes();
+                terminal.setAttributes(originalAttributes);
+            }
         } else {
             if (isBroken()) {
                 System.exit(0);
                 return;
             }
-
+            if (savedAttributes != null) {
+                terminal.setAttributes(savedAttributes);
+            }
+            //Restore the console mode that was active before pause
+            if (terminal instanceof WinSysTerminal) {
+               ((WinSysTerminal) terminal).resumeConsoleMode();
+            }
             terminal.resume();
             terminal.echo(false);
             if (status != null) {

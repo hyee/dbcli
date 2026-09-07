@@ -37,7 +37,7 @@ return [[
         $IF DBMS_DB_VERSION.VERSION > 10 $THEN
         OPEN cur for 
         WITH args AS(
-            SELECT /*+opt_param('container_data' 'all') opt_param('parallel_execution_enabled', 'false')*/ -- ADB-- ORA-00600: internal error code, arguments: [evaopn2.h:kaf_qeeCol]
+            SELECT /*+materialize opt_param('container_data' 'all') opt_param('parallel_execution_enabled', 'false')*/ -- ADB-- ORA-00600: internal error code, arguments: [evaopn2.h:kaf_qeeCol]
                    overload,
                    SEQUENCE*1e8 s,
                    DATA_LEVEL l,
@@ -133,8 +133,12 @@ return [[
                     s.attr_type_name,
                     s.coll_type,
                     r.lv + 1 lv
-            FROM   plsql r,
-                   LATERAL(
+            FROM   plsql r
+            $IF DBMS_DB_VERSION.VERSION > 11 $THEN
+                   CROSS APPLY(
+            $ELSE  
+                   ,LATERAL(
+            $END
                        SELECT /*+OUTLINE_LEAF leading(t s) use_nl(t s) push_pred(t) push_pred(s)*/ 
                               s.*,t.coll_type||NULLIF('('||t.upper_bound||t.index_by||')','()') coll_type
                        FROM   all_plsql_coll_types t, all_plsql_type_attrs s

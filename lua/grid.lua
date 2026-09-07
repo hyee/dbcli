@@ -6,7 +6,7 @@ local grid = class()
 local console = console
 local getWidth = console.getBufferWidth
 local getScreenWidth=console.getScreenWidth
-local reps=string.rep
+local reps,ansi_cut,wcwidth=string.rep,string.ansi_cut,string.wcwidth
 local params = {
     [{'HEADSEP', 'HEADDEL'}] = {name = "title_del", default = '-', desc = "The delimiter to devide header and body when printing a grid"},
     [{'COLSEP', 'COLDEL'}] = {name = "col_del", default = ' ', desc = "The delimiter to split the fields when printing a grid"},
@@ -74,7 +74,7 @@ function grid.cut(row, format_func, format_str, is_head)
         if cs then
             if colbase ~= 'auto' and colbase ~= 'trim' then
                 for i, _ in ipairs(cs) do
-                    byte_len,print_len,row[i] = tostring(row[i]):ulen(cs[i][1])
+                    byte_len,print_len,row[i] = ansi_cut(tostring(row[i]),cs[i][1])
                 end
             end
             if is_head then
@@ -90,17 +90,9 @@ function grid.cut(row, format_func, format_str, is_head)
     end
     print_len = type(format_func) == "number" and format_func or effective_linesize()
     if print_len > 0 and #row > print_len then
-        byte_len,print_len,row=row:ulen(print_len)
+        byte_len,print_len,row=ansi_cut(row,print_len)
     end
     return row .. env.ansi.get_color('NOR')
-end
-
---string.format pads a %Ns spec by byte count, but a grid column is sized in display
---columns, so a cell whose bytes and columns differ has to be padded here instead.
---The two only differ when the cell holds a byte >=0x7f or an ESC, which makes the
---scan for those two the entire fast path.
-local function needs_pad(s)
-    return s:find("[\27\127-\255]") ~= nil
 end
 
 local fmt_spec_cache, fmt_spec_count = {}, 0
@@ -154,12 +146,14 @@ function grid.fmt(format, ...)
     for _, spec in ipairs(specs) do
         local idx, pad_after, siz = spec[1], spec[2], spec[3]
         local v = args[idx]
-        if type(v) == "string" and (siz > 99 or needs_pad(v)) then
-            local byte_len, print_len = v:ulen()
+        if type(v) == "string" then
+            --string.format pads a %Ns spec by byte count, but a grid column is sized in
+            --display columns, so a cell whose bytes and columns differ is padded here
+            --instead. wcwidth reports at most as many columns as bytes for everything but
+            --TAB, so the padded cell is already at least siz bytes wide and %Ns adds
+            --nothing on top; grid:add maps every C0 control, TAB included, before storing.
+            local print_len,byte_len = wcwidth(v)
             if byte_len ~= print_len or siz > 99 then
-                --ulen never reports more display columns than bytes, so a cell of
-                --width 99 or less is already at least siz bytes wide once padded and
-                --%Ns adds nothing on top
                 local pad = reps(" ", siz - print_len)
                 args[idx] = pad_after and v .. pad or pad .. v
             end
@@ -267,13 +261,13 @@ function grid.line_wrap(text,width)
             end
             return e,0
         end
-        if b1<0x80 then return b+1,1 end            -- ASCII: width always 1, skip ulen
+        if b1<0x80 then return b+1,1 end            -- ASCII: width always 1, skip wcwidth
         local n=b1<0xE0 and 2 or (b1<0xF0 and 3 or 4)
         for i=b+1,b+n-1 do                          -- validate UTF-8 continuation bytes
             local bi=text:byte(i)
             if not (bi and bi>=0x80 and bi<0xC0) then n=1 break end
         end
-        local _,pw=text:sub(b,b+n-1):ulen()         -- non-ASCII: need real display width
+        local pw=wcwidth(text:sub(b,b+n-1))         -- non-ASCII: need real display width
         return b+n,pw
     end
 
@@ -309,7 +303,7 @@ function grid.line_wrap(text,width)
         end
         local line=text:sub(pos,npos-1)
         lines[#lines+1]=line
-        local l1,l2=line:ulen()
+        local l2,l1=wcwidth(line)
         if usize<l1 then usize=l1 end
         if csize<l2 then csize=l2 end
         pos=npos
@@ -358,7 +352,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
     local function get_value(title, row_idx, col_idx)
         if not colinfo[col_idx] then colinfo[col_idx] = {column_name = title} end
         _, value = grid.format_column(true, type(title) == "table" and title or colinfo[col_idx], tonumber(rows[row_idx][col_idx]) or rows[row_idx][col_idx], row_idx - 1)
-        byte_len, print_len, new_val = tostring(value or null_val):trim():ulen(max_col_size)
+        byte_len, print_len, new_val = ansi_cut(tostring(value or null_val):trim(),max_col_size)
         if wrap_width > 0 and print_len > wrap_width and not new_val:sub(1, 1024):find('\n', 1, true) then
             value, byte_len, print_len = grid.line_wrap(new_val, wrap_width)
             new_val = table.concat(value, '\n')
@@ -370,7 +364,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
     -- Build column keys and calculate max length
     for k, v in ipairs(title) do
         keys[v] = k
-        byte_len, print_len, new_val = v:ulen(max_col_size)
+        byte_len, print_len, new_val = ansi_cut(v,max_col_size)
         max_len = max_len < print_len and print_len or max_len
         if vert_count then
             for i = 1, math.min(30, vert_count - 1) do
@@ -393,7 +387,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
         local size
         local titles = {}
         for k, t in ipairs(title) do
-            byte_len, print_len, new_val = grid.format_title(t):rtrim():ulen(max_col_size)
+            byte_len, print_len, new_val = ansi_cut(grid.format_title(t):rtrim(),max_col_size)
             titles[k] = ("%s %-" .. (max_len + byte_len - print_len) .. "s%s %s"):format(hor, new_val, nor, '=')
         end
         local seq_size = #tostring(vert_count) + 3
@@ -437,7 +431,7 @@ function grid.show_pivot(rows, col_del, pivotsort)
     local head_col = pivot_sort == 'head' and tostring(title[1]):lower() or (pivot_sort ~= 'on' and pivot_sort ~= 'off') and pivot_sort or nil
     local _, value
     for k, v in ipairs(title) do
-        byte_len, print_len, new_val = v:ulen(max_col_size)
+        byte_len, print_len, new_val = ansi_cut(v,max_col_size)
         local row = {("%s%-" .. (max_len + byte_len - print_len) .. "s %s%s"):format(hor, grid.format_title(new_val) .. (v:lower() == head_col and ' =>' or ''), nor, sep)}
 
         for i = 2, pivot, 1 do
@@ -655,7 +649,7 @@ function grid:add(row)
         elseif is_number and header_idx > 0 then
             byte_len, col_width = 0, strip_len(tostring(val))
             if col_width > 0 then
-                byte_len, col_width = tostring(val):ulen()
+                col_width,byte_len = wcwidth(tostring(val))
             else
                 val = ''
             end
@@ -672,11 +666,12 @@ function grid:add(row)
             local line_parts = empty
             val = val:convert_ansi()
             -- Handle header row
+            val = val:gsub('[%z\1-\31]', printables)
             if header_idx == 0 then
                 val, byte_len = val:gsub('[\n\r]+', ''):gsub("([^|]+)%c*|%c*([^|]+)", function(a, b)
                         local len1, len2, len3, len4
-                        len1, len2, a = a:ulen(math.min(99, max_col_size))
-                        len3, len4, b = b:ulen(math.min(99, max_col_size))
+                        len1, len2, a = ansi_cut(a,math.min(99, max_col_size))
+                        len3, len4, b = ansi_cut(b,math.min(99, max_col_size))
                         local max_len = math.max(len2, len4)
                         unicode_size = math.max(len1, len3)
                         col_width = max_len
@@ -699,9 +694,8 @@ function grid:add(row)
             else
                 val = val:sub(1, 1048576 * 4):rtrim()
                 for part in val:gsplit(split_pattern) do
-                    part = part:gsub('%c', printables)
                     -- Deal with unicode chars
-                    byte_len, print_len, part = part:ulen(max_col_size)
+                    byte_len, print_len, part = ansi_cut(part,max_col_size)
                     line_parts[#line_parts + 1] = part
                     unicode_size = unicode_size < byte_len and byte_len or unicode_size
                     if print_len == 0 and part ~= '' then print_len = 1 end
@@ -744,7 +738,7 @@ function grid:add(row)
             if line_count < #line_parts then line_count = #line_parts end
             -- Consolidate line parts
             if not line_parts[1] then
-                unicode_size, col_width, val = val:ulen(math.min(max_col_size, header_idx == 0 and 99 or max_col_size))
+                unicode_size, col_width, val = ansi_cut(val,math.min(max_col_size, header_idx == 0 and 99 or max_col_size))
             elseif #line_parts > 1 then
                 val, empty = line_parts, {}
             else
@@ -1109,7 +1103,7 @@ function grid:wellform(col_del, row_del)
             -- the tail, so colsize -- not the row -- is what bounds the displayed columns.
             for col = 1, cols do
                 local value = v[col]
-                local _, plen = value:ulen()
+                local plen = wcwidth(value)
                 local pad = colsize[col][1] - plen
                 if pad >= 2 then
                     if colsize[col][1] <= 40 or pad == 2 then
@@ -1275,7 +1269,7 @@ end
 function grid.merge(tabs, is_print, prefix, suffix)
     -- Helper function to get string display width
     local function strip(str)
-        local byte_len, print_len = str:ulen()
+        local print_len = wcwidth(str)
         return print_len
     end
     local footer_pat = env.ansi.mask('UDL', '(.-)', 'NOR'):gsub('%[', '%%[')

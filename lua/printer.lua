@@ -100,6 +100,7 @@ local function flush_buff(text,lines)
     buff[#buff+1]=strip_ansi(text):rtrim()
 end
 
+local ansi_cut=string.ansi_cut
 function printer.print(...)
     local output,found,ignore,column,columns={}
     local n=0
@@ -166,7 +167,7 @@ function printer.print(...)
         end
         if keep then
             if column then
-                _,_,columns[#columns+1]=s:ulen(column)
+                _,_,columns[#columns+1]=ansi_cut(s,column)
                 columns[#columns+1]=sep
             end
             if #s>32768 then s=s:sub(1,32768) end

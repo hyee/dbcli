@@ -291,7 +291,7 @@ function var.print(name,desc)
             env.checkerr(obj,'Target variable[%s] does not exist!',name)
             desc = desc or var.desc[name]
             if type(obj)=='userdata' and tostring(obj):find('ResultSet') then
-                local byte_len=(desc or ''):ulen()
+                local byte_len=#(desc or ''):strip_ansi()
                 var.inputs[name]=db.resultset:print(obj,db.conn, 
                     desc and (desc..':\n'..string.rep('=',byte_len+1)),
                     verticals)
@@ -711,7 +711,7 @@ function var.define_column(col,...)
             else
                 local siz=0
                 for _,c in ipairs((obj.heading or col):strip_ansi():split(' *| *')) do
-                    local len=c:ulen()
+                    local len=#c
                     siz=siz<len and len or siz
                 end
                 obj.format_dir='%'..dir..siz..'s'

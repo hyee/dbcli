@@ -1,5 +1,5 @@
 /*[[
-    List files in Cloud Object Storage or Oracle directory. Usage: $$NAME {<directory>|{[<credential>] <URL>}} [<keyword>|-f"<filter>"] 
+    List files in Cloud Object Storage or Oracle directory. Usage: @@NAME {<directory>|{[<credential>] <URL>}} [<keyword>|-f"<filter>"] 
     <credential>: Optional if the default credential is defined via 'set credential'
     <URL>       : The Object Storage directory URL. can be '/<sub_files>' if the default URL is defined via 'set bucket'
     <directory> : Shoule be found in view all_directories
@@ -107,13 +107,14 @@ DECLARE
     FUNCTION assert_url(url VARCHAR2) RETURN VARCHAR2 IS
         d VARCHAR2(1000) := url;
     BEGIN
-        IF instr(d, '/') > 0 AND instr(d,'https://')=0 THEN
+        IF instr(d, '/') > 0 AND instr(d,'://')=0 THEN
             IF :objbucket IS NULL THEN
                 raise_application_error(-20001, 'Please define the default bucket by "set bucket" when the URL is a relative path.');
             END IF;
             d := trim(trailing '/' from :objbucket)||'/'|| trim(leading '/'  from d);
         END IF;
-        IF instr(nvl(d, 'x'), 'http') != 1 THEN
+
+        IF instr(nvl(d, 'x'), 'http') != 1 and instr(nvl(d, 'x'), 's3://') != 1 THEN
             raise_application_error(-20001, 'Invalid Object Storage URL: ' || d);
         END IF;
         RETURN d;
@@ -523,7 +524,7 @@ BEGIN
         END IF;
 
         IF is_url1 OR is_url2 THEN
-            stmt := replace(replace(replace(q'~
+            stmt := replace(replace(q'~
                 DECLARE
                     t1 SYS.ODCIVARCHAR2LIST:=:t1;
                 BEGIN
@@ -531,7 +532,6 @@ BEGIN
                         dbms_cloud.$OP2$_object(:credential,trim('/' from :target)||CASE WHEN t1(i) IS NOT NULL THEN '/'||t1(i) END,trim('/' from :dest)$OP3$);
                     END LOOP;
                 END;~',
-                --'$OP1$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'download' ELSE 'upload' END),
                 '$OP2$',CASE is_url1 WHEN is_url2 THEN op WHEN true THEN 'get'      ELSE 'put'    END),
                 '$OP3$',CASE WHEN is_url1!=is_url2 THEN ',file_name=>t1(i)' 
                              WHEN regexp_like(CASE WHEN is_url1 THEN dest   ELSE target END,'\.\w+$') THEN '' 

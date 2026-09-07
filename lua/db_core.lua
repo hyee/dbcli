@@ -957,6 +957,7 @@ function db_core:exec(sql,args,prep_params,src_sql,print_result)
     local is_output,index,typename=1,2,3
     local cleans={}
     local function process_result(rs,is_print)
+        if not rs then return end
         __source[rs]=sql
         if print_result==true and is_print~=false then
             cleans[#cleans+1]=rs

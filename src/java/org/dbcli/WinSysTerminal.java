@@ -243,6 +243,33 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         Kernel32.SetConsoleMode(console, mode);
     }
 
+    //Restore the exact console mode captured at startup, so a native child given the real console (e.g. sqlplus) gets cooked line-input and command history.
+    public void restoreOrgConsoleMode() {
+        setConsoleMode(inConsole, originalInConsoleMode);
+        //Also clear VT processing on output: Windows 11 enables it by default, and sqlplus 21c
+        //switches to its own VT line editor on a VT console, losing conhost's cooked up/down
+        //command history and F7. Handing over a plain cooked console keeps them working.
+        setConsoleMode(outConsole, originalOutConsoleMode & ~AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    }
+
+    //Save the current console mode before pausing, so we can restore it when resuming
+    private int savedConsoleMode = -1;
+    private int savedOutConsoleMode = -1;
+
+    public void saveConsoleMode() {
+        savedConsoleMode = getConsoleMode(inConsole);
+        savedOutConsoleMode = getConsoleMode(outConsole);
+    }
+
+    public void resumeConsoleMode() {
+        if (savedConsoleMode >= 0) {
+            setConsoleMode(inConsole, savedConsoleMode);
+        }
+        if (savedOutConsoleMode >= 0) {
+            setConsoleMode(outConsole, savedOutConsoleMode);
+        }
+    }
+
     final Size size = new Size();
     final CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
 
