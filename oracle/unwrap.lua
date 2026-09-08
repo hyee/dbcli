@@ -127,6 +127,7 @@ end
 
 
 local function to_pct(a,b,c,quote)
+    if a==nil or b==nil then return '' end
     if b==0 then
         if c and c>0 then 
             b=c
@@ -147,6 +148,7 @@ end
 
 local function split_text(text)
     local width=console:getScreenWidth()-50
+    if type(width)~='number' or width<=0 then width=100 end
     local len,result,pos,pos1,c,p=#text,{},1
     local pt="[|),%] =]"
     while true do
@@ -1575,7 +1577,7 @@ function unwrap.analyze_sqlmon(text,file,seq)
         local io_idx={disk_reads,disk_writes}
         local max_io,max_io_idx,io_cnt=0,0,0
         local function num(val)
-            return type(val)=='string' and tonumber(val:strip_ansi()) or val or 0
+            return type(val)=='string' and (tonumber(val:strip_ansi()) or 0) or val or 0
         end
         local threshold_idx={}
         local event_idx=statset.seqs.top_event
@@ -1622,14 +1624,16 @@ function unwrap.analyze_sqlmon(text,file,seq)
 
             local ela=stat[sqlstat.timer_start]
             if type(ela)=='string' then ela=tonumber(ela:strip_ansi()) end
-            for j=sqlstat.timer_start+1,sqlstat.timer_end do
-                if stat[j] then
-                    local st,ed
-                    if type(stat[j])=='string' then
-                        stat[j],st,ed=stat[j]:from_ansi()
+            if type(ela)=='number' and ela>0 then
+                for j=sqlstat.timer_start+1,sqlstat.timer_end do
+                    if stat[j] then
+                        local st,ed
+                        if type(stat[j])=='string' then
+                            stat[j],st,ed=stat[j]:from_ansi()
+                        end
+                        local pct=math.round(stat[j]/ela,3)
+                        stat[j]=pct>0 and string.to_ansi(pct,st,ed) or nil
                     end
-                    local pct=math.round(stat[j]/ela,3)
-                    stat[j]=pct>0 and string.to_ansi(pct,st,ed) or nil
                 end
             end
 

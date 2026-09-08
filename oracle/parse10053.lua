@@ -524,6 +524,10 @@ local function extract_qb()
                     root.qbs[root.current_qb].sql={}
                 end
                 table.insert(root.qbs[root.current_qb].sql,lineno+1)
+            --collect the statement-level complete query (e.g. the VPD/security-rewritten text) for 'sql'
+            elseif line:find('****** UNPARSED QUERY IS ******',1,true) and (line:find('^Stmt') or line:find('^Final query')) then
+                root.stmt_sql=root.stmt_sql or {}
+                table.insert(root.stmt_sql,lineno+1)
             end
             return false
         end,
@@ -1142,8 +1146,12 @@ local function extract_jo()
                 self:add(2,lineno)
                 self:add(2,lineno+1)
                 local best=line:match('%S+$')
-                self.curr_jo.tlines[self.curr_tab_index].method=best
-                self.is_best=2
+                --the current table may not be tracked if 'Now joining' did not match this join order's table list
+                local tb=self.curr_tab_index and self.curr_jo.tlines[self.curr_tab_index]
+                if tb then
+                    tb.method=best
+                    self.is_best=2
+                end
             elseif self.is_best==2 then
                 if line:find('^ +') then
                     local cost,card=line:match('[cC]ost: *([%.%d]+).-[cC]ard: *([%.%d]+)')
@@ -1602,7 +1610,18 @@ local function extract_sql()
                     text=table.concat(text,'\n')
                     print(text)
                     print('\n'.. string.rep('=',30)..'\nSource SQL ID: '..root.sql_id)
-                    print('\nResult saved to '..env.write_cache(root.prefix..'.sql',text))
+                    local saved={text}
+                    local seen={}
+                    for i,lineno in ipairs(root.stmt_sql or {}) do
+                        local stmt=root.line(lineno)
+                        if stmt and stmt~='' and not seen[stmt] then
+                            seen[stmt]=true
+                            print('\n'..string.rep('=',30)..'\nComplete statement parsed by the optimizer (Line# '..lineno..'):')
+                            print(stmt)
+                            saved[#saved+1]=stmt
+                        end
+                    end
+                    print('\nResult saved to '..env.write_cache(root.prefix..'.sql',table.concat(saved,'\n\n'..string.rep('=',30)..'\n')))
                 else
                     local q=root.qbs[qb:upper()]
                     env.checkerr(q and q.sql,"Cannot find unparsed SQL text for query block: "..qb)
@@ -1916,20 +1935,25 @@ end
 local filelist={}
 
 function parser:check_file(f,path,seq)
-    local ary,lineno=filelist[path]
+    local ary=filelist[path]
     local q,o,s='Registered qb: [A-Z]+$1 ','End of Optimizer State Dump','Current SQL Statement for this session'
     if not ary then
-        local st,ed,sql_id,offset,prev
-        local q1,o1,sql_id='^'..q,'^'..o
+        local st,ed,sql_id,offset
+        local q1,o1='^'..q,'^'..o
         ary={}
         filelist[path]=ary
-        lineno=0
-        for line in f:lines() do
+        local lineno=0
+        local curr_offset=f:seek()
+        while true do
+            local line=f:read('l')
+            if line==nil then break end
             lineno=lineno+1
+            local start_offset=curr_offset
+            curr_offset=f:seek()
             line=line:sub(1,256)
             if not (st or ed) and line:match(q1) then
                 st=lineno
-                offset=f:seek()-prev-1
+                offset=start_offset
             elseif st and not ed then
                 if not sql_id and line:find(s) then
                     sql_id=line:match('sql_id=(%w+)')
@@ -1939,20 +1963,13 @@ function parser:check_file(f,path,seq)
                     st,ed,sql_id=nil
                 end
             end
-            if not st then prev=#line end
         end
     end
 
     if #ary==1 or (seq and ary[seq]) then
-        if lineno then f:seek('set',ary[4]) end
-        local st,ed,sql_id=table.unpack(ary[seq or 1])
-        if st>1 then
-            lineno=1
-            for line in f:lines() do
-                lineno=lineno+1
-                if lineno>=st then break end
-            end
-        end
+        local rec=ary[seq or 1]
+        f:seek('set',rec[4])
+        local st,ed,sql_id=table.unpack(rec)
         return st,ed,'SQL Id: '..sql_id
     end
 

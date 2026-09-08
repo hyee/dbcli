@@ -1,49 +1,49 @@
 /*[[Gather object/SQL/db/schema statistics. Usage: @@NAME {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent|0>] ["<method_opt>"] [-async|-trace]
-    @@NAME <owner>.]<name>[.<partition>]: Gather Statistics for target object
-    @@NAME <SQL Id>                     : Gather statistics of all objects relative to target SQL
-    @@NAME [<schema>] <options>         : Database/schema operations, if the schema is null(.) then for the whole database.
+    @@NAME [<owner>.]<name>[.<partition>]: Gather statistics for the target object
+    @@NAME <SQL Id>                      : Gather statistics of all objects related to the target SQL
+    @@NAME [<schema>] <options>          : Database/schema operations, if the schema is '.', then the whole database is processed.
                                               One of -list/-auto/-stale/-empty must be specified for database/schema mode
 
     Other Parameters:
     =================
-    <percent>            : The sample percentage(in %) for gathering stats, 0 as default 
+    <percent>            : The sample percentage (in %) for gathering stats, default is 0
     -list                : List the empty/stale/auto objects
-        -k"<key>"        : Only list matched objects whose name contains <key>, such as owner/name/partition
-        -table           : Group in table level instead of segment level, sum up to top object level instead
+        -k"<key>"        : Only list the matched objects whose name contains <key>, such as owner/name/partition
+        -table           : Group at table level instead of segment level, and sum up to the top object level
     -auto                : Gather stats with 'GATHER AUTO'
     -empty               : Gather stats with 'GATHER EMPTY'
     -stale               : Gather stats with 'GATHER STALE'
-    -row                 : If sample percentage < 100%, then random sample by row, instead of block
-    -async               : Create scheduler job to gather in background.
-    -trace               : Print gather stats traces
-    -invalid             : Invalidate the relative cursors
-    -force               : Force gathering stats even the stats is locked
-    <method_opt>         : Default as "FOR ALL COLUMNS SIZE AUTO"
-         -skew           : Same to "FOR ALL COLUMNS SIZE SKEWONLY"
-         -repeat         : Same to "FOR ALL COLUMNS SIZE REPEAT"
-         <other>         : Refer to documentation of parameter "method_opt"
-    -pending             : Gather pending stats. Not avaible to schema/database level
-    -publish             : Publish pending stats on target object/SQL
+    -row                 : If the sample percentage is < 100%, then sample randomly by row instead of by block
+    -async               : Create a scheduler job to gather stats in the background.
+    -trace               : Print the traces of gathering stats
+    -invalid             : Invalidate the related cursors
+    -force               : Force gathering stats even if the stats are locked
+    <method_opt>         : Default is "FOR ALL COLUMNS SIZE AUTO"
+         -skew           : Same as "FOR ALL COLUMNS SIZE SKEWONLY"
+         -repeat         : Same as "FOR ALL COLUMNS SIZE REPEAT"
+         <other>         : Refer to the documentation of the "method_opt" parameter
+    -pending             : Gather pending stats. Not available at schema/database level
+    -publish             : Publish pending stats on the target object/SQL
     -unpend              : Clear pending stats
-    -print               : Print gather stats command only, don't actually execute
-    -t"[<owner>.]<table>": Save stats into target table, instead of updating object stats
+    -print               : Only print the gather-stats commands without actually executing them
+    -t"[<owner>.]<table>": Save stats into the target table instead of updating the object stats
 
     Examples:
     =========
-    @@NAME sys.obj$      1 0            :gather SYS.OBJ$ in sync mode
-    @@NAME dd99a44gnta5s 4 100 -async   :gather all objects relative to sql dd99a44gnta5s with dop 4 in background
-    @@NAME dd99a44gnta5s 4 100 -stale   :gather all objects relative to sql dd99a44gnta5s with dop 4 with "GATHER STALE" mode
-    @@NAME dd99a44gnta5s 4 100 -print   :only print the commands of gathering all objects relative to sql dd99a44gnta5s with dop 4
-    @@NAME SYS -list                    :list all stale SYS objects 
-    @@NAME -list  -F"O"                 :list all stale database objects whose name/type/partition contains string 'O'
-    @@NAME SYS 8 0 -async -auto         :gather all SYS empty/stale object in "GATHER AUTO" mode with dop 8 in background
-    @@NAME .   8 0 -async -stale        :gather all stale object in "GATHER STALE" mode with dop 8 in background
+    @@NAME sys.obj$      1 0            : Gather the stats of SYS.OBJ$ in sync mode
+    @@NAME dd99a44gnta5s 4 100 -async   : Gather the stats of all objects related to SQL dd99a44gnta5s with dop 4 in the background
+    @@NAME dd99a44gnta5s 4 100 -stale   : Gather the stats of all objects related to SQL dd99a44gnta5s with dop 4 in "GATHER STALE" mode
+    @@NAME dd99a44gnta5s 4 100 -print   : Only print the commands of gathering the stats of all objects related to SQL dd99a44gnta5s with dop 4
+    @@NAME SYS -list                    : List all stale SYS objects
+    @@NAME -list  -k"O"                 : List all stale database objects whose name/type/partition contains the string 'O'
+    @@NAME SYS 8 0 -async -auto         : Gather all SYS empty/stale objects in "GATHER AUTO" mode with dop 8 in the background
+    @@NAME .   8 0 -async -stale        : Gather all stale objects in "GATHER STALE" mode with dop 8 in the background
 
     --[[
         &async  : default={0} async={1}
         &trace  : default={0} trace={1}
         &invalid: default={} invalid={,no_invalidate=>false}
-        &force  : defualt={} force={,force=>true}
+        &force  : default={} force={,force=>true}
         &t      : default={} t={}
         &V4     : default={} skew={FOR ALL COLUMNS SIZE SKEWONLY} repeat={FOR ALL COLUMNS SIZE REPEAT}
         &stale  : default={} stale={ STALE} auto={ AUTO} empty={ EMPTY}
@@ -114,119 +114,125 @@ COL BLOCKS,EXTENTS,STATS_ROWS,STATS_BLOCKS FOR TMB2
 var CUR REFCURSOR;
 
 DECLARE
-    sq_id VARCHAR2(128) := :V1;
-    own   VARCHAR2(128) := :object_owner;
-    nam   VARCHAR2(128) := :object_name;
-    schem VARCHAR2(128);
-    typ   VARCHAR2(128) := :object_type;
-    part  VARCHAR2(128) := :object_subname;
-    key   VARCHAR2(128) := trim('%' from upper(:filter));
-    pct   NUMBER        := nvl(0+regexp_substr(:V3,'^[\.0-9]+$'),0);
-    dop   INT           := regexp_substr(:V2,'^\d+$');
-    opt   VARCHAR2(300) := trim(:V4);
-    msg   VARCHAR2(300) := 'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent>] [-async]';
-    fmt   VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s%s,degree=>%s&invalid.&force.%s);]';
-    pub   VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
-    cls   VARCHAR2(300) := q'[dbms_stats.delete_pending_stats('%s','%s');]';
-    stmt  VARCHAR2(32767);
-    town  VARCHAR2(128);
-    tnam  VARCHAR2(512) := replace(trim(upper(:t)),' '); 
-    cnt   INT:=0;
-    val   INT;
-    cnt1  INT;
-    segs  INT;
-    HV    VARCHAR2(30);
-    TYPE  T_LIST IS TABLE OF PLS_INTEGER INDEX BY VARCHAR2(30);
-    lst   T_LIST;
-    objs  DBMS_STATS.ObjectTab:=DBMS_STATS.ObjectTab();
-    fil   DBMS_STATS.ObjectTab:=DBMS_STATS.ObjectTab();
-    tabs  SYS.ODCIARGDESCLIST:=SYS.ODCIARGDESCLIST();
-    pending VARCHAR2(32767);
-    schema_mode BOOLEAN:=false;
+    sq_id       VARCHAR2(128) := :v1;
+    own         VARCHAR2(128) := :object_owner;
+    nam         VARCHAR2(128) := :object_name;
+    schem       VARCHAR2(128);
+    typ         VARCHAR2(128) := :object_type;
+    part        VARCHAR2(128) := :object_subname;
+    key         VARCHAR2(128) := trim('%' FROM upper(:filter));
+    pct         NUMBER := nvl(0+regexp_substr(:v3,'^[\.0-9]+$'),0);
+    dop         INT := regexp_substr(:v2,'^\d+$');
+    opt         VARCHAR2(300) := trim(:v4);
+    fmt         VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s%s,degree=>%s&invalid.&force.%s);]';
+    pub         VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
+    cls         VARCHAR2(300) := q'[dbms_stats.delete_pending_stats('%s','%s');]';
+    stmt        VARCHAR2(32767);
+    town        VARCHAR2(128);
+    tnam        VARCHAR2(512) := replace(trim(upper(:t)),' ');
+    cnt         INT := 0;
+    val         INT;
+    cnt1        INT;
+    segs        INT;
+    hv          VARCHAR2(30);
+    TYPE t_list IS TABLE OF PLS_INTEGER INDEX BY VARCHAR2(30);
+    lst         t_list;
+    objs        dbms_stats.objecttab := dbms_stats.objecttab();
+    fil         dbms_stats.objecttab := dbms_stats.objecttab();
+    tabs        sys.odciargdesclist := sys.odciargdesclist();
+    pending     VARCHAR2(32767);
+    schema_mode BOOLEAN := false;
     CURSOR cur IS
         SELECT /*+NO_MERGE(B) NO_MERGE(A) USE_HASH(A B) opt_param('optimizer_dynamic_sampling' 11)*/ *
-        FROM   (SELECT OWNER OWN,OBJECT_NAME NAM,OBJECT_TYPE,NULL RNAM
-                FROM   ALL_OBJECTS
-                WHERE  OBJECT_TYPE IN('INDEX','TABLE','MATERIALIZED VIEW')
-                UNION 
-                SELECT 'SYS',A.NAME,TYPE,B.KQFDTEQU RNAM
-                FROM   V$FIXED_TABLE A,&check_access_fix B
-                WHERE  A.TYPE='TABLE'
-                AND    A.NAME=B.KQFDTNAM(+)) B
+        FROM   (SELECT owner own,object_name nam,object_type,NULL rnam
+                FROM   all_objects
+                WHERE  object_type IN('INDEX','TABLE','MATERIALIZED VIEW')
+                UNION
+                SELECT 'SYS',a.name,type,b.kqfdtequ rnam
+                FROM   v$fixed_table a,&check_access_fix b
+                WHERE  a.type='TABLE'
+                AND    a.name=b.kqfdtnam(+)) b
         JOIN (
-            SELECT OWN,
-                   REGEXP_REPLACE(NAM,' .*') NAM,
-                   CASE WHEN OP LIKE '%INDEX%' THEN 'INDEX' ELSE 'TABLE' END typ,
+            SELECT own,
+                   regexp_replace(nam,' .*') nam,
+                   CASE WHEN op LIKE '%INDEX%' THEN 'INDEX' ELSE 'TABLE' END typ,
                    MIN(nvl(regexp_substr(st,'^\d+$')+0,-1)) pst,
                    MIN(nvl(regexp_substr(ed,'^\d+$')+0,1E8)) ped
             FROM (
-                SELECT OBJECT_OWNER OWN,
-                       OBJECT_NAME NAM,
-                       PARTITION_START ST,
-                       PARTITION_STOP ED,
-                       OPERATION OP
-                FROM   GV$SQL_PLAN
+                SELECT object_owner own,
+                       object_name nam,
+                       partition_start st,
+                       partition_stop ed,
+                       operation op
+                FROM   gv$sql_plan
                 WHERE  sql_id=sq_id
-                AND    OBJECT_OWNER IS NOT NULL
-                AND    NVL(OBJECT_NAME,':') NOT LIKE ':%'
+                AND    object_owner IS NOT NULL
+                AND    nvl(object_name,':') NOT LIKE ':%'
                 UNION ALL
-                SELECT OBJECT_OWNER OWN,OBJECT_NAME NAM,PARTITION_START ST,PARTITION_STOP ED,OPERATION
-                FROM   DBA_HIST_SQL_PLAN
+                SELECT object_owner own,object_name nam,partition_start st,partition_stop ed,operation
+                FROM   dba_hist_sql_plan
                 WHERE  sql_id=sq_id
-                AND    OBJECT_OWNER IS NOT NULL
-                AND    NVL(OBJECT_NAME,':') NOT LIKE ':%'
+                AND    object_owner IS NOT NULL
+                AND    nvl(object_name,':') NOT LIKE ':%'
                 UNION ALL
-                SELECT OBJECT_OWNER OWN,OBJECT_NAME NAM,PARTITION_START ST,PARTITION_STOP ED,OPERATION
-                FROM   ALL_SQLSET_PLANS
+                SELECT object_owner own,object_name nam,partition_start st,partition_stop ed,operation
+                FROM   all_sqlset_plans
                 WHERE  sql_id=sq_id
-                AND    OBJECT_OWNER IS NOT NULL
-                AND    NVL(OBJECT_NAME,':') NOT LIKE ':%')
-            GROUP BY OWN,
-                     REGEXP_REPLACE(NAM,' .*'),
-                     CASE WHEN OP LIKE '%INDEX%' THEN 'INDEX' ELSE 'TABLE' END
-        ) A USING(OWN,NAM);
+                AND    object_owner IS NOT NULL
+                AND    nvl(object_name,':') NOT LIKE ':%')
+            GROUP  BY own,
+                      regexp_replace(nam,' .*'),
+                      CASE WHEN op LIKE '%INDEX%' THEN 'INDEX' ELSE 'TABLE' END
+        ) a USING(own,nam);
 
-    FUNCTION parse(own varchar2,nam varchar2,typ varchar2,part varchar2,pct varchar2,dop varchar2,cascade varchar2:='false') RETURN VARCHAR2 IS
+    FUNCTION parse(own     VARCHAR2,
+                   nam     VARCHAR2,
+                   typ     VARCHAR2,
+                   part    VARCHAR2,
+                   pct     VARCHAR2,
+                   dop     VARCHAR2,
+                   cascade VARCHAR2 := 'false') RETURN VARCHAR2 IS
         rtn VARCHAR2(2000);
     BEGIN
-        rtn:=utl_lms.format_message(fmt,
-                CASE WHEN typ LIKE 'INDEX%' THEN 'index' else 'table' END,
-                own,nam,part,pct,
-                CASE WHEN typ NOT LIKE 'INDEX%' AND DBMS_DB_VERSION.VERSION+DBMS_DB_VERSION.RELEASE>13 THEN 
-                    ',options=>''GATHER&stale'''
-                END,
-                tnam,dop,
-                CASE WHEN typ NOT LIKE 'INDEX%' THEN 
-                    ',block_sample=>&block,cascade=>'||cascade||opt
-                END);
+        rtn := utl_lms.format_message(fmt,
+                                      CASE WHEN typ LIKE 'INDEX%' THEN 'index' ELSE 'table' END,
+                                      own,nam,part,pct,
+                                      CASE WHEN typ NOT LIKE 'INDEX%' AND dbms_db_version.version+dbms_db_version.release>13 THEN
+                                          ',options=>''GATHER&stale'''
+                                      END,
+                                      tnam,dop,
+                                      CASE WHEN typ NOT LIKE 'INDEX%' THEN
+                                          ',block_sample=>&block,cascade=>'||cascade||opt
+                                      END);
         IF &pending=1 AND typ NOT LIKE 'INDEX%' AND NOT(own='SYS' AND nam LIKE 'X$%') THEN
-            pending:=pending||utl_lms.format_message(q'[dbms_stats.set_table_prefs('%s','%s','publish','false');]',own,nam)||chr(10);
+            pending := pending||utl_lms.format_message(q'[dbms_stats.set_table_prefs('%s','%s','publish','false');]',own,nam)||chr(10);
         END IF;
         RETURN rtn;
     END;
-    
+
     PROCEDURE submit(cmd VARCHAR2) IS
-        ln    VARCHAR2(1):=chr(10);
+        ln    VARCHAR2(1) := chr(10);
         job   VARCHAR2(128);
         c     INT;
         tim   NUMBER;
     BEGIN
-        select count(1) into c
-        from   v$sysstat
-        where  name like 'cell%elig%pred%offload%'
-        and    value>0;
-        stmt :=pending||cmd;
-        IF pending IS NOT NULL THEN 
-            stmt:='BEGIN'||ln||stmt||ln||'EXCEPTION WHEN OTHERS THEN err:=SQLERRM; END;';
-            stmt:=stmt||ln||replace(pending,q'['false');]',q'['true');]')||ln
-                  ||'IF err IS NOT NULL THEN raise_application_error(-20001,err); END IF;';
+        SELECT count(1)
+        INTO   c
+        FROM   v$sysstat
+        WHERE  name LIKE 'cell%elig%pred%offload%'
+        AND    value>0;
+        stmt := pending||cmd;
+        IF pending IS NOT NULL THEN
+            stmt := 'BEGIN'||ln||stmt||ln||'EXCEPTION WHEN OTHERS THEN err:=SQLERRM; END;';
+            stmt := stmt||ln||replace(pending,q'['false');]',q'['true');]')||ln
+                    ||'IF err IS NOT NULL THEN raise_application_error(-20001,err); END IF;';
         END IF;
-        stmt :=replace(ln||stmt,ln,ln||'    ')||ln;
+        stmt := replace(ln||stmt,ln,ln||'    ')||ln;
         IF NOT &exec THEN
             dbms_output.put_line('Print ONLY the statements:');
             dbms_output.put_line('==========================');
-        ElSE
-            tim:= dbms_utility.get_time;
+        ELSE
+            tim := dbms_utility.get_time;
             dbms_output.put_line('Executed below statements:');
             dbms_output.put_line('==========================');
         END IF;
@@ -248,7 +254,7 @@ DECLARE
                             ELSE 2+4+8+64+1024+CASE when schema_mode then 0 else 16 END 
                          END);
             IF &exec THEN
-                job:=dbms_scheduler.generate_job_name('GATHER_STATS_');
+                job := dbms_scheduler.generate_job_name('GATHER_STATS_');
                 dbms_scheduler.create_job(job_name   => job,
                                           job_type   => 'PLSQL_BLOCK',
                                           job_action => stmt,
@@ -260,9 +266,11 @@ DECLARE
         END IF;
 
         IF c>0 THEN
-        BEGIN
-            execute immediate 'alter session set "_serial_direct_read"=always';
-        EXCEPTION WHEN OTHERS THEN NULL; END;
+            BEGIN
+                EXECUTE IMMEDIATE 'alter session set "_serial_direct_read"=always';
+            EXCEPTION
+                WHEN OTHERS THEN NULL;
+            END;
         END IF;
 
         stmt := 'DECLARE err VARCHAR2(500);BEGIN'||stmt||'END;';
@@ -279,16 +287,19 @@ DECLARE
                 EXECUTE IMMEDIATE stmt;
                 dbms_stats.set_global_prefs('TRACE',0);
                 dbms_output.put_line('Trace End');
-            EXCEPTION WHEN OTHERS THEN
-                dbms_stats.set_global_prefs('TRACE',0);
-                dbms_output.put_line('Trace End');
-                raise;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    dbms_stats.set_global_prefs('TRACE',0);
+                    dbms_output.put_line('Trace End');
+                    raise;
             END;
         END IF;
         IF c>0 THEN
-        BEGIN
-            execute immediate 'alter session set "_serial_direct_read"=auto';
-        EXCEPTION WHEN OTHERS THEN NULL; END;
+            BEGIN
+                EXECUTE IMMEDIATE 'alter session set "_serial_direct_read"=auto';
+            EXCEPTION
+                WHEN OTHERS THEN NULL;
+            END;
         END IF;
         IF tim IS NOT NULL THEN
             dbms_output.put_line('==========================');
@@ -297,30 +308,34 @@ DECLARE
                 dbms_output.put_line('Consider set optimizer_use_pending_statistics=true to test pending stats');
             END IF;
         END IF;
-    EXCEPTION WHEN OTHERS THEN
-        IF c>0 THEN
-        BEGIN
-            execute immediate 'alter session set "_serial_direct_read"=auto';
-        EXCEPTION WHEN OTHERS THEN NULL; END;
-        END IF;
-        RAISE;
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF c>0 THEN
+                BEGIN
+                    EXECUTE IMMEDIATE 'alter session set "_serial_direct_read"=auto';
+                EXCEPTION
+                    WHEN OTHERS THEN NULL;
+                END;
+            END IF;
+            RAISE;
     END;
 BEGIN
     dbms_output.enable(null);
-    IF opt is not null then 
+    IF opt IS NOT NULL THEN
         opt := ',method_opt=>'''||opt||'''';
     END IF;
     IF sq_id IS NOT NULL AND own IS NULL THEN
         SELECT max(username)
         INTO   schem
-        FROM   ALL_USERS
+        FROM   all_users
         WHERE  upper(username)=upper(sq_id);
-    END IF; 
+    END IF;
 
     IF &list=1 THEN
         BEGIN
-            DBMS_STATS.FLUSH_DATABASE_MONITORING_INFO;
-        EXCEPTION WHEN OTHERS THEN NULL;
+            dbms_stats.flush_database_monitoring_info;
+        EXCEPTION
+            WHEN OTHERS THEN NULL;
         END;
 
         IF schem IS NULL AND sq_id IS NOT NULL THEN
@@ -329,14 +344,14 @@ BEGIN
                 fil(1).ownname     := own;
                 fil(1).objname     := nam;
                 fil(1).objtype     := regexp_substr(typ,'\S+');
-                fil(1).partname    := CASE WHEN typ LIKE '%SUBPART%' THEN '' ELSE PART END;
-                fil(1).subpartname := CASE WHEN typ LIKE '%SUBPART%' THEN PART END;
+                fil(1).partname    := CASE WHEN typ LIKE '%SUBPART%' THEN '' ELSE part END;
+                fil(1).subpartname := CASE WHEN typ LIKE '%SUBPART%' THEN part END;
             ELSE
                 FOR r IN cur LOOP
                     fil.extend;
-                    fil(fil.count).ownname     := r.own;
-                    fil(fil.count).objname     := nvl(r.rnam,r.nam);
-                    fil(fil.count).objtype     := CASE WHEN r.typ LIKE 'INDEX%' THEN 'INDEX' ELSE 'TABLE' END;
+                    fil(fil.count).ownname := r.own;
+                    fil(fil.count).objname := nvl(r.rnam,r.nam);
+                    fil(fil.count).objtype := CASE WHEN r.typ LIKE 'INDEX%' THEN 'INDEX' ELSE 'TABLE' END;
                 END LOOP;
                 IF fil.count=0 THEN
                     raise_application_error(-20001,'Cannot find matched objects for SQL: '||sq_id);
@@ -345,103 +360,103 @@ BEGIN
         ELSIF key IS NOT NULL THEN
             sq_id := '%'||key||'%';
             fil.extend(4);
-            fil(1).ownname:=sq_id;
-            fil(2).objname:=sq_id;
-            fil(3).partname:=sq_id;
-            fil(4).subpartname:=sq_id;
+            fil(1).ownname := sq_id;
+            fil(2).objname := sq_id;
+            fil(3).partname := sq_id;
+            fil(4).subpartname := sq_id;
             IF length(key)<6 THEN
                 fil.extend;
-                fil(5).objtype:=key||'%';
+                fil(5).objtype := key||'%';
             END IF;
         ELSE
-            fil:=NULL;
+            fil := NULL;
         END IF;
-        FOR j in 1..3 LOOP
+        FOR j IN 1..3 LOOP
             IF schem IS NOT NULL THEN
                 dbms_stats.gather_schema_stats(schem,options=>'LIST '||CASE j WHEN 1 THEN 'AUTO' WHEN 2 THEN 'STALE' ELSE 'EMPTY' END,objlist=>objs,obj_filter_list=>fil);
             ELSE
                 dbms_stats.gather_database_stats(options=>'LIST '||CASE j WHEN 1 THEN 'AUTO' WHEN 2 THEN 'STALE' ELSE 'EMPTY' END,objlist=>objs,obj_filter_list=>fil);
             END IF;
-            
-            cnt1:=objs.count;
+
+            cnt1 := objs.count;
             IF j=1 THEN
-                segs:=cnt1;
+                segs := cnt1;
             END IF;
             FOR i IN 1..cnt1 LOOP
-                SELECT TO_CHAR(SYS_OP_COMBINED_HASH(objs(i).OBJNAME,objs(i).OWNNAME,objs(i).OBJTYPE,
-                                   CASE WHEN &nopart=1 then '' ELSE objs(i).PARTNAME END,
-                                   CASE WHEN &nopart=1 then '' ELSE objs(i).SUBPARTNAME END),'TM9')
+                SELECT to_char(sys_op_combined_hash(objs(i).objname,objs(i).ownname,objs(i).objtype,
+                                                    CASE WHEN &nopart=1 THEN '' ELSE objs(i).partname END,
+                                                    CASE WHEN &nopart=1 THEN '' ELSE objs(i).subpartname END),'TM9')
                 INTO   hv
-                FROM   DUAL;
+                FROM   dual;
                 IF lst.exists(hv) THEN
                     IF lst(hv)<=1000 THEN
                         val := tabs(lst(hv)).argtype;
                         val := val-bitand(val,power(2,j-1))+power(2,j-1);
-                        tabs(lst(hv)).argtype:=val;
+                        tabs(lst(hv)).argtype := val;
                         IF &nopart=1 AND val=bitand(val,power(2,j-1)) THEN
-                            tabs(lst(hv)).cardinality:=tabs(lst(hv)).cardinality+1;
-                            tabs(lst(hv)).TABLEPARTITIONUPPER:=NULL;
-                            tabs(lst(hv)).TABLEPARTITIONLOWER:=NULL;
+                            tabs(lst(hv)).cardinality := tabs(lst(hv)).cardinality+1;
+                            tabs(lst(hv)).tablepartitionupper := NULL;
+                            tabs(lst(hv)).tablepartitionlower := NULL;
                         END IF;
                     END IF;
                 ELSE
                     cnt := cnt + 1;
-                    lst(hv):=cnt;
+                    lst(hv) := cnt;
                     IF cnt<=1000 THEN
                         tabs.extend;
-                        tabs(cnt):=SYS.ODCIARGDESC(power(2,j-1),
-                                                   objs(i).OBJNAME,
-                                                   objs(i).OWNNAME,
-                                                   substr(objs(i).OBJTYPE,1,6),
-                                                   objs(i).PARTNAME,
-                                                   objs(i).SUBPARTNAME,
-                                                   1);
+                        tabs(cnt) := sys.odciargdesc(power(2,j-1),
+                                                     objs(i).objname,
+                                                     objs(i).ownname,
+                                                     substr(objs(i).objtype,1,6),
+                                                     objs(i).partname,
+                                                     objs(i).subpartname,
+                                                     1);
                     END IF;
                 END IF;
             END LOOP;
-            objs.DELETE;
+            objs.delete;
         END LOOP;
 
-        DBMS_OUTPUT.PUT_LINE(cnt||' empty/stale objects('||segs||' segments) found');
-        DBMS_OUTPUT.PUT_LINE('===============================================');
+        dbms_output.put_line(cnt||' empty/stale objects('||segs||' segments) found');
+        dbms_output.put_line('===============================================');
         OPEN :cur FOR
-            SELECT ROW_NUMBER() OVER(ORDER BY OWNER,OBJECT_NAME,PART_NAME,SUBPART) "#",
-                   A.*
+            SELECT ROW_NUMBER() OVER(ORDER BY owner,object_name,part_name,subpart) "#",
+                   a.*
             FROM(SELECT /*+NO_EXPAND USE_HASH(A B C) outline_leaf opt_param('optimizer_dynamic_sampling' 5) */
-                        TABLESCHEMA OWNER,
-                        TABLENAME OBJECT_NAME,
-                        COLNAME TYPE,
-                        NVL(TABLEPARTITIONLOWER,CASE WHEN CARDINALITY>1 THEN CARDINALITY|| ' Segments' ELSE TABLEPARTITIONLOWER END) PART_NAME,
-                        TABLEPARTITIONUPPER SUBPART,
-                        DECODE(BITAND(ARGTYPE,4),4,'EMPTY,')||
-                        DECODE(BITAND(ARGTYPE,2),2,'STALE,')||
-                        DECODE(BITAND(ARGTYPE,1),1,'AUTO') GATHER_OPTIONS,
+                        tableschema owner,
+                        tablename object_name,
+                        colname TYPE,
+                        nvl(tablepartitionlower,CASE WHEN cardinality>1 THEN cardinality|| ' Segments' ELSE tablepartitionlower END) part_name,
+                        tablepartitionupper subpart,
+                        decode(bitand(argtype,4),4,'EMPTY,')||
+                        decode(bitand(argtype,2),2,'STALE,')||
+                        decode(bitand(argtype,1),1,'AUTO') gather_options,
                         '||' "||",
-                        SUM(B.BYTES) BYTES,
-                        SUM(B.BLOCKS) BLOCKS,
-                        SUM(B.EXTENTS) EXTENTS,
+                        SUM(b.bytes) bytes,
+                        SUM(b.blocks) blocks,
+                        SUM(b.extents) extents,
                         '|' "|",
-                        MAX(C.NUM_ROWS) STATS_ROWS,
-                        MAX(C.BLOCKS) STATS_BLOCKS,
-                        MAX(C.LAST_ANALYZED) LAST_ANALYZED
-                 FROM   TABLE(tabs) A
-                 LEFT   JOIN   all_tables C
-                 ON     A.TABLESCHEMA=C.OWNER
-                 AND    A.TABLENAME=C.TABLE_NAME
-                 AND   (&nopart=1 OR TABLEPARTITIONLOWER IS NULL)
-                 LEFT   JOIN  &check_access_seg B
-                 ON     A.TABLESCHEMA=B.OWNER
-                 AND    A.TABLENAME=B.SEGMENT_NAME
-                 AND    B.SEGMENT_TYPE LIKE A.COLNAME||'%'
-                 WHERE  B.OWNER IS NULL OR COALESCE(TABLEPARTITIONUPPER,TABLEPARTITIONLOWER,' ') IN(' ',B.PARTITION_NAME)
-                 GROUP BY TABLESCHEMA,TABLENAME,COLNAME,TABLEPARTITIONUPPER,ARGTYPE,
-                          NVL(TABLEPARTITIONLOWER,CASE WHEN CARDINALITY>1 THEN CARDINALITY|| ' Segments' ELSE TABLEPARTITIONLOWER END)) A
+                        MAX(c.num_rows) stats_rows,
+                        MAX(c.blocks) stats_blocks,
+                        MAX(c.last_analyzed) last_analyzed
+                 FROM   table(tabs) a
+                 LEFT   JOIN all_tables c
+                 ON     a.tableschema=c.owner
+                 AND    a.tablename=c.table_name
+                 AND   (&nopart=1 OR tablepartitionlower IS NULL)
+                 LEFT   JOIN &check_access_seg b
+                 ON     a.tableschema=b.owner
+                 AND    a.tablename=b.segment_name
+                 AND    b.segment_type LIKE a.colname||'%'
+                 WHERE  b.owner IS NULL OR coalesce(tablepartitionupper,tablepartitionlower,' ') IN(' ',b.partition_name)
+                 GROUP  BY tableschema,tablename,colname,tablepartitionupper,argtype,
+                           nvl(tablepartitionlower,CASE WHEN cardinality>1 THEN cardinality|| ' Segments' ELSE tablepartitionlower END)) a
             ORDER BY 1;
         RETURN;
     END IF;
 
-    IF (pct=0 AND :V3 IS NOT NULL OR dop IS NULL) and &pending!=2 THEN
-        raise_application_error(-20001,msg);
+    IF (pct=0 AND :v3 IS NULL OR dop IS NULL) AND &pending!=2 THEN
+        raise_application_error(-20001,'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent>] [-async]');
     ELSIF key IS NOT NULL THEN
         raise_application_error(-20001,'Option -f"<filter>" is only used to list database/schema stale stats');
     END IF;
@@ -452,29 +467,31 @@ BEGIN
         END IF;
 
         IF instr(tnam,'.')=0 THEN
-            town:=sys_context('userenv','current_schema');
+            town := sys_context('userenv','current_schema');
         ELSE
-            town:=regexp_substr(tnam,'[^\.]+',1,1);
-            tnam:=regexp_substr(tnam,'[^\.]+',1,2);
+            town := regexp_substr(tnam,'[^\.]+',1,1);
+            tnam := regexp_substr(tnam,'[^\.]+',1,2);
         END IF;
 
         BEGIN
             EXECUTE IMMEDIATE 'SELECT 1 FROM '||town||'.'||tnam||' WHERE STATID IS NULL AND C4 IS NOT NULL';
-        EXCEPTION WHEN OTHERS THEN
-            IF SQLCODE=-904 THEN
-                raise_application_error(-20001,'Invalid stats table: '||town||'.'||tnam);
-            ELSE
-                raise_application_error(-20001,'No access to target stats table: &t, consider create it with: exec dbms_stats.create_stat_table('''||town||''','''||tnam||''');');
-            END IF;
+        EXCEPTION
+            WHEN OTHERS THEN
+                IF sqlcode=-904 THEN
+                    raise_application_error(-20001,'Invalid stats table: '||town||'.'||tnam);
+                ELSE
+                    raise_application_error(-20001,'No access to target stats table: &t, consider create it with: exec dbms_stats.create_stat_table('''||town||''','''||tnam||''');');
+                END IF;
         END;
         tnam := utl_lms.format_message(q'[,statown=>'%s',stattab=>'%s']',town,tnam);
     END IF;
 
     IF nam IS NOT NULL THEN
         IF own='SYS' AND nam LIKE 'X$%' THEN
-            SELECT NVL(MAX(KQFDTEQU),nam) INTO nam
+            SELECT nvl(MAX(kqfdtequ),nam)
+            INTO   nam
             FROM   &check_access_fix
-            WHERE  KQFDTNAM=nam;
+            WHERE  kqfdtnam=nam;
         END IF;
         IF &pending<2 THEN
             submit(parse(own,nam,typ,part,pct,dop,'true'));
@@ -486,30 +503,30 @@ BEGIN
         IF &pending>0 THEN
             raise_application_error(-20001,'Option -pending/-publish is not available to gathering database/schema stats');
         END IF;
-        schema_mode:=true;
-        fmt:=q'[dbms_stats.gather_%s_stats(%s%s,options=>'GATHER&stale',gather_fixed=>true,block_sample=>&block%s%s,degree=>%s&invalid.&force.);]';
-        fmt:=utl_lms.format_message(fmt,
-                CASE WHEN schem IS NOT NULL THEN 'schema' ELSE 'database' END,
-                CASE WHEN schem IS NOT NULL THEN ''''||schem||''',' END,
-                ''||pct,
-                opt,
-                tnam,''||dop);
+        schema_mode := true;
+        fmt := q'[dbms_stats.gather_%s_stats(%s%s,options=>'GATHER&stale',gather_fixed=>true,block_sample=>&block%s%s,degree=>%s&invalid.&force.);]';
+        fmt := utl_lms.format_message(fmt,
+                                      CASE WHEN schem IS NOT NULL THEN 'schema' ELSE 'database' END,
+                                      CASE WHEN schem IS NOT NULL THEN ''''||schem||''',' END,
+                                      ''||pct,
+                                      opt,
+                                      tnam,''||dop);
         submit(fmt);
         RETURN;
     END IF;
 
-    FOR R IN cur LOOP
-        part:=NULL;
+    FOR r IN cur LOOP
+        part := NULL;
         IF &pending<2 THEN
-            stmt:=stmt||parse(r.own,nvl(r.rnam,r.nam),r.typ,part,pct,dop)||chr(10);
+            stmt := stmt||parse(r.own,nvl(r.rnam,r.nam),r.typ,part,pct,dop)||chr(10);
         ELSIF r.typ NOT LIKE 'INDEX%' AND NOT(r.own='SYS' AND r.nam LIKE 'X$%') THEN
-            stmt:=stmt||utl_lms.format_message(CASE &pending WHEN 2 THEN pub ELSE cls END,r.own,nvl(r.rnam,r.nam))||chr(10);
+            stmt := stmt||utl_lms.format_message(CASE &pending WHEN 2 THEN pub ELSE cls END,r.own,nvl(r.rnam,r.nam))||chr(10);
         END IF;
     END LOOP;
 
     IF stmt IS NULL THEN
         raise_application_error(-20001,'Cannot find matched objects for SQL: '||sq_id);
     END IF;
-    submit(trim(chr(10) from stmt));
+    submit(trim(chr(10) FROM stmt));
 END;
 /

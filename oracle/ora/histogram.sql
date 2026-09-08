@@ -21,7 +21,7 @@ Examples:
 Notes: if input data type is not string/number/raw, the value should follow below format:
     *  DATE                    : YYYY-MM-DD HH24:MI:SS
     *  TIMESTAMP               : YYYY-MM-DD HH24:MI:SSxFF
-    *  TIMESTAMP WITH TIMEZONE : YYYY-MM-DD HH24:MI:SSxFF TZH:TZM
+    *  TIMESTAMP WITH TIME ZONE: display only, it cannot be used as an input value
 
 Sample Output:
 ==============
@@ -95,7 +95,7 @@ DECLARE
     stattab   VARCHAR2(128) := :stats_tab;
     col       VARCHAR2(128) := upper(:V2);
     input     VARCHAR2(128) := :V3;
-    max_v     VARCHAR2(128) := :V4;
+    max_v     VARCHAR2(4000) := :V4;
     card_adj  NUMBER        := regexp_substr(:V5, '^\d+$');
     bk_adj    NUMBER        := regexp_substr(max_v, '^\d+$');
     other_adj NUMBER        := 0;
@@ -106,7 +106,7 @@ DECLARE
     min_v     VARCHAR2(128);
     restoret  VARCHAR2(128);
     outs      VARCHAR2(32767);
-    rawinput  RAW(128);
+    rawinput  RAW(2000);
     rawval    RAW(2000);
     srec      dbms_stats.StatRec;
     nrec      dbms_stats.StatRec;
@@ -135,14 +135,15 @@ DECLARE
     dtypefull VARCHAR2(128);
     txn_id    VARCHAR2(128) := dbms_transaction.local_transaction_id;
     stmt_id   VARCHAR2(128) := 'TEST_CARD_' || dbms_random.string('X', 16);
-    test_stmt VARCHAR2(512);
-    cep       VARCHAR2(128);
-    pep       VARCHAR2(128) := lpad(' ', 32);
+    test_stmt VARCHAR2(1000);
+    cep       VARCHAR2(4000);
+    pep       VARCHAR2(4000) := lpad(' ', 32);
     gstats    VARCHAR2(3);
     ustats    VARCHAR2(3);
     flags     PLS_INTEGER;
     dlen      PLS_INTEGER;
     buckets   NUMBER;
+    minb      NUMBER;
     prevb     NUMBER   := 0;
     prevv     NUMBER   := 0;
     cnt       PLS_INTEGER   := 0;
@@ -182,11 +183,65 @@ DECLARE
         RETURN m_vc;
     END;
 
+    --BINARY_FLOAT/DOUBLE raws inside histgrm$/statrec are not plain IEEE bytes but the
+    --sortable T-map of them: sign-clear x -> x XOR 0x8000..0, sign-set x -> NOT x. The
+    --map is its own inverse, and dbms_stats.convert_raw_value already applies it when
+    --decoding, so restore scripts and conr() must re-encode with it: set_column_stats
+    --stores srec raws byte for byte, a plain IEEE literal would corrupt the histogram.
+    FUNCTION bfraw(b binary_float) RETURN RAW IS
+        h VARCHAR2(16) := rawtohex(utl_raw.cast_from_binary_float(b));
+    BEGIN
+        IF substr(h, 1, 1) >= '8' THEN
+            RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('FFFFFFFF'));
+        END IF;
+        RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('80000000'));
+    END;
+
+    FUNCTION bdraw(b binary_double) RETURN RAW IS
+        h VARCHAR2(32) := rawtohex(utl_raw.cast_from_binary_double(b));
+    BEGIN
+        IF substr(h, 1, 1) >= '8' THEN
+            RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('FFFFFFFFFFFFFFFF'));
+        END IF;
+        RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('8000000000000000'));
+    END;
+
+    --readable text of a float: to_char with TM turns NaN/Infinity into '####', so name
+    --the specials (exponent all ones) explicitly; the spellings parse back via
+    --to_binary_float/to_binary_double and re-encode byte for byte (canonical forms)
+    FUNCTION bf2txt(b binary_float) RETURN VARCHAR2 IS
+        x RAW(4) := utl_raw.cast_from_binary_float(b);
+        h VARCHAR2(16) := rawtohex(x);
+    BEGIN
+        IF utl_raw.bit_and(x, hextoraw('7F800000')) = hextoraw('7F800000') THEN
+            IF utl_raw.bit_and(x, hextoraw('007FFFFF')) = hextoraw('00000000') THEN
+                RETURN CASE WHEN substr(h, 1, 1) >= '8' THEN '-Infinity' ELSE 'Infinity' END;
+            END IF;
+            RETURN 'NaN';
+        END IF;
+        RETURN to_char(b, 'TM');
+    END;
+
+    FUNCTION bd2txt(b binary_double) RETURN VARCHAR2 IS
+        x RAW(8) := utl_raw.cast_from_binary_double(b);
+        h VARCHAR2(32) := rawtohex(x);
+    BEGIN
+        IF utl_raw.bit_and(x, hextoraw('7FF0000000000000')) = hextoraw('7FF0000000000000') THEN
+            IF utl_raw.bit_and(x, hextoraw('000FFFFFFFFFFFFF')) = hextoraw('0000000000000000') THEN
+                RETURN CASE WHEN substr(h, 1, 1) >= '8' THEN '-Infinity' ELSE 'Infinity' END;
+            END IF;
+            RETURN 'NaN';
+        END IF;
+        RETURN to_char(b, 'TM');
+    END;
+
     --onvert all_tab_histograms.enpoint_value that defined in srec as varchar2
     FUNCTION conv(idx PLS_INTEGER, num NUMBER := NULL,p_len INT:=NULL) RETURN VARCHAR2 IS
         rtn NUMBER := nvl(NUM, CASE WHEN idx IS NOT NULL THEN srec.novals(idx) END);
-        eva RAW(128);
-        res VARCHAR2(64);
+        eva RAW(2000);
+        res VARCHAR2(4000);
+        bf  binary_float;
+        bd  binary_double;
     BEGIN
         $IF dbms_db_version.version > 11 $THEN
             IF idx IS NOT NULL THEN
@@ -201,9 +256,21 @@ DECLARE
             WHEN dtype IN ('NVARCHAR2', 'NCHAR', 'NCLOB') THEN
                 res := nvl(utl_raw.cast_to_nvarchar2(eva), hist_numtochar(rtn,'Y',p_len));
             WHEN dtype = 'BINARY_DOUBLE' THEN
-                res := TO_CHAR(TO_BINARY_DOUBLE(rtn), 'TM');
+                --eavals keeps the true value while novals collapses Infinity/NaN to the
+                --number range, so decode the raw when there is one
+                IF eva IS NOT NULL THEN
+                    dbms_stats.convert_raw_value(eva, bd);
+                    res := bd2txt(bd);
+                ELSE
+                    res := TO_CHAR(TO_BINARY_DOUBLE(rtn), 'TM');
+                END IF;
             WHEN dtype = 'BINARY_FLOAT' THEN
-                res := TO_CHAR(TO_BINARY_FLOAT(rtn), 'TM');
+                IF eva IS NOT NULL THEN
+                    dbms_stats.convert_raw_value(eva, bf);
+                    res := bf2txt(bf);
+                ELSE
+                    res := TO_CHAR(TO_BINARY_FLOAT(rtn), 'TM');
+                END IF;
             WHEN dtype IN ('NUMBER', 'FLOAT', 'INTEGER') THEN
                 res := to_char(rtn, 'TM');
             WHEN dtype IN ('DATE', 'TIMESTAMP') THEN
@@ -224,29 +291,34 @@ DECLARE
 
     --convert the value in srec into raw value
     FUNCTION conr(idx PLS_INTEGER, num NUMBER := NULL,p_len INT:=NULL) RETURN RAW IS
-        rtn VARCHAR2(128) := conv(idx, num,p_len);
+        rtn VARCHAR2(4000) := conv(idx, num,p_len);
         d   TIMESTAMP;
+        ns  NUMBER;
     BEGIN
         CASE
             WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB', 'ROWID', 'UROWID', 'NVARCHAR2', 'NCHAR', 'NCLOB') THEN
                 RETURN utl_raw.cast_to_raw(rtn);
             WHEN dtype = 'BINARY_DOUBLE' THEN
-                RETURN utl_raw.cast_from_binary_double(to_binary_double(rtn));
+                RETURN bdraw(to_binary_double(rtn));
             WHEN dtype = 'BINARY_FLOAT' THEN
-                RETURN utl_raw.cast_from_binary_float(to_binary_float(rtn));
+                RETURN bfraw(to_binary_float(rtn));
             WHEN dtype IN ('NUMBER', 'FLOAT', 'INTEGER') THEN
                 RETURN utl_raw.cast_from_number(to_number(rtn));
             WHEN dtype IN ('DATE', 'TIMESTAMP') THEN
                 d   := to_timestamp(rtn, tstampfmt);
-                rtn := lpad(to_char(substr(extract(YEAR FROM d), 1, 2) + 100, 'fmxx'), 2, 0) ||
-                       lpad(to_char(substr(extract(YEAR FROM d), 3, 2) + 100, 'fmxx'), 2, 0) ||
-                       lpad(to_char(extract(MONTH FROM d), 'fmxx'), 2, 0) ||
-                       lpad(to_char(extract(DAY FROM d), 'fmxx'), 2, 0) ||
-                       lpad(to_char(extract(HOUR FROM d) + 1, 'fmxx'), 2, 0) ||
-                       lpad(to_char(extract(MINUTE FROM d) + 1, 'fmxx'), 2, 0) ||
-                       lpad(to_char(extract(SECOND FROM d) + 1, 'fmxx'), 2, 0);
-                IF dtype != 'DATE' THEN
-                    rtn := rtn || lpad(to_char(0 + to_char(d, 'ff9'), 'fmxxxxxxxx'), 8, 0);
+                ns  := to_number(to_char(d, 'ff9'));
+                --extract(second) carries the fraction and to_char(number,'xx') rounds it,
+                --so take the already truncated parts from the format elements instead
+                rtn := lpad(to_char(floor(to_number(to_char(d, 'SYYYY')) / 100) + 100, 'fmxx'), 2, '0') ||
+                       lpad(to_char(mod(to_number(to_char(d, 'SYYYY')), 100) + 100, 'fmxx'), 2, '0') ||
+                       lpad(to_char(to_number(to_char(d, 'MM')), 'fmxx'), 2, '0') ||
+                       lpad(to_char(to_number(to_char(d, 'DD')), 'fmxx'), 2, '0') ||
+                       lpad(to_char(to_number(to_char(d, 'HH24')) + 1, 'fmxx'), 2, '0') ||
+                       lpad(to_char(to_number(to_char(d, 'MI')) + 1, 'fmxx'), 2, '0') ||
+                       lpad(to_char(to_number(to_char(d, 'SS')) + 1, 'fmxx'), 2, '0');
+                IF dtype != 'DATE' AND ns != 0 THEN
+                    --Oracle omits the 4 nanosecond bytes entirely when the fraction is zero
+                    rtn := rtn || lpad(to_char(ns, 'fmxxxxxxxx'), 8, '0');
                 END IF;
                 RETURN hextoraw(rtn);
             ELSE
@@ -299,38 +371,59 @@ DECLARE
 
     --convert low_value/high_value in dba_tab_cols into varchar2
     FUNCTION getv(val RAW) RETURN VARCHAR2 IS
-        n  NUMBER;
-        c  VARCHAR2(128);
-        nc NVARCHAR2(128);
-        bf binary_float;
-        bd binary_double;
-        d  DATE;
-        r  ROWID;
+        n    NUMBER;
+        c    VARCHAR2(4000);
+        nc   NVARCHAR2(2000);
+        bf   binary_float;
+        bd   binary_double;
+        d    DATE;
+        ts   TIMESTAMP;
+        r    ROWID;
+        ofs  NUMBER;
+        hex  VARCHAR2(4000) := rawtohex(val);
+        frac VARCHAR2(20);
     BEGIN
+        IF val IS NULL THEN
+            RETURN NULL;
+        END IF;
         CASE
             WHEN dtype IN ('NUMBER', 'INTEGER', 'FLOAT') THEN
                 dbms_stats.convert_raw_value(val, n);
-                RETURN n;
+                RETURN to_char(n, 'tm');
             WHEN dtype = 'BINARY_FLOAT' THEN
                 dbms_stats.convert_raw_value(val, bf);
-                RETURN bf;
+                RETURN bf2txt(bf);
             WHEN dtype = 'BINARY_DOUBLE' THEN
                 dbms_stats.convert_raw_value(val, bd);
-                RETURN bd;
+                RETURN bd2txt(bd);
             WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB') THEN
                 dbms_stats.convert_raw_value(val, c);
                 RETURN c;
             WHEN dtype IN ('NVARCHAR2', 'NCHAR', 'NCLOB') THEN
-                dbms_stats.convert_raw_value(val, nc);
+                dbms_stats.convert_raw_value_nvarchar(val, nc);
                 RETURN nc;
-            WHEN dtype IN ('DATE', 'TIMESTAMP') THEN
-                dbms_stats.convert_raw_value(val, d);
-                RETURN d;
             WHEN dtype IN ('ROWID', 'UROWID') THEN
-                dbms_stats.convert_raw_value(val, r);
+                dbms_stats.convert_raw_value_rowid(val, r);
                 RETURN r;
+            WHEN dtype = 'DATE' THEN
+                dbms_stats.convert_raw_value(val, d);
+                RETURN to_char(d, datefmt);
+            WHEN dtype = 'TIMESTAMP' THEN
+                --dbms_stats has no timestamp overload, and convert_raw_value(val, DATE)
+                --truncates the fractional seconds, so decode the trailing bytes here
+                dbms_stats.convert_raw_value(utl_raw.substr(val, 1, 7), d);
+                frac := nullif('.' || rtrim(substr(lpad(to_number(substr(hex, 15, 8), 'xxxxxxxx'), 9, '0'), 1, 9), '0'), '.');
+                IF dtypefull LIKE '%TIME ZONE' AND dtypefull NOT LIKE '%LOCAL%' THEN
+                    --WITH TIME ZONE stores the 7 date bytes in UTC and the zone offset in
+                    --the last 2 bytes as (hour + 20, minute + 60)
+                    ofs := (to_number(substr(hex, 23, 2), 'xx') - 20) * 60 + to_number(substr(hex, 25, 2), 'xx') - 60;
+                    ts  := to_timestamp(to_char(d, datefmt), datefmt) + numtodsinterval(ofs, 'MINUTE');
+                    RETURN to_char(ts, datefmt) || frac || ' ' || CASE WHEN ofs < 0 THEN '-' ELSE '+' END ||
+                           to_char(trunc(abs(ofs) / 60), 'fm00') || ':' || to_char(mod(abs(ofs), 60), 'fm00');
+                END IF;
+                RETURN to_char(d, datefmt) || frac;
             ELSE
-                RETURN val;
+                RETURN hex;
         END CASE;
     END;
 
@@ -341,28 +434,31 @@ DECLARE
             WHEN dtype IN ('NUMBER', 'INTEGER', 'FLOAT', 'BINARY_FLOAT', 'BINARY_DOUBLE') THEN
                 RETURN to_number(input);
             WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB', 'NVARCHAR2', 'NCHAR', 'NCLOB', 'ROWID', 'UROWID') THEN
-                --numval := to_number(utl_raw.cast_to_raw(rpad(input),15,0),rawfmt);
                 RETURN NULL;
             WHEN dtype = 'DATE' THEN
                 dateval := to_date(input, datefmt);
                 RETURN to_char(dateval, 'J') +(dateval - trunc(dateval));
-            WHEN dtype = 'TIMESTAMP' THEN
+            WHEN dtype = 'TIMESTAMP' AND dtypefull NOT LIKE '%TIME ZONE' THEN
                 tstamp := to_timestamp(input, tstampfmt);
                 RETURN to_char(tstamp, 'J') +(tstamp + 0 - trunc(tstamp + 0)) + to_char(tstamp, '"0"xff') / 86400;
             ELSE
-                raise_application_error(-20001, 'Unsupported data type: ' || dtype);
+                raise_application_error(-20001, 'Unsupported data type: ' || dtypefull);
         END CASE;
     EXCEPTION
         WHEN OTHERS THEN
-            raise_application_error(-20001, 'Conversion error from value "' || input || '" to the "' || dtype || '" data type!');
+            IF SQLCODE = -20001 THEN
+                RAISE;
+            END IF;
+            raise_application_error(-20001, 'Conversion error from value "' || input || '" to the "' || dtypefull || '" data type!');
     END;
 
     --get the cardinality of a specific predicate
     FUNCTION get_card(val VARCHAR2) RETURN VARCHAR2 IS
-        val1     VARCHAR2(128) := rtrim(val);
-        str      VARCHAR2(128) := CASE WHEN val1 LIKE ':%' THEN val1 ELSE '''' || val1 || '''' END;
-        target   VARCHAR2(500);
-        test_val VARCHAR2(128);
+        val1     VARCHAR2(4000)   := rtrim(val);
+        str      VARCHAR2(4002)   := CASE WHEN val1 LIKE ':%' THEN val1 ELSE '''' || val1 || '''' END;
+        target   VARCHAR2(32767);
+        test_val VARCHAR2(32767);
+        stmt     VARCHAR2(32767);
         rtn      NUMBER;
         pred     VARCHAR2(2000);
     BEGIN
@@ -380,6 +476,7 @@ DECLARE
             END IF;
             test_stmt := test_stmt || ' from ' || target || ' a where "' || col || '"';
         END IF;
+        stmt := test_stmt;
         
         pred := nvl(upper(regexp_substr(val1,'^\s*(\S+)',1,1)),'x');
         IF pred NOT IN('BETWEEN','IN','EXISTS','NOT','>','<','=','>=','<=','!=','<>') THEN
@@ -397,22 +494,25 @@ DECLARE
                 ELSE
                     test_val := str;
             END CASE;
-            test_val := '='||str;
+            test_val :=  '='|| test_val;
         ELSE
-            test_stmt := test_stmt||val1;
+            --a custom predicate, append it to a copy so the cached prefix stays reusable
+            stmt := stmt || val1;
         END IF;
     
         IF is_test = 2 THEN
-            EXECUTE IMMEDIATE test_stmt || test_val INTO rtn;
+            EXECUTE IMMEDIATE stmt || test_val INTO rtn;
         ELSE
             SAVEPOINT test_card;
             DELETE SYS.PLAN_TABLE$ a WHERE a.statement_id = stmt_id;
-            EXECUTE IMMEDIATE test_stmt || test_val;
+            EXECUTE IMMEDIATE stmt || test_val;
+            --id=0 is the root line and holds the estimate for the whole statement;
+            --ROWNUM<2 would take whichever line happened to come back first
             SELECT MAX(a.cardinality)
             INTO   rtn
             FROM   SYS.PLAN_TABLE$ a
             WHERE  a.statement_id = stmt_id
-            AND    ROWNUM < 2;
+            AND    a.id = 0;
             IF txn_id IS NOT NULL THEN
                 ROLLBACK TO SAVEPOINT test_card;
             ELSE
@@ -425,8 +525,8 @@ DECLARE
             IF SQLCODE IN (-942, -1031) THEN
                 raise_application_error(-20001, 'You don''t have access to "' || oname || '"."' || tab || '"!');
             ELSE
-                target := SQLERRM || ': ' || test_stmt || test_val;
-                raise_application_error(-20001, target);
+                --raise_application_error caps its message at 2048 bytes
+                raise_application_error(-20001, substr(SQLERRM || ': ' || stmt || test_val, 1, 2000));
             END IF;
     END;
 
@@ -497,14 +597,20 @@ DECLARE
     PROCEDURE calc_density IS
     BEGIN
         /*  EP         = EndPoint
-            NewDensity = (1-PopBktCnt/BktCnt)/(NDV-PopValCnt)
             BktCnt     = MAX(EP_number)
-            PopBktCnt  = SUM(<number of popular buckets>)
-            PopValCnt  = Count(<number of popular buckets>)
-            Buckets    = current_EP_number - previous_EP_number
-            Popular EP values:
-                HEIGHT BALANCED: The EP whose buckets > 1
-                HYBRID         : The EP whose buckets > BktCnt/NUM_BUCKETS
+            Buckets    = current_EP_number - previous_EP_number, but on a HYBRID it is
+                         the EP's repeat count, which does not add up to BktCnt
+            NewDensity (the density the optimizer really applies) per histogram type:
+                HEIGHT BALANCED: (1-PopBktCnt/BktCnt)/(NDV-PopValCnt), a popular EP is one
+                                 whose Buckets > 1
+                HYBRID         : (1-PopBktCnt/BktCnt)/(NDV-PopValCnt), a popular EP is one
+                                 whose Buckets > BktCnt/#EPs
+                FREQUENCY      : 0.5 * MIN(Buckets) / BktCnt, the "half the least popular
+                                 value" rule
+                TOP-FREQUENCY  : (NumRows-BktCnt)/((NDV-#EPs)*NumRows), the rows the
+                                 histogram does not account for spread over the values it
+                                 did not capture
+                NONE           : 1/NDV
         
         */
         numbcks := srec.bkvals(srec.epc);
@@ -513,25 +619,32 @@ DECLARE
         numbcks := NULLIF(numbcks, 0);
         cnt     := 0;
         pops    := 0;
+        minb    := NULL;
+        prevb   := 0;
         dlen    := 16;
 
         CASE histogram
-            WHEN 'HYBRID' THEN
-                -- More accurate popular value threshold for HYBRID histogram
-                pop_based := GREATEST(numbcks / srec.epc, 1);
             WHEN 'HEIGHT BALANCED' THEN
                 pop_based := 1;
+            WHEN 'HYBRID' THEN
+                pop_based := numbcks / srec.epc;
             ELSE
                 pop_based := NULL;
         END CASE;
     
         FOR i IN 1 .. srec.epc LOOP
-            buckets := srec.bkvals(i) - prevb;
+            --fill_arrays always starts a non-FREQUENCY array at bkvals(1)=0, so the raw
+            --delta of EP#1 is 0; clamp it like the display loop does or a zero leaks into
+            --minb and zeroes out the FREQUENCY NewDensity
+            buckets := greatest(srec.bkvals(i) - prevb, 1);
             srec.chvals(i) := rtrim(conv(i));
-            dlen := greatest(dlen, lengthb(srec.chvals(i)));
+            dlen := greatest(dlen, length(srec.chvals(i)));
             $IF dbms_db_version.version>11 $THEN
-                buckets := nvl(nullif(srec.rpcnts(i), 0), buckets);
+                IF histogram = 'HYBRID' THEN
+                    buckets := nvl(srec.rpcnts(i), 0);
+                END IF;
             $END
+            minb := least(nvl(minb, buckets), buckets);
             IF buckets > pop_based THEN
                 cnt  := cnt + 1;
                 pops := pops + buckets;
@@ -539,7 +652,13 @@ DECLARE
             prevb := srec.bkvals(i);
         END LOOP;
     
-        densityn := coalesce((1 - pops / numbcks) / nullif(distcnt - cnt, 0), density);
+        IF histogram = 'TOP-FREQUENCY' THEN
+            densityn := coalesce((numrows - numbcks) / nullif((distcnt - srec.epc) * numrows, 0), density);
+        ELSIF histogram = 'FREQUENCY' THEN
+            densityn := coalesce(0.5 * minb / numbcks, density);
+        ELSE
+            densityn := coalesce((1 - pops / numbcks) / nullif(distcnt - cnt, 0), density);
+        END IF;
     END;
 
     PROCEDURE reset_Rec(rec IN OUT NOCOPY DBMS_STATS.STATREC) IS
@@ -547,7 +666,10 @@ DECLARE
         IF rec.chvals IS NULL THEN
             rec.chvals := dbms_stats.chararray();
         END IF;
-        rec.chvals.extend(rec.epc - rec.chvals.count);
+        --epc moves in both directions: it grows when an EP is added and shrinks when
+        --prepare_column_values merges duplicates through RESIZE_ARRAYS
+        rec.chvals.extend(greatest(rec.epc - rec.chvals.count, 0));
+        rec.chvals.trim(greatest(rec.chvals.count - rec.epc, 0));
     
         $IF dbms_db_version.version > 11 $THEN
             IF rec.eavals IS NULL THEN
@@ -556,8 +678,8 @@ DECLARE
             IF rec.rpcnts IS NULL THEN
                 rec.rpcnts := dbms_stats.numarray();
             END IF;
-            rec.eavals.extend(rec.epc - rec.eavals.count);
-            rec.rpcnts.extend(rec.epc - rec.rpcnts.count);
+            rec.eavals.extend(greatest(rec.epc - rec.eavals.count, 0));
+            rec.rpcnts.extend(greatest(rec.epc - rec.rpcnts.count, 0));
         $END
     END;
 
@@ -579,8 +701,8 @@ DECLARE
             FROM   (SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
                            last_analyzed,
-                           global_stats,
-                           user_stats
+                           global_stats gstats,
+                           user_stats   ustats
                     FROM   &CHECK_ACCESS_DBA.part_col_statistics b
                     WHERE  b.owner = oname
                     AND    b.table_name = tab
@@ -591,8 +713,8 @@ DECLARE
                     SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
                            last_analyzed,
-                           global_stats,
-                           user_stats
+                           global_stats gstats,
+                           user_stats   ustats
                     FROM   &CHECK_ACCESS_DBA.subpart_col_statistics b
                     WHERE  b.owner = oname
                     AND    b.table_name = tab
@@ -603,8 +725,8 @@ DECLARE
                     SELECT histogram,
                            nvl2(num_buckets, nvl(sample_size, 0), NULL) samples,
                            last_analyzed,
-                           global_stats,
-                           user_stats
+                           global_stats gstats,
+                           user_stats   ustats
                     FROM   &CHECK_ACCESS_DBA.tab_col_statistics b
                     WHERE  b.owner = oname
                     AND    b.table_name = tab
@@ -677,16 +799,17 @@ DECLARE
                 dbms_output.put_line('Note: The result could be incorrect due to '||lower(ttype)||'(num_rows) < column(num_null + num_distinct).');
             END IF;
 
-            IF adjnnull != notnulls and adjnnull>=distcnt THEN
+            IF adjnnull > 0 and adjnnull != notnulls and adjnnull>=distcnt THEN
                 IF adjnnull < notnulls THEN
-                    adjnnull := numrows - adjnnull*numrows/(adjnnull+nullcnt);
+                    --scale the sampled non-null rows up to the whole table
+                    adjnnull := adjnnull*numrows/(adjnnull+nullcnt);
                 END IF;
             ELSE
                 adjnnull :=null;
             END IF;
 
-            IF flags > 0 AND bitand(srec.eavs,flags) = 0 THEN
-                srec.eavs := srec.eavs + flags;
+            IF flags > 0 AND bitand(rec.eavs,flags) = 0 THEN
+                rec.eavs := rec.eavs + flags;
             END IF;
         EXCEPTION
             WHEN OTHERS THEN
@@ -701,22 +824,360 @@ DECLARE
     PROCEDURE to_script(rec in out nocopy dbms_stats.StatRec) IS
         buff VARCHAR2(32767);
         c    CLOB;
-        PROCEDURE append(idx PLS_INTEGER, name VARCHAR2, val VARCHAR2) IS
-            elem VARCHAR2(2000) := CASE WHEN NAME IN('chvals','eavals','minval','maxval') THEN ''''||val||'''' ELSE val END;
+        aw   PLS_INTEGER;
+        --to_char's nlsparam argument is unusable for numbers in PL/SQL, so sniff the session
+        --decimal separator and normalize it: TM never emits a group separator
+        dec  VARCHAR2(1) := substr(to_char(1.5, 'tm'), 2, 1);
+        --novals round-trip verification scratch space; declared before the first subprogram
+        --because item declarations cannot follow a subprogram declaration
+        cfmt VARCHAR2(30);
+        dfmt VARCHAR2(30);
+        expr VARCHAR2(2000);
+        dtmp DATE;
+        --full fractional-second precision: the default TIMESTAMP(6) truncates the
+        --nanosecond bytes when re-emitting the decoded text, silently corrupting the raw
+        ts   TIMESTAMP(9);
+        tstz TIMESTAMP(9) WITH TIME ZONE;
+
+        PROCEDURE flush(minfree PLS_INTEGER) IS
         BEGIN
-            IF val IS NULL THEN
-                RETURN; 
-            END IF;
-            buff := buff || chr(10) || lpad(' ',4)||utl_lms.format_message('srec.%s%s := %s;',name,nullif('('||idx||')','()'),elem);
-            IF lengthb(buff)>28000 THEN
-                dbms_lob.writeAppend(c,length(buff),buff);
+            IF buff IS NOT NULL AND lengthb(buff) + minfree > 28000 THEN
+                dbms_lob.writeAppend(c, length(buff), buff);
                 buff := '';
             END IF;
         END;
+
+        PROCEDURE line(txt VARCHAR2) IS
+        BEGIN
+            flush(lengthb(txt) + 1);
+            buff := buff || chr(10) || txt;
+        END;
+
+        --a single quoted PL/SQL literal, embedded quotes doubled
+        FUNCTION lit(v VARCHAR2) RETURN VARCHAR2 IS
+        BEGIN
+            RETURN CASE WHEN v IS NULL THEN NULL ELSE '''' || replace(v, '''', '''''') || '''' END;
+        END;
+
+        --a numeric literal that stays compilable regardless of the session NLS settings
+        FUNCTION num(v NUMBER) RETURN VARCHAR2 IS
+        BEGIN
+            RETURN replace(to_char(v, 'tm'), dec, '.');
+        END;
+
+        FUNCTION is_text(v VARCHAR2) RETURN BOOLEAN IS
+        BEGIN
+            RETURN v IS NOT NULL AND v = regexp_replace(v, '[^[:print:]]', '');
+        END;
+
+        --the DSC_* bits this script itself sets or reads, see SYS.DBMS_STATS_INTERNAL
+        FUNCTION eavscmt(v NUMBER) RETURN VARCHAR2 IS
+            r VARCHAR2(200);
+        BEGIN
+            IF bitand(v, 4) > 0 THEN r    := r || 'DSC_EAVS(4) + ';          END IF;
+            IF bitand(v, 32) > 0 THEN r   := r || 'DSC_CHR(32) + ';          END IF;
+            IF bitand(v, 4096) > 0 THEN r := r || 'DSC_HIST_FREQ(4096) + ';  END IF;
+            IF bitand(v, 8192) > 0 THEN r := r || 'DSC_HIST_TOPFREQ(8192) + '; END IF;
+            RETURN rtrim(r, ' +');
+        END;
+
+        PROCEDURE assign(name VARCHAR2, idx PLS_INTEGER, val VARCHAR2, cmt VARCHAR2 := NULL) IS
+            lhs VARCHAR2(128) := 'srec.' || name || nullif('(' || idx || ')', '()');
+        BEGIN
+            IF val IS NULL THEN
+                RETURN;
+            END IF;
+            IF cmt IS NOT NULL THEN
+                line('    --' || cmt);
+            END IF;
+            line('    ' || rpad(lhs, aw) || ' := ' || val || ';');
+        END;
+
+        --An expression evaluating to exactly r. A readable spelling is used only when it
+        --converts back to the stored raw byte for byte, otherwise fall back to raw hex and
+        --say what it decodes to, so that the statistics are never silently rewritten.
+        PROCEDURE assign_raw(name VARCHAR2, idx PLS_INTEGER, r RAW) IS
+            hex    VARCHAR2(4000) := rawtohex(r);
+            v      VARCHAR2(4000);
+            n      NUMBER;
+            bf     binary_float;
+            bd     binary_double;
+            d      DATE;
+            --full fractional-second precision: the default TIMESTAMP(6) truncates the
+            --nanosecond bytes when re-emitting the decoded text, silently corrupting the raw
+            ts     TIMESTAMP(9);
+            tstz   TIMESTAMP(9) WITH TIME ZONE;
+            ns     NUMBER;
+            ns_utc NUMBER;
+            ofs    NUMBER;
+            val    VARCHAR2(32767);
+        BEGIN
+            IF r IS NULL THEN
+                RETURN;
+            END IF;
+            CASE
+                WHEN dtype IN ('VARCHAR2', 'CHAR', 'CLOB', 'ROWID', 'UROWID') THEN
+                    v := utl_raw.cast_to_varchar2(r);
+                    IF is_text(v) AND rawtohex(utl_raw.cast_to_raw(v)) = hex THEN
+                        val := 'utl_raw.cast_to_raw(' || lit(v) || ')';
+                    END IF;
+                WHEN dtype IN ('NVARCHAR2', 'NCHAR', 'NCLOB') THEN
+                    v := utl_raw.cast_to_nvarchar2(r);
+                    --the n'' literal also has to survive the database character set round trip
+                    IF is_text(v) AND rawtohex(utl_raw.cast_to_raw(to_nchar(v))) = hex THEN
+                        val := 'utl_raw.cast_to_raw(n' || lit(v) || ')';
+                    END IF;
+                WHEN dtype IN ('NUMBER', 'INTEGER', 'FLOAT') THEN
+                    dbms_stats.convert_raw_value(r, n);
+                    IF rawtohex(utl_raw.cast_from_number(n)) = hex THEN
+                        val := 'utl_raw.cast_from_number(' || num(n) || ')';
+                    END IF;
+                WHEN dtype = 'BINARY_FLOAT' THEN
+                    dbms_stats.convert_raw_value(r, bf);
+                    v := bf2txt(bf);
+                    IF rawtohex(bfraw(to_binary_float(v))) = hex THEN
+                        val := 'bf2raw(to_binary_float(' || lit(v) || '))';
+                    END IF;
+                WHEN dtype = 'BINARY_DOUBLE' THEN
+                    dbms_stats.convert_raw_value(r, bd);
+                    v := bd2txt(bd);
+                    IF rawtohex(bdraw(to_binary_double(v))) = hex THEN
+                        val := 'bd2raw(to_binary_double(' || lit(v) || '))';
+                    END IF;
+                WHEN dtype = 'DATE' THEN
+                    dbms_stats.convert_raw_value(r, d);
+                    --verify round-trip using the same formula as conr/date2raw
+                    v := lpad(to_char(floor(to_number(to_char(d, 'SYYYY')) / 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(mod(to_number(to_char(d, 'SYYYY')), 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'MM')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'DD')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'HH24')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'MI')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'SS')) + 1, 'fmxx'), 2, '0');
+                    IF rawtohex(hextoraw(v)) = hex THEN
+                        val := 'date2raw(to_date(''' || to_char(d, datefmt) || ''',''' || datefmt || '''))';
+                    END IF;
+                WHEN dtype = 'TIMESTAMP' AND dtypefull NOT LIKE '%TIME ZONE' THEN
+                    dbms_stats.convert_raw_value(utl_raw.substr(r, 1, 7), d);
+                    ts := to_timestamp(to_char(d, datefmt), datefmt);
+                    ns := 0;
+                    IF length(r) > 7 THEN
+                        ns := to_number(substr(hex, 15, 8), 'xxxxxxxx');
+                        ts := ts + numtodsinterval(ns / 1000000000, 'SECOND');
+                    END IF;
+                    --verify round-trip using the same formula as conr/timestamp2raw
+                    v := lpad(to_char(floor(to_number(to_char(ts, 'SYYYY')) / 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(mod(to_number(to_char(ts, 'SYYYY')), 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'MM')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'DD')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'HH24')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'MI')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'SS')) + 1, 'fmxx'), 2, '0');
+                    IF ns != 0 THEN
+                        v := v || lpad(to_char(ns, 'fmxxxxxxxx'), 8, '0');
+                    END IF;
+                    IF rawtohex(hextoraw(v)) = hex THEN
+                        val := 'timestamp2raw(to_timestamp(''' || to_char(ts, tstampfmt) || ''',''' || tstampfmt || '''))';
+                    END IF;
+                WHEN dtypefull LIKE '%WITH TIME ZONE' AND dtypefull NOT LIKE '%LOCAL%' THEN
+                    dbms_stats.convert_raw_value(utl_raw.substr(r, 1, 7), d);
+                    ofs := (to_number(substr(hex, 23, 2), 'xx') - 20) * 60 + to_number(substr(hex, 25, 2), 'xx') - 60;
+                    ts := to_timestamp(to_char(d, datefmt), datefmt) + numtodsinterval(ofs, 'MINUTE');
+                    ns := 0;
+                    IF length(r) > 9 THEN
+                        ns := to_number(substr(hex, 15, 8), 'xxxxxxxx');
+                        ts := ts + numtodsinterval(ns / 1000000000, 'SECOND');
+                    END IF;
+                    tstz := from_tz(ts, to_char(trunc(ofs/60),'fm00')||':'||to_char(mod(abs(ofs),60),'fm00'));
+                    --verify round-trip using the same formula as conr/timestamptz2raw
+                    d := CAST(tstz AT TIME ZONE 'UTC' AS DATE);
+                    v := lpad(to_char(floor(to_number(to_char(d, 'SYYYY')) / 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(mod(to_number(to_char(d, 'SYYYY')), 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'MM')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'DD')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'HH24')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'MI')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(d, 'SS')) + 1, 'fmxx'), 2, '0');
+                    ns_utc := to_number(to_char(tstz AT TIME ZONE 'UTC', 'ff9'));
+                    IF ns_utc != 0 THEN
+                        v := v || lpad(to_char(ns_utc, 'fmxxxxxxxx'), 8, '0');
+                    END IF;
+                    v := v || lpad(to_char(extract(timezone_hour FROM tstz) + 20, 'fmxx'), 2, '0') ||
+                             lpad(to_char(extract(timezone_minute FROM tstz) + 60, 'fmxx'), 2, '0');
+                    IF rawtohex(hextoraw(v)) = hex THEN
+                        val := 'timestamptz2raw(from_tz(to_timestamp(''' || to_char(ts, tstampfmt) || ''',''' || tstampfmt || '''),''' || to_char(trunc(ofs/60),'fm00')||':'||to_char(mod(abs(ofs),60),'fm00') || '''))';
+                    END IF;
+                WHEN dtypefull LIKE '%WITH LOCAL TIME ZONE' THEN
+                    dbms_stats.convert_raw_value(utl_raw.substr(r, 1, 7), d);
+                    ts := to_timestamp(to_char(d, datefmt), datefmt);
+                    ns := 0;
+                    IF length(r) > 7 THEN
+                        ns := to_number(substr(hex, 15, 8), 'xxxxxxxx');
+                        ts := ts + numtodsinterval(ns / 1000000000, 'SECOND');
+                    END IF;
+                    --verify round-trip using the same formula as conr/timestampltz2raw
+                    v := lpad(to_char(floor(to_number(to_char(ts, 'SYYYY')) / 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(mod(to_number(to_char(ts, 'SYYYY')), 100) + 100, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'MM')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'DD')), 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'HH24')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'MI')) + 1, 'fmxx'), 2, '0') ||
+                         lpad(to_char(to_number(to_char(ts, 'SS')) + 1, 'fmxx'), 2, '0');
+                    IF ns != 0 THEN
+                        v := v || lpad(to_char(ns, 'fmxxxxxxxx'), 8, '0');
+                    END IF;
+                    IF rawtohex(hextoraw(v)) = hex THEN
+                        val := 'timestampltz2raw(to_timestamp(''' || to_char(ts, tstampfmt) || ''',''' || tstampfmt || '''))';
+                    END IF;
+                ELSE
+                    NULL;
+            END CASE;
+            IF val IS NOT NULL THEN
+                assign(name, idx, val);
+                RETURN;
+            END IF;
+            IF v IS NULL THEN
+                v := getv(r);
+            END IF;
+            v := regexp_replace(v, '[^[:print:]]', '');
+            assign(name, idx, 'hextoraw(''' || hex || ''')', CASE WHEN v IS NULL THEN NULL ELSE dtypefull || ': ' || v END);
+        END;
     BEGIN
-        buff := replace(replace(q'[
+        dbms_lob.createTemporary(c, true);
+        reset_Rec(rec);
+        aw := greatest(11, 13 + length(to_char(greatest(rec.epc, 1))));
+
+        line('--Histogram of ' || oname || '.' || tab || CASE WHEN part IS NULL THEN NULL ELSE '[' || part || ']' END || ' column ' || col);
+        line('--Data type ' || dtypefull || ', histogram "' || histogram || '", ' || rec.epc || ' endpoints');
+        line('--Snapshot taken by "ora histogram" on ' || to_char(systimestamp, datefmt) || '. Run this script to');
+        line('--write the statistics back with dbms_stats.set_column_stats.');
+        line('--');
+        line('--chvals(i) is the readable value of endpoint i and is documentation only: dbms_stats never');
+        line('--reads StatRec.chvals. The optimizer uses novals(i), the internal endpoint_value, plus');
+        line('--eavals(i) for character and BINARY_FLOAT/DOUBLE columns. A readable expression is emitted');
+        line('--wherever it converts back');
+        line('--to the stored raw byte for byte, otherwise the raw hex is emitted with the decoded value in');
+        line('--the comment above it. novals(i) is what Oracle stores and cannot be recomputed from the');
+        line('--text, so leave it alone unless you know exactly what you are doing.');
+
+        buff := buff || replace(replace(q'[
             DECLARE
-                srec dbms_stats.StatRec;
+                srec dbms_stats.StatRec;]',':epc',rec.epc),lpad(' ',12));
+
+        --emit helper functions for raw re-encoding in the DECLARE section (before BEGIN):
+        --date/timestamp types rebuild the internal bytes from readable text, while float
+        --types must apply the sortable T-map that histgrm$/statrec store instead of IEEE
+        IF dtype = 'BINARY_FLOAT' THEN
+            buff := buff || q'[
+                FUNCTION bf2raw(b binary_float) RETURN RAW IS
+                    h VARCHAR2(16) := rawtohex(utl_raw.cast_from_binary_float(b));
+                BEGIN
+                    IF substr(h, 1, 1) >= '8' THEN
+                        RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('FFFFFFFF'));
+                    END IF;
+                    RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('80000000'));
+                END;]';
+        ELSIF dtype = 'BINARY_DOUBLE' THEN
+            buff := buff || q'[
+                FUNCTION bd2raw(b binary_double) RETURN RAW IS
+                    h VARCHAR2(32) := rawtohex(utl_raw.cast_from_binary_double(b));
+                BEGIN
+                    IF substr(h, 1, 1) >= '8' THEN
+                        RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('FFFFFFFFFFFFFFFF'));
+                    END IF;
+                    RETURN utl_raw.bit_xor(hextoraw(h), hextoraw('8000000000000000'));
+                END;]';
+        ELSIF dtype IN ('DATE', 'TIMESTAMP') OR dtypefull LIKE '%TIME ZONE' THEN
+            --subtypes must precede every subprogram: after the first function
+            --declaration only further functions are allowed in the DECLARE part
+            IF dtype = 'TIMESTAMP' AND dtypefull NOT LIKE '%TIME ZONE' THEN
+                buff := buff || q'[
+                SUBTYPE ts9 IS TIMESTAMP(9);]';
+            ELSIF dtypefull LIKE '%WITH TIME ZONE' AND dtypefull NOT LIKE '%LOCAL%' THEN
+                buff := buff || q'[
+                SUBTYPE tstz9 IS TIMESTAMP(9) WITH TIME ZONE;]';
+            ELSIF dtypefull LIKE '%WITH LOCAL TIME ZONE' THEN
+                buff := buff || q'[
+                SUBTYPE tsl9 IS TIMESTAMP(9) WITH LOCAL TIME ZONE;]';
+            END IF;
+            buff := buff || q'[
+                FUNCTION date2raw(d DATE) RETURN RAW IS
+                BEGIN
+                    RETURN lpad(to_char(floor(to_number(to_char(d, 'SYYYY')) / 100) + 100, 'fmxx'), 2, '0') ||
+                           lpad(to_char(mod(to_number(to_char(d, 'SYYYY')), 100) + 100, 'fmxx'), 2, '0') ||
+                           lpad(to_char(to_number(to_char(d, 'MM')), 'fmxx'), 2, '0') ||
+                           lpad(to_char(to_number(to_char(d, 'DD')), 'fmxx'), 2, '0') ||
+                           lpad(to_char(to_number(to_char(d, 'HH24')) + 1, 'fmxx'), 2, '0') ||
+                           lpad(to_char(to_number(to_char(d, 'MI')) + 1, 'fmxx'), 2, '0') ||
+                           lpad(to_char(to_number(to_char(d, 'SS')) + 1, 'fmxx'), 2, '0');
+                END;]';
+            IF dtype = 'TIMESTAMP' AND dtypefull NOT LIKE '%TIME ZONE' THEN
+                buff := buff || q'[
+                FUNCTION timestamp2raw(ts ts9) RETURN RAW IS
+                    ns NUMBER := to_number(to_char(ts, 'ff9'));
+                    r  RAW(20) := date2raw(CAST(ts AS DATE));
+                BEGIN
+                    IF ns != 0 THEN
+                        r := r || lpad(to_char(ns, 'fmxxxxxxxx'), 8, '0');
+                    END IF;
+                    RETURN r;
+                END;]';
+            ELSIF dtypefull LIKE '%WITH TIME ZONE' AND dtypefull NOT LIKE '%LOCAL%' THEN
+                buff := buff || q'[
+                FUNCTION timestamptz2raw(ts tstz9) RETURN RAW IS
+                    ns  NUMBER := to_number(to_char(ts AT TIME ZONE 'UTC', 'ff9'));
+                    d   DATE   := CAST(ts AT TIME ZONE 'UTC' AS DATE);
+                    r   RAW(20) := date2raw(d);
+                BEGIN
+                    IF ns != 0 THEN
+                        r := r || lpad(to_char(ns, 'fmxxxxxxxx'), 8, '0');
+                    END IF;
+                    r := r || lpad(to_char(extract(timezone_hour FROM ts) + 20, 'fmxx'), 2, '0') ||
+                             lpad(to_char(extract(timezone_minute FROM ts) + 60, 'fmxx'), 2, '0');
+                    RETURN r;
+                END;]';
+            ELSIF dtypefull LIKE '%WITH LOCAL TIME ZONE' THEN
+                buff := buff || q'[
+                FUNCTION timestampltz2raw(ts tsl9) RETURN RAW IS
+                    ns NUMBER := to_number(to_char(ts, 'ff9'));
+                    r  RAW(20) := date2raw(CAST(ts AS DATE));
+                BEGIN
+                    IF ns != 0 THEN
+                        r := r || lpad(to_char(ns, 'fmxxxxxxxx'), 8, '0');
+                    END IF;
+                    RETURN r;
+                END;]';
+            END IF;
+            --also emit num conversion functions for readable novals
+            buff := buff || q'[
+                FUNCTION date2num(d DATE) RETURN NUMBER IS
+                BEGIN
+                    --DATE endpoint numbers are the day fraction rounded onto the
+                    --1e-8-day grid (measured on 19c); reproduce that rounding here
+                    RETURN to_number(to_char(d, 'J')) + round((d - trunc(d)) * 1e8) / 1e8;
+                END;]';
+            IF dtype = 'TIMESTAMP' AND dtypefull NOT LIKE '%TIME ZONE' THEN
+                buff := buff || q'[
+                FUNCTION timestamp2num(ts ts9) RETURN NUMBER IS
+                BEGIN
+                    RETURN to_number(to_char(ts, 'J')) + (ts + 0 - trunc(ts + 0)) + to_number(to_char(ts, 'xff')) / 86400;
+                END;]';
+            ELSIF dtypefull LIKE '%WITH TIME ZONE' AND dtypefull NOT LIKE '%LOCAL%' THEN
+                buff := buff || q'[
+                FUNCTION timestamptz2num(ts tstz9) RETURN NUMBER IS
+                BEGIN
+                    RETURN to_number(to_char(ts AT TIME ZONE 'UTC', 'J')) + (ts AT TIME ZONE 'UTC' + 0 - trunc(ts AT TIME ZONE 'UTC' + 0)) + to_number(to_char(ts AT TIME ZONE 'UTC', 'xff')) / 86400;
+                END;]';
+            ELSIF dtypefull LIKE '%WITH LOCAL TIME ZONE' THEN
+                buff := buff || q'[
+                FUNCTION timestampltz2num(ts tsl9) RETURN NUMBER IS
+                BEGIN
+                    RETURN to_number(to_char(ts, 'J')) + (ts + 0 - trunc(ts + 0)) + to_number(to_char(ts, 'xff')) / 86400;
+                END;]';
+            END IF;
+        END IF;
+
+        buff := buff || replace(q'[
             BEGIN
                 srec.epc    := :epc;
                 srec.bkvals := dbms_stats.numarray();
@@ -730,27 +1191,71 @@ DECLARE
                     srec.rpcnts := dbms_stats.numarray();
                     srec.eavals.extend(srec.epc);
                     srec.rpcnts.extend(srec.epc);
-                $END]',':epc',rec.epc),lpad(' ',12));
-        dbms_lob.createTemporary(c,true);
-        reset_Rec(rec);
+                $END]',':epc',rec.epc);
+        buff := regexp_replace(buff,'('||chr(10)||chr(13)||'?) {12}','\1');
 
-        buff := buff||chr(10);
-        append(null,'eavs',rec.eavs);
-        append(null,'minval',rec.minval);
-        append(null,'maxval',rec.maxval);
+        line('');
+        assign('eavs', null, num(rec.eavs), eavscmt(rec.eavs));
+        assign_raw('minval', null, rec.minval);
+        assign_raw('maxval', null, rec.maxval);
 
         FOR i in 1..rec.epc LOOP
-            buff := buff||chr(10);
-            append(i,'novals',to_char(rec.novals(i),'tm'));
-            append(i,'bkvals',rec.bkvals(i));
-            append(i,'chvals',rec.chvals(i));
+            line('');
+            assign('chvals', i, lit(rec.chvals(i)));
             $IF dbms_db_version.version > 11 $THEN
-                append(i,'eavals',rec.eavals(i));
-                append(i,'rpcnts',rec.rpcnts(i));
+                assign_raw('eavals', i, rec.eavals(i));
+            $END
+            --novals are numbers that cannot always be recomputed from the text (DATE
+            --endpoints are day fractions rounded onto the 1e-8-day grid), so emit a
+            --readable conversion only when it is verified to reproduce the stored
+            --value exactly, otherwise fall back to the bare number
+            expr := NULL;
+            IF (dtype = 'DATE' OR dtype = 'TIMESTAMP' OR dtypefull LIKE '%TIME ZONE')
+               AND rec.chvals.exists(i) AND rec.chvals(i) IS NOT NULL THEN
+                IF dtype = 'DATE' THEN
+                    dfmt := CASE WHEN length(rec.chvals(i)) <= 10 THEN substr(datefmt, 1, 10) ELSE datefmt END;
+                    dtmp := to_date(rec.chvals(i), dfmt);
+                    IF to_number(to_char(dtmp, 'J')) + round((dtmp - trunc(dtmp)) * 1e8) / 1e8 = rec.novals(i) THEN
+                        expr := 'date2num(to_date(' || lit(rec.chvals(i)) || ',''' || dfmt || '''))';
+                    END IF;
+                ELSIF dtypefull LIKE '%WITH TIME ZONE' AND dtypefull NOT LIKE '%LOCAL%' THEN
+                    --endpoints of a WITH TIME ZONE column live on the UTC clock (measured
+                    --on 19c), so pin the literal to UTC instead of inheriting the session zone
+                    cfmt := CASE WHEN length(rec.chvals(i)) <= 10 THEN substr(tstampfmt, 1, 10) ELSE tstampfmt END;
+                    tstz := from_tz(to_timestamp(rec.chvals(i), cfmt), '+00:00');
+                    IF to_number(to_char(tstz AT TIME ZONE 'UTC', 'J'))
+                         + (tstz AT TIME ZONE 'UTC' + 0 - trunc(tstz AT TIME ZONE 'UTC' + 0))
+                         + to_number(to_char(tstz AT TIME ZONE 'UTC', 'xff')) / 86400 = rec.novals(i) THEN
+                        expr := 'timestamptz2num(from_tz(to_timestamp(' || lit(rec.chvals(i)) || ',''' || cfmt || '''),''+00:00''))';
+                    END IF;
+                ELSIF dtypefull LIKE '%WITH LOCAL TIME ZONE' THEN
+                    cfmt := CASE WHEN length(rec.chvals(i)) <= 10 THEN substr(tstampfmt, 1, 10) ELSE tstampfmt END;
+                    ts := to_timestamp(rec.chvals(i), cfmt);
+                    IF to_number(to_char(ts, 'J')) + (ts + 0 - trunc(ts + 0)) + to_number(to_char(ts, 'xff')) / 86400 = rec.novals(i) THEN
+                        expr := 'timestampltz2num(to_timestamp(' || lit(rec.chvals(i)) || ',''' || cfmt || '''))';
+                    END IF;
+                ELSE
+                    cfmt := CASE WHEN length(rec.chvals(i)) <= 10 THEN substr(tstampfmt, 1, 10) ELSE tstampfmt END;
+                    ts := to_timestamp(rec.chvals(i), cfmt);
+                    IF to_number(to_char(ts, 'J')) + (ts + 0 - trunc(ts + 0)) + to_number(to_char(ts, 'xff')) / 86400 = rec.novals(i) THEN
+                        expr := 'timestamp2num(to_timestamp(' || lit(rec.chvals(i)) || ',''' || cfmt || '''))';
+                    END IF;
+                END IF;
+            END IF;
+            IF expr IS NOT NULL THEN
+                assign('novals', i, expr);
+            ELSE
+                assign('novals', i, num(rec.novals(i)));
+            END IF;
+            assign('bkvals', i, num(rec.bkvals(i)));
+            $IF dbms_db_version.version > 11 $THEN
+                assign('rpcnts', i, num(rec.rpcnts(i)));
             $END
         END LOOP;
 
-        buff := buff||chr(10)||regexp_replace(
+        line('');
+        flush(1000);
+        buff := buff||regexp_replace(
             utl_lms.format_message(q'[
                 dbms_stats.set_column_stats(srec          => srec,
                                             ownname       => '%s',
@@ -764,10 +1269,13 @@ DECLARE
                                             no_invalidate => false,
                                             force         => true);
             END;
-            /]',oname,tab,part,col,''||distcnt,to_char(densityn,'tm'),''||nullcnt,''||avgclen),
+            /]',oname,tab,part,col,nvl(num(distcnt),'null'),nvl(num(densityn),'null'),nvl(num(nullcnt),'null'),nvl(num(avgclen),'null')),
             '('||chr(10)||chr(13)||'?) {12}','\1');
 
-        dbms_lob.writeAppend(c,length(buff),buff);
+        flush(0);
+        IF buff IS NOT NULL THEN
+            dbms_lob.writeAppend(c,length(buff),buff);
+        END IF;
         :script_text := c;
     END;
 
@@ -806,7 +1314,10 @@ DECLARE
             d(i, 'chvals', case when orec.chvals.exists(i) then orec.chvals(i) end, case when srec.chvals.exists(i) then srec.chvals(i) end);
             $IF dbms_db_version.version > 11 $THEN
                 d(i, 'eavals', case when orec.eavals.exists(i) then orec.eavals(i) end, case when srec.eavals.exists(i) then srec.eavals(i) end);
-                d(i, 'rpcnts', case when orec.rpcnts.exists(i) then orec.rpcnts(i) end, case when srec.rpcnts.exists(i) then srec.rpcnts(i) end);
+                --rpcnts is either null or all-zero unless the histogram is HYBRID, and reset_Rec
+                --extends with nulls while prepare_column_values writes real zeros, so compare
+                --them as numbers or every EP is reported as changed
+                d(i, 'rpcnts', nvl(case when orec.rpcnts.exists(i) then orec.rpcnts(i) end, 0), nvl(case when srec.rpcnts.exists(i) then srec.rpcnts(i) end, 0));
             $END
         END LOOP;
     
@@ -919,6 +1430,11 @@ BEGIN
         */
         IF nrec.epc > 1 THEN
             load_stats(orec);
+            --get_column_stats never fills StatRec.chvals, so derive the readable pre-change
+            --values here (srec still holds the original stats) or diff flags every EP as changed
+            FOR i IN 1 .. orec.epc LOOP
+                orec.chvals(i) := rtrim(conv(i));
+            END LOOP;
             srec.epc    := nrec.epc;
             srec.bkvals := nrec.bkvals;
             CASE HISTOGRAM
@@ -936,17 +1452,32 @@ BEGIN
             $END
         
             IF dtype IN ('VARCHAR2', 'CHAR', 'CLOB', 'NVARCHAR2', 'NCHAR', 'NCLOB', 'ROWID', 'UROWID') THEN
-                srec.eavs := 4; --DBMS_STATS_INTERNAL.DSC_EAVS
                 dbms_stats.prepare_column_values(srec, nrec.chvals);
             ELSE
                 dbms_stats.prepare_column_values(srec, nrec.novals);
                 $IF dbms_db_version.version > 11 $THEN
-                    srec.eavals := nrec.eavals;
+                    --prepare_column_values encodes every noval as a NUMBER raw and collapses the
+                    --duplicate EPs that add_rec expanded, so nrec.eavals is both the wrong
+                    --encoding and the wrong length: rebuild it from the merged novals instead
+                    IF bitand(nrec.eavs, 4) > 0 THEN
+                        FOR i IN 1 .. srec.epc LOOP
+                            srec.eavals(i) := conr(NULL, srec.novals(i));
+                        END LOOP;
+                    ELSE
+                        --DSC_EAVS is off for DATE/TIMESTAMP, which store no epvalue_raw at all
+                        srec.eavals := dbms_stats.rawarray();
+                        srec.eavals.extend(srec.epc);
+                    END IF;
                 $END
                 srec.minval := conr(1);
                 srec.maxval := conr(srec.epc);
-                --srec.eavs   := null;
             END IF;
+            --prepare_column_values resets eavs to DSC_NONE, restore it before diff/to_script
+            --so that the "-test" preview shows exactly what would be written
+            srec.eavs := nrec.eavs;
+            --prepare_column_values resizes every array except chvals, which dbms_stats does not
+            --read, so realign it to the new epc before calc_density and to_script index into it
+            reset_Rec(srec);
             
             calc_density;
             diff;
@@ -955,7 +1486,6 @@ BEGIN
                 RETURN;
             END IF;
 
-            srec.eavs := nrec.eavs;
             
             --set stats for restoration
             restoret := TO_CHAR(systimestamp - numtodsinterval(1, 'second'), tztampfmt);
@@ -1023,23 +1553,9 @@ BEGIN
             WHEN 'HYBRID' THEN
                 $IF dbms_db_version.version>11 $THEN
                     max_v  := nullif('(' || nullif(srec.rpcnts(i), 0) || ')', '()');
-                    
-                    -- Initialize rpcnt with density-based default value
-                    rpcnt := notnulls * densityn;
-                    
-                    -- Calculate sample-based cardinality
-                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(numbcks, 0); -- sample_size has excluded null values
-                    IF bk_adj IS NOT NULL THEN
-                        IF srec.rpcnts(i) >= pop_based THEN
-                            -- Popular value, use bucket size calculation
-                            rpcnt := bk_adj;
-                        ELSE
-                            -- Non-popular value, take maximum
-                            rpcnt := GREATEST(rpcnt, bk_adj);
-                        END IF;
-                    END IF;
-                    
-                    -- Calculate adjusted cardinality
+                    -- repeat count scaled cardinality, sample_size has excluded null values
+                    bk_adj := nullif(srec.rpcnts(i), 0) * notnulls / nullif(numbcks, 0);
+                    rpcnt  := nvl(bk_adj, notnulls * densityn);
                     adjcnt := rpcnt * adjnnull / notnulls;
                 $ELSE
                     -- Compatible with older versions, use density-based calculation
@@ -1065,6 +1581,11 @@ BEGIN
                 END IF;
                 adjcnt := rpcnt*adjnnull/notnulls;
                 --rpcnt := buckets;
+            WHEN 'TOP-FREQUENCY' THEN
+                --a top-frequency histogram is built from a full scan, so every EP already
+                --holds an exact row count and the optimizer uses it as is
+                rpcnt := buckets;
+                adjcnt:= rpcnt*adjnnull/notnulls;
             ELSE
                 rpcnt := buckets * notnulls / nullif(numbcks,0);
                 adjcnt:= buckets * adjnnull / nullif(numbcks,0);

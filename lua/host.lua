@@ -1,11 +1,12 @@
 local env,os=env,os
 local host={}
+local console,suspend=console,console.suspend
 function host.run_command(cmd)
     env.checkhelp(cmd)
     io.flush()
-    console:suspend(true)
+    suspend(console,true)
     local rtn,exit,signal=os.execute(cmd)
-    console:suspend(false)
+    suspend(console,false)
 end
 
 function host.mkdir(path)

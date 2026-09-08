@@ -284,7 +284,7 @@ function lexer:read(data,file,seq)
     end
     
     for i,h in ipairs(priors) do
-        if h.probe.on_finish then
+        if h.probe.on_finish and root[h.name] then
             h.probe.on_finish(h.probe,root[h.name])
         end
     end

@@ -32,8 +32,8 @@ ORCL> ora space sys.obj$ advise
 
     --[[
         @CHECK_ACCESS: dbms_space/dba_objects/dba_tablespaces={}
-        @check_access_dba: dba_objects={dba_} default={_all}
-        @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments)}
+        @check_access_dba: dba_objects={dba_} default={all_}
+        @check_access_segs: dba_segments={dba_segments} default={(select user owner,a.* from user_segments a)}
         @ARGS: 1
         @fs5: 12.2={fs5_blocks=>v_fs5_blocks,fs5_bytes => v_fs5_bytes,} default={}
         &dep: default={0} dep={1}
@@ -110,7 +110,7 @@ DECLARE
             AND    objs.partition_name=subs.subpartition_name(+)
             AND    nvl(objs.partition_name, ' ') LIKE p_partition || '%')
         SELECT /*+leading(x seg y) use_nl(seg) use_hash(y) no_merge(y)*/
-               distinct segment_owner || '.' || segment_name || nvl2(partition_name, '.' || segment_name, '') object_name,
+               distinct segment_owner || '.' || segment_name || nullif('.' || partition_name, '.') object_name,
                segment_type object_type,
                seg.*,
                (SELECT segment_space_management
@@ -525,6 +525,7 @@ DECLARE
             OPEN l_CursorSegs(v_list(i) ('owner'),
                               v_list(i) ('segment'),
                               v_list(i) ('partition'),
+                              v_list(i) ('object_type'),
                               1);
             FETCH l_CursorSegs BULK COLLECT
                 INTO v_segs;
@@ -541,7 +542,6 @@ DECLARE
                     '--total--');
             v_seek := 0;
             FOR j IN 1 .. v_segs.count LOOP
-
                 DBMS_ADVISOR.create_object(task_name   => v_task,
                                            object_type => v_segs(j).segment_type,
                                            attr1       => v_segs(j).segment_owner,

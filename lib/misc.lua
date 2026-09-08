@@ -102,6 +102,7 @@ end
 
 local trim_space,trim_chars=utf8.trim_space,utf8.trim_chars
 local comon_spaces=' \t\n\r\b\f'
+--when sep is not specified then trims all invisible/white spaces, when sep=='' then only trims ' \t\n\r\b\f'
 local function trim_(s,sep,dir)
     if sep==nil then
         return trim_space(s,dir)

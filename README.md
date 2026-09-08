@@ -264,6 +264,7 @@ Below is the list:
     PSCP        : (MIT)    http://www.putty.org/
     LPeg        : (MIT)    http://www.inf.puc-rio.br/~roberto/lpeg
     xml2lua     : (MIT)    https://github.com/manoelcampos/xml2lua
+    LuaUTF8     : (MIT)    https://github.com/starwing/luautf8
     JNA         : (LGPL)   https://github.com/java-native-access/jna
     NuProcess   : (Apache) https://github.com/brettwooldridge/NuProcess
     Luv(libuv)  : (Apache) https://github.com/luvit/luv

@@ -3,17 +3,17 @@
         * List existing SPMs: @@NAME [<keyword>|<sql_id> [<plan_hash>]|-f"<filter>"]
         * Load SPM from cursor/awr/sqlset: @@NAME load <sql_id> [<new_sql_id>|<plan_hash>]
         * View SQL Id: @@NAME sql <sql_handle>|<plan_name>|<signature>
-        * View the envolve detail of a existing SPM: @@NAME view <sql_handle>|<plan_name>|<signature>|{<sql_id> [<plan_hash>]}
-        * View the execution plan of a existing SPM: @@NAME <sql_handle>|<plan_name> [<plan_hash>]
+        * View the envolve detail of an existing SPM: @@NAME view <sql_handle>|<plan_name>|<signature>|{<sql_id> [<plan_hash>]}
+        * View the execution plan of an existing SPM: @@NAME <sql_handle>|<plan_name> [<plan_hash]>
         * Change category of SQL Profile/Patch: @@NAME CATEGORY <name> <category>
-        * Accept a existing SPM without running envolve task to verify the performance: @@NAME accept <sql_handle>|<plan_name>|<signature>|{<sql_id> [<plan_hash>]} 
-        * Envolve a existing SPM: @@NAME envolve <sql_handle>|<plan_name>|<signature>|<sql_id> [<plan_hash>|<seconds>]
+        * Accept an existing SPM without running the envolve task to verify the performance: @@NAME accept <sql_handle>|<plan_name>|<signature>|{<sql_id> [<plan_hash>]}
+        * Envolve an existing SPM: @@NAME envolve <sql_handle>|<plan_name>|<signature>|<sql_id> [<plan_hash>|<seconds>]
         * Other SPM Operations: @@NAME {drop|enable|disable|fix|unfix} <sql_handle>|<plan_name>|<signature>|{<sql_id> [<plan_hash>]}
-    
-    Relative Parameters:
+
+    Related Parameters:
         * _sql_plan_management_control:
-            4 : diagnose issues with SQL plan baselines of why it fails to use
-            16: Allow SPM on the SQLs start with "/* SQL Analyze("
+            4 : Diagnose the issues of why SQL plan baselines fail to be used
+            16: Allow SPM for the SQLs starting with "/* SQL Analyze("
 
     Turn on AUTO SPM:
         exec DBMS_SPM.CONFIGURE('AUTO_SPM_EVOLVE_TASK','ON');  //OR AUTO
@@ -27,12 +27,9 @@
         exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_SOURCE','AUTO');
         exec DBMS_SPM.SET_EVOLVE_TASK_PARAMETER('SYS_AUTO_SPM_EVOLVE_TASK','ALTERNATE_PLAN_BASELINE','EXISTING');
     --[[
-       
         &filter: default={1=1} f={}
-        @did : 12.2={sys_context('userenv','dbid')+0} default={(select /*+PRECOMPUTE_SUBQUERY*/ dbid from v$database)}
         @org : 23.1={origin} default={'MANUAL'}
         @sig : 23.1={EXACT_MATCHING_SIGNATURE} default={NULL}
-        @add : 19.22={1} default={0}
         @check_access_sq: SYS.DBMS_SQLTUNE_UTIL0={1} DEFAULT={0}
     --]]
 ]]*/
@@ -40,24 +37,30 @@
 set feed off printsize 10000
 
 
-grid {[[SELECT /*grid={topic='DBA_SQL_MANAGEMENT_CONFIG'}*/  PARAMETER_NAME,PARAMETER_VALUE FROM DBA_SQL_MANAGEMENT_CONFIG ORDER BY 1]],
+grid {[[SELECT /*grid={topic='DBA_SQL_MANAGEMENT_CONFIG'}*/ parameter_name,parameter_value
+        FROM   dba_sql_management_config
+        ORDER  BY 1]],
       '|',
-      [[SELECT /*grid={topic='SYS_AUTO_SPM_EVOLVE_TASK Parameters'}*/  
-              PARAMETER_NAME,PARAMETER_VALUE,PARAMETER_TYPE type,DESCRIPTION
-        FROM dba_advisor_parameters 
-        WHERE task_name='SYS_AUTO_SPM_EVOLVE_TASK' AND PARAMETER_VALUE!='UNUSED'
-        ORDER BY 1]]
+      [[SELECT /*grid={topic='SYS_AUTO_SPM_EVOLVE_TASK Parameters'}*/
+               parameter_name,
+               parameter_value,
+               parameter_type type,
+               description
+        FROM   dba_advisor_parameters
+        WHERE  task_name='SYS_AUTO_SPM_EVOLVE_TASK'
+        AND    parameter_value!='UNUSED'
+        ORDER  BY 1]]
 };
 
 col ela,avg_ela for usmhd2
 col execs for tmb2
-VAR c REFCURSOR;
+var c REFCURSOR;
 DECLARE
-    V1       VARCHAR2(4000):=UPPER(:V1);
-    V2       VARCHAR2(4000):=:V2;
-    V3       VARCHAR2(4000):=:V3;
-    key      VARCHAR2(4000):= V1;
-    PHV      INT := regexp_substr(V3,'^\d+$');
+    v1       VARCHAR2(4000) := upper(:v1);
+    v2       VARCHAR2(4000) := :v2;
+    v3       VARCHAR2(4000) := :v3;
+    key      VARCHAR2(4000) := v1;
+    phv      INT := regexp_substr(v3,'^\d+$');
     new_sql  VARCHAR2(20);
     new_phv  INT;
     tmp_now  DATE;
@@ -65,51 +68,55 @@ DECLARE
     flag     PLS_INTEGER := 0;
     cnt      PLS_INTEGER := 0;
     tmp      PLS_INTEGER := 0;
-    type     T_PHV IS TABLE OF VARCHAR2(30) INDEX BY VARCHAR2(30);
-    phvs     T_PHV;
+    TYPE     t_phv IS TABLE OF VARCHAR2(30) INDEX BY VARCHAR2(30);
+    phvs     t_phv;
     sql_text CLOB;
-    names    DBMS_SPM.NAME_LIST := DBMS_SPM.NAME_LIST();
-    CURSOR finder(V2 VARCHAR2,V3 VARCHAR2) IS
-        SELECT /*+OPT_PARAM('_fix_control' '26552730:0') no_expand*/ sql_handle,plan_name 
+    names    dbms_spm.name_list := dbms_spm.name_list();
+    CURSOR finder(v2 VARCHAR2,v3 VARCHAR2) IS
+        SELECT /*+OPT_PARAM('_fix_control' '26552730:0') no_expand*/ sql_handle,plan_name
         FROM   dba_sql_plan_baselines
-        WHERE  upper(V2) IN (upper(sql_handle),upper(plan_name),
+        WHERE  upper(v2) IN (upper(sql_handle),upper(plan_name),
                              ''||signature,
                              ''||to_number(substr(plan_name,-8),'fmxxxxxxxx'))
-        AND   (NVL(PHV,0) < 86400 OR to_char(phv,'fmxxxxxxxx')=substr(plan_name,-8))
-        UNION ALL
-        SELECT 'SQL Profile',NAME
-        FROM  dba_sql_profiles
-        WHERE  upper(V2) IN (upper(name),''||signature)
-        UNION ALL
-        SELECT 'SQL Patch',NAME
-        FROM  dba_sql_patches
-        WHERE  upper(V2) IN (upper(name),''||signature); 
-    CURSOR get_sql(V2 VARCHAR2,PHV INT) IS
+        AND   (nvl(phv,0) < 86400 OR to_char(phv,'fmxxxxxxxx')=substr(plan_name,-8))
+        UNION  ALL
+        SELECT 'SQL Profile',name
+        FROM   dba_sql_profiles
+        WHERE  upper(v2) IN (upper(name),''||signature)
+        UNION  ALL
+        SELECT 'SQL Patch',name
+        FROM   dba_sql_patches
+        WHERE  upper(v2) IN (upper(name),''||signature);
+    CURSOR get_sql(v2 VARCHAR2,phv INT) IS
         SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 'cursor' grp,
                sql_id,
                plan_hash_value phv,
                sql_fulltext sql_text,
-               cast(null as varchar2(128)) key1,
-               cast(null as varchar2(128)) key2
+               CAST(NULL AS VARCHAR2(128)) key1,
+               CAST(NULL AS VARCHAR2(128)) key2
         FROM   v$sqlarea
-        WHERE  sql_id=V2
+        WHERE  sql_id=v2
         AND    plan_hash_value=nvl(phv,plan_hash_value)
         AND    plan_hash_value>0
-        UNION  ALL 
+        UNION  ALL
         SELECT 'AWR',
                sql_id,
                plan_hash_value,
                sql_text,
                ''||dbid,
-               ''||(select MAX(snap_id) from dba_hist_sqlstat WHERE sql_id=V2 AND plan_hash_value=a.plan_hash_value AND DBID=:dbid)
+               ''||(SELECT MAX(snap_id)
+                    FROM   dba_hist_sqlstat
+                    WHERE  sql_id=v2
+                    AND    plan_hash_value=a.plan_hash_value
+                    AND    dbid=:dbid)
         FROM   dba_hist_sql_plan a
         JOIN   dba_hist_sqltext USING(dbid,sql_id)
-        WHERE  sql_id=V2
+        WHERE  sql_id=v2
         AND    plan_hash_value=nvl(phv,plan_hash_value)
         AND    dbid=:dbid
         AND    plan_hash_value>0
         AND    other_xml IS NOT NULL
-        UNION  ALL 
+        UNION  ALL
         SELECT 'sqlset',
                sql_id,
                plan_hash_value,
@@ -117,98 +124,99 @@ DECLARE
                sqlset_name,
                sqlset_owner
         FROM   dba_sqlset_statements
-        WHERE  sql_id=V2
+        WHERE  sql_id=v2
         AND    plan_hash_value=nvl(phv,plan_hash_value)
         AND    plan_hash_value>0;
 
     PROCEDURE pr(sql_handle VARCHAR2,plan_name VARCHAR2,op VARCHAR, done PLS_INTEGER) IS
     BEGIN
         dbms_output.put_line(utl_lms.format_message('Target is %s%s (SQL_ID = %s / PLAN_HASH_VALUE = %s / SQL_HANDLE = %s / PLAN_NAME = %s).',
-                        CASE WHEN done=0 THEN 'not ' END,
-                        replace(op,'eed','ed'),
-                        CASE WHEN sql_handle IN('SQL Profile','SQL Patch') THEN '' ELSE regexp_substr(plan_name,'PLAN_(.{13})',1,1,'i',1) END,
-                        CASE WHEN sql_handle IN('SQL Profile','SQL Patch') THEN '' ELSE ''||to_number(substr(plan_name,-8),'fmxxxxxxxx') END,
-                        sql_handle,plan_name));
+                                                    CASE WHEN done=0 THEN 'not ' END,
+                                                    replace(op,'eed','ed'),
+                                                    CASE WHEN sql_handle IN('SQL Profile','SQL Patch') THEN '' ELSE regexp_substr(plan_name,'PLAN_(.{13})',1,1,'i',1) END,
+                                                    CASE WHEN sql_handle IN('SQL Profile','SQL Patch') THEN '' ELSE ''||to_number(substr(plan_name,-8),'fmxxxxxxxx') END,
+                                                    sql_handle,plan_name));
         cnt := cnt + done;
     END;
 
     PROCEDURE total(v1 VARCHAR2) IS
     BEGIN
-        dbms_output.put_line('Totally '||cnt||' SPMs are '||replace(lower(V1),'eed','ed')||'.');
+        dbms_output.put_line('Totally '||cnt||' SPMs are '||replace(lower(v1),'eed','ed')||'.');
     END;
 BEGIN
-    dbms_output.enable(null);
-    IF V1 IN('DROP','FIX','UNFIX','ENABLE','DISABLE','LOAD','VIEW','ACCEPT','ENVOLVE','CATEGORY') AND V2 IS NULL THEN
+    dbms_output.enable(NULL);
+    IF v1 IN('DROP','FIX','UNFIX','ENABLE','DISABLE','LOAD','VIEW','ACCEPT','ENVOLVE','CATEGORY') AND v2 IS NULL THEN
         raise_application_error(-20001,'Please input more parameters to specify the target.');
     END IF;
-    IF V1='SQL' THEN
+    IF v1='SQL' THEN
         BEGIN
             SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ sql_text
             INTO   sql_text
-            FROM (
+            FROM   (
                 SELECT sql_text
                 FROM   dba_sql_plan_baselines
-                WHERE  :v2 in(PLAN_NAME,SQL_HANDLE,''||signature)
+                WHERE  :v2 IN(plan_name,sql_handle,''||signature)
                 AND    rownum<2
-                UNION ALL
+                UNION  ALL
                 SELECT sql_text
                 FROM   dba_sql_profiles
-                WHERE  :v2 in(NAME,''||signature)
+                WHERE  :v2 IN(name,''||signature)
                 AND    rownum<2
-                UNION ALL
+                UNION  ALL
                 SELECT sql_text
                 FROM   dba_sql_patches
-                WHERE  :v2 in(NAME,''||signature)
+                WHERE  :v2 IN(name,''||signature)
                 AND    rownum<2)
-            WHERE rownum<2;
+            WHERE  rownum<2;
         EXCEPTION WHEN NO_DATA_FOUND THEN
             raise_application_error(-20001,'No such SPM/Profile/Patch: '||:v1);
         END;
-        $IF DBMS_DB_VERSION.VERSION>11 $THEN
-            V2 := dbms_sql_translator.sql_id(sql_text);
+        $IF dbms_db_version.version>11 $THEN
+            v2 := dbms_sql_translator.sql_id(sql_text);
         $END
 
-        $IF &check_access_sq = 1 AND DBMS_DB_VERSION.VERSION=11 $THEN
-            V2 := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(sql_text);
-            sql_text := null;
+        $IF &check_access_sq = 1 AND dbms_db_version.version=11 $THEN
+            v2 := sys.dbms_sqltune_util0.sqltext_to_sqlid(sql_text);
+            sql_text := NULL;
         $END
         dbms_output.put_line('SQL Id: '||v2);
-        return;
-    ELSIF V1 IN('FIX','UNFIX','ENABLE','DISABLE','CATEGORY') THEN
-        tmp_now := SYSDATE;
+        RETURN;
+    ELSIF v1 IN('FIX','UNFIX','ENABLE','DISABLE','CATEGORY') THEN
+        tmp_now := sysdate;
 
         FOR r IN finder(v2,v3) LOOP
+            tmp := 0;
             IF r.sql_handle='SQL Profile' THEN
-                IF V1 IN('ENABLE','DISABLE') THEN
-                    sys.dbms_sqltune.alter_sql_profile(r.plan_name,'STATUS',V1||'D');
+                IF v1 IN('ENABLE','DISABLE') THEN
+                    sys.dbms_sqltune.alter_sql_profile(r.plan_name,'STATUS',v1||'D');
                     tmp := 1;
-                ELSIF V1 IN('CATEGORY') THEN
-                    sys.dbms_sqltune.alter_sql_profile(r.plan_name,'CATEGORY',NVL(V3,'DEFAULT'));
+                ELSIF v1 IN('CATEGORY') THEN
+                    sys.dbms_sqltune.alter_sql_profile(r.plan_name,'CATEGORY',nvl(v3,'DEFAULT'));
                     tmp := 1;
                 END IF;
             ELSIF r.sql_handle='SQL Patch' THEN
-                IF V1 IN('ENABLE','DISABLE') THEN
-                    sys.dbms_sqldiag.alter_sql_patch(r.plan_name,'STATUS',V1||'D');
+                IF v1 IN('ENABLE','DISABLE') THEN
+                    sys.dbms_sqldiag.alter_sql_patch(r.plan_name,'STATUS',v1||'D');
                     tmp := 1;
-                ELSIF V1 IN('CATEGORY') THEN
-                    sys.dbms_sqldiag.alter_sql_patch(r.plan_name,'CATEGORY',NVL(V3,'DEFAULT'));
+                ELSIF v1 IN('CATEGORY') THEN
+                    sys.dbms_sqldiag.alter_sql_patch(r.plan_name,'CATEGORY',nvl(v3,'DEFAULT'));
                     tmp := 1;
                 END IF;
-            ELSIF V1 NOT IN('CATEGORY') THEN
+            ELSIF v1 NOT IN('CATEGORY') THEN
                 tmp := sys.dbms_spm.alter_sql_plan_baseline(
                         sql_handle      => r.sql_handle,
                         plan_name       => r.plan_name,
-                        attribute_name  => CASE WHEN V1 IN('FIX','UNFIX') THEN 'fixed' 
-                                                WHEN V1 IN('ACCEPT','UNACCEPT') THEN 'accepted' 
+                        attribute_name  => CASE WHEN v1 IN('FIX','UNFIX') THEN 'fixed'
+                                                WHEN v1 IN('ACCEPT','UNACCEPT') THEN 'accepted'
                                                 ELSE 'enabled' END,
-                        attribute_value => CASE WHEN V1 IN('FIX','ACCEPT','ENABLE') THEN 'YES' ELSE 'NO' END);
+                        attribute_value => CASE WHEN v1 IN('FIX','ACCEPT','ENABLE') THEN 'YES' ELSE 'NO' END);
             END IF;
-            pr(r.sql_handle,r.plan_name,lower(V1)||'ed',tmp);
+            pr(r.sql_handle,r.plan_name,lower(v1)||'ed',tmp);
         END LOOP;
-        total(lower(V1)||'ed');
-    ELSIF V1 IN('VIEW','ACCEPT','ENVOLVE') THEN
-        tmp_now := SYSDATE;
-        FOR r IN finder(v2,CASE WHEN phv<86400 THEN null ELSE v3 END) LOOP
+        total(lower(v1)||'ed');
+    ELSIF v1 IN('VIEW','ACCEPT','ENVOLVE') THEN
+        tmp_now := sysdate;
+        FOR r IN finder(v2,CASE WHEN phv<86400 THEN NULL ELSE v3 END) LOOP
             IF r.sql_handle NOT IN('SQL Profile','SQL Patch') THEN
                 names.extend;
                 names(names.count) := r.plan_name;
@@ -216,41 +224,40 @@ BEGIN
         END LOOP;
         IF names.count>0 THEN
             dbms_output.put_line(
-                SYS.DBMS_SPM.EVOLVE_SQL_PLAN_BASELINE(
+                sys.dbms_spm.evolve_sql_plan_baseline(
                     plan_list  => names,
-                    time_limit => CASE WHEN phv<86400 THEN phv WHEN V1='VIEW' THEN 30 ELSE 3600 END,
-                    verify     => CASE WHEN V1='ACCEPT' THEN 'NO' ELSE 'YES' END,
-                    commit     => CASE WHEN V1='VIEW' THEN 'NO' ELSE 'YES' END));
+                    time_limit => CASE WHEN phv<86400 THEN phv WHEN v1='VIEW' THEN 30 ELSE 3600 END,
+                    verify     => CASE WHEN v1='ACCEPT' THEN 'NO' ELSE 'YES' END,
+                    commit     => CASE WHEN v1='VIEW' THEN 'NO' ELSE 'YES' END));
         END IF;
-    ELSIF V1='LOAD' THEN
-        tmp_now := SYSDATE;
-        IF V3 IS NOT NULL THEN
+    ELSIF v1='LOAD' THEN
+        tmp_now := sysdate;
+        IF v3 IS NOT NULL THEN
             SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/
                    MAX(sql_id),MAX(plan_hash_value)
             INTO   new_sql,new_phv
-            FROM (
-                SELECT sql_id,plan_hash_value 
+            FROM   (
+                SELECT sql_id,plan_hash_value
                 FROM   v$sqlarea
                 WHERE  phv IS NULL
-                AND    sql_id=V3
-                AND    plan_hash_value=nvl(regexp_substr(:V4,'^\d+$')+0,plan_hash_value)
+                AND    sql_id=v3
+                AND    plan_hash_value=nvl(regexp_substr(:v4,'^\d+$')+0,plan_hash_value)
                 AND    plan_hash_value>0
                 AND    rownum<2
                 UNION  ALL
-                SELECT sql_id,plan_hash_value 
+                SELECT sql_id,plan_hash_value
                 FROM   v$sqlarea
                 WHERE  phv IS NOT NULL
                 AND    plan_hash_value=phv
                 AND    plan_hash_value>0
                 AND    rownum<2)
-            WHERE rownum<2;
+            WHERE  rownum<2;
             IF new_sql IS NOT NULL THEN
-                phv := null;
+                phv := NULL;
             END IF;
         END IF;
 
-        FOR R IN GET_SQL(V2,PHV)
-        LOOP
+        FOR r IN get_sql(v2,phv) LOOP
             IF new_sql IS NOT NULL THEN
                 cnt := dbms_spm.load_plans_from_cursor_cache(sql_id=>new_sql,
                                                              plan_hash_value=>new_phv,
@@ -264,7 +271,7 @@ BEGIN
                                                                  plan_hash_value=>r.phv,
                                                                  fixed=>'NO',
                                                                  enabled=>'YES');
-                $IF DBMS_DB_VERSION.VERSION>12 OR DBMS_DB_VERSION.VERSION=12 AND DBMS_DB_VERSION.RELEASE>1 $THEN
+                $IF dbms_db_version.version>12 OR dbms_db_version.version=12 AND dbms_db_version.release>1 $THEN
                 ELSIF r.grp = 'AWR' THEN
                     tmp := dbms_spm.load_plans_from_awr(dbid=>r.key1,
                                                         begin_snap=>r.key2-1,
@@ -289,7 +296,7 @@ BEGIN
         total('loaded');
     END IF;
 
-    IF V1='DROP' THEN
+    IF v1='DROP' THEN
         FOR r IN finder(v2,v3) LOOP
             tmp := 1;
             IF r.sql_handle='SQL Profile' THEN
@@ -306,67 +313,67 @@ BEGIN
         cnt := 0;
         v3 := chr(1);
         IF tmp_now IS NOT NULL THEN
-            v1 := null;
-            v2 := null;
+            v1 := NULL;
+            v2 := NULL;
         ELSIF length(v1)=13 AND regexp_like(v1,'^[0-9A-Z]+$') THEN
             BEGIN
                 SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/*
                 INTO   v1,v2,sql_text
-                FROM (
-                    SELECT EXACT_MATCHING_SIGNATURE,FORCE_MATCHING_SIGNATURE,SQL_FULLTEXT
-                    FROM   GV$SQLSTATS
-                    WHERE  SQL_ID=lower(v1)
-                    AND    ROWNUM<2
-                    UNION ALL
-                    SELECT &sig,FORCE_MATCHING_SIGNATURE,SQL_TEXT
-                    FROM   DBA_SQLSET_STATEMENTS
-                    WHERE  SQL_ID=lower(v1)
-                    AND    ROWNUM<2
-                    UNION ALL
-                    SELECT NULL,NULL,SQL_TEXT
-                    FROM   DBA_HIST_SQLTEXT
-                    WHERE  SQL_ID=lower(v1)
+                FROM   (
+                    SELECT exact_matching_signature,force_matching_signature,sql_fulltext
+                    FROM   gv$sqlstats
+                    WHERE  sql_id=lower(v1)
+                    AND    rownum<2
+                    UNION  ALL
+                    SELECT &sig,force_matching_signature,sql_text
+                    FROM   dba_sqlset_statements
+                    WHERE  sql_id=lower(v1)
+                    AND    rownum<2
+                    UNION  ALL
+                    SELECT NULL,NULL,sql_text
+                    FROM   dba_hist_sqltext
+                    WHERE  sql_id=lower(v1)
                     AND    dbid=:dbid
-                    AND    ROWNUM<2
-                    UNION ALL
-                    SELECT NULL,NULL,TO_CLOB(SQL_TEXT)
-                    FROM   GV$SQL_MONITOR
-                    WHERE  SQL_ID=lower(v1)
-                    AND    SQL_TEXT IS NOT NULL
-                    AND    IS_FULL_SQLTEXT='Y'
-                    AND    ROWNUM<2
-                ) WHERE ROWNUM<2;
+                    AND    rownum<2
+                    UNION  ALL
+                    SELECT NULL,NULL,to_clob(sql_text)
+                    FROM   gv$sql_monitor
+                    WHERE  sql_id=lower(v1)
+                    AND    sql_text IS NOT NULL
+                    AND    is_full_sqltext='Y'
+                    AND    rownum<2)
+                WHERE  rownum<2;
                 v3 := chr(0);
             EXCEPTION WHEN OTHERS THEN NULL;
             END;
 
             IF v1 IS NULL AND sql_text IS NOT NULL THEN
-                v1 :=  dbms_sqltune.SQLTEXT_TO_SIGNATURE(sql_text,false);
+                v1 := dbms_sqltune.sqltext_to_signature(sql_text,false);
             END IF;
             IF v2 IS NULL AND sql_text IS NOT NULL THEN
-                v2 :=  dbms_sqltune.SQLTEXT_TO_SIGNATURE(sql_text,true);
+                v2 := dbms_sqltune.sqltext_to_signature(sql_text,true);
             END IF;
         ELSE
             BEGIN
                 SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/flag,1,plan_name,sql_text
                 INTO   flag,cnt,v3,sql_text
-                FROM (
+                FROM   (
                     SELECT 1 flag,plan_name,created,sql_text
                     FROM   dba_sql_plan_baselines
-                    WHERE  :v1 in(PLAN_NAME,SQL_HANDLE)
-                    AND    nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(to_number(substr(plan_name,-8),'fmxxxxxxxx'),signature,-1)
-                    UNION ALL
+                    WHERE  :v1 IN(plan_name,sql_handle)
+                    AND    nvl(0+regexp_substr(:v2,'^\d+$'),-1) IN(to_number(substr(plan_name,-8),'fmxxxxxxxx'),signature,-1)
+                    UNION  ALL
                     SELECT 2,name,created,sql_text
                     FROM   dba_sql_profiles
                     WHERE  :v1 = name
-                    AND   nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(signature,-1)
-                    UNION ALL
+                    AND    nvl(0+regexp_substr(:v2,'^\d+$'),-1) IN(signature,-1)
+                    UNION  ALL
                     SELECT 3,name,created,sql_text
                     FROM   dba_sql_patches
                     WHERE  :v1 = name
-                    AND   nvl(0+regexp_substr(:v2,'^\d+$'),-1) in(signature,-1)
-                    ORDER  BY CREATED DESC
-                ) WHERE ROWNUM < 2;
+                    AND    nvl(0+regexp_substr(:v2,'^\d+$'),-1) IN(signature,-1)
+                    ORDER  BY created DESC)
+                WHERE  rownum < 2;
             EXCEPTION WHEN NO_DATA_FOUND THEN
                 v3  := chr(1);
                 cnt := 0;
@@ -374,149 +381,147 @@ BEGIN
         END IF;
 
         IF cnt > 0 THEN
-            $IF DBMS_DB_VERSION.VERSION>11 $THEN
-                V2 := dbms_sql_translator.sql_id(sql_text);
-                sql_text := null;
+            $IF dbms_db_version.version>11 $THEN
+                v2 := dbms_sql_translator.sql_id(sql_text);
+                sql_text := NULL;
             $END
 
-            $IF &check_access_sq = 1 AND DBMS_DB_VERSION.VERSION=11 $THEN
-                V2 := SYS.DBMS_SQLTUNE_UTIL0.SQLTEXT_TO_SQLID(sql_text);
-                sql_text := null;
+            $IF &check_access_sq = 1 AND dbms_db_version.version=11 $THEN
+                v2 := sys.dbms_sqltune_util0.sqltext_to_sqlid(sql_text);
+                sql_text := NULL;
             $END
 
             IF v2 IS NOT NULL AND sql_text IS NULL THEN
-                sql_text := 'SQL Id: ' || V2;
+                sql_text := 'SQL Id: ' || v2;
             ELSE
                 sql_text := '';
             END IF;
 
             IF flag=1 THEN
-                FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PLAN_BASELINE(null,v3,'ALL -PROJECTION'))) LOOP
-                    sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
+                FOR r IN (SELECT * FROM table(dbms_xplan.display_sql_plan_baseline(NULL,v3,'ALL -PROJECTION'))) LOOP
+                    sql_text := sql_text || r.plan_table_output||chr(10);
                 END LOOP;
             ELSIF flag=2 THEN
-                FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PROFILE_PLAN(v3,'ALL -PROJECTION'))) LOOP
-                    sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
+                FOR r IN (SELECT * FROM table(dbms_xplan.display_sql_profile_plan(v3,'ALL -PROJECTION'))) LOOP
+                    sql_text := sql_text || r.plan_table_output||chr(10);
                 END LOOP;
             ELSE
-                FOR r IN (SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY_SQL_PATCH_PLAN(v3,'ALL -PROJECTION'))) LOOP
-                    sql_text := sql_text || r.PLAN_TABLE_OUTPUT||chr(10);
+                FOR r IN (SELECT * FROM table(dbms_xplan.display_sql_patch_plan(v3,'ALL -PROJECTION'))) LOOP
+                    sql_text := sql_text || r.plan_table_output||chr(10);
                 END LOOP;
             END IF;
 
-            sql_text := sql_text|| 'SQL Id: ' || V2;
+            sql_text := sql_text|| 'SQL Id: ' || v2;
 
-            OPEN c FOR SELECT sql_text PLAN_TABLE_OUTPUT FROM dual;
+            OPEN c FOR SELECT sql_text plan_table_output FROM dual;
         ELSE
             OPEN c FOR
-                SELECT /*+opt_param('optimizer_dynamic_sampling' 7) opt_param('_fix_control' '26552730:0')*/ * 
-                FROM (
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 7) opt_param('_fix_control' '26552730:0')*/ *
+                FROM   (
                     SELECT /*+NO_EXPAND*/ plan_name,sql_handle handle,
-                        to_number(substr(plan_name,-8),'fmxxxxxxxx') plan_hash_2,
-                        signature,
-                        attrs,
-                        origin,
-                        nvl(last_modified+0,created+0) updated,          
-                        schema,
-                        substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
+                           to_number(substr(plan_name,-8),'fmxxxxxxxx') plan_hash_2,
+                           signature,
+                           attrs,
+                           origin,
+                           nvl(last_modified+0,created+0) updated,
+                           schema,
+                           substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
                     FROM   (
-                        select a.*,
+                        SELECT a.*,
                                trim(',' FROM CASE WHEN enabled='YES' THEN 'ENABLED,' END
                                     ||CASE WHEN fixed='YES' THEN 'FIXED,' END
                                     ||CASE WHEN accepted='YES' THEN 'ACCEPTED,' END
                                     ||CASE WHEN autopurge='YES' THEN 'AUTOPURGE,' END
                                     ||CASE WHEN reproduced='NO' THEN 'NON-REPRODUCED,' END
-                                $IF DBMS_DB_VERSION.VERSION > 11 $THEN
+                                $IF dbms_db_version.version > 11 $THEN
                                     ||CASE WHEN adaptive='YES' THEN 'ADAPTIVE,' END
                                 $END
-                                $IF DBMS_DB_VERSION.VERSION > 23 $THEN
+                                $IF dbms_db_version.version > 22 $THEN
                                     ||nvl2(foreground_last_verified,'FG-VERIFIED,','')
                                     ||decode(bitand(flags, 1024), 0, '', 'REALTIME,')
                                     ||decode(bitand(flags, 2048), 0, '', 'REVERSE,')
                                     ||n.status
                                 $END
                                 ) attrs,
-                              parsing_schema_name schema 
-                        from  dba_sql_plan_baselines a
-                        $IF DBMS_DB_VERSION.VERSION > 22 $THEN
-                             ,XMLTABLE('/notes'
+                               parsing_schema_name schema
+                        FROM   dba_sql_plan_baselines a
+                        $IF dbms_db_version.version > 22 $THEN
+                             ,xmltable('/notes'
                                 passing xmltype(a.notes)
                                 columns
-                                    sql_id          VARCHAR2(20)   path '//sql_id',
-                                    plan_id         NUMBER         path 'plan_id',
-                                    flags           NUMBER         path 'flags',
-                                    ref_phv         NUMBER         path '//ref_phv',
-                                    test_phv        NUMBER         path '//test_phv',
-                                    ver             VARCHAR2(8)    path '//ver',
-                                    comp_time       VARCHAR2(20)   path '//comp_time',
-                                    ver_time        VARCHAR2(20)   path '//ver_time',
-                                    status          VARCHAR2(8)    path '//status') n
-                        $END 
+                                    sql_id    VARCHAR2(20) PATH '//sql_id',
+                                    plan_id   NUMBER       PATH 'plan_id',
+                                    flags     NUMBER       PATH 'flags',
+                                    ref_phv   NUMBER       PATH '//ref_phv',
+                                    test_phv  NUMBER       PATH '//test_phv',
+                                    ver       VARCHAR2(8)  PATH '//ver',
+                                    comp_time VARCHAR2(20) PATH '//comp_time',
+                                    ver_time  VARCHAR2(20) PATH '//ver_time',
+                                    status    VARCHAR2(8)  PATH '//status') n
+                        $END
                         ) a
                     WHERE  (&filter)
-                    AND    (v3=chr(0) AND (signature IN(V1,V2) OR INSTR(plan_name,key)>0) OR
-                            v3=chr(1) AND (V1 IS NULL OR upper(sql_handle||','||plan_name||','
-                                                ||to_number(substr(plan_name,-8),'fmxxxxxxxx')||','
-                                                ||signature||','
-                                                ||attrs||','
-                                                ||parsing_schema_name||','
-                                                ||to_char(substr(sql_text,1,2000))) LIKE '%'||V1||'%')
-                            AND    (V2 IS NULL OR v2=''||to_number(substr(plan_name,-8),'fmxxxxxxxx')))
+                    AND    (v3=chr(0) AND (signature IN(v1,v2) OR instr(plan_name,key)>0) OR
+                            v3=chr(1) AND (v1 IS NULL OR upper(sql_handle||','||plan_name||','
+                                                               ||to_number(substr(plan_name,-8),'fmxxxxxxxx')||','
+                                                               ||signature||','
+                                                               ||attrs||','
+                                                               ||parsing_schema_name||','
+                                                               ||to_char(substr(sql_text,1,2000))) LIKE '%'||v1||'%')
+                            AND    (v2 IS NULL OR v2=''||to_number(substr(plan_name,-8),'fmxxxxxxxx')))
                     AND    (tmp_now IS NULL OR greatest(created,nvl(last_modified+0,sysdate-3650))>=tmp_now)
-                    UNION ALL
-                    SELECT  /*+NO_EXPAND*/ plan_name,
-                            'SQL Profile',
-                            null,
-                            signature,
-                            attrs,
-                            origin,
-                            nvl(last_modified+0,created+0) updated,
-                            schema,
-                            substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                    FROM   (select a.*,name plan_name,
+                    UNION  ALL
+                    SELECT /*+NO_EXPAND*/ plan_name,
+                           'SQL Profile',
+                           NULL,
+                           signature,
+                           attrs,
+                           origin,
+                           nvl(last_modified+0,created+0) updated,
+                           schema,
+                           substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
+                    FROM   (SELECT a.*,name plan_name,
                                    trim(',' FROM status||','
                                             ||CASE WHEN force_matching='YES' THEN 'FORCE_MATCHING,' END
                                     ) attrs,
                                    category schema,
                                    category parsing_schema_name,
-                                   type||nvl2(task_id,'(task_id='||task_id||')','') origin 
-                            from dba_sql_profiles a)
+                                   type||nvl2(task_id,'(task_id='||task_id||')','') origin
+                            FROM   dba_sql_profiles a)
                     WHERE  (&filter)
-                    AND    (v3=chr(0) AND (signature IN(V1,V2) OR INSTR(plan_name,key)>0) OR
-                            v3=chr(1) AND (V1 IS NULL OR upper('SQL Profile'||','||name||','
-                                                ||signature||','||category||','||attrs||','
-                                                ||to_char(substr(sql_text,1,2000))) LIKE '%'||V1||'%'))
+                    AND    (v3=chr(0) AND (signature IN(v1,v2) OR instr(plan_name,key)>0) OR
+                            v3=chr(1) AND (v1 IS NULL OR upper('SQL Profile'||','||name||','
+                                                               ||signature||','||category||','||attrs||','
+                                                               ||to_char(substr(sql_text,1,2000))) LIKE '%'||v1||'%'))
                     AND    (tmp_now IS NULL OR greatest(created,nvl(last_modified+0,sysdate-3650))>=tmp_now)
-                    UNION ALL
-                    SELECT  /*+NO_EXPAND*/ plan_name,
-                            'SQL Patch',
-                            null,
-                            signature,
-                            attrs,
-                            org,
-                            nvl(last_modified+0,created+0) updated,
-                            schema,
-                            substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
-                    FROM   (select a.*,name plan_name,
+                    UNION  ALL
+                    SELECT /*+NO_EXPAND*/ plan_name,
+                           'SQL Patch',
+                           NULL,
+                           signature,
+                           attrs,
+                           org,
+                           nvl(last_modified+0,created+0) updated,
+                           schema,
+                           substr(trim(regexp_replace(to_char(substr(sql_text,1,1500)),'\s+',' ')),1,200) sql_text
+                    FROM   (SELECT a.*,name plan_name,
                                    trim(',' FROM status||','
                                             ||CASE WHEN force_matching='YES' THEN 'FORCE_MATCHING,' END
                                     ) attrs,
                                    category schema,
                                    category parsing_schema_name,
-                                   &org||nvl2(task_id,'(task_id='||task_id||')','') org 
-                            from dba_sql_patches a)
+                                   &org||nvl2(task_id,'(task_id='||task_id||')','') org
+                            FROM   dba_sql_patches a)
                     WHERE  (&filter)
-                    AND    (v3=chr(0) AND (signature IN(V1,V2) OR INSTR(plan_name,key)>0) OR
-                            v3=chr(1) 
-                            AND    (V1 IS NULL OR upper('SQL Patch'||','||name||','
-                                                ||signature||','||category||','
-                                                ||to_char(substr(sql_text,1,2000))) LIKE '%'||V1||'%'))
+                    AND    (v3=chr(0) AND (signature IN(v1,v2) OR instr(plan_name,key)>0) OR
+                            v3=chr(1) AND (v1 IS NULL OR upper('SQL Patch'||','||name||','
+                                                               ||signature||','||category||','
+                                                               ||to_char(substr(sql_text,1,2000))) LIKE '%'||v1||'%'))
                     AND    (tmp_now IS NULL OR greatest(created,nvl(last_modified+0,sysdate-3650))>=tmp_now)
-                    ORDER BY updated DESC NULLS LAST)
-                WHERE ROWNUM<=50;
+                    ORDER  BY updated DESC NULLS LAST)
+                WHERE  rownum<=50;
         END IF;
     END IF;
     :c := c;
 END;
 /
-

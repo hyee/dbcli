@@ -25,6 +25,7 @@
     --[[
         @ARGS  : 1
         &typ   : default={all} ofe={ofe} env={env}
+        &ofever: default={} ofe={}
         &filter: default={1=2} f={} k={operation||' '||options||' '||object_name like upper('%&0%')}
         &batch : default={1} batch={}
         &sep   : default={rowsep default} batch={rowsep - colsep |}
@@ -107,7 +108,7 @@ var plans clob;
 var file varchar2
 PRO Processing, you can run 'show longops' in another session to monitor the progress.
 DECLARE
-    sq_id     VARCHAR2(32767) := '&v1';
+    sq_id     VARCHAR2(32767) := q'~&v1~';
     params    SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     descs     SYS.ODCIVARCHAR2LIST := SYS.ODCIVARCHAR2LIST();
     cpus      SYS.ODCINUMBERLIST   := SYS.ODCINUMBERLIST();
@@ -230,6 +231,9 @@ BEGIN
         BULK COLLECT
         INTO lst;
     EXECUTE IMMEDIATE 'alter session set STATISTICS_LEVEL=ALL current_schema=' || to_schema;
+    IF '&ofever' IS NOT NULL THEN
+        EXECUTE IMMEDIATE q'[alter session set optimizer_features_enable='&ofever']';
+    END IF;
     DELETE &ptable;
     phase := 2;
     EXECUTE IMMEDIATE REPLACE(sql_text, '@dbcli_stmt_id@', 'BASELINE');
