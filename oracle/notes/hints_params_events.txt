@@ -239,8 +239,8 @@ Parameters
     _mutex_wait_scheme: set to 1 together with _mutex_spin_count=1000 to reduce mutex waits in some cases. setting kernel.numa_balancing=0, vm.zone_reclaim_mode=0 and _enable_NUMA_support=false can also help to reduce the mutex/latch spikes.
     parallel_execution_enable: can be used in opt_param, similar to event 10384
     _enable_space_preallocation:0 to disable tbs autoextend by Wnnn sub-processs from SMCO, but could impact DBIM population
-                                controls together with _kttext_warning(default prealloate 5% tbs size)
                                 0: disable all 1:enables tablespace extension 2:enables segment growth 4:enables chunk allocation
+                                controls together with _kttext_warning(default prealloate 5% tbs size) and _max_spacebg_slaves
 Events:
     turn off space search cache to single block read on inserting: alter session set events '10019 trace name context forever, level 1'
     enable space scan optimization for clustered table to reduce insert overhead: alter session set events '12953 trace name context forever, level 1'

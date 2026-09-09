@@ -1,111 +1,137 @@
-# ansi_width.c —— 终端显示宽度模型、字符宽度对照表与本次改动记录
+# ansi_width.c — terminal display width model and measured width tables
 
-> 本文档记录 `src/c/luauf8/ansi_width.c` 的宽度模型、`(列宽, 字节数)` 双返回值契约、
-> 本次会话（2026-09-06 ~ 2026-09-07）落地的代码改动、验证证据与实测性能。
+> This document describes the width model in `src/c/luauf8/ansi_width.c`, the `(columns, bytes)`
+> two-value contract, and the width tables for every class of character a terminal can be handed.
 >
-> 设计决策的**理由**在 `luautf8.txt` §2.7（同一目录，仅存在于 git 工作树 `D:\Green\github\dbcli`）；
-> 本文档负责**数据**：所有表格都是对已发布产物 `lib/x64/utf8.dll` 直接测量得到的，
-> 不是任何人（包括写代码的人）记忆中的宽度表。表格与理由若有冲突，以代码与本文档的实测为准，
-> 并把 §2.7 改过来。
+> Every table is **measured** straight out of the shipped artifact `lib/x64/utf8.dll` — not a width
+> table from anyone's memory (including whoever wrote the code). Where a reading and a prose
+> explanation conflict, trust the code and the measurements here, and fix the prose.
+>
+> The design decisions below carry the reading that produced them, because the verdicts came off real
+> cursors rather than out of a table: §1.1 lists the witnesses.
 
-## 0. 数据来源与复现
 
-| 项 | 值 |
-|---|---|
-| 被测产物 | `D:\dbcli\lib\x64\utf8.dll`（2026-09-07 15:28 构建，md5 `2e217565f146d2ec112e718086a59922`） |
-| 版本对照 | 该 DLL 与 `git show HEAD:lib/x64/utf8.dll` **逐字节相同**（commit `6166fcbd`）——量的就是入库的那份 |
-| 交叉验证产物 | `D:\dbcli\lib\linux\utf8.so`（同样等于其 git blob）——同一份扫描输出与 x64 **逐字节一致**（仅换行符差异） |
-| 生成脚本 | `F:\tools\tmp\widtab.lua`（临时目录，不入库） |
-| 复现命令 | `luajit F:/tools/tmp/widtab.lua "D:/dbcli/lib/x64" > widtab.out` |
-| 扫描规模 | U+0000..U+10FFFF 全量 1,112,064 个码点（跳过 2048 个代理区码点，见 §2.1） |
+## 1. The width model: a cursor replay
 
-`widtab.lua` 只依赖被测模块自身导出的 `utf8.ansi_width` / `utf8.ansi_cut`，
-因此下面的表是**产物行为**，与源码注释、与本会话早前的记录都无继承关系。
+`walk()` (`ansi_width.c:157-208`) replays the string the way a terminal cursor replays it:
 
-## 1. 宽度模型：一个游标回放器
+- `col` is the cursor column; `line_w` is the widest column the cursor reached **on the current line**;
+- an LF settles the line: if it beats what is recorded, `line_w` is promoted to `maxw` and the line's
+  byte span to `maxb`; then both counters reset and the next line opens;
+- the loop exit settles "the line still in progress" (`ansi_width.c:204`);
+- the return value is `(maxw, maxb)`.
 
-`walk()`（`ansi_width.c:157-208`）把字符串当成终端游标回放：
+Because the maximum over lines of each line's own maximum IS the global maximum, switching to
+per-line accounting left the width **bit-identical to the single high-water-mark counter it
+replaced** — all that changed is that the byte count can now be attributed to a specific line.
 
-- `col` = 游标当前列；`line_w` = **当前行**上游标到达过的最大列；
-- 遇到 LF 结算本行：若它更好则把 `line_w` 提升为 `maxw`、把本行字节跨度提升为 `maxb`，然后清零开新行；
-- 循环结束时结算"仍在进行中的那一行"（`ansi_width.c:204`）；
-- 返回值就是 `(maxw, maxb)`。
+### 1.1 The order in which a code point is decided
 
-因为"对每行取最大、再对行取最大"与"对所有位置取最大"是同一个最大值，
-所以改成按行统计之后**宽度值与改动前的单一高水位计数器完全相同**——变的只是字节数能被归到某一行上。
+`cp_width()` (`ansi_width.c:63-74`) reads the generated `ansi_width_tables.h` (478 intervals plus a
+4352-entry per-256-code-point block map, Unicode 15.0.0). The order matters:
 
-### 1.1 单码点宽度的判定顺序
-
-`cp_width()`（`ansi_width.c:63-74`）查生成表 `ansi_width_tables.h`（478 个区间 + 4352 项按 256 码点分块的映射，Unicode 15.0.0）。顺序：
-
-| 顺序 | 判定 | 结果 |
+| Step | Test | Result |
 |---|---|---|
-| 1 | `Mn` / `Me` / `Cf` | 0（必须先于 EAW：U+3099、U+302A 同时是 Mn 和 W） |
-| 2 | `Cc`、DEL、NUL | 0 |
-| 3 | EastAsianWidth `W` 或 `F` | 2 |
-| 4 | CJK 表意文字块内及 Planes 2/3 的未分配码点 | 2（UAX #11 默认值） |
-| 5 | 其余一切，含 EAW=`A` | 1（歧义宽度不做开关，作用域内终端的出厂默认就是窄） |
+| 1 | `Mn` / `Me` / `Cf` | 0 (must come before EAW: U+3099 and U+302A are Mn **and** W) |
+| 2 | `Cc`, DEL, NUL | 0 |
+| 3 | EastAsianWidth `W` or `F` | 2 |
+| 4 | undesignated code points inside the CJK ideograph blocks and Planes 2/3 | 2 (the UAX #11 default) |
+| 5 | everything else, including EAW=`A` | 1 (ambiguous width gets no opt-in; narrow is the shipping default of every terminal in scope) |
 
-三处**实测补充**（Unicode 属性与终端实际画法不一致时，按终端）：`DRAWN_CF`→1（软连字符 + 13 个 Prepended_Concatenation_Marks）、`JAMO_ZERO`→0（组合型韩文 jamo）、`Yijing`→2（U+4DC0..U+4DFF）。
+Three **measured supplements** cover the code points where Unicode's properties and what a terminal
+actually draws disagree: `DRAWN_CF`→1 (SOFT HYPHEN plus the 13 Prepended_Concatenation_Marks),
+`JAMO_ZERO`→0 (conjoining Hangul jamo), `Yijing`→2 (U+4DC0..U+4DFF).
 
-### 1.2 转义、控制字符与坏 UTF-8
+Each is a reading off a real cursor, taken from four witnesses: **conhost** and **Windows Terminal**
+(`CreateFileW("CONOUT$")` + `WriteConsoleW`, then `GetConsoleScreenBufferInfo` to read the cursor
+column back), **xterm** (raw bytes to `/dev/tty` in termios raw mode, position reported back with
+`ESC[6n`), **glibc** (`wcwidth()` over all code points, C.UTF-8), and **`unidata.h`** (this module's
+own second width table). Two caveats shaped the verdicts: `WriteConsoleW` takes UTF-16, so the Windows
+probes cannot test raw malformed bytes at all — only the xterm pty is valid at byte level; and xterm
+mirrors glibc's `wcwidth()` for every assigned code point, so the two are **one** witness, not two.
 
-- VT/ANSI 控制序列整体跳过、计 0：CSI（参数 0x30-0x3F、中间码 0x20-0x2F、终结 0x40-0x7E）、字符串型 OSC/DCS/SOS/PM/APC、nF、Fe 双字节、SS2/SS3。
-- **SS2/SS3（`ESC N`/`ESC O`）只吞引导符**：其后那个图形字符两个终端都会打出来，所以计 1。
-- 字符串型序列只由 **BEL 或 ST 终结**，由**新的 ESC、CAN(0x18)、SUB(0x1A) 放弃**；**CR 和 LF 都不终结**，会被当作序列内容吞掉（§4.5 有实测行）。
-- TAB 走到**下一个 8 列制表位**，不是 1 列（§4.3）。
-- 其余 C0、DEL、整个 C1 区计 0；孤立 ESC 计 0。
-- CR / BS 只把 `col` 折回，**不降低 `line_w`**，所以覆写不会丢掉已画出的宽度。
-- UTF-8 是**校验**而非仅解码：过长形式、代理区、超过 U+10FFFF、孤立延续字节、截断序列全部拒绝；
-  被拒的字节按 Unicode 最大子部分规则**每字节算 1 列、前进 1 字节**（即终端显示的 U+FFFD），
-  这样畸形字节不可能偷带任何宽度类别。
+### 1.2 Escapes, control characters and malformed UTF-8
 
-## 2. `(列宽, 字节数)` 契约
+- A VT/ANSI control sequence is skipped whole and counts 0: CSI (params 0x30-0x3F, intermediates
+  0x20-0x2F, final 0x40-0x7E), the string forms OSC/DCS/SOS/PM/APC, nF, the Fe two-byte forms, SS2/SS3.
+- **SS2/SS3 (`ESC N` / `ESC O`) consume only their introducer**: both consoles print the graphic byte
+  that follows, so it counts 1.
+- A string form is terminated only by **BEL or ST**, and abandoned by a **new ESC, CAN (0x18) or
+  SUB (0x1A)**; **neither CR nor LF terminates one** — the newline is swallowed as sequence content
+  (§4.5 has the measured rows).
+- TAB advances to the **next 8-column stop**, it is not one column (§4.4).
+- Every other C0 control, DEL and the whole of C1 count 0; a lone ESC counts 0.
+- CR / BS fold `col` back **without lowering `line_w`**, so overstriking does not lose width that was
+  already drawn.
+- UTF-8 is **validated**, not merely decoded: overlong forms, surrogates, anything past U+10FFFF, lone
+  continuation bytes and truncated sequences are all rejected; a rejected byte costs exactly
+  **1 column and advances 1 byte**, which is Unicode's maximal-subpart rule (what the terminal shows as
+  U+FFFD). A malformed byte therefore cannot smuggle in a width class.
 
-`utf8.ansi_width(s)` 返回两个数：
+## 2. The `(columns, bytes)` contract
 
-1. **最宽行的显示列数**；
-2. **同一行的字节长度**——不是整串的字节数，也不是各行之和。字节数服从与宽度完全相同的最宽行规则，**并列时取第一个达到最大值的行**。
+`utf8.ansi_width(s)` returns two numbers:
 
-- LF 是唯一的换行符。CR 只折回游标，它的字节仍属于这一行：`"abc\r\n"` 是一行 4 字节 3 列。
-- 两个数互不包络，两个方向都可能背离：转义序列、组合符号等**只有字节没有列**；一个 TAB 字节**最多值 8 列**。
-- 第一行**无条件结算**（`ansi_width.c:187` 的 `best` 标志）。宽度为 0 的行——全是转义、全不可见——永远过不了 `line_w > maxw` 这道初始为 0 的比较，没有这个标志它会上报 0 列（对）和 0 字节（错）：`ESC ] 0 ; x` 是 0 列 **5** 字节。
-- `nil`/缺参 → `ansi_width` 返回 `0, 0`；`ansi_cut` 返回 `nil`（保持原 Lua 语义）。
+1. the **display columns of the widest line**;
+2. the **byte length of that SAME line** — not of the whole string, and not the sum over lines. The
+   byte count obeys exactly the same widest-line rule as the width, and **a tie goes to the first line
+   that reached the maximum**.
 
-### 2.1 全量扫描的宽度分布
+- LF is the only line separator. CR only folds the cursor back, its byte still belongs to the line:
+  `"abc\r\n"` is one line of 4 bytes and 3 columns.
+- Neither number bounds the other, and they disagree in both directions: escapes, combining marks and
+  every other zero-width byte **add bytes and no columns**, while a single TAB byte is **worth up to 8
+  columns**.
+- The **first line is promoted unconditionally** (the `best` flag, `ansi_width.c:187`). A line of width
+  0 — all escapes, all invisible — can never pass a `line_w > maxw` test against an initial `maxw`
+  of 0, so without the flag it would report 0 columns (right) and 0 bytes (wrong): `ESC ] 0 ; x` is
+  0 columns **5** bytes.
+- nil/absent → `ansi_width` returns `0, 0`; `ansi_cut` returns `nil` (the original Lua semantics).
+- At the Lua layer `lib/misc.lua` exposes both functions as `string.wcwidth` and `string.ansi_cut`;
+  the wrapper is a plain `return ansi_width(s)`, so both returns are visible there as well, and
+  `ansi_width(s) == 3` or `local w = ansi_width(s)` still read the columns only — Lua expands a
+  multi-value call into several values only in trailing position.
 
-| 宽度 | 码点数 | 游程段数 | 谁在这一档 |
+### 2.1 Width distribution over the full sweep
+
+| width | code points | runs | what lands in this class |
 |---|---|---|---|
-| 0 | 2450 | 358 | Mn/Me/Cf 组合与格式符号、C0（TAB 除外）、DEL、C1、组合型韩文 jamo |
-| 1 | 929088 | 471 | 默认值：其余一切，含 EastAsianWidth=A |
-| 2 | 182573 | 121 | EastAsianWidth W/F、CJK 表意块内未分配码点、易经 U+4DC0..4DFF |
-| 8 | 1 | 1 | TAB 单码点扫描的读数——见下方说明，它不是固定宽度 |
+| 0 | 2450 | 358 | Mn/Me/Cf combining and format characters, C0 (TAB excepted), DEL, C1, conjoining Hangul jamo |
+| 1 | 929088 | 471 | the default: everything else, including EastAsianWidth=A |
+| 2 | 182573 | 121 | EastAsianWidth W/F, undesignated code points inside the CJK ideograph blocks, Yijing U+4DC0..4DFF |
+| 8 | 1 | 1 | the reading of a lone TAB in the single-code-point sweep -- see the note below, TAB is not a fixed width |
 
-> TAB 那一行是**单码点扫描**的产物：`ansi_width` 从 col=0 起算，孤立 TAB 因此读到 8。真实字符串里 TAB 的宽度取决于它落在哪个制表位，`1..8` 都可能（§4.4）。
+> The TAB row is an artifact of the **single-code-point** sweep: `ansi_width` starts at col=0, so a lone TAB reads 8. In a real string the width of a TAB depends on which stop it hits -- anything from `1..8` is possible (§4.4).
 
-关于 `luautf8.txt` §2.7 里"953 行、other=2049"与本节 951 行的差别：那一版扫描**把 2048 个代理区码点也按 3 字节 CESU 形式喂进去**，它们全部被拒、每个读作 3 列，于是多出一个 `w3=2048` 的游程；本文档的扫描跳过代理区。实测两个口径同时给出：
+An earlier sweep reported 953 run-length lines and `other=2049` where this section says 951. It **fed
+the 2048 surrogate code points in as their 3-byte CESU form**; all of them are rejected and each reads 3,
+which adds one `w3=2048` run. This document skips the surrogate range. Both policies, measured:
 
-| 口径 | 码点数 | 游程段数 | 直方图 |
+| policy | code points | runs | histogram |
 |---|---|---|---|
-| 跳过 U+D800..DFFF（本文档 §4） | 1,112,064 | 951 | 0=2450 / 1=927040 / 2=182573 / 8=1 |
-| 把代理区按 3 字节 CESU 形式喂入（§2.7 口径） | 1,114,112 | 953 | 0=2450 / 1=927040 / 2=182573 / 3=2048 / 8=1 |
+| skip U+D800..DFFF (this document, §4) | 1,112,064 | 951 | 0=2450 / 1=927040 / 2=182573 / 8=1 |
+| feed the surrogate range as its 3-byte CESU form | 1,114,112 | 953 | 0=2450 / 1=927040 / 2=182573 / 3=2048 / 8=1 |
 
-两者除代理区游程外完全一致，宽度直方图三项 `0/1/2` 的计数一字不差。
+The two agree on everything except the surrogate run, and the `0/1/2` histogram counts match to the digit.
 
-## 3. 与 `utf8.width`（`unidata.h`）的关系
+## 3. How this relates to `utf8.width` (`unidata.h`)
 
-同一个模块里有两套宽度：`utf8.ansi_width`（本文档，实测）与 `utf8.width`（`lutf8lib.c` + 冻结的 `unidata.h`）。
-两者在 1,112,059 个码点上有 4518 个分歧，四个桶**全部是 `unidata.h` 一侧的问题**：Mc 间距符号被判 0（3905 个，`ansi_width` 按实测给 1）、C0/C1 与组合 jamo 被判 1（311 个）、粗区间吞掉的三画/太玄经等被判 2（296 个）、EAW=W 却被判 0 的 6 个。
-另外 `utf8.width` 接受的是**码点整数**，传字符串会静默得到垃圾值（`Lutf8_width` 读 `lua_tointeger`）。
-细节见 §2.7；新代码一律用 `ansi_width`。
+The module ships two width tables: `utf8.ansi_width` (documented here, measured) and `utf8.width`
+(`lutf8lib.c` plus a frozen `unidata.h`). They disagree on 4518 of 1,112,059 code points, in four
+buckets, and **every bucket is `unidata.h`'s error**: 3905 Mc spacing marks judged 0 (measured 1), 311
+C0/C1 controls and conjoining jamo judged 1, 296 trigram/Tai-Xuan-Jing and coarse-range holes judged 2,
+and 6 code points judged 0 where EAW says W. On top of that `utf8.width` takes a **code point integer**,
+so passing it a string silently yields garbage (`Lutf8_width` reads `lua_tointeger`).
+The buckets above are the whole disagreement set; new code should use `ansi_width`.
 
-## 4. 字符宽度对照表（全部为实测）
+## 4. Character width tables (all measured)
 
-### 4.1 宽度 0 的码点区间（358 段，完整）
+### 4.1 Code point intervals of width 0 (358 runs, complete)
 
-宽度 1 是默认值，所以这里只列**非 1** 的区间；下表是全部判 0 的码点段。
+Width 1 is the default, so only the **non-1** intervals are listed; the table below is every run that
+resolves to 0.
 
-| 码点数 | 起 | 止 | 宽度 |
+| code points | from | to | width |
 |---|---|---|---|
 | 9 | `U+0000` | `U+0008` | 0 |
 | 22 | `U+000A` | `U+001F` | 0 |
@@ -466,9 +492,9 @@
 | 96 | `U+E0020` | `U+E007F` | 0 |
 | 240 | `U+E0100` | `U+E01EF` | 0 |
 
-### 4.2 宽度 2 的码点区间（121 段，完整）
+### 4.2 Code point intervals of width 2 (121 runs, complete)
 
-| 码点数 | 起 | 止 | 宽度 |
+| code points | from | to | width |
 |---|---|---|---|
 | 96 | `U+1100` | `U+115F` | 2 |
 | 2 | `U+231A` | `U+231B` | 2 |
@@ -592,25 +618,27 @@
 | 65534 | `U+20000` | `U+2FFFD` | 2 |
 | 65534 | `U+30000` | `U+3FFFD` | 2 |
 
-### 4.3 原始单字节读数（0x00..0xFF，按区间压缩）
+### 4.3 Raw single-byte readings (0x00..0xFF, run-length compressed)
 
-码点表和字节表是两件事：单个 0x80..0xFF 字节不构成合法 UTF-8，读作 1 个替换字形。
-下表由 0..255 全量 256 次实测游程压缩得到。
+The code point table and the byte table are two different things: a lone 0x80..0xFF byte is not valid
+UTF-8 and reads as 1 replacement glyph. The table below is run-length compressed from a full 256-measurement
+sweep of 0..255.
 
-| 字节区间 | 宽度 | 含义 |
+| byte range | width | meaning |
 |---|---|---|
-| 0x00..0x08 | 0 | C0 控制字符（NUL..BS），计 0 |
-| 0x09 | 8 | TAB：走到下一个 8 列制表位，孤立 TAB 读作 8 |
-| 0x0A..0x1F | 0 | C0 余下的（LF..SI）计 0 |
-| 0x20..0x7E | 1 | 可打印 ASCII 与空格，计 1 |
-| 0x7F | 0 | DEL，计 0 |
-| 0x80..0xFF | 1 | 孤立字节：不构成合法 UTF-8，每字节 1 个替换字形（含 C1 的 0x80..0x9F——它们只有编码成 C2 80..C2 9F 才读 0） |
+| 0x00..0x08 | 0 | C0 controls (NUL..BS), count 0 |
+| 0x09 | 8 | TAB: walks to the next 8-column stop, a lone TAB reads 8 |
+| 0x0A..0x1F | 0 | the rest of C0 (LF..SI), count 0 |
+| 0x20..0x7E | 1 | printable ASCII plus space, count 1 |
+| 0x7F | 0 | DEL, count 0 |
+| 0x80..0xFF | 1 | lone byte: not valid UTF-8, one replacement glyph per byte (this includes the C1 range 0x80..0x9F -- those read 0 only when encoded as C2 80..C2 9F) |
 
-### 4.4 TAB 制表位
+### 4.4 TAB stops
 
-`cw = 8 - (col & 7)`，`col` 是 TAB **之前**的列。左列 = `"x"*col .. TAB`，右列 = `TAB .. "x"*col`。
+`cw = 8 - (col & 7)`, where `col` is the column **before** the TAB. Left column = `"x"*col .. TAB`,
+right column = `TAB .. "x"*col`.
 
-| TAB 前列数 | `x..x<TAB>` 宽度 | `<TAB>x..x` 宽度 |
+| columns before TAB | width of `x..x<TAB>` | width of `<TAB>x..x` |
 |---|---|---|
 | 0 | 8 | 8 |
 | 1 | 8 | 9 |
@@ -631,11 +659,12 @@
 | 16 | 24 | 24 |
 | 17 | 24 | 25 |
 
-### 4.5 转义与控制序列
+### 4.5 Escapes and control sequences
 
-`校验` 列是脚本内手写的期望值与实测值的比对，28 项全部 `OK`。
+The `check` column compares a hand-written expectation in the generator against the measured value;
+all 28 rows are `OK`.
 
-| 序列 | 字节数 | 宽度 | 校验 | 字节写法 |
+| sequence | bytes | width | check | as bytes |
 |---|---|---|---|---|
 | CSI SGR on | 5 | 0 | OK | `<1B>[31m` |
 | CSI SGR off | 4 | 0 | OK | `<1B>[0m` |
@@ -666,9 +695,9 @@
 | SGR on text off | 13 | 4 | OK | `<1B>[31mab<1B>[0mcd` |
 | TAB after SGR | 6 | 9 | OK | `<1B>[1m<09>x` |
 
-### 4.6 判定性码点
+### 4.6 Code points that decide a policy
 
-| 码点 | UTF-8 字节 | 宽度 | 为什么它值得单列 |
+| code point | UTF-8 bytes | width | why it decides a policy |
 |---|---|---|---|
 | `U+0007` | 1 | **0** | BEL |
 | `U+0009` | 1 | **8** | TAB |
@@ -701,7 +730,7 @@
 | `U+3248` | 3 | **1** | CIRCLED NUMBER FORTY-EIGHT (EAW=A) |
 | `U+4DC0` | 3 | **2** | YI HEXAGRAM 1 (Yijing) |
 | `U+4DFF` | 3 | **2** | YI HEXAGRAM 64 (Yijing) |
-| `U+4E00` | 3 | **2** | CJK UNIFIED 一 |
+| `U+4E00` | 3 | **2** | CJK UNIFIED IDEOGRAPH-4E00 |
 | `U+FF01` | 3 | **2** | FULLWIDTH EXCLAMATION (F) |
 | `U+FF61` | 3 | **1** | HALFWIDTH IDEOGRAPHIC A |
 | `U+1F600` | 4 | **2** | EMOJI GRINNING |
@@ -710,11 +739,12 @@
 | `U+E0001` | 4 | **0** | LANGUAGE TAG |
 | `U+F0000` | 4 | **1** | PLANE 15 PRIVATE |
 
-### 4.7 畸形 UTF-8 与校验器
+### 4.7 Malformed UTF-8 and the validator
 
-`宽度` 等于字节数即"每个非法字节各占 1 列"；注意 `9B`（孤立 C1 字节）读 1 而 `C29B`（U+009B 的合法编码）读 0。
+A `width` equal to the byte count means "each illegal byte took one column". Note that `9B` (a lone C1
+byte) reads 1 while `C29B` (the legal encoding of U+009B) reads 0.
 
-| 用例 | 字节数 | 宽度 | 十六进制 |
+| case | bytes | width | hex |
 |---|---|---|---|
 | overlong 2  C0 AF | 2 | **2** | `C0AF` |
 | overlong 2  C1 BF | 2 | **2** | `C1BF` |
@@ -741,12 +771,13 @@
 | A + trunc 3 + B | 4 | **4** | `41E4B842` |
 | zhong + lone cont | 4 | **3** | `E4B8AD80` |
 
-### 4.8 组合字符簇：本模型不做字素聚类
+### 4.8 Combining clusters: this model does not do grapheme clustering
 
-一次一个码点，与 conhost / xterm / PuTTY 一致，也正是固定单元格网格需要的。
-（Windows Terminal 会把 emoji ZWJ 序列和区域指示符配对压进一个格子——这里是**有意分歧**，见 §2.7。）
+One code point at a time, matching conhost, xterm and PuTTY, and what a fixed cell grid needs.
+(Windows Terminal pairs an emoji ZWJ sequence and a regional-indicator pair into one cell — a
+**deliberate divergence**: the ZWJ family below measures 6 cells here and the RI pair 2.)
 
-| 组合 | 字节数 | 列宽 | 返回的字节数 |
+| cluster | input bytes | columns | byte return |
 |---|---|---|---|
 | e + U+0301 | 3 | **1** | 3 |
 | a + 5x U+0301 | 11 | **1** | 11 |
@@ -765,9 +796,9 @@
 | 10x ZWSP 200B | 30 | **0** | 30 |
 | NBSP + space + NBSP | 5 | **3** | 5 |
 
-### 4.9 韩文 jamo 序列（`JAMO_ZERO` 的判据）
+### 4.9 Hangul jamo sequences (the reading behind `JAMO_ZERO`)
 
-| 序列 | 字节数 | 宽度 |
+| sequence | bytes | width |
 |---|---|---|
 | initial alone | 3 | **2** |
 | medial alone | 3 | **0** |
@@ -775,11 +806,12 @@
 | initial + medial + final | 9 | **2** |
 | medial + final, malformed | 6 | **0** |
 
-### 4.10 光标回折与跨行：两个返回值何时背离
+### 4.10 Cursor folding and multi-line input: when the two returns diverge
 
-第 3 列是 `ansi_width` 的**字节数**返回值——它属于最宽那一行，不是整串长度（对比第 2 列）。
+Column 3 is `ansi_width`'s **byte** return — it belongs to the widest line, so it is not the length of
+the whole string (compare column 2).
 
-| 原始字节 | 列宽 | 最宽行字节 | 内容 |
+| input bytes | columns | widest-line bytes | content |
 |---|---|---|---|
 | 5 | **2** | 5 | `ab<0D>cd` |
 | 4 | **2** | 4 | `ab<08>c` |
@@ -799,204 +831,134 @@
 
 ## 5. `utf8.ansi_cut(s[, maxlen])`
 
-`(byte_len, print_len, cut)`，**只用于不跨行的字符串**：它带着列预算回放同一个 `walk`，在 `col` 越过预算之前停下，所以一次只量一行。
+`(byte_len, print_len, cut)`, **for strings that do not span lines**: it replays the same `walk` with a
+column budget and stops before `col` would pass it, so it measures one line at a time.
 
-- `byte_len` = **返回的 `cut` 字符串的原始字节数**，**包含其中的转义字节**；若截断处之前出现过 ESC，`cut` 会补一个 `ESC[0m`（4 字节）复位，`byte_len` 也把这 4 字节算进去（`ansi_width.c:283-284`）。
-- `print_len` = `cut` **实际**占用的列数，不是请求的 `maxlen`：正好压在边界上的宽字符整个丢掉，不会画半格。
-- 无预算（省略第二参）时 `byte_len` 就是整串长度。
-- 停在换行符且预算还有余量时，若整串宽度不超过 `maxlen`，原串整个返回（`ansi_width.c:274-280`）。
+- `byte_len` is the **raw byte count of the `cut` string that is returned, escape bytes included**. If
+  an ESC appeared before the cut point, `cut` gets a trailing `ESC[0m` reset (4 bytes) and `byte_len`
+  counts those 4 too (`ansi_width.c:283-284`). This is the same convention `ansi_width` uses for its
+  byte return: both count raw bytes, never "visible" bytes.
+- `print_len` is the columns `cut` **actually** occupies, not the requested `maxlen`: a wide character
+  straddling the budget is dropped whole rather than drawn half a cell.
+- With no budget (second argument omitted) `byte_len` is simply the length of the whole string.
+- If the walk stops at a newline and budget remains, the whole input is returned when its total width
+  fits `maxlen` (`ansi_width.c:274-280`).
 
-预算矩阵实测（`预算 = -1` 表示省略第二参；`cut` 以十六进制原样打印）：
+Budget matrix, measured (`budget = -1` means the second argument was omitted; `cut` is printed as hex
+bytes verbatim):
 
-| 用例 | 预算 | 原串字节 | byte_len | print_len | cut(HEX) |
+| case | budget | input bytes | byte_len | print_len | cut (hex) |
 |---|---|---|---|---|---|
-| plain | 省略 | 6 | 6 | **6** | `616263646566` |
-| plain | 0 | 6 | 0 | **0** | `(空)` |
+| plain | omitted | 6 | 6 | **6** | `616263646566` |
+| plain | 0 | 6 | 0 | **0** | `(empty)` |
 | plain | 1 | 6 | 1 | **1** | `61` |
 | plain | 2 | 6 | 2 | **2** | `6162` |
 | plain | 3 | 6 | 3 | **3** | `616263` |
 | plain | 4 | 6 | 4 | **4** | `61626364` |
 | plain | 6 | 6 | 6 | **6** | `616263646566` |
 | plain | 12 | 6 | 6 | **6** | `616263646566` |
-| zhong x2 | 省略 | 6 | 6 | **4** | `E4B8ADE4B8AD` |
-| zhong x2 | 0 | 6 | 0 | **0** | `(空)` |
-| zhong x2 | 1 | 6 | 0 | **0** | `(空)` |
+| zhong x2 | omitted | 6 | 6 | **4** | `E4B8ADE4B8AD` |
+| zhong x2 | 0 | 6 | 0 | **0** | `(empty)` |
+| zhong x2 | 1 | 6 | 0 | **0** | `(empty)` |
 | zhong x2 | 2 | 6 | 3 | **2** | `E4B8AD` |
 | zhong x2 | 3 | 6 | 3 | **2** | `E4B8AD` |
 | zhong x2 | 4 | 6 | 6 | **4** | `E4B8ADE4B8AD` |
 | zhong x2 | 6 | 6 | 6 | **4** | `E4B8ADE4B8AD` |
 | zhong x2 | 12 | 6 | 6 | **4** | `E4B8ADE4B8AD` |
-| SGR red | 省略 | 12 | 12 | **3** | `1B5B33316D7265641B5B306D` |
-| SGR red | 0 | 12 | 0 | **0** | `(空)` |
+| SGR red | omitted | 12 | 12 | **3** | `1B5B33316D7265641B5B306D` |
+| SGR red | 0 | 12 | 0 | **0** | `(empty)` |
 | SGR red | 1 | 12 | 10 | **1** | `1B5B33316D721B5B306D` |
 | SGR red | 2 | 12 | 11 | **2** | `1B5B33316D72651B5B306D` |
 | SGR red | 3 | 12 | 12 | **3** | `1B5B33316D7265641B5B306D` |
 | SGR red | 4 | 12 | 12 | **3** | `1B5B33316D7265641B5B306D` |
 | SGR red | 6 | 12 | 12 | **3** | `1B5B33316D7265641B5B306D` |
 | SGR red | 12 | 12 | 12 | **3** | `1B5B33316D7265641B5B306D` |
-| SGR on only | 省略 | 8 | 8 | **3** | `1B5B33316D726564` |
-| SGR on only | 0 | 8 | 0 | **0** | `(空)` |
+| SGR on only | omitted | 8 | 8 | **3** | `1B5B33316D726564` |
+| SGR on only | 0 | 8 | 0 | **0** | `(empty)` |
 | SGR on only | 1 | 8 | 10 | **1** | `1B5B33316D721B5B306D` |
 | SGR on only | 2 | 8 | 11 | **2** | `1B5B33316D72651B5B306D` |
 | SGR on only | 3 | 8 | 8 | **3** | `1B5B33316D726564` |
 | SGR on only | 4 | 8 | 8 | **3** | `1B5B33316D726564` |
 | SGR on only | 6 | 8 | 8 | **3** | `1B5B33316D726564` |
 | SGR on only | 12 | 8 | 8 | **3** | `1B5B33316D726564` |
-| OSC only | 省略 | 5 | 5 | **0** | `1B5D303B78` |
-| OSC only | 0 | 5 | 0 | **0** | `(空)` |
+| OSC only | omitted | 5 | 5 | **0** | `1B5D303B78` |
+| OSC only | 0 | 5 | 0 | **0** | `(empty)` |
 | OSC only | 1 | 5 | 5 | **0** | `1B5D303B78` |
 | OSC only | 2 | 5 | 5 | **0** | `1B5D303B78` |
 | OSC only | 3 | 5 | 5 | **0** | `1B5D303B78` |
 | OSC only | 4 | 5 | 5 | **0** | `1B5D303B78` |
 | OSC only | 6 | 5 | 5 | **0** | `1B5D303B78` |
 | OSC only | 12 | 5 | 5 | **0** | `1B5D303B78` |
-| tab | 省略 | 5 | 5 | **10** | `6162096364` |
-| tab | 0 | 5 | 0 | **0** | `(空)` |
+| tab | omitted | 5 | 5 | **10** | `6162096364` |
+| tab | 0 | 5 | 0 | **0** | `(empty)` |
 | tab | 1 | 5 | 1 | **1** | `61` |
 | tab | 2 | 5 | 2 | **2** | `6162` |
 | tab | 3 | 5 | 2 | **2** | `6162` |
 | tab | 4 | 5 | 2 | **2** | `6162` |
 | tab | 6 | 5 | 2 | **2** | `6162` |
 | tab | 12 | 5 | 5 | **10** | `6162096364` |
-| CR fold | 省略 | 9 | 9 | **6** | `6162636465660D7879` |
-| CR fold | 0 | 9 | 0 | **0** | `(空)` |
+| CR fold | omitted | 9 | 9 | **6** | `6162636465660D7879` |
+| CR fold | 0 | 9 | 0 | **0** | `(empty)` |
 | CR fold | 1 | 9 | 1 | **1** | `61` |
 | CR fold | 2 | 9 | 2 | **2** | `6162` |
 | CR fold | 3 | 9 | 3 | **3** | `616263` |
 | CR fold | 4 | 9 | 4 | **4** | `61626364` |
 | CR fold | 6 | 9 | 9 | **6** | `6162636465660D7879` |
 | CR fold | 12 | 9 | 9 | **6** | `6162636465660D7879` |
-| LF two lines | 省略 | 7 | 7 | **4** | `61620A63646566` |
-| LF two lines | 0 | 7 | 0 | **0** | `(空)` |
+| LF two lines | omitted | 7 | 7 | **4** | `61620A63646566` |
+| LF two lines | 0 | 7 | 0 | **0** | `(empty)` |
 | LF two lines | 1 | 7 | 1 | **1** | `61` |
 | LF two lines | 2 | 7 | 2 | **2** | `6162` |
 | LF two lines | 3 | 7 | 2 | **2** | `6162` |
 | LF two lines | 4 | 7 | 7 | **4** | `61620A63646566` |
 | LF two lines | 6 | 7 | 7 | **4** | `61620A63646566` |
 | LF two lines | 12 | 7 | 7 | **4** | `61620A63646566` |
-| combining | 省略 | 5 | 5 | **3** | `65CC816162` |
-| combining | 0 | 5 | 0 | **0** | `(空)` |
+| combining | omitted | 5 | 5 | **3** | `65CC816162` |
+| combining | 0 | 5 | 0 | **0** | `(empty)` |
 | combining | 1 | 5 | 3 | **1** | `65CC81` |
 | combining | 2 | 5 | 4 | **2** | `65CC8161` |
 | combining | 3 | 5 | 5 | **3** | `65CC816162` |
 | combining | 4 | 5 | 5 | **3** | `65CC816162` |
 | combining | 6 | 5 | 5 | **3** | `65CC816162` |
 | combining | 12 | 5 | 5 | **3** | `65CC816162` |
-| empty | 省略 | 0 | 0 | **0** | `(空)` |
-| empty | 0 | 0 | 0 | **0** | `(空)` |
-| empty | 1 | 0 | 0 | **0** | `(空)` |
-| empty | 2 | 0 | 0 | **0** | `(空)` |
-| empty | 3 | 0 | 0 | **0** | `(空)` |
-| empty | 4 | 0 | 0 | **0** | `(空)` |
-| empty | 6 | 0 | 0 | **0** | `(空)` |
-| empty | 12 | 0 | 0 | **0** | `(空)` |
+| empty | omitted | 0 | 0 | **0** | `(empty)` |
+| empty | 0 | 0 | 0 | **0** | `(empty)` |
+| empty | 1 | 0 | 0 | **0** | `(empty)` |
+| empty | 2 | 0 | 0 | **0** | `(empty)` |
+| empty | 3 | 0 | 0 | **0** | `(empty)` |
+| empty | 4 | 0 | 0 | **0** | `(empty)` |
+| empty | 6 | 0 | 0 | **0** | `(empty)` |
+| empty | 12 | 0 | 0 | **0** | `(empty)` |
 
-## 6. 本次会话的代码改动
+## 6. Verification record
 
-### 6.1 C 层：`ansi_width.c` 增加"最宽行字节数"
-
-`walk()` 增加 4 个状态量与 1 个可选出参：
-
-```c
-size_t line_start = 0, line_w = 0, maxb = 0;
-int best = 0;                                    /* has any line been promoted yet? */
-...
-if (c == 0x0A) {
-    if (trunc) break;
-    if (!best || line_w > maxw) { best = 1; maxw = line_w; maxb = i - line_start; }
-    line_start = i + 1; line_w = 0; col = 0;
-}
-...
-if (!best || line_w > maxw) { maxw = line_w; maxb = i - line_start; }  /* line in progress */
-if (out_bytes) *out_bytes = maxb;
-```
-
-原先"每字节都参与的高水位计数器"改成"每行一个 `line_w` + 行末结算"，宽度值不变，
-字节跨度 `i - line_start` 因此可以精确归给产生该宽度的那一行。
-`luautf8_ansi_width` 由 1 个返回值改为 2 个（`ansi_width.c:243-245`）。
-`luautf8_ansi_cut` 不需要字节数，传 `NULL`，该分支被编译期折掉。
-
-### 6.2 Lua 层：`string.wcwidth` 透传第二个返回值
-
-`lib/misc.lua:501-507` 的包装器直接 `return ansi_width(s)`，因此第二个返回值自动可见；
-不需要改任何签名。
-
-### 6.3 改名 `ulen` → `ansi_cut`（两层）
-
-| 层 | 改动 |
-|---|---|
-| C | 导出符号 `ulen` → `ansi_cut`：`lutf8lib.c:18` 声明、`lutf8lib.c:2444` 注册表项 `{"ansi_cut", luautf8_ansi_cut}`；函数名 `luautf8_ulen` → `luautf8_ansi_cut` |
-| Lua | `lib/misc.lua:513-519`：`string.ulen` → `string.ansi_cut`，头部绑定 `local ansi_cut=utf8.ansi_cut`，注释同步 |
-| 调用点 | `lua/grid.lua`（:9 绑定 + :77 :93 :355 :367 :390 :434 :673 :674 :698 :741）、`lua/ansi.lua:398`、`lua/printer.lua:169`、`lua/var.lua:294`、`lua/var.lua:714`、`mysql/tidb.lua:108`、`mysql/tidb.lua:269` |
-| 构建脚本 | `src/c/luauf8/build.sh` 内联自检：注释 :386、断言 :533-542（`ansi_cut plain cut` / `ansi_cut nil returns one nil` / `" ansi_cut=" .. select(2, u.ansi_cut("abcdef", 3))`）、Windows 自测 :566。`test_utf8.lua` 由 `write_test` heredoc 生成，自动继承 |
-| 文档 | `luautf8.txt` 11 处：模块清单、API 行、§2.7 标题、注册块、新增"ansi_width RETURNS TWO NUMBERS"段、重写 WIDTH MODEL 与 LF 条目、新增"第一行无条件结算"与"第二个返回值没有打破任何调用者"两条、VERIFICATION 增加 33851 串独立模型一条、性能表标签 `ulen`→`cut`、原 CALLER WARNING 关闭 |
-
-**改名是彻底的**：`utf8.ulen` 已不存在（`namecheck.lua` 在四个产物上都断言 `utf8.ulen == nil`），
-所以任何漏改的调用点都会立刻报 "attempt to call a nil value"，不会静默降级。
-
-**故意未改**（需要时再说）：
-
-- `src/java/org/dbcli/Console.java:307 public String ulen(String s, final int maxLength)` —— 零调用者的 Java 遗留死代码；
-- `cache/_*.lua` 里 7 个 A/B 临时文件（18 处），不在 `init.lua` 的模块清单里；
-- `.workbuddy/memory/*.md` 与 `luautf8.txt:340`（那是对 grid.lua 已删除注释的**逐字引用**）。
-- 误报已排除：`rulename`、`Schulenberg`。
-
-Lua 多返回值语义保证向后兼容：只有 trailing position（return、参数表、表构造器、多重赋值右侧）才展开多个值，
-因此 `ansi_width(s) == 3`、`a .. ansi_width(s) .. b`、`local w = ansi_width(s)` 全部照旧只读列宽。
-
-### 6.4 `lua/grid.lua`：删掉失效注释、修正表头路径
-
-- `:671-673` 删除了一条已经失效的注释；C0 可打印化 `val:gsub('[%z\1-\31]', printables)` 现在位于
-  `if header_idx == 0` **之前**，表头与正文共用同一道映射，表头里的 TAB 因此也是 4 空格。
-- `:155-159` 的补齐闸门取 `wcwidth` 的**两个**返回值，`byte_len ~= print_len` 即手动补空格：
-  闸门建立在一次实测比较上，而不是"数据不会越界"这类不变量上。
-  紧随其后的注释（:150-154）给出了为什么这样安全：除 TAB 之外列数不超过字节数，
-  而 TAB 在 `grid:add` 存单元格之前就被 `printables` 展开了。
-- `:264` `if b1<0x80 then return b+1,1 end` —— ASCII 宽度恒为 1，跳过 `wcwidth`。
-- `:306-308` `grid.line_wrap`（:243，调用点 :357 与 :731）用 `wcwidth(line)` 的两个返回值，
-  顺序是 `usize`=字节、`csize`=列。
-
-### 6.5 一处需要澄清的前提（**未改代码**）
-
-本会话收到一条判断："wcwidth 的 bytes 计算应该和 ansi_cut 类似，不包含 ansi escapes 等的长度"。
-§5 的预算矩阵是对已发布产物直接测的，结论相反：**`ansi_cut` 的 `byte_len` 本来就包含转义字节**。
-
-| 输入 | 原始字节 | `ansi_cut` 无预算 | `ansi_width` |
-|---|---|---|---|
-| `ESC[31mred ESC[0m` | 12 | `byte_len=12, print_len=3` | 3 列 / 12 字节 |
-| `ESC]0;x` | 5 | `byte_len=5, print_len=0` | 0 列 / 5 字节 |
-| `中文中文` | 6 | `byte_len=6, print_len=4` | 4 列 / 6 字节 |
-
-两个函数在"字节数 = 原始字节数（含转义）"上**已经一致**，无需改动。
-反过来，如果把 `wcwidth` 的字节数改成"只数可见字节"，会直接打破 §6.4 的闸门：
-它喂给 `string.format("%Ns")` 的判断需要的是**原始**字节数，转义字节 `%Ns` 一样会算进宽度。
-因此这一条按"实测证据 + 依赖分析"记账，未动代码，等待确认。
-
-## 7. 验证记录
-
-| 关卡 | 范围 | 结果 |
+| Gate | Scope | Result |
 |---|---|---|
-| 构建自检 | `build.sh` 在 4 个目标（x64 / x86 / linux / linux-arm）上内联断言：SGR 跳过、宽=2、四个 TAB 制表位、最宽行、CR/BS 高水位、OSC 放弃规则、SS2/SS3、整串 DRAWN Cf、jamo 音节、易经块、畸形 UTF-8、nil、`ansi_cut` 截断，以及字节侧（值个数、按行归属、并列取首行、CR/CRLF/BS 字节归属、零宽行仍报自己的字节） | 全部通过，无新增编译告警 |
-| 独立模型差分 | `awref.lua`：1-based 的 `esc_end` 镜像 + 自己的分行器，对 33851 串语料（31 类 token 的 1/2/3 长度全交叉 + 28 个手写跨行串） | 宽度不符 0，字节不符 0 |
-| 全量扫描 | 本文档 §4 的全部表格，x64 产物 | 与 linux 产物逐字节一致 |
-| 改名回归 | `namecheck.lua <libdir> [misc.lua]`：`utf8.ansi_cut` 是函数、`utf8.ulen` 为 nil、从**真实** `lib/misc.lua` 里切出定义 `loadstring` 后 `string.ansi_cut` 存在且 `string.ulen` 为 nil、`string.wcwidth` 恰好返回 2 个值、9 例宽度断言、以及 `local reps,ansi_cut,wcwidth=...` 绑定行原样可用 | x64 / x86 / linux / linux-arm(qemu) 全 PASS |
-| 结构断言 | `lua -e loadfile` 语法检查、行尾字节计数（`grid.lua` 100% CRLF、`misc.lua` 100% LF） | 未破坏 |
-| glibc 对照 | `wcwidth()` 全量码点 | 仅 U+3248..U+324F 8 个不符，是 §2.7 记录的有意分歧 |
+| Build self-check | `build.sh` asserts the model inline on 4 targets (x64 / x86 / linux / linux-arm): SGR skip, wide=2, the four TAB stops, widest-line, the CR/BS high-water mark, the OSC abandon rules, SS2/SS3, the whole drawn Cf set, the jamo syllable, the Yijing block, malformed UTF-8, nil, the `ansi_cut` cuts, and the byte half (value count, per-line attribution, tie-goes-to-the-first-line, CR/CRLF/BS byte attribution, a zero-width line still reporting its own bytes) | all pass, no new compiler warnings |
+| Independent model, differentially | `awref.lua`: a 1-based mirror of `esc_end` plus its own line splitter, over a 33851-string corpus (31 token classes crossed exhaustively at lengths 1, 2 and 3, plus 28 hand-built multi-line strings) | 0 width mismatches, 0 byte mismatches |
+| Full sweep | every table in §4 of this document, x64 artifact | byte-identical to the linux artifact |
+| Export-name contract | `namecheck.lua <libdir> [misc.lua]`: `utf8.ansi_cut` is a function, `utf8.ulen` is nil, the real definitions sliced out of `lib/misc.lua` `loadstring` cleanly with `string.ansi_cut` present and `string.ulen` nil, `string.wcwidth` returns exactly 2 values, 9 width assertions, and the `local reps,ansi_cut,wcwidth=...` binding line intact | x64 / x86 / linux / linux-arm (qemu) all PASS |
+| Structural assertions | `lua -e loadfile` syntax check, line-ending byte counts (`grid.lua` 100% CRLF, `misc.lua` 100% LF) | not broken |
+| Against glibc | `wcwidth()` over all code points | only U+3248..U+324F disagree (8), the deliberate EAW=A call listed in §4.6 |
 
-> `namecheck.lua` 一开始试图 `dofile("lib/misc.lua")` 并给 `java`/`env` 打桩，两轮失败
-> （:129 `String=java.require("java.lang.String")`，桩函数又被当成表索引）。
-> 最终做法是**放弃打桩**：按锚点行把 `misc.lua` 尾部的真实定义切出来 `loadstring`。
-> 更便宜，也更诚实——测的是文件文本，不是我以为文件会长成的样子。
+> `namecheck.lua` first tried to `dofile("lib/misc.lua")` with stubs for `java` and `env`, and failed
+> twice (`:129 String=java.require("java.lang.String")`, then a stub function used as a table index).
+> The version that works **gives up on stubbing**: it slices the real definitions out of the tail of
+> `misc.lua` by anchor line and `loadstring`s them. Cheaper, and more honest — it tests the text in
+> the file rather than the file I assumed it was.
 
-## 8. 实测性能：字节跟踪 + 第二个返回值的代价
+## 7. Measured performance: what the byte tracking and the second return cost
 
-三方对照，Windows x64，QueryPerformanceCounter，每种配置独立进程，调用深度相同，5 轮交错取 `min`，单位 ns/op：
+Three-way comparison, Windows x64, QueryPerformanceCounter, one configuration per process, equal call
+depth, 5 interleaved repetitions, `min` per cell, ns/op:
 
-- **A** = 删掉字节跟踪、只推 1 个返回值（`line_start/line_w/maxb/best` 与 `out_bytes` 全去掉）
-- **B** = 保留字节跟踪、只推 1 个返回值（结果写入 `static size_t bench_bytes_sink`，否则 GCC 会证明 `bytes` 是死值并把跟踪整个删掉——第一版就因此测了个空）
-- **C** = 已发布源码（跟踪 + 2 个返回值）
+- **A** = byte tracking deleted, 1 value pushed (`line_start/line_w/maxb/best` and `out_bytes` all gone)
+- **B** = byte tracking kept, 1 value pushed (the result is written to `static size_t bench_bytes_sink`,
+  otherwise GCC proves `bytes` is dead and deletes the tracking outright — the first version of this
+  benchmark measured nothing for exactly that reason)
+- **C** = the shipped source (tracking + 2 values pushed)
 
-| 用例 | A ns | B ns | C ns | walk(B−A) | push(C−B) | 合计(C−A) | 相对 A |
+| case | A ns | B ns | C ns | walk(B-A) | push(C-B) | total(C-A) | vs A |
 |---|---|---|---|---|---|---|---|
 | ascii1 | 43.10 | 47.25 | 49.62 | +4.15 | +2.37 | +6.52 | +15% |
 | ascii8 | 48.72 | 53.77 | 56.21 | +5.05 | +2.44 | +7.49 | +15% |
@@ -1009,34 +971,20 @@ Lua 多返回值语义保证向后兼容：只有 trailing position（return、�
 | multiline | 274.52 | 275.30 | 277.73 | +0.78 | +2.43 | +3.21 | +1% |
 | tab | 78.35 | 75.10 | 77.02 | -3.25 | +1.92 | -1.33 | -2% |
 
-（聚合自 `bench_abc3.tsv` 的 150 条测量，每格取 min。）
+(aggregated from 150 measurements in `bench_abc3.tsv`, min per cell.)
 
-结论：`walk` 的行内记账**不是免费的**——`B−A` 落在 4.1~11.5 ns（`multiline` 只 +0.8、`tab` 甚至 −3.3，这两格是噪声不是负成本），
-第二个 `lua_pushinteger` 稳定地值 1.3~4.4 ns（中位约 +2.2）。合计 `C−A` 为 +3.2~+15.8 ns，
-相对改动前从 1%（长 ASCII、跨行）到 15%（最短的串）。
-本表是**对当前发布的 `lib/x64/utf8.dll` 重测**的（每格 5 次交错取 min），与 2026-09-07 12:30 那一轮形状一致。
-按 §2.7 记录的 ±10% 运行间波动，单看任何一行都证明不了什么；站得住的是**10 个用例里 9 个合计为正**，唯一的例外 `tab` 只负 1.3 ns，在噪声内。
-这个代价买到的是"能按行归属的字节数"，而 grid.lua 的补齐闸门（§6.4）需要它。
+Conclusion: the per-line bookkeeping inside `walk` is **not free** — `B−A` lands between 4.1 and
+11.5 ns (`multiline` shows only +0.8 and `tab` even −3.3; those two cells are noise, not a negative
+cost), and the second `lua_pushinteger` is worth a steady 1.3~4.4 ns (median about +2.2). The total
+`C−A` is +3.2~+15.8 ns, i.e. 1% (long ASCII, multi-line) to 15% (the shortest strings) over the
+pre-change artifact. This table was **re-measured against the currently shipped `lib/x64/utf8.dll`**
+(min over 5 interleaved runs per cell) and matches the shape of the 2026-09-07 12:30 round. Given the
+±10% run-to-run spread this machine shows, no single row proves anything on its own; what holds up is
+that **9 of the 10 cases are positive in total**, the lone exception `tab` missing by 1.3 ns, inside
+the noise. What that cost buys is a byte count attributable to a line, which is what the padding gate
+in `lua/grid.lua:155-159` needs.
 
-尚未尝试的省法：把 `int best` 换成有符号哨兵 `ptrdiff_t maxw = -1`，使 `if ((ptrdiff_t)line_w > maxw)` 天然让第一行无条件晋级，
-从而少一个活跃局部量、少一条短路分支。脚手架在 `F:\tools\tmp\dsrc`，未编译未测量。
-
-## 9. 环境事实与遗留事项（复核过，不是抄记录）
-
-- **本会话的改动已经入库**：commit `6166fcbd`（2026-09-07 15:32，"new lib 'utf8' and misc changes related to the new lib"）
-  一次性带进 `src/c/luauf8/*`（`ansi_width.c` 全文 296 行、`build.sh` 716 行）、5 个平台的 `lib/*/utf8.*`、
-  `lib/misc.lua`、`lua/grid.lua` 以及改名后的 `ansi/printer/var/tidb` 调用点。
-  已 `cmp` 验证：`git show HEAD:src/c/luauf8/ansi_width.c` 与 `D:\dbcli` / git 工作树两处工作文件**逐字节相同**。
-- **`luautf8.txt` 与 `gen_ansi_tables.py` 至今是 untracked**，而且**只存在于 git 工作树** `D:\Green\github\dbcli\src\c\luauf8\`；
-  `D:\dbcli\src\c\luauf8\` 里没有它们。所以本文档（在 `D:\dbcli` 下生成）与 §2.7（在 git 树下）分处两棵树，入库时要一并 `copy /Y`。
-- 提交之后 `lib/misc.lua` 又被并发编辑过一次（15:45，+110 字节 = `trim_` 上方新增一行注释，整体行号 +1）；
-  我改的 `ansi_width` / `ansi_cut` 区块（现 `:501-519`）内容未动。
-- 构建脚本现名 **`build.sh`**（git 工作树 12:29），早期会话里它叫 `build_luautf8.sh`；本会话对断言的改名都落在现存的 `build.sh` 上。
-- `lib/*/utf8.*` 在 `ansi_width.c` 定稿（12:00）之后被**并发构建**过（`lib/x64/utf8.dll` 时间戳 15:28）。
-  §0 所测、并已随 `6166fcbd` 入库的就是**这一份**，所以本文档描述的是实际发布出去的东西。
-- `gen_ansi_tables.py` 与本项目"仓库内不得出现 `.py`"的约定冲突（`ansi_width_tables.h` 头部与 §2.7 :247 都引用它，
-  重新生成命令记为 `MSYS_NO_PATHCONV=1 /f/tools/python312/python.exe <dir>/gen_ansi_tables.py <dir>/ansi_width_tables.h`）。
-  本会话**未改动**它，仅报告两件事：一是约定冲突（要么移入 `F:\tools`，要么明确豁免）；
-  二是记录的命令指向 `D:/dbcli/src/c/luauf8/`，而该文件现在**只存在于 git 工作树**，照原命令跑会找不到文件。
-- 待决：`F:\tools\tmp` 下本会话产生的 scratch 变体（`absrc`/`ablib`、`midsrc`/`midlib`、`newsrc`/`newlib`、`dsrc`/`dlib`）
-  与 `lib/*/` 里残留的 `.bak-*`（清理需要显式确认，属破坏性操作）。
+An optimisation that has NOT been tried: replace `int best` with the signed sentinel `ptrdiff_t maxw =
+-1` so that `if ((ptrdiff_t)line_w > maxw)` promotes the first line unconditionally by itself, saving
+one live local and one short-circuit branch. The scaffold is in `F:\tools\tmp\dsrc`; never compiled,
+never measured.

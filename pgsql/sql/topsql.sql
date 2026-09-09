@@ -27,7 +27,7 @@
                                      all - top + nested statements(recursive SQLs)
     --[[--
         @check_access_stmt: pg_stat_statements={1}
-        &filter: default={lower(concat(queryid,'|',"user",'|',"db",'|',"query")) like lower('%&v1%')} f={}
+        &filter: default={lower(concat(queryid,'|',"db",'|',"query")) like lower('%&v1%')} f={}
         &reset:  default={} reset={select pg_stat_statements_reset();}
         @time: 13={exec_} default={}
         @tmpr: 13={temp_blk_read_time::bigint} default={0::bigint}
@@ -70,7 +70,7 @@ SELECT queryid::text sql_id,
        nullif(round((&tmpr*1e3) / GREATEST(temp_blks_read, 1),2),0) tmpr_time,
        nullif(round((&tmpw*1e3) / GREATEST(temp_blks_written, 1),2),0) tmpw_time,
        '|' "|",
-       "user",
+       a.userid,
        "db",
        LTRIM(SUBSTR(regexp_replace(query, '\s+', ' ', 'g'), 1, 200)) short_sql_text
 FROM   pg_stat_statements a

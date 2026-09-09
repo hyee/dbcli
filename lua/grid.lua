@@ -528,7 +528,16 @@ function grid.format_column(include_head, colinfo, value, rownum,instance,rowind
             v1=value
         end
         value = v2 or v1
-        if tostring(value):find('e', 1, true) then return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '') end
+        if tostring(value):find('e', 1, true) then
+            local v = tonumber(value)
+            local a = v and math.abs(v)
+            --expand only where %.38f still shows all 17 significant digits (|v| >= 1e-22);
+            --below it digits are lost and LuaJIT's %f garbles denormals outright
+            if v and v == v and a < math.huge and a >= 1e-22 then
+                return true, string.format('%99.38f', value):gsub(' ', ''):gsub('%.?0+$', '')
+            end
+            return true, value
+        end
         return true, value
     end
     return false, value == nil and '' or value

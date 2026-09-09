@@ -3,7 +3,6 @@ package org.dbcli;
 import com.esotericsoftware.reflectasm.ClassAccess;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.LuaTable;
-import com.naef.jnlua.debug.LuaMemoryDiagnostics;
 import com.opencsv.*;
 import org.jline.keymap.KeyMap;
 import org.jline.utils.OSUtils;
@@ -404,8 +403,8 @@ public class Loader {
         if (rs.getStatement().isClosed() || rs.isClosed()) throw CancelError;
         setCurrentResultSet(rs);
         return new LuaTable((Object[]) asyncCall(() -> {
+            ResultSetHelperService.IS_TRIM = false;
             try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
-                ResultSetHelperService.IS_TRIM = false;
                 return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
             }
         }));
@@ -413,7 +412,8 @@ public class Loader {
 
     public String object2String(Object obj) throws Exception {
         if (obj instanceof Array || obj instanceof Struct) {
-            try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+            //formatter-only helper: it never reads the ResultSet, so it must not be given one
+            try (ResultSetHelperService helper = new ResultSetHelperService(null)) {
                 StringBuilder sb = new StringBuilder();
                 helper.object2String(sb, obj, "");
                 return sb.toString();

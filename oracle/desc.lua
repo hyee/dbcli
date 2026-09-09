@@ -11,7 +11,8 @@ function desc.desc(name,option)
     local obj=db:check_obj(name,1)
     local sql=(name..' '..(option or '')):trim(';')
     local typ=db.get_command_type(sql)
-    if sql:sub(1,128):find(" ",1,true) and (typ=="WITH" or typ=="SELECT") then
+
+    if not obj and sql:sub(1,128):find(" ",1,true) and (typ=="WITH" or typ=="SELECT") then
         rs={query=sql,
             object_type="QUERY",
             object_name=loader:computeSQLIdFromText(sql),
@@ -22,7 +23,13 @@ function desc.desc(name,option)
             object_name=name,
             sql_id=name,
             owner=name}
-        rs[1],rs[2],rs[3],rs[4]=rs.owner,rs.object_name,rs.object_subname or "",rs.object_type
+        rs[1],rs[2],rs[3],rs[4]=rs.owner,rs.object_name,"",rs.object_type
+    elseif not obj and sql:len()<=256 and sql:find('@') then
+        rs={query='SELECT * FROM '..sql,
+            object_type="QUERY",
+            object_name=sql,
+            owner='<REMOTE>'}
+        rs[1],rs[2],rs[3],rs[4]=rs.owner,rs.object_name,"",rs.object_type
     else
         env.checkerr(obj,"Cannot find target object: "..name)
         if obj.object_type=='SYNONYM' then
