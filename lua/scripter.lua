@@ -58,13 +58,17 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         end
         local attrs={path=file.fullname,desc='',short_desc=desc:match("([^\n\r]+)") or ""}
         if annotation then 
-            local alias=("\n"..annotation):match("\n%s*@ALIAS[ \t]*:[ \t]*(%S+)")
+            local alias=("\n"..annotation):match("\n%s*@ALIAS[ \t]*:[ \t]*([^\r\n]+)")
             if alias then
-                local abbr=alias:upper():split('[,; ]+')
-                attrs.abbr=table.concat(abbr,',')
+                local abbr=alias:trim():upper():split('[,; ]+')
+                local names={}
                 for x,y in ipairs(abbr) do
-                    abbrs[y]=attrs
+                    if y~='' then
+                        names[#names+1]=y
+                        abbrs[y]=attrs
+                    end
                 end
+                attrs.abbr=table.concat(names,',')
             end
         end
         return attrs
@@ -77,11 +81,19 @@ function scripter:rehash(script_dir,ext_name,extend_dirs)
         local cmd=file.shortname:upper()
         if cmdlist[cmd] then
             local old_cmd=cmdlist[cmd]
-            pathlist[old_cmd.path:lower()]=nil
-            for abbr,attrs in pairs(abbrs) do
-                if attrs==old_cmd then abbrs[abbr]=nil end
+            if rawget(cmdlist,cmd) then
+                -- another file with the same name takes over: the old one becomes
+                -- unreachable, so drop its path and every alias pointing at it
+                pathlist[old_cmd.path:lower()]=nil
+                for abbr,attrs in pairs(abbrs) do
+                    if attrs==old_cmd then abbrs[abbr]=nil end
+                end
+                counter=counter-1
+            else
+                -- only this alias name is taken; the aliased file is still
+                -- reachable under its own name, so keep its other aliases
+                abbrs[cmd]=nil
             end
-            counter=counter-1
         end
         rawset(cmdlist,cmd,file.data)
         rawset(pathlist,file.fullname:lower(),cmd)
@@ -341,7 +353,7 @@ function scripter:run_sql(sql,args,cmds)
         return;
     end
 
-    if not self.db or not self.db.is_connect then
+    if not self.db or not self.db:is_connect() then
         env.raise("Database connection is not defined!")
     end
     --self.db:assert_connect()
@@ -394,12 +406,16 @@ function scripter:get_script(cmd,args,print_args)
     end
     local org=cmd
     cmd=cmd:trim():upper()
+    --"cmd" is upper-cased for the command lookup while check_ext_file() needs the
+    --path with its original case, so track the raw token following '@' separately.
+    local ext_path=org:trim():sub(2)
 
     if cmd:sub(1,1)=='-' and args[1]=='@' and args[2] then
         args[2]='@'..args[2]
         table.remove(args,1)
     elseif cmd=='@' and args[1] then
         cmd=cmd..args[1]
+        ext_path=args[1]
         table.remove(args,1)
     end
     local is_get=false
@@ -410,6 +426,7 @@ function scripter:get_script(cmd,args,print_args)
     elseif cmd=="-G" then
         env.checkerr(args[1],"Please specify the command name!")
         cmd,is_get=args[1] and args[1]:upper() or "/",true
+        if cmd:sub(1,1)=='@' then ext_path=args[1]:sub(2) end
     elseif cmd=="-L" then
         env.checkerr(args[1],"Please specify the directory!")
         env.checkerr(os.exists(args[1])=='directory' or args[1]:lower()=="default","No such directory: %s",args[1])
@@ -423,6 +440,7 @@ function scripter:get_script(cmd,args,print_args)
         return
     elseif cmd=="-P" then
         cmd,print_args=args[1] and args[1]:upper() or "/",true
+        if cmd:sub(1,1)=='@' then ext_path=args[1]:sub(2) end
         table.remove(args,1)
     elseif cmd=="-S" then
         return env.help.help(self:get_command(),"-S",table.unpack(args))
@@ -430,8 +448,8 @@ function scripter:get_script(cmd,args,print_args)
 
     local file,f,target_dir
     if cmd:sub(1,1)=="@" then
-        target_dir,file=self:check_ext_file(org:sub(2))
-        env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..org:sub(2))
+        target_dir,file=self:check_ext_file(ext_path)
+        env.checkerr(target_dir['./COUNT']>0,"Cannot find script "..ext_path)
         if not file then return env.help.help(self:get_command(),org) end
         cmd,file=file,target_dir[file].path
     elseif self.cmdlist[cmd] then

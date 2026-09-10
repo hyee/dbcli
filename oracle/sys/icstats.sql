@@ -129,7 +129,7 @@
 
                 PRO NMON_SYSSTS:
                 PRO ============
-                SELECT NAME,&insts,MAX(ts) "Timestamp",any_value(comments) comments
+                SELECT NAME,&insts,MAX(ts) "Timestamp",max(comments) comments
                 FROM   TABLE(gv$(CURSOR(
                     SELECT userenv('instance') inst_id,
                            KSNMONSYSSTS_NAME NAME,
@@ -179,7 +179,7 @@ END;
 /
 PRO TCP Paramters:
 PRO ==============
-SELECT STAT_NAME,&insts,any_value(COMMENTS) comments
+SELECT STAT_NAME,&insts,max(COMMENTS) comments
 FROM   GV$OSSTAT
 WHERE  REGEXP_LIKE(STAT_NAME,'(SEND|RECEIVE|TCP)_')
 AND    CUMULATIVE='NO'

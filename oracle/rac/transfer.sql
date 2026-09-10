@@ -3,7 +3,7 @@
     Sample Output:
     ==============
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+
-    | Inst->Inst class     | CR blk Tx |CR blk tm  | CR blkav  | CR 2hop   | CR2hop tm | CR 2hop   | CR 3hop   |CR 3hop tm |CR 3hop av |
+    | Inst->Inst class     | CR blk Tx |CR blk tm  | CR blkav  | CR 2hop   | CR2hop tm |CR2hop av  | CR 3hop   |CR 3hop tm |CR 3hop av |
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+
     | 2->12nd level bmb    |         18|       1383|        .07|         18|       1383|        .07|          0|          0|          0|
     | 2->1undo header      |         24|       1294|        .05|         24|       1294|        .05|          0|          0|          0|
@@ -13,7 +13,7 @@
     +----------------------------------------------------------------------------------------------------------------------------------+
 
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+
-    | Inst->Inst class     | CUR blk Tx|CUR blk tm | CUR blkav | CUR 2hop  | CUR2hop tm| CUR 2hop  | CUR 3hop  |CUR 3hop tm|CUR 3hop av|
+    | Inst->Inst class     | CUR blk Tx|CUR blk tm | CUR blkav | CUR 2hop  | CUR2hop tm|CUR2hop av | CUR 3hop  |CUR 3hop tm|CUR 3hop av|
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+
     | 2->12nd level bmb    |          7|       1444|         .2|          7|       1444|         .2|          0|          0|          0|
     | 1->22nd level bmb    |          2|        181|        .09|          2|        181|        .09|          0|          0|          0|
@@ -21,7 +21,7 @@
 
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+
     | Inst->Inst class     | CRbsy     | CRbsy tm  | CRbsy %   | CRcongest | CRcngst tm| CRcng %   |
-    |----------------------+-----------+-----------+-----------+-----------+-----------+-----------+
+    +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+
     | 2->12nd level bmb    |          0|          0|          0|          0|          0|          0|
     | 2->1undo header      |          3|        757|       58.5|          0|          0|          0|
     | 1->21st level bmb    |          0|          0|          0|          0|          0|          0|
@@ -34,7 +34,7 @@
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+
     | 2->12nd level bmb    |          0|          0|          0|          0|          0|          0|
     | 1->22nd level bmb    |          0|          0|          0|          0|          0|          0|
-    |----------------------------------------------------------------------------------------------+
+    +----------------------------------------------------------------------------------------------+
     --[[
         @ARGS: 1
         &V1: default={30}
@@ -80,13 +80,13 @@ PROMPT
 PROMPT Column name key:
 PROMPT   Inst -> Inst class : source and target instance and class of the block transfer
 PROMPT   CR blk TX  : CR blocks transmitted
-PROMPT   CR blk tm  : CR blocks time taken
-PROMPT   CR blk av  : Average time taken for CR block
+PROMPT   CR blk tm  : CR blocks time(in ms) taken
+PROMPT   CR blk av  : Average time(in ms) taken for CR block
 PROMPT   CR bsy     : Count of blocks suffered from "busy" events
-PROMPT   CR bsy tm  : Amount of time taken due to "busy" waits
+PROMPT   CR bsy tm  : Amount of time(in ms) taken due to "busy" waits
 PROMPT   CR bsy %   : Percentage of CR busy time to CR time
 PROMPT   CR congest : Count of blocks suffered from "congestion" events
-PROMPT   CR cngsttm : Amount of time taken due to "congestion" waits
+PROMPT   CR cngsttm : Amount of time(in ms) taken due to "congestion" waits
 PROMPT   CR cng %   : Percentage of CR congestion time to CR time
 
 DECLARE
@@ -157,7 +157,7 @@ DECLARE
     c1  cur_1%rowtype;
     tim number;
 BEGIN
-    l_sleep:=upper(nvl('&sleep', 60));
+    l_sleep:=to_number(nvl('&sleep', '60'));
 
     OPEN cur_1;
 
@@ -195,7 +195,7 @@ BEGIN
     END LOOP;
     CLOSE CUR_1;
 
-    dbms_lock.sleep(l_sleep+tim-dbms_utility.get_time);
+    dbms_lock.sleep(greatest(0, l_sleep - (dbms_utility.get_time - tim) / 100));
     OPEN cur_1;
     LOOP
         FETCH cur_1 INTO c1;
@@ -229,12 +229,12 @@ BEGIN
     CLOSE CUR_1;
 
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+');
-    dbms_output.put_line('| Inst->Inst class     | CR blk Tx |CR blk tm  | CR blkav  | CR 2hop   | CR2hop tm | CR 2hop   | CR 3hop   |CR 3hop tm |CR 3hop av |');
+    dbms_output.put_line('| Inst->Inst class     | CR blk Tx |CR blk tm  | CR blkav  | CR 2hop   | CR2hop tm |CR2hop av  | CR 3hop   |CR 3hop tm |CR 3hop av |');
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+');
-    FOR i IN key_table.first .. key_table.last LOOP
+    FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
-        IF (e_cr_block(ind) - b_cr_block(ind) > 0) THEN
-            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind),21) || '|' || 
+        IF e_cr_block.EXISTS(ind) AND (e_cr_block(ind) - b_cr_block(ind) > 0) THEN
+            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || ' ' || e_class(ind),21) || '|' || 
                                  lpad(to_char(e_cr_block(ind) - b_cr_block(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_block_time(ind) - b_cr_block_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -251,13 +251,13 @@ BEGIN
                                                   ELSE
                                                    trunc((e_cr_2hop_time(ind) - b_cr_2hop_time(ind)) / (e_cr_2hop(ind) - b_cr_2hop(ind)) / 1000, 2)
                                               END),11) || '|' || 
-                                 lpad(to_char(e_current_3hop(ind) - b_current_3hop(ind)), 11) || '|' ||
-                                 lpad(to_char(e_current_3hop_time(ind) - b_current_3hop_time(ind)), 11) || '|' ||
+                                 lpad(to_char(e_cr_3hop(ind) - b_cr_3hop(ind)), 11) || '|' ||
+                                 lpad(to_char(e_cr_3hop_time(ind) - b_cr_3hop_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
-                                                  WHEN e_current_3hop(ind) - b_current_3hop(ind) = 0 THEN
+                                                  WHEN e_cr_3hop(ind) - b_cr_3hop(ind) = 0 THEN
                                                    0
                                                   ELSE
-                                                   trunc((e_current_3hop_time(ind) - b_current_3hop_time(ind)) / (e_current_3hop(ind) - b_current_3hop(ind)) / 1000,
+                                                   trunc((e_cr_3hop_time(ind) - b_cr_3hop_time(ind)) / (e_cr_3hop(ind) - b_cr_3hop(ind)) / 1000,
                                                          2)
                                               END),11) || '|');
         END IF;
@@ -265,12 +265,12 @@ BEGIN
     dbms_output.put_line('+----------------------------------------------------------------------------------------------------------------------------------+');
     dbms_output.put_line(' ');
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+');
-    dbms_output.put_line('| Inst->Inst class     | CUR blk Tx|CUR blk tm | CUR blkav | CUR 2hop  | CUR2hop tm| CUR 2hop  | CUR 3hop  |CUR 3hop tm|CUR 3hop av|');
+    dbms_output.put_line('| Inst->Inst class     | CUR blk Tx|CUR blk tm | CUR blkav | CUR 2hop  | CUR2hop tm|CUR2hop av | CUR 3hop  |CUR 3hop tm|CUR 3hop av|');
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+');
-    FOR i IN key_table.first .. key_table.last LOOP
+    FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
-        IF (e_current_block(ind) - b_current_block(ind) > 0) THEN
-            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind),21) || '|' ||
+        IF e_current_block.EXISTS(ind) AND (e_current_block(ind) - b_current_block(ind) > 0) THEN
+            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || ' ' || e_class(ind),21) || '|' ||
                                  lpad(to_char(e_current_block(ind) - b_current_block(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_block_time(ind) - b_current_block_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -301,10 +301,10 @@ BEGIN
     dbms_output.put_line(' ');
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+');
     dbms_output.put_line('| Inst->Inst class     | CRbsy     | CRbsy tm  | CRbsy %   | CRcongest | CRcngst tm| CRcng %   |');
-    dbms_output.put_line('|----------------------+-----------+-----------+-----------+-----------+-----------+-----------+');
-    FOR i IN key_table.first .. key_table.last LOOP
+    dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+');
+    FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
-        IF (e_cr_block(ind) - b_cr_block(ind) > 0) THEN
+        IF e_cr_block.EXISTS(ind) AND (e_cr_block(ind) - b_cr_block(ind) > 0) THEN
             dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind),21) || '|' || 
                                  lpad(to_char(e_cr_busy(ind) - b_cr_busy(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_busy_time(ind) - b_cr_busy_time(ind)), 11) || '|' ||
@@ -329,9 +329,9 @@ BEGIN
     dbms_output.put_line('+----------------------------------------------------------------------------------------------+');
     dbms_output.put_line('| Inst->Inst class     | CURbsy    | CURbsy tm | CURbsy %  | CURcongest|CURcngst tm| CURcng %  |');
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+');
-    FOR i IN key_table.first .. key_table.last LOOP
+    FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
-        IF (e_current_block(ind) - b_current_block(ind) > 0) THEN
+        IF e_current_block.EXISTS(ind) AND (e_current_block(ind) - b_current_block(ind) > 0) THEN
             dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind),21) || '|' || 
                                  lpad(to_char(e_current_busy(ind) - b_current_busy(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_busy_time(ind) - b_current_busy_time(ind)), 11) || '|' ||
@@ -353,6 +353,6 @@ BEGIN
                                               END),11) || '|');
         END IF;
     END LOOP;
-    dbms_output.put_line('|----------------------------------------------------------------------------------------------+');
+    dbms_output.put_line('+----------------------------------------------------------------------------------------------+');
 END;
 /

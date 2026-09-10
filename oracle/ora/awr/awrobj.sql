@@ -1,5 +1,5 @@
-/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME <name|obj#|dataobj#> [<sort_by>] [yymmddhhmi] [yymmddhhmi] 
-    <sort_by>: Sort the records with specific order, available options:
+/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME <name|obj#> [<sort_by>] [yymmddhhmi] [yymmddhhmi] 
+    <sort_by>: Sort the records with specific order, use "." to keep the default order. Available options:
         ela  : elapsed time (default)
         exe  : executions
         id   : sql_id
@@ -16,21 +16,13 @@
         @CON : 12.1={,CON_DBID} DEFAULT={}
         &phf:  default={plan_hash} phf={plan_full}
         &typ:  d={d} g={g}
-        &seg : {
-                    d={(select * from &check_access_pdb.Seg_stat_obj where DBID='&dbid')}
-                    g={(select a.*,&dbid dbid,object_id obj#,data_object_id dataobj# from all_objects a)}
-            }
         &plan: d={&check_access_pdb.SQL_PLAN} g={(select &dbid dbid,a.* from gv$sql_plan a)}
         @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
     ]]--
 ]]*/
 
 set printsize 100 feed off
-COL "SEG|SCANS,IM|SCANS,BUFF|READS,BUFF|BUSY,PHY_RD|REQS,PHY_OPT|READS,PHY|READS,PHY_WR|REQS,PHY|WRITES" FOR TMB
-COL "BLOCK|CHANGES,BLOCK|IM-CHG,GC-BUF|BUSY,GC-CR|BLKS,GC-CU|BLKS,ITL|WAITS,ROW_LK|WAITS,REMOTE|GRANTS,CHAIN_ROW|EXCESS,EXECS" FOR TMB
-COL "SPACE|USED,SPACE|ALLOC,IM|MEM" FOR KMG
-COL "PHY_OPT|READS,READS|DIRECT,WRITES|DIRECT,Weight" FOR PCT2
-COL TIME smhd2
+COL "Weight" FOR PCT2
 COL TOTAL_ELA,AVG_ELA FOR usmhd2
 var c1 refcursor;
 var c2 refcursor;
@@ -42,7 +34,7 @@ BEGIN
         WITH plans AS(
             SELECT a.*
             FROM   &plan a
-            WHERE  upper('&V1') IN(a.object_name,''||a.object#,a.object_owner||'.'||a.object_name)
+            WHERE  upper('&V1') IN(upper(a.object_name),''||a.object#,upper(a.object_owner||'.'||a.object_name))
             AND    a.dbid='&dbid'
         )
         SELECT a.dbid,
@@ -55,13 +47,13 @@ BEGIN
                a.object_name,
                a.options,
                a.operation,
-               substr(a.preds||nvl2(b.sql_id,'Join  Filter: '||nvl(b.access_predicates,b.filter_predicates),''),1,3500) join_preds
+               substr(substr(a.preds,1,3000)||nvl2(b.join_pred,'Join  Filter: '||substr(b.join_pred,1,800),''),1,3500) join_preds
         FROM (
             SELECT row_number() OVER(PARTITION BY dbid,sq_id,plan_hash_value,id ORDER BY flag) seq_,
                    a.dbid,
                    a.id,
                    parent_,
-                   nvl(lower(''),'total') sorttype,
+                   nvl(lower(nullif('&V2','.')),'total') sorttype,
                    sq_id,
                    sql_id,
                    plan_full,
@@ -127,13 +119,16 @@ BEGIN
                 AND  a.sql_id = b.sql_id
                 AND  a.plan_hash_value = b.plan_hash_value
             ) a) a
-        LEFT JOIN &plan b
+        LEFT JOIN (SELECT dbid,sql_id,plan_hash_value,id,
+                          max(nvl(access_predicates,filter_predicates)) join_pred
+                   FROM   &plan
+                   WHERE  regexp_like(operation,'HASH|NESTED|MERGE')
+                   AND    nvl(access_predicates,filter_predicates) IS NOT NULL
+                   GROUP  BY dbid,sql_id,plan_hash_value,id) b
         ON   b.dbid = a.dbid
         AND  a.sql_id = b.sql_id
         AND  a.plan_hash = b.plan_hash_value
         AND  a.parent_=b.id
-        AND  regexp_like(b.operation,'HASH|NESTED|MERGE')
-        AND  nvl(b.access_predicates,b.filter_predicates) IS NOT NULL
         WHERE seq_=1~';
     xml := dbms_xmlgen.getxmltype(stmt);
     stmt :=q'~
@@ -172,8 +167,8 @@ BEGIN
                       AND    b.dbid='&dbid'
                       AND    b.plan_hash_value=0) hs
                 JOIN &check_access_pdb.snapshot s USING(dbid,snap_id,instance_number)
-                WHERE s.begin_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
-                AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';
+                WHERE s.end_interval_time + 0 BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') - 5/1440
+                AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI') + 5/1440~';
     ELSE
         stmt := stmt||q'~@qry@
                 FROM  (
@@ -211,14 +206,17 @@ BEGIN
         || q'~
                 GROUP  BY hs.sql_id, dbid &con,plan_full,plan_hash,op,preds)
             WHERE trim(preds) IS NOT NULL
+            &11G OR preds IS NULL
             GROUP BY op,preds)
         SELECT * FROM stats
-        ORDER  BY 0+decode(nvl(lower('&V2'),'total'),'total',total_ela,'ela',avg_ela,'exe',execs,'sqls',"SQLs",0) DESC NULLS LAST,total_ela DESC~'
+        ORDER  BY 0+decode(nvl(lower(nullif('&V2','.')),'total'),'total',total_ela,'ela',avg_ela,'exe',execs,'sqls',"SQLs",0) DESC NULLS LAST,
+                  decode(nvl(lower(nullif('&V2','.')),'total'),'id',top_sql,'op',op,'text',preds),total_ela DESC~'
     USING xml;
 
     OPEN :C2 FOR replace(stmt,'@qry@',q'~
         stats AS (
-            SELECT &phf,dbid &con, 
+            SELECT &phf,dbid,
+                   &12c max(con_dbid) KEEP(dense_rank LAST ORDER BY total_ela) con_dbid,
                    max(sql_id) KEEP(dense_rank LAST ORDER BY total_ela) sql_id,
                    count(DISTINCT sql_id) ids,
                    sum(total_ela) total_ela,
@@ -233,7 +231,7 @@ BEGIN
                        plan_full,plan_hash~')
         || q'~
                 GROUP  BY hs.sql_id, dbid &con,plan_full,plan_hash)
-            GROUP BY &phf,dbid &con,CASE WHEN plan_hash=0 THEN sql_id END)
+            GROUP BY &phf,dbid,CASE WHEN plan_hash=0 THEN sql_id END)
         SELECT &phf,id plan#,sql_id top_sql_id,ids "SQLs",obj,
                coalesce(op,operation||' '||options) operation,total_ela,weight,avg_ela,execs,
                substr(regexp_replace(trim(to_char(substr(sql_text, 1, 500))),'[[:space:][:cntrl:]]+',' '),1,200) text
@@ -242,7 +240,7 @@ BEGIN
         LEFT JOIN &check_access_pdb.sqltext USING(dbid &con,sql_id)
         WHERE sql_id=nvl(a.sq_id,sql_id)
         ORDER  BY 0+decode(sorttype,'total',total_ela,'ela',avg_ela,'exe',execs,0) DESC NULLS LAST,
-                  decode(sorttype,'sql',sql_id,'text',text)~'
+                  decode(sorttype,'sql',sql_id,'id',sql_id,'text',text,'op',operation)~'
     USING xml;
 END;
 /

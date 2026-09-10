@@ -101,17 +101,17 @@ function string.case_insensitive_pattern(pattern)
 end
 
 local trim_space,trim_chars=utf8.trim_space,utf8.trim_chars
-local comon_spaces=' \t\n\r\b\f'
+local common_spaces=' \t\n\r\b\f'
 --when sep is not specified then trims all invisible/white spaces, when sep=='' then only trims ' \t\n\r\b\f'
 local function trim_(s,sep,dir)
     if sep==nil then
         return trim_space(s,dir)
     elseif sep=='' then
-        return trim_chars(s,comon_spaces,dir)
+        return trim_chars(s,common_spaces,dir)
     elseif type(sep)~='string' then
         return s
     else
-        return trim_chars(s,sep,dir)
+        return trim_chars(s,sep..common_spaces,dir)
     end
 end
 
