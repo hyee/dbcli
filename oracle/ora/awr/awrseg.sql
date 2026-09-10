@@ -19,7 +19,7 @@
         @im_chgs: 19.1={SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit)} default={0}
         @gc_grants: 19.1={SUM(GC_REMOTE_GRANTS_DELTA/&unit)} default={0}
         @pop_cus: 19.1={SUM(POPULATE_CUS_DELTA/&unit)} default={0}
-        @repop_cus: 19.1={SUM(REPOPULATE_CUS_TOTAL/&unit)} default={0}
+        @repop_cus: 19.1={SUM(REPOPULATE_CUS_DELTA/&unit)} default={0}
     ]]--
 ]]*/
 COL "scans,imscans,logi_reads,busy_waits,phy_rreqs,phy_reads,phy_wreqs,phy_writes,value" FOR TMB
@@ -53,12 +53,12 @@ WITH segs AS(
            nullif(sum(itl_waits_delta/&unit),0) itl_waits,
            nullif(sum(row_lock_waits_delta/&unit),0) lock_waits,
            nullif(sum(chain_row_excess_delta/&unit),0) chain_rows,
-           nullif(max(decode(r,1,space_used_total)),0) space
-           &12c ,nullif(max(decode(r,1,im_membytes)),0) im_mem
+           nullif(sum(decode(r,1,space_used_total)),0) space
+           &12c ,nullif(sum(decode(r,1,im_membytes)),0) im_mem
     FROM (SELECT a.*, 
                  row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r 
          FROM (
-            SELECT /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
+            SELECT /*+outline_leaf leading(a b c) use_hash(a b c) opt_param('_optimizer_cartesian_enabled', 'false') opt_param('_optimizer_mjc_enabled', 'false')*/ *
             FROM &check_access_pdb.seg_stat_obj b
             JOIN &check_access_pdb.seg_stat c USING (dbid,obj#,dataobj#)
             JOIN (SELECT dbid,snap_id,instance_number,
@@ -67,8 +67,8 @@ WITH segs AS(
                                  THEN begin_interval_time+0 
                             END))) s
                   FROM &check_access_pdb.snapshot
-                  WHERE end_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
-                  AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
+                  WHERE end_interval_time+0 BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
+                  AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')+3/1440) a
             USING(dbid,instance_number,snap_id)
             WHERE dbid=&dbid
             AND   &filter
@@ -79,10 +79,10 @@ SELECT * FROM(
     SELECT ratio_to_report(&v2) OVER()*2 "Weight",
            '|' "|",
            a.*
-    FROM segs a
+    FROM  segs a
+    WHERE nvl("Partition",'x') NOT LIKE '%(1 segs)%'
     ORDER BY &v2 DESC NULLS LAST)
 WHERE ROWNUM<=50
-AND   nvl("Partition",'x') NOT LIKE '%(1 segs)%'
 ORDER BY 1 DESC;
 
 col Statistics break ~
@@ -90,7 +90,7 @@ var c refcursor "Top Segments by Statistics(threshold = 8%)"
 BEGIN
     OPEN :c FOR 
         WITH segs AS(
-            SELECT /*+MATERIALIZE opt_param('parallel_execution_enabled', 'false')*/ 
+            SELECT /*+MATERIALIZE opt_param('parallel_execution_enabled', 'false') opt_param('_optimizer_cartesian_enabled', 'false') opt_param('_optimizer_mjc_enabled', 'false')*/ 
                    owner,object_name,
                    decode(count(DISTINCT nvl(subobject_name,' ')),1,max(obj#)) obj#,
                    decode(grouping_id(subobject_name),0,subobject_name,''||count(DISTINCT nvl(subobject_name,' '))) segments,
@@ -130,8 +130,8 @@ BEGIN
                                          THEN begin_interval_time+0 
                                     END))) s
                           FROM &check_access_pdb.snapshot
-                          WHERE end_interval_time BETWEEN to_timestamp(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
-                          AND   to_timestamp(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')) a
+                          WHERE end_interval_time BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
+                          AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')+3/1440) a
                     USING(dbid,instance_number,snap_id)
                     WHERE dbid=&dbid
                     AND   &filter
@@ -171,7 +171,7 @@ BEGIN
                                       2,phy_reads,
                                       3,phy_rreqs,
                                       4,dx_reads,
-                                      5,phy_reads-nvl(opt_reads,0),
+                                      5,phy_reads*(1-opt_reads),
                                       6,scans,
                                       7,imscans,
                                       8,blk_chgs,

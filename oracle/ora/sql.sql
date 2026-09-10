@@ -122,7 +122,7 @@ BEGIN
         dbms_lob.createtemporary(text, TRUE);
         dbms_lob.append(text, sql_text);
         dbms_lob.writeappend(text, 1, ' ');
-        text    := regexp_replace(text, '^\s*/\*.*?\*/', '', 'in');
+        text    := regexp_replace(text, '^\s*/\*.*?\*/', '',1,1, 'in');
         text    := regexp_replace(text, q'{:("?)([0-9a-zA-Z$_#]+)\1([^0-9a-zA-Z'$_#])}', '#!:\2!#\3');
         opname  := upper(regexp_substr(text, '\w+'));
 

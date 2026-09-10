@@ -1,13 +1,13 @@
-local ad=[[
+local ad = [[
     (SELECT  /*+no_merge monitor
-               opt_param('optimizer_dynamic_sampling' 5) 
-               opt_param('optimizer_adaptive_plans' 'false') 
+               opt_param('optimizer_dynamic_sampling' 5)
+               opt_param('optimizer_adaptive_plans' 'false')
                opt_param('_optimizer_cartesian_enabled' 'false')
                opt_param('container_data' 'current')
                opt_param('_optimizer_cbqt_or_expansion' 'off')
-               opt_param('_optimizer_reduce_groupby_key' 'false') 
-               opt_param('_optimizer_group_by_placement' 'false') 
-               opt_param('_optimizer_aggr_groupby_elim' 'false') 
+               opt_param('_optimizer_reduce_groupby_key' 'false')
+               opt_param('_optimizer_group_by_placement' 'false')
+               opt_param('_optimizer_aggr_groupby_elim' 'false')
                outline_leaf*/
              lv.level_name,
              d.level_type,
@@ -19,53 +19,65 @@ local ad=[[
              d.skip_when_null skip_null,
              aggs.level_order,
              c.caption attr_caption,
-             c.descr attr_Desc,
-             decode(lv.role, 'KEY', regexp_substr(to_char(substr(d.member_name_expr,1,1000)),'[^'||chr(10)||']*')) member_name,
-             decode(lv.role, 'KEY', regexp_substr(to_char(substr(d.member_caption_expr,1,1000)),'[^'||chr(10)||']*')) member_caption,
-             decode(lv.role, 'KEY', regexp_substr(to_char(substr(d.member_description_expr,1,1000)),'[^'||chr(10)||']*')) member_desc,
-             row_number() OVER(PARTITION BY lv.level_name ORDER BY k.key_order_num,a.column_name) seq,
+             c.descr attr_desc,
+             decode(lv.role, 'KEY', regexp_substr(to_char(substr(d.member_name_expr, 1, 1000)), '[^'||chr(10)||']*')) member_name,
+             decode(lv.role, 'KEY', regexp_substr(to_char(substr(d.member_caption_expr, 1, 1000)), '[^'||chr(10)||']*')) member_caption,
+             decode(lv.role, 'KEY', regexp_substr(to_char(substr(d.member_description_expr, 1, 1000)), '[^'||chr(10)||']*')) member_desc,
+             row_number() OVER(PARTITION BY lv.level_name ORDER BY k.key_order_num, a.column_name) seq,
              d.order_num level_seq
       FROM   (SELECT *
               FROM   all_attribute_dim_tables tb
-              WHERE  tb.owner=ad.owner AND tb.dimension_name=ad.dimension_name AND tb.origin_con_id=:origin_con_id) b
+              WHERE  tb.owner = ad.owner
+              AND    tb.dimension_name = ad.dimension_name
+              AND    tb.origin_con_id = :origin_con_id) b
       JOIN   (SELECT attr.*
-             FROM   all_attribute_dim_attrs attr
-             WHERE  attr.owner=ad.owner AND attr.dimension_name=ad.dimension_name AND attr.origin_con_id=:origin_con_id) a
+              FROM   all_attribute_dim_attrs attr
+              WHERE  attr.owner = ad.owner
+              AND    attr.dimension_name = ad.dimension_name
+              AND    attr.origin_con_id = :origin_con_id) a
       ON     (a.table_alias = b.table_alias)
-      JOIN  (SELECT attr.*
-             FROM   all_attribute_dim_level_attrs attr
-             WHERE  (attr.owner=ad.owner AND attr.dimension_name=ad.dimension_name)
-             AND    (attr.origin_con_id = :origin_con_id OR origin_con_id IS NULL)) lv
+      JOIN   (SELECT attr.*
+              FROM   all_attribute_dim_level_attrs attr
+              WHERE  (attr.owner = ad.owner AND attr.dimension_name = ad.dimension_name)
+              AND    (attr.origin_con_id = :origin_con_id OR origin_con_id IS NULL)) lv
       ON     (a.attribute_name = lv.attribute_name)
       JOIN   (SELECT *
               FROM   all_attribute_dim_levels lv
-              WHERE  lv.owner=ad.owner AND lv.dimension_name=ad.dimension_name AND lv.origin_con_id=:origin_con_id) d
+              WHERE  lv.owner = ad.owner
+              AND    lv.dimension_name = ad.dimension_name
+              AND    lv.origin_con_id = :origin_con_id) d
       ON     (lv.level_name = d.level_name)
-      LEFT JOIN  (
+      LEFT   JOIN (
              SELECT *
              FROM   all_attribute_dim_keys attr
-             WHERE  attr.owner=ad.owner AND attr.dimension_name=ad.dimension_name AND attr.origin_con_id=:origin_con_id) K
-      ON     (lv.attribute_name = k.attribute_name and lv.level_name=k.level_name) 
+             WHERE  attr.owner = ad.owner
+             AND    attr.dimension_name = ad.dimension_name
+             AND    attr.origin_con_id = :origin_con_id) k
+      ON     (lv.attribute_name = k.attribute_name AND lv.level_name = k.level_name)
       LEFT   JOIN (
              SELECT level_name,
-                    listagg(agg_func || '(' || attribute_name||NULLIF(' ' || criteria, ' ASC') || NULLIF(' NULLS ' || nulls_position, ' NULLS ' || DECODE(criteria, 'ASC', 'LAST', 'FIRST')) ||')',
+                    listagg(agg_func || '(' || attribute_name||nullif(' ' || criteria, ' ASC') || nullif(' NULLS ' || nulls_position, ' NULLS ' || decode(criteria, 'ASC', 'LAST', 'FIRST')) ||')',
                             ',') WITHIN GROUP(ORDER BY order_num) level_order
              FROM   all_attribute_dim_order_attrs attr
-             WHERE  attr.owner=ad.owner AND attr.dimension_name=ad.dimension_name AND attr.origin_con_id=:origin_con_id
+             WHERE  attr.owner = ad.owner
+             AND    attr.dimension_name = ad.dimension_name
+             AND    attr.origin_con_id = :origin_con_id
              GROUP  BY level_name) aggs
-      ON     (lv.level_name = aggs.level_name and k.key_order_num=0)
+      ON     (lv.level_name = aggs.level_name AND k.key_order_num = 0)
       LEFT   JOIN (
              SELECT attribute_name,
-                    MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) caption,
-                    MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) descr
+                    max(decode(classification, 'CAPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST) caption,
+                    max(decode(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST) descr
              FROM   all_attribute_dim_attr_class j
-             WHERE  j.owner=ad.owner AND j.dimension_name=ad.dimension_name AND j.origin_con_id=:origin_con_id
+             WHERE  j.owner = ad.owner
+             AND    j.dimension_name = ad.dimension_name
+             AND    j.origin_con_id = :origin_con_id
              GROUP  BY attribute_name) c
       ON     (a.attribute_name = c.attribute_name))]]
-local ah=([[(
-    SELECT lpad(' ', 2 * (max_lv - lv)) 
+local ah = ([[(
+    SELECT lpad(' ', 2 * (max_lv - lv))
            || decode(seq, 1, level_name, '  |')
-           || CASE WHEN lv=0 AND seq=max(seq) over(partition by level_name) THEN '$UDL$' END level_name,
+           || CASE WHEN lv = 0 AND seq = max(seq) over(partition by level_name) THEN '$UDL$' END level_name,
            ahk.column_name,
            ahk.role,
            CASE
@@ -99,7 +111,7 @@ local ah=([[(
     FROM   (SELECT /*+OUTLINE_LEAF push_pred(adt) use_nl(adt)*/
                    1 grp,
                    max_lv - ahk.order_num lv,
-                   MAX(max_lv - ahk.order_num) over (PARTITION BY attribute_name) min_lv,
+                   max(max_lv - ahk.order_num) over (PARTITION BY attribute_name) min_lv,
                    max_lv,
                    ahk.level_name,
                    adt.attribute_name column_name,
@@ -115,14 +127,16 @@ local ah=([[(
                    adt.member_name,
                    adt.member_caption,
                    adt.member_desc
-            FROM (SELECT ah.hier_name,ah.dimension_owner owner,ah.dimension_name from dual) ad 
-            JOIN (SELECT ahk.*, MAX(order_num) over () max_lv
-                  FROM   all_hier_levels ahk
-                  WHERE  ahk.owner=ah.owner AND ahk.hier_name=ah.hier_name AND ahk.origin_con_id=:origin_con_id) ahk
-            ON   (ahk.hier_name=ad.hier_name)
-            CROSS APPLY(
-                SELECT /*+push_pred(adt)*/ * 
-                FROM @ad@ adt
+            FROM   (SELECT ah.hier_name, ah.dimension_owner owner, ah.dimension_name FROM dual) ad
+            JOIN   (SELECT ahk.*, max(order_num) over () max_lv
+                    FROM   all_hier_levels ahk
+                    WHERE  ahk.owner = ah.owner
+                    AND    ahk.hier_name = ah.hier_name
+                    AND    ahk.origin_con_id = :origin_con_id) ahk
+            ON     (ahk.hier_name = ad.hier_name)
+            CROSS  APPLY(
+                SELECT /*+push_pred(adt)*/ *
+                FROM   @ad@ adt
                 WHERE  adt.level_name = ahk.level_name) adt
             UNION ALL
             SELECT DISTINCT
@@ -145,43 +159,45 @@ local ah=([[(
                    NULL,
                    NULL
             FROM   (SELECT /*+OUTLINE_LEAF*/
-                           g.*, i.caption, i.descr, MAX(order_num) over () max_lv
-                    FROM   (SELECT * FROM all_hier_hier_attributes attr WHERE attr.owner=ah.owner AND attr.hier_name=ah.hier_name AND attr.origin_con_id=:origin_con_id) g,
+                           g.*, i.caption, i.descr, max(order_num) over () max_lv
+                    FROM   (SELECT * FROM all_hier_hier_attributes attr WHERE attr.owner = ah.owner AND attr.hier_name = ah.hier_name AND attr.origin_con_id = :origin_con_id) g,
                            (SELECT hier_attr_name,
-                                   MAX(DECODE(classification,
+                                   max(decode(classification,
                                               'CAPTION',
-                                              regexp_substr(to_char(substr(VALUE, 1, 1000)), '[^' || chr(10) || ']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) caption,
-                                   MAX(DECODE(classification,
+                                              regexp_substr(to_char(substr(value, 1, 1000)), '[^' || chr(10) || ']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST) caption,
+                                   max(decode(classification,
                                               'DESCRIPTION',
-                                              regexp_substr(to_char(substr(VALUE, 1, 1000)), '[^' || chr(10) || ']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST) descr
+                                              regexp_substr(to_char(substr(value, 1, 1000)), '[^' || chr(10) || ']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST) descr
                             FROM   all_hier_hier_attr_class cls
-                            WHERE  cls.owner=ah.owner AND cls.hier_name=ah.hier_name AND cls.origin_con_id=:origin_con_id
+                            WHERE  cls.owner = ah.owner
+                            AND    cls.hier_name = ah.hier_name
+                            AND    cls.origin_con_id = :origin_con_id
                             GROUP  BY hier_attr_name) i
                     WHERE  g.hier_attr_name = i.hier_attr_name(+)) ahk
             ) ahk
-    JOIN   (SELECT * FROM all_hier_columns c WHERE c.owner=ah.owner AND c.hier_name=ah.hier_name AND c.origin_con_id=:origin_con_id) ahc
+    JOIN   (SELECT * FROM all_hier_columns c WHERE c.owner = ah.owner AND c.hier_name = ah.hier_name AND c.origin_con_id = :origin_con_id) ahc
     ON     (ahk.column_name = ahc.column_name)
     WHERE  lv = min_lv
     ORDER  BY seq)]]):gsub('@ad@',ad)
 
-if obj.object_type=='ANALYTIC VIEW' then
-    env.var.define_column('HIER_NAME','BREAK','SKIP','-')
-    env.set.set("colsep",'|')
-    env.set.set("colwrap",80)
-elseif obj.object_type=='ATTRIBUTE DIMENSION' then
-    env.var.define_column('LEVEL_NAME','BREAK','SKIP','-')
+if obj.object_type == 'ANALYTIC VIEW' then
+    env.var.define_column('HIER_NAME', 'BREAK', 'SKIP', '-')
+    env.set.set("colsep", '|')
+    env.set.set("colwrap", 80)
+elseif obj.object_type == 'ATTRIBUTE DIMENSION' then
+    env.var.define_column('LEVEL_NAME', 'BREAK', 'SKIP', '-')
 end
 env.var.define_column('SEQ,LEVEL_SEQ,ORDER_NUM,KEY_ORDER_NUM','NOPRINT')
 
-local stmt="select /*+opt_param('container_data' 'current')*/ max(origin_con_id) from " ..
-      (obj.object_type=='ATTRIBUTE DIMENSION' and 'all_attribute_dimensions where (owner,dimension_name)' or
-       obj.object_type=='HIERARCHY' and 'all_hierarchies where (owner,hier_name)' or
-       obj.object_type=='ANALYTIC VIEW' and 'all_analytic_views where (owner,analytic_view_name)') ..
-      '= (:owner,:object_name)'
-obj.origin_con_id=db:dba_query(db.get_value,stmt,obj)
+local stmt = "SELECT /*+opt_param('container_data' 'current')*/ max(origin_con_id) FROM " ..
+             (obj.object_type == 'ATTRIBUTE DIMENSION' and 'all_attribute_dimensions WHERE (owner, dimension_name)' or
+              obj.object_type == 'HIERARCHY' and 'all_hierarchies WHERE (owner, hier_name)' or
+              obj.object_type == 'ANALYTIC VIEW' and 'all_analytic_views WHERE (owner, analytic_view_name)') ..
+             '= (:owner,:object_name)'
+obj.origin_con_id = db:dba_query(db.get_value, stmt, obj)
 
-return obj.object_type=='ATTRIBUTE DIMENSION' and {
-    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+return obj.object_type == 'ATTRIBUTE DIMENSION' and {
+    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
              dimension_type,
              compile_state,
              table_owner,
@@ -193,12 +209,12 @@ return obj.object_type=='ATTRIBUTE DIMENSION' and {
              to_char(all_member_name) all_member_name,
              to_char(all_member_caption) all_member_caption,
              to_char(all_member_description) all_member_description
-      FROM   (SELECT * 
-              FROM all_attribute_dimensions 
-              JOIN all_attribute_dim_tables 
-              USING (origin_con_id, owner, dimension_name)) ad
-      OUTER  APPLY (SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                           MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
+      FROM   (SELECT *
+              FROM   all_attribute_dimensions
+              JOIN   all_attribute_dim_tables
+              USING  (origin_con_id, owner, dimension_name)) ad
+      OUTER  APPLY (SELECT max(decode(classification, 'CAPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST)  caption,
+                           max(decode(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST)  description
                     FROM   all_attribute_dim_class j
                     WHERE  j.owner = ad.owner
                     AND    j.dimension_name = ad.dimension_name
@@ -207,57 +223,57 @@ return obj.object_type=='ATTRIBUTE DIMENSION' and {
       AND    ad.dimension_name = :object_name
       AND    ad.origin_con_id = :origin_con_id]],
     (([[
-      SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
+      SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
              dtl.*
       FROM   all_attribute_dimensions ad
       CROSS  APPLY @ad@ dtl
-      WHERE  owner=:owner 
-      AND    dimension_name=:object_name
+      WHERE  owner = :owner
+      AND    dimension_name = :object_name
       AND    origin_con_id = :origin_con_id
-      ORDER  BY level_seq,seq]]):gsub('@ad@',ad))}
-or obj.object_type=='HIERARCHY' and {
-    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ 
-             dimension_owner, dimension_name,dim_source_table,parent_attr,caption,description
+      ORDER  BY level_seq, seq]]):gsub('@ad@',ad))}
+or obj.object_type == 'HIERARCHY' and {
+    [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
+             dimension_owner, dimension_name, dim_source_table, parent_attr, caption, description
       FROM   all_hierarchies hr
-      OUTER APPLY(SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                         MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
-                  FROM   all_hier_class j
-                  WHERE  j.owner = hr.owner
-                  AND    j.hier_name = hr.hier_name
-                  AND    j.origin_con_id = :origin_con_id)
-     JOIN  (SELECT owner dimension_owner, dimension_name, origin_con_id, nullif(table_owner||'.',owner||'.')||table_name dim_source_table FROM all_attribute_dim_tables a) dim_tab
-     USING (origin_con_id,dimension_owner, dimension_name)
-     WHERE hr.owner = :owner
-     AND   hr.hier_name = :object_name
-     AND   origin_con_id = :origin_con_id]],
+      OUTER  APPLY(SELECT max(decode(classification, 'CAPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST)  caption,
+                          max(decode(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST)  description
+                   FROM   all_hier_class j
+                   WHERE  j.owner = hr.owner
+                   AND    j.hier_name = hr.hier_name
+                   AND    j.origin_con_id = :origin_con_id)
+     JOIN   (SELECT owner dimension_owner, dimension_name, origin_con_id, nullif(table_owner||'.', owner||'.')||table_name dim_source_table FROM all_attribute_dim_tables a) dim_tab
+     USING  (origin_con_id, dimension_owner, dimension_name)
+     WHERE  hr.owner = :owner
+     AND    hr.hier_name = :object_name
+     AND    origin_con_id = :origin_con_id]],
     (([[SELECT dtl.*
       FROM   all_hierarchies ah
       CROSS  APPLY @ah@ dtl
-      WHERE  ah.owner = :owner 
+      WHERE  ah.owner = :owner
       AND    ah.hier_name = :object_name
       AND    ah.origin_con_id = :origin_con_id
       ORDER  BY seq]]):gsub('@ah@',ah))}
-or obj.object_type=='ANALYTIC VIEW' and {
-   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) topic="ANALYTIC VIEW INFO"*/ * 
-     FROM  all_analytic_views av
-     OUTER APPLY( SELECT MAX(DECODE(classification, 'CAPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  caption,
-                         MAX(DECODE(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value,1,1000)),'[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY LANGUAGE NULLS FIRST)  description
-                  FROM   all_analytic_view_class j
-                  WHERE  owner = av.owner
-                  AND    analytic_view_name = av.analytic_view_name
-                  AND    origin_con_id = :origin_con_id)
-     OUTER APPLY  (SELECT av_lvlgrp_order cache_id,
-                         listagg(nvl2(level_name,trim('.' from dimension_alias||'.'||hier_alias||'.'||level_name),''),',') WITHIN GROUP(ORDER BY level_meas_order) cache_levels,
-                         listagg(measure_name,',')  WITHIN GROUP(ORDER BY level_meas_order) cache_measures
-                    FROM   all_analytic_view_lvlgrps 
+or obj.object_type == 'ANALYTIC VIEW' and {
+   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) topic="ANALYTIC VIEW INFO"*/ *
+     FROM   all_analytic_views av
+     OUTER  APPLY( SELECT max(decode(classification, 'CAPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST)  caption,
+                          max(decode(classification, 'DESCRIPTION', regexp_substr(to_char(substr(value, 1, 1000)), '[^'||chr(10)||']*'))) KEEP(dense_rank LAST ORDER BY language NULLS FIRST)  description
+                   FROM   all_analytic_view_class j
+                   WHERE  owner = av.owner
+                   AND    analytic_view_name = av.analytic_view_name
+                   AND    origin_con_id = :origin_con_id)
+     OUTER  APPLY  (SELECT av_lvlgrp_order cache_id,
+                         listagg(nvl2(level_name, trim('.' from dimension_alias||'.'||hier_alias||'.'||level_name), ''), ',') WITHIN GROUP(ORDER BY level_meas_order) cache_levels,
+                         listagg(measure_name, ',')  WITHIN GROUP(ORDER BY level_meas_order) cache_measures
+                    FROM   all_analytic_view_lvlgrps
                     WHERE  owner = av.owner
                     AND    analytic_view_name = av.analytic_view_name
                     AND    origin_con_id = :origin_con_id
-                    GROUP  BY av_lvlgrp_order) 
-     WHERE av.owner = :owner 
-     AND   av.origin_con_id = :origin_con_id
-     AND   av.analytic_view_name = :object_name]],
-   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) outline_leaf topic="ANALYTIC VIEW DIMENSIONS"*/ 
+                    GROUP  BY av_lvlgrp_order)
+     WHERE  av.owner = :owner
+     AND    av.origin_con_id = :origin_con_id
+     AND    av.analytic_view_name = :object_name]],
+   [[SELECT /*+opt_param('optimizer_dynamic_sampling' 5) outline_leaf topic="ANALYTIC VIEW DIMENSIONS"*/
            hier_alias,
            ltrim(nullif(hier_owner, owner) || '.' || hier_name, '.') src_hier_name,
            is_default hier_default,
@@ -269,9 +285,9 @@ or obj.object_type=='ANALYTIC VIEW' and {
            dim_keys,
            fact_joins,
            references_distinct dim_key_distinct,
-           regexp_substr(to_char(substr(all_member_name,1,1000)),'[^'||chr(10)||']*') all_dim_member_name,
-           regexp_substr(to_char(substr(all_member_caption,1,1000)),'[^'||chr(10)||']*') all_dim_member_caption,
-           regexp_substr(to_char(substr(all_member_description,1,1000)),'[^'||chr(10)||']*') all_dim_member_desc
+           regexp_substr(to_char(substr(all_member_name, 1, 1000)), '[^'||chr(10)||']*') all_dim_member_name,
+           regexp_substr(to_char(substr(all_member_caption, 1, 1000)), '[^'||chr(10)||']*') all_dim_member_caption,
+           regexp_substr(to_char(substr(all_member_description, 1, 1000)), '[^'||chr(10)||']*') all_dim_member_desc
     FROM   (SELECT /*+no_merge*/
                    owner,
                    analytic_view_name,
@@ -293,9 +309,9 @@ or obj.object_type=='ANALYTIC VIEW' and {
     ORDER  BY 1]],
   (([[
     SELECT /*+outline_leaf topic="ANALYTIC VIEW HIERARCHIES" use_nl(dtl) push_pred(dtl)*/
-           ah.hier_name,dtl.*
-    FROM   (SELECT * FROM all_analytic_view_hiers WHERE owner=:owner AND analytic_view_name=:object_name AND origin_con_id=:origin_con_id) avh
-    CROSS  APPLY(SELECT * FROM all_hierarchies WHERE owner=avh.owner AND hier_name=avh.hier_name AND origin_con_id=:origin_con_id) ah
+           ah.hier_name, dtl.*
+    FROM   (SELECT * FROM all_analytic_view_hiers WHERE owner = :owner AND analytic_view_name = :object_name AND origin_con_id = :origin_con_id) avh
+    CROSS  APPLY(SELECT * FROM all_hierarchies WHERE owner = avh.owner AND hier_name = avh.hier_name AND origin_con_id = :origin_con_id) ah
     CROSS  APPLY @ah@ dtl
     UNION ALL
     SELECT /*+outline_leaf*/
@@ -331,16 +347,22 @@ or obj.object_type=='ANALYTIC VIEW' and {
            NULL,
            NULL,
            row_number() OVER (ORDER BY av.column_name) seq
-    FROM   (SELECT measure_name, to_char(REPLACE(qual_meas_expression, '"')) column_name, aggr_function
+    FROM   (SELECT measure_name, to_char(replace(qual_meas_expression, '"')) column_name, aggr_function
             FROM   all_analytic_view_base_meas
-            WHERE  owner=:owner AND analytic_view_name=:object_name AND origin_con_id=:origin_con_id
+            WHERE  owner = :owner
+            AND    analytic_view_name = :object_name
+            AND    origin_con_id = :origin_con_id
             UNION ALL
             SELECT measure_name, to_char(meas_expression), NULL
             FROM   all_analytic_view_calc_meas
-            WHERE  owner=:owner AND analytic_view_name=:object_name AND origin_con_id=:origin_con_id) meas
+            WHERE  owner = :owner
+            AND    analytic_view_name = :object_name
+            AND    origin_con_id = :origin_con_id) meas
     JOIN   (SELECT *
             FROM   all_analytic_view_columns
-            WHERE  owner=:owner AND analytic_view_name=:object_name AND origin_con_id=:origin_con_id) av
+            WHERE  owner = :owner
+            AND    analytic_view_name = :object_name
+            AND    origin_con_id = :origin_con_id) av
     ON     (av.column_name = meas.measure_name)
     ]]):gsub('@ah@',ah))
 }

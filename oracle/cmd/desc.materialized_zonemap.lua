@@ -1,40 +1,52 @@
 env.var.define_column('OWNER,ZONEMAP_NAME,OBJECT_NAME,SUBOBJECT_NAME,OBJECT_TYPE','NOPRINT')
 return {[[/*topic="ZONEMAP QUERY TEXT"*/
-    SELECT QUERY TEXT FROM ALL_ZONEMAPS WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name     
+    SELECT query text
+    FROM   all_zonemaps
+    WHERE  owner = :owner
+    AND    zonemap_name = :object_name
 ]],[[/*topic="ZONEMAP QUERY MEASURES"*/
-    SELECT * FROM all_zonemap_measures WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name ORDER BY POSITION_IN_SELECT
+    SELECT *
+    FROM   all_zonemap_measures
+    WHERE  owner = :owner
+    AND    zonemap_name = :object_name
+    ORDER  BY position_in_select
 ]],[[/*topic="ZONEMAP LAST REFRESH"*/
     SELECT DISTINCT
-          LAST_REFRESH_SCN "REFRESH|LAST_SCN",LAST_REFRESH_DATE "REFRESH|LAST_DATE",REFRESH_METHOD "REFRESH|METHOD",
-          FULLREFRESHTIM "FULL|SECS",INCREFRESHTIM "INCR|SECS",
-          trim(',' from decode(CONTAINS_VIEWS,'Y','CONTAINS_VIEWS,')
-              ||decode(UNUSABLE,'Y','UNUSABLE,')
-              ||decode(RESTRICTED_SYNTAX,'Y','RESTRICTED_SYNTAX,')
-              ||decode(INC_REFRESHABLE,'Y','INC_REFRESHABLE,')
-              ||decode(KNOWN_STALE,'Y','KNOWN_STALE,')) "REFRESH|ATTRS",
-           DETAIL_OWNER||'.'||DETAIL_RELATION||' ['||DETAIL_TYPE||']' "SOURCE|OBJECT"
-    FROM  all_summary_detail_tables a
-    JOIN  all_summaries b
-    USING (owner,summary_name)
-    WHERE owner=:owner AND summary_name=:object_name
+           last_refresh_scn "REFRESH|LAST_SCN",
+           last_refresh_date "REFRESH|LAST_DATE",
+           refresh_method "REFRESH|METHOD",
+           fullrefreshtim "FULL|SECS",
+           increfreshtim "INCR|SECS",
+           TRIM(',' FROM decode(contains_views, 'Y', 'CONTAINS_VIEWS,')
+               ||decode(unusable, 'Y', 'UNUSABLE,')
+               ||decode(restricted_syntax, 'Y', 'RESTRICTED_SYNTAX,')
+               ||decode(inc_refreshable, 'Y', 'INC_REFRESHABLE,')
+               ||decode(known_stale, 'Y', 'KNOWN_STALE,')) "REFRESH|ATTRS",
+           detail_owner||'.'||detail_relation||' ['||detail_type||']' "SOURCE|OBJECT"
+    FROM   all_summary_detail_tables a
+    JOIN   all_summaries b
+    USING  (owner, summary_name)
+    WHERE  owner = :owner
+    AND    summary_name = :object_name
 ]],[[
-    SELECT  /*PIVOT*/
-             OWNER,
-             ZONEMAP_NAME,
-             FACT_OWNER,
-             FACT_TABLE,
-             SCALE,
-             HIERARCHICAL,
-             WITH_CLUSTERING,
-             QUERY_LEN,
-             PRUNING,
-             REFRESH_MODE,
-             REFRESH_METHOD,
-             LAST_REFRESH_METHOD,
-             INVALID,
-             STALE,
-             UNUSABLE,
-             COMPILE_STATE
-    FROM  ALL_ZONEMAPS
-    WHERE OWNER=:owner AND ZONEMAP_NAME=:object_name
+    SELECT /*PIVOT*/
+           owner,
+           zonemap_name,
+           fact_owner,
+           fact_table,
+           scale,
+           hierarchical,
+           with_clustering,
+           query_len,
+           pruning,
+           refresh_mode,
+           refresh_method,
+           last_refresh_method,
+           invalid,
+           stale,
+           unusable,
+           compile_state
+    FROM   all_zonemaps
+    WHERE  owner = :owner
+    AND    zonemap_name = :object_name
 ]]}

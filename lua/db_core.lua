@@ -1766,7 +1766,7 @@ function db_core:__onload()
     cfg.init("endtime","",self.set_time,"db.core","Specify the default end time(in 'YYMMDD[HH24[MI[SS]]]') of some queries",nil,self)
     env.event.snoop('ON_COMMAND_ABORT',self.abort_statement,self)
     env.event.snoop('TRIGGER_LOGIN',self.login,self)
-    env.set_command(self,"ping","ping network latency of current connection. Usage: @@NAME [<count> <interval>] [<query>]",self.ping,false,4)
+    env.set_command(self,"ping","ping network latency of current connection. Usage: @@NAME [<count> <interval>] [<query>|<spid>]",self.ping,false,4)
     env.set_command(self,{"reconnect","reconn"}, "Re-connect to database with the last login account.",self.reconnnect,false,2)
     env.set_command(self,{"disconnect","disc"},"Disconnect current login.",self.disconnect,false,2)
     env.set_command(self,"sql2file",'Export Query Result into SQL file. Usage: @@NAME <file_name>[.sql|gz|zip] ["-r<remap_columns>"] ["-e<exclude_columns>"] <sql|cursor>'..txt ,self.sql2sql,'__SMART_PARSE__',3)
@@ -1884,9 +1884,27 @@ function db_core:ping(...)
     end
 
     count,interval=args[1],args[2]
-    stmt=type(stmt)=='string' and stmt or (env.set.get("PLATFORM")=='oracle' and 'begin null;end;' or "select 'OK'")
     count=tonumber(count) or 30
     interval=tonumber(interval) or 0.1
+
+    if tonumber(args[3]) then
+        local cmd=[[bash -c 'CIP=$(ss -Htnp 2>/dev/null \
+            | awk '\''/pid=@3[,)]/{print $5}'\'' \
+            | sed '\''s/:[0-9]*$//'\'' \
+            | tr -d '\''[]'\'' \
+            | grep -vE '\''^(0\.0\.0\.0|::)$'\'' \
+            | sort -u \
+            | head -1); \
+            if [ -n "$CIP" ]; then ping -c @1 -w @2 "$CIP"; else echo "Cannot find IP for pid @3"; fi']]
+        cmd=cmd:gsub('@3',args[3])
+        cmd=cmd:gsub('@1',count)
+        cmd=cmd:gsub('@2',interval)
+        --print(cmd)
+        env.os.execute(cmd)
+        return
+    end
+
+    stmt=type(stmt)=='string' and stmt or (env.set.get("PLATFORM")=='oracle' and 'begin null;end;' or "select 'OK'")
     
     self:assert_connect()
     local done,res,cache
