@@ -292,27 +292,37 @@ function ResultSet:rows(rs,count,null_value,is_close)
     if count~=0 then
         rows=self.db:call_sql_method('ON_SQL_ERROR',__source[rs] or '',loader.fetchResult,loader,rs,count)
         --rows=loader:fetchResult(rs,count)
+        --the per-cell work that used to live here is reduced to what is a display policy:
+        --the DATE/TIMESTAMP text normalization now happens in Java, right where the text is
+        --produced, and the per-column facts are resolved once instead of once per cell
+        local isnum,isblob={},{}
+        for j=1,cols do
+            local info=head.colinfo[j]
+            isnum[j]=info.is_number
+            isblob[j]=info.data_typeName=="BLOB"
+        end
         for i=1,#rows do
+            local row=rows[i]
             for j=1,cols do
-                local info=head.colinfo[j]
-                if rows[i][j]~=nil then
-                    
-                    if type(rows[i][j])=="userdata" then rows[i][j]=tostring(rows[i][j]) end
-                    if is_lob and type(rows[i][j])=="string" and #rows[i][j]>255 then
-                        print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',rows[i][j]))
+                local v=row[j]
+                if v~=nil then
+                    if type(v)=="userdata" then v=tostring(v); row[j]=v end
+                    if is_lob and type(v)=="string" and #v>255 then
+                        print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',v))
                     end
-                    if info.data_typeName=="DATE" or info.data_typeName=="TIMESTAMP" then
-                        rows[i][j]=tostring(rows[i][j]):gsub('%.0+$',''):gsub('%s0+:0+:0+$','')
-                    elseif info.data_typeName=="BLOB" then
-                        rows[i][j]=tostring(rows[i][j]):sub(1,255)
-                    elseif info.is_number and type(rows[i][j])~="number" then
-                        local int=tonumber(rows[i][j])
-                        rows[i][j]=tostring(int)==rows[i][j] and int or rows[i][j]
+                    if isblob[j] then
+                        --kept in Lua: the untruncated text above is what the cache write needs
+                        row[j]=tostring(v):sub(1,255)
+                    elseif isnum[j] and type(v)~="number" then
+                        --exactness guard: only a string that round-trips through tostring()
+                        --becomes a number, so >2^53 integer digits are preserved verbatim
+                        local int=tonumber(v)
+                        row[j]=tostring(int)==v and int or v
                     end
-                elseif info.is_number then
-                    rows[i][j]=''
+                elseif isnum[j] then
+                    row[j]=''
                 else
-                    rows[i][j]=null_value
+                    row[j]=null_value
                 end
             end
         end

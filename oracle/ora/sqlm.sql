@@ -367,7 +367,8 @@ BEGIN
                            max(last_refresh_time)
                     INTO   sq_id, sql_exec, sql_start, last_date
                     FROM   gv$sql_monitor
-                    WHERE  (sql_id = sq_id OR lower(sq_id) IN ('l', 'last') AND inst_id = userenv('instance') AND sid = userenv('sid'))
+                    WHERE  (sql_id = sq_id OR 
+                            lower(sq_id) IN ('l', 'last') AND inst_id = userenv('instance') AND sid = userenv('sid') AND sql_plan_hash_value>0)
                     AND    sql_exec_id > 0
                     AND    px_server# IS NULL
                     AND    sql_text IS NOT NULL

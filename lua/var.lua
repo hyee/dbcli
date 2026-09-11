@@ -671,7 +671,17 @@ function var.define_column(col,...)
                 obj.format_dir='%'..#arg..'s'
                 func=function(v)
                     if not tonumber(v) then return v,1 end
-                    local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,cast(v,'java.math.BigDecimal')))
+                    --an integral Lua number is exactly what Long/BigDecimal would carry, and
+                    --DecimalFormat prints both the same, so the per-cell cast (a JNI call plus
+                    --an allocation) is kept only where the exact decimal value matters:
+                    --fractions, values outside the exactly-representable integer range,
+                    --signed zero and non-numbers
+                    local num=v
+                    if type(v)~='number' or v~=math.floor(v) or v==0
+                        or math.abs(v)>=9007199254740992 then
+                        num=cast(v,'java.math.BigDecimal')
+                    end
+                    local done,res=pcall(obj.format_dir.format,obj.format_dir,format(fmt,num))
                     if not done then
                         env.raise('Cannot format double number "'..v..'" with "'..arg..'" on field "'..col..'"!')
                     end

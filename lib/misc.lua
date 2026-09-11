@@ -106,10 +106,12 @@ local common_spaces=' \t\n\r\b\f'
 local function trim_(s,sep,dir)
     if sep==nil then
         return trim_space(s,dir)
-    elseif sep=='' then
-        return trim_chars(s,common_spaces,dir)
     elseif type(sep)~='string' then
         return s
+    elseif sep=='' then
+        return trim_chars(s,common_spaces,dir)
+    elseif trim_space(s,-1)=='' then
+        return trim_chars(s,sep,dir)
     else
         return trim_chars(s,sep..common_spaces,dir)
     end
@@ -142,6 +144,17 @@ end
 
 function string.format_number(base,s,cast)
     if not tonumber(s) then return s end
+    if type(s)=='number' and s~=math.floor(s) and (cast==nil or cast=='double') then
+        --a non-integral Lua number reaches Java as a Double anyway, so the explicit cast only
+        --changes the outcome for integral numbers, which the bridge boxes as Integer/Long and
+        --which the %f/%e/%g conversions reject. The fast path is limited to a float-only base:
+        --with %s or %d a Double and the BigDecimal of the shortest form can print differently.
+        local float_only=true
+        for c in base:gmatch('%%[-+ #0-9.]*(%a)') do
+            if not ('fFeEgGaAn'):find(c,1,true) then float_only=false break end
+        end
+        if float_only then return String:format(base,s) end
+    end
     return String:format(base,java.cast(s,cast or 'double'))
 end
 

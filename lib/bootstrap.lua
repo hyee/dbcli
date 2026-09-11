@@ -40,7 +40,7 @@ local function scan(dir,ext)
         end
         if ftype=="directory" then
             subdirs[#subdirs+1]=name
-        elseif name:find(pattern) and (java_ver>52 or not name:find('jaxb',1,true)) then
+        elseif name:find(pattern) and (java_ver>=53 or not name:find('jaxb',1,true)) then
             local prefix,version=name:lower():match('[\\/]([^\\/]-)%-?([%-0-9.]*)%.jar$')
             version=version:gsub('%d+',function(d) return string.rep('0',4-#d)..d end)
             local p='.'..fsep..name
@@ -118,20 +118,21 @@ local options ={'-server',
                 '-Djava.security.egd=file:/dev/./urandom',
                 '-Dsecurerandom.source=file:/dev/./urandom',
                 --'-Djava.awt.headless=true',
-                java_ver>52 and java_ver<61 and '--illegal-access=permit' or nil,
-                java_ver>52 and '--add-opens=java.sql/java.sql=ALL-UNNAMED' or nil ,
-                java_ver>52 and '--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED' or nil ,
-                java_ver>52 and '--add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED' or nil ,
-                java_ver>52 and '--add-opens=java.base/java.lang=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-opens=java.base/java.net=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-opens=java.base/java.io=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-opens=java.base/jdk.internal=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
-                java_ver>52 and '--enable-native-access=ALL-UNNAMED' or nil,
-                java_ver>52 and '--add-modules=jdk.unsupported' or nil,
-                java_ver>67 and '--illegal-native-access=allow' or nil,
-                java_ver>64 and '-XX:UseSVE=0' or nil,
+                java_ver>=53 and java_ver<61 and '--illegal-access=permit' or nil,
+                java_ver>=53 and '--add-opens=java.sql/java.sql=ALL-UNNAMED' or nil ,
+                java_ver>=53 and '--add-opens=java.base/jdk.internal.loader=ALL-UNNAMED' or nil ,
+                java_ver>=53 and '--add-opens=jdk.zipfs/jdk.nio.zipfs=ALL-UNNAMED' or nil ,
+                java_ver>=53 and '--add-opens=java.base/java.lang=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--add-opens=java.base/java.net=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--add-opens=java.base/java.io=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--add-opens=java.base/jdk.internal=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--add-exports=java.base/jdk.internal.reflect=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--add-exports=jdk.unsupported/sun.misc=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--enable-native-access=ALL-UNNAMED' or nil,
+                java_ver>=53 and '--add-modules=jdk.unsupported' or nil,
+                java_ver>=68 and '--illegal-native-access=allow' or nil,
+                java_ver>=70 and '--enable-final-field-mutation=ALL-UNNAMED' or nil,
+                java_ver>=65 and '-XX:UseSVE=0' or nil,
                 '-Djava.library.path='..resolve(luv.cwd().."/lib/"..dlldir),
                 '-Djava.class.path='..jars,
                 }

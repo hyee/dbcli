@@ -169,10 +169,90 @@ JNLUA_THREADLOCAL JNIEnv *thread_env = NULL;     /* Thread-local JNI environment
         if (status != 0)                                         \
         {                                                        \
             throw(L, status);                                    \
-            JNLUA_DETACH_L;                                      \
+            JNLUA_DETACH;                                        \
         }                                                        \
     }
-#define lua_absindex(L, index) (index > 0 || index <= LUA_REGISTRYINDEX) ? index : lua_gettop(L) + index + 1
+#define lua_absindex(L, index) ((index) > 0 || (index) <= LUA_REGISTRYINDEX ? (index) : lua_gettop(L) + (index) + 1)
+
+/* ---- Prebuilt protected closures ----
+ * Every protected entry point used to rebuild its C closure with lua_pushcfunction on each call,
+ * and getField/getGlobal build two of them (bytes2string pushes its own). Measured against the
+ * lua5.1.dll this bridge links, 1e6 reps best of 5 (F:\tools\tmp\jnluawork\pcallcost.c):
+ *
+ *   x64  lua_pushcfunction + pop                    49.6 ns
+ *   x64  lua_rawgeti(registry, slot) + pop          12.6 ns
+ *   x64  full getglobal shape                      149.6 ns -> 112.8 ns prebuilt (-24.6%)
+ *   x86  full getglobal shape                      159.9 ns -> 119.0 ns prebuilt (-25.6%)
+ *
+ * The closure lives in the registry at JNLUA_PROT_BASE + slot and is built on first use. Keeping
+ * it in the registry rather than in C means it dies with its lua_State (no lua_close cleanup),
+ * is shared by that state's coroutines, and stays separate across LuaStates. Two alternatives
+ * were measured and rejected: keying a registry table by the function pointer (158.1 ns, no
+ * better than rebuilding it, because it costs two hashes) and a registry-ref -> array table
+ * (126.8 ns). 27 slots cost 1-2 KB of LuaJIT memory and stay in the registry's hash part, so
+ * its array part does not grow; the base also sits far above the 1 and 2 that newstate_protected
+ * assigns to RIDX_MAINTHREAD/RIDX_GLOBALS and above anything luaL_ref can hand back.
+ *
+ * Only steady-state hot paths use PROT(). State lifecycle (newstate/close/openlib/gc) and the
+ * error-throw path keep plain lua_pushcfunction: they run once per state or once per failure,
+ * and writing registry entries during lua_close is not safe.
+ *
+ * PROT() pastes the slot constant from the function name, so wiring a site to the wrong closure
+ * is a compile error rather than a silent misdispatch. */
+#define JNLUA_PROT_BASE 0x40000000
+
+enum
+{
+    PROT_bytes2string_protected = 1,
+    PROT_messagehandler,
+    PROT_getglobal_protected,
+    PROT_setglobal_protected,
+    PROT_pushstring_protected,
+    PROT_tostring_protected,
+    PROT_gettable_protected,
+    PROT_settable_protected,
+    PROT_rawset_protected,
+    PROT_next_protected,
+    PROT_rawseti_protected,
+    PROT_equal_protected,
+    PROT_lessthan_protected,
+    PROT_concat_protected,
+    PROT_tojavaobject_protected,
+    PROT_tojavafunction_protected,
+    PROT_isjavaobject_protected,
+    PROT_createtable_protected,
+    PROT_newtable_protected,
+    PROT_tablesize_protected,
+    PROT_tablemove_protected,
+    PROT_getmetafield_protected,
+    PROT_findtable_protected,
+    PROT_ref_protected,
+    PROT_pcall_table_pair_push,
+    PROT_pcall_table_pair_get,
+    PROT_packed_array_protected,
+    PROT_LAST
+};
+
+/* Pushes fn's prebuilt closure, leaving the stack exactly as lua_pushcfunction would.
+ * The fill below peaks one slot higher than the rawgeti it replaces, and jcall_call and
+ * jcall_table_pair_get/push get here without a checkstack(JNLUA_MINSTACK) of their own, so it
+ * asks first. It runs once per state per slot; on the hot path the rawgeti is the whole body. */
+static void push_protected(lua_State *L, int slot, lua_CFunction fn)
+{
+    lua_rawgeti(L, LUA_REGISTRYINDEX, JNLUA_PROT_BASE + slot);
+    if (!lua_isfunction(L, -1))
+    {
+        lua_pop(L, 1);
+        lua_pushcfunction(L, fn);
+        if (lua_checkstack(L, 1))
+        {
+            lua_pushvalue(L, -1);
+            lua_rawseti(L, LUA_REGISTRYINDEX, JNLUA_PROT_BASE + slot);
+        }
+    }
+}
+
+#define PROT(L, fn) push_protected((L), PROT_##fn, (fn))
 
 /* ---- Utility Macros for Code Reusability ---- */
 
@@ -287,6 +367,10 @@ struct lua_State {
  * Represents a Java stream (InputStream/OutputStream) in native code
  * Used by lua_load() and lua_dump() implementations to read/write between Java streams and Lua
  */
+/* Size of the JNI byte[] the stream adapters copy through. Allocated by jcall_load and
+ * jcall_dump, and the per-call copy limit in writehandler. */
+#define JNLUA_STREAM_BUFFER_SIZE 1024
+
 typedef struct StreamStruct
 {
     jobject stream;         /* Java stream object (InputStream or OutputStream) */
@@ -508,7 +592,7 @@ static const char *bytes2string(lua_State *L, jbyteArray bytes, int len, int pop
             bytes2string_ptr = ptr;
             bytes2string_len = len;
             
-            lua_pushcfunction(L, bytes2string_protected);
+            PROT(L, bytes2string_protected);
             int pcall_result = lua_pcall(L, 0, 1, 0);
             
             if (pcall_result != 0) {
@@ -538,7 +622,7 @@ static const char *bytes2string(lua_State *L, jbyteArray bytes, int len, int pop
             bytes2string_ptr = buf;
             bytes2string_len = len;
             
-            lua_pushcfunction(L, bytes2string_protected);
+            PROT(L, bytes2string_protected);
             int pcall_result = lua_pcall(L, 0, 1, 0);
             
             if (pcall_result != 0) {
@@ -687,10 +771,14 @@ static int handlejavaexception(lua_State *L, int raise)
             lua_pushliteral(L, "Java exception occurred.");
             lua_concat(L, 2);
         }
+        /* Decrement before raising: lua_error() longjmps, so a decrement placed after it
+         * would never run and the counter would creep to MAX_EXCEPTION_DEPTH, after which
+         * every later exception on this thread is reported as "recursion limit exceeded"
+         * instead of the real error. Nesting is still detected because a recursive call
+         * happens above, before this point. */
+        exception_handling_depth--;
         if (raise & 1)
             return lua_error(L);
-        
-        exception_handling_depth--;
         return 1;
     }
     return 0;
@@ -1375,14 +1463,21 @@ static int pushmetafunction_protected(lua_State *L)
         classObj = (*thread_env)->CallStaticObjectMethod(thread_env, luastate_class, classname_id, meta_obj);
         clear_jni_exception_with_log();
     }
-    /* Convert byte array to C string */
-    const char *className = bytes2string(L, meta_class ? meta_class : classObj, -1, 1);
+    /* Convert byte array to C string.
+     * pop=0 leaves the name rooted on the stack for the whole function: className is read again
+     * by the registry lookups below, by precache_metadata_functions(), by pushjavaobject() and by
+     * strlen/strcpy, across luaL_getmetatable(), lua_createtable() and precache_metadata_functions()
+     * - all of which allocate and can run a GC sweep that frees a string nothing references.
+     * Every index in this function is negative or a pseudo-index, so one extra value at the bottom
+     * is invisible to the body; it is dropped just before each return. */
+    const char *className = bytes2string(L, meta_class ? meta_class : classObj, -1, 0);
+    const int nameIdx = lua_gettop(L);    /* 0 when bytes2string pushed nothing */
 
     /* Step 2: Check if class metadata already exists in registry */
     // PERFORMANCE: Use lua_rawget() for registry access (no metamethods, faster)
     lua_pushstring(L, className);
     lua_rawget(L, LUA_REGISTRYINDEX);
-    /* Stack: [class_table or nil] */
+    /* Stack: [class_table or nil]   (plus the rooted className at the bottom) */
     
     if (lua_isnil(L, -1) && (meta_call_type != 2 || meta_method))
     {
@@ -1499,26 +1594,35 @@ static int pushmetafunction_protected(lua_State *L)
     if (meta_call_type == 3)
     {
         lua_pop(L, 1);  /* Pop the accessor */
+        if (nameIdx)
+            lua_remove(L, nameIdx);  /* Drop the rooted class name */
         return 0;  /* No value on stack */
     }
     
+    if (nameIdx)
+        lua_remove(L, nameIdx);  /* Drop the rooted class name, result stays on top */
     return 1;  /* One value on stack (object or method accessor) */
 }
 
 jint jcall_pushmetafunction(JNIEnv *env, jobject obj, jlong lua, jbyteArray class, jbyteArray method, jobject object, jbyte call_type)
 {
     JNLUA_ENV_L;
+    jint nresults = 0;
     if (checkstack(L, JNLUA_MINSTACK))
     {
+        /* pushmetafunction_protected pushes 1 value, except for meta_call_type == 3 (fields),
+         * where it pops the accessor again and returns 0. Report what actually landed. */
+        const int base = lua_gettop(L);
         meta_class = class;
         meta_method = method;
         meta_obj = object;
         meta_call_type = call_type;
         lua_pushcfunction(L, pushmetafunction_protected);
         JNLUA_PCALL(L, 0, LUA_MULTRET);
+        nresults = lua_gettop(L) - base;
     }
     JNLUA_DETACH_L;
-    return 1;
+    return nresults;
 }
 
 void jcall_pushjavaobject(JNIEnv *env, jobject obj, jlong lua, jobject jobj, jbyteArray class)
@@ -1580,10 +1684,15 @@ void jcall_set_negative_cache(JNIEnv *env, jobject obj, jlong lua, jbyteArray cl
     JNLUA_ENV_L;
     if (checkstack(L, JNLUA_MINSTACK))
     {
-        /* Convert byte arrays to C strings */
-        /* CRITICAL: className is popped immediately (pop=1), keyName stays on stack (pop=0) */
-        const char *className = bytes2string(L, class, -1, 1);
+        /* Convert byte arrays to C strings.
+         * Order matters: bytes2string() allocates (lua_pushcfunction + lua_pushlstring) and so can
+         * run a GC sweep. keyName is rooted (pop=0), while className is popped (pop=1) and returns a
+         * pointer into a string nothing references any more - so className must be converted last and
+         * read by the very next statement, where lua_pushstring() interns the same bytes that are
+         * still in the string table, hits, and allocates nothing. Net stack is the same either way
+         * because the pop=1 call pushes and pops. */
         const char *keyName = bytes2string(L, key, -1, 0);
+        const char *className = bytes2string(L, class, -1, 1);
         
         /* Stack: [keyName_string] */
         
@@ -1758,7 +1867,7 @@ void jcall_load(JNIEnv *env, jobject obj, jlong lua, jobject inputStream, jstrin
     Stream stream = {inputStream, NULL, NULL, 0, NULL};
     int status;
 
-    if (checkstack(L, JNLUA_MINSTACK) && checknotnull(inputStream) && (chunkname_utf = getstringchars(chunkname)) && (stream.byte_array = newbytearray(1024)))
+    if (checkstack(L, JNLUA_MINSTACK) && checknotnull(inputStream) && (chunkname_utf = getstringchars(chunkname)) && (stream.byte_array = newbytearray(JNLUA_STREAM_BUFFER_SIZE)))
     {
         status = lua_load(L, readhandler, &stream, chunkname_utf);
         if (status != 0 && !stream.exception)
@@ -1792,7 +1901,7 @@ void jcall_dump(JNIEnv *env, jobject obj, jlong lua, jobject outputStream)
 {
     JNLUA_ENV_L;
     Stream stream = {outputStream, NULL, NULL, 0, NULL};
-    if (checkstack(L, JNLUA_MINSTACK) && checknelems(L, 1) && checknotnull(outputStream) && (stream.byte_array = newbytearray(1024)))
+    if (checkstack(L, JNLUA_MINSTACK) && checknelems(L, 1) && checknotnull(outputStream) && (stream.byte_array = newbytearray(JNLUA_STREAM_BUFFER_SIZE)))
     {
         int status = lua_dump(L, writehandler, &stream);
         if (status != 0 && !stream.exception)
@@ -1829,7 +1938,7 @@ jint jcall_call(JNIEnv *env, jobject obj, jlong lua, jint nargs, jint nresults)
     {
         const int top = lua_gettop(L) - 1 - nargs;
         index = lua_absindex(L, -nargs - 1);
-        lua_pushcfunction(L, messagehandler);
+        PROT(L, messagehandler);
         lua_insert(L, index);
         const int status = lua_pcall(L, nargs, nresults, index);
         lua_remove(L, index);
@@ -1846,37 +1955,53 @@ jint jcall_call(JNIEnv *env, jobject obj, jlong lua, jint nargs, jint nresults)
 /* ---- Global ---- */
 /* lua_getglobal() */
 
+/* Both global accessors keep the name on the Lua stack and read it with lua_tostring()
+ * inside the protected function. bytes2string() with pop=1 would hand back a pointer into
+ * a string whose only reference has just been popped, and that pointer is then read across
+ * a lua_pcall() that allocates and can run a GC step. */
+JNLUA_THREADLOCAL int getglobal_result;
+
+static int getglobal_protected(lua_State *L)
+{
+    lua_getglobal(L, lua_tostring(L, 1));
+    getglobal_result = lua_type(L, -1);
+    return 1;
+}
+
 int jcall_getglobal(JNIEnv *env, jobject obj, jlong lua, jbyteArray name)
 {
     JNLUA_ENV_L;
     int res = -1;
-    const char *getglobal_name = NULL;
-    if (checkstack(L, JNLUA_MINSTACK) && checknotnull(name) && (getglobal_name = bytes2string(L, name, -1, 1)))
+    if (checkstack(L, JNLUA_MINSTACK) && checknotnull(name))
     {
-        lua_getglobal(L, getglobal_name);
-        res = lua_type(L, -1);
+        bytes2string(L, name, -1, 2);
+        getglobal_result = -1;
+        PROT(L, getglobal_protected);
+        lua_insert(L, -2);
+        JNLUA_PCALL(L, 1, 1);
+        res = getglobal_result;
     }
-    (*thread_env)->DeleteLocalRef(thread_env, name);
     JNLUA_DETACH_L;
     return res;
 }
 
 /* lua_setglobal() */
-JNLUA_THREADLOCAL const char *setglobal_name;
 static int setglobal_protected(lua_State *L)
 {
-    lua_setglobal(L, setglobal_name);
+    lua_setglobal(L, lua_tostring(L, 1));
     return 0;
 }
+
 void jcall_setglobal(JNIEnv *env, jobject obj, jlong lua, jbyteArray name)
 {
     JNLUA_ENV_L;
-    setglobal_name = NULL;
-    if (checkstack(L, JNLUA_MINSTACK) && checknelems(L, 1) && checknotnull(name) && (setglobal_name = bytes2string(L, name, -1, 1)))
+    if (checkstack(L, JNLUA_MINSTACK) && checknelems(L, 1) && checknotnull(name))
     {
-        lua_pushcfunction(L, setglobal_protected);
+        bytes2string(L, name, -1, 2);
         lua_insert(L, -2);
-        JNLUA_PCALL(L, 1, 0);
+        PROT(L, setglobal_protected);
+        lua_insert(L, -3);
+        JNLUA_PCALL(L, 2, 0);
     }
     JNLUA_DETACH_L;
 }
@@ -1899,10 +2024,7 @@ void jcall_pushinteger(JNIEnv *env, jobject obj, jlong lua, jlong n)
     JNLUA_ENV_L;
     if (checkstack(L, JNLUA_MINSTACK))
     {
-        if (n == (lua_Integer)n)
-            lua_pushinteger(L, (lua_Integer)n);
-        else
-            lua_pushnumber(L, (lua_Number)n);
+        lua_pushnumber(L, (lua_Number)n);
     }
     JNLUA_DETACH_L;
 }
@@ -1960,7 +2082,7 @@ void jcall_pushstring(JNIEnv *env, jobject obj, jlong lua, jstring s)
         /* CRITICAL: Protected call to prevent crash on invalid Lua state */
         pushstring_str = str;
         pushstring_len = len;
-        lua_pushcfunction(L, pushstring_protected);
+        PROT(L, pushstring_protected);
         int pcall_result = lua_pcall(L, 0, 1, 0);
         
         releasestringchars(s, str);
@@ -2077,7 +2199,7 @@ jint jcall_isjavaobject(JNIEnv *env, jobject obj, jlong lua, jint index)
     else if (checkstack(L, JNLUA_MINSTACK))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, isjavaobject_protected);
+        PROT(L, isjavaobject_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, 0);
     }
@@ -2167,7 +2289,7 @@ jint jcall_equal(JNIEnv *env, jobject obj, jlong lua, jint index1, jint index2)
     {
         index1 = lua_absindex(L, index1);
         index2 = lua_absindex(L, index2);
-        lua_pushcfunction(L, equal_protected);
+        PROT(L, equal_protected);
         lua_pushvalue(L, index1);
         lua_pushvalue(L, index2);
         JNLUA_PCALL(L, 2, 0);
@@ -2194,7 +2316,7 @@ jint jcall_lessthan(JNIEnv *env, jobject obj, jlong lua, jint index1, jint index
     {
         index1 = lua_absindex(L, index1);
         index2 = lua_absindex(L, index2);
-        lua_pushcfunction(L, lessthan_protected);
+        PROT(L, lessthan_protected);
         lua_pushvalue(L, index1);
         lua_pushvalue(L, index2);
         JNLUA_PCALL(L, 2, 0);
@@ -2303,7 +2425,7 @@ jobject jcall_tojavafunction(JNIEnv *env, jobject obj, jlong lua, jint index)
     if (checkstack(L, JNLUA_MINSTACK) && checkindex(L, index))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, tojavafunction_protected);
+        PROT(L, tojavafunction_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, 0);
     }
@@ -2325,7 +2447,7 @@ jobject jcall_tojavaobject(JNIEnv *env, jobject obj, jlong lua, jint index)
     if (checkstack(L, JNLUA_MINSTACK) && checkindex(L, index))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, tojavaobject_protected);
+        PROT(L, tojavaobject_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, 0);
     }
@@ -2408,7 +2530,7 @@ jstring jcall_tostring(JNIEnv *env, jobject obj, jlong lua, jint index)
     if (checkstack(L, JNLUA_MINSTACK) && checkindex(L, index))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, tostring_protected);
+        PROT(L, tostring_protected);
         lua_pushvalue(L, index);
         
         /* CRITICAL FIX: Safe error handling for lua_tostring
@@ -2468,7 +2590,7 @@ void jcall_concat(JNIEnv *env, jobject obj, jlong lua, jint n)
     if (checkstack(L, JNLUA_MINSTACK) && checkarg(n >= 0, "illegal count") && checknelems(L, n))
     {
         concat_n = n;
-        lua_pushcfunction(L, concat_protected);
+        PROT(L, concat_protected);
         lua_insert(L, -n - 1);
         JNLUA_PCALL(L, n, 1);
     }
@@ -2578,7 +2700,7 @@ void jcall_createtable(JNIEnv *env, jobject obj, jlong lua, jint narr, jint nrec
     {
         createtable_narr = narr;
         createtable_nrec = nrec;
-        lua_pushcfunction(L, createtable_protected);
+        PROT(L, createtable_protected);
         JNLUA_PCALL(L, 0, 1);
     }
     JNLUA_DETACH_L;
@@ -2602,7 +2724,7 @@ jstring jcall_findtable(JNIEnv *env, jobject obj, jlong lua, jint index, jstring
     {
         findtable_szhint = szhint;
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, findtable_protected);
+        PROT(L, findtable_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, LUA_MULTRET);
     }
@@ -2615,6 +2737,48 @@ jstring jcall_findtable(JNIEnv *env, jobject obj, jlong lua, jint index, jstring
     return rtn;
 }
 
+/* Protected table access.
+ * lua_gettable/lua_settable run __index/__newindex metamethods and lua_rawset rejects a
+ * NaN key with "table index is NaN", so an unprotected call reaches LuaJIT's panic
+ * handler and aborts the process instead of surfacing a Java exception. These wrappers
+ * use the same prebuilt-closure + JNLUA_PCALL shape as jcall_next and jcall_rawseti. */
+JNLUA_THREADLOCAL int table_result;
+
+static int gettable_protected(lua_State *L)
+{
+    lua_gettable(L, 1);
+    table_result = lua_type(L, -1);
+    return 1;
+}
+
+static int settable_protected(lua_State *L)
+{
+    lua_settable(L, 1);
+    return 0;
+}
+
+static int rawset_protected(lua_State *L)
+{
+    lua_rawset(L, 1);
+    return 0;
+}
+
+/* Arranges [fn, table, operand...] on the stack, where the operands are the noperands
+ * values already on top. The table is pushed by value so that the protected function
+ * sees it at index 1 regardless of how the caller indexed it.
+ * The slot is a parameter here because fn is, so PROT()'s token pasting cannot reach it;
+ * PUSH_TABLE_OP pastes it at the call site instead, which keeps a wrong slot a compile error. */
+static void push_table_op(lua_State *L, int index, int slot, lua_CFunction fn, int noperands)
+{
+    index = lua_absindex(L, index);
+    push_protected(L, slot, fn);
+    lua_insert(L, -(noperands + 1));
+    lua_pushvalue(L, index);
+    lua_insert(L, -(noperands + 1));
+}
+
+#define PUSH_TABLE_OP(L, index, fn, noperands) push_table_op((L), (index), PROT_##fn, (fn), (noperands))
+
 int jcall_getfield(JNIEnv *env, jobject obj, jlong lua, jint index, jbyteArray k)
 {
     JNLUA_ENV_L;
@@ -2623,8 +2787,10 @@ int jcall_getfield(JNIEnv *env, jobject obj, jlong lua, jint index, jbyteArray k
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE) && checknotnull(k))
     {
         bytes2string(L, k, -1, 2);
-        lua_gettable(L, index);
-        res = lua_type(L, -1);
+        table_result = -1;
+        PUSH_TABLE_OP(L, index, gettable_protected, 1);
+        JNLUA_PCALL(L, 2, 1);
+        res = table_result;
     }
     JNLUA_DETACH_L;
     return res;
@@ -2638,8 +2804,10 @@ int jcall_gettable(JNIEnv *env, jobject obj, jlong lua, jint index)
     int res = -1;
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE) && checknil(L, -1))
     {
-        lua_gettable(L, index);
-        res = lua_type(L, -1);
+        table_result = -1;
+        PUSH_TABLE_OP(L, index, gettable_protected, 1);
+        JNLUA_PCALL(L, 2, 1);
+        res = table_result;
     }
     JNLUA_DETACH_L;
     return res;
@@ -2656,7 +2824,7 @@ void jcall_newtable(JNIEnv *env, jobject obj, jlong lua)
     JNLUA_ENV_L;
     if (checkstack(L, JNLUA_MINSTACK))
     {
-        lua_pushcfunction(L, newtable_protected);
+        PROT(L, newtable_protected);
         JNLUA_PCALL(L, 0, 1);
     }
     JNLUA_DETACH_L;
@@ -2675,7 +2843,7 @@ jint jcall_next(JNIEnv *env, jobject obj, jlong lua, jint index)
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, next_protected);
+        PROT(L, next_protected);
         lua_insert(L, -2);
         lua_pushvalue(L, index);
         lua_insert(L, -2);
@@ -2718,7 +2886,8 @@ void jcall_rawset(JNIEnv *env, jobject obj, jlong lua, jint index)
     JNLUA_ENV_L;
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE) && checknelems(L, 2) && checknil(L, -2))
     {
-        lua_rawset(L, index);
+        PUSH_TABLE_OP(L, index, rawset_protected, 2);
+        JNLUA_PCALL(L, 3, 0);
     }
     JNLUA_DETACH_L;
 }
@@ -2737,7 +2906,7 @@ void jcall_rawseti(JNIEnv *env, jobject obj, jlong lua, jint index, jint n)
     {
         rawseti_n = n;
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, rawseti_protected);
+        PROT(L, rawseti_protected);
         lua_insert(L, -2);
         lua_pushvalue(L, index);
         lua_insert(L, -2);
@@ -2752,7 +2921,8 @@ void jcall_settable(JNIEnv *env, jobject obj, jlong lua, jint index)
     JNLUA_ENV_L;
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE) && checknil(L, -2) && checknelems(L, 2))
     {
-        lua_settable(L, index);
+        PUSH_TABLE_OP(L, index, settable_protected, 2);
+        JNLUA_PCALL(L, 3, 0);
     }
     JNLUA_DETACH_L;
 }
@@ -2767,7 +2937,8 @@ void jcall_setfield(JNIEnv *env, jobject obj, jlong lua, jint index, jbyteArray 
     {
         bytes2string(L, k, -1, 2);
         lua_insert(L, -2);
-        lua_settable(L, index);
+        PUSH_TABLE_OP(L, index, settable_protected, 2);
+        JNLUA_PCALL(L, 3, 0);
     }
     JNLUA_DETACH_L;
 }
@@ -2813,7 +2984,7 @@ jint jcall_getmetafield(JNIEnv *env, jobject obj, jlong lua, jint index, jstring
     if (checkstack(L, JNLUA_MINSTACK) && checkindex(L, index) && (getmetafield_k = getstringchars(k)))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, getmetafield_protected);
+        PROT(L, getmetafield_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, LUA_MULTRET);
     }
@@ -2947,7 +3118,7 @@ jint jcall_ref(JNIEnv *env, jobject obj, jlong lua, jint index)
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, ref_protected);
+        PROT(L, ref_protected);
         lua_insert(L, -2);
         lua_pushvalue(L, index);
         lua_insert(L, -2);
@@ -3130,7 +3301,7 @@ jint jcall_tablesize(JNIEnv *env, jobject obj, jlong lua, jint index)
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE))
     {
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, tablesize_protected);
+        PROT(L, tablesize_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, 0);
     }
@@ -3174,7 +3345,7 @@ void jcall_tablemove(JNIEnv *env, jobject obj, jlong lua, jint index, jint from,
         tablemove_to = to;
         tablemove_count = count;
         index = lua_absindex(L, index);
-        lua_pushcfunction(L, tablemove_protected);
+        PROT(L, tablemove_protected);
         lua_pushvalue(L, index);
         JNLUA_PCALL(L, 1, 0);
     }
@@ -3238,6 +3409,42 @@ typedef struct ArgStruct
     jbyteArray ref_cache_pool[ARGS_CACHE_POOL_SIZE];    // Multi-slot TABLE ref cache (args only)
 } Args;
 
+/* Table holding the byte[4] refs handed to Java. Must not be LUA_GLOBALSINDEX: the
+ * pair-get path walks a table with lua_next() across several native calls, and when that
+ * table is _G itself, inserting integer ref keys into _G between two lua_next() steps can
+ * rehash it and corrupt the traversal. The registry is already JNLua's ref table (getProxy
+ * uses it) and no Lua code ever iterates it. */
+#define JNLUA_REF_TABLE LUA_REGISTRYINDEX
+
+/* Hand Java a ref to the value at stack index i. build_args' callers pop the value before
+ * Java can see it, so a ref is the only way Java can turn it back into a LuaValueProxy. */
+static void set_ref_arg(lua_State *L, int i, int idx, Args *args_ctx)
+{
+    lua_pushvalue(L, i);
+    const int ref = luaL_ref(L, JNLUA_REF_TABLE);
+    jbyte buf[4] = {
+        (jbyte)(ref >> 24),
+        (jbyte)(ref >> 16),
+        (jbyte)(ref >> 8),
+        (jbyte)ref
+    };
+
+    jbyteArray cache_slot = NULL;
+    // Try single-value cache (pair)
+    if (args_ctx->ref_cache) {
+        cache_slot = args_ctx->ref_cache;
+    }
+    // Try multi-slot pool (args) - always available for idx < 33
+    else if (args_ctx->ref_cache_pool[idx]) {
+        cache_slot = args_ctx->ref_cache_pool[idx];
+    }
+    else {
+        cache_slot = (*thread_env)->NewByteArray(thread_env, 4);
+    }
+    (*thread_env)->SetByteArrayRegion(thread_env, cache_slot, 0, 4, buf);
+    (*thread_env)->SetObjectArrayElement(thread_env, args_ctx->values, idx, cache_slot);
+}
+
 static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte *bytes_, bool pushtable, bool sync)
 {
     jobject obj;
@@ -3265,8 +3472,16 @@ static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte 
             if (obj)
             {
                 bytes_[idx] += 3;
+                (*thread_env)->SetObjectArrayElement(thread_env, args, idx, obj);
             }
-            (*thread_env)->SetObjectArrayElement(thread_env, args, idx, obj);
+            else if (pushtable)
+            {
+                set_ref_arg(L, i, idx, args_ctx);
+            }
+            else
+            {
+                (*thread_env)->SetObjectArrayElement(thread_env, args, idx, NULL);
+            }
             break;
         case LUA_TNUMBER:
             /* ZERO-COPY OPTIMIZATION: Use cache pool to eliminate NewByteArray
@@ -3312,31 +3527,8 @@ static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte 
         case LUA_TTABLE:
             if (pushtable)
             {
-                // ZERO-COPY OPTIMIZATION: Use cache pool for TABLE ref
-                lua_pushvalue(L, i);
-                const int ref = luaL_ref(L, LUA_GLOBALSINDEX);
-                jbyte buf[4] = {
-                    (jbyte)(ref >> 24),
-                    (jbyte)(ref >> 16),
-                    (jbyte)(ref >> 8),
-                    (jbyte)ref
-                };
-
-                jbyteArray cache_slot = NULL;
-                // Try single-value cache (pair)
-                if (args_ctx->ref_cache) {
-                    cache_slot = args_ctx->ref_cache;
-                }
-                // Try multi-slot pool (args) - always available for idx < 33
-                else if (args_ctx->ref_cache_pool[idx]) {
-                    cache_slot = args_ctx->ref_cache_pool[idx];
-                }
-                else {
-                    // BUG FIX: Must create 4-byte array for TABLE ref, not 8
-                    cache_slot = (*thread_env)->NewByteArray(thread_env, 4);
-                }
-                (*thread_env)->SetByteArrayRegion(thread_env, cache_slot, 0, 4, buf);
-                (*thread_env)->SetObjectArrayElement(thread_env, args, idx, cache_slot);
+                // ZERO-COPY OPTIMIZATION: ref_cache_pool slot avoids NewByteArray per call
+                set_ref_arg(L, i, idx, args_ctx);
             } else {
                 // CRITICAL FIX: When pushtable=false, must explicitly set NULL
                 // Otherwise args[idx] contains garbage (e.g., byte[] from previous string param)
@@ -3353,6 +3545,176 @@ static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte 
     {
         (*thread_env)->SetByteArrayRegion(thread_env, types, 0, stop - start + 1, bytes_);
     }
+}
+
+/* ---- Packed-structure replay ----
+ * Converter.packArray() / packMap() flatten a whole (possibly nested) Java array or map into one byte
+ * buffer holding a tag per element, so replaying it here needs ONE array access for the entire
+ * structure and carries a type per element. That is what the one-type-per-level expansion below cannot
+ * express, which is why mixed arrays (a result row of strings and numbers, say) were forced onto the
+ * Java-side loop before. Tags are mirrored from Converter. A malformed buffer must never walk off the
+ * end - hence the bound checks - and the whole replay runs inside one protected call, so a Lua
+ * allocation failure surfaces as a Java exception instead of longjmping through the JNI frame. */
+#define LUA_TPACKED_ARRAY 15         /* keyTypes[1] marker; below 16 so it is not a depth marker */
+#define PACK_NIL 0
+#define PACK_BOOLEAN 1
+#define PACK_NUMBER 3
+#define PACK_STRING 4
+#define PACK_ARRAY 16
+#define PACK_MAP 32
+/* Defensive caps for replaying a hand-built or corrupt buffer. Converter.packArray()/packMap() cap at
+ * the same depth and fall back to the per-element loop, so only a direct tablePushPackedArray(byte[])
+ * can reach these. PACK_MAX_DEPTH bounds the native recursion: push_packed_element recurses once per
+ * nesting level and a stack overflow there is a SIGSEGV that lua_pcall cannot catch. PACK_MAX_PREALLOC
+ * bounds the lua_createtable size hint taken from an untrusted 4-byte count, matching the clamp the
+ * legacy array path already applies (see the size > 100000 guard in push_args). */
+#define PACK_MAX_DEPTH 1000
+#define PACK_MAX_PREALLOC 100000
+
+JNLUA_THREADLOCAL const jbyte *packed_ptr;
+JNLUA_THREADLOCAL jint packed_len;
+
+/* Reads a big-endian int32 at *pp and advances it past the 4 bytes. Returns 0 without advancing when
+ * fewer than 4 bytes remain, so every decode site shares one bounds check. */
+static int read_be32(const jbyte **pp, const jbyte *end, jint *out)
+{
+    const jbyte *p = *pp;
+    if (p + 4 > end)
+        return 0;
+    *out = ((jint)(unsigned char)p[0] << 24) | ((jint)(unsigned char)p[1] << 16) |
+           ((jint)(unsigned char)p[2] << 8) | (jint)(unsigned char)p[3];
+    *pp = p + 4;
+    return 1;
+}
+
+/* Reads a big-endian int64 (the raw bits of an IEEE-754 double) the same way. */
+static int read_be64(const jbyte **pp, const jbyte *end, jlong *out)
+{
+    const jbyte *p = *pp;
+    if (p + 8 > end)
+        return 0;
+    *out = ((jlong)(unsigned char)p[0] << 56) | ((jlong)(unsigned char)p[1] << 48) |
+           ((jlong)(unsigned char)p[2] << 40) | ((jlong)(unsigned char)p[3] << 32) |
+           ((jlong)(unsigned char)p[4] << 24) | ((jlong)(unsigned char)p[5] << 16) |
+           ((jlong)(unsigned char)p[6] << 8) | (jlong)(unsigned char)p[7];
+    *pp = p + 8;
+    return 1;
+}
+
+/* Replays one element, leaving exactly one value on the stack. Returns 0 when the buffer is truncated,
+ * when nesting exceeds PACK_MAX_DEPTH, or when the Lua stack cannot be grown - the caller then pushes
+ * nil for the whole structure. depth is the nesting level, 0 at the top. */
+static int push_packed_element(lua_State *L, const jbyte **pp, const jbyte *end, int depth)
+{
+    const jbyte *p = *pp;
+    jbyte tag;
+
+    /* Bound the native recursion: a stack overflow here is a SIGSEGV that the enclosing lua_pcall
+     * cannot turn into a Java exception. Converter never emits a buffer this deep (it falls back to
+     * the per-element loop first), so only a hand-built buffer hits this. */
+    if (depth >= PACK_MAX_DEPTH)
+        return 0;
+    /* Ensure headroom before any push: a container holds its table across the whole child recursion
+     * and peaks at table + key + value. One check per element is simpler than per-branch and measured
+     * no slower (lua_checkstack is cheap in LuaJIT). */
+    if (!lua_checkstack(L, 3))
+        return 0;
+    if (p >= end)
+        return 0;
+    tag = *p++;
+
+    switch (tag)
+    {
+    case PACK_NIL:
+        lua_pushnil(L);
+        break;
+    case PACK_BOOLEAN:
+        if (p >= end)
+            return 0;
+        lua_pushboolean(L, (*p++) != 0);
+        break;
+    case PACK_NUMBER:
+    {
+        union { jlong l; double d; } u;
+        if (!read_be64(&p, end, &u.l))
+            return 0;
+        /* Same rule as jcall_pushnumber(), so the value seen by Lua does not change */
+        {
+            lua_Integer iv = (lua_Integer)u.d;
+            if (u.d == (double)iv)
+                lua_pushinteger(L, iv);
+            else
+                lua_pushnumber(L, u.d);
+        }
+        break;
+    }
+    case PACK_STRING:
+    {
+        jint len;
+        if (!read_be32(&p, end, &len))
+            return 0;
+        /* (end - p) is computed in 64-bit so a large jint len cannot wrap the pointer sum on x86. */
+        if (len < 0 || (jlong)(end - p) < (jlong)len)
+            return 0;
+        lua_pushlstring(L, (const char *)p, (size_t)len);
+        p += len;
+        break;
+    }
+    case PACK_ARRAY:
+    {
+        jint count, j;
+        if (!read_be32(&p, end, &count) || count < 0)
+            return 0;
+        /* Clamp only the pre-allocation hint: the table still grows as real elements are replayed, but
+         * a crafted count cannot make a 5-byte buffer request a gigabyte. */
+        lua_createtable(L, count > PACK_MAX_PREALLOC ? PACK_MAX_PREALLOC : count, 0);
+        for (j = 0; j < count; j++)
+        {
+            if (!push_packed_element(L, &p, end, depth + 1))
+                return 0;
+            lua_rawseti(L, -2, j + 1);
+        }
+        break;
+    }
+    case PACK_MAP:
+    {
+        jint count, j;
+        if (!read_be32(&p, end, &count) || count < 0)
+            return 0;
+        /* The pair count goes into the record part. A nil value removes its key exactly as the Java
+         * loop's lua_settable did. Converter.packMapEntries declines both a nil key (jcall_settable
+         * rejects one with IllegalArgumentException) and a NaN key (lua_rawset would raise the Lua-level
+         * "table index is NaN"), so neither arrives on the packed path; a hand-built buffer that carries
+         * one gets the Lua error raised inside this protected call instead of an abort. */
+        lua_createtable(L, 0, count > PACK_MAX_PREALLOC ? PACK_MAX_PREALLOC : count);
+        for (j = 0; j < count; j++)
+        {
+            if (!push_packed_element(L, &p, end, depth + 1))
+                return 0;
+            if (!push_packed_element(L, &p, end, depth + 1))
+                return 0;
+            lua_rawset(L, -3);
+        }
+        break;
+    }
+    default:
+        lua_pushnil(L);
+        break;
+    }
+
+    *pp = p;
+    return 1;
+}
+
+static int packed_array_protected(lua_State *L)
+{
+    const jbyte *p = packed_ptr;
+    const jbyte *end = packed_ptr + packed_len;
+    if (!push_packed_element(L, &p, end, 0))
+    {
+        lua_pushnil(L);
+    }
+    return 1;
 }
 
 static void push_args(lua_State *L, JNIEnv *env, jobject obj, jlong lua, int start, int stop, jobjectArray args, jbyte *types)
@@ -3399,6 +3761,42 @@ static void push_args(lua_State *L, JNIEnv *env, jobject obj, jlong lua, int sta
         {
             switch ((int)types[i])
             {
+            case LUA_TPACKED_ARRAY:
+                /* o is the byte[] Converter.packArray() produced; replay it as one table.
+                 * GetByteArrayElements, NOT GetPrimitiveArrayCritical: the replay runs arbitrary Lua
+                 * that allocates (so it can step the GC, whose __gc handlers call back into JNI) and a
+                 * failure hands off to throw(), which calls JNI as well - none of that is legal inside a
+                 * critical region, which -Xcheck:jni flags and a stricter JVM can deadlock on. One copy
+                 * of the buffer is negligible next to the per-element JNI this protocol replaced. */
+                if (o)
+                {
+                    jbyteArray packed = (jbyteArray)o;
+                    jbyte *ptr = (*thread_env)->GetByteArrayElements(thread_env, packed, NULL);
+                    if (ptr)
+                    {
+                        int pcstatus;
+                        packed_ptr = ptr;
+                        packed_len = (*thread_env)->GetArrayLength(thread_env, packed);
+                        PROT(L, packed_array_protected);
+                        /* push_args is not an entry point, so no JNLUA_PCALL here: call the protected
+                         * replay directly and hand a failure to throw(), like bytes2string does. Release
+                         * the buffer first so throw() runs with no array element held. */
+                        pcstatus = lua_pcall(L, 0, 1, 0);
+                        (*thread_env)->ReleaseByteArrayElements(thread_env, packed, ptr, JNI_ABORT);
+                        packed_ptr = NULL;
+                        if (pcstatus != 0)
+                            throw(L, pcstatus);
+                    }
+                    else
+                    {
+                        lua_pushnil(L);
+                    }
+                }
+                else
+                {
+                    lua_pushnil(L);
+                }
+                break;
             case LUA_TNIL:
                 lua_pushnil(L);
                 break;
@@ -3421,6 +3819,7 @@ static void push_args(lua_State *L, JNIEnv *env, jobject obj, jlong lua, int sta
                 /* OPTIMIZED: Zero-copy read from byte[] */
                 if (o) {
                     bytes2string(L, (jbyteArray)o, -1, 2);
+                    o = NULL;  /* bytes2string() deletes the array element itself */
                 } else {
                     lua_pushnil(L);
                 }
@@ -3768,8 +4167,7 @@ static int pcall_table_pair_push(lua_State *L)
 static void jcall_table_pair_get(JNIEnv *env, jobject obj, jlong lua, jint index, jint options)
 {
     JNLUA_ENV_L;
-    jobject global_obj = NULL; // Track GlobalRef for cleanup
-    
+
     if (options & 2)
     {
         lua_rawgeti(L, LUA_REGISTRYINDEX, index);
@@ -3782,42 +4180,26 @@ static void jcall_table_pair_get(JNIEnv *env, jobject obj, jlong lua, jint index
         if (options & 2)
             lua_pop(L, 1);
         check(0, illegalargumentexception_class, "illegal table at the specific index.");
-        return;
-    }
-    
-    // CRITICAL FIX: Properly manage GlobalRef lifecycle to prevent memory leaks
-    // Old code leaked GlobalRef when exceptions occurred or early returns happened
-    if(table_pair_obj) {
-        (*env)->DeleteGlobalRef(env, table_pair_obj);
-        table_pair_obj = NULL;
-    }
-    global_obj = (*env)->NewGlobalRef(env, obj);
-    if (global_obj == NULL) {
-        // Failed to create GlobalRef - clean up and return
-        lua_pop(L, 2); // pop function and table
-        check(0, luaruntimeexception_class, "Failed to create global reference");
         JNLUA_DETACH_L;
         return;
     }
-    table_pair_obj = global_obj;
-    
-    lua_pushcfunction(L, options & 32768 ? pcall_table_pair_push : pcall_table_pair_get);
+
+    /* Read only by pcall_table_pair_get/push and jcall_tablemove, all of which return before
+     * this function does, so the local reference the JVM passed in is enough. Promoting it to
+     * a global reference per call just takes a lock on the global handle table. */
+    table_pair_obj = obj;
+
+    if (options & 32768) PROT(L, pcall_table_pair_push);
+    else                 PROT(L, pcall_table_pair_get);
     lua_pushvalue(L, index);
     table_pair_index = 1;
     table_pair_options = options ^ 32768;
-    
+
     table_pair_lua = lua;
     JNLUA_PCALL(L, 1, 0)
-    
-    // CRITICAL: Clean up GlobalRef regardless of success or failure
-    // NOTE: If JNLUA_PCALL throws (via throw() function), this code won't execute.
-    // However, table_pair_obj is a thread-local variable that will be cleaned up
-    // on the next call to this function (see cleanup code above).
-    if(table_pair_obj) {
-        (*env)->DeleteGlobalRef(env, table_pair_obj);
-        table_pair_obj = NULL;
-    }
-    
+
+    table_pair_obj = NULL;
+
     if (options & 1)
         lua_remove(L, index);
     JNLUA_DETACH_L;
@@ -4252,13 +4634,6 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved)
     {
         (*env)->DeleteGlobalRef(env, boolean_false_bytes);
         boolean_false_bytes = NULL;
-    }
-
-    /* Step 5: Free thread-local global references */
-    if (table_pair_obj)
-    {
-        (*env)->DeleteGlobalRef(env, table_pair_obj);
-        table_pair_obj = NULL;
     }
 
     /* Release global Java VM pointer */
@@ -4788,7 +5163,19 @@ static int calljavafunction(lua_State *L)
      * Performance strategy: Skip all clearing when n == array_len (most common case)
      */
     jint array_len = (*thread_env)->GetArrayLength(thread_env, args.values);
-    
+
+    /* Every buffer build_args writes through is as wide as the Java paramArgs array (33,
+     * with slot 32 doubling as the yield flag): bytes_buffer is malloc'd to match and so
+     * are both cache pools. A longer argument list would therefore run past all of them,
+     * which at ~100 arguments takes the JVM down. Refuse the call instead. */
+    if (n > array_len)
+    {
+        luastate_obj = luastate_obj_old;
+        lua_pushfstring(L, "too many arguments for a Java function: %d, max is %d", n, (int)array_len);
+        (*thread_env)->PopLocalFrame(thread_env, NULL);
+        return lua_error(L);
+    }
+
 	++CALL_COUNT;
     if (n == 0) {
         /* Zero arguments: only clear first byte for nresults=-64 case */
@@ -5072,28 +5459,40 @@ static const char *readhandler(lua_State *L, void *ud, size_t *size)
 static int writehandler(lua_State *L, const void *data, size_t size, void *ud)
 {
     Stream *stream;
+    const char *p = (const char *)data;
 
     stream = (Stream *)ud;
-    if (!stream->bytes)
+    /* lua_dump hands the whole dump over in one call, so a chunk larger than the buffer
+     * is normal and has to be sliced. */
+    while (size > 0)
     {
-        stream->bytes = (*thread_env)->GetByteArrayElements(thread_env, stream->byte_array, &stream->is_copy);
+        const size_t chunk = size < JNLUA_STREAM_BUFFER_SIZE ? size : JNLUA_STREAM_BUFFER_SIZE;
         if (!stream->bytes)
         {
-            (*thread_env)->ThrowNew(thread_env, ioexception_class, "JNI error: GetByteArrayElements() failed accessing IO buffer");
+            stream->bytes = (*thread_env)->GetByteArrayElements(thread_env, stream->byte_array, &stream->is_copy);
+            if (!stream->bytes)
+            {
+                (*thread_env)->ThrowNew(thread_env, ioexception_class, "JNI error: GetByteArrayElements() failed accessing IO buffer");
+                return 1;
+            }
+        }
+        memcpy(stream->bytes, p, chunk);
+        if (stream->is_copy)
+        {
+            (*thread_env)->ReleaseByteArrayElements(thread_env, stream->byte_array, stream->bytes, JNI_COMMIT);
+            /* Released: reusing this pointer for the next chunk would be a use-after-free,
+             * and jcall_dump must not release it a second time. */
+            stream->bytes = NULL;
+        }
+        (*thread_env)->CallVoidMethod(thread_env, stream->stream, write_id, stream->byte_array, 0, (jint)chunk);
+        if ((*thread_env)->ExceptionCheck(thread_env))
+        {
+            stream->exception = (*thread_env)->ExceptionOccurred(thread_env);
+            (*thread_env)->ExceptionClear(thread_env);
             return 1;
         }
-    }
-    memcpy(stream->bytes, data, size);
-    if (stream->is_copy)
-    {
-        (*thread_env)->ReleaseByteArrayElements(thread_env, stream->byte_array, stream->bytes, JNI_COMMIT);
-    }
-    (*thread_env)->CallVoidMethod(thread_env, stream->stream, write_id, stream->byte_array, 0, size);
-    if ((*thread_env)->ExceptionCheck(thread_env))
-    {
-        stream->exception = (*thread_env)->ExceptionOccurred(thread_env);
-        (*thread_env)->ExceptionClear(thread_env);
-        return 1;
+        p += chunk;
+        size -= chunk;
     }
     return 0;
 }

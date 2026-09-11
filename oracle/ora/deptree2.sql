@@ -1,9 +1,9 @@
-/*[[Shows the accessible dependencies on the given object. Usage: @@NAME [owner.]object_name
+/*[[Shows the accessible dependencies of the given object. Usage: @@NAME [owner.]object_name
     Sample Output:
     ==============
-    ORCL> ora deptree2 dbms_workload_repository
-    ##               OBJECT_NAME               OBJECT_TYPE  OBJECT_ID DATA_OBJECT_ID STATUS       CREATED          LAST_DDL_TIME         TIMESTAMP      TEMPORARY
-    ------------------------------------------ ------------ --------- -------------- ------ ------------------- ------------------- ------------------- ---------
+    ORCL> @@NAME dbms_workload_repository
+    ## OBJECT_NAME                             OBJECT_TYPE  OBJECT_ID DATA_OBJECT_ID STATUS CREATED             LAST_DDL_TIME       TIMESTAMP           TEMPORARY
+    -- --------------------------------------- ------------ --------- -------------- ------ ------------------- ------------------- ------------------- ---------
      1 *SYS.DBMS_WORKLOAD_REPOSITORY           PACKAGE           8460                VALID  2011-08-28 22:12:37 2013-12-20 15:54:50 2013-12-20 15:27:20 N
      2 *   PUBLIC.DBMS_WORKLOAD_REPOSITORY     SYNONYM           8461                VALID  2011-08-28 22:12:37 2013-12-20 15:27:22 2013-12-20 15:27:22 N
      3 *   SYS.DBA_HIST_BASELINE               VIEW             10965                VALID  2011-08-28 22:14:31 2013-12-20 15:34:12 2011-08-28 22:14:31 N
@@ -34,39 +34,63 @@ set feed off
 var cur REFCURSOR;
 
 DECLARE
-    c   INT;
-    o   DBMSOUTPUT_LINESARRAY;
+    c        INT;
+    o        dbmsoutput_linesarray;
+    v_trunc  PLS_INTEGER := 0;
+    v_notice VARCHAR2(200) := '*** TRUNCATED: dbms_output buffer(1MB) overflow, the tree below is incomplete ***';
+    v_schema VARCHAR2(130);
+    v_name   VARCHAR2(130);
 BEGIN
     dbms_output.disable;
     dbms_output.enable(NULL);
-    dbms_utility.get_dependency(:object_type, :object_owner, :object_name);
+    v_schema := CASE WHEN dbms_db_version.version >= 12 AND :object_owner <> upper(:object_owner)
+                     THEN '"' || :object_owner || '"' ELSE :object_owner END;
+    v_name   := CASE WHEN dbms_db_version.version >= 12 AND :object_name <> upper(:object_name)
+                     THEN '"' || :object_name || '"' ELSE :object_name END;
+    BEGIN
+        dbms_utility.get_dependency(:object_type, v_schema, v_name);
+    EXCEPTION WHEN OTHERS THEN
+        IF instr(sqlerrm, 'ORU-10027') != 0 THEN
+            v_trunc := 1;
+        ELSIF instr(sqlerrm, 'ORU-10013') != 0 AND :object_name <> upper(:object_name) THEN
+            raise_application_error(-20001, 'dbms_utility.get_dependency cannot handle the case sensitive name '
+                || :object_owner || '.' || :object_name);
+        ELSE
+            RAISE;
+        END IF;
+    END;
     dbms_output.get_lines(o, c);
     EXECUTE IMMEDIATE 'alter session set nls_date_format=''YYYY-MM-DD HH24:MI:SS''';
 
     OPEN :cur FOR
         SELECT /*+no_merge(o)*/
-                 r "#",
-                 object_name,
-                 object_type,
-                 0+regexp_substr(info, '[^/]+', 1, 1) OBJECT_ID,
-                 nullif(0+regexp_substr(info, '[^/]+', 1, 2),0) DATA_OBJECT_ID,
-                 regexp_substr(info, '[^/]+', 1, 6) STATUS,
-                 TO_DATE(regexp_substr(info, '[^/]+', 1, 3)) CREATED,
-                 TO_DATE(regexp_substr(info, '[^/]+', 1, 4)) LAST_DDL_TIME,
-                 TO_DATE(regexp_substr(info, '[^/]+', 1, 5)) TIMESTAMP,
-                 regexp_substr(info, '[^/]+', 1, 7) TEMPORARY
-        FROM   (SELECT r,object_name,regexp_substr(obj, '[^\.]+', 1, 3) object_type,
-                        (SELECT OBJECT_ID || '/' || nvl(DATA_OBJECT_ID,0) || '/' || CREATED || '/' ||
-                                LAST_DDL_TIME || '/' || TIMESTAMP || '/' || STATUS || '/' || TEMPORARY
-                          FROM   &check_access_obj
-                          WHERE  owner = regexp_substr(obj, '[^\.]+', 1, 1)
-                          AND    object_name = regexp_substr(obj, '[^\.]+', 1, 2)
-                          AND    object_type = regexp_substr(obj, '[^\.]+', 1, 3)) info
-                 FROM   (SELECT rownum r,
-                                regexp_replace(COLUMN_VALUE, '([\* ]+)(.*) ([^ \(]+).*','\1\3') object_name,
-                                regexp_replace(COLUMN_VALUE, '([\* ]+)(.*) ([^ \(]+).*', '\3.\2') obj
-                         FROM   TABLE(o)
-                         WHERE  COLUMN_VALUE LIKE '*%')) o
-        ORDER BY r;
+               r "#",
+               object_name,
+               p_type object_type,
+               0 + regexp_substr(info, '[^/]+', 1, 1) OBJECT_ID,
+               nullif(0 + regexp_substr(info, '[^/]+', 1, 2), 0) DATA_OBJECT_ID,
+               regexp_substr(info, '[^/]+', 1, 6) STATUS,
+               to_date(regexp_substr(info, '[^/]+', 1, 3)) CREATED,
+               to_date(regexp_substr(info, '[^/]+', 1, 4)) LAST_DDL_TIME,
+               to_date(regexp_substr(info, '[^/]+', 1, 5)) TIMESTAMP,
+               regexp_substr(info, '[^/]+', 1, 7) TEMPORARY
+        FROM   (SELECT r, object_name, p_type,
+                       (SELECT object_id || '/' || nvl(data_object_id, 0) || '/' || created || '/' ||
+                               last_ddl_time || '/' || TIMESTAMP || '/' || status || '/' || temporary
+                        FROM   &check_access_obj
+                        WHERE  owner = regexp_substr(obj, '[^\.]+', 1, 1)
+                        AND    object_name = substr(obj, instr(obj, '.') + 1)
+                        AND    object_type = p_type) info
+                FROM   (SELECT rownum r,
+                               regexp_replace(column_value, '([\* ]+)(.*) ([^ \(]+).*', '\1\3') object_name,
+                               regexp_replace(column_value, '([\* ]+)(.*) ([^ \(]+).*', '\2') p_type,
+                               regexp_replace(column_value, '([\* ]+)(.*) ([^ \(]+).*', '\3') obj
+                        FROM   TABLE(o)
+                        WHERE  column_value LIKE '*%')
+                UNION ALL
+                SELECT 0, v_notice, 'WARNING', to_char(NULL)
+                FROM   dual
+                WHERE  v_trunc = 1) o
+        ORDER  BY r;
 END;
 /

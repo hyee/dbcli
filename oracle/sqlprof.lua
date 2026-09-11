@@ -134,7 +134,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 END IF;
             EXCEPTION
                 WHEN no_data_found THEN
-                    IF pos=1 THEN
+                    IF pos=1 AND nvl(dbms_lob.getlength(v_sql),0)=0 THEN
                         raise_application_error(-20001, 'Cannot find SQL text of '||v_sql_id);
                     END IF;
             END;
@@ -385,7 +385,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     BEGIN
         :2 := extract_profile(:3,:4,:5,:6, TRUE);
     END;]]
-    env.checkhelp(sql_id)
+    env.checkhelp(sql_id or sql_text)
     if (sql_plan or ''):find('[^%w_%$.#"]') then
         return sqlprof.generate_profile_from_outlines(sql_id,sql_plan)
     end
@@ -395,19 +395,16 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
     local args={sql_text or "",'#VARCHAR','#CLOB',sql_id or "",sql_plan or "",env.set.get("dbid") or ""}
     db:internal_call(stmt,args)
 
-    if args[1] and args[1]:sub(1,1)=="#" then
-        env.raise(args[1]:sub(2))
-    end
-
-    sql_id=((sql_id or ''):gsub('^PROF_','') or "plan_table");
+    sql_id=(sql_id or ''):gsub('^PROF_','')
+    if sql_id=='' then sql_id='plan_table' end
 
     if args[2] then
         local src,phv=args[2]:match('^(.*)/(%d+)$')
         if phv then
-            print('SQL Profile for plan #'..phv..' is extraced from '..src)
+            print('SQL Profile for plan #'..phv..' is extracted from '..src)
             sql_id = sql_id .. '_'..phv
         else
-            print('SQL Profile is extraced from '..args[2])
+            print('SQL Profile is extracted from '..args[2])
         end
     end
     print("Result written to file "..env.write_cache('prof_'..sql_id..".sql",args[3]))
@@ -497,7 +494,7 @@ function sqlprof.generate_profile_from_outlines(sql_id,outlines)
     end
     
     outlines=table.concat(hints,',\n        ')
-    local profile=profile_template:gsub('@sql_id@',sql_id):gsub('@sql_profile',outlines)
+    local profile=profile_template:gsub('@sql_id@',sql_id):gsub('@sql_profile',function() return outlines end)
     print("Result written to file "..env.write_cache('prof_'..sql_id..".sql",profile))
 end
 
