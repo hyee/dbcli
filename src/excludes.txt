@@ -1,5 +1,6 @@
 .cfg
 .dat
+.dsh
 .ini
 .log
 .swp

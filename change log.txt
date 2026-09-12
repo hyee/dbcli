@@ -1,3 +1,4 @@
+2026-09-11: * public: fix lib `jnlua`
 2026-09-07: + public: new lib 'utf8'
 2026-09-06: * public: update lib `luv` to v1.52-1. 
                       It should be the last version for this project,newer version cannot support centos 6 and win7.

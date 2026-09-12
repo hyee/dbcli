@@ -439,9 +439,7 @@ static int writehandler(lua_State *L, const void *data, size_t size, void *ud); 
 
 /* ---- Global JNI Cached Variables (Initialized in JNI_OnLoad) ---- */
 /* Java class references */
-static jclass object_class = NULL;                      /**< java.lang.Object class reference */
 static jclass luastate_class = NULL;                   /**< com.naef.jnlua.LuaState class reference */
-static jclass luatable_class = NULL;                   /**< com.naef.jnlua.LuaTable class reference */
 static jclass luadebug_class = NULL;                   /**< com.naef.jnlua.LuaState$LuaDebug class reference */
 static jclass javafunction_interface = NULL;           /**< com.naef.jnlua.JavaFunction interface reference */
 static jclass luaruntimeexception_class = NULL;        /**< com.naef.jnlua.LuaRuntimeException class reference */
@@ -470,7 +468,6 @@ static jfieldID yield_id = 0;                          /**< LuaState.yield field
 
 /* Method IDs */
 static jmethodID classname_id = 0;                     /**< LuaState.getCanonicalName method ID */
-static jmethodID luaexecthread_id = 0;                 /**< LuaState.setExecThread method ID */
 static jmethodID luadebug_init_id = 0;                 /**< LuaDebug constructor method ID */
 static jfieldID luadebug_field_id = 0;                 /**< LuaDebug.luaDebug field ID */
 static jmethodID invoke_id = 0;                        /**< JavaFunction.invoke method ID (critical for Java-Lua function calls) */
@@ -485,8 +482,6 @@ static jmethodID luaerror_id = 0;                      /**< LuaError constructor
 static jmethodID setluastacktrace_id = 0;              /**< LuaError.setLuaStackTrace method ID */
 static jmethodID valueof_integer_id = 0;               /**< Long.valueOf method ID */
 static jmethodID valueof_double_id = 0;                /**< Double.valueOf method ID */
-static jmethodID double_value_id = 0;                  /**< Double.doubleValue method ID */
-static jmethodID tostring_id = 0;                      /**< Object.toString method ID */
 static jmethodID read_id = 0;                          /**< InputStream.read method ID */
 static jmethodID write_id = 0;                          /**< OutputStream.write method ID */
 static jmethodID print_id = 0;                         /**< LuaState.println method ID */
@@ -1859,6 +1854,21 @@ void jcall_openlibs(JNIEnv *env, jobject obj, jlong lua)
 }
 
 /* ---- Load and dump ---- */
+/* Releases the byte[] copy readhandler/writehandler pinned for the duration of a load or dump.
+ * Both stream adapters begin their teardown with exactly these two steps; a captured Java
+ * exception is deliberately left to the caller, which throws it where its own flow calls for. */
+static void stream_release_buffer(Stream *stream)
+{
+    if (stream->bytes)
+    {
+        (*thread_env)->ReleaseByteArrayElements(thread_env, stream->byte_array, stream->bytes, JNI_ABORT);
+    }
+    if (stream->byte_array)
+    {
+        (*thread_env)->DeleteLocalRef(thread_env, stream->byte_array);
+    }
+}
+
 /* lua_load() */
 void jcall_load(JNIEnv *env, jobject obj, jlong lua, jobject inputStream, jstring chunkname, jstring mode)
 {
@@ -1875,14 +1885,7 @@ void jcall_load(JNIEnv *env, jobject obj, jlong lua, jobject inputStream, jstrin
             throw(L, status);
         }
     }
-    if (stream.bytes)
-    {
-        (*thread_env)->ReleaseByteArrayElements(thread_env, stream.byte_array, stream.bytes, JNI_ABORT);
-    }
-    if (stream.byte_array)
-    {
-        (*thread_env)->DeleteLocalRef(thread_env, stream.byte_array);
-    }
+    stream_release_buffer(&stream);
     if (chunkname_utf)
     {
         releasestringchars(chunkname, chunkname_utf);
@@ -1909,14 +1912,7 @@ void jcall_dump(JNIEnv *env, jobject obj, jlong lua, jobject outputStream)
             throw(L, status);
         }
     }
-    if (stream.bytes)
-    {
-        (*thread_env)->ReleaseByteArrayElements(thread_env, stream.byte_array, stream.bytes, JNI_ABORT);
-    }
-    if (stream.byte_array)
-    {
-        (*thread_env)->DeleteLocalRef(thread_env, stream.byte_array);
-    }
+    stream_release_buffer(&stream);
     if (stream.exception)
     {
         (*thread_env)->Throw(thread_env, stream.exception);
@@ -3403,11 +3399,60 @@ typedef struct ArgStruct
     jobjectArray values;  // Unified storage: Object[] for all types
     jbyteArray types;
     jbyte * bytes_buffer;  // Main buffer for type metadata and temp data
-    jbyteArray number_cache; // Reusable byte[8] for single-value NUMBER (pair only)
-    jbyteArray ref_cache;    // Reusable byte[4] for single-value TABLE ref (pair only)
-    jbyteArray number_cache_pool[ARGS_CACHE_POOL_SIZE]; // Multi-slot NUMBER cache (args only)
-    jbyteArray ref_cache_pool[ARGS_CACHE_POOL_SIZE];    // Multi-slot TABLE ref cache (args only)
+    /* One reusable byte[] per argument, so a NUMBER or a TABLE ref reaches Java without a
+     * NewByteArray per call. Only the args userdata allocates these; the pair userdata leaves
+     * every slot NULL and takes cache_slot()'s fallback. */
+    jbyteArray number_cache_pool[ARGS_CACHE_POOL_SIZE];
+    jbyteArray ref_cache_pool[ARGS_CACHE_POOL_SIZE];
 } Args;
+
+/* ---- C<->Java number codec ----
+ * The one definition of the byte order for every multi-byte field on the wire; the Java half of
+ * that contract is com.naef.jnlua.Converter. put_* writes one field into a caller-owned buffer,
+ * get_* reads one, and read_* adds the bounds check the packed replay's cursor walk needs.
+ * build_args and push_args are the two halves of a single encoding, so they share these rather
+ * than each spelling out the shifts. */
+static inline void put_be32(jbyte *p, jint v)
+{
+    p[0] = (jbyte)(v >> 24);
+    p[1] = (jbyte)(v >> 16);
+    p[2] = (jbyte)(v >> 8);
+    p[3] = (jbyte)v;
+}
+
+static inline void put_be64(jbyte *p, jlong v)
+{
+    p[0] = (jbyte)(v >> 56);
+    p[1] = (jbyte)(v >> 48);
+    p[2] = (jbyte)(v >> 40);
+    p[3] = (jbyte)(v >> 32);
+    p[4] = (jbyte)(v >> 24);
+    p[5] = (jbyte)(v >> 16);
+    p[6] = (jbyte)(v >> 8);
+    p[7] = (jbyte)v;
+}
+
+static inline jint get_be32(const jbyte *p)
+{
+    return ((jint)(unsigned char)p[0] << 24) | ((jint)(unsigned char)p[1] << 16) |
+           ((jint)(unsigned char)p[2] << 8) | (jint)(unsigned char)p[3];
+}
+
+static inline jlong get_be64(const jbyte *p)
+{
+    return ((jlong)(unsigned char)p[0] << 56) | ((jlong)(unsigned char)p[1] << 48) |
+           ((jlong)(unsigned char)p[2] << 40) | ((jlong)(unsigned char)p[3] << 32) |
+           ((jlong)(unsigned char)p[4] << 24) | ((jlong)(unsigned char)p[5] << 16) |
+           ((jlong)(unsigned char)p[6] << 8) | (jlong)(unsigned char)p[7];
+}
+
+/* The cache slot for one argument, or a fresh byte[] when this Args carries no pool (the pair
+ * userdata never allocates one). */
+static jbyteArray cache_slot(jbyteArray *pool, int idx, jsize width)
+{
+    jbyteArray slot = pool[idx];
+    return slot ? slot : (*thread_env)->NewByteArray(thread_env, width);
+}
 
 /* Table holding the byte[4] refs handed to Java. Must not be LUA_GLOBALSINDEX: the
  * pair-get path walks a table with lua_next() across several native calls, and when that
@@ -3422,30 +3467,15 @@ static void set_ref_arg(lua_State *L, int i, int idx, Args *args_ctx)
 {
     lua_pushvalue(L, i);
     const int ref = luaL_ref(L, JNLUA_REF_TABLE);
-    jbyte buf[4] = {
-        (jbyte)(ref >> 24),
-        (jbyte)(ref >> 16),
-        (jbyte)(ref >> 8),
-        (jbyte)ref
-    };
+    jbyte buf[4];
+    jbyteArray slot = cache_slot(args_ctx->ref_cache_pool, idx, 4);
 
-    jbyteArray cache_slot = NULL;
-    // Try single-value cache (pair)
-    if (args_ctx->ref_cache) {
-        cache_slot = args_ctx->ref_cache;
-    }
-    // Try multi-slot pool (args) - always available for idx < 33
-    else if (args_ctx->ref_cache_pool[idx]) {
-        cache_slot = args_ctx->ref_cache_pool[idx];
-    }
-    else {
-        cache_slot = (*thread_env)->NewByteArray(thread_env, 4);
-    }
-    (*thread_env)->SetByteArrayRegion(thread_env, cache_slot, 0, 4, buf);
-    (*thread_env)->SetObjectArrayElement(thread_env, args_ctx->values, idx, cache_slot);
+    put_be32(buf, (jint)ref);
+    (*thread_env)->SetByteArrayRegion(thread_env, slot, 0, 4, buf);
+    (*thread_env)->SetObjectArrayElement(thread_env, args_ctx->values, idx, slot);
 }
 
-static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte *bytes_, bool pushtable, bool sync)
+static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte *bytes_, bool pushtable)
 {
     jobject obj;
     jobjectArray args = args_ctx->values;
@@ -3484,44 +3514,19 @@ static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte 
             }
             break;
         case LUA_TNUMBER:
-            /* ZERO-COPY OPTIMIZATION: Use cache pool to eliminate NewByteArray
-             * Performance gain: ~60% reduction in JNI calls (from 3 to 2)
-             * - Before: NewByteArray + SetByteArrayRegion + SetObjectArrayElement
-             * - After:  SetByteArrayRegion (reuse GlobalRef cache) + SetObjectArrayElement
-             *
-             * Cache strategy:
-             * - pair: single-value cache (number_cache)
-             * - args: multi-slot pool (number_cache_pool[idx]) - 33 slots for all params
-             */
+            /* The double's IEEE 754 bits, big-endian, through this argument's cache slot so the
+             * byte[] is reused instead of allocated per call. This is the field the LUA_TNUMBER
+             * arm of push_args reads back. */
             {
                 jdouble num = lua_tonumber(L, i);
                 jlong bits;
                 memcpy(&bits, &num, sizeof(jlong)); // Safe way to get IEEE 754 bit representation
-                jbyte buf[8] = {
-                    (jbyte)(bits >> 56),
-                    (jbyte)(bits >> 48),
-                    (jbyte)(bits >> 40),
-                    (jbyte)(bits >> 32),
-                    (jbyte)(bits >> 24),
-                    (jbyte)(bits >> 16),
-                    (jbyte)(bits >> 8),
-                    (jbyte)bits
-                };
+                jbyte buf[8];
+                jbyteArray slot = cache_slot(args_ctx->number_cache_pool, idx, 8);
 
-                jbyteArray cache_slot = NULL;
-                // Try single-value cache (pair)
-                if (args_ctx->number_cache) {
-                    cache_slot = args_ctx->number_cache;
-                }
-                // Try multi-slot pool (args) - always available for idx < 33
-                else if (args_ctx->number_cache_pool[idx]) {
-                    cache_slot = args_ctx->number_cache_pool[idx];
-                }
-                else {
-                    cache_slot = (*thread_env)->NewByteArray(thread_env, 8);
-                }
-                (*thread_env)->SetByteArrayRegion(thread_env, cache_slot, 0, 8, buf);
-                (*thread_env)->SetObjectArrayElement(thread_env, args, idx, cache_slot);
+                put_be64(buf, bits);
+                (*thread_env)->SetByteArrayRegion(thread_env, slot, 0, 8, buf);
+                (*thread_env)->SetObjectArrayElement(thread_env, args, idx, slot);
             }
             break;
         case LUA_TTABLE:
@@ -3541,10 +3546,7 @@ static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte 
             break;
         }
     }
-    if (sync)
-    {
-        (*thread_env)->SetByteArrayRegion(thread_env, types, 0, stop - start + 1, bytes_);
-    }
+    (*thread_env)->SetByteArrayRegion(thread_env, types, 0, stop - start + 1, bytes_);
 }
 
 /* ---- Packed-structure replay ----
@@ -3562,6 +3564,13 @@ static void build_args(lua_State *L, int start, int stop, Args *args_ctx, jbyte 
 #define PACK_STRING 4
 #define PACK_ARRAY 16
 #define PACK_MAP 32
+/* A value the buffer cannot carry - a raw Java object (Timestamp, ZonedDateTime, ...), a primitive
+ * array (byte[]), anything whose Lua form the Java converter has to build - as 4 bytes of luaL_ref
+ * into LUA_REGISTRYINDEX. Java pushed that Lua value through the same conversion the per-element loop
+ * uses and parked the reference here, so the rawgeti below yields exactly what that loop would have
+ * produced. A reference that is no longer live yields nil, so a hand-built buffer degrades rather
+ * than failing. */
+#define PACK_OBJECT 64
 /* Defensive caps for replaying a hand-built or corrupt buffer. Converter.packArray()/packMap() cap at
  * the same depth and fall back to the per-element loop, so only a direct tablePushPackedArray(byte[])
  * can reach these. PACK_MAX_DEPTH bounds the native recursion: push_packed_element recurses once per
@@ -3578,26 +3587,20 @@ JNLUA_THREADLOCAL jint packed_len;
  * fewer than 4 bytes remain, so every decode site shares one bounds check. */
 static int read_be32(const jbyte **pp, const jbyte *end, jint *out)
 {
-    const jbyte *p = *pp;
-    if (p + 4 > end)
+    if (*pp + 4 > end)
         return 0;
-    *out = ((jint)(unsigned char)p[0] << 24) | ((jint)(unsigned char)p[1] << 16) |
-           ((jint)(unsigned char)p[2] << 8) | (jint)(unsigned char)p[3];
-    *pp = p + 4;
+    *out = get_be32(*pp);
+    *pp += 4;
     return 1;
 }
 
 /* Reads a big-endian int64 (the raw bits of an IEEE-754 double) the same way. */
 static int read_be64(const jbyte **pp, const jbyte *end, jlong *out)
 {
-    const jbyte *p = *pp;
-    if (p + 8 > end)
+    if (*pp + 8 > end)
         return 0;
-    *out = ((jlong)(unsigned char)p[0] << 56) | ((jlong)(unsigned char)p[1] << 48) |
-           ((jlong)(unsigned char)p[2] << 40) | ((jlong)(unsigned char)p[3] << 32) |
-           ((jlong)(unsigned char)p[4] << 24) | ((jlong)(unsigned char)p[5] << 16) |
-           ((jlong)(unsigned char)p[6] << 8) | (jlong)(unsigned char)p[7];
-    *pp = p + 8;
+    *out = get_be64(*pp);
+    *pp += 8;
     return 1;
 }
 
@@ -3658,6 +3661,14 @@ static int push_packed_element(lua_State *L, const jbyte **pp, const jbyte *end,
             return 0;
         lua_pushlstring(L, (const char *)p, (size_t)len);
         p += len;
+        break;
+    }
+    case PACK_OBJECT:
+    {
+        jint ref;
+        if (!read_be32(&p, end, &ref) || ref < 0)
+            return 0;
+        lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
         break;
     }
     case PACK_ARRAY:
@@ -3825,21 +3836,13 @@ static void push_args(lua_State *L, JNIEnv *env, jobject obj, jlong lua, int sta
                 }
                 break;
             case LUA_TNUMBER:;
-                /* OPTIMIZED: Zero-copy read from byte[] (8-byte IEEE 754 double) */
+                /* Zero-copy read of the 8-byte IEEE 754 double build_args wrote. */
                 if (o) {
                     jbyte *ptr = (jbyte*)(*thread_env)->GetPrimitiveArrayCritical(thread_env, (jbyteArray)o, NULL);
                     if (ptr) {
-                        // Read 8 bytes as big-endian double
-                        jlong bits = ((jlong)(unsigned char)ptr[0] << 56) |
-                                     ((jlong)(unsigned char)ptr[1] << 48) |
-                                     ((jlong)(unsigned char)ptr[2] << 40) |
-                                     ((jlong)(unsigned char)ptr[3] << 32) |
-                                     ((jlong)(unsigned char)ptr[4] << 24) |
-                                     ((jlong)(unsigned char)ptr[5] << 16) |
-                                     ((jlong)(unsigned char)ptr[6] << 8) |
-                                     ((jlong)(unsigned char)ptr[7]);
-                        (*thread_env)->ReleasePrimitiveArrayCritical(thread_env, (jbyteArray)o, ptr, JNI_ABORT);
+                        jlong bits = get_be64(ptr);
                         double value;
+                        (*thread_env)->ReleasePrimitiveArrayCritical(thread_env, (jbyteArray)o, ptr, JNI_ABORT);
                         memcpy(&value, &bits, sizeof(double));
                         lua_pushnumber(L, value);
                     } else {
@@ -3872,11 +3875,9 @@ static void push_args(lua_State *L, JNIEnv *env, jobject obj, jlong lua, int sta
  * Memory cleanup:
  * 1. DeleteGlobalRef(values) - releases Java array reference
  * 2. DeleteGlobalRef(types) - releases Java array reference
- * 3. DeleteGlobalRef(number_cache) - releases cached byte[8] (if enabled for pair)
- * 4. DeleteGlobalRef(ref_cache) - releases cached byte[4] (if enabled for pair)
- * 5. DeleteGlobalRef(number_cache_pool[]) - releases cache pool (if enabled for args)
- * 6. DeleteGlobalRef(ref_cache_pool[]) - releases cache pool (if enabled for args)
- * 7. free(bytes_buffer) - releases malloc'd buffer
+ * 3. DeleteGlobalRef(number_cache_pool[]) - releases the cached byte[8] slots
+ * 4. DeleteGlobalRef(ref_cache_pool[]) - releases the cached byte[4] slots
+ * 5. free(bytes_buffer) - releases malloc'd buffer
  */
 static int gc_args(lua_State *L)
 {
@@ -3904,17 +3905,7 @@ static int gc_args(lua_State *L)
         args->types = NULL;
     }
     
-    /* ZERO-COPY OPTIMIZATION: Clean up single-value caches (pair) */
-    if (args->number_cache) {
-        (*thread_env)->DeleteGlobalRef(thread_env, args->number_cache);
-        args->number_cache = NULL;
-    }
-    if (args->ref_cache) {
-        (*thread_env)->DeleteGlobalRef(thread_env, args->ref_cache);
-        args->ref_cache = NULL;
-    }
-    
-    /* ZERO-COPY OPTIMIZATION: Clean up cache pools (args) */
+    /* Clean up the per-argument cache slots (a pool exists only on the args userdata) */
     for (int i = 0; i < ARGS_CACHE_POOL_SIZE; i++) {
         if (args->number_cache_pool[i]) {
             (*thread_env)->DeleteGlobalRef(thread_env, args->number_cache_pool[i]);
@@ -3970,8 +3961,7 @@ void jcall_table_pair_init(JNIEnv *env, jobject obj, jlong lua, jobjectArray key
     (*pair).values = (*thread_env)->NewGlobalRef(thread_env, keys);
     (*pair).types = (*thread_env)->NewGlobalRef(thread_env, types);
     (*pair).bytes_buffer = malloc(2);
-    (*pair).number_cache = NULL;  // pair doesn't use cache (only 1-2 values, direct alloc is fast)
-    (*pair).ref_cache = NULL;     // pair doesn't use cache
+    /* The pair userdata has no cache slots, so cache_slot() falls back to NewByteArray. */
     // Initialize cache pools to NULL for pair
     for (int i = 0; i < ARGS_CACHE_POOL_SIZE; i++) {
         (*pair).number_cache_pool[i] = NULL;
@@ -3988,14 +3978,11 @@ void jcall_table_pair_init(JNIEnv *env, jobject obj, jlong lua, jobjectArray key
     set_args_metatable(L); // Set metatable BEFORE storing GlobalRefs
     (*args).values = (*thread_env)->NewGlobalRef(thread_env, params);
     (*args).types = (*thread_env)->NewGlobalRef(thread_env, paramTypes);
-    (*args).bytes_buffer = malloc(33);
+    (*args).bytes_buffer = malloc(ARGS_CACHE_POOL_SIZE);
     
-    /* ZERO-COPY OPTIMIZATION: Pre-allocate cache pool for multi-param functions
-     * Each parameter gets its own cache slot to avoid aliasing bug
-     * Pool size: 33 slots (aligned with bytes_buffer capacity)
-     */
-    (*args).number_cache = NULL;  // Not used for args (use pool instead)
-    (*args).ref_cache = NULL;     // Not used for args (use pool instead)
+    /* Pre-allocate one cache slot per parameter so repeated calls reuse the byte[] instead of
+     * allocating one. Each parameter needs its own slot: sharing one would alias across arguments.
+     * The pool matches bytes_buffer, i.e. the widest argument list calljavafunction accepts. */
     
     // Initialize NUMBER cache pool (33 slots)
     for (int i = 0; i < ARGS_CACHE_POOL_SIZE; i++) {
@@ -4083,7 +4070,7 @@ static int pcall_table_pair_get(lua_State *L)
     {
         lua_gettable(L, index);
     }
-    build_args(L, -1 * count, -1, pair, pair->bytes_buffer, true, true);
+    build_args(L, -1 * count, -1, pair, pair->bytes_buffer, true);
     lua_pop(L, count);
     if (options & 1)
         lua_remove(L, index);
@@ -4134,7 +4121,7 @@ static int pcall_table_pair_push(lua_State *L)
             {
                 lua_pushvalue(L, -1);
                 lua_gettable(L, index);
-                build_args(L, -1, -1, pair, pair->bytes_buffer, true, true);
+                build_args(L, -1, -1, pair, pair->bytes_buffer, true);
                 lua_pop(L, 1);
             }
 
@@ -4325,306 +4312,153 @@ static JNINativeMethod luadebug_native_map[] = {
     {"lua_debugname", "()Ljava/lang/String;", (void *)jcall_debugname},
     {"lua_debugnamewhat", "()Ljava/lang/String;", (void *)jcall_debugnamewhat}};
 /* ---- JNI Entry Point and Library Initialization ---- */
-/**
- * JNI_OnLoad - Entry point for JNI library loading
- * This function is called when the JVM loads the native library.
- * It initializes all cached JNI variables, registers native methods,
- * and sets up the Java-Lua bridge infrastructure.
- * 
- * Key responsibilities:
- * 1. Store global Java VM pointer for thread-safe JNI access
- * 2. Cache Java class references for efficient access
- * 3. Cache method and field IDs for performance
- * 4. Register native methods with Java classes
- * 5. Initialize library state
- * 
- * @param vm Java VM pointer
- * @param reserved Reserved parameter (not used)
- * @return JNI version required by the library
- */
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
+
+/* ---- JNI cache tables ----
+ * Everything JNI_OnLoad resolves and JNI_OnUnload releases lives in these two tables, and both
+ * loops walk the same rows. Every entry used to be written out three times - a null initializer, a
+ * lookup, and a DeleteGlobalRef - so adding a cache meant editing three places that could drift.
+ *
+ * kind: 'f' = GetFieldID, 'm' = GetMethodID (a constructor is the name "<init>"), 's' =
+ * GetStaticMethodID. jmethodID/jfieldID are not references, so only the classes are released. */
+typedef struct
 {
-    JNIEnv *env;
+    jclass *slot;
+    const char *name;
+} JniClassEntry;
 
-    /* Store Java VM pointer globally for thread-safe JNI access */
-    java_vm = vm;
+typedef struct
+{
+    void **slot;
+    jclass *owner;
+    const char *name;
+    const char *signature;
+    char kind;
+} JniMemberEntry;
 
-    /* Get JNI environment for current thread */
-    env = get_jni_env();
+static const JniClassEntry jni_classes[] =
+{
+    { &luastate_class, "com/naef/jnlua/LuaState" },
+    { &luadebug_class, "com/naef/jnlua/LuaState$LuaDebug" },
+    { &javafunction_interface, "com/naef/jnlua/JavaFunction" },
+    { &luaruntimeexception_class, "com/naef/jnlua/LuaRuntimeException" },
+    { &luasyntaxexception_class, "com/naef/jnlua/LuaSyntaxException" },
+    { &luamemoryallocationexception_class, "com/naef/jnlua/LuaMemoryAllocationException" },
+    { &luagcmetamethodexception_class, "com/naef/jnlua/LuaGcMetamethodException" },
+    { &luamessagehandlerexception_class, "com/naef/jnlua/LuaMessageHandlerException" },
+    { &luastacktraceelement_class, "com/naef/jnlua/LuaStackTraceElement" },
+    { &luaerror_class, "com/naef/jnlua/LuaError" },
+    { &nullpointerexception_class, "java/lang/NullPointerException" },
+    { &illegalargumentexception_class, "java/lang/IllegalArgumentException" },
+    { &illegalstateexception_class, "java/lang/IllegalStateException" },
+    { &error_class, "java/lang/Error" },
+    { &integer_class, "java/lang/Long" },
+    { &double_class, "java/lang/Double" },
+    { &inputstream_class, "java/io/InputStream" },
+    { &outputstream_class, "java/io/OutputStream" },
+    { &ioexception_class, "java/io/IOException" }
+};
 
-    (*env)->EnsureLocalCapacity(env, 512);
-    (*env)->PushLocalFrame(env, LOCALFRAME_LARGE);
-    
-    /* Step 1: Initialize core classes and fields */
-    if (!(object_class = referenceclass(env, "java/lang/Object")))
-        return JNLUA_JNIVERSION;
-    
-    /* Cache Object.toString() method for type conversion fallback */
-    if (!(tostring_id = (*env)->GetMethodID(env, object_class, "toString", "()Ljava/lang/String;")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Step 2: Initialize LuaState class and its fields/methods */
-    if (!(luastate_class = referenceclass(env, "com/naef/jnlua/LuaState"))                           //
-        || !(luastate_id = (*env)->GetFieldID(env, luastate_class, "luaState", "J"))               // Field: native Lua state pointer
-        || !(luathread_id = (*env)->GetFieldID(env, luastate_class, "luaThread", "J"))               // Field: current Lua thread
-        || !(luaexecthread_id = (*env)->GetMethodID(env, luastate_class, "setExecThread", "(J)V")) // Method: set execution thread
-        || !(luamemorytotal_id = (*env)->GetFieldID(env, luastate_class, "luaMemoryTotal", "I"))   // Field: max memory allowed
-        || !(luamemoryused_id = (*env)->GetFieldID(env, luastate_class, "luaMemoryUsed", "I"))       // Field: current memory used
-        || !(yield_id = (*env)->GetFieldID(env, luastate_class, "yield", "Z"))                       // Field: yield flag for coroutines
-        || !(print_id = (*env)->GetStaticMethodID(env, luastate_class, "println", "(Ljava/lang/String;)V")) // Method: debug printing
-        || !(classname_id = (*env)->GetStaticMethodID(env, luastate_class, "getCanonicalName", "(Ljava/lang/Object;)[B"))) // Method: get class name
-    {
-        luastate_class = NULL;
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Register native methods for LuaState class */
-    (*env)->RegisterNatives(env, luastate_class, luastate_native_map, sizeof(luastate_native_map) / sizeof(luastate_native_map[0]));
+static const JniMemberEntry jni_members[] =
+{
+    /* LuaState fields and static methods */
+    { (void **)&luastate_id, &luastate_class, "luaState", "J", 'f' },
+    { (void **)&luathread_id, &luastate_class, "luaThread", "J", 'f' },
+    { (void **)&luamemorytotal_id, &luastate_class, "luaMemoryTotal", "I", 'f' },
+    { (void **)&luamemoryused_id, &luastate_class, "luaMemoryUsed", "I", 'f' },
+    { (void **)&yield_id, &luastate_class, "yield", "Z", 'f' },
+    { (void **)&print_id, &luastate_class, "println", "(Ljava/lang/String;)V", 's' },
+    { (void **)&classname_id, &luastate_class, "getCanonicalName", "(Ljava/lang/Object;)[B", 's' },
+    /* LuaState$LuaDebug - the debug structure handed across the bridge */
+    { (void **)&luadebug_init_id, &luadebug_class, "<init>", "(JZ)V", 'm' },
+    { (void **)&luadebug_field_id, &luadebug_class, "luaDebug", "J", 'f' },
+    /* JavaFunction - the callback Lua makes into Java */
+    { (void **)&invoke_id, &javafunction_interface, "JNI_call", "(Lcom/naef/jnlua/LuaState;JI)I", 'm' },
+    /* Exception types raised across the bridge */
+    { (void **)&luaruntimeexception_id, &luaruntimeexception_class, "<init>", "(Ljava/lang/String;)V", 'm' },
+    { (void **)&setluaerror_id, &luaruntimeexception_class, "setLuaError", "(Lcom/naef/jnlua/LuaError;)V", 'm' },
+    { (void **)&luasyntaxexception_id, &luasyntaxexception_class, "<init>", "(Ljava/lang/String;)V", 'm' },
+    { (void **)&luamemoryallocationexception_id, &luamemoryallocationexception_class, "<init>", "(Ljava/lang/String;)V", 'm' },
+    { (void **)&luagcmetamethodexception_id, &luagcmetamethodexception_class, "<init>", "(Ljava/lang/String;)V", 'm' },
+    { (void **)&luamessagehandlerexception_id, &luamessagehandlerexception_class, "<init>", "(Ljava/lang/String;)V", 'm' },
+    { (void **)&luastacktraceelement_id, &luastacktraceelement_class, "<init>", "(Ljava/lang/String;Ljava/lang/String;I)V", 'm' },
+    { (void **)&luaerror_id, &luaerror_class, "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V", 'm' },
+    { (void **)&setluastacktrace_id, &luaerror_class, "setLuaStackTrace", "([Lcom/naef/jnlua/LuaStackTraceElement;)V", 'm' },
+    /* Boxed numbers for Lua values reaching Java as objects */
+    { (void **)&valueof_integer_id, &integer_class, "valueOf", "(J)Ljava/lang/Long;", 's' },
+    { (void **)&valueof_double_id, &double_class, "valueOf", "(D)Ljava/lang/Double;", 's' },
+    /* Streams behind lua_load / lua_dump */
+    { (void **)&read_id, &inputstream_class, "read", "([B)I", 'm' },
+    { (void **)&write_id, &outputstream_class, "write", "([BII)V", 'm' }
+};
 
-    /* Step 3: Initialize LuaDebug class */
-    if (!(luadebug_class = referenceclass(env, "com/naef/jnlua/LuaState$LuaDebug")) // Inner class for debug info
-        || !(luadebug_init_id = (*env)->GetMethodID(env, luadebug_class, "<init>", "(JZ)V")) // Constructor
-        || !(luadebug_field_id = (*env)->GetFieldID(env, luadebug_class, "luaDebug", "J"))) // Field: native debug info pointer
-    {
-        luadebug_class = NULL;
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Register native methods for LuaDebug class */
-    (*env)->RegisterNatives(env, luadebug_class, luadebug_native_map, sizeof(luadebug_native_map) / sizeof(luadebug_native_map[0]));
-
-    /* Step 4: Initialize remaining classes and their methods/fields */
-    if (!(luatable_class = referenceclass(env, "com/naef/jnlua/LuaTable")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-
-    /* JavaFunction interface initialization */
-    if (!(javafunction_interface = referenceclass(env, "com/naef/jnlua/JavaFunction")) //
-        || !(invoke_id = (*env)->GetMethodID(env, javafunction_interface, "JNI_call", "(Lcom/naef/jnlua/LuaState;JI)I")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Exception classes initialization */
-    if (!(luaruntimeexception_class = referenceclass(env, "com/naef/jnlua/LuaRuntimeException")) || !(luaruntimeexception_id = (*env)->GetMethodID(env, luaruntimeexception_class, "<init>", "(Ljava/lang/String;)V")) || !(setluaerror_id = (*env)->GetMethodID(env, luaruntimeexception_class, "setLuaError", "(Lcom/naef/jnlua/LuaError;)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(luasyntaxexception_class = referenceclass(env, "com/naef/jnlua/LuaSyntaxException")) || !(luasyntaxexception_id = (*env)->GetMethodID(env, luasyntaxexception_class, "<init>", "(Ljava/lang/String;)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(luamemoryallocationexception_class = referenceclass(env, "com/naef/jnlua/LuaMemoryAllocationException")) || !(luamemoryallocationexception_id = (*env)->GetMethodID(env, luamemoryallocationexception_class, "<init>", "(Ljava/lang/String;)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(luagcmetamethodexception_class = referenceclass(env, "com/naef/jnlua/LuaGcMetamethodException")) || !(luagcmetamethodexception_id = (*env)->GetMethodID(env, luagcmetamethodexception_class, "<init>", "(Ljava/lang/String;)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(luamessagehandlerexception_class = referenceclass(env, "com/naef/jnlua/LuaMessageHandlerException")) || !(luamessagehandlerexception_id = (*env)->GetMethodID(env, luamessagehandlerexception_class, "<init>", "(Ljava/lang/String;)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(luastacktraceelement_class = referenceclass(env, "com/naef/jnlua/LuaStackTraceElement")) || !(luastacktraceelement_id = (*env)->GetMethodID(env, luastacktraceelement_class, "<init>", "(Ljava/lang/String;Ljava/lang/String;I)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(luaerror_class = referenceclass(env, "com/naef/jnlua/LuaError")) || !(luaerror_id = (*env)->GetMethodID(env, luaerror_class, "<init>", "(Ljava/lang/String;Ljava/lang/Throwable;)V")) || !(setluastacktrace_id = (*env)->GetMethodID(env, luaerror_class, "setLuaStackTrace", "([Lcom/naef/jnlua/LuaStackTraceElement;)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Java standard exception classes */
-    if (!(nullpointerexception_class = referenceclass(env, "java/lang/NullPointerException")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(illegalargumentexception_class = referenceclass(env, "java/lang/IllegalArgumentException")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(illegalstateexception_class = referenceclass(env, "java/lang/IllegalStateException")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(error_class = referenceclass(env, "java/lang/Error")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Java number classes for type conversion */
-    if (!(integer_class = referenceclass(env, "java/lang/Long")) || !(valueof_integer_id = (*env)->GetStaticMethodID(env, integer_class, "valueOf", "(J)Ljava/lang/Long;")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(double_class = referenceclass(env, "java/lang/Double"))                                                   //
-        || !(valueof_double_id = (*env)->GetStaticMethodID(env, double_class, "valueOf", "(D)Ljava/lang/Double;")) //
-        || !(double_value_id = (*env)->GetMethodID(env, double_class, "doubleValue", "()D")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    
-    /* Java I/O classes for stream integration */
-    if (!(inputstream_class = referenceclass(env, "java/io/InputStream")) || !(read_id = (*env)->GetMethodID(env, inputstream_class, "read", "([B)I")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(outputstream_class = referenceclass(env, "java/io/OutputStream")) || !(write_id = (*env)->GetMethodID(env, outputstream_class, "write", "([BII)V")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-    if (!(ioexception_class = referenceclass(env, "java/io/IOException")))
-    {
-        return JNLUA_JNIVERSION;
-    }
-
-    /* Initialize cached boolean byte arrays to avoid repeated allocation */
-    /* These arrays are used in build_args for boolean parameter passing */
-    {
-        jbyteArray true_array = (*env)->NewByteArray(env, 1);
-        if (true_array) {
-            jbyte true_val = '1';
-            (*env)->SetByteArrayRegion(env, true_array, 0, 1, &true_val);
-            boolean_true_bytes = (*env)->NewGlobalRef(env, true_array);
-            (*env)->DeleteLocalRef(env, true_array);
-        }
-        
-        jbyteArray false_array = (*env)->NewByteArray(env, 1);
-        if (false_array) {
-            jbyte false_val = '0';
-            (*env)->SetByteArrayRegion(env, false_array, 0, 1, &false_val);
-            boolean_false_bytes = (*env)->NewGlobalRef(env, false_array);
-            (*env)->DeleteLocalRef(env, false_array);
-        }
-        
-        if (!boolean_true_bytes || !boolean_false_bytes) {
-            return JNLUA_JNIVERSION;
-        }
-    }
-
-    /* Initialization complete */
-    (*env)->PopLocalFrame(env, NULL);
-    initialized = 1;
-    return JNLUA_JNIVERSION;
+/* Builds one of the two cached boolean byte[]s ("1" / "0") and keeps a global reference to it. */
+static int jni_new_boolean_bytes(JNIEnv *env, jbyteArray *slot, jbyte value)
+{
+    jbyteArray array = (*env)->NewByteArray(env, 1);
+    if (!array)
+        return 0;
+    (*env)->SetByteArrayRegion(env, array, 0, 1, &value);
+    *slot = (*env)->NewGlobalRef(env, array);
+    (*env)->DeleteLocalRef(env, array);
+    return *slot != NULL;
 }
 
-/**
- * JNI_OnUnload - Cleanup function called when JVM unloads the library
- * This function releases all global resources acquired during JNI_OnLoad,
- * including class references and native method registrations.
- * 
- * Key responsibilities:
- * 1. Unregister native methods from Java classes
- * 2. Delete global class references to free memory
- * 3. Release any other global resources
- * 4. Reset global state variables
- * 
- * @param vm Java VM pointer
- * @param reserved Reserved parameter (not used)
- */
-JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved)
+/* Resolves every class and member the bridge caches. Returns 0 at the first failure, having kept
+ * only what already succeeded; the caller frees that through jni_cache_free(). */
+static int jni_cache_init(JNIEnv *env)
 {
-    JNIEnv *env;
-    /* Get JNI environment for current thread */
-    env = get_jni_env();
+    size_t i;
 
-    /* Step 1: Unregister native methods and free LuaState class resources */
-    if (luastate_class)
+    for (i = 0; i < sizeof(jni_classes) / sizeof(jni_classes[0]); i++)
     {
-        (*env)->UnregisterNatives(env, luastate_class);
-        (*env)->DeleteGlobalRef(env, luastate_class);
+        jclass cached = referenceclass(env, jni_classes[i].name);
+        if (!cached)
+            return 0;
+        *jni_classes[i].slot = cached;
     }
-    
-    /* Step 2: Unregister native methods and free LuaDebug class resources */
-    if (luadebug_class)
+
+    for (i = 0; i < sizeof(jni_members) / sizeof(jni_members[0]); i++)
     {
-        (*env)->UnregisterNatives(env, luadebug_class);
-        (*env)->DeleteGlobalRef(env, luadebug_class);
+        const JniMemberEntry *entry = &jni_members[i];
+        void *member;
+
+        if (!*entry->owner)
+            return 0;
+        switch (entry->kind)
+        {
+        case 'f':
+            member = (*env)->GetFieldID(env, *entry->owner, entry->name, entry->signature);
+            break;
+        case 'm':
+            member = (*env)->GetMethodID(env, *entry->owner, entry->name, entry->signature);
+            break;
+        default:
+            member = (*env)->GetStaticMethodID(env, *entry->owner, entry->name, entry->signature);
+            break;
+        }
+        if (!member)
+            return 0;
+        *entry->slot = member;
     }
-    
-    /* Step 3: Free remaining class references */
-    if (object_class)
+
+    return jni_new_boolean_bytes(env, &boolean_true_bytes, '1') &&
+           jni_new_boolean_bytes(env, &boolean_false_bytes, '0');
+}
+
+/* Releases every class reference the tables hold and nulls each slot, so a failed JNI_OnLoad
+ * followed by JNI_OnUnload cannot release the same reference twice. Member IDs need no release. */
+static void jni_cache_free(JNIEnv *env)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof(jni_classes) / sizeof(jni_classes[0]); i++)
     {
-        (*env)->DeleteGlobalRef(env, object_class);
+        if (*jni_classes[i].slot)
+        {
+            (*env)->DeleteGlobalRef(env, *jni_classes[i].slot);
+            *jni_classes[i].slot = NULL;
+        }
     }
-    if (luatable_class)
-    {
-        (*env)->DeleteGlobalRef(env, luatable_class);
-    }
-    if (javafunction_interface)
-    {
-        (*env)->DeleteGlobalRef(env, javafunction_interface);
-    }
-    if (luaruntimeexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, luaruntimeexception_class);
-    }
-    if (luasyntaxexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, luasyntaxexception_class);
-    }
-    if (luamemoryallocationexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, luamemoryallocationexception_class);
-    }
-    if (luagcmetamethodexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, luagcmetamethodexception_class);
-    }
-    if (luamessagehandlerexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, luamessagehandlerexception_class);
-    }
-    if (luastacktraceelement_class)
-    {
-        (*env)->DeleteGlobalRef(env, luastacktraceelement_class);
-    }
-    if (luaerror_class)
-    {
-        (*env)->DeleteGlobalRef(env, luaerror_class);
-    }
-    if (nullpointerexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, nullpointerexception_class);
-    }
-    if (illegalargumentexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, illegalargumentexception_class);
-    }
-    if (illegalstateexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, illegalstateexception_class);
-    }
-    if (error_class)
-    {
-        (*env)->DeleteGlobalRef(env, error_class);
-    }
-    if (integer_class)
-    {
-        (*env)->DeleteGlobalRef(env, integer_class);
-    }
-    if (double_class)
-    {
-        (*env)->DeleteGlobalRef(env, double_class);
-    }
-    if (inputstream_class)
-    {
-        (*env)->DeleteGlobalRef(env, inputstream_class);
-    }
-    if (outputstream_class)
-    {
-        (*env)->DeleteGlobalRef(env, outputstream_class);
-    }
-    if (ioexception_class)
-    {
-        (*env)->DeleteGlobalRef(env, ioexception_class);
-    }
-    
-    /* Step 4: Free cached boolean byte arrays */
     if (boolean_true_bytes)
     {
         (*env)->DeleteGlobalRef(env, boolean_true_bytes);
@@ -4635,8 +4469,77 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved)
         (*env)->DeleteGlobalRef(env, boolean_false_bytes);
         boolean_false_bytes = NULL;
     }
+}
 
-    /* Release global Java VM pointer */
+/**
+ * JNI_OnLoad - called when the JVM loads this library.
+ *
+ * Resolves the cached JNI surface and registers the two native method maps. Any failure here
+ * leaves the bridge unusable, so it returns JNI_ERR: the VM then rejects the load and the caller
+ * sees an UnsatisfiedLinkError at loadLibrary, instead of getting a library that reported success
+ * and fails at the first call into a native method that was never registered.
+ *
+ * @param vm Java VM pointer
+ * @param reserved Reserved parameter (not used)
+ * @return the JNI version this library needs, or JNI_ERR
+ */
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
+{
+    JNIEnv *env;
+
+    /* Store Java VM pointer globally for thread-safe JNI access */
+    java_vm = vm;
+
+    env = get_jni_env();
+    if (!env)
+        return JNI_ERR;
+
+    (*env)->EnsureLocalCapacity(env, 512);
+    (*env)->PushLocalFrame(env, LOCALFRAME_LARGE);
+
+    if (!jni_cache_init(env))
+        goto fail;
+    if ((*env)->RegisterNatives(env, luastate_class, luastate_native_map,
+                                sizeof(luastate_native_map) / sizeof(luastate_native_map[0])) != 0)
+        goto fail;
+    if ((*env)->RegisterNatives(env, luadebug_class, luadebug_native_map,
+                                sizeof(luadebug_native_map) / sizeof(luadebug_native_map[0])) != 0)
+        goto fail;
+
+    (*env)->PopLocalFrame(env, NULL);
+    initialized = 1;
+    return JNLUA_JNIVERSION;
+
+fail:
+    jni_cache_free(env);
+    (*env)->PopLocalFrame(env, NULL);
+    java_vm = NULL;
+    return JNI_ERR;
+}
+
+/**
+ * JNI_OnUnload - called when the JVM unloads this library.
+ *
+ * Unregisters the native methods, then releases the cached class references. initialized is
+ * cleared and java_vm reset so no later entry point can run against a half-torn-down bridge.
+ *
+ * @param vm Java VM pointer
+ * @param reserved Reserved parameter (not used)
+ */
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved)
+{
+    JNIEnv *env = get_jni_env();
+
+    if (!env)
+        return;
+
+    if (luastate_class)
+        (*env)->UnregisterNatives(env, luastate_class);
+    if (luadebug_class)
+        (*env)->UnregisterNatives(env, luadebug_class);
+
+    jni_cache_free(env);
+    initialized = 0;
     java_vm = NULL;
 }
 
@@ -5190,7 +5093,7 @@ static int calljavafunction(lua_State *L)
     }
     
     if (n > 0) {
-        build_args(L, 1, n, args_ptr, args.bytes_buffer, false, true);
+        build_args(L, 1, n, args_ptr, args.bytes_buffer, false);
     }
 
     nresults = (*thread_env)->CallIntMethod(thread_env, javafunction, invoke_id, javastate, lua_ptr, n);
