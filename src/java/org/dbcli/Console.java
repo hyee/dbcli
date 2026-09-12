@@ -15,6 +15,7 @@ import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractTerminal;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
+import org.jline.terminal.impl.DumbTerminal;
 import org.jline.utils.*;
 import org.jline.widget.AutosuggestionWidgets;
 
@@ -60,9 +61,10 @@ public final class Console {
     boolean isPrompt = true;
     boolean isJNIConsole = false;
     ArrayList<AttributedString> titles = new ArrayList<>(2);
-    private LuaState lua;
+    private volatile LuaState lua;
     volatile private ScheduledFuture task;
-    private ActionListener event;
+    //read on the signal/event thread (callback) and written on the Lua thread (setEvents/setLua)
+    private volatile ActionListener event;
     private char[] keys;
     private final EventCallback callback;
     private ParserCallback parserCallback;
@@ -77,6 +79,18 @@ public final class Console {
     private Size prevSize = null;
     private Attributes originalAttributes = null;
     private Attributes savedAttributes = null;
+
+    private static int envInt(String name, int def) {
+        String value = System.getenv(name);
+        if (value != null) {
+            try {
+                int i = Integer.parseInt(value.trim());
+                if (i > 0) return i;
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return def;
+    }
 
     public Console(String historyLog) throws Exception {
         colorPlan = "dbcli";
@@ -103,13 +117,20 @@ public final class Console {
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
                 && !"jna".equals(mode)
                 && !"ffm".equals(mode)) {
-            this.terminal = WinSysTerminal.createTerminal(colorPlan,
-                    null,
-                    "ansicon".equals(mode) || "conemu".equals(mode),
-                    encoding, true,
-                    Terminal.SignalHandler.SIG_IGN,
-                    false);
-        } else {
+            try {
+                this.terminal = WinSysTerminal.createTerminal(colorPlan,
+                        null,
+                        "ansicon".equals(mode) || "conemu".equals(mode),
+                        encoding, true,
+                        Terminal.SignalHandler.SIG_IGN,
+                        false);
+            } catch (IOException e) {
+                //No console attached (redirected stdio / harness / background): fall through to the generic
+                //builder, which yields a dumb terminal instead of aborting before anything can be printed.
+                this.terminal = null;
+            }
+        }
+        if (this.terminal == null) {
             this.terminal = (AbstractTerminal) TerminalBuilder
                     .builder()
                     .system(true)
@@ -122,6 +143,13 @@ public final class Console {
                     .nativeSignals(true)
                     .signalHandler(Terminal.SignalHandler.SIG_IGN)
                     .build();
+        }
+        //A dumb terminal carries no size, which degenerates every width-dependent layout (grid/colwrap/line
+        //trimming). Defaults are unchanged; DBCLI_COLS/DBCLI_ROWS (or COLUMNS/LINES) opt into a fixed size.
+        if (this.terminal instanceof DumbTerminal) {
+            int cols = envInt("DBCLI_COLS", envInt("COLUMNS", 0));
+            int rows = envInt("DBCLI_ROWS", envInt("LINES", 0));
+            if (cols > 0 && rows > 0) terminal.setSize(new Size(cols, rows));
         }
         //Capture the pristine (cooked) terminal state before dbcli ever enters raw mode; restored when handing the console to a native child.
         this.originalAttributes = terminal.getAttributes();
@@ -154,27 +182,7 @@ public final class Console {
         //terminal.echo(false); //fix paste issue of iTerm2 when past is off
         enableBracketedPaste("on");
         keyMap = reader.getKeyMaps().get(LineReader.MAIN);
-        setKeyCode(LineReader.BACKWARD_DELETE_CHAR, Character.toString('\177'));
-        for (String s : new String[]{"^_", "^[^H"}) setKeyCode(LineReader.BACKWARD_KILL_WORD, s);
-        //deal with keys ctrl+arrow and alt+Arrow
-        for (String s : new String[]{"^[[", "[1;2", "[1;3", "[1;5", "O", "["}) {
-            s = "^[" + s;
-            if (keyMap.getBound(KeyMap.translate(s + "A")) == null) {
-                setKeyCode(LineReader.UP_HISTORY, s + "A");
-                setKeyCode(LineReader.DOWN_HISTORY, s + "B");
-                setKeyCode(LineReader.FORWARD_WORD, s + "C");
-                setKeyCode(LineReader.BACKWARD_WORD, s + "D");
-            }
-        }
-
-        //alt+y and alt+z
-        setKeyCode("redo", "^[y");
-        setKeyCode("undo", "^[z");
-
-        if (!OSUtils.IS_OSX) {
-            setKeyCode(LineReader.BEGINNING_OF_LINE, "^[[1~");
-            setKeyCode(LineReader.END_OF_LINE, "^[[4~");
-        }
+        initTerminalKeys();
 
         input = terminal.reader();
         writer = new Output(terminal.writer());
@@ -185,21 +193,27 @@ public final class Console {
             @Override
             public void call(Object... c) {
                 increaseCancelSeq();
-                if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
-                    long[] keyData = new long[8];
-                    if (c[0] instanceof long[]) {
-                        System.arraycopy((long[]) c[0], 0, keyData, 0, keyData.length);
-                    } else {
-                        keyData[2] = '\3';
+                if (c.length > 0) {
+                    if (!pause && lua != null && threadID == Thread.currentThread().getId()) {
+                        long[] keyData = new long[8];
+                        final boolean isKeyArray = c[0] instanceof long[];
+                        if (isKeyArray) {
+                            System.arraycopy((long[]) c[0], 0, keyData, 0, keyData.length);
+                        } else {
+                            keyData[2] = '\3';
+                        }
+                        lua.getGlobal("TRIGGER_EVENT");
+                        Object r = lua.call(keyData, c.length > 1 ? String.valueOf(c[1]) : "CTRL+C")[0];
+                        //2 means "the key was consumed": write it back into the caller's key array, which only
+                        //exists when the event arrived as one (a CTRL+C ActionEvent carries no key array).
+                        if (isKeyArray && r instanceof Number && ((Number) r).intValue() == 2) {
+                            ((long[]) c[0])[0] = 2;
+                        }
+                    } else if (event != null) {
+                        //The event itself is c[0]; c[1] only carries the key name for the TRIGGER_EVENT call.
+                        if (c[0] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
+                        else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                     }
-                    lua.getGlobal("TRIGGER_EVENT");
-                    Object r = lua.call(keyData, c.length > 1 ? String.valueOf(c[1]) : "CTRL+C")[0];
-                    if (r instanceof Number && ((Number) r).intValue() == 2) {
-                        ((long[]) c[0])[0] = 2;
-                    }
-                } else if (event != null) {
-                    if (c[1] instanceof ActionEvent) event.actionPerformed((ActionEvent) c[0]);
-                    else event.actionPerformed(new ActionEvent(this, ActionEvent.ACTION_PERFORMED, "\3"));
                 }
 
                 if (titles.size() > 0) {
@@ -218,6 +232,67 @@ public final class Console {
         display = new Display(terminal, false);
         prevSize = new Size(getScreenHeight(), getBufferWidth());
         terminal.handle(Terminal.Signal.WINCH, this::handleResize);
+    }
+
+    //Widgets to use for A/B/C/D (up/down/right/left), and the modifier numbers of the two CSI forms:
+    //CSI 1;<n><final> and CSI <n><final>, where n-1 is SHIFT|ALT|CTRL (2=Shift 3=Alt 5=Ctrl 6=Ctrl+Shift ...).
+    private static final String[] ARROW_WIDGETS = {
+        LineReader.UP_HISTORY, LineReader.DOWN_HISTORY, LineReader.FORWARD_WORD, LineReader.BACKWARD_WORD};
+    private static final char[] ARROW_FINALS = {'A', 'B', 'C', 'D'};
+    private static final String[] ARROW_MODS =
+            {"1;2", "1;3", "1;4", "1;5", "1;6", "1;7", "1;8", "2", "3", "4", "5", "6", "7", "8"};
+    private static final String SENTINEL_INSERT = "dbcli-sentinel-insert";
+
+    //Terminals disagree on how a modified arrow key is encoded, and the terminfo Linux/mac provides makes JLine
+    //pre-bind the forms it knows (Shift+arrows end up on `beep`), so the encodings are bound here explicitly.
+    private void initTerminalKeys() throws IOException {
+        //Backspace: DEL, plus the "no character" sentinel U+FFFF ((char)-1) that MSYS/ConPTY terminals report for
+        //the backspace key. A code point >= KeyMap.KEYMAP_LENGTH cannot live in a keymap, so the sentinel is only
+        //reachable through the keymap's unicode fallback.
+        setKeyCode(LineReader.BACKWARD_DELETE_CHAR, Character.toString('\177'));
+        reader.getWidgets().put(SENTINEL_INSERT, this::insertOrDelete);
+        keyMap.setUnicode(new Reference(SENTINEL_INSERT));
+        //Delete a word: Ctrl+_, Ctrl+W, Alt+Backspace (ESC BS on the Windows console, ESC DEL elsewhere).
+        for (String s : new String[]{"^_", "\027"}) setKeyCode(LineReader.BACKWARD_KILL_WORD, s);
+        for (String s : new String[]{"^[^H", "^[\177"}) setKeyCode(LineReader.BACKWARD_KILL_WORD, s);
+        //Word motion and history: the xterm CSI 1;<n><final> form (what JLine synthesises for the Windows console,
+        //and what xterm/gnome-terminal/iTerm2/Windows Terminal send), the legacy CSI <n><final> form (rxvt, PuTTY,
+        //Xshell's "CSI 5" mode, TERM=linux), rxvt's CSI a-d / SS3 a-d forms, and the ESC-prefixed forms of
+        //terminals that pass Alt through as a leading ESC.
+        for (String m : ARROW_MODS)
+            for (int i = 0; i < ARROW_FINALS.length; i++) setKeyCode(ARROW_WIDGETS[i], "^[[" + m + ARROW_FINALS[i]);
+        for (String p : new String[]{"^[[", "^[O"})
+            for (int i = 0; i < ARROW_FINALS.length; i++) {
+                setKeyCode(ARROW_WIDGETS[i], p + (char) ('a' + i));
+                setKeyCode(ARROW_WIDGETS[i], "^[" + p + ARROW_FINALS[i]);
+            }
+        //A plain arrow keeps whatever the terminal capability bound (char motion, up-line-or-search); whose CSI/SS3
+        //form is still free is worth binding, since that is then the only encoding the terminal can send.
+        for (String p : new String[]{"^[[", "^[O"})
+            for (int i = 0; i < ARROW_FINALS.length; i++)
+                if (keyMap.getBound(KeyMap.translate(p + ARROW_FINALS[i])) == null)
+                    setKeyCode(ARROW_WIDGETS[i], p + ARROW_FINALS[i]);
+        //Home / End: xterm-style ^[[1~/^[[4~, plus the CSI form used by macOS Terminal.app and VT consoles.
+        if (!OSUtils.IS_OSX) {
+            setKeyCode(LineReader.BEGINNING_OF_LINE, "^[[1~");
+            setKeyCode(LineReader.END_OF_LINE, "^[[4~");
+        }
+        for (String s : new String[]{"^[[H", "^[OH"}) setKeyCode(LineReader.BEGINNING_OF_LINE, s);
+        for (String s : new String[]{"^[[F", "^[OF"}) setKeyCode(LineReader.END_OF_LINE, s);
+        //alt+y / alt+z for redo / undo. The shifted (ESC Y / ESC Z) and the ^X^R / ^X^U chords are bound too:
+        //a terminal that uppercases the Alt+letter would otherwise land on JLine's `do-lowercase-version` and
+        //corrupt the line, and JLine's own ^X^R/^X^U only exist on its emacs keymap. On macOS Option+z/y types a
+        //special character instead of ESC+z/y (profile setting), so the ^X^R / ^X^U pair is the reliable one there.
+        for (String s : new String[]{"^[y", "^[Y", "^X^R"}) setKeyCode("redo", s);
+        for (String s : new String[]{"^[z", "^[Z", "^X^U"}) setKeyCode("undo", s);
+    }
+
+    //The keymap's unicode fallback: every unbound character lands here. U+FFFF is the backspace sentinel of the
+    //console/ConPTY terminals, anything else is normal text.
+    private boolean insertOrDelete() {
+        if ("\uffff".equals(reader.getLastBinding())) reader.callWidget(LineReader.BACKWARD_DELETE_CHAR);
+        else reader.callWidget(LineReader.SELF_INSERT);
+        return true;
     }
 
     public void initDisplay() {
@@ -257,14 +332,14 @@ public final class Console {
 
     public void handleResize(Terminal.Signal signal) {
         Size size = terminal.getBufferSize();
-        if (size.getRows() > 1
-                && prevSize != null
+        if (prevSize != null && size.getRows() > 1
                 && prevSize.getColumns() == size.getColumns()
                 && prevSize.getRows() == size.getRows()) {
             return;
         }
 
-        prevSize.copy(size);
+        if (prevSize == null) prevSize = new Size(size.getColumns(), size.getRows());   //a WINCH before the ctor
+        else prevSize.copy(size);
 
         if (status != null && !status.isHided() && !status.isSuspended()) {
             status.close();
@@ -515,12 +590,18 @@ public final class Console {
                 pause = true;
             }
             return line;
+        } catch (EndOfFileException eof) {
+            //Ctrl+D on a console, or the end of a redirected/piped stdin: not an error. Still counts towards
+            //the limit so a prompt loop that keeps re-reading (env.ask) cannot spin forever, but reports
+            //"no more input" instead of "" -- input.lua then runs env.exit() and the session closes cleanly.
+            ++cancelSeq;
+            return null;
         } catch (Throwable e) {
             timer.stop();
             ++cancelSeq;
             try {
                 if (cancelSeq >= 5) {
-                    System.out.println("Detected 5 readLine errors, terminating the console to avoid blocking in backgound.");
+                    System.out.println("Detected 5 readLine errors, terminating the console to avoid blocking in background.");
                     System.out.flush();
                     if (status != null) {
                         this.status.close();
@@ -760,8 +841,10 @@ public final class Console {
             if (ansi.equals(this.ansi)) return;
             this.ansi = ansi;
             Matcher m = numPattern.matcher(ansi);
-            m.find();
-            this.errorAnsi = Integer.valueOf(m.group(1)) > 50 ? "\33[91m" : "\33[31m";
+            //A colour sequence needs no parameter ("\33[m" is a plain reset), and ansiPattern accepts that,
+            //so fall back to the default red instead of letting group(1) throw out of highlight setup.
+            int severity = m.find() ? Integer.parseInt(m.group(1)) : 0;
+            this.errorAnsi = severity > 50 ? "\33[91m" : "\33[31m";
             enabled = !ansi.equals(NOR);
             for (String key : colors.keySet()) {
                 String value;

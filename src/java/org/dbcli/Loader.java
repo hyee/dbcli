@@ -44,7 +44,8 @@ public class Loader {
     private static Loader loader = null;
     KeyMap keyMap;
     KeyListner q = new KeyListner('q');
-    Future sleeper;
+    //written by the Lua thread (asyncCall/sleep) and cancelled from the signal thread (KeyListner)
+    volatile Future<?> sleeper;
     private volatile Statement stmt = null;
     private final Sleeper runner = new Sleeper();
     private volatile ResultSet rs;
@@ -385,7 +386,9 @@ public class Loader {
         t.start();
         ArrayList<String> messages = new ArrayList<>();
         String str;
-        while (t.isAlive()) {
+        //Drain until the producer is gone AND the queue is empty: the row flusher below can break out of the
+        //inner loop with rows still queued, and those rows must not be dropped when the thread has just died.
+        while (t.isAlive() || !queue.isEmpty()) {
             while ((str = queue.poll(timeout, TimeUnit.MILLISECONDS)) != null) {
                 messages.add(str);
                 if (messages.size() >= console.getScreenHeight() * 3) break;
@@ -462,14 +465,13 @@ public class Loader {
     public String inflate(byte[] data) throws Exception {
         ByteArrayInputStream bis = new ByteArrayInputStream(data);
         InflaterInputStream iis;
-        try {
+        //InflaterInputStream's constructor never reads, so it cannot detect a foreign container: pick the
+        //stream from the magic bytes instead (gzip 1f 8b; everything else is zlib). The old "try inflater,
+        //fall back to GZIP" pair could never fire, because the inflater is only fed on the first read.
+        if (data.length > 1 && (data[0] & 0xFF) == 0x1F && (data[1] & 0xFF) == 0x8B) {
+            iis = new GZIPInputStream(bis);
+        } else {
             iis = new InflaterInputStream(bis);
-        } catch (Exception e1) {
-            try {
-                iis = new GZIPInputStream(bis);
-            } catch (Exception e2) {
-                throw e1;
-            }
         }
 
         try (Closeable ignored = iis; ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
@@ -558,7 +560,12 @@ public class Loader {
             e = getRootCause(e);
             throw e;
         } finally {
-            if (rs != null && !rs.isClosed()) rs.close();
+            //Never let the cleanup replace the real failure: a throwing close() would mask the statement's
+            //own exception with a "ResultSet is closed" one.
+            try {
+                if (rs != null && !rs.isClosed()) rs.close();
+            } catch (Throwable ignored) {
+            }
             sleeper = null;
             rs = null;
             isAsync = false;

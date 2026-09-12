@@ -11,6 +11,7 @@
 .idea
 .workbuddy
 .github
+\agent-out\
 \jre\
 \src\
 \cache\
@@ -56,6 +57,7 @@ dbcli_agent.bat
 dbcli_x64.bat
 dbcli_ibm.bat
 dbcli_mysql.bat
+dbcli.iml
 .xplan_settings
 user.xml
 NULL

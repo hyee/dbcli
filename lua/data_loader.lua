@@ -291,8 +291,6 @@ function this:parse_options(src_file,options)
                 local maps
                 if value then maps=value:match("^%b()$") else maps=next_token("%b()",false) end
                 env.checkerr(maps,"Invalid option \""..opt:upper().."\" value: "..(value or "nil"))
-                --JNLua hands a nested table to an Object-typed parameter as a proxy rather than a
-                --Map, so the pairs travel as text and UserConfig parses them back
                 local list={}
                 for csv_col,table_col in maps:sub(2,-2):gmatch("%s*([^=, ]+)%s*=%s*([^, ]+)") do
                     list[#list+1]=csv_col:upper()..'='..table_col:trim()
