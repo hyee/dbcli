@@ -20,7 +20,8 @@ mysql.module_list={
     "dict",
     "xplan",
     "autotrace",
-    "mysqluc"
+    "mysqluc",
+    "dataload"
 }
 
 function mysql:ctor(isdefault)

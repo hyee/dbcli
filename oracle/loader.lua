@@ -1,8 +1,5 @@
 local env=env
 local loader=env.class(env.data_loader)
-function loader:ctor()
-    self.db=env.getdb()
-end
 
 function loader.init_options(options)
     options.VARIABLE_FORMAT=':'

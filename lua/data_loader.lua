@@ -1,13 +1,26 @@
 local this=env.class()
 local env=env
 
+--Oracle -> Java date format pieces, applied in order: 'mm'->'MM' has to run before 'mi'->'mm',
+--or the minutes that 'mi' just produced get matched again and turn into a month. pairs() over an
+--inline table gave no order at all.
+local ORA2JAVA={
+    {'tzh:tzm','XXX'},
+    {'tzr','XXX'},
+    {'"',"'"},
+    {'hh24','HH'},
+    {'mon','MMM'},
+    {'mm','MM'},
+    {'mi','mm'},
+}
+
 local db_loader=java.require("com.opencsv.DBLoader",true)
 local db_unloader=java.require("com.opencsv.DBUnloader",true)
-function this:ctor()
-    self.load_command='load'
-    self.unload_command='unload'
-    self.db=env.getdb()
-    self.load_helps=[[
+--Command names and help texts live on the class rather than in a ctor: __onload runs against
+--whatever this module returns, and it returns an instance created before any database is loaded.
+this.load_command='load'
+this.unload_command='unload'
+this.load_helps=[[
         Load data from a CSV file into a table. usage: @@NAME <target_table> <src_csv> [SET options]
 
         Load options(case-insensitive):
@@ -38,7 +51,7 @@ function this:ctor()
         * delimiter <chars>                                         : CSV delimiter character (default: ,)
         * enclosure <chars>                                         : CSV enclosure character (default: ")
         * escape_char <char>                                        : CSV escape character to escape <enclosure> (default: \)
-        * unescape_string|unescape                                  : Whether to unescape string "\n" and "\r" as CRLF for string column (default: off)
+        * unescape_string|unescape                                  : Whether to unescape string "\n" and "\r" as CRLF for string column (default: on)
         * skip_rows|skiprows|skip <number>                          : Number of rows to skip if CSV rows is not started from the first row (default: 0)
         * skip_columns|skipcols (column1,column2,...)|off|auto      : Columns to be skipped from loading (default: auto)
         
@@ -65,7 +78,7 @@ function this:ctor()
         * locale <locale>                                           : Locale used to parse date/timestamp (default: "")
     ]]
 
-    self.unload_helps=[[
+this.unload_helps=[[
         Unload data from SELECT statement into CSV/SQL/JSON file. usage: @@NAME <savepath> <SQL_file>|"<SQL>" [SET <options>]
 
         Unload options(case-insensitive):
@@ -122,7 +135,6 @@ function this:ctor()
         * timestamptz_format|timestamptzformat|timestamptz <format> : Timestamp with timezone format string (default: auto)
         * locale <locale>                                           : Locale used to parse date/timestamp (default: "")
     ]]
-end
 
 function this:parse_options(src_file,options)
     local typ,file=os.exists(src_file)
@@ -136,28 +148,25 @@ function this:parse_options(src_file,options)
     --env.checkerr(typ=="file","Target file %s does not exist.",src_file)
     local function next_token(pattern,lower)
         if options:sub(1,1)=='"' then
-            local st,ed=(options..' '):find('"[^"]+"%s')
-            env.checkerr(st,"Unrecognized options: "..options)
-            local piece=options:sub(st,ed):trim():sub(2,-2):trim()
-            options=options:sub(ed):trim()
+            --a quoted token is taken verbatim: trim() used to eat `delimiter " "` down to nothing
+            local ed=options:find('"',2,true)
+            env.checkerr(ed,"Unrecognized options: "..options)
+            local piece=options:sub(2,ed-1)
+            options=options:sub(ed+1):trim()
             return lower~=false and piece:lower() or piece,piece
-        else
-            local st,ed=options:find('^'..(pattern or '%S+'))
-            if st then
-                local piece=options:sub(st,ed)
-                options=options:sub(ed+1):trim()
-                return lower~=false and piece:lower() or piece,piece
-            end
-            return nil
         end
+        local st,ed=options:find('^'..(pattern or '%S+'))
+        if not st then return nil end
+        local piece=options:sub(st,ed)
+        options=options:sub(ed+1):trim()
+        return lower~=false and piece:lower() or piece,piece
     end
 
     local cfg={TARGET_FILE=file}
-    local function push(opt,value,upper)
-        if type(value)=="string" then 
-            value=value:trim()
-            if upper~=false then value=value:upper() end
-        end
+    --keepcase: enumerated values are normalised to upper case, everything else (a charset, a
+    --locale tag, a delimiter, the JSON null literal) travels verbatim
+    local function push(opt,value,keepcase)
+        if type(value)=="string" and not keepcase then value=value:upper() end
         cfg[opt:upper()]=value
     end
 
@@ -175,7 +184,7 @@ function this:parse_options(src_file,options)
         skip_columns={"auto"},
         scan_rows={200},
         report_mb={8},
-        trict_mode={"off","on"},
+        strict_mode={"off","on"},
         variable_format={"?",":"},
         json_row_type={"object","array"},
         json_keep_nulls={"on","off"},
@@ -195,23 +204,27 @@ function this:parse_options(src_file,options)
         encoding={"auto"}
     }
 
-    for n,v in pairs(names) do
-        v.name=n
-        if #v>1 then
+    --v[1] is the default, v[2] what a bare option falls back to, v.name the cfg key it writes
+    local function add_option(n,v)
+        names[n]=v
+        v.name=v.name or n
+        if #v>1 and not v.maps then
             local maps={}
-            for _,v in ipairs(v) do
-                maps[v:upper()]=true
-            end
+            for i=1,#v do maps[v[i]:upper()]=true end
             v.maps=maps
         end
-        push(n,v[1])
+    end
+
+    for n,v in pairs(names) do
+        add_option(n,v)
+        push(n,v[1],v.maps==nil)
     end
 
     push("platform",env.set.get("platform"))
-    for _,v in ipairs(names.file_format) do
-        if file:lower():find('.'..v,1,true) then
-            push('FILE_FORMAT',v)
-        end
+    local ext=file:match("%.([^%.\\/]*)$")
+    if ext then
+        ext=ext:lower()
+        if names.file_format.maps[ext:upper()] then push('FILE_FORMAT',ext) end
     end
 
     for n,v in pairs{
@@ -219,10 +232,10 @@ function this:parse_options(src_file,options)
         file_type=names.file_format,
         new=names.create,
         show_ddl={"ddl","ddl",name="show"},
-        show_dml={"dml","ddl",name="show"},
+        show_dml={"dml","dml",name="show"},
         ddl={"ddl","ddl",name="show"},
-        dml={"dml","ddl",name="show"},
-        strict=names.trict_mode,
+        dml={"dml","dml",name="show"},
+        strict=names.strict_mode,
         badfile=names.bad_file,
         jsonrowtype=names.json_row_type,
         json_type=names.json_row_type,
@@ -252,14 +265,7 @@ function this:parse_options(src_file,options)
         unescape=names.unescape_string,
         locale={""}
     } do
-        names[n]=v
-        if #v>1 then
-            local maps={}
-            for _,v in ipairs(v) do
-                maps[v:upper()]=true
-            end
-            v.maps=maps
-        end
+        add_option(n,v)
     end
 
     if self.init_options then
@@ -274,6 +280,7 @@ function this:parse_options(src_file,options)
             opt,org=next_token()
             local name,value,low=(org or ""):match("^([^= ]+)%s*=%s*(.*)$")
             if name then
+                value=value:trim()
                 opt,low=name:lower(),value:lower()
             end
             ::parse_opt::
@@ -281,26 +288,28 @@ function this:parse_options(src_file,options)
             local val=names[opt]
             env.checkerr(val,"Unrecognized option: "..opt:upper())
             if val.name=="map_column_names" then
-                local maps=not low and next_token("%b()") or low:match("^%b()$");
-                
-                if not maps then
-                    local next_=(low or "nil")
-                    env.checkerr(maps,"Invalid option \""..opt:upper().."\" value: "..next_)
+                local maps
+                if value then maps=value:match("^%b()$") else maps=next_token("%b()",false) end
+                env.checkerr(maps,"Invalid option \""..opt:upper().."\" value: "..(value or "nil"))
+                --JNLua hands a nested table to an Object-typed parameter as a proxy rather than a
+                --Map, so the pairs travel as text and UserConfig parses them back
+                local list={}
+                for csv_col,table_col in maps:sub(2,-2):gmatch("%s*([^=, ]+)%s*=%s*([^, ]+)") do
+                    list[#list+1]=csv_col:upper()..'='..table_col:trim()
                 end
-                local mappings={}
-                for csv_col,table_col in maps:sub(2,-2):gmatch("%s*([^= ]+)%s*=%s*([^, ]+)") do
-                    mappings[csv_col:upper()]=table_col
-                end
-                push(val.name,mappings)
+                env.checkerr(#list>0,"Invalid option \""..opt:upper().."\" value: "..maps)
+                push(val.name,table.concat(list,','),true)
             elseif val.name=="skip_columns" then
-                local cols=not low and next_token("%b()") or low:match("^%b()$");
-                if cols then
-                    push(val.name,cols)
+                --a parenthesised list, or the bare words auto/off
+                local cols
+                if value then
+                    cols=value
                 else
-                    cols=low
-                    env.checkerr(cols=="off" or cols=="auto","Invalid option \""..opt:upper().."\" value: "..(cols or "nil"))
-                    push(val.name,cols)
+                    cols=next_token("%b()") or next_token()
                 end
+                local list=cols and cols:match("^%b()$")
+                env.checkerr(list or cols=="off" or cols=="auto","Invalid option \""..opt:upper().."\" value: "..(cols or "nil"))
+                push(val.name,cols)
             elseif val.name=='bad_file' then
                 local fmt=value or next_token(nil,false)
                 env.checkerr(fmt and not names[fmt:lower()],"Invalid option \""..opt:upper().."\" value: "..(fmt or "nil"))
@@ -310,7 +319,7 @@ function this:parse_options(src_file,options)
                         fmt=env.join_path(env._CACHE_BASE,fmt)
                     end
                 end
-                push(val.name,fmt,false)
+                push(val.name,fmt,true)
             elseif val.name=="date_format" or val.name=="timestamp_format" or val.name=="timestamptz_format" then
                 local fmt=value or next_token(nil,false)
                 env.checkerr(fmt and not names[fmt:lower()],"Invalid option \""..opt:upper().."\" value: "..(fmt or "nil"))
@@ -318,45 +327,33 @@ function this:parse_options(src_file,options)
                     fmt=fmt:lower()
                     fmt=fmt:gsub('%.(S+)',function(s) return '.'..s:upper() end)
                     fmt=fmt:gsub('([%.x]ff)(%d*)',function(s,d) return '.'..('S'):rep(tonumber(d) or 3) end)
-                    for k,v in pairs{
-                        ['mm']='MM',
-                        ['mon']='MMM',
-                        ['hh24']='HH',
-                        ['mi']='mm',
-                        ['"']="'",
-                        ['tzh:tzm']='XXX',
-                        ['tzr']='XXX'
-                    } do
-                        fmt=fmt:gsub(k,v)
+                    for i=1,#ORA2JAVA do
+                        fmt=fmt:gsub(ORA2JAVA[i][1],ORA2JAVA[i][2])
                     end
                     fmt=fmt:gsub('z$','Z'):gsub('(x+)$',function(s) return '.'..s:upper() end)
                 end
-                push(val.name,fmt,false)
+                push(val.name,fmt,true)
             elseif type(val[1])=="number" then
                 local num=low or next_token()
                 env.checkerr(num and tonumber(num),"Invalid option \""..opt:upper().."\" value: "..(num or "nil"))
                 push(val.name,tonumber(num))
             else
-                local option=low or next_token() or ""
-                if val.maps then
-                    if val.maps[option:upper()] then
-                        push(val.name,option)
-                    else
-                        if option=='' or names[option] then
-                            push(val.name,val[2])
-                            if option=='' then
-                                break
-                            end
-                        end
-                        opt=option
-                        goto parse_opt
-                    end
-                elseif option then
-                    if names[option] then
-                        goto parse_opt
-                    else
-                        push(val.name,option)
-                    end
+                --raw keeps the user's spelling, option is the lowercased form used for lookups
+                local raw=value or next_token(nil,false) or ""
+                local option=raw:lower()
+                if val.maps and val.maps[option:upper()] then
+                    push(val.name,option)
+                elseif option~="" and not names[option] then
+                    --neither a listed value nor another option name, so it is a free-form value
+                    env.checkerr(not val.maps,"Invalid option \""..opt:upper().."\" value: "..option)
+                    push(val.name,raw,true)
+                else
+                    push(val.name,val[2] or val[1],val.maps==nil)
+                    if option=="" then break end
+                    --low/value belong to the token just consumed; carrying them into the next
+                    --round made `set create=new` re-read the same value forever
+                    opt,value,low=option,nil,nil
+                    goto parse_opt
                 end
             end
         end
@@ -370,11 +367,14 @@ function this:load(target_table,src_file,options)
     env.checkhelp(src_file)
     local cfg,typ=self:parse_options(src_file,options)
     env.checkerr(typ=="file","Target file %s does not exist.",src_file)
-    local db=self.db
+    local db=env.getdb()
     if db:is_connect() and db.check_obj then
-        local validate=cfg.CREATE=='OFF' and cfg.show~='OFF'
-        local obj=db:check_obj(target_table,validate and 1 or 0)
-        env.checkerr(not validate or obj and obj.object_name,"Cannot find target object: "..target_table)
+        --check_obj raises DBC-00631 unless it is told to bypass, and with create=on the target is
+        --supposed to be missing, so the lookup always bypasses and the check happens here instead
+        local obj=db:check_obj(target_table,1)
+        --a dry run prints the DDL and DML for a table that need not exist yet either
+        local optional=cfg.CREATE~='OFF' or cfg.SHOW~='OFF'
+        env.checkerr((obj and obj.object_name) or optional,"Cannot find target object: "..tostring(target_table))
         if obj and obj.object_name then
             target_table=obj.object_fullname or obj.object_name
             cfg.TARGET_TABLE=obj.target_table
@@ -394,7 +394,7 @@ function this:load(target_table,src_file,options)
     local importer=db_loader.new(db.conn,cfg)
     local proxy=java.proxy({
         call=function(...)
-            local rows=importer:importCSVData(target_table,cfg.TARGET_FILE)
+            importer:importCSVData(target_table,cfg.TARGET_FILE)
         end
     },"org.dbcli.EventCallback")
     loader:doCall(importer,proxy)
@@ -403,15 +403,18 @@ end
 function this:unload(target_file,query,options)
     env.checkhelp(query)
     local cfg=self:parse_options(target_file,options)
-    local db=self.db
+    local db=env.getdb()
     db:assert_connect()
     local rs
     if type(query)=="userdata" then
         rs=query
     else
         local typ,file=os.exists(query)
-        if typ=='file' then 
-            query=env.read_file(file)
+        if typ=='file' then
+            local f=io.open(file,'r')
+            env.checkerr(f,"Cannot read %s.",query)
+            query=f:read("*a")
+            f:close()
         end
         query=env.COMMAND_SEPS.match(query)
         local sql_type=db.get_command_type(query)
@@ -426,15 +429,17 @@ function this:unload(target_file,query,options)
     local exporter=db_unloader.new(cfg)
     local proxy=java.proxy({
         call=function(...)
-            local rows=exporter:exportToFile(rs,cfg.TARGET_FILE)
+            exporter:exportToFile(rs,cfg.TARGET_FILE)
         end
     },"org.dbcli.EventCallback")
     loader:doCall(exporter,proxy)
 end
 
 function this:__onload()
-    env.set_command(self,self.load_command,self.load_helps,self.load,true,4)
-    env.set_command(self,self.unload_command,self.unload_helps,self.unload,true,4)
+    --overridable: mysql, pgsql and db2 each claim LOAD as a pass-through to the server, and
+    --oracle/loader.lua re-binds both commands to its own instance
+    env.set_command(self,self.load_command,self.load_helps,self.load,true,4,nil,true)
+    env.set_command(self,self.unload_command,self.unload_helps,self.unload,true,4,nil,true)
 end
 
-return this
+return this.new()

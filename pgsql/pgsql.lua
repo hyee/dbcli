@@ -4,7 +4,7 @@ local set_command,exec_command=env.set_command,env.exec_command
 local pgsql=env.class(env.db_core)
 pgsql.module_list={
    "dict","findobj","desc","xplan","sql","list","gaussdb","chart","ssh","snap",
-   "show","dba","psql_exe",
+   "show","dba","psql_exe","dataload",
 }
 
 function pgsql:ctor(isdefault)
