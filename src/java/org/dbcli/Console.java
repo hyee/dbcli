@@ -237,7 +237,7 @@ public final class Console {
     //Widgets to use for A/B/C/D (up/down/right/left), and the modifier numbers of the two CSI forms:
     //CSI 1;<n><final> and CSI <n><final>, where n-1 is SHIFT|ALT|CTRL (2=Shift 3=Alt 5=Ctrl 6=Ctrl+Shift ...).
     private static final String[] ARROW_WIDGETS = {
-        LineReader.UP_HISTORY, LineReader.DOWN_HISTORY, LineReader.FORWARD_WORD, LineReader.BACKWARD_WORD};
+            LineReader.UP_HISTORY, LineReader.DOWN_HISTORY, LineReader.FORWARD_WORD, LineReader.BACKWARD_WORD};
     private static final char[] ARROW_FINALS = {'A', 'B', 'C', 'D'};
     private static final String[] ARROW_MODS =
             {"1;2", "1;3", "1;4", "1;5", "1;6", "1;7", "1;8", "2", "3", "4", "5", "6", "7", "8"};
@@ -664,10 +664,10 @@ public final class Console {
             terminal.pause();
             //Save the current console mode before restoring to original mode for native child
             if (terminal instanceof WinSysTerminal) {
-               ((WinSysTerminal) terminal).saveConsoleMode();
-               ((WinSysTerminal) terminal).restoreOrgConsoleMode();
+                ((WinSysTerminal) terminal).saveConsoleMode();
+                ((WinSysTerminal) terminal).restoreOrgConsoleMode();
             } else {
-                savedAttributes=terminal.getAttributes();
+                savedAttributes = terminal.getAttributes();
                 terminal.setAttributes(originalAttributes);
             }
         } else {
@@ -680,7 +680,7 @@ public final class Console {
             }
             //Restore the console mode that was active before pause
             if (terminal instanceof WinSysTerminal) {
-               ((WinSysTerminal) terminal).resumeConsoleMode();
+                ((WinSysTerminal) terminal).resumeConsoleMode();
             }
             terminal.resume();
             terminal.echo(false);

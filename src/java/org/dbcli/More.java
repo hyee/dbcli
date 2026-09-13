@@ -77,7 +77,26 @@ final public class More {
     protected KeyMap<Operation> keys;
 
     protected int firstLineInMemory = 0;
-    protected List<AttributedString> lines = new ArrayList<>();
+    //Raw line text, already trimmed. An AttributedString costs 10 bytes per char (char[] and
+    //long[] of the same length) against 2 for a String, and the pager used to keep every line it
+    //had ever read, so a 32k line result set needed ~800MB and died with OutOfMemoryError on the
+    //shipped 32bit JVM. Lines are therefore kept as text and materialised on demand, cached with
+    //an LRU bound so that repeated repaints of the same screen stay allocation free.
+    //firstLineInMemory is the absolute number of the oldest line held in lines (titleLines when
+    //nothing has been pruned), i.e. lines.get(k) is line firstLineInMemory + k. Older lines are
+    //re-read from the source when the user scrolls back above the window (rewindable sources only).
+    //Title lines are never pruned: they live in titles[] and are only a handful.
+    protected List<String> lines = new ArrayList<>();
+    protected static final int MATERIALIZED_CACHE = 512;
+    protected static final int WINDOW_LINES = 4096;
+    protected static final int WINDOW_CHARS = 4 << 20;
+    protected int windowChars = 0;
+    protected boolean rewindable = false;
+    //Highest totalLines reached since the source was opened: a rewind restarts the read cursor, but
+    //the file info message must not report a shrinking line count.
+    protected int highWaterLines = 0;
+    private final Map<Integer, AttributedString> materialized =
+            new LinkedHashMap<>(128, 0.75f, true);
 
     protected int firstLineToDisplay = 0;
     protected int firstColumnToDisplay = 0;
@@ -108,6 +127,7 @@ final public class More {
     private boolean highlight = true;
     private boolean nanorcIgnoreErrors;
     protected static String clrBol = null;
+
     public static String[] usage() {
         return new String[]{
                 "less -  file pager",
@@ -332,7 +352,6 @@ final public class More {
                 }
             }
 
-
             SignalHandler prevHandler = terminal.handle(Signal.WINCH, this::handle);
             Attributes attr = terminal.enterRawMode();
             try {
@@ -426,6 +445,11 @@ final public class More {
                     //
                     else {
                         Operation obj = bindingReader.readBinding(keys, null, false);
+                        if (obj == null && bindingReader.getCurrentBuffer().isEmpty() && inputAtEof()) {
+                            //No input device left; there is nothing to page through any more.
+                            op = Operation.EXIT;
+                            continue;
+                        }
                         if (obj == Operation.CHAR) {
                             char c = bindingReader.getLastBinding().charAt(0);
                             // Enter option mode or pattern edit mode
@@ -662,7 +686,10 @@ final public class More {
             }
         } finally {
             lines = null;
+            materialized.clear();
+            windowChars = 0;
             totalLines = 0;
+            highWaterLines = 0;
             titleLines = 0;
             titles = null;
             if (reader != null) {
@@ -773,9 +800,11 @@ final public class More {
         int saveFirstLineToDisplay;
         int saveFirstColumnToDisplay;
         int saveOffsetInLine;
-        List<AttributedString> savelines = new ArrayList<>();
+        List<String> savelines = new ArrayList<>();
         int saveTotalLines = 0;
         int saveTitleLines = 0;
+        int saveFirstLineInMemory = 0;
+        int saveHighWaterLines = 0;
         AttributedString[] saveTitles = null;
         boolean saveMatchedAsc;
         int saveMatchedIndex;
@@ -793,6 +822,8 @@ final public class More {
             saveFirstLineToDisplay = firstLineToDisplay;
             saveFirstColumnToDisplay = firstColumnToDisplay;
             saveOffsetInLine = offsetInLine;
+            saveFirstLineInMemory = firstLineInMemory;
+            saveHighWaterLines = highWaterLines;
             savePrintLineNumbers = printLineNumbers;
             saveTitles = titles;
             saveTotalLines = totalLines;
@@ -804,12 +835,16 @@ final public class More {
             saveMatchedLines.addAll(matchedLines);
             savelines.clear();
             savelines.addAll(lines);
+            materialized.clear();
             //sourceIdx = dec;
             firstLineToDisplay = 0;
             firstColumnToDisplay = 0;
             offsetInLine = 0;
             printLineNumbers = false;
             lines.clear();
+            windowChars = 0;
+            firstLineInMemory = titleLines;
+            highWaterLines = 0;
             titleLines = 0;
             titles = new AttributedString[titleLines];
             totalLines = 0;
@@ -835,6 +870,13 @@ final public class More {
             matchedLines.addAll(saveMatchedLines);
             lines.clear();
             lines.addAll(savelines);
+            materialized.clear();
+            windowChars = 0;
+            for (String saved : savelines) {
+                windowChars += saved.length();
+            }
+            firstLineInMemory = saveFirstLineInMemory;
+            highWaterLines = saveHighWaterLines;
             if (failingSource != null) {
                 message = failingSource + " not found!";
             }
@@ -878,6 +920,11 @@ final public class More {
         while (true) {
             checkInterrupted();
             Operation op = bindingReader.readBinding(fileKeyMap);
+            if (op == null) {
+                //End of input while editing the file name: cancel the prompt.
+                buffer.setLength(0);
+                return;
+            }
             if (op == Operation.ACCEPT) {
                 String name = buffer.substring(begPos);
                 addSource(name);
@@ -929,8 +976,13 @@ final public class More {
         LineEditor lineEditor = new LineEditor(begPos);
         while (true) {
             checkInterrupted();
-            Operation op;
-            switch (op = bindingReader.readBinding(searchKeyMap)) {
+            Operation op = bindingReader.readBinding(searchKeyMap);
+            if (op == null) {
+                //End of input while editing the pattern.
+                buffer.setLength(0);
+                return forward;
+            }
+            switch (op) {
                 case UP:
                     buffer.setLength(0);
                     buffer.append(type);
@@ -1012,6 +1064,9 @@ final public class More {
             do {
                 checkInterrupted();
                 op = bindingReader.readBinding(keys, null, false);
+                if (op == null && bindingReader.getCurrentBuffer().isEmpty() && inputAtEof()) {
+                    break;      // no input device left
+                }
                 if (op != null) {
                     switch (op) {
                         case FORWARD_ONE_WINDOW_OR_LINES:
@@ -1043,6 +1098,11 @@ final public class More {
             Source source = sources.get(sourceIdx);
             try {
                 InputStream in = source.read();
+                //A fresh stream per read() (URL/Path/Resource sources) can always be re-read, while
+                //an InputStreamSource rewinds its stream only when it supports marks (a
+                //ByteArrayInputStream does, a pipe does not). Window pruning is enabled only when
+                //re-reading is possible.
+                rewindable = !(source instanceof Source.InputStreamSource) || in.markSupported();
                 if (sources.size() == 2 || sourceIdx == 0) {
                     message = source.getName();
                 } else {
@@ -1051,6 +1111,18 @@ final public class More {
                 }
                 reader = new BufferedReader(new InputStreamReader(
                         new InterruptibleInputStream(in)));
+                //Reset the buffer to the new source. These resets live here rather than only in
+                //SavedSourcePositions: :d and the quit-at-eof file switch call openSource()
+                //directly and used to keep displaying the previous file's cached lines.
+                firstLineInMemory = titleLines;
+                lines = new ArrayList<>();
+                windowChars = 0;
+                materialized.clear();
+                highWaterLines = 0;
+                firstLineToDisplay = 0;
+                firstColumnToDisplay = 0;
+                offsetInLine = 0;
+                totalLines = 0;
                 display.clear();
                 if (sourceIdx == 0) {
                     syntaxHighlighter = SyntaxHighlighter.build(syntaxFiles, null, "none");
@@ -1092,9 +1164,9 @@ final public class More {
         AttributedString line = getLine(lineNum);
         if (line != null) {
             display.clear();
-            if (firstLineInMemory > lineNum) {
-                openSource();
-            }
+            //No openSource() here: getLine() already re-reads the source when the target is above
+            //the retained window, and resetting the buffer at this point would drop every line
+            //between the target and the current position.
             firstLineToDisplay = lineNum;
             offsetInLine = 0;
         } else {
@@ -1181,20 +1253,32 @@ final public class More {
                 offsetInLine = 0;
                 return;
             } else {
-                for (int lineNumber = firstLineToDisplay - 1; lineNumber >= firstLineInMemory; lineNumber--) {
-                    AttributedString line = getLine(lineNumber);
-                    if (line == null) {
-                        break;
-                    } else if (!toBeDisplayed(line, dpCompiled)) {
-                        continue;
-                    } else if (compiled.matcher(line).find()) {
-                        display.clear();
-                        firstLineToDisplay = lineNumber;
-                        offsetInLine = 0;
-                        ++matchedIndex;
-                        matchedLines.add(firstLineToDisplay);
-                        return;
+                //Scan upwards, crossing the retained window if necessary: a match above it must
+                //still be found, so the scan rewinds and continues instead of stopping at the
+                //window start.
+                int from = firstLineToDisplay - 1;
+                while (true) {
+                    int floor = Math.max(firstLineInMemory, titleLines);
+                    for (int lineNumber = from; lineNumber >= floor; lineNumber--) {
+                        AttributedString line = getLine(lineNumber);
+                        if (line == null) {
+                            break;
+                        } else if (!toBeDisplayed(line, dpCompiled)) {
+                            continue;
+                        } else if (compiled.matcher(line).find()) {
+                            display.clear();
+                            firstLineToDisplay = lineNumber;
+                            offsetInLine = 0;
+                            ++matchedIndex;
+                            matchedLines.add(firstLineToDisplay);
+                            return;
+                        }
                     }
+                    if (floor <= titleLines || !rewindable) {
+                        break;
+                    }
+                    rewind();
+                    from = floor - 1;
                 }
             }
         }
@@ -1307,7 +1391,9 @@ final public class More {
         while (--lines >= 0) {
             if (offsetInLine > 0) {
                 offsetInLine = Math.max(0, offsetInLine - width);
-            } else if (firstLineInMemory < firstLineToDisplay) {
+            //There are always lines above the top of the screen until it is the first line itself
+            //(title lines are kept in titles[] even after the window has been pruned).
+            } else if (firstLineToDisplay > 0) {
                 Pair<Integer, AttributedString> prevLine = prevLine2display(firstLineToDisplay, dpCompiled);
                 firstLineToDisplay = prevLine.getU();
                 AttributedString line = prevLine.getV();
@@ -1380,24 +1466,20 @@ final public class More {
         return display(oneScreen, null);
     }
 
-    boolean waitReader(long timeout) {
+    //True when no further input can arrive at all (input closed or exhausted). readBinding() with
+    //block=false cannot tell that apart from "a partial key sequence is buffered" on its own, and
+    //without this check the main loop spins: it keeps getting null back while there is nothing
+    //left to block on. The probe uses a 1ms budget, never 0: peek(0) waits forever (see display()).
+    boolean inputAtEof() {
         try {
-            if (System.getenv("IS_WSL") == null && !OSUtils.IS_MSYSTEM && !OSUtils.IS_CYGWIN) {
-                return terminal.reader().peek(timeout) == NonBlockingReader.READ_EXPIRED;
-            } else {
-                if (terminal.reader().available() <= 0) {
-                    try {
-                        Thread.sleep(timeout);
-                    } catch (InterruptedException e) {
-
-                    }
-                }
-                return terminal.reader().available() <= 0;
-            }
+            //jline's NonBlockingReader contract: -1 is end of input, READ_EXPIRED (-2) is "nothing yet".
+            //At real EOF the character is already latched, so this returns -1 without waiting.
+            return terminal.reader().peek(1) == -1;
         } catch (Exception e) {
-
+            //A closed reader throws here. The MSYS/WSL/Cygwin paths deliberately avoid peek()
+            //elsewhere in this class, so stay conservative there instead of leaving the pager early.
+            return System.getenv("IS_WSL") == null && !OSUtils.IS_MSYSTEM && !OSUtils.IS_CYGWIN;
         }
-        return false;
     }
 
     public int numWidth = 4;
@@ -1410,11 +1492,16 @@ final public class More {
 
     synchronized boolean display(boolean oneScreen, Integer curPos) throws IOException {
         if (!oneScreen) {
-            if (!waitReader(128)) return false;
             if (curPos == null && display.getPos() > 0 && buffer.length() > 0 && rows == size.getRows() && cols == size.getColumns()) {
                 display.updateBuff(buffer.toString(), -1);
                 return false;
             }
+            //The repaint used to sit behind a blocking peek, which delayed every keystroke by the
+            //whole 128ms timeout (measured: 141ms per repaint, of which only 4.5ms was painting).
+            //Display diffs the screen, so repainting an unchanged state writes nothing and the
+            //batching is not worth the latency.
+            //Do not try to test for pending input with peek(0): jline's Timeout(0).elapsed() stays
+            //false, so its wait loop calls wait(0) and never returns (verified on an idle reader).
         }
         rows = size.getRows();
         cols = size.getColumns();
@@ -1520,7 +1607,8 @@ final public class More {
             Long allLines = source.lines();
             message = source.getName()
                     + (sources.size() > 2 ? " (file " + sourceIdx + " of " + (sources.size() - 1) + ")" : "")
-                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/" + (allLines != null ? allLines : totalLines)
+                    + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/"
+                    + (allLines != null ? allLines : Math.max(highWaterLines, totalLines))
                     + (eof ? " (END)" : "");
         }
         if (buffer.length() > 0) {
@@ -1563,44 +1651,135 @@ final public class More {
 
     int lineIndex;
     private final static Pattern RTRIM = Pattern.compile("\\s+$");
+
+    //Cut trailing whitespace without the regex: a grid line is mostly right-padding, so this is
+    //the same result as RTRIM.matcher(s).replaceAll("") for the case that actually occurs.
+    static String rtrim(String s) {
+        int i = s.length();
+        while (i > 0 && s.charAt(i - 1) <= ' ') --i;
+        return i == s.length() ? s : s.substring(0, i);
+    }
+
     int paddingCounter = 0;
     int totalLines = 0;
 
     AttributedString getLine(int line) throws IOException {
         if (line < 0) line = 0;
+        if (line >= titleLines && line < firstLineInMemory) {
+            //Scrolled back above the retained window: re-read the source from the start.
+            rewind();
+        }
         while (line >= totalLines) {
             String str = reader.readLine();
             if (str != null) {
-                AttributedString buff = AttributedString.fromAnsi(RTRIM.matcher(str).replaceAll(""), tabs);
-                if (padding > 0 && paddingCounter < 30) {
-                    for (int i = 0, l = Math.min(padding, buff.columnLength()); i < l; i++) {
-                        if (buff.charAt(i) != ' ') {
-                            padding = 0;
-                            break;
-                        }
-                    }
-                    ++paddingCounter;
-                }
-                if (totalLines < titleLines)
+                //RTRIM.matcher(str).replaceAll("") runs a backtracking regex over the whole line;
+                //a dbcli grid line is mostly right-padding, so the tail scan below is both faster
+                //and allocation-free.
+                str = rtrim(str);
+                if (totalLines < titleLines) {
+                    //Title lines stay materialised: there are only a handful of them and every
+                    //repaint needs them.
+                    AttributedString buff = toAttributedString(str);
                     titles[totalLines] = buff;
-                else
-                    lines.add(buff);
+                    if (padding > 0 && paddingCounter < 30) checkPadding(buff);
+                } else {
+                    lines.add(str);
+                    windowChars += str.length();
+                    if (padding > 0 && paddingCounter < 30) checkPadding(materialize(totalLines));
+                }
                 ++totalLines;
+                if (totalLines > highWaterLines) highWaterLines = totalLines;
             } else {
                 break;
             }
         }
+        pruneWindow();
         lineIndex = -1;
         final int line1 = line - firstLineToDisplay;
         if (line1 < titleLines && titleLines > 0) {
             return line1 >= 0 ? titles[line1] : null;
         }
-        line -= titleLines;
-        if (line >= 0 && line < lines.size()) {
-            lineIndex = line + 1;
-            return lines.get(line);
+        if (line >= titleLines) {
+            final int content = line - firstLineInMemory;
+            if (content >= 0 && content < lines.size()) {
+                lineIndex = line - titleLines + 1;
+                return materialize(line);
+            }
         }
         return null;
+    }
+
+    //Re-open the source and drop the buffer; the reads that follow refill it from line 0, so
+    //absolute line numbers (and with them firstLineToDisplay, the match list and the screen) stay
+    //valid. Only used for sources that can be read twice, see rewindable.
+    private void rewind() throws IOException {
+        if (reader != null) {
+            reader.close();
+        }
+        reader = new BufferedReader(new InputStreamReader(
+                new InterruptibleInputStream(sources.get(sourceIdx).read())));
+        lines = new ArrayList<>();
+        windowChars = 0;
+        materialized.clear();
+        totalLines = 0;
+        firstLineInMemory = titleLines;
+    }
+
+    //Drop the oldest buffered lines once the window overflows. The floor keeps a whole window
+    //behind the top of the screen, so scrolling back stays instant; a jump above the window is
+    //served by rewind() from getLine().
+    private void pruneWindow() {
+        if (!rewindable || (lines.size() <= WINDOW_LINES && windowChars <= WINDOW_CHARS)) {
+            return;
+        }
+        int floor = firstLineToDisplay - titleLines - WINDOW_LINES;
+        int drop = 0;
+        while (drop < lines.size()
+                && firstLineInMemory + drop < floor
+                && (lines.size() - drop > WINDOW_LINES || windowChars > WINDOW_CHARS)) {
+            windowChars -= lines.get(drop).length();
+            ++drop;
+        }
+        if (drop > 0) {
+            lines.subList(0, drop).clear();
+            firstLineInMemory += drop;
+            materialized.keySet().removeIf(k -> k < firstLineInMemory);
+        }
+    }
+
+    //fromAnsi is only worth its per-cell parse when the line actually carries escape sequences;
+    //a plain dbcli grid row is a straight copy either way.
+    private AttributedString toAttributedString(String str) {
+        return str.indexOf('\u001b') >= 0 ? AttributedString.fromAnsi(str, tabs) : new AttributedString(str);
+    }
+
+    //Materialise one buffered line and remember it, keeping the cache bounded: a repaint of the
+    //same screen (and the pre-highlight pass that walks back over it) then costs no allocation,
+    //while a full-file search scan cannot grow the heap without limit. Keys are absolute line
+    //numbers, so entries stay valid while the window slides.
+    private AttributedString materialize(int line) {
+        AttributedString buff = materialized.get(line);
+        if (buff != null) return buff;
+        buff = toAttributedString(lines.get(line - firstLineInMemory));
+        materialized.put(line, buff);
+        if (materialized.size() > MATERIALIZED_CACHE) {
+            Iterator<Integer> lru = materialized.keySet().iterator();
+            lru.next();
+            lru.remove();
+        }
+        return buff;
+    }
+
+    //Same test the reader used to run on the AttributedString it built eagerly: does the line
+    //start with at least `padding` blank columns?
+    private void checkPadding(AttributedString buff) {
+        for (int i = 0, l = Math.min(padding, buff.columnLength()); i < l; i++) {
+            if (buff.charAt(i) != ' ') {
+                padding = 0;
+                break;
+            }
+        }
+        ++paddingCounter;
     }
 
     /**

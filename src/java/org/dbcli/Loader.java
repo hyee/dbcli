@@ -535,11 +535,12 @@ public class Loader {
         }
     }
 
-    volatile AutoCloseable workingObject =null;
-    public boolean doCall(AutoCloseable c,EventCallback callback) throws Throwable{
+    volatile AutoCloseable workingObject = null;
+
+    public boolean doCall(AutoCloseable c, EventCallback callback) throws Throwable {
         console.setEvents(q, new char[]{'q', 'Q'});
         workingObject = c;
-        try(AutoCloseable target = c) {
+        try (AutoCloseable target = c) {
             callback.call(target);
             return true;
         } finally {
@@ -657,7 +658,7 @@ public class Loader {
 
                 if (rs != null && !rs.isClosed()) {
                     rs.close();
-                    rs=null;
+                    rs = null;
                 }
 
                 if (console.isRunning() && stmt != null && !stmt.isClosed()) {
@@ -665,9 +666,9 @@ public class Loader {
                     stmt = null;
                 }
 
-                if(workingObject!=null) {
+                if (workingObject != null) {
                     workingObject.close();
-                    workingObject=null;
+                    workingObject = null;
                 }
             } catch (Exception err) {
                 //getRootCause(err).printStackTrace();

@@ -35,7 +35,7 @@ public class TestSim {
         url = args[2];
         final int threads = Integer.valueOf(args[3]);
         final int secs = Integer.valueOf(args[4]);
-        final int think=Integer.valueOf(args[5]);
+        final int think = Integer.valueOf(args[5]);
         String cmd = args[6];
         latch1 = new CountDownLatch(threads);
         latch2 = new CountDownLatch(threads);
@@ -43,8 +43,8 @@ public class TestSim {
         ds.setUser(user);
         ds.setPassword(pwd);
         ds.setURL("jdbc:oracle:thin:@" + url);
-        final CountDownLatch exitLatch=new CountDownLatch(1);
-        try(Connection conn = ds.getConnection()) {
+        final CountDownLatch exitLatch = new CountDownLatch(1);
+        try (Connection conn = ds.getConnection()) {
             AtomicInteger counter = new AtomicInteger();
             ExecutorService service = Executors.newFixedThreadPool(threads);
             for (int i = 0; i < threads; i++) {
@@ -62,15 +62,15 @@ public class TestSim {
                             try (PreparedStatement prep = con.prepareStatement(sql)) {
                                 prep.setFetchSize(1024);
                                 boolean isQuery = prep.execute();
-                                if(isQuery) {
-                                    ResultSet rs=prep.getResultSet();
-                                    while(rs.next()) ;
+                                if (isQuery) {
+                                    ResultSet rs = prep.getResultSet();
+                                    while (rs.next()) ;
                                 }
                                 counter.incrementAndGet();
                             } catch (Exception e1) {
                                 throw e1;
                             }
-                            if(exitLatch.await(5,TimeUnit.MICROSECONDS)) {
+                            if (exitLatch.await(5, TimeUnit.MICROSECONDS)) {
                                 return;
                             }
                             Thread.sleep(Math.max(1, think / 3 + ((Double) (Math.random() * think * 2 / 3)).intValue()));
