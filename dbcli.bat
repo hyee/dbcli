@@ -72,6 +72,7 @@ rem check if ConEmu dll exists to determine whether use it as the ANSI renderer
 if not defined ANSICON if defined ANSICON_CMD (
    SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
    SET ANSICON_DEF=ansicon
+   set DBCLI_BULK_WRITE=on
    if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
 )
 
@@ -82,7 +83,8 @@ set "ANSICON_CMD="
 rem set "ANSICON_DEF=native"
 rem set "ANSICON_DEF=ffm"
 rem set "ANSICON_DEF=jna"
-rem if defined ANSICON_DEF set "ANSICON_DEF=conemu"
+set DBCLI_BULK_WRITE=on
+rem if "!ANSICON_DEF!"=="ansicon" set "ANSICON_DEF=conemu" 
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 
 cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*

@@ -5,82 +5,39 @@ import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 import static org.jline.nativ.Kernel32.*;
 
 public final class WinConsoleWriter extends AbstractWindowsConsoleWriter {
+    /** index asking for the in-process ANSI renderer, see ConEmuWriter */
+    private static final int CONEMU = 1;
     private final ConEmuWriter conEmuWriter;
-    final int mode;
-    /*
-    volatile short clock = 0;
-    volatile CountDownLatch latch = null;
-    final StringBuffer sb = new StringBuffer(1024 * 1024);
-    Thread t = new Thread(new Runnable() {
-        @Override
-        public void run() {
-            while (true) {
-                try {
-                    Thread.sleep(10L);
-                    if (sb.length()==0||++clock < 8) continue;
-                    char[] text;
-                    synchronized (WinConsoleWriter.this.lock) {
-                        text = sb.toString().toCharArray();
-                        sb.setLength(0);
-                        latch = new CountDownLatch(1);
-                    }
-                    if (index != 1) {
-                        WriteConsoleW(console, text, text.length, writtenChars, 0);
-                    } else {
-                        conEmuWriter.writeConsole(text, text.length);
-                    }
-                    latch.await();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    });*/
-    private long console;
+    private final long console;
+    private final int[] writtenChars = new int[1];
 
     public WinConsoleWriter(long console, int index) {
         super();
-        this.index = index;
-        this.mode = index;
         this.console = console;
-        conEmuWriter = mode <= 1 ? new ConEmuWriter() : null;
-        if (mode <= 1) conEmuWriter.register(true);
-        //t.setDaemon(true);
-        //t.start();
+        //Index 1 renders ANSI in-process through ConEmuHk; every other index writes the text
+        //through WriteConsoleW (the console then is a VTP one, or Windows Terminal's).
+        this.conEmuWriter = index == CONEMU ? new ConEmuWriter(console) : null;
     }
 
     public WinConsoleWriter(long console) {
         this(console, 2);
     }
 
-
-    private final int[] writtenChars = new int[1];
-    private int index = 0;
-
-    void setWriter(int index) {
-        if (mode != 0) return;
-        conEmuWriter.register(index == 1);
-        this.index = index;
-    }
-
-    public int currentWriter() {
-        return index;
-    }
-
     @Override
     protected final void writeConsole(char[] text, int len) {
-        if (index != 1) {
-            WriteConsoleW(console, text, len, writtenChars, 0);
-        } else {
+        if (conEmuWriter != null) {
             conEmuWriter.writeConsole(text, len);
+        } else {
+            WriteConsoleW(console, text, len, writtenChars, 0);
         }
     }
 
     @Override
     public void close() {
-        super.close();
-        if (mode == 0) {
+        if (conEmuWriter != null) {
+            //prints the optional bulk-writer statistics; it never unloads ConEmuHk
             conEmuWriter.close();
         }
+        super.close();
     }
 }

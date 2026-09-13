@@ -117,6 +117,13 @@ local options ={'-server',
                 '-Duser.language=en','-Duser.region=US','-Duser.country=US',
                 '-Djava.security.egd=file:/dev/./urandom',
                 '-Dsecurerandom.source=file:/dev/./urandom',
+                --JLine writes ESC[9999E at startup whenever the terminal type is windows-conemu, as
+                --ConEmu's "activate extended fonts" signal. dbcli.bat sets ANSICON_DEF=conemu for every
+                --non-msys start, so the type is windows-conemu even on a plain console where nothing
+                --consumes that sequence: ConEmuHk's parser then just moves the cursor to the last line,
+                --and the banner is printed at the bottom with an empty screen above it. Only inside a
+                --real ConEmu window (ConEmuPID is set there) does that signal mean anything.
+                not os.getenv("ConEmuPID") and '-Dorg.jline.terminal.conemu.disable-activate=true' or nil,
                 --'-Djava.awt.headless=true',
                 java_ver>=53 and java_ver<61 and '--illegal-access=permit' or nil,
                 java_ver>=53 and '--add-opens=java.sql/java.sql=ALL-UNNAMED' or nil ,

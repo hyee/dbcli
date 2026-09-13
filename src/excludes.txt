@@ -49,6 +49,9 @@ ansicon.exe
 .7z
 .iml
 .class
+.opencode
+.omo
+AGENTS.md
 jnlua.c
 Makefile
 dbcli_*

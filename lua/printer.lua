@@ -8,7 +8,13 @@ local NOR=""
 local strip_ansi=function(x) return x end
 local println,write=console.println,console.write
 
-local buff={ }
+--buff backs `output`/`view buff` (the editor view of the accumulated output). Same head-index
+--scheme as more_text: the old `while #buff > limit do table.remove(buff,1) end` shifted the whole
+--array on every single drop, and table.remove(t,1) on a full buffer measures ~34us, so one big
+--flush could spend ~1s. Text is also kept UNSTRIPPED now: stripping the whole scrollback up front
+--ran three Lua gsubs over up to ~88MB (measured ~0.6s per 8MB), so the strip happens once, in
+--view_buff, only when the buffer is actually opened.
+local buff={head=1,total=0}
 local grep_fmt="%1"
 --more_text is the scrollback handed to the pager: an array of output chunks plus the
 --running line count. Entries are dropped from the FRONT once the count passes 32767, so
@@ -77,6 +83,20 @@ function printer.get_last_output()
         more_push(space..lines[i])
     end
     more_text.lines=more_text.lines+#lines
+    --Callers outside this file still index the result as a dense array: oracle/oradebug.lua:1407 does
+    --table.concat(printer.get_last_output(),'\n'), and once a chunk has been dropped the head index
+    --leaves more_text[1] nil, so that concat raises "invalid value (nil) at index 1". Hand back a
+    --dense copy in that case, with head/total kept coherent for the callers that use them.
+    local head=more_text.head
+    if head>1 then
+        local out={head=1,total=more_text.total-head+1,lines=more_text.lines}
+        local n=0
+        for i=head,more_text.total do
+            n=n+1
+            out[n]=more_text[i]
+        end
+        return out
+    end
     return more_text
 end
 
@@ -105,14 +125,22 @@ function printer.set_more(stmt)
     printer.more()
 end
 
+--The pager is a Java call, so it can fail in ways pcall() would hide completely: a bad pattern, an
+--exception, or the OutOfMemoryError that used to escape Console.less. Report instead of vanishing.
+local function run_pager(...)
+    local ok,err=pcall(console.less,console,...)
+    if not ok then println(console,"\nmore failed: "..tostring(err)) end
+    return ok
+end
+
 function printer.more(output)
     if not output then
         if printer.grid_title_lines < -10 then printer.grid_title_lines=0 end
-        pcall(console.less,console,table.concat(more_text,'\n',more_text.head,more_text.total),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
+        run_pager(table.concat(more_text,'\n',more_text.head,more_text.total),math.abs(printer.grid_title_lines),#(env.space),more_text.lines)
     else
         local lines=count_nl(output)
         if output.convert_ansi then output=output:convert_ansi() end
-        pcall(console.less,console,output,0,#(env.space),lines)
+        run_pager(output,0,#(env.space),lines)
     end
 end
 
@@ -124,9 +152,28 @@ function printer.rawprint(...)
     println(console,table.concat(msg," "))
 end
 
+--The escape sequences stay in the entry (view_buff strips the whole buffer in one pass), but the
+--whitespace before a trailing reset still has to go, exactly as strip_ansi(text):rtrim() did: the
+--grid pads every row to the column width, and keeping that padding grew @@output by ~2%.
+local function trail_trim(text)
+    if text:sub(-32):find('\27%[[%d;]*m$') then
+        local body,esc=text:match('^(.*)(\27%[[%d;]*m)$')
+        if body then return body:rtrim()..esc end
+    end
+    return text:rtrim()
+end
+
 local function flush_buff(text,lines)
-    while #buff > math.max(0,32766-(lines or 1)) do table.remove(buff,1) end
-    buff[#buff+1]=strip_ansi(text):rtrim()
+    local keep=math.max(0,32766-(lines or 1))
+    local head,total=buff.head,buff.total
+    while total-head+1>keep do
+        buff[head]=nil
+        head=head+1
+    end
+    buff.head=head
+    total=total+1
+    buff.total=total
+    buff[total]=trail_trim(text)  --kept unstripped; view_buff strips once, on demand
 end
 
 local ansi_cut=string.ansi_cut
@@ -154,6 +201,10 @@ function printer.print(...)
     out_k=0
     if out_buf then out_buf:reset() end
     local len,pos=#output,1
+    --The reset prefix is only needed while the console may still be holding a colour from earlier
+    --text: the first line of a print keeps it unconditionally, later ones only when the line before
+    --could have left a colour set. See the emit block below.
+    local reset_needed=true
     while pos<=len do
         local s,sep
         local b=output:byte(pos)
@@ -200,15 +251,29 @@ function printer.print(...)
                 columns[#columns+1]=sep
             end
             if #s>32768 then s=s:sub(1,32768) end
-            if out_buf then
-                if s~='' then out_buf:put(NOR,env.space,s) end
-                if sep~='' then out_buf:put(sep) end
-            else
-                if s~='' then
-                    out_k=out_k+3
-                    out_parts[out_k-2],out_parts[out_k-1],out_parts[out_k]=NOR,env.space,s
+            --Skip the reset prefix when the console is already in its default colours: a line that
+            --ends with NOR (every grid row does, grid.lua appends it) or that carries no escape at
+            --all cannot leave a colour set. Emitting it anyway costs one SGR round trip per line in
+            --the ANSI renderer used on Windows 7 (measured ~120us of the ~570us per grid line).
+            local prefix=reset_needed and NOR or nil
+            if s~='' then
+                reset_needed=s:find('\27',1,true)~=nil and s:sub(-#NOR)~=NOR
+                if out_buf then
+                    if prefix then out_buf:put(prefix) end
+                    out_buf:put(env.space,s)
+                else
+                    if prefix then
+                        out_k=out_k+1
+                        out_parts[out_k]=prefix
+                    end
+                    out_k=out_k+2
+                    out_parts[out_k-1],out_parts[out_k]=env.space,s
                 end
-                if sep~='' then
+            end
+            if sep~='' then
+                if out_buf then
+                    out_buf:put(sep)
+                else
                     out_k=out_k+1
                     out_parts[out_k]=sep
                 end
@@ -617,11 +682,11 @@ end
 
 function printer.view_buff(file)
     if file and file:lower()=='clear' then
-        buff={}
+        buff={head=1,total=0}
         printer.clear_buffered_output()
         return
     end
-    printer.edit_buffer(file,'output.log',table.concat(buff,'\n'))
+    printer.edit_buffer(file,'output.log',strip_ansi(table.concat(buff,'\n',buff.head,buff.total)))
 end
 
 function printer.set_editor(name,editor)

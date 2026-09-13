@@ -1,6 +1,7 @@
 package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
+import com.sun.jna.WString;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
 import org.jline.builtins.Commands;
@@ -28,6 +29,7 @@ import java.security.Security;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -145,10 +147,10 @@ public final class Console {
                     .build();
         }
         //A dumb terminal carries no size, which degenerates every width-dependent layout (grid/colwrap/line
-        //trimming). Defaults are unchanged; DBCLI_COLS/DBCLI_ROWS (or COLUMNS/LINES) opt into a fixed size.
+        //trimming). Defaults are unchanged; DBCLI_BUFFER_COLS/DBCLI_BUFFER_ROWS (or COLUMNS/LINES) opt into a fixed size.
         if (this.terminal instanceof DumbTerminal) {
-            int cols = envInt("DBCLI_COLS", envInt("COLUMNS", 0));
-            int rows = envInt("DBCLI_ROWS", envInt("LINES", 0));
+            int cols = envInt("DBCLI_BUFFER_COLS", envInt("COLUMNS", 0));
+            int rows = envInt("DBCLI_BUFFER_ROWS", envInt("LINES", 0));
             if (cols > 0 && rows > 0) terminal.setSize(new Size(cols, rows));
         }
         //Capture the pristine (cooked) terminal state before dbcli ever enters raw mode; restored when handing the console to a native child.
@@ -320,6 +322,22 @@ public final class Console {
 
     public void display(String[] args) {
         int width = getBufferWidth();
+        //A dashboard repaint does not need the line editor's diff: with the rectangle writer on, the
+        //whole screen goes out as one block (home, rows, erase to end of line). The writer then paints
+        //it with a single WriteConsoleOutputW instead of one cursor addressed write per row, which is
+        //the difference between "the screen appears" and "the screen paints itself line by line".
+        if (bulkDisplay()) {
+            int height = getScreenHeight();
+            List<AttributedString> lines = Arrays.stream(args)
+                    .map(s -> s == null ? null : AttributedString.fromAnsi(s))
+                    .collect(Collectors.toList());
+            Attributes attrs = terminal.enterRawMode();
+            terminal.writer().print(screenBlock(lines, height, width));
+            terminal.writer().flush();
+            terminal.setAttributes(attrs);
+            prevDisplay = args;
+            return;
+        }
         display.clear();
         display.resize(getScreenHeight(), width);
         Attributes attrs = terminal.enterRawMode();
@@ -328,6 +346,45 @@ public final class Console {
                         .columnSubSequence(0, width)).collect(Collectors.toList()), -1);
         terminal.setAttributes(attrs);
         prevDisplay = args;
+    }
+
+    /**
+     * One screenful as a single sequential write: home, every row, erase to end of line. The rectangle
+     * writer turns that into one WriteConsoleOutputW; anything it declines still gets the whole screen
+     * in one chunk for ConEmuHk instead of one cursor addressed write per row.
+     */
+    static String screenBlock(List<AttributedString> lines, int rows, int columns) {
+        StringBuilder sb = new StringBuilder(16 + (columns + 8) * (rows + 1));
+        sb.append("\u001b[H");
+        for (int i = 0; i < rows; i++) {
+            if (i > 0) {
+                sb.append("\r\n");
+            }
+            if (i < lines.size() && lines.get(i) != null) {
+                sb.append(lines.get(i).columnSubSequence(0, columns).toAnsi());
+            }
+            sb.append("\u001b[K");
+        }
+        return sb.toString();
+    }
+
+
+    /** the ConEmu console (no ENABLE_VIRTUAL_TERMINAL_PROCESSING) with the rectangle writer enabled */
+    static boolean isBulkBlockEnabled(Terminal terminal) {
+        return BulkCellWriter.isEnabled()
+                && !BulkCellWriter.isSafe()
+                && AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType());
+    }
+
+    private boolean bulkDisplay() {
+        // The screen block is plain ANSI, so it needs no rectangle writer - only a terminal that can
+        // take ANSI as-is. Inside a real ConEmu window dbcli gets JLine's native Windows terminal
+        // (Console.java:118 skips dbcli's own WinSysTerminal there), whose type is still windows-conemu
+        // (NativeWinSysTerminal.java:74 picks it when TERM is unset and ConEmuPID is set) - so this is
+        // true there as well. That matters: the repaint this replaces goes through Display.clear(),
+        // which makes Display.update emit clear_screen (\e[H\E[J for windows-conemu) and wipes the
+        // screen - it is why leaving the pager used to clear everything in a real ConEmu window.
+        return isBulkBlockEnabled(terminal);
     }
 
     public void handleResize(Terminal.Signal signal) {
@@ -491,8 +548,16 @@ public final class Console {
         return names;
     }
 
+
     public int getBufferWidth() {
-        return terminal.getBufferSize().getColumns();
+        // The grid formats its rows to this width. On a console it is the screen buffer width, which on
+        // this user's terminals is deliberately much wider than the window (2000 columns) so that output
+        // stays readable in the scrollback. A pty has no such thing: Terminal.getBufferSize() defaults to
+        // getSize(), i.e. the window, and nothing inside the pty can see the console's buffer either, so
+        // DBCLI_BUFFER_COLS (or COLUMNS) is how that width is stated - dbcli.sh carries a commented out export
+        // for the 2000 column case.
+        int cols = envInt("DBCLI_BUFFER_COLS", envInt("COLUMNS", 0));
+        return cols > 0 ? cols : terminal.getBufferSize().getColumns();
     }
 
     public int getScreenWidth() {
@@ -514,15 +579,30 @@ public final class Console {
         //Less less=new Less(terminal, null);
         less.noInit = true;
         less.veryQuiet = true;
-        less.numWidth = (int) Math.max(3, Math.ceil(Math.log10(lines < 10 ? 10 : lines)));
+        //Digits of the largest line number, not ceil(log10(n)): that came out one short for 1000,
+        //10000, ... and then every numbered row was one column wider than the budget.
+        less.numWidth = Math.max(3, String.valueOf(lines < 10 ? 10 : lines).length());
         less.padding = spaces;
         less.setTitleLines(titleLines);
         less.chopLongLines = true;
         less.quitIfOneScreen = true;
         less.ignoreCaseAlways = true;
         try {
-            less.run(new Source.InputStreamSource(new ByteArrayInputStream(output.getBytes()), true, ""));
-        } catch (Exception e) {
+            //The text is already a String: runText() avoids output.getBytes() (a second full copy and
+            //a silent '?' for anything the platform charset cannot encode).
+            less.runText("", output);
+        } catch (Throwable e) {
+            //Must catch Throwable: an Error (the OOM the pager raises on a huge result set) is not an
+            //Exception, so it is the case the old code could not report. Note that an escaping
+            //Throwable *was* already reported by printer.lua's pcall(console.less, ...) - what
+            //vanished was a caught Nothing: the old body printed the stack trace to stderr only, and
+            //a database session has no visible stderr. Report on the terminal as well.
+            try {
+                println("");
+                println("[more failed: " + e + "]");
+            } catch (Throwable ignored) {
+                //nothing else we can do while reporting a failure
+            }
             e.printStackTrace();
         }
     }
@@ -539,7 +619,10 @@ public final class Console {
 
     public void println(String msg) {
         if (writer == null) return;
-        writer.println(msg);
+        //PrintWriter.println() is two writes (the text, then newLine()): JLine hands each write to the
+        //console writer separately, so every line arrived as two chunks - and on a console without VT
+        //processing each chunk costs its own console round trip in ConEmuWriter. One write instead.
+        writer.print(msg + System.lineSeparator());
         writer.flush();
     }
 

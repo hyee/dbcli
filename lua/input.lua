@@ -18,6 +18,9 @@ print("========================================================================"
 if console:getBufferWidth()<=console:getScreenWidth() then
     print("* Your terminal doesn't support horizontal scrolling, chars longer than screen width default to be trimmed.")
     print("  Please run 'set linesize <cols>' to a larger value if preferred folding the long lines rather than trimming.")
+    --A pty only reports its window, so a terminal that keeps a much wider buffer (ConEmu under WSL, for
+    --instance) cannot be detected from inside: DBCLI_COLS is the way to tell dbcli about it.
+    print("  Or start dbcli with DBCLI_COLS=<cols> set, to use the width the console really keeps.")
 end
 console.isSubSystem=false
 --print(console:getScreenWidth(),console:getScreenHeight())

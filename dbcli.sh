@@ -154,5 +154,15 @@ if [[ "$os" = mac* ]] && xattr ./lib/$os/luajit 2>/dev/null | grep -q quarantine
 fi
 
 chmod  +x ./lib/$os/luajit &>/dev/null
+
+# On a pty the terminal only reports its window size, so under WSL dbcli cannot see that the console
+# it is shown in keeps a much wider buffer (this setup uses 2000 columns, readable in the scrollback
+# instead of paging with 'more'). Everything reachable from inside WSL reports the window instead -
+# measured: a 317 column pty window and, through interop, a hidden 120 column console that is not the
+# one being displayed - so the width has to be stated here. Uncomment to format for 2000 columns;
+# 'set linesize 2000' inside dbcli does the same for the grid only, and DBCLI_BUFFER_COLS also applies to
+# the Windows launcher if it is exported there.
+#export DBCLI_BUFFER_COLS=2000
+
 exec -a "dbcli" ./lib/$os/luajit ./lib/bootstrap.lua "$_java" "$ver" "$@"
 popd
