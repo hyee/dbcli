@@ -14,6 +14,10 @@
             12.1={select /*+merge*/ inst_id,event#,event,wait_time_micro/1024 wait_time_milli,wait_count from gv$event_histogram_micro} 
             default={gv$event_histogram}
         }
+        @check_access_ping: {
+            gv$instance_ping={SELECT inst_id instance,instance inst_id,COUNT_500B+COUNT_8K PING,WAIT_TIME_500B+WAIT_TIME_8K PING_TIME FROM gv$instance_ping}
+            default={SELECT inst_id,instance,0 PING,0 PING_TIME FROM gv$instance_cache_transfer}
+        }
         @con : 12.1={,con_dbid} default={}
         &awr : default={false} awr={true} pdb={true}
         &vw  : default={dba_hist_} pdb={awr_pdb_}
@@ -145,11 +149,7 @@ BEGIN
 
     sq(1,
        'SELECT /*+NO_MERGE(A) MERGE(B) USE_HASH(A B)*/ * 
-        FROM (
-            SELECT inst_id instance,instance inst_id,
-                   COUNT_500B+COUNT_8K PING,
-                   WAIT_TIME_500B+WAIT_TIME_8K PING_TIME
-            FROM gv$instance_ping) B
+        FROM (&check_access_ping) B
         JOIN  GV$INSTANCE_CACHE_TRANSFER A USING (inst_id,instance)
         WHERE LOST+CR_BLOCK+CURRENT_BLOCK>0',
        'SELECT /*+NO_MERGE(A) MERGE(B) USE_HASH(A B)*/ * 
@@ -299,14 +299,14 @@ BEGIN
     ELSIF sleeps > 0 THEN
         snap(1);
         tim1 := dbms_utility.get_time - tim1;
-        dbms_output.put_line('Sampling data took external ' || round(tim1 * 2 / 100, 2) || ' secs.');
+        dbms_output.put_line('Sampling data took external ' || round(tim1 / 100, 2) || ' secs.');
         dbms_output.put_line('*******************************');
         tim1 := greatest(1, sleeps - (dbms_utility.get_time - tim) / 100);
         tim  := dbms_utility.get_time;
         $IF DBMS_DB_VERSION.VERSION>12 $THEN
             dbms_session.sleep(tim1);
         $ELSE
-            sys.dbms_lock.sleep(tim);
+            sys.dbms_lock.sleep(tim1);
         $END
     ELSE
         SELECT greatest(10, round(86400 * AVG(SYSDATE - startup_time) - 60))

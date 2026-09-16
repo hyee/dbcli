@@ -1,0 +1,223 @@
+/*[[
+    Show RAC Information
+    ====================
+    Snap the RAC statistics of the period: global cache/enqueue services, message stats and the
+    per-instance-pair cache transfer counters. Usage: @@NAME rac <seconds>|BEGIN|END [-sec] [-top]
+
+    The report is made of 4 blocks:
+    1) GV$CR_BLOCK_SERVER            - the CR/CU request, LMS request and result counters per instance
+    2) GC CR/CUR Blocks              - gc cr/current block traffic, receive/flush/pin/build times
+                                       and the GCS/GES message counters, with their per-block and
+                                       per-message averages
+    3) Global Message Stats          - the message queue/process times, the direct/indirect/flow-ctrl
+                                       percentage and the S-optim broadcast counters
+    4) Global Cache Instance         - the per instance-pair transfer counters, with the average
+       Transfer Stats                  time per block and the busy/congested/2-hop/3-hop breakdown
+                                       of each file type
+
+    Parameters:
+    -----------
+    <seconds> : the period to be snapped, or BEGIN/END to wrap a series of commands
+    -sec      : show the delta stats per second instead of for the whole period
+    -top      : show the result in top-style, refreshing the screen at each round
+
+    Notes:
+    ------
+    - the gc cr/current block counters come from gv$sysstat while the GCS/GES message counters come
+      from gv$dlm_misc, so the two are counted on different paths and do not add up to each other
+    - a column whose denominator is 0(no CR/CU block received, nothing queued) is left empty rather
+      than shown as 0, so an empty cell means "not computable", not "no activity"
+    - the report only makes sense on a RAC database: on a single instance the gc and dlm_misc
+      counters stay 0 and every block is filtered out, leaving the 4 title bars empty
+
+    --[[
+        @ver12 : 12.1={} default={--}
+        @con   : 12.1={,con_id} default={}
+    --]]
+]]*/
+{
+    sql={
+        [[/*grid={topic='GV$CR_BLOCK_SERVER'}*/
+            SELECT inst_id                     "INST|ID",
+                   sum(cr_requests)            "CR|REQS",
+                   sum(current_requests)       "CU|REQS",
+                   '|' "|",
+                   sum(data_requests)          "LMS|DATA",
+                   sum(undo_requests)          "LMS|UNDO",
+                   sum(tx_requests)            "LMS|HEADER",
+                   sum(other_requests)         "LMS|OTHER",
+                   '|' "|",
+                   sum(current_results)        "CURR|RESULTS",
+                   sum(private_results)        "PRIV|RESULTS",
+                   sum(zero_results)           "ZERO|RESULTS",
+                   sum(disk_read_results)      "DISK|RESULTS",
+                   sum(fail_results)           "FAIL|RESULTS",
+                   sum(stale)                  "STALE|RESULTS",
+                   '|' "|",
+                   sum(fairness_down_converts) "FAIRNESS|CONVERTS",
+                   sum(fairness_clears)        "FAIRNESS|CLEARS",
+                   sum(free_gc_elements)       "GC_FREE|ELEMENT",
+                   '|' "|",
+                   sum(flushes)                "FLUSH|COUNT",
+                   sum(flushes_queued)         "FLUSH|QUEUE",
+                   sum(flush_queue_full)       "FLUSH|FULL",
+                   sum(light_works)            "LIGHT|WORKS",
+                   sum(errors)                 "NUM|ERRS"
+            FROM   gv$cr_block_server
+            GROUP  BY inst_id
+            ORDER  BY 1
+        ]],'-',[[/*grid={topic='GC CR/CUR Blocks'}*/
+            SELECT /*+outline_leaf use_hash(a b c)*/
+                   a.inst_id "INST|ID",
+                   sum(CASE WHEN a.name IN('gc cr blocks served','gc cr blocks received','gc current blocks served','gc current blocks received') THEN a.value END)
+                     *(SELECT value+0 FROM   v$parameter WHERE  name='db_block_size')
+                     +200*(
+                      sum(CASE WHEN a.name IN('gc status messages sent','ka messages sent','gc status messages received','ka grants received') THEN a.value ELSE 0 END)
+                      +nvl(sum(c.sent+c.recv),0)) "GC|Traffic",
+                   sum(decode(a.name, 'gc blocks lost', a.value)) "Blks|Lost",
+                   sum(b.total_waits) "CR|Failure",
+                   '|' "|",
+                   sum(decode(a.name, 'gc cr blocks served', a.value)) "CR|Sent",
+                   sum(decode(a.name, 'gc cr blocks received', a.value)) "CR|Recv",
+                   sum(decode(a.name, 'gc cr blocks built', a.value)) "CR|Built",
+                   sum(decode(a.name, 'gc cr block receive time', a.value*10000)) "CR|Time",
+                   sum(decode(a.name, 'gc cr block flush time', a.value*10000)) "CR|Flush",
+                   sum(decode(a.name, 'gc cr block build time', a.value*10000)) "Build|Time",
+                   NULL "CR|Avg",
+                   NULL "Build|Avg",
+                   '|' "|",
+                   sum(decode(a.name, 'gc current blocks served', a.value)) "CU|Sent",
+                   sum(decode(a.name, 'gc current blocks received', a.value)) "CU|Recv",
+                   sum(decode(a.name, 'gc current blocks pinned', a.value)) "CU|Pins",
+                   sum(decode(a.name, 'gc current block receive time', a.value*10000)) "CU|Time",
+                   sum(decode(a.name, 'gc current block flush time', a.value*10000)) "CU|Flush",
+                   sum(decode(a.name, 'gc current block pin time', a.value*10000)) "Pin|Time",
+                   NULL "CU|Avg",
+                   NULL "Pin|Avg",
+                   '|' "|",
+                   sum(CASE WHEN a.name IN('gc status messages sent','ka messages sent') THEN a.value ELSE 0 END)+nvl(sum(c.sent),0) "GCS/GES|Msg Sent",
+                   sum(CASE WHEN a.name IN('gc status messages received','ka grants received') THEN a.value ELSE 0 END)+nvl(sum(c.recv),0) "GCS/GES|Msg Recv",
+                   sum(c.recv_time) "Recv|Time",
+                   sum(c.recv) "GCS/GES|Avg"
+            FROM   gv$sysstat a
+            LEFT   JOIN (SELECT *
+                         FROM   gv$system_event
+                         WHERE  event='gc cr failure') b
+            ON     a.inst_id=b.inst_id
+            AND    a.name='gc cr blocks received'
+            &ver12 AND    a.con_id=b.con_id
+            LEFT   JOIN (
+                SELECT inst_id &con,
+                       sum(CASE WHEN name IN ('gcs msgs received','ges msgs received') THEN value ELSE 0 END) recv,
+                       sum(CASE WHEN name IN ('gcs msgs process time(ms)','ges msgs process time(ms)') THEN value*1000 ELSE 0 END) recv_time,
+                       sum(CASE WHEN name IN ('gcs messages sent','ges messages sent') THEN value ELSE 0 END) sent
+                FROM   gv$dlm_misc
+                GROUP  BY inst_id &con) c
+            ON     a.inst_id=c.inst_id
+            AND    a.name='gc cr blocks received'
+            &ver12 AND    a.con_id=c.con_id
+            GROUP  BY a.inst_id
+            ORDER  BY 1
+        ]],'-',[[/*grid={topic='Global Message Stats'}*/
+            SELECT inst_id "INST|ID",
+                   sum(decode(name, 'msgs sent queued', value)) "Sent|Queued",
+                   sum(decode(name, 'msgs sent queue time (ms)', value*1000)) "Sent|Time",
+                   sum(decode(name, 'msgs sent queued on ksxp', value)) "ksxp|Queued",
+                   sum(decode(name, 'msgs sent queue time on ksxp (ms)', value*1000)) "ksxp|Time",
+                   NULL "Sent|Avg",
+                   NULL "ksxp|Avg",
+                   '|' "|",
+                   sum(decode(name, 'msgs received queued', value)) "Recv|Queued",
+                   sum(decode(name, 'msgs received queue time (ms)', value*1000)) "Recv|Time",
+                   sum(decode(name, 'msgs received kernel queue time (ns)', value/1000)) "Kernel|Time",
+                   NULL "Recv|Avg",
+                   NULL "Kernel|Avg",
+                   '|' "|",
+                   sum(decode(name, 'Global Enqueue S-optim Broadcasts sent', value)) "S-optim|Broadcast",
+                   sum(decode(name, 'Global Enqueue S-optim S-lock gets', value)) "S-optim|S-lock",
+                   sum(decode(name, 'Global Enqueue S-optim anti-locks crea sent', value)) "S-optim|Anti-Lock",
+                   '|' "|",
+                   sum(decode(name, 'messages sent directly', value)) "Msgs|Direct",
+                   sum(decode(name, 'messages sent indirectly', value)) "Msgs|Indirect",
+                   sum(decode(name, 'messages flow controlled', value)) "Msgs|FlowCtrl"
+            FROM   gv$dlm_misc
+            WHERE  value>0
+            GROUP  BY inst_id
+            ORDER  BY inst_id
+        ]],'-',[[/*grid={topic='Global Cache Instance Transfer Stats'}*/
+            SELECT inst_id || ' -> ' || instance "Instance|Transfer",
+                   a.class "File|Type",
+                   sum(lost) "File|Lost",
+                   sum(lost_time) "Lost|Time",
+                   '|' "|",
+                   sum(cr_block) "CR|Blks",
+                   NULL "Avg|CR",
+                   sum(cr_block - current_busy - current_congested) "CR|Immedia",
+                   '|' "|",
+                   sum(cr_block_time) "CR|Time",
+                   sum(cr_busy_time) "CR|Busy",
+                   sum(cr_congested_time) "CR|Cogst",
+                   sum(cr_2hop_time) "CR|2-Hop",
+                   sum(cr_3hop_time) "CR|3-Hop",
+                   '||' "||",
+                   sum(current_block) "CU|Blks",
+                   NULL "Avg|CU",
+                   sum(current_block - current_busy - current_congested) "CU|Immedia",
+                   '|' "|",
+                   sum(current_block_time) "CU|Time",
+                   sum(current_busy_time) "CU|Busy",
+                   sum(current_congested_time) "CU|Cogst",
+                   sum(current_2hop_time) "CU|2-Hop",
+                   sum(current_3hop_time) "CU|3-Hop"
+            FROM   gv$instance_cache_transfer a
+            GROUP  BY inst_id, instance, class
+            ORDER  BY a.class, 1
+        ]]
+    },
+    delta_by=[[CR|REQS,CU|REQS,LMS|DATA,LMS|UNDO,LMS|HEADER,LMS|OTHER,
+               CURR|RESULTS,PRIV|RESULTS,ZERO|RESULTS,DISK|RESULTS,FAIL|RESULTS,STALE|RESULTS,Blks|Lost,CR|Failure,
+               FAIRNESS|CONVERTS,FAIRNESS|CLEARS,GC_FREE|ELEMENT,FLUSH|COUNT,FLUSH|QUEUE,FLUSH|FULL,LIGHT|WORKS,NUM|ERRS,
+               CR|Recv,CR|Time,CU|Recv,CR|Sent,CU|Sent,CU|Time,Build|Time,Pin|Time,CR|Built,CU|Pins,CR|Flush,CU|Flush,
+               Sent|Queued,Sent|Time,ksxp|Queued,ksxp|Time,Recv|Queued,Recv|Time,Kernel|Time,
+               Msgs|Direct,Msgs|Indirect,Msgs|FlowCtrl,GCS/GES|Msg Sent,GCS/GES|Msg Recv,GCS/GES|Avg,Recv|Time,Recv|Avg,GC|Traffic,
+               S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,
+               CR|Blks,CR|Immedia,CR|Busy,CR|Cogst,CR|2-Hop,CR|3-Hop,CU|Blks,CU|Immedia,CU|Busy,CU|Cogst,CU|2-Hop,CU|3-Hop,
+    ]],
+    group_by="inst|id,Instance|Transfer,File|Type,",
+    calc_rules={
+        ['CR|Avg']='[CR|Time]/[CR|Recv]',
+        ['Build|Avg']='[Build|Time]/[CR|Built]',
+        ['CU|Avg']='[CU|Time]/[CU|Recv]',
+        ['Pin|Avg']='[Pin|Time]/[CU|Pins]',
+        ['Sent|Avg']='[Sent|Time]/[Sent|Queued]',
+        ['ksxp|Avg']='[ksxp|Time]/[ksxp|Queued]',
+        ['Recv|Avg']='[Recv|Time]/[Recv|Queued]',
+        ['Kernel|Avg']='[Kernel|Time]/[Recv|Queued]',
+        ['GCS/GES|Avg']='[Recv|Time]/[GCS/GES|Avg]',
+        ['CR|Immedia']='[CR|Immedia]/[CR|Blks]',
+        ['CR|Busy']='[CR|Busy]/[CR|Time]',
+        ['CR|Cogst']='[CR|Cogst]/[CR|Time]',
+        ['CR|2-Hop']='[CR|2-Hop]/[CR|Time]',
+        ['CR|3-Hop']='[CR|3-Hop]/[CR|Time]',
+        ['CU|Immedia']='[CU|Immedia]/[CU|Blks]',
+        ['CU|Busy']='[CU|Busy]/[CU|Time]',
+        ['CU|Cogst']='[CU|Cogst]/[CU|Time]',
+        ['CU|2-Hop']='[CU|2-Hop]/[CU|Time]',
+        ['CU|3-Hop']='[CU|3-Hop]/[CU|Time]',
+        ['Avg|CR']='[CR|Time]/[CR|Blks]',
+        ['Avg|CU']='[CU|Time]/[CU|Blks]',
+    },
+    column_formatter={
+        pct2="CR|Immedia,CR|Busy,CR|Cogst,CR|2-Hop,CR|3-Hop,CU|Immedia,CU|Busy,CU|Cogst,CU|2-Hop,CU|3-Hop",
+        kmg2="GC|Traffic",
+        usmhd2=[[CR|Time,Build|Time,CU|Time,Pin|Time,CR|Avg,CU|Avg,Build|Avg,Pin|Avg,Sent|Time,ksxp|Time,
+                 Sent|Avg,ksxp|Avg,Recv|Avg,Kernel|Avg,Recv|Time,Kernel|Time,CR|Flush,CU|Flush,
+                 GCS/GES|Avg,Avg|CR,Avg|CU,
+                ]],
+        tmb2=[[Sent|Queued,ksxp|Queued,Recv|Queued,GCS/GES|Msg Sent,GCS/GES|Msg Recv,Msgs|Direct,Msgs|Indirect,Msgs|FlowCtrl,
+              S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,
+              Blks|Lost,CR|Sent,CR|Recv,CR|Built,CU|Sent,CU|Recv,CU|Pins,
+              File|Lost,CR|Blks,CU|Blks,
+            ]]
+    }
+}

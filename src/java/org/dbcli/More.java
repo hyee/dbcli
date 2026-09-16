@@ -52,6 +52,20 @@ final public class More {
     private static final int ESCAPE = 27;
     private static final String MESSAGE_FILE_INFO = "FILE_INFO";
 
+    /**
+     * A terminal that enabled bracketed paste (DECSET 2004) wraps pasted text in these
+     * markers - a real terminal for an actual paste, ConPTY for any multi-character input
+     * chunk. The pager edits its pattern / file name in its own key maps (it does not go
+     * through LineReader), so without a binding the marker text was typed into the buffer:
+     * in the search prompt the literal '[' made Pattern.compile throw
+     * "Unclosed character class near index N" and the "(Press a key)" handler swallowed the
+     * next keystroke; in command mode the '[' ran the left-column move and the digits of
+     * "200~" were fed into the numeric buffer. Same values as
+     * org.jline.reader.impl.LineReaderImpl.BRACKETED_PASTE_BEGIN/END.
+     */
+    private static final String BRACKETED_PASTE_BEGIN = "\033[200~";
+    private static final String BRACKETED_PASTE_END = "\033[201~";
+
     public boolean quitAtSecondEof;
     public boolean quitAtFirstEof;
     public boolean quitIfOneScreen;
@@ -666,6 +680,8 @@ final public class More {
                                 break;
                             case EXIT:
                                 continue;
+                            case IGNORE:
+                                break;
                         }
                         buffer.setLength(0);
                     }
@@ -889,6 +905,7 @@ final public class More {
         fileKeyMap.bind(Operation.DELETE_WORD, alt('X'));
         fileKeyMap.bind(Operation.DELETE_LINE, ctrl('U'));
         fileKeyMap.bind(Operation.ACCEPT, "\r");
+        fileKeyMap.bind(Operation.IGNORE, BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END);
 
         SavedSourcePositions ssp = new SavedSourcePositions();
         message = null;
@@ -904,6 +921,10 @@ final public class More {
                 //End of input while editing the file name: cancel the prompt.
                 buffer.setLength(0);
                 return;
+            }
+            if (op == Operation.IGNORE) {
+                //A paste marker is not part of the file name, and must not end the prompt.
+                continue;
             }
             if (op == Operation.ACCEPT) {
                 String name = buffer.substring(begPos);
@@ -945,6 +966,8 @@ final public class More {
         searchKeyMap.bind(Operation.UP, key(terminal, Capability.key_up), alt('k'));
         searchKeyMap.bind(Operation.DOWN, key(terminal, Capability.key_down), alt('j'));
         searchKeyMap.bind(Operation.ACCEPT, "\r");
+        //Same as the command map: a paste marker must not become part of the pattern.
+        searchKeyMap.bind(Operation.IGNORE, BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END);
 
 
         boolean forward = true;
@@ -1030,6 +1053,8 @@ final public class More {
                         message = null;
                     }
                     return forward;
+                case IGNORE:
+                    break;
                 default:
                     curPos = lineEditor.editBuffer(op, curPos);
                     currentBuffer = buffer.toString();
@@ -1983,6 +2008,10 @@ final public class More {
     private void bindKeys(KeyMap<Operation> map) {
         map.bind(Operation.HELP, "h", "H");
         map.bind(Operation.EXIT, "q", ":q", "Q", ":Q", "ZZ");
+        //Bracketed paste markers are neither text nor commands: swallow them (the body of
+        //the paste is still read normally, so e.g. a pasted "/pattern" searches with the
+        //right pattern instead of dying inside Pattern.compile).
+        map.bind(Operation.IGNORE, BRACKETED_PASTE_BEGIN, BRACKETED_PASTE_END);
         map.bind(Operation.FORWARD_ONE_LINE, "e", ctrl('E'), "j", ctrl('N'), "\r", key(terminal, Capability.key_down));
         map.bind(Operation.BACKWARD_ONE_LINE, "y", ctrl('Y'), "k", ctrl('K'), ctrl('P'), key(terminal, Capability.key_up));
         map.bind(Operation.FORWARD_ONE_WINDOW_OR_LINES, "f", ctrl('F'), ctrl('V'), " ", key(terminal, Capability.key_npage));
@@ -2090,7 +2119,13 @@ final public class More {
         DELETE_LINE,
         ACCEPT,
         UP,
-        DOWN
+        DOWN,
+
+        /**
+         * A bracketed-paste marker: consumed as a no-op so it can never become part of a
+         * search pattern, a file name or a command. Kept last so the existing ordinals stay.
+         */
+        IGNORE
     }
 
     /** In-memory source: the pager reads the characters directly, no byte copy and no charset round trip. */

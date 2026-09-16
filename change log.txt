@@ -1,3 +1,4 @@
+2026-09-16: + oracle: new command 'snap rac'
 2026-09-12: * public: fix lib `opencsv`
 2026-09-11: * public: fix lib `jnlua`
 2026-09-07: + public: new lib 'utf8'

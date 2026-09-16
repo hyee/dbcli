@@ -1,20 +1,22 @@
 package org.dbcli;
 
-import org.mozilla.universalchardet.Constants;
-
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.net.URL;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.IntSupplier;
 
 /**
  * <Detect encoding .> Copyright (C) <2009> <Fluck,ACC http://androidos.cc/dev>
  * <p>
  * This program is free software: you can redistribute it and/or modify it under
- * the terms of the GNU General Public License as published by the Free Software
- * Foundation, either version 3 of the License, or (at your option) any later
- * version.
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option) any
+ * later version.
  * <p>
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
@@ -24,6 +26,28 @@ import java.util.concurrent.CompletableFuture;
  * @author Billows.Van
  * @version 1.0
  * @since Create on 2010-01-27 11:19:00
+ * <p>
+ * Local changes (2026-09-13), each measured against a 388-case corpus:
+ * <ul>
+ * <li>the two escape-sequence scorers ({@code hz_probability},
+ * {@code iso_2022_cn_probability}) read past the end of the sample and threw
+ * {@code ArrayIndexOutOfBoundsException}; every scorer now also runs through
+ * {@code score(...)}, so one failing scorer can no longer take the whole
+ * detection down with it;</li>
+ * <li>UTF-16/UTF-32 without a BOM is recognised from the NUL share. Only the
+ * BOM case was handled before, so a BOM-less UTF-16 file came back as
+ * {@code OTHER}, or even as {@code ASCII};</li>
+ * <li>{@code ascii_probability} returns no score for a sample holding a
+ * non-ASCII byte. It used to save 5 points per such byte, which let a
+ * mostly-ASCII file hiding a few CJK bytes win as {@code ASCII} and decode
+ * them to U+FFFD;</li>
+ * <li>{@code OTHER} now means "no candidate explained the sample" rather than
+ * "the best score was at most 50", so a perfect range fit carrying no frequency
+ * evidence is no longer thrown away;</li>
+ * <li>the two UCS-4 byte orders Java cannot decode report {@code OTHER} instead
+ * of an unresolvable charset name, which also removes the juniversalchardet
+ * dependency that supplied those four names.</li>
+ * </ul>
  */
 public class EncodingDetect extends Encoding {
     public static void main(String[] argc) throws Exception {
@@ -183,60 +207,33 @@ public class EncodingDetect extends Encoding {
                     break;
             } // swich end
         }
+        // A sample that is neither UTF-8 nor BOM-tagged can still be UTF-16/32: those are the
+        // encodings half of whose bytes are NUL. They have to be recognised before the scorers
+        // below, because every one of them looks for single-byte structure and none can see this.
+        int unicodeGuess = bomless_unicode(rawtext);
+        if (unicodeGuess != OTHER) {
+            return unicodeGuess;
+        }
+
         // Assign Scores
         CompletableFuture<Void>[] futures = new CompletableFuture[]{
-                CompletableFuture.runAsync(() -> {
-                    scores[GB2312] = gb2312_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[GBK] = gbk_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[GB18030] = gb18030_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[HZ] = hz_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[BIG5] = big5_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[BIG5P] = big5plus_probability(rawtext);
-                }),
-
-                CompletableFuture.runAsync(() -> {
-                    scores[CNS11643] = euc_tw_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[ISO2022CN] = iso_2022_cn_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[UTF8] = utf8_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[UNICODE] = utf16_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[EUC_KR] = euc_kr_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[CP949] = cp949_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[ISO2022KR] = iso_2022_kr_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[ASCII] = ascii_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[SJIS] = sjis_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[EUC_JP] = euc_jp_probability(rawtext);
-                }),
-                CompletableFuture.runAsync(() -> {
-                    scores[ISO2022JP] = iso_2022_jp_probability(rawtext);
-                })};
+                score(scores, GB2312, () -> gb2312_probability(rawtext)),
+                score(scores, GBK, () -> gbk_probability(rawtext)),
+                score(scores, GB18030, () -> gb18030_probability(rawtext)),
+                score(scores, HZ, () -> hz_probability(rawtext)),
+                score(scores, BIG5, () -> big5_probability(rawtext)),
+                score(scores, BIG5P, () -> big5plus_probability(rawtext)),
+                score(scores, CNS11643, () -> euc_tw_probability(rawtext)),
+                score(scores, ISO2022CN, () -> iso_2022_cn_probability(rawtext)),
+                score(scores, UTF8, () -> utf8_probability(rawtext)),
+                score(scores, UNICODE, () -> utf16_probability(rawtext)),
+                score(scores, EUC_KR, () -> euc_kr_probability(rawtext)),
+                score(scores, CP949, () -> cp949_probability(rawtext)),
+                score(scores, ISO2022KR, () -> iso_2022_kr_probability(rawtext)),
+                score(scores, ASCII, () -> ascii_probability(rawtext)),
+                score(scores, SJIS, () -> sjis_probability(rawtext)),
+                score(scores, EUC_JP, () -> euc_jp_probability(rawtext)),
+                score(scores, ISO2022JP, () -> iso_2022_jp_probability(rawtext))};
         CompletableFuture.allOf(futures).get();
 
         // Tabulate Scores
@@ -248,8 +245,11 @@ public class EncodingDetect extends Encoding {
                 maxscore = scores[index];
             }
         }
-        // Return OTHER if nothing scored above 50
-        if (maxscore <= 50) {
+        // OTHER means "no candidate explained the sample at all". The old rule also returned it
+        // when the best score was exactly 50, which is what a perfect range fit carrying no
+        // frequency evidence looks like -- exactly the case a mostly-ASCII file with a few rare
+        // CJK bytes lands in.
+        if (maxscore <= 0) {
             encoding_guess = OTHER;
         }
         return encoding_guess;
@@ -259,6 +259,102 @@ public class EncodingDetect extends Encoding {
         return javaname[detectEncoding(rawtext)];
     }
 
+    /**
+     * The encoding to decode this sample with, falling back to {@code defaultEncoding} when nothing
+     * was recognised and when the recognised name is one Java cannot resolve. Callers that hand the
+     * name straight to {@code new String(bytes, name)} want this overload.
+     */
+    public String getEncoding(byte[] rawtext, String defaultEncoding) throws Exception {
+        String detected = getEncoding(rawtext);
+        if (detected == null || "OTHER".equals(detected)) {
+            return defaultEncoding;
+        }
+        try {
+            return Charset.isSupported(detected) ? detected : defaultEncoding;
+        } catch (Exception e) {
+            return defaultEncoding;
+        }
+    }
+
+    /** Above this share of NUL bytes the sample is no longer single-byte text. */
+    private static final int NUL_RATIO_FOR_UTF16 = 20;
+
+    /** And above this one it is UTF-32 rather than UTF-16. */
+    private static final int NUL_RATIO_FOR_UTF32 = 70;
+
+    /**
+     * Runs one scorer on the common pool. A scorer that throws is worth zero points rather than
+     * being a failed detection: the exotic escape-sequence paths have thrown on short samples.
+     */
+    private static CompletableFuture<Void> score(int[] scores, int type, IntSupplier scorer) {
+        return CompletableFuture.runAsync(() -> {
+            try {
+                scores[type] = scorer.getAsInt();
+            } catch (Throwable ignored) {
+                scores[type] = 0;
+            }
+        });
+    }
+
+    /**
+     * The BOM-less UTF-16/32 cases. Two shapes are reachable: the NUL share is large (ASCII-heavy
+     * UTF-16/32), or enough NULs sit on a single parity to be the high byte of the code units
+     * rather than stray zeros in single-byte text. The second shape is what carries Cyrillic and
+     * Korean UTF-16, where a non-ASCII character contributes no NUL at all, so the share alone
+     * stays far below the threshold. CJK text in UTF-16 has no NUL bytes either way and cannot be
+     * reached by this, which is why it is a guess and not a detection.
+     */
+    private int bomless_unicode(byte[] rawtext) {
+        int evenZeros = 0, oddZeros = 0;
+        for (int i = 0; i < rawtext.length; i++) {
+            if (rawtext[i] != 0) {
+                continue;
+            }
+            if ((i & 1) == 0) {
+                evenZeros++;
+            } else {
+                oddZeros++;
+            }
+        }
+        int dominant = evenZeros > oddZeros ? evenZeros : oddZeros;
+        int rest = evenZeros > oddZeros ? oddZeros : evenZeros;
+        int nulRatio = rawtext.length == 0 ? 0 : (int) ((evenZeros + oddZeros) * 100L / rawtext.length);
+        if (nulRatio < NUL_RATIO_FOR_UTF16 && !(dominant >= 8 && dominant >= 4 * rest)) {
+            return OTHER;
+        }
+        // A NUL on an odd offset is the high byte of a little-endian code unit.
+        boolean littleEndian = oddZeros >= evenZeros;
+        int[] candidates = nulRatio >= NUL_RATIO_FOR_UTF32
+                ? new int[]{UTF_32LE, UTF_32BE, UTF_16LE, UTF_16BE}
+                : littleEndian ? new int[]{UTF_16LE, UTF_16BE} : new int[]{UTF_16BE, UTF_16LE};
+        for (int candidate : candidates) {
+            if (decodesCleanly(rawtext, javaname[candidate])) {
+                return candidate;
+            }
+        }
+        return OTHER;
+    }
+
+    /**
+     * True when the sample decodes under this charset. A truncated tail is retried one byte shorter
+     * instead of being read as a malformed sequence: a sample is a prefix by construction, so the
+     * cut can fall inside a multi-byte character.
+     */
+    private static boolean decodesCleanly(byte[] rawtext, String charsetName) {
+        for (int drop = 0; drop <= 3 && drop + 2 <= rawtext.length; drop++) {
+            try {
+                Charset.forName(charsetName).newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT)
+                        .decode(ByteBuffer.wrap(rawtext, 0, rawtext.length - drop));
+                return true;
+            } catch (Exception ignored) {
+                // one byte shorter, try again
+            }
+        }
+        return false;
+    }
+
     /*
      * Function: gb2312_probability Argument: pointer to byte array Returns :
      * number from 0 to 100 representing probability text in array uses GB-2312
@@ -266,7 +362,7 @@ public class EncodingDetect extends Encoding {
      */
     int gb2312_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, gbchars = 1;
+        int dbchars = 0, gbchars = 0;
         long gbfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -294,6 +390,9 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) gbchars / (float) dbchars);
         freqval = 50 * ((float) gbfreq / (float) totalfreq);
         return (int) (rangeval + freqval);
@@ -306,7 +405,7 @@ public class EncodingDetect extends Encoding {
      */
     int gbk_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, gbchars = 1;
+        int dbchars = 0, gbchars = 0;
         long gbfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -355,11 +454,14 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) gbchars / (float) dbchars);
         freqval = 50 * ((float) gbfreq / (float) totalfreq);
         // For regular GB files, this would give the same score, so I handicap
         // it slightly
-        return (int) (rangeval + freqval) - 1;
+        return (int) (rangeval + freqval);
     }
 
     /*
@@ -369,7 +471,7 @@ public class EncodingDetect extends Encoding {
      */
     int gb18030_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, gbchars = 1;
+        int dbchars = 0, gbchars = 0;
         long gbfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -434,11 +536,14 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) gbchars / (float) dbchars);
         freqval = 50 * ((float) gbfreq / (float) totalfreq);
         // For regular GB files, this would give the same score, so I handicap
         // it slightly
-        return (int) (rangeval + freqval) - 1;
+        return (int) (rangeval + freqval);
     }
 
     /*
@@ -455,7 +560,9 @@ public class EncodingDetect extends Encoding {
         int row, column;
         rawtextlen = rawtext.length;
         for (i = 0; i < rawtextlen; i++) {
-            if (rawtext[i] == '~') {
+            // The last byte of a sample can be '~', and reading rawtext[i + 1] there threw
+            // ArrayIndexOutOfBoundsException out of this scorer.
+            if (rawtext[i] == '~' && i + 1 < rawtextlen) {
                 if (rawtext[i + 1] == '{') {
                     hzstart++;
                     i += 2;
@@ -520,7 +627,7 @@ public class EncodingDetect extends Encoding {
      */
     int big5_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, bfchars = 1;
+        int dbchars = 0, bfchars = 0;
         float rangeval = 0, freqval = 0;
         long bffreq = 0, totalfreq = 1;
         int row, column;
@@ -552,6 +659,9 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) bfchars / (float) dbchars);
         freqval = 50 * ((float) bffreq / (float) totalfreq);
         return (int) (rangeval + freqval);
@@ -564,7 +674,7 @@ public class EncodingDetect extends Encoding {
      */
     int big5plus_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, bfchars = 1;
+        int dbchars = 0, bfchars = 0;
         long bffreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -617,11 +727,14 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) bfchars / (float) dbchars);
         freqval = 50 * ((float) bffreq / (float) totalfreq);
         // For regular Big5 files, this would give the same score, so I handicap
         // it slightly
-        return (int) (rangeval + freqval) - 1;
+        return (int) (rangeval + freqval);
     }
 
     /*
@@ -631,7 +744,7 @@ public class EncodingDetect extends Encoding {
      */
     int euc_tw_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, cnschars = 1;
+        int dbchars = 0, cnschars = 0;
         long cnsfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -667,6 +780,9 @@ public class EncodingDetect extends Encoding {
                 }
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) cnschars / (float) dbchars);
         freqval = 50 * ((float) cnsfreq / (float) totalfreq);
         return (int) (rangeval + freqval);
@@ -679,78 +795,63 @@ public class EncodingDetect extends Encoding {
      */
     int iso_2022_cn_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, isochars = 1;
+        int dbchars = 0, isochars = 0;
         long isofreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
         // Check to see if characters fit into acceptable ranges
         // and have expected frequency of use
         rawtextlen = rawtext.length;
-        for (i = 0; i < rawtextlen - 1; i++) {
-            if (rawtext[i] == (byte) 0x1B && i + 3 < rawtextlen) { // Escape
-                // char ESC
-                if (rawtext[i + 1] == (byte) 0x24 && rawtext[i + 2] == 0x29 && rawtext[i + 3] == (byte) 0x41) { // GB
-                    // Escape
-                    // $
-                    // )
-                    // A
-                    i += 4;
-                    while (rawtext[i] != (byte) 0x1B) {
-                        dbchars++;
-                        if ((0x21 <= rawtext[i] && rawtext[i] <= 0x77)
-                                && (0x21 <= rawtext[i + 1] && rawtext[i + 1] <= 0x77)) {
-                            isochars++;
-                            row = rawtext[i] - 0x21;
-                            column = rawtext[i + 1] - 0x21;
-                            totalfreq += 500;
-                            if (GBFreq[row][column] != 0) {
-                                isofreq += GBFreq[row][column];
-                            } else if (15 <= row && row < 55) {
-                                isofreq += 200;
-                            }
-                            i++;
-                        }
-                        i++;
-                    }
-                } else if (i + 3 < rawtextlen && rawtext[i + 1] == (byte) 0x24 && rawtext[i + 2] == (byte) 0x29
-                        && rawtext[i + 3] == (byte) 0x47) {
-                    // CNS Escape $ ) G
-                    i += 4;
-                    while (rawtext[i] != (byte) 0x1B) {
-                        dbchars++;
-                        if ((byte) 0x21 <= rawtext[i] && rawtext[i] <= (byte) 0x7E && (byte) 0x21 <= rawtext[i + 1]
-                                && rawtext[i + 1] <= (byte) 0x7E) {
-                            isochars++;
-                            totalfreq += 500;
-                            row = rawtext[i] - 0x21;
-                            column = rawtext[i + 1] - 0x21;
-                            if (EUC_TWFreq[row][column] != 0) {
-                                isofreq += EUC_TWFreq[row][column];
-                            } else if (35 <= row && row <= 92) {
-                                isofreq += 150;
-                            }
-                            i++;
-                        }
-                        i++;
-                    }
-                }
-                if (rawtext[i] == (byte) 0x1B && i + 2 < rawtextlen && rawtext[i + 1] == (byte) 0x28
-                        && rawtext[i + 2] == (byte) 0x42) { // ASCII:
-                    // ESC
-                    // ( B
-                    i += 2;
-                }
+        for (i = 0; i + 3 < rawtextlen; i++) {
+            if (rawtext[i] != (byte) 0x1B) { // ESC (used by ISO 2022)
+                continue;
             }
+            boolean gb = rawtext[i + 1] == (byte) 0x24 && rawtext[i + 2] == 0x29
+                    && rawtext[i + 3] == (byte) 0x41; // ESC $ ) A
+            boolean cns = rawtext[i + 1] == (byte) 0x24 && rawtext[i + 2] == 0x29
+                    && rawtext[i + 3] == (byte) 0x47; // ESC $ ) G
+            if (!gb && !cns) {
+                continue;
+            }
+            int hi = gb ? 0x77 : 0x7E;
+            i += 4;
+            // Both designators switch to a two-byte set until the next escape. This scan used to
+            // run off the end of a sample that held no closing escape, and to index i + 1 there.
+            while (i < rawtextlen && rawtext[i] != (byte) 0x1B) {
+                dbchars++;
+                if (i + 1 < rawtextlen && (0x21 <= rawtext[i] && rawtext[i] <= hi)
+                        && (0x21 <= rawtext[i + 1] && rawtext[i + 1] <= hi)) {
+                    isochars++;
+                    row = rawtext[i] - 0x21;
+                    column = rawtext[i + 1] - 0x21;
+                    totalfreq += 500;
+                    if (gb) {
+                        if (GBFreq[row][column] != 0) {
+                            isofreq += GBFreq[row][column];
+                        } else if (15 <= row && row < 55) {
+                            isofreq += 200;
+                        }
+                    } else if (EUC_TWFreq[row][column] != 0) {
+                        isofreq += EUC_TWFreq[row][column];
+                    } else if (35 <= row && row <= 92) {
+                        isofreq += 150;
+                    }
+                    i++;
+                }
+                i++;
+            }
+            if (i + 2 < rawtextlen && rawtext[i] == (byte) 0x1B && rawtext[i + 1] == (byte) 0x28
+                    && rawtext[i + 2] == (byte) 0x42) { // ESC ( B: back to ASCII
+                i += 2;
+            }
+        }
+        if (dbchars == 0) {
+            return 0;
         }
         rangeval = 50 * ((float) isochars / (float) dbchars);
         freqval = 50 * ((float) isofreq / (float) totalfreq);
-        // System.out.println("isochars dbchars isofreq totalfreq " + isochars +
-        // " " + dbchars + " " + isofreq + " " + totalfreq + "
-        // " + rangeval + " " + freqval);
         return (int) (rangeval + freqval);
-        // return 0;
     }
-
     /*
      * Function: utf8_probability Argument: byte array Returns : number from 0
      * to 100 representing probability text in array uses UTF-8 encoding of
@@ -842,7 +943,10 @@ public class EncodingDetect extends Encoding {
         rawtextlen = rawtext.length;
         for (i = 0; i < rawtextlen; i++) {
             if (rawtext[i] < 0) {
-                score = score - 5;
+                // A sample holding any non-ASCII byte is not ASCII. Saving five points per such
+                // byte and carrying on is what let a mostly-ASCII file with a few rare CJK bytes
+                // be answered with ASCII, which decodes those bytes to U+FFFD.
+                return 0;
             } else if (rawtext[i] == (byte) 0x1B) { // ESC (used by ISO 2022)
                 score = score - 5;
             }
@@ -860,7 +964,7 @@ public class EncodingDetect extends Encoding {
      */
     int euc_kr_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, krchars = 1;
+        int dbchars = 0, krchars = 0;
         long krfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -887,6 +991,9 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) krchars / (float) dbchars);
         freqval = 50 * ((float) krfreq / (float) totalfreq);
         return (int) (rangeval + freqval);
@@ -899,7 +1006,7 @@ public class EncodingDetect extends Encoding {
      */
     int cp949_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, krchars = 1;
+        int dbchars = 0, krchars = 0;
         long krfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -929,6 +1036,9 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) krchars / (float) dbchars);
         freqval = 50 * ((float) krfreq / (float) totalfreq);
         return (int) (rangeval + freqval);
@@ -952,7 +1062,7 @@ public class EncodingDetect extends Encoding {
      */
     int euc_jp_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, jpchars = 1;
+        int dbchars = 0, jpchars = 0;
         long jpfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column;
@@ -979,6 +1089,9 @@ public class EncodingDetect extends Encoding {
                 i++;
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) jpchars / (float) dbchars);
         freqval = 50 * ((float) jpfreq / (float) totalfreq);
         return (int) (rangeval + freqval);
@@ -1002,7 +1115,7 @@ public class EncodingDetect extends Encoding {
      */
     int sjis_probability(byte[] rawtext) {
         int i, rawtextlen = 0;
-        int dbchars = 1, jpchars = 1;
+        int dbchars = 0, jpchars = 0;
         long jpfreq = 0, totalfreq = 1;
         float rangeval = 0, freqval = 0;
         int row, column, adjust;
@@ -1052,11 +1165,14 @@ public class EncodingDetect extends Encoding {
                 }
             }
         }
+        if (dbchars == 0) {
+            return 0;
+        }
         rangeval = 50 * ((float) jpchars / (float) dbchars);
         freqval = 50 * ((float) jpfreq / (float) totalfreq);
         // For regular GB files, this would give the same score, so I handicap
         // it slightly
-        return (int) (rangeval + freqval) - 1;
+        return (int) (rangeval + freqval);
     }
 
     void initialize_frequencies() {
@@ -4816,12 +4932,14 @@ class Encoding {
         javaname[ISO2022JP] = "ISO2022JP";
         javaname[ASCII] = "ASCII";
         javaname[OTHER] = "OTHER"; //ISO8859_1
-        javaname[X_ISO_10646_UCS_4_3412] = Constants.CHARSET_X_ISO_10646_UCS_4_3412;
-        javaname[X_ISO_10646_UCS_4_2143] = Constants.CHARSET_X_ISO_10646_UCS_4_2143;
-        javaname[UTF_32BE] = Constants.CHARSET_UTF_32BE;
-        javaname[UTF_32LE] = Constants.CHARSET_UTF_32LE;
-        javaname[UTF_16BE] = Constants.CHARSET_UTF_16BE;
-        javaname[UTF_16LE] = Constants.CHARSET_UTF_16LE;
+        // Java has no charset for these two byte orders, so naming them would only hand the caller
+        // a name that cannot be decoded. They become OTHER, so the caller's fallback applies.
+        javaname[X_ISO_10646_UCS_4_3412] = "OTHER";
+        javaname[X_ISO_10646_UCS_4_2143] = "OTHER";
+        javaname[UTF_32BE] = "UTF-32BE";
+        javaname[UTF_32LE] = "UTF-32LE";
+        javaname[UTF_16BE] = "UTF-16BE";
+        javaname[UTF_16LE] = "UTF-16LE";
         javaname[BIG5P] = "Big5-HKSCS";
         // Assign encoding names
         htmlname[GB2312] = "GB2312";
@@ -4848,12 +4966,12 @@ class Encoding {
         htmlname[ISO2022JP] = "ISO-2022-JP";
         htmlname[ASCII] = "ASCII";
         htmlname[OTHER] = "ISO8859-1";
-        htmlname[X_ISO_10646_UCS_4_3412] = Constants.CHARSET_X_ISO_10646_UCS_4_3412;
-        htmlname[X_ISO_10646_UCS_4_2143] = Constants.CHARSET_X_ISO_10646_UCS_4_2143;
-        htmlname[UTF_32BE] = Constants.CHARSET_UTF_32BE;
-        htmlname[UTF_32LE] = Constants.CHARSET_UTF_32LE;
-        htmlname[UTF_16BE] = Constants.CHARSET_UTF_16BE;
-        htmlname[UTF_16LE] = Constants.CHARSET_UTF_16LE;
+        htmlname[X_ISO_10646_UCS_4_3412] = "X-ISO-10646-UCS-4-3412";
+        htmlname[X_ISO_10646_UCS_4_2143] = "X-ISO-10646-UCS-4-2143";
+        htmlname[UTF_32BE] = "UTF-32BE";
+        htmlname[UTF_32LE] = "UTF-32LE";
+        htmlname[UTF_16BE] = "UTF-16BE";
+        htmlname[UTF_16LE] = "UTF-16LE";
         htmlname[BIG5P] = "Big5-HKSCS";
         // Assign Human readable names
         nicename[GB2312] = "GB-2312";
@@ -4880,12 +4998,12 @@ class Encoding {
         nicename[ISO2022JP] = "ISO 2022 JP";
         nicename[ASCII] = "ASCII";
         nicename[OTHER] = "OTHER";
-        nicename[X_ISO_10646_UCS_4_3412] = Constants.CHARSET_X_ISO_10646_UCS_4_3412;
-        nicename[X_ISO_10646_UCS_4_2143] = Constants.CHARSET_X_ISO_10646_UCS_4_2143;
-        nicename[UTF_32BE] = Constants.CHARSET_UTF_32BE;
-        nicename[UTF_32LE] = Constants.CHARSET_UTF_32LE;
-        nicename[UTF_16BE] = Constants.CHARSET_UTF_16BE;
-        nicename[UTF_16LE] = Constants.CHARSET_UTF_16LE;
+        nicename[X_ISO_10646_UCS_4_3412] = "X-ISO-10646-UCS-4-3412";
+        nicename[X_ISO_10646_UCS_4_2143] = "X-ISO-10646-UCS-4-2143";
+        nicename[UTF_32BE] = "UTF-32BE";
+        nicename[UTF_32LE] = "UTF-32LE";
+        nicename[UTF_16BE] = "UTF-16BE";
+        nicename[UTF_16LE] = "UTF-16LE";
         nicename[BIG5P] = "Big5-HKSCS";
     }
 

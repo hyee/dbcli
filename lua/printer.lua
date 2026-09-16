@@ -781,8 +781,8 @@ function printer.onload()
      |-                     |-                          |
      | [        Home        | Left  window              |
      | \]        End        | Right window              |
-     | (        Left        | Left  half window         |
-     | )        Right       | Right half window         |
+     | Alt+(    Left        | Left  half window         |
+     | Alt+)    Right       | Right half window         |
      |-                     |-                          |
      | /pattern             | Search pattern            |
      | n        Alt+n       | Search Forward            |

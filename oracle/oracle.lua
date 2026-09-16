@@ -162,8 +162,9 @@ function oracle:connect(conn_str)
                     driver,usr,pwd,conn_desc,url="oci8",usr or "sys","sys","/ as sysdba",""
                 end
             end
-            if conn_desc == nil then return exec_command("HELP",{"CONNECT"}) end
+            env.checkhelp(conn_desc)
         end
+        env.checkhelp(url)
         --if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
         
         sqlplustr,url=conn_str,url or conn_desc

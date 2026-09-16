@@ -1,5 +1,7 @@
 /*[[
-    Sample gv$instance_cache_transfer within specific seconds and generate the gc block transfer result between instances. Usage: @@NAME <secs>
+    Sample gv$instance_cache_transfer within specific seconds and generate the gc block transfer
+    result between instances. Usage: @@NAME <secs>
+
     Sample Output:
     ==============
     +----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+
@@ -35,6 +37,15 @@
     | 2->12nd level bmb    |          0|          0|          0|          0|          0|          0|
     | 1->22nd level bmb    |          0|          0|          0|          0|          0|          0|
     +----------------------------------------------------------------------------------------------+
+
+    Notes:
+    ------
+    - the counters are sampled twice, <secs> seconds apart, and only the delta is reported
+    - v$instance_cache_transfer holds the counters of each source->target instance pair, and one
+      row is reported only when the pair transferred at least one block of that type in the period
+    - the class name of each pair comes from the block class(different levels of bmb, undo header,
+      ...), and the busy/congested percentage is the share of the busy/congested time in the total
+      cr/current block time of that pair
     --[[
         @ARGS: 1
         &V1: default={30}
@@ -69,7 +80,7 @@ REM ----------------------------------------------------------------------------
 */
 
 SET verify off feed off
-Define sleep=&v1
+DEFINE sleep=&v1
 PROMPT
 PROMPT
 PROMPT gc_instance_cache.sql v1.10 by Riyaj Shamsudeen @orainternals.com
@@ -99,65 +110,63 @@ DECLARE
     b_class                  t_varchar2_table;
     b_lost                   t_number_table;
     b_lost_time              t_number_table;
-    b_CR_BLOCK               t_number_table;
-    b_CR_BLOCK_TIME          t_number_table;
-    b_CR_2HOP                t_number_table;
-    b_CR_2HOP_TIME           t_number_table;
-    b_CR_3HOP                t_number_table;
-    b_CR_3HOP_TIME           t_number_table;
-    b_CR_BUSY                t_number_table;
-    b_CR_BUSY_TIME           t_number_table;
-    b_CR_CONGESTED           t_number_table;
-    b_CR_CONGESTED_TIME      t_number_table;
-    b_CURRENT_BLOCK          t_number_table;
-    b_CURRENT_BLOCK_TIME     t_number_table;
-    b_CURRENT_2HOP           t_number_table;
-    b_CURRENT_2HOP_TIME      t_number_table;
-    b_CURRENT_3HOP           t_number_table;
-    b_CURRENT_3HOP_TIME      t_number_table;
-    b_CURRENT_BUSY           t_number_table;
-    b_CURRENT_BUSY_TIME      t_number_table;
-    b_CURRENT_CONGESTED      t_number_table;
-    b_CURRENT_CONGESTED_TIME t_number_table;
+    b_cr_block               t_number_table;
+    b_cr_block_time          t_number_table;
+    b_cr_2hop                t_number_table;
+    b_cr_2hop_time           t_number_table;
+    b_cr_3hop                t_number_table;
+    b_cr_3hop_time           t_number_table;
+    b_cr_busy                t_number_table;
+    b_cr_busy_time           t_number_table;
+    b_cr_congested           t_number_table;
+    b_cr_congested_time      t_number_table;
+    b_current_block          t_number_table;
+    b_current_block_time     t_number_table;
+    b_current_2hop           t_number_table;
+    b_current_2hop_time      t_number_table;
+    b_current_3hop           t_number_table;
+    b_current_3hop_time      t_number_table;
+    b_current_busy           t_number_table;
+    b_current_busy_time      t_number_table;
+    b_current_congested      t_number_table;
+    b_current_congested_time t_number_table;
     e_inst_id                t_number_table;
     e_instance               t_number_table;
     e_class                  t_varchar2_table;
     e_lost                   t_number_table;
     e_lost_time              t_number_table;
-    e_CR_BLOCK               t_number_table;
-    e_CR_BLOCK_TIME          t_number_table;
-    e_CR_2HOP                t_number_table;
-    e_CR_2HOP_TIME           t_number_table;
-    e_CR_3HOP                t_number_table;
-    e_CR_3HOP_TIME           t_number_table;
-    e_CR_BUSY                t_number_table;
-    e_CR_BUSY_TIME           t_number_table;
-    e_CR_CONGESTED           t_number_table;
-    e_CR_CONGESTED_TIME      t_number_table;
-    e_CURRENT_BLOCK          t_number_table;
-    e_CURRENT_BLOCK_TIME     t_number_table;
-    e_CURRENT_2HOP           t_number_table;
-    e_CURRENT_2HOP_TIME      t_number_table;
-    e_CURRENT_3HOP           t_number_table;
-    e_CURRENT_3HOP_TIME      t_number_table;
-    e_CURRENT_BUSY           t_number_table;
-    e_CURRENT_BUSY_TIME      t_number_table;
-    e_CURRENT_CONGESTED      t_number_table;
-    e_CURRENT_CONGESTED_TIME t_number_table;
-    v_ver                    NUMBER;
+    e_cr_block               t_number_table;
+    e_cr_block_time          t_number_table;
+    e_cr_2hop                t_number_table;
+    e_cr_2hop_time           t_number_table;
+    e_cr_3hop                t_number_table;
+    e_cr_3hop_time           t_number_table;
+    e_cr_busy                t_number_table;
+    e_cr_busy_time           t_number_table;
+    e_cr_congested           t_number_table;
+    e_cr_congested_time      t_number_table;
+    e_current_block          t_number_table;
+    e_current_block_time     t_number_table;
+    e_current_2hop           t_number_table;
+    e_current_2hop_time      t_number_table;
+    e_current_3hop           t_number_table;
+    e_current_3hop_time      t_number_table;
+    e_current_busy           t_number_table;
+    e_current_busy_time      t_number_table;
+    e_current_congested      t_number_table;
+    e_current_congested_time t_number_table;
     l_sleep                  NUMBER := 60;
-    l_cr_blks_served         NUMBER := 0;
-    l_cur_blks_served        NUMBER := 0;
     i                        NUMBER := 1;
     ind                      VARCHAR2(32);
     CURSOR cur_1 IS
-        SELECT instance || ',' || inst_id || ',' || CLASS indx, ic.*
+        SELECT instance || ',' || inst_id || ',' || class indx, ic.*
         FROM   gv$instance_cache_transfer ic
-        WHERE  cr_block > 0;
+        WHERE  cr_block > 0
+        OR     current_block > 0;
     c1  cur_1%rowtype;
     tim number;
 BEGIN
-    l_sleep:=to_number(nvl('&sleep', '60'));
+    l_sleep := to_number(nvl('&sleep', '60'));
 
     OPEN cur_1;
 
@@ -171,29 +180,29 @@ BEGIN
         b_class(c1.indx) := c1.class;
         b_lost(c1.indx) := c1.lost;
         b_lost_time(c1.indx) := c1.lost_time;
-        b_CR_BLOCK(c1.indx) := c1.cr_block;
-        b_CR_BLOCK_TIME(c1.indx) := c1.cr_block_time;
-        b_CR_2HOP(c1.indx) := c1.cr_2hop;
-        b_CR_2HOP_TIME(c1.indx) := c1.cr_2hop_time;
-        b_CR_3HOP(c1.indx) := c1.cr_3hop;
-        b_CR_3HOP_TIME(c1.indx) := c1.cr_3hop_time;
-        b_CR_BUSY(c1.indx) := c1.cr_busy;
-        b_CR_BUSY_TIME(c1.indx) := c1.cr_busy_time;
-        b_CR_CONGESTED(c1.indx) := c1.cr_congested;
-        b_CR_CONGESTED_TIME(c1.indx) := c1.cr_congested_time;
-        b_CURRENT_BLOCK(c1.indx) := c1.current_block;
-        b_CURRENT_BLOCK_TIME(c1.indx) := c1.current_block_time;
-        b_CURRENT_2HOP(c1.indx) := c1.current_2hop;
-        b_CURRENT_2HOP_TIME(c1.indx) := c1.current_2hop_time;
-        b_CURRENT_3HOP(c1.indx) := c1.current_3hop;
-        b_CURRENT_3HOP_TIME(c1.indx) := c1.current_3hop_time;
-        b_CURRENT_BUSY(c1.indx) := c1.current_busy;
-        b_CURRENT_BUSY_TIME(c1.indx) := c1.current_busy_time;
-        b_CURRENT_CONGESTED(c1.indx) := c1.current_congested;
-        b_CURRENT_CONGESTED_TIME(c1.indx) := c1.current_congested_time;
+        b_cr_block(c1.indx) := c1.cr_block;
+        b_cr_block_time(c1.indx) := c1.cr_block_time;
+        b_cr_2hop(c1.indx) := c1.cr_2hop;
+        b_cr_2hop_time(c1.indx) := c1.cr_2hop_time;
+        b_cr_3hop(c1.indx) := c1.cr_3hop;
+        b_cr_3hop_time(c1.indx) := c1.cr_3hop_time;
+        b_cr_busy(c1.indx) := c1.cr_busy;
+        b_cr_busy_time(c1.indx) := c1.cr_busy_time;
+        b_cr_congested(c1.indx) := c1.cr_congested;
+        b_cr_congested_time(c1.indx) := c1.cr_congested_time;
+        b_current_block(c1.indx) := c1.current_block;
+        b_current_block_time(c1.indx) := c1.current_block_time;
+        b_current_2hop(c1.indx) := c1.current_2hop;
+        b_current_2hop_time(c1.indx) := c1.current_2hop_time;
+        b_current_3hop(c1.indx) := c1.current_3hop;
+        b_current_3hop_time(c1.indx) := c1.current_3hop_time;
+        b_current_busy(c1.indx) := c1.current_busy;
+        b_current_busy_time(c1.indx) := c1.current_busy_time;
+        b_current_congested(c1.indx) := c1.current_congested;
+        b_current_congested_time(c1.indx) := c1.current_congested_time;
         i := i + 1;
     END LOOP;
-    CLOSE CUR_1;
+    CLOSE cur_1;
 
     dbms_lock.sleep(greatest(0, l_sleep - (dbms_utility.get_time - tim) / 100));
     OPEN cur_1;
@@ -205,28 +214,28 @@ BEGIN
         e_class(c1.indx) := c1.class;
         e_lost(c1.indx) := c1.lost;
         e_lost_time(c1.indx) := c1.lost_time;
-        e_CR_BLOCK(c1.indx) := c1.cr_block;
-        e_CR_BLOCK_TIME(c1.indx) := c1.cr_block_time;
-        e_CR_2HOP(c1.indx) := c1.cr_2hop;
-        e_CR_2HOP_TIME(c1.indx) := c1.cr_2hop_time;
-        e_CR_3HOP(c1.indx) := c1.cr_3hop;
-        e_CR_3HOP_TIME(c1.indx) := c1.cr_3hop_time;
-        e_CR_BUSY(c1.indx) := c1.cr_busy;
-        e_CR_BUSY_TIME(c1.indx) := c1.cr_busy_time;
-        e_CR_CONGESTED(c1.indx) := c1.cr_congested;
-        e_CR_CONGESTED_TIME(c1.indx) := c1.cr_congested_time;
-        e_CURRENT_BLOCK(c1.indx) := c1.current_block;
-        e_CURRENT_BLOCK_TIME(c1.indx) := c1.current_block_time;
-        e_CURRENT_2HOP(c1.indx) := c1.current_2hop;
-        e_CURRENT_2HOP_TIME(c1.indx) := c1.current_2hop_time;
-        e_CURRENT_3HOP(c1.indx) := c1.current_3hop;
-        e_CURRENT_3HOP_TIME(c1.indx) := c1.current_3hop_time;
-        e_CURRENT_BUSY(c1.indx) := c1.current_busy;
-        e_CURRENT_BUSY_TIME(c1.indx) := c1.current_busy_time;
-        e_CURRENT_CONGESTED(c1.indx) := c1.current_congested;
-        e_CURRENT_CONGESTED_TIME(c1.indx) := c1.current_congested_time;
+        e_cr_block(c1.indx) := c1.cr_block;
+        e_cr_block_time(c1.indx) := c1.cr_block_time;
+        e_cr_2hop(c1.indx) := c1.cr_2hop;
+        e_cr_2hop_time(c1.indx) := c1.cr_2hop_time;
+        e_cr_3hop(c1.indx) := c1.cr_3hop;
+        e_cr_3hop_time(c1.indx) := c1.cr_3hop_time;
+        e_cr_busy(c1.indx) := c1.cr_busy;
+        e_cr_busy_time(c1.indx) := c1.cr_busy_time;
+        e_cr_congested(c1.indx) := c1.cr_congested;
+        e_cr_congested_time(c1.indx) := c1.cr_congested_time;
+        e_current_block(c1.indx) := c1.current_block;
+        e_current_block_time(c1.indx) := c1.current_block_time;
+        e_current_2hop(c1.indx) := c1.current_2hop;
+        e_current_2hop_time(c1.indx) := c1.current_2hop_time;
+        e_current_3hop(c1.indx) := c1.current_3hop;
+        e_current_3hop_time(c1.indx) := c1.current_3hop_time;
+        e_current_busy(c1.indx) := c1.current_busy;
+        e_current_busy_time(c1.indx) := c1.current_busy_time;
+        e_current_congested(c1.indx) := c1.current_congested;
+        e_current_congested_time(c1.indx) := c1.current_congested_time;
     END LOOP;
-    CLOSE CUR_1;
+    CLOSE cur_1;
 
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+-----------+');
     dbms_output.put_line('| Inst->Inst class     | CR blk Tx |CR blk tm  | CR blkav  | CR 2hop   | CR2hop tm |CR2hop av  | CR 3hop   |CR 3hop tm |CR 3hop av |');
@@ -234,7 +243,7 @@ BEGIN
     FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
         IF e_cr_block.EXISTS(ind) AND (e_cr_block(ind) - b_cr_block(ind) > 0) THEN
-            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || ' ' || e_class(ind),21) || '|' || 
+            dbms_output.put_line('| ' || rpad(e_instance(ind) || '->' || e_inst_id(ind) || ' ' || e_class(ind), 21) || '|' ||
                                  lpad(to_char(e_cr_block(ind) - b_cr_block(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_block_time(ind) - b_cr_block_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -242,7 +251,7 @@ BEGIN
                                                    0
                                                   ELSE
                                                    trunc((e_cr_block_time(ind) - b_cr_block_time(ind)) / (e_cr_block(ind) - b_cr_block(ind)) / 1000, 2)
-                                              END),11) || '|' || 
+                                              END), 11) || '|' ||
                                  lpad(to_char(e_cr_2hop(ind) - b_cr_2hop(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_2hop_time(ind) - b_cr_2hop_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -250,7 +259,7 @@ BEGIN
                                                    0
                                                   ELSE
                                                    trunc((e_cr_2hop_time(ind) - b_cr_2hop_time(ind)) / (e_cr_2hop(ind) - b_cr_2hop(ind)) / 1000, 2)
-                                              END),11) || '|' || 
+                                              END), 11) || '|' ||
                                  lpad(to_char(e_cr_3hop(ind) - b_cr_3hop(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_3hop_time(ind) - b_cr_3hop_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -259,7 +268,7 @@ BEGIN
                                                   ELSE
                                                    trunc((e_cr_3hop_time(ind) - b_cr_3hop_time(ind)) / (e_cr_3hop(ind) - b_cr_3hop(ind)) / 1000,
                                                          2)
-                                              END),11) || '|');
+                                              END), 11) || '|');
         END IF;
     END LOOP;
     dbms_output.put_line('+----------------------------------------------------------------------------------------------------------------------------------+');
@@ -270,31 +279,31 @@ BEGIN
     FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
         IF e_current_block.EXISTS(ind) AND (e_current_block(ind) - b_current_block(ind) > 0) THEN
-            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || ' ' || e_class(ind),21) || '|' ||
+            dbms_output.put_line('| ' || rpad(e_instance(ind) || '->' || e_inst_id(ind) || ' ' || e_class(ind), 21) || '|' ||
                                  lpad(to_char(e_current_block(ind) - b_current_block(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_block_time(ind) - b_current_block_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
                                                   WHEN e_current_block(ind) - b_current_block(ind) = 0 THEN
                                                    0
                                                   ELSE
-                                                   trunc((e_current_block_time(ind) - b_current_block_time(ind)) / (e_current_block(ind) - b_current_block(ind)) / 1000,2)
-                                              END),11) || '|' ||
+                                                   trunc((e_current_block_time(ind) - b_current_block_time(ind)) / (e_current_block(ind) - b_current_block(ind)) / 1000, 2)
+                                              END), 11) || '|' ||
                                  lpad(to_char(e_current_2hop(ind) - b_current_2hop(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_2hop_time(ind) - b_current_2hop_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
                                                   WHEN e_current_2hop(ind) - b_current_2hop(ind) = 0 THEN
                                                    0
                                                   ELSE
-                                                   trunc((e_current_2hop_time(ind) - b_current_2hop_time(ind)) / (e_current_2hop(ind) - b_current_2hop(ind)) / 1000,2)
-                                              END),11) || '|' ||
+                                                   trunc((e_current_2hop_time(ind) - b_current_2hop_time(ind)) / (e_current_2hop(ind) - b_current_2hop(ind)) / 1000, 2)
+                                              END), 11) || '|' ||
                                  lpad(to_char(e_current_3hop(ind) - b_current_3hop(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_3hop_time(ind) - b_current_3hop_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
                                                   WHEN e_current_3hop(ind) - b_current_3hop(ind) = 0 THEN
                                                    0
                                                   ELSE
-                                                   trunc((e_current_3hop_time(ind) - b_current_3hop_time(ind)) / (e_current_3hop(ind) - b_current_3hop(ind)) / 1000,2)
-                                              END),11) || '|');
+                                                   trunc((e_current_3hop_time(ind) - b_current_3hop_time(ind)) / (e_current_3hop(ind) - b_current_3hop(ind)) / 1000, 2)
+                                              END), 11) || '|');
         END IF;
     END LOOP;
     dbms_output.put_line('+----------------------------------------------------------------------------------------------------------------------------------+');
@@ -305,7 +314,7 @@ BEGIN
     FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
         IF e_cr_block.EXISTS(ind) AND (e_cr_block(ind) - b_cr_block(ind) > 0) THEN
-            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind),21) || '|' || 
+            dbms_output.put_line('| ' || rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind), 21) || '|' ||
                                  lpad(to_char(e_cr_busy(ind) - b_cr_busy(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_busy_time(ind) - b_cr_busy_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -313,15 +322,15 @@ BEGIN
                                                    0
                                                   ELSE
                                                    trunc(100 * (e_cr_busy_time(ind) - b_cr_busy_time(ind)) / (e_cr_block_time(ind) - b_cr_block_time(ind)), 2)
-                                              END),11) || '|' || 
+                                              END), 11) || '|' ||
                                  lpad(to_char(e_cr_congested(ind) - b_cr_congested(ind)), 11) || '|' ||
                                  lpad(to_char(e_cr_congested_time(ind) - b_cr_congested_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
                                                   WHEN e_cr_block_time(ind) - b_cr_block_time(ind) = 0 THEN
                                                    0
                                                   ELSE
-                                                   trunc(100 * (e_cr_congested_time(ind) - b_cr_congested_time(ind)) / (e_cr_block_time(ind) - b_cr_block_time(ind)),2)
-                                              END),11) || '|');
+                                                   trunc(100 * (e_cr_congested_time(ind) - b_cr_congested_time(ind)) / (e_cr_block_time(ind) - b_cr_block_time(ind)), 2)
+                                              END), 11) || '|');
         END IF;
     END LOOP;
     dbms_output.put_line('+----------------------+-----------+-----------+-----------+-----------+-----------+-----------+');
@@ -332,7 +341,7 @@ BEGIN
     FOR i IN 1 .. key_table.COUNT LOOP
         ind := key_table(i);
         IF e_current_block.EXISTS(ind) AND (e_current_block(ind) - b_current_block(ind) > 0) THEN
-            dbms_output.put_line('| '||rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind),21) || '|' || 
+            dbms_output.put_line('| ' || rpad(e_instance(ind) || '->' || e_inst_id(ind) || '' || e_class(ind), 21) || '|' ||
                                  lpad(to_char(e_current_busy(ind) - b_current_busy(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_busy_time(ind) - b_current_busy_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -340,8 +349,8 @@ BEGIN
                                                    0
                                                   ELSE
                                                    trunc(100 * (e_current_busy_time(ind) - b_current_busy_time(ind)) /
-                                                         (e_current_block_time(ind) - b_current_block_time(ind)),2)
-                                              END),11) || '|' ||
+                                                         (e_current_block_time(ind) - b_current_block_time(ind)), 2)
+                                              END), 11) || '|' ||
                                  lpad(to_char(e_current_congested(ind) - b_current_congested(ind)), 11) || '|' ||
                                  lpad(to_char(e_current_congested_time(ind) - b_current_congested_time(ind)), 11) || '|' ||
                                  lpad(to_char(CASE
@@ -349,8 +358,8 @@ BEGIN
                                                    0
                                                   ELSE
                                                    trunc(100 * (e_current_congested_time(ind) - b_current_congested_time(ind)) /
-                                                         (e_current_block_time(ind) - b_current_block_time(ind)),2)
-                                              END),11) || '|');
+                                                         (e_current_block_time(ind) - b_current_block_time(ind)), 2)
+                                              END), 11) || '|');
         END IF;
     END LOOP;
     dbms_output.put_line('+----------------------------------------------------------------------------------------------+');
