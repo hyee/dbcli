@@ -13,7 +13,7 @@
         &V2 : default={nvl(logi_reads,0)/30+nvl(phy_reads,0)+nvl(phy_writes,0)+nvl(cr_blocks,0)+nvl(cu_blocks,0)}
         &V3 : default={&starttime}
         &V4 : default={&endtime}
-        &unit: default={1} avg={s}
+        &unit: default={1} avg={s/snaps}
         @opt_reads: 12.1={ROUND(SUM(OPTIMIZED_PHYSICAL_READS_DELTA)/NULLIF(SUM(PHYSICAL_READ_REQUESTS_DELTA),0),4)} default={0}
         @imscans: 19.1={SUM(IM_SCANS_DELTA/&unit)} default={0}
         @im_chgs: 19.1={SUM(IM_DB_BLOCK_CHANGES_DELTA/&unit)} default={0}
@@ -55,17 +55,15 @@ WITH segs AS(
            nullif(sum(chain_row_excess_delta/&unit),0) chain_rows,
            nullif(sum(decode(r,1,space_used_total)),0) space
            &12c ,nullif(sum(decode(r,1,im_membytes)),0) im_mem
-    FROM (SELECT a.*, 
-                 row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r 
+    FROM (SELECT a.*,
+                 count(DISTINCT snap_id*1000+instance_number) OVER() snaps,
+                 row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r
          FROM (
             SELECT /*+outline_leaf leading(a b c) use_hash(a b c) opt_param('_optimizer_cartesian_enabled', 'false') opt_param('_optimizer_mjc_enabled', 'false')*/ *
             FROM &check_access_pdb.seg_stat_obj b
             JOIN &check_access_pdb.seg_stat c USING (dbid,obj#,dataobj#)
             JOIN (SELECT dbid,snap_id,instance_number,
-                         greatest(1,round(86400*((end_interval_time+0)-
-                            CASE WHEN begin_interval_time+0>= to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
-                                 THEN begin_interval_time+0 
-                            END))) s
+                         greatest(1,round(86400*((end_interval_time+0)-(begin_interval_time+0)))) s
                   FROM &check_access_pdb.snapshot
                   WHERE end_interval_time+0 BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
                   AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')+3/1440) a
@@ -109,6 +107,8 @@ BEGIN
                    nullif(sum(physical_write_requests_delta/&unit),0) phy_wreqs,
                    nullif(sum(physical_writes_delta/&unit),0) phy_writes,
                    nullif(round(sum(physical_writes_direct_delta)/nullif(sum(physical_writes_delta),0),4),0) dx_writes,
+                   nullif(sum(physical_reads_direct_delta/&unit),0) dxr,
+                   nullif(sum(physical_writes_direct_delta/&unit),0) dxw,
                    nullif(sum(gc_cu_blocks_received_delta/&unit),0) cu_blocks,
                    nullif(&gc_grants,0) gc_grants,
                    nullif(&pop_cus,0) pop_cus,
@@ -116,19 +116,17 @@ BEGIN
                    nullif(sum(itl_waits_delta/&unit),0) itl_waits,
                    nullif(sum(row_lock_waits_delta/&unit),0) lock_waits,
                    nullif(sum(chain_row_excess_delta/&unit),0) chain_rows,
-                   nullif(max(decode(r,1,space_used_total)),0) space
-                   &12c ,nullif(max(decode(r,1,im_membytes)),0) im_mem
-            FROM (SELECT a.*, 
-                         row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r 
+                   nullif(sum(decode(r,1,space_used_total)),0) space
+                   &12c ,nullif(sum(decode(r,1,im_membytes)),0) im_mem
+            FROM (SELECT a.*,
+                         count(DISTINCT snap_id*1000+instance_number) OVER() snaps,
+                         row_number() OVER(PARTITION BY dbid, obj#, dataobj# ORDER BY space_used_total DESC) r
                  FROM (
                     SELECT /*+outline_leaf leading(a b c) use_hash(a b c)*/ *
                     FROM &check_access_pdb.seg_stat_obj b
                     JOIN &check_access_pdb.seg_stat c USING (dbid,obj#,dataobj#)
                     JOIN (SELECT dbid,snap_id,instance_number,
-                                 greatest(1,round(86400*((end_interval_time+0)-
-                                    CASE WHEN begin_interval_time+0>= to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
-                                         THEN begin_interval_time+0 
-                                    END))) s
+                                 greatest(1,round(86400*((end_interval_time+0)-(begin_interval_time+0)))) s
                           FROM &check_access_pdb.snapshot
                           WHERE end_interval_time BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')-3/1440
                           AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')+3/1440) a
@@ -170,7 +168,7 @@ BEGIN
                                       1,logi_reads,
                                       2,phy_reads,
                                       3,phy_rreqs,
-                                      4,dx_reads,
+                                      4,dxr,
                                       5,phy_reads*(1-opt_reads),
                                       6,scans,
                                       7,imscans,
@@ -178,7 +176,7 @@ BEGIN
                                       9,im_chgs,
                                       10,phy_writes,
                                       11,phy_wreqs,
-                                      12,dx_writes,
+                                      12,dxw,
                                       13,busy_waits,
                                       14,gc_busy,
                                       15,gc_grants,
