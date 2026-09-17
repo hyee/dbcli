@@ -11,6 +11,7 @@
 .idea
 .workbuddy
 .github
+.agent-teams
 \agent-out\
 \jre\
 \src\

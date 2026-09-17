@@ -1,7 +1,7 @@
 /*[[
     Generate delta values based on gv$event_histogram. Usage: @@NAME <options> [0|inst_id] [-lgwr|-io|-gc|-w"<event|wait_class>"|-f"<filter>"] [-c|-n]
-    
-    inst_id : The instance id,when 0 then the result will be grouped by instance. Defaults to sum all instances. 
+
+    inst_id : The instance id,when 0 then the result will be grouped by instance. Defaults to sum all instances.
     -lgwr   : show only the events relative to LGWR
     -io     : show only the events belong to User/System I/O
     -gc     : show only the events belong to Cluster waits
@@ -68,66 +68,66 @@
     sql=[[
         SELECT /*grid={topic='Event Histogram(based on wait_count*&u)',autosize='trim',zero2null=true}*/ *
         FROM   (SELECT /*+ordered use_nl(timer stat) no_merge(stat) no_expand OPT_PARAM('_fix_control' '26552730:0')*/
-                       nullif(inst,0) inst,nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
-                       grouping_id(wait_class,event) g,
+                       nullif(inst, 0) inst, nvl(event, '- Wait Class: '||nvl(wait_class, 'All')) event,
+                       grouping_id(wait_class, event) g,
                        CASE
-                           WHEN slot_time <= 512 THEN
+                           WHEN   slot_time <= 512 THEN
                             '<' || slot_time || 'us'
-                           WHEN slot_time <= 524288 THEN
+                           WHEN   slot_time <= 524288 THEN
                             '<' || round(slot_time / 1024) || 'ms'
-                           WHEN slot_time <= 33554432 THEN
+                           WHEN   slot_time <= 33554432 THEN
                             '<' || round(slot_time / 1024 / 1024) || 's'
-                           WHEN slot_time <= 67108864 THEN
+                           WHEN   slot_time <= 67108864 THEN
                             '<' || round(slot_time / 1024 / 1024 / 64) || 'm'
                            ELSE
                             '>=1m'
-                       END unit,
-                       MAX(SUM(TIME_WAITED_MICRO)/1E3) over(PARTITION BY inst,wait_class,event) Time,
-                       MAX(SUM(TIME_WAITED_MICRO)/1E3) over() "Time%",
-                       MAX(SUM(total_waits)) over(PARTITION BY inst,wait_class,event) Waits,
+                       END    unit,
+                       max(sum(time_waited_micro)/1e3) OVER(PARTITION BY inst, wait_class, event) time,
+                       max(sum(time_waited_micro)/1e3) OVER() "Time%",
+                       max(sum(total_waits)) OVER(PARTITION BY inst, wait_class, event) waits,
                        0 avg_time,
                        '|' "|",
-                       SUM(SUM(svalue*&u)) OVER(partition by inst,wait_class,event) total,
-                       nullif(SUM(svalue*&u), 0) pct
+                       sum(sum(svalue*&u)) OVER(PARTITION BY inst, wait_class, event) total,
+                       nullif(sum(svalue*&u), 0) pct
                 FROM   (
                           SELECT /*+ordered use_hash(a b)*/
-                                 decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
-                                 trim(substr(event,1,40)) event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
+                                 decode(lower(nvl('&v1', 'a')), 'a', 0, inst_id)  inst,
+                                 trim(substr(event, 1, 40)) event, a.total_waits, a.time_waited_micro, b.&micro slot_time, b.wait_count svalue,
                                  a.wait_class
                           FROM   gv$system_event a
                           JOIN   &tab b
-                          USING  (inst_id,event)
+                          USING  (inst_id, event)
                           WHERE  a.wait_class != 'Idle'
-                          AND    lower(nvl('&v1','a')) in('a','0',to_char(inst_id))
+                          AND    lower(nvl('&v1', 'a')) IN('a', '0', to_char(inst_id))
                           AND    (&filter)
-                          UNION ALL
-                          SELECT decode(lower(nvl('&v1','a')),'a',0,inst_id)  inst,
-                                 event,total_Waits,time_waited_micro,slot_time,wait_count,wait_class
-                          from   (select inst_id,stat_name event,1 total_waits,value time_waited_micro,
-                                         1 slot_time,1 wait_count,'ON CPU' wait_class 
-                                  from gv$sys_time_model
-                                  WHERE  upper(stat_name) like '% CPU%')
-                          WHERE   lower(nvl('&v1','a')) in('a','0',to_char(inst_id))
+                          UNION  ALL
+                          SELECT decode(lower(nvl('&v1', 'a')), 'a', 0, inst_id)  inst,
+                                 event, total_waits, time_waited_micro, slot_time, wait_count, wait_class
+                          FROM   (SELECT inst_id, stat_name event, 1 total_waits, value time_waited_micro,
+                                         1 slot_time, 1 wait_count, 'ON CPU' wait_class
+                                  FROM   gv$sys_time_model
+                                  WHERE  upper(stat_name) LIKE '% CPU%')
+                          WHERE  lower(nvl('&v1', 'a')) IN('a', '0', to_char(inst_id))
                           AND    (&filter)
                           ) stat
-                GROUP  BY inst,rollup(wait_class,event),
+                GROUP  BY inst, ROLLUP(wait_class, event),
                           CASE
-                              WHEN slot_time <= 512 THEN
+                              WHEN   slot_time <= 512 THEN
                                '<' || slot_time || 'us'
-                              WHEN slot_time <= 524288 THEN
+                              WHEN   slot_time <= 524288 THEN
                                '<' || round(slot_time / 1024) || 'ms'
-                              WHEN slot_time <= 33554432 THEN
+                              WHEN   slot_time <= 33554432 THEN
                                '<' || round(slot_time / 1024 / 1024) || 's'
-                              WHEN slot_time <= 67108864 THEN
+                              WHEN   slot_time <= 67108864 THEN
                                '<' || round(slot_time / 1024 / 1024 / 64) || 'm'
                               ELSE
                                '>=1m'
                           END
-                HAVING (:filter!='1=1' OR SUM(total_waits)>0)
+                HAVING (:filter!='1=1' OR sum(total_waits)>0)
                 )
-        PIVOT(MAX(pct)
-        FOR    unit IN(
-                       '<1us' "<1us",'<2us' "<2us",'<4us' "<4us",'<8us' "<8us",'<16us' "<16us",'<32us' "<32us",'<64us' "<64us",'<128us' "<128us",'<256us' "<256us",'<512us' "<512us",
+        pivot(max(pct)
+        for    unit IN(
+                       '<1us' "<1us", '<2us' "<2us", '<4us' "<4us", '<8us' "<8us", '<16us' "<16us", '<32us' "<32us", '<64us' "<64us", '<128us' "<128us", '<256us' "<256us", '<512us' "<512us",
                        '<1ms' "<1ms",
                        '<2ms' "<2ms",
                        '<4ms' "<4ms",

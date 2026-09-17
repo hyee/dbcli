@@ -13,7 +13,7 @@ VAR c2 REFCURSOR "gv$latch_children"
 COL WAIT_TIME FOR USMHD2
 COL GETS,MISSES FOR TMB2
 COL SPINS FOR PCT2
-DECLARE 
+DECLARE
     COLS VARCHAR2(32767);
     COL1 VARCHAR2(32767);
     CNT  INT;
@@ -31,7 +31,7 @@ BEGIN
                nvl(''||MIN(nullif(trim(LIMIT_VALUE),'UNLIMITED')),'UNLIMITED') LIMIT_VALUE &con
         FROM   gv$resource_limit
         GROUP  BY RESOURCE_NAME &CON
-        ORDER BY 1 &CON~';
+        ORDER  BY 1 &CON~';
 
     COL1 := REGEXP_REPLACE(REPLACE(COLS,'SUM(','ROUND(100*SUM('),'"(#\d+)"','/NULLIF(SUM(#V#),0),1) "\1 %"');
     OPEN :C2 FOR '

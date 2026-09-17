@@ -49,7 +49,7 @@
                case when '&COL' in ('A','M') then round(AVG(AVG_8K),2)    end "Ms/Req(8K)"
         FROM  (SELECT /*+merge*/
                        etime,
-                       event || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
+                       event || decode(nvl(lower(:V1), 'a'), 'a', NULL, ' #' || inst_id) event,
                        CNT_500B/secs*500 CNT_500B,
                        WAIT_500B/secs*1E-3 WAIT_500B,
                        WAIT_500B/CNT_500B*1E-3 AVG_500B,

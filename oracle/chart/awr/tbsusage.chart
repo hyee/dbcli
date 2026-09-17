@@ -4,6 +4,7 @@
     --[[
         &V2     : default={&STARTTIME}
         &V3     : default={&ENDTIME}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -19,11 +20,11 @@
                       TABLESPACE_USEDSIZE*BLOCK_SIZE value,
                       TABLESPACE_MAXSIZE*BLOCK_SIZE mvalue
                FROM   DBA_HIST_TBSPC_SPACE_USAGE
-               JOIN   (SELECT A.*, TS# TABLESPACE_ID FROM DBA_HIST_TABLESPACE_STAT A WHERE INSTANCE_NUMBER=userenv('instance')) USING(SNAP_ID,DBID,TABLESPACE_ID)
-               NATURAL JOIN dba_hist_snapshot
+               JOIN   (SELECT A.*, TS# TABLESPACE_ID FROM DBA_HIST_TABLESPACE_STAT A WHERE &WCON AND INSTANCE_NUMBER=userenv('instance')) USING(snap_id,dbid,tablespace_id)
+               JOIN   dba_hist_snapshot USING(SNAP_ID,DBID,INSTANCE_NUMBER)
                JOIN   DBA_TABLESPACES on (TABLESPACE_NAME=tsname)
                WHERE  dbid=:dbid
-               AND    end_interval_time+0 between NVL(to_date(:V3,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+               AND    end_interval_time+0 BETWEEN NVL(to_date(:V2,'yymmddhh24miss')-3/144,sysdate-7) AND NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
                AND    (:V1 IS NULL OR upper(TSNAME) like upper('%&V1%')))
          WHERE VALUE>0
          GROUP BY etime,name

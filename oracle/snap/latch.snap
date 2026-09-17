@@ -37,62 +37,62 @@
 ]]*/
 {
     sql={[[ /*grid={topic='GV$LATCH',height=0,order_by='-wait,-gets,-sleeps'}*/
-        SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
-               NAME,
-               SUM(WAIT_TIME) Wait,
-               SUM(GETS) GETS,
-               SUM(MISSES) MISSES,
-               SUM(SLEEPS) SLEEPS,
-               SUM(SPIN_GETS) SPINS
+        SELECT decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id) "#",
+               name,
+               sum(wait_time) wait,
+               sum(gets) gets,
+               sum(misses) misses,
+               sum(sleeps) sleeps,
+               sum(spin_gets) spins
         FROM   gv$latch
-        WHERE  (GETS+IMMEDIATE_GETS+MISSES+IMMEDIATE_MISSES+SLEEPS+SPIN_GETS>0 or :V1 is not null)
-        AND    (:V1 is NULL OR lower(NAME) like lower('%&V1%'))
-        AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
-        GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),NAME
+        WHERE  (gets+immediate_gets+misses+immediate_misses+sleeps+spin_gets>0 OR :V1 IS NOT NULL)
+        AND    (:V1 IS NULL OR lower(name) LIKE lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2 IN(''||inst_id, '0'))
+        GROUP  BY decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id), name
     ]],
     '|',
     {
       [[  /*grid={topic='GV$MUTEX_SLEEP',height=13,order_by='-wait,-sleeps'}*/
-          SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
-                 MUTEX_TYPE,
-                 replace(LOCATION,chr(0)) location,
-                 SUM(WAIT_TIME) Wait,
-                 SUM(SLEEPS) SLEEPS
+          SELECT decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id) "#",
+                 mutex_type,
+                 replace(location, chr(0)) location,
+                 sum(wait_time) wait,
+                 sum(sleeps) sleeps
           FROM   gv$mutex_sleep
-          WHERE  (sleeps>0 or :V1 is not null)
-          AND    (:V1 is NULL OR lower(MUTEX_TYPE||','||LOCATION) like lower('%&V1%'))
-          AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
-          GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),MUTEX_TYPE,LOCATION
+          WHERE  (sleeps>0 OR :V1 IS NOT NULL)
+          AND    (:V1 IS NULL OR lower(mutex_type||','||location) LIKE lower('%&V1%'))
+          AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2 IN(''||inst_id, '0'))
+          GROUP  BY decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id), mutex_type, location
       ]],
       '-',
       [[  /*grid={topic='GV$ROWCACHE',height=13,order_by='-gets,-misses'}*/
-          SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
-                 PARAMETER name,
-                 SUM(GETS+SCANS) GETS,
-                 SUM(GETMISSES+SCANMISSES) MISSES,
-                 SUM(MODIFICATIONS) MODS,
-                 SUM(FLUSHES) FLUSHES
-          FROM   gv$ROWCACHE
-          WHERE  (GETS+SCANS>0 or :V1 is not null)
-          AND    (:V1 is NULL OR lower(PARAMETER) like lower('%&V1%'))
-          AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
-          GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),PARAMETER
+          SELECT decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id) "#",
+                 parameter name,
+                 sum(gets+scans) gets,
+                 sum(getmisses+scanmisses) misses,
+                 sum(modifications) mods,
+                 sum(flushes) flushes
+          FROM   gv$rowcache
+          WHERE  (gets+scans>0 OR :V1 IS NOT NULL)
+          AND    (:V1 IS NULL OR lower(parameter) LIKE lower('%&V1%'))
+          AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2 IN(''||inst_id, '0'))
+          GROUP  BY decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id), parameter
       ]]
     },
     '-',
     [[ /*grid={topic='GV$LATCH_MISSES',order_by='-WTR_SLPS,-sleeps,-NWFAILS'}*/
-        SELECT decode(nvl(lower(:V2),'a'),'a','*',inst_id) "#",
-               PARENT_NAME NAME,
+        SELECT decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id) "#",
+               parent_name name,
                location,
-               SUM(NWFAIL_COUNT) NWFAILS,
-               SUM(SLEEP_COUNT) SLEEPS,
-               SUM(WTR_SLP_COUNT) WTR_SLPS,
-               SUM(LONGHOLD_COUNT) LONGHOLDS
+               sum(nwfail_count) nwfails,
+               sum(sleep_count) sleeps,
+               sum(wtr_slp_count) wtr_slps,
+               sum(longhold_count) longholds
         FROM   gv$latch_misses a
-        WHERE  (NWFAIL_COUNT+SLEEP_COUNT+WTR_SLP_COUNT+LONGHOLD_COUNT>0 or :V1 is not null)
-        AND    (:V1 is NULL OR lower(PARENT_NAME||','||location) like lower('%&V1%'))
-        AND    (:V2 IS NULL AND (:snap_cmd is null OR inst_id=userenv('instance')) or :V2 IN(''||INST_ID,'0'))
-        GROUP  BY decode(nvl(lower(:V2),'a'),'a','*',inst_id),location,PARENT_NAME
+        WHERE  (nwfail_count+sleep_count+wtr_slp_count+longhold_count>0 OR :V1 IS NOT NULL)
+        AND    (:V1 IS NULL OR lower(parent_name||','||location) LIKE lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2 IN(''||inst_id, '0'))
+        GROUP  BY decode(nvl(lower(:V2), 'a'), 'a', '*', inst_id), location, parent_name
     ]],
     },
     delta_by="GETS,MISSES,SLEEPS,SPINS,WAIT,NWFAILS,SLEEPS,WTR_SLPS,LONGHOLDS,MODS,FLUSHES",

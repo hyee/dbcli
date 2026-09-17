@@ -1,32 +1,32 @@
 /*[[Show PL/SQL compile environment.]]*/
 set feed off
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('$$PLSCOPE_SETTINGS       = '|| $$PLSCOPE_SETTINGS);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_CCFLAGS          = '|| $$PLSQL_CCFLAGS);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_CODE_TYPE        = '|| $$PLSQL_CODE_TYPE);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_OPTIMIZE_LEVEL   = '|| $$PLSQL_OPTIMIZE_LEVEL);
+    dbms_output.put_line('$$PLSCOPE_SETTINGS       = '|| $$PLSCOPE_SETTINGS);
+    dbms_output.put_line('$$PLSQL_CCFLAGS          = '|| $$PLSQL_CCFLAGS);
+    dbms_output.put_line('$$PLSQL_CODE_TYPE        = '|| $$PLSQL_CODE_TYPE);
+    dbms_output.put_line('$$PLSQL_OPTIMIZE_LEVEL   = '|| $$PLSQL_OPTIMIZE_LEVEL);
     --DBMS_OUTPUT.PUT_LINE('$$PLSQL_DEBUG = '          || $$PLSQL_DEBUG);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_WARNINGS         = '|| $$PLSQL_WARNINGS);
-    DBMS_OUTPUT.PUT_LINE('$$NLS_LENGTH_SEMANTICS   = '|| $$NLS_LENGTH_SEMANTICS);
+    dbms_output.put_line('$$PLSQL_WARNINGS         = '|| $$PLSQL_WARNINGS);
+    dbms_output.put_line('$$NLS_LENGTH_SEMANTICS   = '|| $$NLS_LENGTH_SEMANTICS);
 
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_LINE             = '|| $$PLSQL_LINE);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_UNIT             = '|| $$PLSQL_UNIT);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_UNIT_OWNER       = '|| $$PLSQL_UNIT_OWNER);
-    DBMS_OUTPUT.PUT_LINE('$$PLSQL_UNIT_TYPE        = '|| $$PLSQL_UNIT_TYPE);
+    dbms_output.put_line('$$PLSQL_LINE             = '|| $$PLSQL_LINE);
+    dbms_output.put_line('$$PLSQL_UNIT             = '|| $$PLSQL_UNIT);
+    dbms_output.put_line('$$PLSQL_UNIT_OWNER       = '|| $$PLSQL_UNIT_OWNER);
+    dbms_output.put_line('$$PLSQL_UNIT_TYPE        = '|| $$PLSQL_UNIT_TYPE);
 
-    DBMS_OUTPUT.PUT_LINE('UID                      = '|| UID);
-    DBMS_OUTPUT.PUT_LINE('USER                     = '|| USER);
-    DBMS_OUTPUT.PUT_LINE('CURRENT_USER             = '|| SYS_CONTEXT('USERENV','CURRENT_USER'));
-    DBMS_OUTPUT.PUT_LINE('CURRENT_SCHEMA           = '|| SYS_CONTEXT('USERENV','CURRENT_SCHEMA'));
+    dbms_output.put_line('UID                      = '|| uid);
+    dbms_output.put_line('USER                     = '|| user);
+    dbms_output.put_line('CURRENT_USER             = '|| sys_context('USERENV','CURRENT_USER'));
+    dbms_output.put_line('CURRENT_SCHEMA           = '|| sys_context('USERENV','CURRENT_SCHEMA'));
     --some values are impacted by parameter fixed_date
-    DBMS_OUTPUT.PUT_LINE('SYSDATE                  = '|| SYSDATE);
-    DBMS_OUTPUT.PUT_LINE('SYSTIMESTAMP             = '|| SYSTIMESTAMP);
-    DBMS_OUTPUT.PUT_LINE('CURRENT_DATE             = '|| CURRENT_DATE); 
-    DBMS_OUTPUT.PUT_LINE('CURRENT_TIMESTAMP        = '|| CURRENT_TIMESTAMP);
-    DBMS_OUTPUT.PUT_LINE('LOCALTIMESTAMP           = '|| LOCALTIMESTAMP);
-    DBMS_OUTPUT.PUT_LINE('DBTIMEZONE               = '|| DBTIMEZONE);
-    DBMS_OUTPUT.PUT_LINE('SESSIONTIMEZONE          = '|| SESSIONTIMEZONE);
-    DBMS_OUTPUT.PUT_LINE('DBMS_UTILITY.GET_TIME    = '|| DBMS_UTILITY.GET_TIME||' (v$timer)');
-    DBMS_OUTPUT.PUT_LINE('DBMS_UTILITY.GET_CPU_TIME= '|| DBMS_UTILITY.GET_CPU_TIME);
+    dbms_output.put_line('SYSDATE                  = '|| sysdate);
+    dbms_output.put_line('SYSTIMESTAMP             = '|| systimestamp);
+    dbms_output.put_line('CURRENT_DATE             = '|| current_date);
+    dbms_output.put_line('CURRENT_TIMESTAMP        = '|| current_timestamp);
+    dbms_output.put_line('LOCALTIMESTAMP           = '|| localtimestamp);
+    dbms_output.put_line('DBTIMEZONE               = '|| dbtimezone);
+    dbms_output.put_line('SESSIONTIMEZONE          = '|| sessiontimezone);
+    dbms_output.put_line('DBMS_UTILITY.GET_TIME    = '|| dbms_utility.get_time||' (v$timer)');
+    dbms_output.put_line('DBMS_UTILITY.GET_CPU_TIME= '|| dbms_utility.get_cpu_time);
 END;
 /

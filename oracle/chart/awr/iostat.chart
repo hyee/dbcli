@@ -40,9 +40,9 @@
                            NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
                      AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
         SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') sample_time, event,
-               Round(SUM(RMB+WMB/secs*1024*1024),2)  "Bytes per Second",
-               Round(SUM(RREQ+WREQ/secs),2) "Requests per Second",
-               nvl(Round(SUM((RMB+WMB)*1024*1024/nullif(RREQ+WREQ,0)),2),0) "Bytes per Request",
+               Round(SUM((RMB+WMB)/secs*1024*1024),2)  "Bytes per Second",
+               Round(SUM((RREQ+WREQ)/secs),2) "Requests per Second",
+               nvl(Round(SUM(RMB+WMB)*1024*1024/nullif(SUM(RREQ+WREQ),0),2),0) "Bytes per Request",
                Round(SUM(WAIT_TIME/secs*1e-3),2) "Wait Seconds per Second",
                Round(sum(WAIT_TIME)/sum(WAITS),2) "AVG Milliseconds per Request",
                Round(SUM(RMB/secs*1024*1024),2)  "Read Bytes per Second",

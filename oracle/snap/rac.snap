@@ -69,11 +69,11 @@
         ]],'-',[[/*grid={topic='GC CR/CUR Blocks'}*/
             SELECT /*+outline_leaf use_hash(a b c)*/
                    a.inst_id "INST|ID",
-                   sum(CASE WHEN a.name IN('gc cr blocks served','gc cr blocks received','gc current blocks served','gc current blocks received') THEN a.value END)
+                   sum(CASE WHEN a.name IN('gc cr blocks served', 'gc cr blocks received', 'gc current blocks served', 'gc current blocks received') THEN a.value END)
                      *(SELECT value+0 FROM   v$parameter WHERE  name='db_block_size')
                      +200*(
-                      sum(CASE WHEN a.name IN('gc status messages sent','ka messages sent','gc status messages received','ka grants received') THEN a.value ELSE 0 END)
-                      +nvl(sum(c.sent+c.recv),0)) "GC|Traffic",
+                      sum(CASE WHEN a.name IN('gc status messages sent', 'ka messages sent', 'gc status messages received', 'ka grants received') THEN a.value ELSE 0 END)
+                      +nvl(sum(c.sent+c.recv), 0)) "GC|Traffic",
                    sum(decode(a.name, 'gc blocks lost', a.value)) "Blks|Lost",
                    sum(b.total_waits) "CR|Failure",
                    '|' "|",
@@ -83,8 +83,8 @@
                    sum(decode(a.name, 'gc cr block receive time', a.value*10000)) "CR|Time",
                    sum(decode(a.name, 'gc cr block flush time', a.value*10000)) "CR|Flush",
                    sum(decode(a.name, 'gc cr block build time', a.value*10000)) "Build|Time",
-                   NULL "CR|Avg",
-                   NULL "Build|Avg",
+                   NULL   "CR|Avg",
+                   NULL   "Build|Avg",
                    '|' "|",
                    sum(decode(a.name, 'gc current blocks served', a.value)) "CU|Sent",
                    sum(decode(a.name, 'gc current blocks received', a.value)) "CU|Recv",
@@ -92,11 +92,11 @@
                    sum(decode(a.name, 'gc current block receive time', a.value*10000)) "CU|Time",
                    sum(decode(a.name, 'gc current block flush time', a.value*10000)) "CU|Flush",
                    sum(decode(a.name, 'gc current block pin time', a.value*10000)) "Pin|Time",
-                   NULL "CU|Avg",
-                   NULL "Pin|Avg",
+                   NULL   "CU|Avg",
+                   NULL   "Pin|Avg",
                    '|' "|",
-                   sum(CASE WHEN a.name IN('gc status messages sent','ka messages sent') THEN a.value ELSE 0 END)+nvl(sum(c.sent),0) "GCS/GES|Msg Sent",
-                   sum(CASE WHEN a.name IN('gc status messages received','ka grants received') THEN a.value ELSE 0 END)+nvl(sum(c.recv),0) "GCS/GES|Msg Recv",
+                   sum(CASE WHEN a.name IN('gc status messages sent', 'ka messages sent') THEN a.value ELSE 0 END)+nvl(sum(c.sent), 0) "GCS/GES|Msg Sent",
+                   sum(CASE WHEN a.name IN('gc status messages received', 'ka grants received') THEN a.value ELSE 0 END)+nvl(sum(c.recv), 0) "GCS/GES|Msg Recv",
                    sum(c.recv_time) "Recv|Time",
                    sum(c.recv) "GCS/GES|Avg"
             FROM   gv$sysstat a
@@ -108,9 +108,9 @@
             &ver12 AND    a.con_id=b.con_id
             LEFT   JOIN (
                 SELECT inst_id &con,
-                       sum(CASE WHEN name IN ('gcs msgs received','ges msgs received') THEN value ELSE 0 END) recv,
-                       sum(CASE WHEN name IN ('gcs msgs process time(ms)','ges msgs process time(ms)') THEN value*1000 ELSE 0 END) recv_time,
-                       sum(CASE WHEN name IN ('gcs messages sent','ges messages sent') THEN value ELSE 0 END) sent
+                       sum(CASE WHEN name IN ('gcs msgs received', 'ges msgs received') THEN value ELSE 0 END) recv,
+                       sum(CASE WHEN name IN ('gcs msgs process time(ms)', 'ges msgs process time(ms)') THEN value*1000 ELSE 0 END) recv_time,
+                       sum(CASE WHEN name IN ('gcs messages sent', 'ges messages sent') THEN value ELSE 0 END) sent
                 FROM   gv$dlm_misc
                 GROUP  BY inst_id &con) c
             ON     a.inst_id=c.inst_id
@@ -124,14 +124,14 @@
                    sum(decode(name, 'msgs sent queue time (ms)', value*1000)) "Sent|Time",
                    sum(decode(name, 'msgs sent queued on ksxp', value)) "ksxp|Queued",
                    sum(decode(name, 'msgs sent queue time on ksxp (ms)', value*1000)) "ksxp|Time",
-                   NULL "Sent|Avg",
-                   NULL "ksxp|Avg",
+                   NULL   "Sent|Avg",
+                   NULL   "ksxp|Avg",
                    '|' "|",
                    sum(decode(name, 'msgs received queued', value)) "Recv|Queued",
                    sum(decode(name, 'msgs received queue time (ms)', value*1000)) "Recv|Time",
                    sum(decode(name, 'msgs received kernel queue time (ns)', value/1000)) "Kernel|Time",
-                   NULL "Recv|Avg",
-                   NULL "Kernel|Avg",
+                   NULL   "Recv|Avg",
+                   NULL   "Kernel|Avg",
                    '|' "|",
                    sum(decode(name, 'Global Enqueue S-optim Broadcasts sent', value)) "S-optim|Broadcast",
                    sum(decode(name, 'Global Enqueue S-optim S-lock gets', value)) "S-optim|S-lock",
@@ -151,7 +151,7 @@
                    sum(lost_time) "Lost|Time",
                    '|' "|",
                    sum(cr_block) "CR|Blks",
-                   NULL "Avg|CR",
+                   NULL   "Avg|CR",
                    sum(cr_block - current_busy - current_congested) "CR|Immedia",
                    '|' "|",
                    sum(cr_block_time) "CR|Time",
@@ -161,7 +161,7 @@
                    sum(cr_3hop_time) "CR|3-Hop",
                    '||' "||",
                    sum(current_block) "CU|Blks",
-                   NULL "Avg|CU",
+                   NULL   "Avg|CU",
                    sum(current_block - current_busy - current_congested) "CU|Immedia",
                    '|' "|",
                    sum(current_block_time) "CU|Time",
@@ -182,7 +182,7 @@
                Msgs|Direct,Msgs|Indirect,Msgs|FlowCtrl,GCS/GES|Msg Sent,GCS/GES|Msg Recv,GCS/GES|Avg,Recv|Time,Recv|Avg,GC|Traffic,
                S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,
                CR|Blks,CR|Immedia,CR|Busy,CR|Cogst,CR|2-Hop,CR|3-Hop,CU|Blks,CU|Immedia,CU|Busy,CU|Cogst,CU|2-Hop,CU|3-Hop,
-    ]],
+        ]],
     group_by="inst|id,Instance|Transfer,File|Type,",
     calc_rules={
         ['CR|Avg']='[CR|Time]/[CR|Recv]',
@@ -213,11 +213,11 @@
         usmhd2=[[CR|Time,Build|Time,CU|Time,Pin|Time,CR|Avg,CU|Avg,Build|Avg,Pin|Avg,Sent|Time,ksxp|Time,
                  Sent|Avg,ksxp|Avg,Recv|Avg,Kernel|Avg,Recv|Time,Kernel|Time,CR|Flush,CU|Flush,
                  GCS/GES|Avg,Avg|CR,Avg|CU,
-                ]],
+                                ]],
         tmb2=[[Sent|Queued,ksxp|Queued,Recv|Queued,GCS/GES|Msg Sent,GCS/GES|Msg Recv,Msgs|Direct,Msgs|Indirect,Msgs|FlowCtrl,
               S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,
               Blks|Lost,CR|Sent,CR|Recv,CR|Built,CU|Sent,CU|Recv,CU|Pins,
               File|Lost,CR|Blks,CU|Blks,
-            ]]
+                        ]]
     }
 }

@@ -12,6 +12,7 @@
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
         &GRP    : default={stat_name}, c={class_name}
+        &filter : default={1=1},f={}
     --]]
 ]]*/
 {
@@ -32,9 +33,10 @@
                            (dbid+to_char(startup_time,'yymmddhh24mi'))*1e3+instance_number pkey,
                            (end_interval_time+0) - GREATEST(startup_time+0, MIN(end_interval_time+0) over(PARTITION BY dbid, instance_number,startup_time)) diff
                     FROM   dba_hist_snapshot
-                    WHERE  end_interval_time+0 BETWEEN 
-                           NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
-                           NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
+                    WHERE  dbid=:dbid
+                     AND   end_interval_time+0 BETWEEN
+                            NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND
+                            NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
                      AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
         SELECT time sample_time,event,v "Value Per Second",RNK_
         FROM   (SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') TIME, event,
@@ -46,12 +48,14 @@
                                avg(value/secs) over(partition by inst_id,stat_name) a
                        FROM   (SELECT /*+merge no_expand*/
                                       inst_id,etime,secs,stat_name,
-                                      decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class_name,
-                                      VALUE - nvl(LAG(VALUE) OVER(PARTITION BY pkey,stat_name ORDER BY snap_id),0) value
+                                      ltrim(decode(bitand(CLASS,1),1,'/User')||decode(bitand(CLASS,2),2,'/Redo')||decode(bitand(CLASS,4),4,'/Enqueue')||
+                                            decode(bitand(CLASS,8),8,'/Cache')||decode(bitand(CLASS,16),16,'/OS')||decode(bitand(CLASS,32),32,'/RAC')||
+                                            decode(bitand(CLASS,64),64,'/SQL')||decode(bitand(CLASS,128),128,'/DEBUG'),'/') class_name,
+                                      (VALUE - nvl(LAG(VALUE) OVER(PARTITION BY pkey,stat_name ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) value
                                FROM   dba_hist_sysstat 
                                NATURAL JOIN snap 
                                LEFT JOIN (SELECT a.*,NAME stat_name FROM v$statname a) USING(stat_name)
-                               WHERE  (:V1 is null or upper(stat_name) like upper('%&V1%'))) a
+                               WHERE  (&filter) AND (:V1 IS NULL OR upper(stat_name) LIKE upper('%&V1%'))) a
                        where nvl(value,0)>0)
                  GROUP  BY event, etime) a
         WHERE  (v>0)

@@ -7,7 +7,7 @@ Show active SQLs/processes/sessions. Usage: @@NAME [-a|-i|-k] [-u]
         i={status='INACTIVE'},
         k={status='KILLED'}
       }
-      
+
       &usr: default={1=1}, u={username=nvl('&0',sys_context('userenv','current_schema'))}
       @pname: 11={pname,}, default={}
   ]]--
@@ -16,7 +16,7 @@ set feed off
 
 
 
-prompt  List of processes      
+prompt  List of processes
 prompt  =================
 col last_call_et format smhd2
 SELECT s.sid || ',' || s.serial# || ',@' || s.inst_id "SID",
@@ -49,10 +49,10 @@ SELECT s.sid || ',' || s.serial# || ',@' || s.inst_id "SID",
        last_call_et,
        s.lockwait,
        &pname
-       Substr(regexp_replace(nvl(s.module,s.program),' *\(.*\)$'), 1, 20) program,
+       substr(regexp_replace(nvl(s.module,s.program),' *\(.*\)$'), 1, 20) program,
        sw.event,
        s.sql_id
-FROM   (SELECT * FROM gv$session WHERE &filter and &usr) s, gv$process p, gv$session_wait sw
+FROM   (SELECT * FROM gv$session WHERE &filter AND &usr) s, gv$process p, gv$session_wait sw
 WHERE  s.paddr = p.addr
 AND    sw.sid = s.sid
 AND    s.inst_id = p.inst_id
@@ -60,17 +60,17 @@ AND    s.sid = sw.sid
 AND    s.inst_id = sw.inst_id
 AND    s.username IS NOT NULL
 AND    sw.wait_class!='Idle'
-ORDER  BY s.status DESC, s.last_call_et DESC, P.spid;
+ORDER  BY s.status DESC, s.last_call_et DESC, p.spid;
 
 
 
-prompt  Active / Inactive Sessions  
+prompt  Active / Inactive Sessions
 prompt  ==========================
 
-SELECT '--  Time : ' || TIME || ' - Process : ' || Proc || ' - Session ' || Sess Status
-FROM   (SELECT To_Char(SYSDATE, 'HH24:MI') TIME FROM Dual), (SELECT COUNT(*) Proc FROM GV$Process), (SELECT COUNT(*) Sess FROM GV$Session);
+SELECT '--  Time : ' || time || ' - Process : ' || proc || ' - Session ' || sess status
+FROM   (SELECT to_char(sysdate, 'HH24:MI') time FROM dual), (SELECT count(*) proc FROM gv$process), (SELECT count(*) sess FROM gv$session);
 
-SELECT Initcap(S.Status) status, COUNT(*) nb_sess FROM GV$Session S  where &filter and &usr GROUP BY Initcap(S.Status);
+SELECT initcap(s.status) status, count(*) nb_sess FROM gv$session s  WHERE &filter AND &usr GROUP BY initcap(s.status);
 
 
 prompt  Active Sessions In Progress
@@ -80,29 +80,29 @@ SELECT sn.sid || ',' || sn.serial# || ',@' || sn.inst_id "SID",
        sn.sql_id top_sql_id,
        sl.sql_id,
        substr(sn.username, 1, 8) username,
-       Round(ELAPSED_SECONDS / 60, 2) "Costed(Min)",
-       round((TIME_REMAINING) / 60,2) "Remain(Min)",
+       round(elapsed_seconds / 60, 2) "Costed(Min)",
+       round((time_remaining) / 60,2) "Remain(Min)",
        round(100*sofar/totalwork,2) "Pct(%)",
        sl.message,
        sn.machine machine,
        sn.program program,
        sn.module modu
-FROM   gv$session_longops sl, (SELECT * FROM gv$session WHERE &filter and &usr) sn
+FROM   gv$session_longops sl, (SELECT * FROM gv$session WHERE &filter AND &usr) sn
 WHERE  sl.inst_id = sn.inst_id
 AND    sn.status = 'ACTIVE'
 AND    sl.sid = sn.sid
 AND    sl.totalwork > 0
 AND    sl.sofar != sl.totalwork;
 
-prompt  Running SQLs 
+prompt  Running SQLs
 prompt  ============
 col last_loaded format smhd2
-SELECT /*+ BDAGEVIL leading(se) */sql_id, COUNT(DISTINCT child_number) child_nums, SUM(users_executing) users, username,
-       (sysdate-min(to_date(LAST_LOAD_TIME,'YYYY-MM-DD/HH24:MI:SS')))*86400 last_loaded,
-       substr(trim(regexp_replace(REPLACE(max(sql_text), chr(0)),'[[:space:][:cntrl:]]+',' ')),1,150) sql_text
-FROM   (SELECT s.*,parsing_schema_name username from gv$sql s) s
+SELECT /*+ BDAGEVIL leading(se) */sql_id, count(DISTINCT child_number) child_nums, sum(users_executing) users, username,
+       (sysdate-min(to_date(last_load_time,'YYYY-MM-DD/HH24:MI:SS')))*86400 last_loaded,
+       substr(trim(regexp_replace(replace(max(sql_text), chr(0)),'[[:space:][:cntrl:]]+',' ')),1,150) sql_text
+FROM   (SELECT s.*,parsing_schema_name username FROM gv$sql s) s
 WHERE  s.users_executing > 0
 AND    s.sql_text NOT LIKE '%BDAGEVIL%'
 AND    &usr
-group by sql_id,username
-order by users desc;
+GROUP  BY sql_id,username
+ORDER  BY users DESC;

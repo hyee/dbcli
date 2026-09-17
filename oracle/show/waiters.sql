@@ -1,9 +1,9 @@
-/*[[Show blocking infomation, including equeue and library waits]]*/
+/*[[Show blocking information, including enqueue and library cache waits.]]*/
 
 set feed off
 PRO From DBA_Waiters:
 PRO =================
-select * from dba_waiters;
+SELECT * FROM dba_waiters;
 
 PRO From DBA_KGLLOCK:
 PRO =================

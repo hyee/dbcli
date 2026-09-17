@@ -1,4 +1,4 @@
-/*[[Show alert information(dba_outstanding_alerts/dba_alert_history).
+/*[[Show alert information (dba_outstanding_alerts/dba_alert_history).
     --[[
         @check_version: 11.0={}
         @check_access: dba_outstanding_alerts/dba_alert_history={}
@@ -18,13 +18,18 @@
         }
     --]]
 ]]*/
-SET FEED OFF
+set feed off
 PRO Recent 50 historical alerts:
 PRO ============================
-SELECT * from (SELECT * FROM dba_alert_history a ORDER BY 1 desc) where rownum<=50 order by 1;
+SELECT *
+FROM   (SELECT *
+        FROM   dba_alert_history a
+        ORDER  BY 1 DESC)
+WHERE  rownum <= 50
+ORDER  BY 1;
 
 PRO Active alerts(Refer to dbms_server_alert/dba%thresholds/v$alert_types):
 PRO =======================================================================
-select * from dba_outstanding_alerts order by 1;
+SELECT * FROM dba_outstanding_alerts ORDER BY 1;
 
 &check_access_inc

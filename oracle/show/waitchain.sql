@@ -6,15 +6,15 @@
 
 col in_wait format smhd2
 WITH c AS(
-    SELECT /*+materialize*/c.*, 
+    SELECT /*+materialize*/c.*,
            c.SID||','||c.sess_serial#||',@'||c.instance sess#,
-           nullif(c.blocker_SID||','||c.blocker_sess_serial#||',@'||c.blocker_instance,',,@') blocker# 
-    FROM  v$wait_chains c),
+           nullif(c.blocker_SID||','||c.blocker_sess_serial#||',@'||c.blocker_instance,',,@') blocker#
+    FROM   v$wait_chains c),
 r1(cid,sess#,lv,blocker#,root) AS (
     SELECT chain_id,sess#, 0 lv,blocker#,sess# root
     FROM   c
     WHERE  nvl(blocker#,sess#)=sess#
-    UNION ALL
+    UNION  ALL
     SELECT c.chain_id,c.sess#, r1.lv + 1,c.blocker#,r1.root
     FROM   c, r1
     WHERE  c.blocker#=r1.sess#)
@@ -25,11 +25,11 @@ r2(cid,sess#,lv,blocker#,root) AS (
     FROM   c
     WHERE  sess# in(
         SELECT MIN(sess#) keep(dense_rank last order by in_wait_secs)
-        FROM   c 
+        FROM   c
         WHERE  sess# NOT IN(SELECT SESS# FROM r1)
         GROUP  BY case when p3_text='name|mode' then p3 else row_wait_obj# end
         )
-    UNION ALL
+    UNION  ALL
     SELECT c.chain_id,c.sess#, r1.lv + 1,c.blocker#,r1.root
     FROM   c, r2 r1
     WHERE  c.blocker#=r1.sess#)
@@ -55,7 +55,7 @@ LEFT   JOIN gv$session s1
 ON     s1.inst_id = c.instance
 AND    s1.sid = c.sid
 AND    s1.serial# = c.sess_serial#
-LEFT  JOIN gv$session s2
+LEFT   JOIN gv$session s2
 ON     s2.inst_id = c.blocker_instance
 AND    s2.sid = c.blocker_sid
 AND    s2.serial# = c.blocker_sess_serial#

@@ -1,6 +1,7 @@
 /*[[
     Show chart for DBA_HIST_CELL_DISK_SUMMARY. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [keyword]} [-f"<filter>"|-fd|-hd] [-c|-dn|-dt]
     Impacted by settings: starttime,endtime,instance
+    Note: Exadata only. The cell AWR tables are always empty on non-Exadata databases.
     -c : detail to cell name
     -dn: detail to disk name
     -dt: detail to disk type

@@ -1,18 +1,18 @@
 itv start 5 Checking Active sessions in interval mode, type 'Ctrl + C' to abort
-set VERIFY on
+set verify on
 ora actives
-pro
+PRO
 PRO Determine if need to abort(20%) ...
-var next_action varchar2
-set VERIFY off
+var next_action VARCHAR2
+set verify off
 
-begin
-    if dbms_random.value(0,10)>8 then
+BEGIN
+    IF dbms_random.value(0,10)>8 THEN
         :next_action := 'off';
-    else
+    ELSE
         :next_action := 'end';
-    end if;
-end;
+    END IF;
+END;
 /
-pro next_action: itv &next_action
+PRO next_action: itv &next_action
 itv &next_action

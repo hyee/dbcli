@@ -11,7 +11,7 @@
       1) @@NAME: show all events group by wait_class within current instance
       2) @@NAME . 0: show all events group by wait_class,instance for all instances
       3) @@NAME "user i/o": show events belong to group "User I/O" group by event name
-      4) @@NAME "db file sequential read" or awrevent dfsr: show the chart on "db file sequential read" event
+      4) @@NAME "db file sequential read" or @@NAME dfsr: show the chart on "db file sequential read" event
       5) @@NAME "user i/o" a avg: show events belong to group "User I/O" group by event name based on avg time per request
     --[[
         &V2 : default={&INSTANCE}
@@ -71,8 +71,8 @@
                                TIME_WAITED/secs v1, TOTAL_WAITS/secs v2
                        FROM   (SELECT /*+merge no_expand ordered_predicates*/
                                       inst_id,etime,secs,wait_class,event_name,
-                                      TIME_WAITED_MICRO-nvl(LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name,pkey ORDER BY snap_id),0) TIME_WAITED,
-                                      TOTAL_WAITS-nvl(LAG(TOTAL_WAITS) OVER(PARTITION BY event_name,pkey ORDER BY snap_id),0) TOTAL_WAITS
+                                      (TIME_WAITED_MICRO-nvl(LAG(TIME_WAITED_MICRO) OVER(PARTITION BY event_name,pkey ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) TIME_WAITED,
+                                      (TOTAL_WAITS-nvl(LAG(TOTAL_WAITS) OVER(PARTITION BY event_name,pkey ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) TOTAL_WAITS
                                FROM   DBA_HIST_SYSTEM_EVENT NATURAL JOIN snap
                                WHERE  DBID=&dbid AND (&filter) AND (&ADDITIONAL_FILTER)) a)
                  WHERE nvl(v1,0)>0

@@ -3,14 +3,15 @@
     Impacted by settings: starttime,endtime,instance.
     -pool: group by pool, otherwise group by name
     --[[
-        &V1     : default={&INSTANCE}
+        &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
         &pool   : default={name} pool={nvl(pool,'N/A')}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
-    title="SGA/PGA Memory Chart",
+    title="SGA Memory Chart",
     _sql=[[
         WITH snap AS(
         SELECT a.*,
@@ -39,8 +40,8 @@
                         NATURAL JOIN   (
                         SELECT snap_id, dbid, instance_number,&pool name, SUM(bytes) sga_value 
                         FROM dba_hist_sgastat 
-                        WHERE :V1 IS NULL AND NAME!='free memory'
-                        OR    :V1 IS NOT NULL AND instr(lower(pool|| ' '||name),lower(:v1))>0
+                        WHERE (&WCON) AND (:V1 IS NULL AND NAME!='free memory'
+                        OR    :V1 IS NOT NULL AND instr(lower(pool|| ' '||name),lower(:v1))>0)
                         GROUP BY snap_id, dbid, instance_number,&pool) SGA
                         ) a)
         GROUP BY event, etime]],

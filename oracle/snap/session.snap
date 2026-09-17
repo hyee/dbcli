@@ -94,7 +94,7 @@
     &base: {default={
               WITH s1 AS (
                   SELECT inst_id, SID, &session_info sids
-                  FROM  gv$session 
+                  FROM  gv$session
                   where (&filter)),
               ses AS (select /*+no_merge*/ * from
                 (SELECT sids,inst_id, SID
@@ -105,7 +105,7 @@
                 WHERE  s1.inst_id = s2.qcinst_id
                 AND    s1.SID = s2.qcsid))}}
         &filter: {
-             default={(:V1 IS NULL AND SID=USERENV('SID') or :V1 IS NOT NULL and :V1 in(''||sid,sql_id)) AND 
+             default={(:V1 IS NULL AND SID=USERENV('SID') or :V1 IS NOT NULL and :V1 in(''||sid,sql_id)) AND
                       (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0')}
              u={SCHEMANAME=nvl('&0',sys_context('userenv','current_schema'))}
              f={}
@@ -118,7 +118,7 @@
     }
     &statfilter1: default={} im={1}
     @ash_cost: 11={tm_delta_db_time*1e-6} default={1}
-    @declares: {12.2={sysstat CLOB;sysevent CLOB;timemodel CLOB;base VARCHAR2(4000)} 
+    @declares: {12.2={sysstat CLOB;sysevent CLOB;timemodel CLOB;base VARCHAR2(4000)}
                 default={sysstat xmltype;sysevent xmltype;timemodel xmltype;base xmltype}}
     @to_src: 12.2={(select json_arrayagg(json_array(sids,inst_id,sid)) from ses)} default={xmltype(cursor(select sids,inst_id,sid from ses))}
     @stats: {12.2={
@@ -168,78 +168,78 @@
                         extractvalue(column_value,'/ROW/INST_ID')+0 INST_ID,
                         extractvalue(column_value,'/ROW/SID')+0 SID
                 from    TABLE(XMLSEQUENCE(EXTRACT(base,'/ROWSET/ROW'))))}
-           } 
+           }
     --]]
 ]]*/
 {
     sql={
       declare=[[&declares;bs PLS_INTEGER;]],
-      [[null;
+      [[NULL   ;
          &base
-         select &to_src into base from dual;
+         SELECT &to_src INTO base FROM dual;
 
-        $IF DBMS_DB_VERSION.VERSION>11 $THEN
-            with ses as (select * from &src)
-            select (select json_arrayagg(json_array(sids,name,value) returning clob)
-                    from (
-                        select sids,name,sum(value) value
-                        from  ses
-                        join  gv$sesstat using(sid,inst_id)
-                        join  v$statname using(statistic#)
-                        where value>0
-                        group by sids,name)),
-                   (select json_arrayagg(json_array(sids,WAIT_CLASS,EVENT,waits,micro) returning clob) 
-                    from (
-                        select sids,WAIT_CLASS,EVENT,sum(TOTAL_WAITS) waits,sum(TIME_WAITED_MICRO) micro
-                        from ses 
-                        join gv$session_event using(sid,inst_id) 
-                        where TOTAL_WAITS>0
-                        group by sids,WAIT_CLASS,EVENT)),
-                  (select json_arrayagg(json_array(sids,stat_name,value) returning clob) 
-                   from (
-                        select sids,stat_name,sum(value) value
-                        from ses 
-                        join gv$sess_time_model using(sid,inst_id) 
-                        where value>0
-                        group by sids,stat_name))
-            into sysstat,sysevent,timemodel
-            from dual;
+        $IF dbms_db_version.version>11 $THEN
+            WITH   ses AS (SELECT * FROM &src)
+            SELECT (SELECT json_arrayagg(json_array(sids, name, value) returning clob)
+                    FROM   (
+                        SELECT sids, name, sum(value) value
+                        FROM   ses
+                        JOIN   gv$sesstat USING(sid, inst_id)
+                        JOIN   v$statname USING(statistic#)
+                        WHERE  value>0
+                        GROUP  BY sids, name)),
+                   (SELECT json_arrayagg(json_array(sids, wait_class, event, waits, micro) returning clob)
+                    FROM   (
+                        SELECT sids, wait_class, event, sum(total_waits) waits, sum(time_waited_micro) micro
+                        FROM   ses
+                        JOIN   gv$session_event USING(sid, inst_id)
+                        WHERE  total_waits>0
+                        GROUP  BY sids, wait_class, event)),
+                  (SELECT json_arrayagg(json_array(sids, stat_name, value) returning clob)
+                   FROM   (
+                        SELECT sids, stat_name, sum(value) value
+                        FROM   ses
+                        JOIN   gv$sess_time_model USING(sid, inst_id)
+                        WHERE  value>0
+                        GROUP  BY sids, stat_name))
+            INTO   sysstat, sysevent, timemodel
+            FROM   dual;
         $ELSE
-            with ses as(select * from &src)
-            select xmltype(cursor(
-                    select sids,name,sum(value) value
-                    from  ses
-                    join  gv$sesstat using(sid,inst_id)
-                    join  v$statname using(statistic#)
-                    where value>0
-                    group by sids,name)),
-                   xmltype(cursor(
-                    select sids,WAIT_CLASS,EVENT,sum(TOTAL_WAITS) waits,sum(TIME_WAITED_MICRO) micro
-                    from ses 
-                    join gv$session_event using(sid,inst_id) 
-                    where TOTAL_WAITS>0
-                    group by sids,WAIT_CLASS,EVENT)),
-                   xmltype(cursor(
-                    select sids,stat_name,sum(value) value
-                    from ses 
-                    join gv$sess_time_model using(sid,inst_id) 
-                    where value>0
-                    group by sids,stat_name))
-            into sysstat,sysevent,timemodel
-            from dual;
+            WITH   ses AS(SELECT * FROM &src)
+            SELECT xmltype(CURSOR(
+                    SELECT sids, name, sum(value) value
+                    FROM   ses
+                    JOIN   gv$sesstat USING(sid, inst_id)
+                    JOIN   v$statname USING(statistic#)
+                    WHERE  value>0
+                    GROUP  BY sids, name)),
+                   xmltype(CURSOR(
+                    SELECT sids, wait_class, event, sum(total_waits) waits, sum(time_waited_micro) micro
+                    FROM   ses
+                    JOIN   gv$session_event USING(sid, inst_id)
+                    WHERE  total_waits>0
+                    GROUP  BY sids, wait_class, event)),
+                   xmltype(CURSOR(
+                    SELECT sids, stat_name, sum(value) value
+                    FROM   ses
+                    JOIN   gv$sess_time_model USING(sid, inst_id)
+                    WHERE  value>0
+                    GROUP  BY sids, stat_name))
+            INTO   sysstat, sysevent, timemodel
+            FROM   dual;
          $END
-         select value into bs from v$parameter where name='db_block_size';]],  
+         SELECT value INTO bs FROM v$parameter WHERE name='db_block_size';]],
 
-      [[SELECT A.* FROM ( /*grid={topic='Session Stats',include_zero=true,height=0}*/
+      [[SELECT a.* FROM ( /*grid={topic='Session Stats',include_zero=true,height=0}*/
             SELECT /*+no_expand*/
                    sids,
-                   substr(n,1,40) name,
+                   substr(n, 1, 40) name,
                    sum(v) value
             FROM   &stats
             WHERE  (:V3 IS NOT NULL OR v>0)
             AND    (&statfilter)
-            AND    ((:statfilter1 IS NOT NULL OR :V3 IS NOT NULL)  
-                    OR n not in (
+            AND    ((:statfilter1 IS NOT NULL OR :V3 IS NOT NULL)
+                    OR     n NOT IN (
                         'DB time',
                         'user logons cumulative',
                         'user calls',
@@ -252,7 +252,7 @@
                         'session logical reads',
                         'physical read total bytes',
                         'physical write total bytes',
-                        'redo size','undo change vector size',
+                        'redo size', 'undo change vector size',
                         'physical read total bytes optimized',
                         'cell physical IO bytes eligible for predicate offload',
                         'physical read total bytes',
@@ -272,173 +272,173 @@
                         'IM scan rows projected',
                         'IM populate rows',
                         'IM repopulate (trickle incremental) total rows',
-                        'IM scan rows pcode aggregated','session logical reads - IM',
+                        'IM scan rows pcode aggregated', 'session logical reads - IM',
                         'table scan rows gotten',
                         'recursive calls',
-                        'temp space allocated (bytes)','sorts (rows)','rows fetched via callback',
+                        'temp space allocated (bytes)', 'sorts (rows)', 'rows fetched via callback',
                         'cell physical IO bytes eligible for smart IOs',
-                        'physical reads direct', 'physical writes direct','cell physical write IO bytes eligible for offload',
-                        'cell physical IO bytes processed for IM capacity','cell physical IO bytes processed for IM query',
+                        'physical reads direct', 'physical writes direct', 'cell physical write IO bytes eligible for offload',
+                        'cell physical IO bytes processed for IM capacity', 'cell physical IO bytes processed for IM query',
                         'cell physical IO bytes saved by columnar cache',
-                        'session uga memory','session pga memory'))
-            GROUP BY sids,n) A
-            ORDER BY name]],
+                        'session uga memory', 'session pga memory'))
+            GROUP  BY sids, n) a
+            ORDER  BY name]],
         '|', {[[/*grid={topic='Session Time Model', fixed_title=true,max_rows=10}*/
                 SELECT sids,
-                       substr(n,1,35) name,
-                       sum((select sum(v) 
-                        from   &timemodel b 
-                        where  a.sids=b.sids
-                        and    b.n in('background elapsed time','DB time'))) "Pct",
+                       substr(n, 1, 35) name,
+                       sum((SELECT sum(v)
+                        FROM   &timemodel b
+                        WHERE  a.sids=b.sids
+                        AND    b.n IN('background elapsed time', 'DB time'))) "Pct",
                         sum(v) "Time"
                 FROM   &timemodel a
-                WHERE  n not in('DB time','background elapsed time')
-                group by sids,n]],
+                WHERE  n NOT IN('DB time', 'background elapsed time')
+                GROUP  BY sids, n]],
               '|',
               [[/*grid={topic='Session Rows',fixed_title=true, include_zero=true,order_by="sids"}*/
-                SELECT sids, 
-                       SUM(DECODE(n, 'table scan rows gotten', v)) "Scan",
-                       SUM(DECODE(n, 'IM scan rows', v)) "IM(%)",
-                       SUM(DECODE(n, 'HCC scan rdbms rows', v,'EHCC Total Rows for Decompression',v)) "HCC(%)",
-                       SUM(DECODE(n, 'sorts (rows)', v)) "Sorts",
-                       SUM(DECODE(n, 'rows fetched via callback', v)) "Fetch",
-                       SUM(DECODE(n, 'undo change vector size', v)) "Undos"
+                SELECT sids,
+                       sum(decode(n, 'table scan rows gotten', v)) "Scan",
+                       sum(decode(n, 'IM scan rows', v)) "IM(%)",
+                       sum(decode(n, 'HCC scan rdbms rows', v, 'EHCC Total Rows for Decompression', v)) "HCC(%)",
+                       sum(decode(n, 'sorts (rows)', v)) "Sorts",
+                       sum(decode(n, 'rows fetched via callback', v)) "Fetch",
+                       sum(decode(n, 'undo change vector size', v)) "Undos"
                 FROM   &stats
                 GROUP  BY sids]],
               '-',
               [[/*grid={topic='Session Profiles',fixed_title=true,include_zero=true, order_by=1}*/
-                SELECT sids, 
-                       SUM(DECODE(n, 'user calls', v)) "Call",
-                       SUM(DECODE(n, 'recursive calls', v)) "rCall",
-                       SUM(DECODE(n, 'execute count', v)) "Exec",
+                SELECT sids,
+                       sum(decode(n, 'user calls', v)) "Call",
+                       sum(decode(n, 'recursive calls', v)) "rCall",
+                       sum(decode(n, 'execute count', v)) "Exec",
                        '|' "|",
-                       SUM(DECODE(n, 'parse count (total)', v)) "Parse",
-                       SUM(DECODE(n, 'parse count (hard)', v)) "Hard",
-                       SUM(DECODE(n, 'session cursor cache hits', v)) "CcHit",
+                       sum(decode(n, 'parse count (total)', v)) "Parse",
+                       sum(decode(n, 'parse count (hard)', v)) "Hard",
+                       sum(decode(n, 'session cursor cache hits', v)) "CcHit",
                        '|' "|",
-                       SUM(DECODE(n, 'session logical reads', v))*bs "Buffer",
-                       SUM(DECODE(n, 'physical read total bytes', v)) "PhyRead",
-                       SUM(DECODE(n, 'physical write total bytes', v)) "PhyWrite",
-                       SUM(DECODE(n, 'physical reads direct', v))*bs "dxr",
-                       SUM(DECODE(n, 'physical writes direct', v))*bs "dxw",
-                       SUM(DECODE(n, 'redo size', v,'flashback log write bytes',v)) "Redo",
-                       SUM(decode(n, 'DBWR undo block writes',v))*bs "Undo",
-                       SUM(DECODE(n, 'physical reads direct temporary tablespace',v,'physical writes direct temporary tablespace',v)) "Temp",
-                       SUM(case when n like 'byte%SQL*Net%' then v end) "SQL*Net"
+                       sum(decode(n, 'session logical reads', v))*bs "Buffer",
+                       sum(decode(n, 'physical read total bytes', v)) "PhyRead",
+                       sum(decode(n, 'physical write total bytes', v)) "PhyWrite",
+                       sum(decode(n, 'physical reads direct', v))*bs "dxr",
+                       sum(decode(n, 'physical writes direct', v))*bs "dxw",
+                       sum(decode(n, 'redo size', v, 'flashback log write bytes', v)) "Redo",
+                       sum(decode(n, 'DBWR undo block writes', v))*bs "Undo",
+                       sum(decode(n, 'physical reads direct temporary tablespace', v, 'physical writes direct temporary tablespace', v)) "Temp",
+                       sum(CASE WHEN n LIKE 'byte%SQL*Net%' THEN v END) "SQL*Net"
                 FROM   &stats a
                 GROUP  BY sids]],
             '-',
             [[/*grid={topic='Exadata Profiles',fixed_title=true,order_by=1,autohide=true}*/
                SELECT sids,
-                     SUM(DECODE(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
-                     SUM(DECODE(n, 'cell physical IO bytes eligible for predicate offload', v,'cell physical write IO bytes eligible for offload',v)) "Offload",
-                     SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflOut",
-                     SUM(DECODE(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflEff",
-                     SUM(DECODE(n, 'cell IO uncompressed bytes', v)) "Unzip",
-                     SUM(DECODE(n, 'HCC scan cell bytes compressed', v,'HCC scan rdbms bytes compressed',v)) "zip",
-                     SUM(DECODE(n, 'physical read total bytes optimized', v)) "OptRead",
-                     SUM(DECODE(n, 'physical write total bytes optimized', v)) "OptWrite",
-                     SUM(DECODE(n, 'cell physical IO bytes processed for IM capacity',v,'cell physical IO bytes processed for IM query',v)) "CellIM",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
-                     SUM(DECODE(n, 'cell physical IO bytes saved by columnar cache',v)) "CCSave",
-                     SUM(CASE WHEN n in ('cell ram cache read hits','cell RDMA reads','cell flash cache read hits','cell pmem cache read hits','cell xrmem cache read hits') then v end) "FcHit",
-                     SUM(DECODE(n, 'physical read total IO requests',v)) phyio
-              FROM   (SELECT a.*, count(case when n like '%bytes optimized%' then 1 end) over() offl FROM &stats a)
+                     sum(decode(n, 'cell physical IO interconnect bytes', v)) "BandWidth",
+                     sum(decode(n, 'cell physical IO bytes eligible for predicate offload', v, 'cell physical write IO bytes eligible for offload', v)) "Offload",
+                     sum(decode(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflOut",
+                     sum(decode(n, 'cell physical IO interconnect bytes returned by smart scan', v)) "OflEff",
+                     sum(decode(n, 'cell IO uncompressed bytes', v)) "Unzip",
+                     sum(decode(n, 'HCC scan cell bytes compressed', v, 'HCC scan rdbms bytes compressed', v)) "zip",
+                     sum(decode(n, 'physical read total bytes optimized', v)) "OptRead",
+                     sum(decode(n, 'physical write total bytes optimized', v)) "OptWrite",
+                     sum(decode(n, 'cell physical IO bytes processed for IM capacity', v, 'cell physical IO bytes processed for IM query', v)) "CellIM",
+                     sum(decode(n, 'cell physical IO bytes saved by storage index', v)) "SISave",
+                     sum(decode(n, 'cell physical IO bytes saved by columnar cache', v)) "CCSave",
+                     sum(CASE WHEN n IN ('cell ram cache read hits', 'cell RDMA reads', 'cell flash cache read hits', 'cell pmem cache read hits', 'cell xrmem cache read hits') THEN v END) "FcHit",
+                     sum(decode(n, 'physical read total IO requests', v)) phyio
+              FROM   (SELECT a.*, count(CASE WHEN n LIKE '%bytes optimized%' THEN 1 END) OVER() offl FROM &stats a)
               WHERE  offl>0
-              group  by sids]],
+              GROUP  BY sids]],
             '-',
             [[/*grid={topic='In-Memory Stats (LIO=Logical Reads)',fixed_title=true,order_by=1,autohide=true}*/
-            SELECT   sids,
-                     SUM(DECODE(n, 'session logical reads - IM', v,0))*bs "IM-LIO",
-                     SUM(DECODE(n, 'session logical reads', v,0))*bs "LIO(%)",
-                     SUM(DECODE(n, 'IM scan bytes in-memory', v,0)) "Bytes",
-                     SUM(DECODE(n, 'IM scan bytes uncompressed', v,0)) "Unzip",
+            SELECT sids,
+                     sum(decode(n, 'session logical reads - IM', v, 0))*bs "IM-LIO",
+                     sum(decode(n, 'session logical reads', v, 0))*bs "LIO(%)",
+                     sum(decode(n, 'IM scan bytes in-memory', v, 0)) "Bytes",
+                     sum(decode(n, 'IM scan bytes uncompressed', v, 0)) "Unzip",
                      --SUM(DECODE(n, 'IM populate bytes from storage', v,0)) "Pops",
                      --SUM(DECODE(n, 'IM repopulate (trickle) bytes from storage',v,'IM prepopulate bytes from storage', v,0)) "re-Pops",
                       '|' "|",
-                     SUM(DECODE(n, 'IM scan CUs current', v,0)) "IMCU",
-                     SUM(DECODE(n, 'IM scan CUs predicates optimized', v,'IM scan CUs pruned',v,0)) "Prun",
-                     SUM(DECODE(n, 'IM scan CUs invalid or missing revert to on disk extent', v,0)) 
+                     sum(decode(n, 'IM scan CUs current', v, 0)) "IMCU",
+                     sum(decode(n, 'IM scan CUs predicates optimized', v, 'IM scan CUs pruned', v, 0)) "Prun",
+                     sum(decode(n, 'IM scan CUs invalid or missing revert to on disk extent', v, 0))
                      "Miss",
                      '|' "|",
-                     SUM(DECODE(n, 'IM scan rows', v,0)) "Rows",
-                     SUM(DECODE(n, 'IM scan rows valid', v,0)) "Valid",
-                     SUM(DECODE(n, 'IM scan rows projected', v,0)) "Proj",
-                     SUM(DECODE(n, 'IM scan rows optimized', v,0)) "Skip",
-                     SUM(DECODE(n, 'IM scan rows excluded', v,0)) "Exclude",
-                     SUM(DECODE(n, 'IM scan rows pcode aggregated',v)) "pcode",
-                     SUM(DECODE(n, 'IM populate rows', v,'IM prepopulate rows',v,0)) "Popr",
-                     SUM(DECODE(n, 'IM repopulate (trickle incremental) total rows', v,'IM repopulate rows',v,0)) "re-Popr",
-                     SUM(DECODE(n, 'key vector CU codes processed', v,0)) "IMA",
-                     SUM(DECODE(n, 'IM scan (dynamic) rows', v,0)) "IMDS",
-                     SUM(DECODE(n, 'vector group by accumspace size', v,0)) "JP",
-                     SUM(DECODE(n, 'IM scan EU rows', v,0)) "IMEU"
+                     sum(decode(n, 'IM scan rows', v, 0)) "Rows",
+                     sum(decode(n, 'IM scan rows valid', v, 0)) "Valid",
+                     sum(decode(n, 'IM scan rows projected', v, 0)) "Proj",
+                     sum(decode(n, 'IM scan rows optimized', v, 0)) "Skip",
+                     sum(decode(n, 'IM scan rows excluded', v, 0)) "Exclude",
+                     sum(decode(n, 'IM scan rows pcode aggregated', v)) "pcode",
+                     sum(decode(n, 'IM populate rows', v, 'IM prepopulate rows', v, 0)) "Popr",
+                     sum(decode(n, 'IM repopulate (trickle incremental) total rows', v, 'IM repopulate rows', v, 0)) "re-Popr",
+                     sum(decode(n, 'key vector CU codes processed', v, 0)) "IMA",
+                     sum(decode(n, 'IM scan (dynamic) rows', v, 0)) "IMDS",
+                     sum(decode(n, 'vector group by accumspace size', v, 0)) "JP",
+                     sum(decode(n, 'IM scan EU rows', v, 0)) "IMEU"
               FROM   &stats
               GROUP  BY sids]],
             '-',
             [[/*grid={topic='RAC Profiles (CR=[gc cr blocks] CU=[gc current blocks]  Rec=Received enq=[global enqueue])',fixed_title=true,order_by=1,autohide=true}*/
                 SELECT sids,
-                       SUM(DECODE(n,
-                                  'gc cr blocks received',bs * v,
-                                  'gc cr blocks served',bs * v,
-                                  'gc current blocks received',bs * v,
-                                  'gc current blocks served',bs * v,
-                                  'ges msgs received',v * 200,
-                                  'gcs msgs received',v * 200,
-                                  'gcs messages sent',v * 200,
-                                  'ges msgs sent',v * 200,
-                                  'gc status messages sent',v * 200,
-                                  'gc status messages received',v * 200,
-                                  'ka messages sent',v * 200,
-                                  'ka grants received',v * 200)) "Traffic",
-                       SUM(bs * DECODE(n, 'gc blocks lost', v)) "Lost",
-                       (select sum(waits) from &events b where b.sids=a.sids and event='gc cr failure') "Fail",
-                       SUM(DECODE(n, 'global enqueue get time',v*10000)) "enq",
+                       sum(decode(n,
+                                  'gc cr blocks received', bs * v,
+                                  'gc cr blocks served', bs * v,
+                                  'gc current blocks received', bs * v,
+                                  'gc current blocks served', bs * v,
+                                  'ges msgs received', v * 200,
+                                  'gcs msgs received', v * 200,
+                                  'gcs messages sent', v * 200,
+                                  'ges msgs sent', v * 200,
+                                  'gc status messages sent', v * 200,
+                                  'gc status messages received', v * 200,
+                                  'ka messages sent', v * 200,
+                                  'ka grants received', v * 200)) "Traffic",
+                       sum(bs * decode(n, 'gc blocks lost', v)) "Lost",
+                       (SELECT sum(waits) FROM &events b WHERE b.sids=a.sids AND event='gc cr failure') "Fail",
+                       sum(decode(n, 'global enqueue get time', v*10000)) "enq",
                         '|' "|",
-                       SUM(bs * DECODE(n, 'gc cr blocks served', v, 'gc cr blocks received', v)) cr,
-                       SUM(bs * DECODE(n, 'gc cr blocks received', v)) "CR Rec",
-                       SUM(bs * DECODE(n, 'gc cr block receive time', v*10000)) "CR Rec Avg",
-                       SUM(bs * DECODE(n, 'gc cr blocks flushed', v)) "CR Flush",
-                       SUM(bs * DECODE(n, 'gc cr block flush time', v*10000)) "CR FL Avg",
+                       sum(bs * decode(n, 'gc cr blocks served', v, 'gc cr blocks received', v)) cr,
+                       sum(bs * decode(n, 'gc cr blocks received', v)) "CR Rec",
+                       sum(bs * decode(n, 'gc cr block receive time', v*10000)) "CR Rec Avg",
+                       sum(bs * decode(n, 'gc cr blocks flushed', v)) "CR Flush",
+                       sum(bs * decode(n, 'gc cr block flush time', v*10000)) "CR FL Avg",
                         '|' "|",
-                       SUM(bs * DECODE(n, 'gc current blocks received', v, 'gc current blocks served', v)) cu,
-                       SUM(bs * DECODE(n, 'gc current blocks received', v)) "CU Rec",
-                       SUM(bs * DECODE(n, 'gc current block receive time', v*10000)) "CU Rec Avg",
-                       SUM(bs * DECODE(n, 'gc current blocks flushed', v)) "CU Flush",
-                       SUM(bs * DECODE(n, 'gc current block flush time', v*10000)) "CU FL Avg"
+                       sum(bs * decode(n, 'gc current blocks received', v, 'gc current blocks served', v)) cu,
+                       sum(bs * decode(n, 'gc current blocks received', v)) "CU Rec",
+                       sum(bs * decode(n, 'gc current block receive time', v*10000)) "CU Rec Avg",
+                       sum(bs * decode(n, 'gc current blocks flushed', v)) "CU Flush",
+                       sum(bs * decode(n, 'gc current block flush time', v*10000)) "CU FL Avg"
                 FROM   &stats a
                 GROUP  BY sids;
                ]],
             '-',
             [[/*grid={topic='Session Events',fixed_title=true,max_rows=40,order_by="-cost"}*/
-              WITH ASH as(
-                SELECT sids,event,round(SUM(cost)/greatest(:per_second*:snap_interval,1),2) aas, MAX(w) max_ms, 
-                       MAX(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
-                       round(count(distinct sql_id)/greatest(:per_second*:snap_interval,1),1) sqls
-                FROM   (SELECT sids, SQL_ID, SQL_PLAN_HASH_VALUE, nvl(EVENT,'ON CPU') event, time_waited w,
+              WITH   ash AS(
+                SELECT sids, event, round(sum(cost)/greatest(:per_second*:snap_interval, 1), 2) aas, max(w) max_ms,
+                       max(sql_id) keep(dense_rank LAST ORDER BY cnt) top_sql,
+                       round(count(DISTINCT sql_id)/greatest(:per_second*:snap_interval, 1), 1) sqls
+                FROM   (SELECT sids, sql_id, sql_plan_hash_value, nvl(event, 'ON CPU') event, time_waited w,
                                &ash_cost cost,
-                               SUM(&ash_cost) OVER(PARTITION BY inst_id, event) cnt
-                        FROM   (select a.*, session_id sid from gv$active_session_history a) ash 
-                        join   &src src using (inst_id,sid)
-                        WHERE  sample_time >= SYSDATE - :snap_interval/86400)
-                GROUP  BY sids,event)
+                               sum(&ash_cost) OVER(PARTITION BY inst_id, event) cnt
+                        FROM   (SELECT a.*, session_id sid FROM gv$active_session_history a) ash
+                        JOIN   &src src USING (inst_id, sid)
+                        WHERE  sample_time >= sysdate - :snap_interval/86400)
+                GROUP  BY sids, event)
               SELECT sids,
-                     wait_class, 
-                     substr(event,1,35) name,
+                     wait_class,
+                     substr(event, 1, 35) name,
                      top_sql,
-                     lpad(SQLS,4) "SQLs",
+                     lpad(sqls, 4) "SQLs",
                      aas,
                      waits "Waits",
                      '|' "|",
                      micro "Cost",
                      0 "AVG",
                      max_ms "Max"
-              FROM   (select sids,wait_class,event,waits,micro from &events
-                      union all
-                      select sids,'CPU','ON CPU',count(1),sum(v) v
-                      from  &timemodel
-                      group by sids)
-              LEFT   JOIN ash using(sids,event)]]
+              FROM   (SELECT sids, wait_class, event, waits, micro FROM &events
+                      UNION  ALL
+                      SELECT sids, 'CPU', 'ON CPU', count(1), sum(v) v
+                      FROM   &timemodel
+                      GROUP  BY sids)
+              LEFT   JOIN ash USING(sids, event)]]
             }
     },
     group_by="sids,name",

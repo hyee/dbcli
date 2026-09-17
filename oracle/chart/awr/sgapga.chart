@@ -5,6 +5,7 @@
         &V1     : default={&INSTANCE}
         &V2     : default={&STARTTIME}
         &V3     : default={&ENDTIME}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -38,19 +39,19 @@
                             SELECT snap_id, dbid, instance_number, SUM(bytes) sga_value 
                             FROM dba_hist_sgastat 
                             WHERE NAME!='free memory'
-                            AND   DBID=:DBID
+                            AND   DBID=:DBID AND (&WCON)
                             GROUP BY snap_id, dbid, instance_number) SGA
                         NATURAL JOIN (
                             SELECT snap_id, dbid, instance_number, SUM(bytes) buff_value 
                             FROM dba_hist_sgastat 
                             WHERE NAME='buffer_cache'
-                            AND   DBID=:DBID
+                            AND   DBID=:DBID AND (&WCON)
                             GROUP BY snap_id, dbid, instance_number) BUFF
                         NATURAL JOIN (
                             SELECT snap_id, dbid, instance_number, VALUE pga_value 
                             FROM dba_hist_pgastat 
                             WHERE NAME = 'total PGA inuse'
-                            AND   DBID=:DBID) pga 
+                            AND   DBID=:DBID AND (&WCON)) pga 
                         ) a)
         GROUP BY event, etime]],
     ylabel="Bytes",

@@ -3,60 +3,60 @@
 
     Sample Output:
     ==============
-    [snap#cache]: From 2019-04-13 23:43:15 to 2019-04-13 23:43:20:                                                                              
-    +-------------------------------------------------------------Library Cache--------------------------------------------------------------+  
-    |INST_ID    NAMESPACE     GETS GETMISSES  PINS PINMISSES RELOADS INVALID DLM_LOCK_REQ DLM_PIN_REQ DLM_PIN_RLS DLM_INVALID_REQ DLM_INVALID|  
-    |------- --------------- ----- --------- ----- --------- ------- ------- ------------ ----------- ----------- --------------- -----------|  
-    |      3 SQL AREA        25.00         0 60.00         0       0       0            0           0           0               0           0|  
-    |      3 TABLE/PROCEDURE     0         0 28.00         0       0       0        25.00       28.00       28.00               0           0|  
-    |      3 BODY                0         0  3.00         0       0       0            0        3.00        3.00               0           0|  
-    +----------------------------------------------------------------------------------------------------------------------------------------+  
-    +---------------------------------------------------------------Row Cache----------------------------------------------------------------+  
-    |INST_ID   PARAMETER     GETS  FASTGETS GETMISSES SCANS SCANMISSES SCANDONE COUNT USAGE MDFS FLUSHES DLM_LREQ DLM_CONFLICTS DLM_RLS      |  
-    |------- -------------- ------ -------- --------- ----- ---------- -------- ----- ----- ---- ------- -------- ------------- -------      |  
-    |      3 dc_users       105.00    14.00         0     0          0        0     0     0    0       0        0             0       0      |  
-    |      3 dc_objects      50.00        0         0     0          0        0     0     0    0       0        0             0       0      |  
-    |      3 dc_props         6.00        0         0     0          0        0     0     0    0       0        0             0       0      |  
-    |      3 dc_tablespaces      0    14.00         0     0          0        0     0     0    0       0        0             0       0      |  
-    +----------------------------------------------------------------------------------------------------------------------------------------+  
+    [snap#cache]: From 2019-04-13 23:43:15 to 2019-04-13 23:43:20:
+    +-------------------------------------------------------------Library Cache--------------------------------------------------------------+
+    |INST_ID    NAMESPACE     GETS GETMISSES  PINS PINMISSES RELOADS INVALID DLM_LOCK_REQ DLM_PIN_REQ DLM_PIN_RLS DLM_INVALID_REQ DLM_INVALID|
+    |------- --------------- ----- --------- ----- --------- ------- ------- ------------ ----------- ----------- --------------- -----------|
+    |      3 SQL AREA        25.00         0 60.00         0       0       0            0           0           0               0           0|
+    |      3 TABLE/PROCEDURE     0         0 28.00         0       0       0        25.00       28.00       28.00               0           0|
+    |      3 BODY                0         0  3.00         0       0       0            0        3.00        3.00               0           0|
+    +----------------------------------------------------------------------------------------------------------------------------------------+
+    +---------------------------------------------------------------Row Cache----------------------------------------------------------------+
+    |INST_ID   PARAMETER     GETS  FASTGETS GETMISSES SCANS SCANMISSES SCANDONE COUNT USAGE MDFS FLUSHES DLM_LREQ DLM_CONFLICTS DLM_RLS      |
+    |------- -------------- ------ -------- --------- ----- ---------- -------- ----- ----- ---- ------- -------- ------------- -------      |
+    |      3 dc_users       105.00    14.00         0     0          0        0     0     0    0       0        0             0       0      |
+    |      3 dc_objects      50.00        0         0     0          0        0     0     0    0       0        0             0       0      |
+    |      3 dc_props         6.00        0         0     0          0        0     0     0    0       0        0             0       0      |
+    |      3 dc_tablespaces      0    14.00         0     0          0        0     0     0    0       0        0             0       0      |
+    +----------------------------------------------------------------------------------------------------------------------------------------+
 
 ]]*/
 {
     sql={
-        [[grid:{topic="Library Cache",max_rows=10,order_by="-pins"}
+        [[grid:{topic="Library Cache", max_rows=10, order_by="-pins"}
         SELECT inst_id,
-               NAMESPACE,
-               GETS,
-               GETS-GETHITS GETMISSES,
-               PINS,
-               PINS-PINHITS PINMISSES,
-               RELOADS,
-               INVALIDATIONS INVALID,
-               DLM_LOCK_REQUESTS DLM_LOCK_REQ,DLM_PIN_REQUESTS DLM_PIN_REQ,DLM_PIN_RELEASES DLM_PIN_RLS,DLM_INVALIDATION_REQUESTS DLM_INVALID_REQ,DLM_INVALIDATIONS DLM_INVALID
+               namespace,
+               gets,
+               gets-gethits getmisses,
+               pins,
+               pins-pinhits pinmisses,
+               reloads,
+               invalidations invalid,
+               dlm_lock_requests dlm_lock_req, dlm_pin_requests dlm_pin_req, dlm_pin_releases dlm_pin_rls, dlm_invalidation_requests dlm_invalid_req, dlm_invalidations dlm_invalid
         FROM   gv$librarycache
-        WHERE  (GETS+PINS+RELOADS+INVALIDATIONS+DLM_LOCK_REQUESTS>0 or :V1 is not null)
-        AND    (:V1 is null or lower(NAMESPACE) like lower('%&V1%'))
-        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+        WHERE  (gets+pins+reloads+invalidations+dlm_lock_requests>0 OR :V1 IS NOT NULL)
+        AND    (:V1 IS NULL OR lower(namespace) LIKE lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2=inst_id OR :V2='0')
         ]],
         '-',
-        [[grid:{topic="Row Cache",order_by="-gets"}
+        [[grid:{topic="Row Cache", order_by="-gets"}
         SELECT inst_id,
-               PARAMETER||nvl2(SUBORDINATE#,'(S#'||SUBORDINATE#||')','') PARAMETER,
-               GETS,
-               FASTGETS,
-               GETMISSES,
-               SCANS,
-               SCANMISSES,
-               SCANCOMPLETES SCANDONE,
-               COUNT,
-               USAGE,
-               MODIFICATIONS MDFS,
-               FLUSHES,
-               DLM_REQUESTS DLM_LREQ,DLM_CONFLICTS,DLM_RELEASES DLM_RLS
+               parameter||nvl2(subordinate#, '(S#'||subordinate#||')', '') parameter,
+               gets,
+               fastgets,
+               getmisses,
+               scans,
+               scanmisses,
+               scancompletes scandone,
+               count,
+               usage,
+               modifications mdfs,
+               flushes,
+               dlm_requests dlm_lreq, dlm_conflicts, dlm_releases dlm_rls
         FROM   gv$rowcache
-        WHERE  (GETS+SCANS+COUNT+FLUSHES+DLM_REQUESTS>0 or :V1 is not null)
-        AND    (:V1 is null or lower(PARAMETER) like lower('%&V1%'))
-        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2=INST_ID OR :V2='0') 
+        WHERE  (gets+scans+count+flushes+dlm_requests>0 OR :V1 IS NOT NULL)
+        AND    (:V1 IS NULL OR lower(parameter) LIKE lower('%&V1%'))
+        AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2=inst_id OR :V2='0')
         ]]
     },
     delta_by="GETS,FASTGETS,GETMISSES,PINS,PINMISSES,RELOADS,INVALID,DLM_LOCK_REQ,DLM_PIN_REQ,DLM_PIN_RLS,DLM_INVALID_REQ,DLM_INVALID,SCANS,SCANMISSES,SCANDONE,COUNT,USAGE,MDFS,FLUSHES,DLM_LREQ,DLM_CONFLICTS,DLM_RLS",

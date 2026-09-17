@@ -1,5 +1,5 @@
-/*[[Generate delta values based on gv$sysstat/v$cell_global/v$cell_ioreason. Usage: @@NAME <options> {[<inst_id>]  [keyword]}
-  
+/*[[Generate delta values based on gv$sysstat/v$cell_global/v$cell_ioreason. Usage: @@NAME <options> {[<inst_id>] [keyword]}
+
   --[[
     @check_access_cell: {
         v$cell_global={
@@ -29,15 +29,15 @@
 ]]*/
 {
     sql={[[--grid:{topic='System Stats',order_by="-value"}
-        SELECT decode(count(inst_id),1,max(inst_id)||'','*') inst, 
-               substr(name,1,60) name, 
-               decode(CLASS,1,'User',2,'Redo',4,'Enqueue',8,'Cache',16,'OS',32,'RAC',64,'SQL',128,'DEBUG') class,
+        SELECT decode(count(inst_id), 1, max(inst_id)||'', '*') inst,
+               substr(name, 1, 60) name,
+               decode(class, 1, 'User', 2, 'Redo', 4, 'Enqueue', 8, 'Cache', 16, 'OS', 32, 'RAC', 64, 'SQL', 128, 'DEBUG') class,
                sum(value) value
         FROM   gv$sysstat
-        WHERE  NAME != 'DB time' AND NAME NOT LIKE 'session%memory%'
-        AND    (:V1 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V1=INST_ID OR :V1='0')
-        AND    (:V2 is null AND value>0 or lower(NAME) like lower('%&V2%'))
-        GROUP  BY name,class
+        WHERE  name != 'DB time' AND name NOT LIKE 'session%memory%'
+        AND    (:V1 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V1=inst_id OR :V1='0')
+        AND    (:V2 IS NULL AND value>0 OR lower(name) LIKE lower('%&V2%'))
+        GROUP  BY name, class
     ]] &check_access_cell
     },
     delta_by="value,reqs,bytes",

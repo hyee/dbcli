@@ -1762,6 +1762,7 @@ static int gc_protected(lua_State *L)
 jint jcall_gc(JNIEnv *env, jobject obj, jlong lua, jint what, jint data)
 {
     JNLUA_ENV_L;
+    gc_result = 0;
     if (checkstack(L, JNLUA_MINSTACK))
     {
         gc_what = what;
@@ -2188,6 +2189,7 @@ static int isjavaobject_protected(lua_State *L)
 jint jcall_isjavaobject(JNIEnv *env, jobject obj, jlong lua, jint index)
 {
     JNLUA_ENV_L;
+    isjavaobject_result = 0;
     if (!validindex(L, index))
     {
         isjavaobject_result = 0;
@@ -2268,7 +2270,7 @@ jint jcall_isthread(JNIEnv *env, jobject obj, jlong lua, jint index)
 
 /* ---- Stack query ---- */
 /* lua_equal() */
-int equal_result;
+JNLUA_THREADLOCAL int equal_result;
 static int equal_protected(lua_State *L)
 {
     equal_result = lua_equal(L, 1, 2);
@@ -2277,6 +2279,7 @@ static int equal_protected(lua_State *L)
 jint jcall_equal(JNIEnv *env, jobject obj, jlong lua, jint index1, jint index2)
 {
     JNLUA_ENV_L;
+    equal_result = 0;
     if (!validindex(L, index1) || !validindex(L, index2))
     {
         equal_result = 0;
@@ -2295,7 +2298,7 @@ jint jcall_equal(JNIEnv *env, jobject obj, jlong lua, jint index1, jint index2)
 }
 
 /* lua_lessthan() */
-int lessthan_result;
+JNLUA_THREADLOCAL int lessthan_result;
 static int lessthan_protected(lua_State *L)
 {
     lessthan_result = lua_lessthan(L, 1, 2);
@@ -2304,6 +2307,7 @@ static int lessthan_protected(lua_State *L)
 jint jcall_lessthan(JNIEnv *env, jobject obj, jlong lua, jint index1, jint index2)
 {
     JNLUA_ENV_L;
+    lessthan_result = 0;
     if (!validindex(L, index1) || !validindex(L, index2))
     {
         lessthan_result = 0;
@@ -2418,6 +2422,7 @@ static int tojavafunction_protected(lua_State *L)
 jobject jcall_tojavafunction(JNIEnv *env, jobject obj, jlong lua, jint index)
 {
     JNLUA_ENV_L;
+    tojavafunction_result = NULL;
     if (checkstack(L, JNLUA_MINSTACK) && checkindex(L, index))
     {
         index = lua_absindex(L, index);
@@ -2836,6 +2841,7 @@ static int next_protected(lua_State *L)
 jint jcall_next(JNIEnv *env, jobject obj, jlong lua, jint index)
 {
     JNLUA_ENV_L;
+    next_result = 0;
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE))
     {
         index = lua_absindex(L, index);
@@ -2967,7 +2973,7 @@ void jcall_setmetatable(JNIEnv *env, jobject obj, jlong lua, jint index)
 
 /* lua_getmetafield() */
 JNLUA_THREADLOCAL const char *getmetafield_k;
-int getmetafield_result;
+JNLUA_THREADLOCAL int getmetafield_result;
 static int getmetafield_protected(lua_State *L)
 {
     getmetafield_result = luaL_getmetafield(L, 1, getmetafield_k);
@@ -2976,6 +2982,7 @@ static int getmetafield_protected(lua_State *L)
 jint jcall_getmetafield(JNIEnv *env, jobject obj, jlong lua, jint index, jstring k)
 {
     JNLUA_ENV_L;
+    getmetafield_result = 0;
     getmetafield_k = NULL;
     if (checkstack(L, JNLUA_MINSTACK) && checkindex(L, index) && (getmetafield_k = getstringchars(k)))
     {
@@ -3205,6 +3212,7 @@ static int getinfo_protected(lua_State *L)
 jint jcall_getinfo(JNIEnv *env, jobject obj, jlong lua, jstring what, jobject ar)
 {
     JNLUA_ENV_L;
+    getinfo_result = 0;
     getinfo_what = NULL;
     if (checkstack(L, JNLUA_MINSTACK) && (getinfo_what = getstringchars(what)) && checknotnull(ar))
     {
@@ -3294,6 +3302,7 @@ static int tablesize_protected(lua_State *L)
 jint jcall_tablesize(JNIEnv *env, jobject obj, jlong lua, jint index)
 {
     JNLUA_ENV_L;
+    tablesize_result = 0;
     if (checkstack(L, JNLUA_MINSTACK) && checktype(L, index, LUA_TTABLE))
     {
         index = lua_absindex(L, index);

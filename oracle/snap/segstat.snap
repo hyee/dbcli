@@ -6,15 +6,15 @@
 {
     sql=[[
         SELECT /*+ordered use_nl(a)*/
-         NAME, STATISTIC_NAME, SUM(VALUE) VALUE, COUNT(DISTINCT a.dataobj#) segs
+         name, statistic_name, sum(value) value, count(DISTINCT a.dataobj#) segs
         FROM   sys.obj$ b, gv$segstat a
         WHERE  a.dataobj# = b.dataobj#
-        AND    (NAME, owner#) IN
+        AND    (name, owner#) IN
                (SELECT object_name, (SELECT user_id FROM dba_users WHERE username = object_owner)
                 FROM   gv$sql_plan
                 WHERE  sql_id = :V1)
-        AND    VALUE > 0
-        GROUP BY NAME, STATISTIC_NAME
+        AND    value > 0
+        GROUP  BY name, statistic_name
     ]],
     delta_by="VALUE,segs",
     set_ratio='off',

@@ -154,7 +154,7 @@ function graph:run_sql(sql,args,cmd,file)
             if not v:find('[a-z]') then v=v:lower() end
             args[v]=value[k]
             --deal with table
-            if value[k] and value[k]:sub(1,1)=='{' then value[k]=json.decode(value[k]) end
+            if type(value[k])=="string" and value[k]:sub(1,1)=='{' then value[k]=json.decode(value[k]) end
             default_attrs[v]=value[k]
         end
     end
@@ -331,6 +331,16 @@ function graph:run_sql(sql,args,cmd,file)
     end
 
     env.checkerr(counter>2,"No data found for the given criteria!")
+
+    --In pivot mode, use the visible value column names as the chart list,
+    --so each chart gets its column name as the ylabel instead of a data value
+    if pivot then
+        local vis_names={}
+        for i=1,#head do
+            if head[head[i]] then vis_names[#vis_names+1]=head[i] end
+        end
+        charts={table.unpack(vis_names,start_value)}
+    end
 
     --Print summary report
     local labels={table.unpack(values[title],2)}

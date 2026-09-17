@@ -8,6 +8,7 @@
         &GRP  : default={tsname}, c={regexp_substr(file_name,'[^\\/]+$')}
         &DICT : V={V}, D={D}
         &TITLE: V={GV$FILEMETRIC_HISTORY}, D={DBA_HIST_FILESTATXS}
+        @WCON  : 12={con_dbid=:dbid}, 8={1=1}
     ]]--
 ]]*/
 
@@ -60,15 +61,15 @@
                  UNION ALL
                  SELECT /*+no_expand */
                         etime, inst_id, tsname,FILENAME, 
-                        (PHYRDS - nvl(LAG(PHYRDS) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))/secs,
-                        (PHYWRTS - nvl(LAG(PHYWRTS) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))/secs,
-                        (PHYBLKRD - nvl(LAG(PHYBLKRD) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0)) * block_size/secs ,
-                        (PHYBLKWRT - nvl(LAG(PHYBLKWRT) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0)) * block_size/secs ,
-                        (READTIM - nvl(LAG(READTIM) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))/secs,
-                        (WRITETIM - nvl(LAG(WRITETIM) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))/secs
+                        (PHYRDS - nvl(LAG(PHYRDS) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1)/secs,
+                        (PHYWRTS - nvl(LAG(PHYWRTS) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1)/secs,
+                        (PHYBLKRD - nvl(LAG(PHYBLKRD) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) * block_size/secs ,
+                        (PHYBLKWRT - nvl(LAG(PHYBLKWRT) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) * block_size/secs ,
+                        (READTIM - nvl(LAG(READTIM) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1)/secs,
+                        (WRITETIM - nvl(LAG(WRITETIM) OVER(PARTITION BY pkey, file# ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1)/secs
                  FROM   DBA_HIST_FILESTATXS b natural join snap
                  WHERE  'D' = UPPER(:DICT)
-                 AND    DBID= :DBID
+                 AND    DBID= :DBID AND (&WCON)
                  AND    (:V4 is null or tsname like upper('%&V4%'))
               )
         WHERE  (phyrds >0 or phywrs>0)

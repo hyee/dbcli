@@ -1,5 +1,5 @@
-/*[[show current holding/waiting latch info]]*/
-select 'Holding' typ,
+/*[[Show current holding/waiting latch info]]*/
+SELECT 'Holding' typ,
        s.inst_id,s.sid,
        s.serial#,
        s.process,
@@ -13,13 +13,13 @@ select 'Holding' typ,
        p1text,
        p2text,
        p3text
-  from gv$process p, gv$session s, gv$latchholder h
- where h.pid = p.pid
-   and p.addr = s.paddr
-   and p.inst_id = s.inst_id
-   and p.inst_id = h.inst_id
-UNION ALL
-select 'Waiting',
+FROM   gv$process p, gv$session s, gv$latchholder h
+WHERE  h.pid = p.pid
+AND    p.addr = s.paddr
+AND    p.inst_id = s.inst_id
+AND    p.inst_id = h.inst_id
+UNION  ALL
+SELECT 'Waiting',
        s.inst_id,s.sid,
        s.serial#,
        s.process,
@@ -33,9 +33,9 @@ select 'Waiting',
        p1text,
        p2text,
        p3text
-  from gv$session s, gv$process p, gv$latch l
- where latchwait is not null
-   and p.addr = s.paddr
-   and p.latchwait = l.addr
-   and p.inst_id = s.inst_id
-   and p.inst_id = l.inst_id;
+FROM   gv$session s, gv$process p, gv$latch l
+WHERE  latchwait IS NOT NULL
+AND    p.addr = s.paddr
+AND    p.latchwait = l.addr
+AND    p.inst_id = s.inst_id
+AND    p.inst_id = l.inst_id;

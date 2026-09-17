@@ -1,4 +1,4 @@
-/*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d|-h] [-eff] [-max]
+/*[[Show chart for gv$sysmetric_history/dba_hist_sysmetric_summary. Usage: @@NAME <metric_name|metric_group_name> {[0|inst_id] [yymmddhh24mi] [yymmddhh24mi]} [-d|-h] [-eff] [-iops] [-time] [-ratio] [-max]
     -d    : Based on DBA_HIST_SYSMETRIC_SUMMARY
     -h    : Based on DBA_HIST_SYSMETRIC_HISTORY
     -eff  : Show metrics related to DB efficiency
@@ -12,7 +12,7 @@
       &V4   : default={&ENDTIME}
       @BASE : 10.2={}
       &DICT : V={V}, D={D} H={H}
-      &TITLE: V={GV$SYSMETRIC_HISTORY}, D={DBA_HIST_SYSMETRIC_SUMMARY}
+      &TITLE: V={GV$SYSMETRIC_HISTORY}, D={DBA_HIST_SYSMETRIC_SUMMARY}, H={DBA_HIST_SYSMETRIC_HISTORY}
       &CAT  : {
             default={1=1},
             iops={METRIC_NAME in ('User Transaction Per Sec','Physical Read Total IO Requests Per Sec',

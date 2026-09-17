@@ -11,6 +11,7 @@
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
         &filter : default={1=1},f={}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -55,12 +56,13 @@
                                wait_time/secs v,
                                avg(wait_time/secs) over(partition by inst_id,LATCH_NAME) a
                        FROM   (SELECT  inst_id, etime, LATCH_NAME, secs,
-                                       wait_time - nvl(LAG(wait_time) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) wait_time,
-                                       GETS - nvl(LAG(GETS) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) GETS,
-                                       MISSES - nvl(LAG(MISSES) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) MISSES,
-                                       SLEEPS - nvl(LAG(SLEEPS) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0) SLEEPS
+                                       (wait_time - nvl(LAG(wait_time) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) wait_time,
+                                       (GETS - nvl(LAG(GETS) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) GETS,
+                                       (MISSES - nvl(LAG(MISSES) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) MISSES,
+                                       (SLEEPS - nvl(LAG(SLEEPS) OVER(PARTITION BY pkey, LATCH_NAME ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) SLEEPS
                                FROM   DBA_HIST_LATCH NATURAL JOIN snap
-                               WHERE  (&filter)) a
+                               WHERE  (&filter) AND (&WCON)
+                                AND    (:V1 IS NULL OR upper(latch_name) LIKE upper('%&V1%'))) a
                        WHERE  wait_time>0)
                  GROUP  BY event, etime) a
         WHERE  (v>0)

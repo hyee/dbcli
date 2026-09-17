@@ -21,7 +21,7 @@
         &V2       : default={&STARTTIME}
         &V3       : default={&ENDTIME}
 
-        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a)}
+        &ASH_NAME: default={gv$active_session_history}, d={(select instance_number inst_id,a.* from dba_hist_active_Sess_history a &AWCON)}
         &METRIC_NAME: default={gv$sysmetric_history}, d={(select instance_number inst_id,a.* from dba_hist_sysmetric_history a)}
         &TIME_BAND: default={sample_time > sysdate - INTERVAL '3' HOUR},d={sample_time between nvl(to_date('&V2','YYMMDDHH24MI'),sysdate-interval '3' day) and nvl(to_date('&V3','YYMMDDHH24MI'),sysdate+1)}
         &Time_Filter:{
@@ -29,22 +29,23 @@
             t={sample_time > sysdate - :V2/1440}, 
             r={sample_time between nvl(to_date('&V2','YYMMDDHH24MI'),sysdate-3) and nvl(to_date('&V3','YYMMDDHH24MI'),sysdate+1)}
         }    
-        &Filter:default={1=1},u={username=nvl('&0',sys_context('userenv','current_schema'))},f={}
+        &Filter:default={1=1},u={u.username=nvl('&0',sys_context('userenv','current_schema'))},f={}
+        @CHECK_ACCESS_USER : dba_users={dba_users} default={all_users}
+        @AWCON       : 12={where con_dbid=:dbid}, 8={}
         &GROUPS:{
             default={nvl(wait_class, 'ON CPU')},
             cpu={'ON CPU #'||inst_id},
             event={nvl(event,'['||p1text||nullif('|'||p2text,'|')||nullif('|'||p3text,'|')||']')},
-            schema={username}, sql={sql_id}, g={}
+            schema={u.username}, sql={sql_id}, g={}
         }
         &GROUP_NAME : default={Wait Class}, event={Event}, schema={Schema Name}, g={}
-        &COUNTER    : default={SUM(&VER3)}, sec={count(distinct sample_time+0)}
-        &COUNT_NAME : default={Total Seconds}, sec={Distinct Seconds}
+        &COUNTER    : default={count(1)}, sec={count(distinct sample_time+0)}
+        &COUNT_NAME : default={Active Sessions}, sec={Distinct Seconds}
         &cpu        : default={0} cpu={1}
         &cpu1       : default={true} cpu={false}
         &UNIT       : default={1}, d={10}
         @VER1       : 11.2={COUNT(DISTINCT SQL_ID||SQL_EXEC_ID)}, default={NULL}
         @VER2       : 11.2={Running SQLs}, default={HIDDEN_}
-        @VER3       : 11.2={delta_time*1e-6}, default={&unit}
         @VER4       : 11.2={,round(SUM(DELTA_READ_IO_BYTES)/60) rb,round(SUM(DELTA_Write_IO_BYTES)/60) wb},default={}
         @VER5       : 11.2={,SUM(rb) "IO Read Bytes" ,SUM(wb) "IO Write Bytes" },default={}
         @VER41      : 11.2={,NULL,NULL} default={}
@@ -55,7 +56,7 @@
     _attrs=[[select 'ASH Chart (Group By "&GROUP_NAME")' title from dual]],
     _sql=[[
         SELECT to_char(MAX(MAX(sample_time)) over(partition by bucket_id),'YYYY-MM-DD HH24:MI') sample_time,
-               group_by,ROUND(avg(cnt),2) "Active Sessions",SUM(SQLS) "&VER2" &VER5,sums RNK_
+               group_by,ROUND(avg(cnt),2) "&COUNT_NAME",SUM(SQLS) "&VER2" &VER5,sums RNK_
         FROM(
              SELECT A.*, SUM(CNT1) OVER(partition by group_by) sums,
                      WIDTH_BUCKET(sample_time,min(sample_time) over(),max(sample_time) over(),1440) bucket_id
@@ -63,10 +64,10 @@
                  SELECT /*+no_expand*/
                         trunc(sample_time, 'MI') sample_time,
                         &GROUPS AS group_by,
-                        count(1)*&UNIT/60 cnt,
+                        &COUNTER*&UNIT/60 cnt,
                         &VER1 SQLS &VER4,
                         COUNT(1) CNT1
-                 FROM   &ASH_NAME a
+                 FROM   &ASH_NAME a LEFT JOIN &CHECK_ACCESS_USER u ON u.user_id=a.user_id
                  WHERE  (&Time_Filter)
                  AND    ('&V1' IS NULL OR lower('&V1') IN ('0', 'a') OR inst_id = '&V1')
                  AND    (&Filter)

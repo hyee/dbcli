@@ -67,7 +67,7 @@ COL UNDOBLOCKSDONE HEAD Undo|Done
 
 PRO GV$FAST_START_TRANSACTIONS
 PRO ==========================
-SELECT /*+no_merge(b)*/ 
+SELECT /*+no_merge(b)*/
        inst_id,
        usn,
        r.name,
@@ -81,11 +81,11 @@ SELECT /*+no_merge(b)*/
        cputime "CPU|Spent",
        decode(cputime,0,'unknown',(undoblockstotal - undoblocksdone) / nullif(undoblocksdone / cputime,0)) "Est|Complete"
 FROM   gv$fast_start_transactions
-LEFT  JOIN (
-    SELECT inst_id,COUNT(1) "PIDs",XID 
+LEFT   JOIN (
+    SELECT inst_id,COUNT(1) "PIDs",XID
     FROM   GV$FAST_START_SERVERS
     GROUP  BY inst_id,xid) B
-USING(inst_id,xid)
-LEFT  JOIN v$rollname r
-USING (usn)
-WHERE undoblockstotal - undoblocksdone>0
+USING  (inst_id,xid)
+LEFT   JOIN v$rollname r
+USING  (usn)
+WHERE  undoblockstotal - undoblocksdone>0

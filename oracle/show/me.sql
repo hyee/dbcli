@@ -1,5 +1,5 @@
 /*[[
-   Show current connection's information
+   Show information about the current connection
    --[[
       @ctn: 12={sys_context('userenv','con_name') current_container,}, default={}
    --]]
@@ -9,21 +9,21 @@ set feed off
 
 PRO Session Optimizer Env:
 PRO ======================
-select * from v$ses_optimizer_env where sid=userenv('sid') order by 3;
+SELECT * FROM v$ses_optimizer_env WHERE sid=userenv('sid') ORDER BY 3;
 
-PRO Session Cursor Cache:
+PRO Session Object Cache:
 PRO =====================
 set pivot 1
-SELECT * FROM V$SESSION_OBJECT_CACHE;
+SELECT * FROM v$session_object_cache;
 
 
 var pcur refcursor;
 DECLARE
     pcur SYS_REFCURSOR;
 BEGIN
-    $IF DBMS_DB_VERSION.VERSION < 11 $THEN
-        open pcur for 
-            SELECT u_dump.value || '/' || SYS_CONTEXT('userenv','instance_name') || '_ora_' || p.spid ||
+    $IF dbms_db_version.version < 11 $THEN
+        OPEN pcur for
+            SELECT u_dump.value || '/' || sys_context('userenv','instance_name') || '_ora_' || p.spid ||
                    nvl2(p.traceid, '_' || p.traceid, NULL) || '.trc' "Trace File"
             FROM   v$parameter u_dump
             CROSS  JOIN v$process p
@@ -32,17 +32,17 @@ BEGIN
             WHERE  u_dump.name = 'user_dump_dest'
             AND    s.audsid = sys_context('userenv', 'sessionid');
     $ELSE
-        open pcur for select value "Trace File" from v$diag_info where name='Default Trace File';
+        OPEN pcur for SELECT value "Trace File" FROM v$diag_info WHERE name='Default Trace File';
     $END
     :pcur := pcur;
 END;
 /
 
-select /*INTERNAL_DBCLI_CMD*/ user username,sys_context('userenv','current_schema') current_schema,
-               (SELECT VALUE FROM Nls_Database_Parameters WHERE parameter='NLS_RDBMS_VERSION') version,
-                sys_context('userenv','language') lang,
-                (select sid from v$mystat where rownum<2) sid,
-                (select instance_number from v$instance where rownum<2) inst_id,
-                &ctn
-                sys_context('userenv','isdba') is_sysdba
-from dual;
+SELECT /*INTERNAL_DBCLI_CMD*/ user username,sys_context('userenv','current_schema') current_schema,
+       (SELECT value FROM nls_database_parameters WHERE parameter='NLS_RDBMS_VERSION') version,
+       sys_context('userenv','language') lang,
+       (SELECT sid FROM v$mystat WHERE ROWNUM<2) sid,
+       (SELECT instance_number FROM v$instance WHERE ROWNUM<2) inst_id,
+       &ctn
+       sys_context('userenv','isdba') is_sysdba
+FROM   dual;

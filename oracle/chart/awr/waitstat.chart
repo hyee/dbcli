@@ -9,6 +9,7 @@
         &V1     : default={&INSTANCE}
         &V2     : default={&STARTTIME}
         &V3     : default={&ENDTIME}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -35,7 +36,7 @@
                            NVL(to_date(:V3,'yymmddhh24miss'),sysdate+1)
                      AND  (:V1 IS NULL OR lower(:V1) IN ('0', 'a') OR instance_number = :V1)) a)
         SELECT to_char(etime, 'YYYY-MM-DD HH24:MI') sample_time, event,
-               Round(SUM(WAIT_TIME/secs),2)  "Wait Time Per Second",
+               Round(SUM(WAIT_TIME/secs)*10,2) "Milliseconds per Second",
                Round(SUM(WAIT_COUNT/secs),2) "Wait Count Per Second",
                Round(SUM(WAIT_TIME)/SUM(WAIT_COUNT)*10,2) "Wait Time per Request"
         FROM  (SELECT /*+merge*/
@@ -43,10 +44,10 @@
                        CLASS || decode(nvl(lower(:V1), 'a'), 'a', NULL, ' #' || inst_id) event
                FROM   (SELECT /*+merge no_expand*/
                               inst_id,etime,secs,CLASS,
-                              WAIT_COUNT - nvl(LAG(WAIT_COUNT) OVER(PARTITION BY pkey,CLASS ORDER BY snap_id),0) WAIT_COUNT,
-                              TIME - nvl(LAG(TIME) OVER(PARTITION BY pkey,CLASS ORDER BY snap_id),0) WAIT_TIME
+                              (WAIT_COUNT - nvl(LAG(WAIT_COUNT) OVER(PARTITION BY pkey,CLASS ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) WAIT_COUNT,
+                              (TIME - nvl(LAG(TIME) OVER(PARTITION BY pkey,CLASS ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) WAIT_TIME
                        FROM   DBA_HIST_WAITSTAT NATURAL JOIN snap
-                       WHERE  DBID=:DBID) a
+                       WHERE  DBID=:DBID AND (&WCON)) a
                where nvl(WAIT_COUNT,0)>0)
          GROUP  BY event, etime
         ]],

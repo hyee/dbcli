@@ -7,30 +7,30 @@
 
 set feed off
 WITH b AS
- (SELECT /*+use_hash(l t) opt_param('optimizer_dynamic_sampling' 5) 
-           no_expand materialize 
-           table_stats(SYS.X$KSQRS set rows=1000000) 
+ (SELECT /*+use_hash(l t) opt_param('optimizer_dynamic_sampling' 5)
+           no_expand materialize
+           table_stats(SYS.X$KSQRS set rows=1000000)
            table_stats(SYS.X$KSUSE set rows=100000)
         */
          l.*,nvl2(s.sid,s.sid||'@'||s.inst_id,'') blocking,s.event e2
-  FROM   v$lock_type t 
-  JOIN   gv$lock l 
+  FROM   v$lock_type t
+  JOIN   gv$lock l
   ON     l.type=t.type AND l.id1>0
-  LEFT  JOIN gv$session_wait s
+  LEFT   JOIN gv$session_wait s
   ON     l.id1=s.p2 AND l.id2=s.p3 AND t.id1_tag=s.p2text AND t.id2_tag=s.p3text
   AND    l.request=0
-  WHERE (t.id1_tag LIKE 'obj%' or s.sid is not null)),
+  WHERE  (t.id1_tag LIKE 'obj%' or s.sid is not null)),
 objs AS (
   SELECT id1,b.*
   FROM   (select /*+no_merge*/ distinct id1 from b) d,
-         XMLTABLE('/ROWSET/ROW' 
-                passing(dbms_xmlgen.getxmltype('select /*+CURSOR_SHARING_FORCE*/ owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1)) 
+         XMLTABLE('/ROWSET/ROW'
+                passing(dbms_xmlgen.getxmltype('select /*+CURSOR_SHARING_FORCE*/ owner,object_name,subobject_name from &CHECK_ACCESS where object_id=' || d.id1))
                 columns owner VARCHAR2(128),
-                        object_name VARCHAR2(128), 
+                        object_name VARCHAR2(128),
                         subobject_name VARCHAR2(128)) b
 )
 SELECT /*+leading(b d) outline_leaf*/
-         distinct 
+         DISTINCT
          c.sid||','||c.serial#||',@'||c.inst_id session#,
          d.type,
          d.lmode || ' [' ||

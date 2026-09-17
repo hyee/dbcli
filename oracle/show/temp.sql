@@ -14,8 +14,8 @@ col BLOCKS_CACHED,BLOCKS_USED for tmb
 
 PRO GV$TEMP_EXTENT_POOL:
 PRO ====================
-select /*+opt_param('optimizer_dynamic_sampling' 5)*/ DISTINCT * 
-from gv$temp_extent_pool order by 2,3,1;
+SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/ DISTINCT *
+FROM   gv$temp_extent_pool order by 2,3,1;
 
 PRO GV$SORT_SEGMENT(In dba_segments where segment_type = 'TEMPORARY')
 PRO         (Use level 2147483647 to cleanup all tablespaces)
@@ -33,18 +33,18 @@ SELECT /*+opt_param('optimizer_dynamic_sampling' 5)*/
        S.FREE_BLOCKS * T2.BLOCK_SIZE BYTES_FREE,
        S.USED_BLOCKS * T2.BLOCK_SIZE BYTES_USED &cid,
        'alter session set events ''immediate trace name DROP_SEGMENTS level ' || (T1.TS# + 1) || ''';' STMT
-FROM   GV$SORT_SEGMENT S 
-JOIN   (SELECT TS#,NAME TABLESPACE_NAME &cid FROM V$TABLESPACE) T1 USING(TABLESPACE_NAME &cid) 
+FROM   GV$SORT_SEGMENT S
+JOIN   (SELECT TS#,NAME TABLESPACE_NAME &cid FROM V$TABLESPACE) T1 USING(TABLESPACE_NAME &cid)
 JOIN   DBA_TABLESPACES T2 USING(TABLESPACE_NAME)
 ;
 
 PRO GV$TEMPSEG_USAGE(>1MB):
 PRO =======================
-WITH tmps AS (    
+WITH tmps AS (
     SELECT /*+inline*/ sid,spid,username,tablespace,
            round(BLOCKS*(select value from v$parameter where name='db_block_size'), 2) bytes,
            segtype,event,sql_id
-    FROM TABLE(GV$(CURSOR(
+    FROM   TABLE(GV$(CURSOR(
         SELECT /*+ordered*/
                B.SID||','||B.SERIAL#||',@'||userenv('instance') sid,
                P.SPID,
@@ -60,7 +60,7 @@ WITH tmps AS (
         AND    A.blocks>128))))
 SELECT A.*,trim(substr(b.sql_text,1,200)) sql_text
 FROM   tmps a
-LEFT JOIN (
+LEFT   JOIN (
     SELECT sql_id,extractvalue(column_value,'/ROW/SQL_TEXT') sql_text
     FROM   (select /*+no_merge*/ distinct sql_id from tmps) a,
            TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'{
@@ -68,6 +68,6 @@ LEFT JOIN (
                FROM   gv$sqlstats
                WHERE  sql_id = '}'||a.sql_id||'''
                AND    rownum<2'),'/ROWSET/ROW'))) ) b
-ON a.sql_id=b.sql_id
-WHERE &filter
+ON     a.sql_id=b.sql_id
+WHERE  &filter
 ORDER  BY BYTES DESC;

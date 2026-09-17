@@ -5,6 +5,7 @@
         &V1     : default={&INSTANCE}
         &V2     : default={&STARTTIME}
         &V3     : default={&ENDTIME}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -43,7 +44,7 @@
                                       TOTAL_SQL ,
                                       SINGLE_USE_SQL 
                                FROM   DBA_HIST_SQL_SUMMARY NATURAL JOIN snap
-                               WHERE  dbid=:dbid) a
+                               WHERE  dbid=:dbid AND (&WCON)) a
                        )
                  GROUP  BY etime) a
         ORDER  BY 1]],

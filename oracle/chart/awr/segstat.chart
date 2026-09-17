@@ -5,6 +5,7 @@
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
         &V4     : default={&ENDTIME}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -55,12 +56,12 @@
                                       GC_CR_BLOCKS_SERVED_DELTA+GC_CR_BLOCKS_RECEIVED_DELTA+GC_CU_BLOCKS_SERVED_DELTA+GC_CU_BLOCKS_RECEIVED_DELTA gc,
                                       TABLE_SCANS_DELTA scans
                                FROM   SNAP NATURAL JOIN DBA_HIST_SEG_STAT_OBJ NATURAL JOIN  DBA_HIST_SEG_STAT
-                               WHERE  DBID=:DBID
+                               WHERE  DBID=:DBID AND (&WCON)
                                AND    OBJECT_NAME=upper(:V1)) a
                        )
                  GROUP  BY event,etime) a
         ORDER  BY 1]],
     _sorter=2,
-    ylabel="Bytes per Minute",
+    ylabel="Bytes per Second",
     _pivot="mixed",
 }

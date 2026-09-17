@@ -2,7 +2,7 @@
 set feed off digits 4
 PRO Library Cache Ratio:
 PRO ====================
-select * from gv$LIBRARYCACHE order by 1,2;
+SELECT * FROM gv$librarycache ORDER BY 1, 2;
 PRO Library Cache Memory:
-PRO ====================
-select * from GV$LIBRARY_CACHE_MEMORY  order by 1,2;
+PRO =====================
+SELECT * FROM gv$library_cache_memory ORDER BY 1, 2;

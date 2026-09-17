@@ -9,36 +9,36 @@ COL BLOCKS FOR TMB
 
 PRO Audit Trail Properties
 PRO ======================
-SELECT AUDIT_TRAIL, PARAMETER_NAME,PARAMETER_VALUE FROM DBA_AUDIT_MGMT_CONFIG_PARAMS ORDER BY 1,2;
+SELECT audit_trail, parameter_name,parameter_value FROM dba_audit_mgmt_config_params ORDER BY 1,2;
 
-pro   
+pro
 pro Size of Audit log tables
 PRO ========================
-SELECT OWNER,SEGMENT_NAME,
-       decode(SEGMENT_NAME,'AUD$','DBA_AUDIT_TRAIL','FGA_LOG$','DBA_FGA_AUDIT_TRAIL','AUDIT_TRAIL$','','AUD$UNIFIED','UNIFIED_AUDIT_TRAIL') view_name,
-       SEGMENT_SUBTYPE,TABLESPACE_NAME,COUNT(1) SEGMENTS,SUM(BYTES) BYTES,SUM(BLOCKS) BLOCKS,SUM(EXTENTS) EXTENTS,MAX(NEXT_EXTENT) NEXT_EXTENT
-FROM DBA_SEGMENTS 
-WHERE SEGMENT_NAME IN('AUD$','FGA_LOG$','AUDIT_TRAIL$','AUD$UNIFIED') AND OWNER IN ('SYS','DVSYS','AUDSYS')
-GROUP BY OWNER,SEGMENT_NAME,SEGMENT_SUBTYPE,TABLESPACE_NAME
-ORDER BY 1,2,3,4;
+SELECT owner,segment_name,
+       decode(segment_name,'AUD$','DBA_AUDIT_TRAIL','FGA_LOG$','DBA_FGA_AUDIT_TRAIL','AUDIT_TRAIL$','','AUD$UNIFIED','UNIFIED_AUDIT_TRAIL') view_name,
+       segment_subtype,tablespace_name,count(1) segments,sum(bytes) bytes,sum(blocks) blocks,sum(extents) extents,max(next_extent) next_extent
+FROM   dba_segments
+WHERE  segment_name IN('AUD$','FGA_LOG$','AUDIT_TRAIL$','AUD$UNIFIED') AND owner IN ('SYS','DVSYS','AUDSYS')
+GROUP  BY owner,segment_name,segment_subtype,tablespace_name
+ORDER  BY 1,2,3,4;
 
 pro Audit config for stmt/priv
 pro ==========================
 SELECT a.* FROM dba_stmt_audit_opts a
 UNION
 SELECT a.* FROM dba_priv_audit_opts a
-ORDER BY 1,3;
+ORDER  BY 1,3;
 
 &12c pro Unified Audit config
 &12c pro ====================
-&12c SELECT * FROM V$OPTION WHERE PARAMETER = 'Unified Auditing';
+&12c SELECT * FROM v$option WHERE parameter = 'Unified Auditing';
 &12c pro Unified Audit Policies
 &12c pro ======================
-&12c SELECT * FROM AUDIT_UNIFIED_ENABLED_POLICIES JOIN AUDIT_UNIFIED_POLICIES USING(POLICY_NAME);
+&12c SELECT * FROM audit_unified_enabled_policies JOIN audit_unified_policies USING(policy_name);
 
 pro Audit config for objects
 pro ========================
-SELECT * FROM DBA_OBJ_AUDIT_OPTS ORDER BY 1,2;
+SELECT * FROM dba_obj_audit_opts ORDER BY 1,2;
 
 pro Fine Grained Auditing(FGA) config
 pro =================================

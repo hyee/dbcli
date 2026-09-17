@@ -8,11 +8,11 @@
 --Show node-level sysdate by querying the logon time of px sessions from px queries
 var cur refcursor;
 set feed off verify on
-declare
-    cur sys_refcursor;
-begin
-$IF DBMS_DB_VERSION.VERSION>10 $THEN
-    open cur for q'[
+DECLARE
+    cur SYS_REFCURSOR;
+BEGIN
+$IF dbms_db_version.version>10 $THEN
+    OPEN cur for q'[
         SELECT decode(userenv('instance')+0,a.inst_id,'*',' ')||a.inst_id inst_id, instance_name,&ver version,
                host_name,user,
                status,archiver,&blocked
@@ -23,23 +23,23 @@ $IF DBMS_DB_VERSION.VERSION>10 $THEN
         WHERE a.inst_id=b.inst_id(+)
         order by a.inst_id]';
 $ELSE
-    open cur for
-        WITH PX AS (SELECT /*+materialize*/ * FROM gv$px_session WHERE sid IS NOT NULL),
-             SS AS (SELECT /*+materialize*/ inst_id,sid,logon_time from gv$session where status='ACTIVE' and username=user),
-             tim AS(SELECT /*+no_merge*/ inst_id,max(logon_time) tim
-                    FROM   ss natural join PX
+    OPEN cur for
+        WITH px AS (SELECT /*+materialize*/ * FROM gv$px_session WHERE sid IS NOT NULL),
+             ss AS (SELECT /*+materialize*/ inst_id,sid,logon_time FROM gv$session WHERE status='ACTIVE' AND username=user),
+             tim AS (SELECT /*+no_merge*/ inst_id,max(logon_time) tim
+                    FROM   ss NATURAL JOIN px
                     WHERE  qcsid = userenv('sid')
                     AND    qcinst_id = userenv('instance')
-                    GROUP BY inst_id)
+                    GROUP  BY inst_id)
         SELECT decode(userenv('instance')+0,a.inst_id,'*',' ')||a.inst_id inst_id, instance_name,version,
                host_name,user,
                status,archiver,
                to_char(startup_time,'YYYY-MM-DD HH24:MI') startup_time,
                to_char(nvl(b.tim,sysdate),'YYYY-MM-DD HH24:MI:SS') inst_current_time
-        from gv$instance a,tim b
-        WHERE a.inst_id=b.inst_id(+)
-        order by a.inst_id;
-$end
+        FROM   gv$instance a,tim b
+        WHERE  a.inst_id=b.inst_id(+)
+        ORDER  BY a.inst_id;
+$END
     :cur := cur;
-end;
+END;
 /

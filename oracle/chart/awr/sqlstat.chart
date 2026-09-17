@@ -18,6 +18,7 @@
         &LABEL  : time={Seconds per Second}, io={Bytes per Second}, exec={Count per Second}
         &FILTER : default={1=1}, u={PARSING_SCHEMA_NAME=nvl('&0',sys_context('userenv','current_schema'))},s={PARSING_SCHEMA_NAME='&0'}, f={}
         @VER    : 11.2={}, default={--}
+        @WCON   : 12={con_dbid=:dbid}, 8={1=1}
     --]]
 ]]*/
 {
@@ -81,7 +82,7 @@
                           block_size*(DISK_READS_DELTA)/secs phr,
                           block_size*DIRECT_WRITES_DELTA/secs phw,
                           block_size*BUFFER_GETS_DELTA/secs buff,
-                          &VER  block_size*OPTIMIZED_PHYSICAL_READS_DELTA opr,
+                          &VER  block_size*OPTIMIZED_PHYSICAL_READS_DELTA/secs opr,
                           &VER IO_INTERCONNECT_BYTES_DELTA/secs clr,
                           &VER CELL_UNCOMPRESSED_BYTES_DELTA/secs cuzip,
                           &VER IO_OFFLOAD_RETURN_BYTES_DELTA/secs iooff,
@@ -92,7 +93,7 @@
                    FROM   DBA_HIST_SQLSTAT 
                    JOIN   snap a USING(snap_id,dbid,instance_number),
                           (select /*+no_merge*/ value block_size from v$parameter where name='db_block_size') c
-                   WHERE  dbid=:dbid AND (&FILTER)) a
+                   WHERE  dbid=:dbid AND (&WCON) AND (&FILTER)) a
             group by etime,inst
         )
         ORDER  BY 1]],

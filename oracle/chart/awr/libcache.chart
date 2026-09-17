@@ -5,7 +5,7 @@
                 0         - Separate all instances
                 a         - Group all instances
                 <inst_id> - Only the specific instance
-    -f       : User-defined filter. For example, -f"latch_name like '%XDB%'"
+    -f       : User-defined filter. For example, -f"namespace like '%XDB%'"
     --[[
         &V2     : default={&INSTANCE}
         &V3     : default={&STARTTIME}
@@ -15,7 +15,7 @@
 ]]*/
 {
     _attrs=[[
-        SELECT 'System Latch State Chart' title
+        SELECT 'System Library Cache State Chart' title
         from dual]],
     _sql=[[
         WITH snap AS(
@@ -45,10 +45,10 @@
                round(sum(PINHITS)*100/nullif(sum(PINS),0),2) "Pins Hit Ratio(%)"
         FROM   (SELECT /*+merge no_expand ordered_predicates*/
                       inst_id,etime,secs,namespace|| decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) namespace,
-                      GETHITS - nvl(LAG(GETHITS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0) GETHITS,
-                      GETS - nvl(LAG(GETS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0) GETS,
-                      PINS - nvl(LAG(PINS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0) PINS,
-                      PINHITS - nvl(LAG(PINHITS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0) PINHITS
+                      (GETHITS - nvl(LAG(GETHITS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) GETHITS,
+                      (GETS - nvl(LAG(GETS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) GETS,
+                      (PINS - nvl(LAG(PINS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) PINS,
+                      (PINHITS - nvl(LAG(PINHITS) OVER(PARTITION BY pkey,namespace ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) PINHITS
                FROM   DBA_HIST_LIBRARYCACHE NATURAL JOIN snap
                WHERE  dbid=:dbid
                AND    (&filter)

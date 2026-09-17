@@ -54,8 +54,8 @@
                                FROM   DBA_HIST_MUTEX_SLEEP NATURAL JOIN SNAP
                                WHERE  DBID=:DBID 
                                AND   (:V1 is null 
-                                      or upper(MUTEX_TYPE)=upper(:V1)) 
-                                      or upper(TRIM(LOCATION)) like upper(TRIM('%&V1%'))) a
+                                      or upper(MUTEX_TYPE)=upper(:V1)
+                                      or upper(TRIM(LOCATION)) like upper(TRIM('%&V1%')))) a
                        where nvl(value,0)>0)
                  GROUP  BY event, etime) a
         WHERE  (v>0)

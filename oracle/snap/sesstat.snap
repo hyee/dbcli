@@ -2,19 +2,19 @@
 ]]*/
 {
     sql=[[
-    SELECT A.* FROM(
+    SELECT a.* FROM(
         SELECT /*+no_expand*/
                inst_id,
                sid,
-               NAME,VALUE
+               name, value
         FROM   gv$sesstat
         JOIN   v$statname
         USING  (statistic#)
-        WHERE  (VALUE > 0 OR :V3 IS NOT NULL)
-        AND    SID=NVL(0+:V1,USERENV('SID')) 
-        AND    (:V2 IS NULL AND (:snap_cmd is null or inst_id=userenv('instance')) OR :V2+0=INST_ID OR :V2='0') 
-        AND    (:V3 IS NULL OR lower(name) like lower('%&V3%'))) A
-    ORDER BY NAME]],
+        WHERE  (value > 0 OR :V3 IS NOT NULL)
+        AND    sid=nvl(0+:V1, userenv('SID'))
+        AND    (:V2 IS NULL AND (:snap_cmd IS NULL OR inst_id=userenv('instance')) OR :V2+0=inst_id OR :V2='0')
+        AND    (:V3 IS NULL OR lower(name) LIKE lower('%&V3%'))) a
+    ORDER  BY name]],
     delta_by="value",
     order_by="-value,name",
     max_rows=200,

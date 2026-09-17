@@ -1,6 +1,7 @@
 /*[[
     Show chart for DBA_HIST_CELL_IOREASON. Usage: @@NAME {[yymmddhh24mi] [yymmddhh24mi] [keyword]} [-f"<filter>"] [-c]
     Impacted by settings: starttime,endtime,instance
+    Note: Exadata only. The cell AWR tables are always empty on non-Exadata databases.
     -c : detail to cell name
     --[[
         @VERSION: 12.1={}
@@ -31,7 +32,7 @@
                     WHERE  dbid=&dbid
                      AND   end_interval_time+0 BETWEEN 
                            NVL(to_date(:V1,'yymmddhh24miss'),sysdate-7) AND 
-                           NVL(to_date(:V1,'yymmddhh24miss'),sysdate+1)
+                           NVL(to_date(:V2,'yymmddhh24miss'),sysdate+1)
                     ) a),
         stats AS
          (SELECT /*+no_expand ordered use_hash(a b) 

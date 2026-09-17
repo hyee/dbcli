@@ -1,5 +1,10 @@
-/*[[Show inmemory stats. Usage: @@NAME [-u]
-    --[[
+/*[[
+    Show the In-Memory column store usage of the current instance.
+    Usage: @@NAME [-u["<owner>"]]
+
+    -u : Only report the segments of the given owner, default is the current schema
+
+--[[
         &filter: default={1=1}, u={owner=nvl('&0',sys_context('userenv','current_schema'))}
         @check_access_dba: dba_tab_partitions={dba_} default={all_}
         @VER: 12.2={,regexp_replace(listagg(INMEMORY_SERVICE,'/') WITHIN GROUP(ORDER BY INMEMORY_SERVICE),'([^/]+)(/\1)+','\1') IM_SERVICE}, 12.1={}
@@ -100,7 +105,7 @@
                        BLOCKS
                 FROM   gv$(cursor(select * from sys.x$imcsegments)) imcs
                 WHERE  imcs.segtype = 0}
-                
+
             default={SELECT b.*, BLOCKSINMEM, d.extents, MEMEXTENTS, IMCUSINMEM,BLOCKS
                      FROM   gv$im_segments b,
                             (SELECT o.owner, o.object_name, o.subobject_name, d.*
@@ -125,33 +130,33 @@ col UN_POP format kmg
 col "Used %" format %.2f%%
 col "IM %" format %.2f%%
 
-select TYPE,INST_ID,POOL,POPULATE_STATUS, ALLOC_BYTES,USED_BYTES,
-       round(USED_BYTES*100/nullif(ALLOC_BYTES,0),2) "Used %",ALLOC_BYTES-USED_BYTES remaining_bytes  
-from  (
-    select 'DBIM' TYPE,a.* from gv$inmemory_area a
-    &vector union all select 'VECTOR',a.* from gv$VECTOR_MEMORY_POOL a
+SELECT TYPE,INST_ID,POOL,POPULATE_STATUS, ALLOC_BYTES,USED_BYTES,
+       round(USED_BYTES*100/nullif(ALLOC_BYTES,0),2) "Used %",ALLOC_BYTES-USED_BYTES remaining_bytes
+FROM   (
+    SELECT 'DBIM' TYPE,a.* FROM gv$inmemory_area a
+    &vector UNION ALL SELECT 'VECTOR',a.* FROM gv$VECTOR_MEMORY_POOL a
 )
-order by 1,2;
+ORDER  BY 1,2;
 
 
-select *
-from   gv$inmemory_faststart_area
-order by 1,2;
+SELECT *
+FROM   gv$inmemory_faststart_area
+ORDER  BY 1,2;
 
 
 SELECT /*+monitor no_merge(a)*/ b.inst_id,
        a.owner,
        a.segment_name,
-       lpad(nvl(sum(b.segs),0),4)  || '|' || MAX(a.segs) segments,
-       nullif(lpad(trim(dbms_xplan.format_number(SUM(MEMEXTENTS))),6) || '|','|') || dbms_xplan.format_number(SUM(extents)) extents,
-       lpad(trim(dbms_xplan.format_number(nvl(SUM(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(SUM(blocks)) blocks,
-       SUM(IMCUSINMEM) "IMCUs",
-       round(SUM(BLOCKSINMEM)/nullif(SUM(IMCUSINMEM),0)) "Blk/CU",
+       lpad(nvl(sum(b.segs),0),4)  || '|' || max(a.segs) segments,
+       nullif(lpad(trim(dbms_xplan.format_number(sum(MEMEXTENTS))),6) || '|','|') || dbms_xplan.format_number(sum(extents)) extents,
+       lpad(trim(dbms_xplan.format_number(nvl(sum(BLOCKSINMEM),0))),6)|| '|' || dbms_xplan.format_number(sum(blocks)) blocks,
+       sum(IMCUSINMEM) "IMCUs",
+       round(sum(BLOCKSINMEM)/nullif(sum(IMCUSINMEM),0)) "Blk/CU",
        max(c.im_cols) im_cols,
-       SUM(inmemory_size) im_size,
-       SUM(bytes) total_size,
-       round(SUM(inmemory_size) * 100 / nullif(SUM(bytes), 0), 2) "IM %",
-       SUM(BYTES_NOT_POPULATED) UN_POP,
+       sum(inmemory_size) im_size,
+       sum(bytes) total_size,
+       round(sum(inmemory_size) * 100 / nullif(sum(bytes), 0), 2) "IM %",
+       sum(BYTES_NOT_POPULATED) UN_POP,
        '|' "|",
        regexp_replace(listagg(INMEMORY_COMPRESSION, '/') WITHIN GROUP(ORDER BY INMEMORY_COMPRESSION),
               '([^/]+)(/\1)+','\1') IM_COMPRESSION,
@@ -166,11 +171,11 @@ FROM   (SELECT owner, segment_name, COUNT(1) segs
         FROM   (SELECT owner, table_name segment_name
                 FROM   &check_access_dba.tables
                 WHERE  inmemory = 'ENABLED'
-                UNION ALL
+                UNION  ALL
                 SELECT table_owner, table_name
                 FROM   &check_access_dba.tab_partitions
                 WHERE  inmemory = 'ENABLED'
-                UNION ALL
+                UNION  ALL
                 SELECT table_owner, table_name
                 FROM   &check_access_dba.tab_subpartitions
                 WHERE  inmemory = 'ENABLED')
@@ -180,24 +185,24 @@ LEFT   JOIN (
     SELECT inst_id,owner,segment_name,
            INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1,
            COUNT(DISTINCT nvl(b.partition_name, b.segment_name)) segs,
-           SUM(MEMEXTENTS) MEMEXTENTS,
-           SUM(extents) extents,
-           SUM(BLOCKSINMEM) BLOCKSINMEM,
-           SUM(blocks) blocks,
-           SUM(IMCUSINMEM) IMCUSINMEM,
-           SUM(inmemory_size) inmemory_size,
-           SUM(bytes) bytes,
-           SUM(BYTES_NOT_POPULATED) BYTES_NOT_POPULATED
-    from  (&check_access_x) b
-    group  by inst_id,owner,segment_name,
+           sum(MEMEXTENTS) MEMEXTENTS,
+           sum(extents) extents,
+           sum(BLOCKSINMEM) BLOCKSINMEM,
+           sum(blocks) blocks,
+           sum(IMCUSINMEM) IMCUSINMEM,
+           sum(inmemory_size) inmemory_size,
+           sum(bytes) bytes,
+           sum(BYTES_NOT_POPULATED) BYTES_NOT_POPULATED
+    FROM   (&check_access_x) b
+    GROUP  BY inst_id,owner,segment_name,
               INMEMORY_COMPRESSION,POPULATE_STATUS,inmemory_priority,INMEMORY_DISTRIBUTE,INMEMORY_DUPLICATE &ver1
 ) b
 ON     (a.owner = b.owner AND a.segment_name = b.segment_name)
-LEFT   JOIN(
+LEFT   JOIN (
     SELECT inst_id,owner,table_name,COUNT(1) im_cols
     FROM   gv$im_column_level c
     WHERE  c.inmemory_compression!='NO INMEMORY'
     GROUP  BY inst_id,owner,table_name) c
-ON (c.inst_id = b.inst_id AND c.owner = b.owner AND c.table_name = b.segment_name)
+ON     (c.inst_id = b.inst_id AND c.owner = b.owner AND c.table_name = b.segment_name)
 GROUP  BY b.inst_id, a.owner, a.segment_name
 ORDER  BY a.owner, a.segment_name,inst_id

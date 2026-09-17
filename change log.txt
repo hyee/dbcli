@@ -1,3 +1,4 @@
+2026-09-17: + public: upgrade lib 'dygraphs' v2.0.0->v.2.2.2 
 2026-09-16: + oracle: new command 'snap rac'
 2026-09-12: * public: fix lib `opencsv`
 2026-09-11: * public: fix lib `jnlua`

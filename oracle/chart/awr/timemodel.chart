@@ -15,7 +15,7 @@
     --]]
 ]]*/
 {
-    title="System OS Stats Chart",
+    title="System Time Model Chart",
     _sql=[[
         WITH snap AS(
             SELECT a.*,
@@ -37,14 +37,14 @@
                            NVL(to_date(:V3,'yymmddhh24miss'),sysdate-7) AND 
                            NVL(to_date(:V4,'yymmddhh24miss'),sysdate+1)
                      AND  (:V2 IS NULL OR lower(:V2) IN ('0', 'a') OR instance_number = :V2)) a)
-        SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') sample_time, event,round(sum(v*1e-6),2) "Seconds per OS Second"
+        SELECT to_char(MAX(etime), 'YYYY-MM-DD HH24:MI') sample_time, event,round(sum(v*1e-6),2) "Seconds per Second"
         FROM  (SELECT /*+merge*/
                        A.*,
                        stat_name || decode(nvl(lower(:V2), 'a'), 'a', NULL, ' #' || inst_id) event,
                        value/secs v
                FROM   (SELECT /*+merge no_expand*/
                               inst_id,etime,secs,stat_name,
-                              VALUE - nvl(LAG(VALUE) OVER(PARTITION BY pkey,stat_name ORDER BY snap_id),0) value
+                              (VALUE - nvl(LAG(VALUE) OVER(PARTITION BY pkey,stat_name ORDER BY snap_id),0))*decode(snap_id,min_snap,0,1) value
                        FROM   DBA_HIST_SYS_TIME_MODEL NATURAL JOIN snap
                        WHERE  DBID=:DBID
                        AND    (&filter)
