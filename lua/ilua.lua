@@ -799,7 +799,6 @@ local params = {}
 local ilua = Ilua:new(params)
 
 function Ilua:loop(...)
-    terminal:pause()
     params = {}
     local arg={...}
     if arg then
@@ -888,8 +887,16 @@ function Ilua:loop(...)
     end
     --local FuncEnv=setmetatable({}, {__index = env})
     --setfenv(1,FuncEnv)
-    self:start()
-    self:run()
+    --hand the console over to io.read: suspend stops the JLine reader AND
+    --restores the original console mode; pausing alone leaves raw/no-echo
+    --mode on, so typed keys never show up (and resume on the way out)
+    console:suspend(true)
+    local ok, err = pcall(function()
+        self:start()
+        self:run()
+    end)
+    console:suspend(false)
+    if not ok then error(err, 0) end
 end
 
 function Ilua:onload()

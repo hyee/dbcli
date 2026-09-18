@@ -304,63 +304,6 @@ static inline int has_jnlua_metatable(lua_State *L, int index) {
     return result;
 }
 
-#include <setjmp.h>
-/* ---- Error handling ---- */
-/*
- * JNI does not allow uncontrolled transitions such as jongjmp between Java
- * code and native code, but Lua uses longjmp for error handling. The follwing
- * section replicates logic from luaD_rawrunprotected that is internal to
- * Lua. Contact me if you know of a more elegant solution ;)
- */
-/*
-struct lua_longjmp {
-    struct lua_longjmp *previous;
-    jmp_buf b;
-    volatile int status;
-};
-
-struct lua_State {
-    void *next;
-    unsigned char tt;
-    unsigned char marked;
-    unsigned char status;
-    void *top;
-    void *l_G;
-    void *ci;
-    void *oldpc;
-    void *stack_last;
-    void *stack;
-    int stacksize;
-    unsigned short nny;
-    unsigned short nCcalls;
-    unsigned char hookmask;
-    unsigned char allowhook;
-    int basehookcount;
-    int hookcount;
-    lua_Hook hook;
-    void *openupval;
-    void *gclist;
-    struct lua_longjmp *errorJmp;
-};
-
-#define JNLUA_TRY {\
-    unsigned short oldnCcalls = L->nCcalls;\
-    struct lua_longjmp lj;\
-    lj.status = 0;\
-    lj.previous = L->errorJmp;\
-    L->errorJmp = &lj;\
-    if (setjmp(lj.b) == 0) {\
-        checkstack(L, LUA_MINSTACK, NULL);
-#define JNLUA_END }\
-    L->errorJmp = lj.previous;\
-    L->nCcalls = oldnCcalls;\
-    if (lj.status != 0) {\
-        throwException(env, L, lj.status);\
-    }\
-}
-#define JNLUA_THROW(status) lj.status = status;\
-    longjmp(lj.b, -1)
-*/
 /* ---- Data Types ---- */
 /**
  * Stream Structure for Java-Lua I/O Integration
@@ -470,7 +413,7 @@ static jfieldID yield_id = 0;                          /**< LuaState.yield field
 static jmethodID classname_id = 0;                     /**< LuaState.getCanonicalName method ID */
 static jmethodID luadebug_init_id = 0;                 /**< LuaDebug constructor method ID */
 static jfieldID luadebug_field_id = 0;                 /**< LuaDebug.luaDebug field ID */
-static jmethodID invoke_id = 0;                        /**< JavaFunction.invoke method ID (critical for Java-Lua function calls) */
+static jmethodID invoke_id = 0;                        /**< JavaFunction.JNI_call method ID (critical for Java-Lua function calls) */
 static jmethodID luaruntimeexception_id = 0;           /**< LuaRuntimeException constructor ID */
 static jmethodID setluaerror_id = 0;                   /**< LuaRuntimeException.setLuaError method ID */
 static jmethodID luasyntaxexception_id = 0;            /**< LuaSyntaxException constructor ID */
@@ -520,7 +463,7 @@ JNIEnv *get_jni_env()
     return env_;
 }
 
-/* lua_version() */
+/* lua_trace() */
 void jcall_trace(JNIEnv *env, jobject obj, jint level)
 {
     trace = level;
@@ -800,7 +743,7 @@ jstring jcall_version(JNIEnv *env, jobject obj)
     return (*env)->NewStringUTF(env, luaVersion);
 }
 
-/* lua_version() */
+/* lua_where() */
 jbyteArray jcall_where(JNIEnv *env, jobject obj, jlong lua, jint index)
 {
     JNLUA_ENV_L;
@@ -1101,13 +1044,13 @@ static const char *TO_LUA = "to_lua";
  * Returns: 1 value on stack (cfunction or other)
  * 
  * Performance Optimizations:
- * 1. Negative Cache Check (Lines 832-847):
+ * 1. Negative Cache Check:
  *    - Checks if member was previously looked up and not found
  *    - Uses lightuserdata marker for O(1) identification
  *    - Avoids expensive Java reflection on cache hit
  *    - Performance gain: ~90% for non-existent members
  * 
- * 2. Metadata Function Pre-caching (Line 880-882):
+ * 2. Metadata Function Pre-caching:
  *    - Common metadata functions (to_table, java_methods, etc.) are pre-cached
  *    - Eliminates strcmp() overhead in hot path
  *    - Performance gain: ~70% for metadata access
@@ -1161,7 +1104,7 @@ static int findjavafunction(lua_State *L)
              * Check if this member was previously looked up and marked as non-existent.
              * 
              * How it works:
-             * 1. Read value from environment table (line 828)
+             * 1. Read value from environment table
              * 2. If value is lightuserdata, compare with negative cache marker
              * 3. If match, this member doesn't exist - return nil immediately
              * 
@@ -1237,8 +1180,8 @@ static int findjavafunction(lua_State *L)
          * 
          * Current Optimized Behavior:
          * - All metadata functions are PRE-CACHED in class environment table
-         * - Pre-caching happens in precache_metadata_functions() (line 897)
-         * - Triggered during first class access (see line 1135)
+         * - Pre-caching happens in precache_metadata_functions()
+         * - Triggered during first class access
          * - Metadata access now follows the same fast path as regular methods
          * 
          * Performance Impact:
@@ -1397,10 +1340,12 @@ static void pushjavaobject(lua_State *L, jobject object, const char *class, jbyt
     {
         /* Wrap the userdata in a closure to make it callable from Lua */
         /* Stack before: [userdata] */
-        lua_pushboolean(L, type == 3);  // Upvalue 1: has base class?
-        lua_pushstring(L, class);       // Upvalue 2: class name
+        lua_pushboolean(L, type == 3);  // Upvalue 2: call type (true = field access)
+        lua_pushstring(L, class);       // Upvalue 3: class/member name
         lua_pushcclosure(L, calljavafunction, 3);  // Create closure with 3 upvalues
-        /* Stack after: [closure] - the userdata is now upvalue 3 of the closure */
+        /* Stack after: [closure] - the userdata was pushed first (above) and becomes
+         * upvalue 1: 1 = GlobalRef jobject, 2 = call type boolean, 3 = name.
+         * calljavafunction(), findjavafunction() and gcjavaobject() all read this order. */
     }
     else if (class)  // type == 1 and class specified: Regular object with custom environment
     {
@@ -1531,7 +1476,7 @@ static int pushmetafunction_protected(lua_State *L)
          * This is a one-time initialization that significantly speeds up
          * subsequent metadata accesses for this class.
          * 
-         * See precache_metadata_functions() at line 897 for details.
+         * See precache_metadata_functions() for details.
          */
         precache_metadata_functions(L, className);
         // PERFORMANCE: Use lua_rawget() for registry access
@@ -4047,7 +3992,7 @@ static Args *table_pair(lua_State *L) {
   2: the index is an ref id
   4: table.insert mode
   8: returns the original values
-  32: use table.next instead of table.next
+  32: use lua_next instead of gettable (fetch the next key/value pair)
   64: value is an array and push as a Lua table
   128: push array
 */

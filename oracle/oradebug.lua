@@ -1255,8 +1255,11 @@ function oradebug.profile(sid,samples,interval,event)
             if event then is_ms,events=true,events+1 end
             ela=ela and tonumber(ela)/1000 or 1
             line='<-'..line
-        elseif sid then
-            title="OraDebug Short Stack Profiling (Session PID:"..sid..")"
+        elseif sid or typ then
+            -- `sid` is cleared above when the input is a file path (only the
+            -- numeric part survives), so the file case must be accepted too,
+            -- otherwise a saved shortstack log parses to an empty graph.
+            title="OraDebug Short Stack Profiling"..(sid and (" (Session PID:"..sid..")") or (file and (" ("..file..")") or ""))
             line,cnt=line:gsub('^.-%_%_sighandler%(%)','',1)
             if cnt==0 then
                 line,cnt=line:gsub('^.-sspuser%(%)','',1)
@@ -1408,7 +1411,7 @@ function oradebug.profile(sid,samples,interval,event)
     if log then print("Short stacks are written to", log) end
     print("Analyze result is saved as",env.write_cache("printstack_"..file..".log",out:strip_ansi()))
     print("Collapsed profile result is saved as",env.write_cache(file..".collapsedstack.txt",table.concat(profiles,'\n')))
-    print("FlameGraph is saved as",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{titletext=title,funcdesc=cache,countname=is_ms and 'ms' or 'count'})))
+    print("FlameGraph is saved as",env.write_cache("flamegraph_"..file..".svg",env.flamegraph.BuildGraph(profiles,{titletext=title,funcdesc=cache,colors='oracle',countname=is_ms and 'ms' or 'count'})))
     print(title)
 end
 
