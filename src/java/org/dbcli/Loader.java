@@ -408,6 +408,7 @@ public class Loader {
         return new LuaTable((Object[]) asyncCall(() -> {
             ResultSetHelperService.IS_TRIM = false;
             try (ResultSetHelperService helper = new ResultSetHelperService(rs)) {
+                helper.setPrint(true);
                 return (rows >= 0 && rows <= 10000) ? helper.fetchRows(rows) : helper.fetchRowsAsync(rows);
             }
         }));

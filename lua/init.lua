@@ -24,6 +24,7 @@ local init={
         "lua/grid",
         "lua/helper",
         "lua/sleep",
+        "lua/flame",
         "lua/set",
         "lua/host",
         "lua/search",

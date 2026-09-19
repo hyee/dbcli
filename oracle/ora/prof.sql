@@ -5,9 +5,12 @@
     Install record tables : @?/rdbms/admin/proftab.sql   --on target schema to run the profile
 
     Also refer to dbcli/sqlplus/profrep.sql to generate more report details.
-    
+
     Example:
         @@NAME "dbms_lock.sleep(10);dbms_session.sleep(10)"
+
+    A flame graph of the profiled lines is also generated as
+    <cache>/prof_<runid>.svg via the 'flame' command (times in microsecs).
     --[[
         @ALIAS: profiler
         @CHECK_ACCESS: dba_source={DBA_SOURCE}, all_source={ALL_SOURCE}
@@ -18,69 +21,146 @@
 set feed off
 COL total_time,MIN_TIME,MAX_TIME for usmhd2
 VAR cur REFCURSOR
+VAR folded CLOB
+VAR svgname VARCHAR2(100)
 DECLARE
     run_id INT;
     c      VARCHAR2(100);
+    folded CLOB;
 BEGIN
     IF :V1 IS NULL THEN
         OPEN :cur FOR
-            SELECT RUNID,RELATED_RUN,RUN_OWNER,RUN_DATE,RUN_COMMENT,LTRIM(RTRIM(to_char(NUMTODSINTERVAL(RUN_TOTAL_TIME*1E-9,'SECOND')),'0.'),'0+') RUN_TIME,RUN_SYSTEM_INFO,RUN_COMMENT1,SPARE1
-            FROM PLSQL_PROFILER_RUNS ORDER BY RUNID DESC;
+            SELECT runid,
+                   related_run,
+                   run_owner,
+                   run_date,
+                   run_comment,
+                   ltrim(rtrim(to_char(numtodsinterval(run_total_time * 1E-9, 'SECOND')), '0.'), '0+') run_time,
+                   run_system_info,
+                   run_comment1,
+                   spare1
+            FROM   plsql_profiler_runs
+            ORDER  BY runid DESC;
     ELSE
-        IF regexp_like(:V1,'^\d+$') THEN
-            run_id:=:V1;
+        IF regexp_like(:V1, '^\d+$') THEN
+            run_id := :V1;
         ELSE
-            c      := 'DBCLI_'||round(dbms_random.value(1e5,1e6));
-            run_id := SYS.DBMS_PROFILER.start_profiler(c);
+            c      := 'DBCLI_' || round(dbms_random.value(1e5, 1e6));
+            run_id := sys.dbms_profiler.start_profiler(c);
             BEGIN
-                EXECUTE IMMEDIATE 'BEGIN '||regexp_replace(:V1,';\s*$')||';END;';
-                SYS.DBMS_PROFILER.FLUSH_DATA;
-                run_id := SYS.DBMS_PROFILER.stop_profiler;
+                EXECUTE IMMEDIATE 'BEGIN ' || regexp_replace(:V1, ';\s*$') || ';END;';
+                sys.dbms_profiler.flush_data;
+                run_id := sys.dbms_profiler.stop_profiler;
             EXCEPTION WHEN OTHERS THEN
-                run_id := SYS.DBMS_PROFILER.stop_profiler;
+                run_id := sys.dbms_profiler.stop_profiler;
                 RAISE;
             END;
-            select max(runid) into run_id from PLSQL_PROFILER_RUNS where RUN_COMMENT=c;
-            dbms_output.put_line('Runid is '||run_id);
+            SELECT max(runid) INTO run_id FROM plsql_profiler_runs WHERE run_comment = c;
+            dbms_output.put_line('Runid is ' || run_id);
         END IF;
 
+        -- Fold the line-level profile into "stack self_us" lines for the flame
+        -- graph: run -> unit.subprogram -> source line, self time is the count.
+        dbms_lob.createtemporary(folded, TRUE);
+        FOR r IN (WITH src AS
+                   (SELECT /*+MATERIALIZE no_merge(u)*/
+                           u.runid,
+                           u.unit_owner,
+                           u.unit_name,
+                           u.unit_number,
+                           extractvalue(b.column_value,'//LINE') + 0 line#,
+                           extractvalue(b.column_value,'//SUB_NAME') subname
+                    FROM   (SELECT * FROM plsql_profiler_units WHERE runid = run_id) u,
+                           TABLE(xmlsequence(extract(dbms_xmlgen.getxmltype(
+                               q'[SELECT line,
+                                         regexp_substr(regexp_substr(text,'(procedure|function) +[^ \(]+',1,1,'i'),'[^ ]+',1,2) sub_name
+                                  FROM   &CHECK_ACCESS
+                                  WHERE  ']' || unit_type || ''' NOT LIKE ''ANONYMOUS%'' AND OWNER=''' || unit_owner ||
+                                       ''' AND NAME=''' || unit_name ||
+                                       ''' AND TYPE=''' || unit_type || ''''),'//ROW')))(+) b),
+                   rs AS
+                   (SELECT /*+ORDERED use_hash(dat src) MATERIALIZE*/
+                           src.unit_owner,
+                           src.unit_name,
+                           unit_number,
+                           dat.line#,
+                           dat.total_time * 1E-3 self_us,
+                           rownum r
+                    FROM   plsql_profiler_data dat
+                    JOIN   src
+                    USING  (runid, unit_number)
+                    WHERE  runid = run_id
+                    AND    dat.line# = nvl(src.line#, dat.line#)),
+                   frames AS
+                   (SELECT sub, line#, sum(self_us) AS self_us
+                    FROM   (SELECT rtrim(rs.unit_owner || '.' || rs.unit_name || '.' || src.subname, '.') AS sub,
+                                   rs.line#,
+                                   rs.self_us,
+                                   row_number() OVER (PARTITION BY rs.r ORDER BY src.line# DESC) seq
+                            FROM   rs, src
+                            WHERE  rs.unit_number = src.unit_number(+)
+                            AND    rs.line# >= src.line#(+)
+                            AND    src.subname(+) IS NOT NULL)
+                    WHERE  seq = 1
+                    GROUP  BY sub, line#)
+                   SELECT 'run ' || run_id || ';' || sub || ' (Line #' || line# || ')' AS stack,
+                          self_us
+                   FROM   frames
+                   WHERE  self_us > 0)
+        LOOP
+            dbms_lob.writeappend(folded, length(r.stack) + length(to_char(round(r.self_us))) + 2,
+                                 r.stack || ' ' || round(r.self_us) || chr(10));
+        END LOOP;
+        :folded  := folded;
+        :svgname := 'prof_' || run_id;
+        dbms_lob.freetemporary(folded);
+
         OPEN :cur FOR
-            WITH SRC AS
+            WITH src AS
              (SELECT /*+MATERIALIZE no_merge(u)*/
-                    U.*, EXTRACTVALUE(b.COLUMN_VALUE,'//TEXT') text,EXTRACTVALUE(b.COLUMN_VALUE,'//LINE')+0 line#,EXTRACTVALUE(b.COLUMN_VALUE,'//SUB_NAME') subname
-              FROM  (SELECT * FROM PLSQL_PROFILER_UNITS WHERE RUNID = run_id) u,
-                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(
+                     u.*,
+                     extractvalue(b.column_value,'//TEXT') text,
+                     extractvalue(b.column_value,'//LINE') + 0 line#,
+                     extractvalue(b.column_value,'//SUB_NAME') subname
+              FROM   (SELECT * FROM plsql_profiler_units WHERE runid = run_id) u,
+                     TABLE(xmlsequence(extract(dbms_xmlgen.getxmltype(
                          q'[SELECT line,ltrim(TEXT,chr(9)||' ') text,
                                    regexp_substr(regexp_substr(text,'(procedure|function) +[^ \(]+',1,1,'i'),'[^ ]+',1,2) sub_name
                            FROM &CHECK_ACCESS
-                           WHERE ']'||UNIT_TYPE ||''' NOT LIKE ''ANONYMOUS%'' AND OWNER=''' ||unit_owner ||
+                           WHERE ']' || unit_type || ''' NOT LIKE ''ANONYMOUS%'' AND OWNER=''' || unit_owner ||
                                 ''' AND NAME=''' || unit_name ||
-                                ''' AND TYPE=''' || unit_type ||''''),'//ROW')))(+) B),
-            rs as(
-                SELECT /*+ORDERED use_hash(dat src) MATERIALIZE*/
-                         src.unit_owner, src.unit_name, dat.line#, dat.TOTAL_OCCUR,unit_number,
-                         rownum r,
-                         dat.TOTAL_TIME * 1E-3 TOTAL_TIME,
-                         dat.MIN_TIME * 1E-3 MIN_TIME,
-                         dat.MAX_TIME * 1E-3 MAX_TIME,
-                         regexp_substr(src.text,'[^'||chr(10)||']+') text
-                FROM   PLSQL_PROFILER_DATA dat
-                JOIN   src
-                USING  (RUNID, UNIT_NUMBER)
-                WHERE  RUNID = run_id AND dat.line#=nvl(src.line#,dat.line#))
-            SELECT * FROM (
-                SELECT unit_number unit#,unit_owner,unit_name,subname,line#,total_occur,total_time,min_time ,max_time,text
-                FROM(
-                    SELECT /*+ordered use_hash(rs src)*/
-                        rs.*,row_number() over(partition by rs.r order by src.line# desc) seq, src.subname
-                    FROM  rs, src
-                    WHERE rs.unit_number=src.unit_number(+)
-                    AND   rs.line#>=src.line#(+)
-                    AND   src.subname(+) IS NOT NULL
-                ) WHERE SEQ=1
-                ORDER BY &V2 DESC NULLS LAST
-            ) WHERE ROWNUM<=100;
+                                ''' AND TYPE=''' || unit_type || ''''),'//ROW')))(+) b),
+            rs AS
+             (SELECT /*+ORDERED use_hash(dat src) MATERIALIZE*/
+                     src.unit_owner,
+                     src.unit_name,
+                     dat.line#,
+                     dat.total_occur,
+                     unit_number,
+                     rownum r,
+                     dat.total_time * 1E-3 total_time,
+                     dat.min_time   * 1E-3 min_time,
+                     dat.max_time   * 1E-3 max_time,
+                     regexp_substr(src.text,'[^'||chr(10)||']+') text
+              FROM   plsql_profiler_data dat
+              JOIN   src
+              USING  (runid, unit_number)
+              WHERE  runid = run_id
+              AND    dat.line# = nvl(src.line#, dat.line#))
+            SELECT *
+            FROM   (SELECT unit_number unit#, unit_owner, unit_name, subname, line#, total_occur, total_time, min_time, max_time, text
+                    FROM   (SELECT /*+ordered use_hash(rs src)*/
+                                   rs.*,
+                                   row_number() OVER (PARTITION BY rs.r ORDER BY src.line# DESC) seq,
+                                   src.subname
+                            FROM   rs, src
+                            WHERE  rs.unit_number = src.unit_number(+)
+                            AND    rs.line# >= src.line#(+)
+                            AND    src.subname(+) IS NOT NULL)
+                    WHERE  seq = 1
+                    ORDER  BY &V2 DESC NULLS LAST)
+            WHERE  rownum <= 100;
     END IF;
 END;
 /
-    
+flame folded svgname countname=us title=DBMS_PROFILER

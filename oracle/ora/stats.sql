@@ -36,8 +36,8 @@ Get preferences/stats of the target object or compare stats. Usage: @@NAME {[own
     --[[
        @check_access_dba: dba_tables={dba_} default={all_}
        &advise          : default={0} advise={1}
-       @notes           : 12.1={,t.notes} default={}
-       @notes2          : 12.1={t.notes} default={null}
+       @notes           : 18={,t.notes} default={}
+       @notes2          : 18={t.notes} default={null}
        @im              : 12.2={} default={--}
        @scanrate        : 12.2={,scanrate*1024*1024 scan_rate} default={}
        &t               : default={} t={}
@@ -376,7 +376,7 @@ BEGIN
         END;
     END IF;
 
-    msg := '| '||typ||' '||own||'.'||nam||trim('.' FROM '.'||sub)||' |';
+    msg := '| '||typ||' '||own||'.'||nam||CASE WHEN sub IS NOT NULL THEN '.'||sub END||' |';
     dbms_output.put_line(rpad('*',length(msg),'*'));
     dbms_output.put_line(msg);
     dbms_output.put_line('| '||rpad('=',length(msg)-4,'=')||' |');
@@ -692,7 +692,7 @@ DECLARE
     output CLOB;
 BEGIN
     NULL;
-    $IF &advise=1 $THEN
+    $IF &advise=1 AND dbms_db_version.version>12 OR &advise=1 AND dbms_db_version.version=12 AND dbms_db_version.release>1 $THEN
         IF oname IS NULL AND input IS NOT NULL THEN
             SELECT MAX(username)
             INTO   oname

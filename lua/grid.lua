@@ -1167,6 +1167,7 @@ function grid:wellform(col_del, row_del)
                 screen_rows[#screen_rows + 1] = trim_line(output[#output])
             end
         end
+
     end
 
     -- Add title separator line in non-merge mode
@@ -1178,6 +1179,8 @@ function grid:wellform(col_del, row_del)
         table.insert(screen_rows, 1, line)
         table.insert(output, 1, line)
     end
+
+    table.clear(result)
     -- Set metadata on output
     output.len = row_count
     output.colinfo, (type(output[1]) == 'table' and output[1] or {}).colinfo = colinfo, colinfo

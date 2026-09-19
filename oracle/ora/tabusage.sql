@@ -184,7 +184,7 @@ BEGIN
                        WHEN BITAND(CU.FLAGS, 16) = 16 THEN 'SPD '
                    END || --
                    CASE
-                       WHEN BITAND(CU.FLAGS, 16) = 16 THEN 'COL_SEED '
+                       WHEN BITAND(CU.FLAGS, 32) = 32 THEN 'COL_SEED '
                    END || --
                    CASE
                        WHEN BITAND(CU.FLAGS, 64) = 64 THEN 'DROPPED '
@@ -217,8 +217,6 @@ BEGIN
         FROM   dba_indexes a, dba_index_usage b
         WHERE  a.owner = b.owner(+)
         AND    a.index_name = b.name(+)
-        AND    b.owner(+)= '&object_owner'
-        AND    b.name(+)= '&object_name'
         AND    a.table_owner = '&object_owner'
         AND    a.table_name = '&object_name';
     $END
