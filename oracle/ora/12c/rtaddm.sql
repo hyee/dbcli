@@ -1,32 +1,44 @@
-/*[[Get real-time ADDM report, supports 12c only. Usage: @@NAME [report_id]
-  --[[
-    @ver: 12.1={}
-  --]]
+/*[[
+    Get real-time ADDM report, supports 12c only. Usage: @@NAME [report_id]
+
+    No argument lists the saved ADDM reports (component_name='perf') from
+    dba_hist_reports; report_id 0 asks dbms_addm for the real-time report and
+    any other report_id dumps that saved report through dbms_perf. Both are
+    wrapped into the EM active-report HTML and saved as the file below.
+    --[[
+        @ver: 12.1={}
+    --]]
 ]]*/
 
-SET FEED OFF verify off
+set feed off verify off
 VAR report CLOB;
 VAR cur REFCURSOR;
 DECLARE
-    v_report_id int:= regexp_substr(:V1,'^\d+$');
-    v_report    clob;
-    v_version   varchar2(30);
+    v_report_id INT := regexp_substr(:V1, '^\d+$');
+    v_report    CLOB;
+    v_version   VARCHAR2(30);
 BEGIN
     OPEN :cur FOR
-        SELECT REPORT_ID,SNAP_ID,DBID,INSTANCE_NUMBER,COMPONENT_ID,PERIOD_START_TIME,
-               PERIOD_END_TIME,GENERATION_TIME,reps_xml."trigger_cause", reps_xml."impact"
-        FROM  dba_hist_reports  reps,
-           XMLTABLE('/report_repository_summary/trigger'
-               PASSING XMLTYPE(reps.report_summary)
-               COLUMNS "trigger_cause" varchar2(30)
-                        PATH '/trigger/@id_desc',
-                       "impact" varchar2(30)
-                        PATH '/trigger/@impact') reps_xml 
-        WHERE reps.COMPONENT_NAME='perf'
-        AND   REPORT_ID=nvl(v_report_id,REPORT_ID)
-        ORDER BY REPORT_ID DESC;
-    IF v_report_id=0 THEN
-        v_report := dbms_addm.REAL_TIME_ADDM_REPORT ();
+        SELECT report_id,
+               snap_id,
+               dbid,
+               instance_number,
+               component_id,
+               period_start_time,
+               period_end_time,
+               generation_time,
+               reps_xml."trigger_cause",
+               reps_xml."impact"
+        FROM   dba_hist_reports reps,
+               XMLTABLE('/report_repository_summary/trigger'
+                        PASSING xmltype(reps.report_summary)
+                        COLUMNS "trigger_cause" VARCHAR2(30) PATH '/trigger/@id_desc',
+                                "impact"        VARCHAR2(30) PATH '/trigger/@impact') reps_xml
+        WHERE  reps.component_name = 'perf'
+        AND    report_id = nvl(v_report_id, report_id)
+        ORDER  BY report_id DESC;
+    IF v_report_id = 0 THEN
+        v_report := dbms_addm.real_time_addm_report();
         :report := q'[<?xml version="1.0" encoding="UTF-8"?><html>
         <head>
         <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
@@ -65,16 +77,16 @@ BEGIN
         </body>
         </html>]';
     ELSIF v_report_id IS NOT NULL THEN
-        v_report := dbms_perf.report_addm_watchdog_xml(v_report_id).getClobVal();
+        v_report := dbms_perf.report_addm_watchdog_xml(v_report_id).getclobval();
         SELECT extractvalue(xmltype(v_report), '/report/@db_version')
-        INTO v_version
-        FROM dual;
+        INTO   v_version
+        FROM   dual;
 
         :report := '<html>
           <head>
             <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
             <base href="http://download.oracle.com/otn_software/"/>
-            <script id="scriptVersion" language="javascript" type="text/javascript">var version = "'|| v_version || '";</script>
+            <script id="scriptVersion" language="javascript" type="text/javascript">var version = "' || v_version || '";</script>
             <script id="scriptActiveReportInit" language="javascript" type="text/javascript" src="emviewers/scripts/activeReportInit.js">
               <!-- script defining sendXML() -->
             </script>
@@ -82,7 +94,7 @@ BEGIN
           <body onload="sendXML();">
             <script type="text/javascript">writeIframe();</script>
             <script id="fxtmodel" type="text/xml">
-              <!--FXTMODEL-->'||v_report||'<!--FXTMODEL--></script></body></html>';
+              <!--FXTMODEL-->' || v_report || '<!--FXTMODEL--></script></body></html>';
     END IF;
 END;
 /

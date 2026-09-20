@@ -1,6 +1,19 @@
 /*[[
-    Show column usage and SQL plan directives on target table. Usage: @@NAME {[<owner>.]<object_name>[.<partition>]} | <SQL Id> | <directive id>
-    You can "exec dbms_spd.flush_sql_plan_directive" to flush the SPD
+    Show column usage and SQL plan directives of a target object. Usage: @@NAME {[<owner>.]<object_name>[.<partition>]} | <SQL Id> | <directive id>
+
+    The argument is resolved by "ora _find_object", so a bare table name is
+    looked up in the current schema and "owner.table.partition" is accepted.
+
+        <object_name> : CUR1 gets the dbms_stats.report_col_usage text report,
+                        CUR2 gets the plan directives collected for the object
+                        (only when dba_sql_plan_dir_objects is readable).
+        <SQL Id>      : a sql_id is not an object, so CUR1 stays empty and
+                        CUR2 lists the directives of that statement.
+        <numeric>     : taken as a directive id; CUR1 dumps that single
+                        dba_sql_plan_directives row and CUR2 stays empty.
+
+    Run "exec dbms_spd.flush_sql_plan_directive" to flush the SPD statistics
+    that are kept in memory into the dictionary views.
 
     Sample Output:
     ==============
@@ -34,7 +47,7 @@
 
     E=equality_predicates_only | C=simple_column_predicates_only | J=index_access_by_join_predicates | F=filter_on_joining_object:
     ==============================================================================================================================
-        DIRECTIVE_ID      OWNER  OBJECT_NAME ENABLED   STATE    AUTO_DROP          TYPE                        REASON              NOTES
+    DIRECTIVE_ID         OWNER   OBJECT_NAME ENABLED STATE      AUTO_DROP TYPE                     REASON                           NOTES
     -------------------- ------- ----------- ------- ---------- --------- ----------------------- -------------------------------- ----------------------------------------------------------
     147738779520430212   SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.CUSTOMER) / (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) /
     657765050449506494   SSB_EXA LINEORDER   YES     USABLE     YES       DYNAMIC_SAMPLING        GROUP BY CARDINALITY MISESTIMATE (SSB_EXA.DATE_DIM[D_MONTH,D_YEAR]) / (SSB_EXA.LINEORDER) /
@@ -47,59 +60,60 @@
 
     --[[
         @CHECK_ACCESSS_OBJ: dba_sql_plan_dir_objects={1}, default={0}
-        @CHECK_ACCESSS_COL: sys.col_usage$={1},default={0}
+        @CHECK_ACCESSS_COL: sys.col_usage$={1}, default={0}
         @ARGS : 1
     --]]
 ]]*/
-SET FEED OFF VERIFY ON
+set feed off verify on
 ora _find_object &V1 1
 VAR Text clob
 VAR cur1 REFCURSOR;
 VAR cur2 REFCURSOR "E=equality_predicates_only | C=simple_column_predicates_only | J=index_access_by_join_predicates | F=filter_on_joining_object";
 DECLARE
-    did INT := regexp_substr(:V1,'^\d+$');
+    did INT := regexp_substr(:V1, '^\d+$');
     c1  sys_refcursor;
     c2  sys_refcursor;
 BEGIN
     IF did IS NOT NULL THEN
-        open c1 FOR
+        OPEN c1 FOR
             WITH o1 AS
              (SELECT directive_id dir_id,
-                     OWNER,OBJECT_NAME,
-                     nvl(OWNER,'SQL') || '.' || OBJECT_NAME obj,
-                     SUBOBJECT_NAME,
-                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/equality_predicates_only'), 'YES', 'E') ALLEQ,
-                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/simple_column_predicates_only'), 'YES', 'C') ALLCOLS,
-                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') NLJNIX,
-                     DECODE(EXTRACTVALUE(NOTES, '/obj_note/filter_on_joining_object'), 'YES', 'F') FILTER
-             FROM    SYS.DBA_SQL_PLAN_DIR_OBJECTS
-             WHERE   DIRECTIVE_ID = did),
+                     owner,
+                     object_name,
+                     nvl(owner, 'SQL') || '.' || object_name obj,
+                     subobject_name,
+                     decode(extractvalue(notes, '/obj_note/equality_predicates_only'), 'YES', 'E') alleq,
+                     decode(extractvalue(notes, '/obj_note/simple_column_predicates_only'), 'YES', 'C') allcols,
+                     decode(extractvalue(notes, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') nljnix,
+                     decode(extractvalue(notes, '/obj_note/filter_on_joining_object'), 'YES', 'F') filter
+              FROM   sys.dba_sql_plan_dir_objects
+              WHERE  directive_id = did),
             o2 AS
              (SELECT dir_id,
-                     OWNER,
-                     OBJECT_NAME,
-                     listagg(op || '(' || obj  || nvl2(cols, '[' || cols || ']', '')|| ')', ' / ') WITHIN GROUP(ORDER BY obj) notes
+                     owner,
+                     object_name,
+                     listagg(op || '(' || obj || nvl2(cols, '[' || cols || ']', '') || ')', ' / ') WITHIN GROUP(ORDER BY obj) notes
               FROM   (SELECT dir_id,
-                             OWNER,
-                             OBJECT_NAME,
+                             owner,
+                             object_name,
                              obj,
-                             listagg(ALLEQ||ALLCOLS||NLJNIX||FILTER,'') within group(order by 1) op,
-                             listagg(SUBOBJECT_NAME, ',') within GROUP(ORDER BY SUBOBJECT_NAME) COLS
+                             listagg(alleq || allcols || nljnix || filter, '') WITHIN GROUP(ORDER BY 1) op,
+                             listagg(subobject_name, ',') WITHIN GROUP(ORDER BY subobject_name) cols
                       FROM   o1
-                      GROUP  BY dir_id, OWNER, OBJECT_NAME, obj)
-              GROUP  BY dir_id, OWNER, OBJECT_NAME)
-            SELECT   TO_CHAR(d.directive_id) directive_id,
-                     o2.owner,
-                     o2.object_name,
-                     d.ENABLED,
-                     d.state,
-                     extract(d.notes,'/spd_note/internal_state/text()') internal_state,
-                     d.AUTO_DROP,
-                     d.type,
-                     d.reason,
-                     o2.notes,
-                     nvl(d.LAST_MODIFIED, d.CREATED) LAST_MDF,
-                     d.LAST_USED
+                      GROUP  BY dir_id, owner, object_name, obj)
+              GROUP  BY dir_id, owner, object_name)
+            SELECT to_char(d.directive_id) directive_id,
+                   o2.owner,
+                   o2.object_name,
+                   d.enabled,
+                   d.state,
+                   extract(d.notes, '/spd_note/internal_state/text()') internal_state,
+                   d.auto_drop,
+                   d.type,
+                   d.reason,
+                   o2.notes,
+                   nvl(d.last_modified, d.created) last_mdf,
+                   d.last_used
             FROM   o2, dba_sql_plan_directives d
             WHERE  d.directive_id = o2.dir_id
             AND    d.directive_id = did
@@ -107,88 +121,88 @@ BEGIN
     ELSE
     $IF 1=1 $THEN
         IF '&object_name' IS NOT NULL THEN
-            OPEN c1 FOR SELECT DBMS_STATS.REPORT_COL_USAGE('&object_owner','&object_name') report from dual;
+            OPEN c1 FOR SELECT dbms_stats.report_col_usage('&object_owner', '&object_name') report FROM dual;
         END IF;
     $ELSE
-        OPEN c1 FOR 
+        OPEN c1 FOR
         SELECT /*+ ordered use_nl(o c cu h) index(u i_user1) index(o i_obj1)
                index(ci_obj#) index(cu i_col_usage$)
                index(h i_hh_obj#_intcol#) */
-               C.NAME COL_NAME,
-               CU.EQUALITY_PREDS EQ_PREDS,
-               CU.EQUIJOIN_PREDS EQJ_PREDS,
-               CU.NONEQUIJOIN_PREDS NO_EQ_PREDS,
-               CU.RANGE_PREDS,
-               CU.LIKE_PREDS,
-               CU.NULL_PREDS,
-               C.DEFAULT$ default#,
-               h.ROW_CNT rows#,
-               h.NULL_CNT nulls,
-               H.BUCKET_CNT BUCKETS,
-               round((T.ROWCNT - H.NULL_CNT) / GREATEST(H.DISTCNT, 1),2) CARD
-          FROM SYS.USER$      U,
-               SYS.OBJ$       O,
-               SYS.TAB$       T,
-               SYS.COL$       C,
-               SYS.COL_USAGE$ CU,
-               SYS.HIST_HEAD$ H
-         WHERE U.NAME =  '&object_owner'
-           AND O.OWNER# = U.USER#
-           AND O.TYPE# = 2
-           AND O.obj# = &object_id
-           AND O.OBJ# = T.OBJ#
-           AND O.OBJ# = C.OBJ#
-           AND C.OBJ# = CU.OBJ#
-           AND C.INTCOL# = CU.INTCOL#
-           AND C.OBJ# = H.OBJ#(+)
-           AND C.INTCOL# = H.INTCOL#(+);
+               c.name col_name,
+               cu.equality_preds eq_preds,
+               cu.equijoin_preds eqj_preds,
+               cu.nonequijoin_preds no_eq_preds,
+               cu.range_preds,
+               cu.like_preds,
+               cu.null_preds,
+               c.default$ default#,
+               h.row_cnt rows#,
+               h.null_cnt nulls,
+               h.bucket_cnt buckets,
+               round((t.rowcnt - h.null_cnt) / greatest(h.distcnt, 1), 2) card
+        FROM   sys.user$ u,
+               sys.obj$ o,
+               sys.tab$ t,
+               sys.col$ c,
+               sys.col_usage$ cu,
+               sys.hist_head$ h
+        WHERE  u.name = '&object_owner'
+        AND    o.owner# = u.user#
+        AND    o.type# = 2
+        AND    o.obj# = &object_id
+        AND    o.obj# = t.obj#
+        AND    o.obj# = c.obj#
+        AND    c.obj# = cu.obj#
+        AND    c.intcol# = cu.intcol#
+        AND    c.obj# = h.obj#(+)
+        AND    c.intcol# = h.intcol#(+);
     $END
     $IF &CHECK_ACCESSS_OBJ=1 $THEN
-        OPEN c2 for
+        OPEN c2 FOR
             WITH o AS
              (SELECT /*+no_expand materialize ORDERED_PREDICATES opt_estimate(query_block rows=2)*/ DISTINCT directive_id dir_id, owner, object_name
               FROM   dba_sql_plan_dir_objects o
-              WHERE  object_name in ('&object_name','&V1')
-              AND    nvl(owner,' ') = nvl('&object_owner',' ')
-              AND    object_type IN ('COLUMN', 'TABLE','SQL STATEMENT')),
+              WHERE  object_name IN ('&object_name', '&V1')
+              AND    nvl(owner, ' ') = nvl('&object_owner', ' ')
+              AND    object_type IN ('COLUMN', 'TABLE', 'SQL STATEMENT')),
             o1 AS
              (SELECT /*+use_nl(o1) no_expand push_pred(o1) no_merge(o1)*/ *
               FROM   o,
-                     lateral(SELECT nvl(OWNER,'SQL') || '.' || OBJECT_NAME obj,
-                                    SUBOBJECT_NAME,
-                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/equality_predicates_only'), 'YES', 'E') ALLEQ,
-                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/simple_column_predicates_only'), 'YES', 'C') ALLCOLS,
-                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') NLJNIX,
-                                    DECODE(EXTRACTVALUE(NOTES, '/obj_note/filter_on_joining_object'), 'YES', 'F') FILTER
-                             FROM   SYS.DBA_SQL_PLAN_DIR_OBJECTS o1
-                             WHERE  DIRECTIVE_ID = o.dir_id) o1),
+                     LATERAL(SELECT nvl(owner, 'SQL') || '.' || object_name obj,
+                                    subobject_name,
+                                    decode(extractvalue(notes, '/obj_note/equality_predicates_only'), 'YES', 'E') alleq,
+                                    decode(extractvalue(notes, '/obj_note/simple_column_predicates_only'), 'YES', 'C') allcols,
+                                    decode(extractvalue(notes, '/obj_note/index_access_by_join_predicates'), 'YES', 'J') nljnix,
+                                    decode(extractvalue(notes, '/obj_note/filter_on_joining_object'), 'YES', 'F') filter
+                             FROM   sys.dba_sql_plan_dir_objects o1
+                             WHERE  directive_id = o.dir_id) o1),
             o2 AS
              (SELECT dir_id,
-                     OWNER,
-                     OBJECT_NAME,
-                     listagg(op || '(' || obj  || nvl2(cols, '[' || cols || ']', '')|| ')', ' / ') WITHIN GROUP(ORDER BY obj) notes
+                     owner,
+                     object_name,
+                     listagg(op || '(' || obj || nvl2(cols, '[' || cols || ']', '') || ')', ' / ') WITHIN GROUP(ORDER BY obj) notes
               FROM   (SELECT dir_id,
-                             OWNER,
-                             OBJECT_NAME,
+                             owner,
+                             object_name,
                              obj,
-                             listagg(ALLEQ||ALLCOLS||NLJNIX||FILTER,'') within group(order by 1) op,
-                             listagg(SUBOBJECT_NAME, ',') within GROUP(ORDER BY SUBOBJECT_NAME) COLS
+                             listagg(alleq || allcols || nljnix || filter, '') WITHIN GROUP(ORDER BY 1) op,
+                             listagg(subobject_name, ',') WITHIN GROUP(ORDER BY subobject_name) cols
                       FROM   o1
-                      GROUP  BY dir_id, OWNER, OBJECT_NAME, obj)
-              GROUP  BY dir_id, OWNER, OBJECT_NAME)
+                      GROUP  BY dir_id, owner, object_name, obj)
+              GROUP  BY dir_id, owner, object_name)
             SELECT /*+leading(o2 d) use_nl(d) merge(d)*/
-                     TO_CHAR(d.directive_id) directive_id,
-                     o2.owner,
-                     o2.object_name,
-                     d.ENABLED,
-                     d.state,
-                     extract(d.notes,'/spd_note/internal_state/text()') "Internal|State",
-                     d.AUTO_DROP "Auto|Drop",
-                     d.type,
-                     d.reason,
-                     o2.notes,
-                     nvl(d.LAST_MODIFIED, d.CREATED) LAST_MDF,
-                     d.LAST_USED
+                   to_char(d.directive_id) directive_id,
+                   o2.owner,
+                   o2.object_name,
+                   d.enabled,
+                   d.state,
+                   extract(d.notes, '/spd_note/internal_state/text()') "Internal|State",
+                   d.auto_drop "Auto|Drop",
+                   d.type,
+                   d.reason,
+                   o2.notes,
+                   nvl(d.last_modified, d.created) last_mdf,
+                   d.last_used
             FROM   o2, dba_sql_plan_directives d
             WHERE  d.directive_id = o2.dir_id
             ORDER  BY d.reason;

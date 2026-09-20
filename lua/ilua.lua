@@ -85,6 +85,21 @@ local function trim(str)
     return str:gsub("^%s*(.-)%s*$", "%1")
 end
 
+-- make a path argument absolute against dbcli's working directory (env.WORK_DIR).
+-- The Lua C runtime cwd is NOT dbcli's root here, so relative file/transcript
+-- paths would not resolve (verified 2026-09-20: io.open('data/init.cfg') fails).
+local function abspath(p)
+    if not p or p == "" or p:match("^%a:[\\/]") or p:match("^[\\/]") then
+        return p
+    end
+    local root = env and env.WORK_DIR
+    if not root or root == "" then return p end
+    if root:sub(-1) ~= "/" and root:sub(-1) ~= "\\" then
+        root = root .. (env.PATH_DEL or "/")
+    end
+    return root .. p
+end
+
 -- function varsub(str, repl)
 -- replaces variables in strings like "%20s{foo} %s{bar}" using the table repl
 -- to look up replacements. use string:format patterns followed by {variable}
@@ -458,6 +473,12 @@ function Ilua:init(params)
     for k, v in pairs(self.defaults) do
         self[k] = v
     end
+    --per-invocation fields not present in defaults (nil entries are invisible
+    --to pairs) must not leak from a previous loop() call on this instance;
+    --savef in particular may hold a file closed by the previous run()
+    self.file, self.args, self.load_files = nil, nil, nil
+    self.load_libs, self.import_libs, self.inject_libs = nil, nil, nil
+    self.global_env, self.inject_helpers, self.savef = nil, nil, nil
     for k, v in pairs(params) do
         self[k] = v
     end
@@ -524,7 +545,12 @@ function Ilua:start()
     if self.file then
         print('saving transcript "'..self.file..'"')
         self.savef = io.open(self.file,'w')
-        self.savef:write('! ilua ', concat(self.args,' '),'\n')
+        if not self.savef then
+            self.file = nil
+            write('warning: cannot open transcript file, continuing without it\n')
+        else
+            self.savef:write('! ilua ', concat(self.args,' '),'\n')
+        end
     end
 
     -- inject libs already loaded on command line 
@@ -740,7 +766,7 @@ end
 function Ilua:run()
     while true do    
         local input = self:get_input()
-        if not input or trim(input) == 'quit' then break end
+        if not input or trim(input) == 'quit' or trim(input) == 'exit' then break end
         self:eval_lua(input)
         saveline(input)
     end
@@ -828,10 +854,13 @@ function Ilua:loop(...)
             if opt == '-' then
                 opt = v:sub(2,2)            
                 if opt == 'h' then
-                    quit(0,"ilua [[ -h | -g | -H | -l <lib> | -L <lib> | -t | -T | -s | -i | -p | <file> ] ... ]")
+                    quit(0,"ilua [[ -h | -e <code> | -g | -H | -l <lib> | -L <lib> | -t <file> | -T | -s | -v | -i | -p | <file> ] ... ]")
                 elseif opt == 'g' then
                     params['global_env'] = true
                 elseif opt == 'e' then
+                    if not arg[i+1] then
+                        quit(-1,"expecting code for option '-e'")
+                    end
                     local r1,r2=loadstring(arg[i+1])
                     env.checkerr(r1,r2)
                     r1()
@@ -861,9 +890,9 @@ function Ilua:loop(...)
                         append(params['inject_libs'], {tbl, true, lib})
                     end
                 elseif opt == 't' then
-                    params['file'] = parm_value(opt,v,"ilua.log")
+                    params['file'] = abspath(parm_value(opt,v,"ilua.log"))
                 elseif opt == 'T' then
-                    params['file'] = 'ilua_'..os.date ('%y_%m_%d_%H_%M')..'.log'
+                    params['file'] = abspath('ilua_'..os.date ('%y_%m_%d_%H_%M')..'.log')
                 elseif opt == 's' then
                     params['strict'] = false
                 elseif opt == 'v' then
@@ -874,6 +903,7 @@ function Ilua:loop(...)
                     postpone = true
                 end
             else -- a lua file to be executed immediately or later, depending on current value of postpone
+                v = abspath(v)
                 if postpone then
                     params['load_files'] = params['load_files'] or {}
                     append(params['load_files'], v)
@@ -887,20 +917,40 @@ function Ilua:loop(...)
     end
     --local FuncEnv=setmetatable({}, {__index = env})
     --setfenv(1,FuncEnv)
-    --hand the console over to io.read: suspend stops the JLine reader AND
-    --restores the original console mode; pausing alone leaves raw/no-echo
-    --mode on, so typed keys never show up (and resume on the way out)
-    console:suspend(true)
-    local ok, err = pcall(function()
+    --the instance was created at module load with empty params; re-init it in
+    --place with the parsed ones so the options and postponed files take effect
+    --(_G.ilua keeps pointing at this same instance, which eval_lua's wrap needs)
+    self:init(params)
+
+    --input channel:
+    --* interactive tty: hand the console to io.read via suspend, which stops the
+    --  JLine reader AND restores the original console mode; pausing alone leaves
+    --  raw/no-echo mode on, so typed keys never show up (resume on the way out)
+    --* dumb terminal (piped/redirected stdin): JLine owns stdin and buffers ahead,
+    --  io.read would see EOF immediately, so read lines through console:readLine
+    --  instead and leave the terminal running
+    local run_repl = function()
         self:start()
         self:run()
-    end)
-    console:suspend(false)
+    end
+    local ok, err
+    if tostring(terminal):find('[Dd]umb') then
+        readline = function(prompt) return console:readLine(prompt) end
+        saveline = function() end
+        ok, err = pcall(run_repl)
+    else
+        console:suspend(true)
+        ok, err = pcall(run_repl)
+        console:suspend(false)
+    end
     if not ok then error(err, 0) end
 end
 
 function Ilua:onload()
-    env.set_command(self,'ilua','#Start interactive Lua. Usage: @@NAME [{-e <string>}|<file>]',Ilua.loop,false,3,false)
+    --parameters must exceed the option count: env.parse_args only splits the
+    --rest into separate tokens when arg_count > 1, otherwise (ARGS<=2) the
+    --whole tail arrives merged into one argument and no option ever matches
+    env.set_command(self,'ilua','#Run Lua code/file or start the interactive Lua prompt. Usage: @@NAME [{-e <code>}|<file>|-h for options]',Ilua.loop,false,30,false)
 end
 
 return ilua

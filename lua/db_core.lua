@@ -133,7 +133,7 @@ function db_Types:load_sql_types(className)
                     local israw=cfg.get("CONVERTRAW2HEX")=='on'
                     local succ,len=pcall(result.length,result)
                     if not succ then return nil end
-                    local str=result:getBytes(1,israw and len or math.min(255,len))
+                    local str=result:getBytes(1,israw and len or math.min(256,len))
                     pcall(result.free,result)
                     if not israw then
                         str=string.rep('%2X',#str):format(str:byte(1,#str)):gsub(' ','0')
@@ -186,9 +186,14 @@ function db_Types:load_sql_types(className)
     }
     for k,v in java.fields(typ) do
         if type(k) == "string" and k:match('^[%u_%d]+$') and k~='NULL' and k~='UNKNOWN' then
+            -- A constant class such as com.mysql.cj.MysqlType yields the enum itself, while JDBC
+            -- setters take the wrapped java.sql.Types code. Its ids are already aliased by the
+            -- java.sql.Types pass, so only that one owns the numeric keys.
+            local numeric=type(v)=="number"
+            if type(v)=="userdata" then v=v:getJdbcType() end
             local m=m1[k] or (number_types[k] and m2[2]) or {getter="getString",setter="setString"}
             self[k]={id=v,name=k,getter=m.getter,setter=m.setter,handler=m.handler}
-            self[v]=self[k]
+            if numeric then self[v]=self[k] end
         end
     end
 end
@@ -204,14 +209,15 @@ function ResultSet:getHeads(rs)
     local titles={}
     for i=1,len,1 do
         local cname=meta:getColumnLabel(i) or ''
+        local dtype=(meta:getColumnTypeName(i) or ''):upper()
         colinfo[i]={
             column_name=cname,
-            data_typeName=meta:getColumnTypeName(i),
+            data_typeName=dtype,
             data_type=meta:getColumnType(i),
             data_size=meta:getColumnDisplaySize(i),
             data_precision=meta:getPrecision(i),
             data_scale=meta:getScale(i),
-            is_number=number_types[meta:getColumnTypeName(i):match("^%w+")]
+            is_number=number_types[dtype:match("^%w+")]
         }
         titles[i]=colinfo[i].column_name
         colinfo[cname:upper()]=i
@@ -277,6 +283,18 @@ function ResultSet:close(rs)
     end
 end
 
+local long_data_types={
+    BLOB=1,LONGBLOB=1,MEDIUMBLOB=1,LONGVARBINARY=1,VARBINARY=1,LONGRAW=1,
+    CLOB=1,LONGVARCHAR=1,LONGNVARCHAR=1,NCLOB=1,
+    SQLXML=1,TEXT=1,MEDIUMTEXT,LONGTEXT=1,
+    JSON=1,JSONB=1
+}
+
+local raw_types={
+    BLOB=1,LONGBLOB=1,MEDIUMBLOB=1,TINYBLOB=1,
+    RAW=1,BINARY=1,LONGVARBINARY=1,VARBINARY=1,LONGRAW=1
+}
+
 function ResultSet:rows(rs,count,null_value,is_close)
     if is_closed(rs) then return end
     count=tonumber(count) or -1
@@ -286,15 +304,11 @@ function ResultSet:rows(rs,count,null_value,is_close)
     local cols=#head
     if not titles[1] then return end
     local dtype=titles[1].data_typeName
-    local is_lob=cols==1 and (dtype:find("[BC]LOB") or dtype:find("XML") or dtype:find("TEXT") or dtype:find("JSON"))
+    local is_lob=cols==1 and long_data_types[dtype]
     
     null_value=null_value or ''
     if count~=0 then
         rows=self.db:call_sql_method('ON_SQL_ERROR',__source[rs] or '',loader.fetchResult,loader,rs,count)
-        --rows=loader:fetchResult(rs,count)
-        --the per-cell work that used to live here is reduced to what is a display policy:
-        --the DATE/TIMESTAMP text normalization now happens in Java, right where the text is
-        --produced, and the per-column facts are resolved once instead of once per cell
         local isnum,isblob={},{}
         for j=1,cols do
             local info=head.colinfo[j]
@@ -307,12 +321,13 @@ function ResultSet:rows(rs,count,null_value,is_close)
                 local v=row[j]
                 if v~=nil then
                     if type(v)=="userdata" then v=tostring(v); row[j]=v end
-                    if is_lob and type(v)=="string" and #v>255 then
-                        print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.txt',v))
+                    if is_lob and type(v)=="string" and #v>256 then
+                        local binary=raw_types[dtype]~=nil
+                        print('Result written to '..env.write_cache(dtype:lower()..'_'..i..'.'..(binary and 'dat' or 'txt'),binary and v:fromhex() or v,binary))
                     end
                     if isblob[j] then
                         --kept in Lua: the untruncated text above is what the cache write needs
-                        row[j]=tostring(v):sub(1,255)
+                        row[j]=tostring(v):sub(1,256)
                     elseif isnum[j] and type(v)~="number" then
                         --exactness guard: only a string that round-trips through tostring()
                         --becomes a number, so >2^53 integer digits are preserved verbatim
@@ -352,6 +367,25 @@ function ResultSet:print(res,conn,prefix,verticals,is_close)
     if pivot~=0 and not verticals then maxrows=math.abs(pivot) end
     local result=self:rows(res,maxrows,cfg.get('null'),is_close~=false)
     if not result then return end
+    local has_lob=false
+    for j=1,#cols do
+        has_lob=long_data_types[cols[j].data_typeName]
+        if has_lob then
+            break
+        end
+    end
+    --deal with OOM
+    if has_lob and #cols>1 then
+        for i=2,#result do
+            local row=result[i]
+            for j=1,#cols do
+                local v=row[j]
+                if type(v)=='string' and #v>32768 then
+                    row[j]=v:sub(1,32768)
+                end
+            end
+        end
+    end
     result.verticals=verticals
     if pivot==0 and not verticals then
         hdl=grid.new()

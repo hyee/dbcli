@@ -234,7 +234,7 @@ DECLARE /*+no_monitor*/
     END;
 BEGIN
     IF &SNAP=1 THEN
-        $IF &check_access_sqlm=0 OR dbms_db_version.release+dbms_db_version.version<14 $THEN
+        $IF &check_access_sqlm=0 OR dbms_db_version.version<12 OR dbms_db_version.version=12 AND dbms_db_version.release=1 $THEN
             raise_application_error(-20001,'You dont'' have access on dbms_sql_monitor/dbms_lock, or db version < 12.2!');
         $ELSE
             dopename := 'DBCLI_SNAPPER_' || userenv('SESSIONID');
