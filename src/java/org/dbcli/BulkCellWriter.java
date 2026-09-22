@@ -1,15 +1,9 @@
 package org.dbcli;
 
-import com.sun.jna.Library;
 import com.sun.jna.Memory;
-import com.sun.jna.Native;
-import com.sun.jna.Pointer;
-import com.sun.jna.Structure;
-import com.sun.jna.win32.W32APIOptions;
 import org.jline.nativ.Kernel32;
 
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * Writes a chunk of console text as one CHAR_INFO rectangle with a single WriteConsoleOutputW,
@@ -35,89 +29,19 @@ import java.util.List;
  */
 public final class BulkCellWriter {
 
-    // ---- JNA plumbing ----------------------------------------------------------------------
-    public static class COORDV extends Structure implements Structure.ByValue {
-        public short X, Y;
-
-        public COORDV() {}
-
-        public COORDV(short x, short y) {
-            X = x;
-            Y = y;
-        }
-
-        @Override
-        protected List<String> getFieldOrder() {
-            return Arrays.asList("X", "Y");
-        }
-    }
-
-    public static class RECTV extends Structure {
-        public short Left, Top, Right, Bottom;
-
-        public RECTV() {}
-
-        public RECTV(short l, short t, short r, short b) {
-            Left = l;
-            Top = t;
-            Right = r;
-            Bottom = b;
-        }
-
-        @Override
-        protected List<String> getFieldOrder() {
-            return Arrays.asList("Left", "Top", "Right", "Bottom");
-        }
-    }
-
-    public static class CHARINFO extends Structure {
-        public char UnicodeChar;
-        public short Attributes;
-
-        public CHARINFO() {}
-
-        @Override
-        protected List<String> getFieldOrder() {
-            return Arrays.asList("UnicodeChar", "Attributes");
-        }
-    }
-
-    /** CONSOLE_CURSOR_INFO: a DWORD size and a BOOL visibility */
-    public static class CURSORINFO extends Structure {
-        public int dwSize;
-        public int bVisible;
-
-        public CURSORINFO() {}
-
-        @Override
-        protected List<String> getFieldOrder() {
-            return Arrays.asList("dwSize", "bVisible");
-        }
-    }
-
-    public interface K32 extends Library {
-        K32 I = Native.load("kernel32", K32.class, W32APIOptions.DEFAULT_OPTIONS);
-
-        boolean WriteConsoleOutputW(Pointer h, Pointer cells, COORDV bufferSize, COORDV bufferCoord, RECTV region);
-
-        boolean ReadConsoleOutputW(Pointer h, Pointer cells, COORDV bufferSize, COORDV bufferCoord, RECTV region);
-
-        boolean ScrollConsoleScreenBufferW(Pointer h, RECTV scrollRect, RECTV clipRect, COORDV destOrigin, CHARINFO fill);
-
-        boolean SetConsoleTextAttribute(Pointer h, short attribute);
-
-        boolean GetConsoleCursorInfo(Pointer h, CURSORINFO info);
-
-        boolean SetConsoleCursorInfo(Pointer h, CURSORINFO info);
-
-        boolean SetConsoleWindowInfo(Pointer h, boolean absolute, RECTV window);
-
-        boolean SetConsoleCursorPosition(Pointer h, COORDV position);
-    }
-
     // ConEmu's own ANSI index -> console colour bits map (Ansi.cpp: ClrMap). It is an involution,
     // so the same table converts back; using it is what makes both renderers produce equal cells.
     private static final short[] ANSI2CON = {0, 4, 2, 6, 1, 5, 3, 7};
+
+    /**
+     * ClrMap applied to a colour index: the low three bits through the table, the bright bit kept
+     * where it is. Because the table is an involution this one call serves both directions, which is
+     * also its trap - see ansiFrom256 for a colour index that must not be converted twice.
+     */
+    private static int clrMap(int colourIndex) {
+        return ANSI2CON[colourIndex & 0x07] | (((colourIndex & 0x08) != 0) ? 0x08 : 0);
+    }
+
     private static final char ESC = 27;
     private static final char BEL = 7;
     private static final short LVB_UNDERSCORE = (short) 0x8000;
@@ -127,12 +51,26 @@ public final class BulkCellWriter {
     private static final int MAX_ARGS = 16;
     private static final int MAX_PENDING_ESCAPE = 512; // CEAnsi_MaxPrevPart in ConEmu
 
-    private static Boolean enabled;
-    private static Boolean tracing;
+    /**
+     * The DBCLI_BULK_* environment, read once when this class is first touched. Two of the tests run
+     * on the hot path - the safe-mode test per carriage return, the trace test per chunk - so none of
+     * them may look a variable up per chunk.
+     */
+    static final class Config {
+        /** DBCLI_BULK_WRITE=on|1|true|yes|trace switches the rectangle writer on (default: off) */
+        final boolean enabled;
+        /**
+         * DBCLI_BULK_SAFE=1 holds the writer to text, SGR, LF and CRLF: no cursor addressing, no erase
+         * line, no bare CR, no full window block. Diagnostics only, to tell the two feature sets apart.
+         */
+        final boolean safe;
+        /**
+         * DBCLI_BULK_TRACE=<file>|1 logs every chunk, its decision and the console geometry; null when
+         * tracing is off, so a call site tests one field.
+         */
+        final String traceFile;
 
-    /** DBCLI_BULK_WRITE=on|1|true|yes switches the rectangle writer on (default: off) */
-    public static boolean isEnabled() {
-        if (enabled == null) {
+        Config() {
             String v = System.getenv("DBCLI_BULK_WRITE");
             enabled = v != null
                     && (v.equalsIgnoreCase("on")
@@ -140,45 +78,28 @@ public final class BulkCellWriter {
                             || v.equalsIgnoreCase("true")
                             || v.equalsIgnoreCase("yes")
                             || v.equalsIgnoreCase("trace"));
+            safe = truthy(System.getenv("DBCLI_BULK_SAFE"));
+            v = System.getenv("DBCLI_BULK_TRACE");
+            traceFile = !truthy(v) ? null
+                    : (v.equals("1") || v.equalsIgnoreCase("on"))
+                            ? System.getProperty("java.io.tmpdir", ".") + java.io.File.separator
+                                    + "dbcli-bulk-trace.log"
+                            : v;
         }
-        return enabled;
+
+        /** DBCLI_BULK_SAFE and DBCLI_BULK_TRACE are on for any value but an empty one, 0 and off */
+        private static boolean truthy(String v) {
+            return v != null && !v.isEmpty() && !v.equals("0") && !v.equalsIgnoreCase("off");
+        }
     }
 
-    /** DBCLI_BULK_TRACE=<file>|1 logs every chunk, its decision and the console geometry */
-    public static boolean isTracing() {
-        if (tracing == null) {
-            String v = System.getenv("DBCLI_BULK_TRACE");
-            tracing = v != null && !v.isEmpty() && !v.equals("0") && !v.equalsIgnoreCase("off");
-            if (tracing && (v.equals("1") || v.equalsIgnoreCase("on"))) {
-                tracePath = System.getProperty("java.io.tmpdir", ".") + java.io.File.separator + "dbcli-bulk-trace.log";
-            } else {
-                tracePath = v;
-            }
-        }
-        return tracing;
-    }
+    static final Config CONFIG = new Config();
 
-    private static Boolean safe;
-
-    /**
-     * DBCLI_BULK_SAFE=1 holds the writer to text, SGR, LF and CRLF: no cursor addressing, no erase
-     * line, no bare CR, no full window block. Diagnostics only, to tell the two feature sets apart.
-     */
-    public static boolean isSafe() {
-        if (safe == null) {
-            String v = System.getenv("DBCLI_BULK_SAFE");
-            safe = v != null && !v.isEmpty() && !v.equals("0") && !v.equalsIgnoreCase("off");
-        }
-        return safe;
-    }
-
-    private static String tracePath;
     private static java.io.Writer traceOut;
     private static int traceLines;
     private static long traceSeq;
 
-    private final long console;
-    private final Pointer h;
+    private final ScreenBuffer screen;
 
     // console geometry of the current chunk
     private int width, height;
@@ -225,12 +146,11 @@ public final class BulkCellWriter {
     private int escPending;
 
     public BulkCellWriter(long console) {
-        this.console = console;
-        this.h = Pointer.createConstant(console);
+        this.screen = new ScreenBuffer(console);
         Arrays.fill(rowStart, Integer.MAX_VALUE); // no row covered yet
         // Freeze the reset base as early as ConEmuHk does: this runs right after the DLL is loaded
         // and before a single character has been written, so both sides read the same clean attribute.
-        Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = info();
+        Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = screen.info();
         short captured = csbi == null ? 0x07 : csbi.attributes;
         // A default whose foreground and background are the same colour would make every SGR reset
         // paint invisible text, and because the console attribute is written back below, it would do
@@ -238,20 +158,9 @@ public final class BulkCellWriter {
         // fall back to the ordinary light grey on black the console starts with.
         defAttr = ((captured & 0x0F) == ((captured >> 4) & 0x0F)) ? (short) 0x07 : captured;
         chunkAttr = defAttr;
-        CURSORINFO ci = new CURSORINFO();
-        cursorSize = K32.I.GetConsoleCursorInfo(h, ci) ? (short) ci.dwSize : (short) -1;
     }
 
     // ---- public API ------------------------------------------------------------------------
-
-    /** true when this chunk can be rendered in bulk; false means: use WriteProcessed3 */
-    public boolean canHandle(char[] buf, int len) {
-        if (escState != 0) {
-            return false; // ConEmu is holding an unterminated sequence
-        }
-        Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = info();
-        return csbi != null && measure(buf, len, csbi);
-    }
 
     /** renders the chunk; returns false when it declined, in which case nothing was written */
     public boolean write(char[] buf, int len) {
@@ -309,7 +218,7 @@ public final class BulkCellWriter {
     private String lastReason;
     private int lastRows, lastRectW;
 
-    private static final String BUILD = "bulk-2026-09-13-6";
+    private static final String BUILD = "bulk-2026-09-22-13";
 
     /** what the standard output handle points at, for the trace's one-time header */
     private String describeStdHandle() {
@@ -334,7 +243,7 @@ public final class BulkCellWriter {
     private boolean sameBufferAsStdOut() {
         try {
             long out = Kernel32.GetStdHandle(-11);
-            Kernel32.CONSOLE_SCREEN_BUFFER_INFO a = info();
+            Kernel32.CONSOLE_SCREEN_BUFFER_INFO a = screen.info();
             Kernel32.CONSOLE_SCREEN_BUFFER_INFO b = new Kernel32.CONSOLE_SCREEN_BUFFER_INFO();
             if (a == null || Kernel32.GetConsoleScreenBufferInfo(out, b) == 0) {
                 return false;
@@ -354,16 +263,16 @@ public final class BulkCellWriter {
 
     /** one line per chunk: what it was, what was decided, and the console geometry around it */
     private void trace(char[] buf, int len, String decision, int rows, int rectW, int boxTop, int boxBottom) {
-        if (!isTracing() || traceLines > 4000) {
+        if (CONFIG.traceFile == null || traceLines > 4000) {
             return;
         }
         try {
             if (traceOut == null) {
-                traceOut = new java.io.BufferedWriter(new java.io.FileWriter(tracePath, false));
+                traceOut = new java.io.BufferedWriter(new java.io.FileWriter(CONFIG.traceFile, false));
                 traceLines = 0;
-                Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = info();
+                Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = screen.info();
                 traceOut.write("== dbcli bulk writer trace " + BUILD + ", enabled="
-                        + isEnabled() + " safe=" + isSafe()
+                        + CONFIG.enabled + " safe=" + CONFIG.safe
                         + "\n   geometry: buffer="
                         + (csbi == null ? "?" : csbi.size.x + "x" + csbi.size.y)
                         + " window=" + (csbi == null ? "?" : csbi.window.left + ".." + csbi.window.right
@@ -374,11 +283,11 @@ public final class BulkCellWriter {
                         // Writing into the right screen buffer is the whole ball game: if the handle the
                         // writer was handed is not the buffer that is on screen, every rectangle lands
                         // somewhere invisible and no call ever reports an error.
-                        + "   handles: this=0x" + Long.toHexString(console)
+                        + "   handles: this=0x" + Long.toHexString(screen.handle())
                         + " stdout=" + describeStdHandle()
                         + " sameBuffer=" + sameBufferAsStdOut() + "\n");
             }
-            Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = info();
+            Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = screen.info();
             StringBuilder sb = new StringBuilder(160);
             sb.append(++traceSeq).append(" len=").append(len).append(' ').append(decision);
             sb.append(" rows=").append(rows).append(" w=").append(rectW)
@@ -427,45 +336,33 @@ public final class BulkCellWriter {
         if (len <= 0) {
             return true;
         }
-        Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = info();
+        Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = screen.info();
         if (csbi == null) {
             return no("no-console");
         }
         if (!measure(buf, len, csbi)) {
             return false;
         }
-        // A screen row maps into the rectangle as (row - rowShift - rectTop): the rectangle already
-        // carries rowBase in its top (below), rowShift is how far the scroll above moved the content
-        // up and rectTop is its unshifted first row. Getting this wrong paints a chunk that
-        // starts below the top of the screen into the wrong rows (or, when the rectangle is one row
-        // tall, nowhere at all).
-        //
-        // A chunk that addresses the cursor first and then fills at least a whole screen is a screen
-        // repaint: the dashboard block, a pager page. On a terminal with an alternate screen "\e[H"
-        // is the visible top, but this console has no alternate screen and ConEmuHk reads it as row 0
-        // of a scrollback buffer that is thousands of rows tall - not where the application means to
-        // draw, and painting the repaint there would leave the user's screen untouched (it is what
-        // used to force the viewport to be dragged to row 0, and what left the screen blank once a
-        // pager exited). Anchor those blocks at the window's top row instead.
+        Plan p = plan(new Geom(cursorRow, boxTop, boxBottom, boxWidth, height, winTop, winBottom,
+                hasOrigin ? originRow : -1));
         rowShift = 0;
-        rowBase = (hasOrigin && originRow == 0 && winTop > 0 && boxBottom - boxTop + 1 >= winBottom - winTop)
-                ? winTop
-                : 0;
-        cursorRow += rowBase;
-        int overflow = cursorRow + 1 - height; // the cursor may need a row past the buffer end
-        if (overflow > 0) {
-            int by = Math.min(overflow, height);
-            if (!scrollUp(by)) {
+        rowBase = p.rowBase;
+        cursorRow = p.anchoredCursor;
+        if (p.oversize) {
+            return no("oversize");
+        }
+        if (p.scrollBy > 0) {
+            if (!screen.scrollUp(p.scrollBy, width, height, chunkAttr)) {
                 return no("scroll-failed");
             }
-            boxTop -= by;
-            boxBottom -= by;
-            cursorRow -= by;
-            rowShift = by;
+            boxTop = p.boxTop;
+            boxBottom = p.boxBottom;
+            cursorRow = p.cursorRow;
+            rowShift = p.scrollBy;
         }
-        rectTop = Math.max(boxTop, 0);
-        int rows = boxBottom - rectTop + 1;
-        int rectW = Math.max(boxWidth, 1);
+        rectTop = p.rectTop;
+        int rows = p.rows;
+        int rectW = p.rectW;
 
         if (rows > 0 && boxWidth > 0 && measuredCells > 0) {
             long need = (long) rows * rectW * 4;
@@ -487,13 +384,11 @@ public final class BulkCellWriter {
                     break;
                 }
             }
-            RECTV target = new RECTV(
-                    (short) 0, (short) (Math.max(boxTop, 0) + rowBase), (short) (rectW - 1),
-                    (short) (Math.max(boxBottom, 0) + rowBase));
+            int paintedTop = rectTop + rowBase;
+            int paintedBottom = Math.max(boxBottom, 0) + rowBase;
             boolean base = false;
             if (ragged) {
-                base = K32.I.ReadConsoleOutputW(
-                        h, cells, new COORDV((short) rectW, (short) rows), new COORDV((short) 0, (short) 0), target);
+                base = screen.readRect(cells, rectW, rows, paintedTop, paintedBottom);
                 if (!base) {
                     // Without the base the cells the text does not cover would keep the prefill (spaces in
                     // the current colour) and paint over live content. Hand the chunk to ConEmuHk instead.
@@ -506,12 +401,7 @@ public final class BulkCellWriter {
                 return false;
             }
             cells.write(0, raw, 0, (int) need);
-            boolean ok = K32.I.WriteConsoleOutputW(
-                    h,
-                    cells,
-                    new COORDV((short) rectW, (short) rows),
-                    new COORDV((short) 0, (short) 0),
-                    target);
+            boolean ok = screen.writeRect(cells, rectW, rows, paintedTop, paintedBottom);
             if (!ok) {
                 return no("write-failed");
             }
@@ -526,18 +416,27 @@ public final class BulkCellWriter {
             // which the ANSI renderer reads back (ExtGetAttributes): keep them in sync.
             if (sgrSeen.length() > 0) {
                 // the attribute only needs writing back when this chunk changed it; without SGR the
-                // console already holds exactly this state, and the call is ~60us on every line
-                K32.I.SetConsoleTextAttribute(h, attrOf());
+                // console already holds exactly this state, and the call is ~50us on every line
+                short want = attrOf();
+                // chunkAttr was read from this same console at the start of this same chunk (measure()),
+                // so equal means the call below would set the value it already has. A chunk that colours
+                // a column and resets it at the end of the line is that case, which is most of them.
+                // attrOf() is not an exact inverse of the state seeding for the grid index bits
+                // (0x100-0x200), but those never reach here as a starting attribute, and a mismatch only
+                // means the call is made as before.
+                if (want != chunkAttr) {
+                    screen.setTextAttribute(want);
+                }
             }
         }
         if (pendingCursorVisible >= 0) {
-            setCursorVisible(pendingCursorVisible == 1);
+            screen.setCursorVisible(pendingCursorVisible == 1);
         }
 
         // place the cursor exactly where the ANSI path would have left it
         if (cursorRow >= height) {
             int by = Math.min(cursorRow - height + 1, height);
-            if (scrollUp(by)) {
+            if (screen.scrollUp(by, width, height, chunkAttr)) {
                 cursorRow = height - 1;
             } else if (!painted) {
                 return no("scroll-failed-2");
@@ -546,14 +445,96 @@ public final class BulkCellWriter {
         if (cursorCol < 0 || cursorCol >= width) {
             cursorCol = 0;
         }
-        boolean placed = K32.I.SetConsoleCursorPosition(
-                h, new COORDV((short) Math.max(0, cursorCol), (short) Math.max(0, cursorRow)));
+        boolean placed = screen.setCursorPosition(Math.max(0, cursorRow), Math.max(0, cursorCol));
         if (placed) {
             followCursor(rectTop + rowBase, rows);
         } else if (!painted) {
             return false;
         }
         return true;
+    }
+
+    // ---- the geometry decision (pure: no console call, so it can be enumerated) --------------
+
+    /** Console shape and the rectangle the measuring walk found, as one chunk sees them. */
+    static final class Geom {
+        final int cursorRow;                // where the chunk leaves the cursor, before any scroll
+        final int boxTop, boxBottom, boxWidth;
+        final int height;                   // buffer rows
+        final int winTop, winBottom;        // visible window as of the start of the chunk
+        final int originRow;                // row a leading CUP addressed, -1 when the chunk had none
+
+        Geom(int cursorRow, int boxTop, int boxBottom, int boxWidth, int height,
+             int winTop, int winBottom, int originRow) {
+            this.cursorRow = cursorRow;
+            this.boxTop = boxTop;
+            this.boxBottom = boxBottom;
+            this.boxWidth = boxWidth;
+            this.height = height;
+            this.winTop = winTop;
+            this.winBottom = winBottom;
+            this.originRow = originRow;
+        }
+    }
+
+    /** What {@link #plan} decides about a chunk: see the fields for the terms writeRect() uses. */
+    static final class Plan {
+        final int rowBase, scrollBy, anchoredCursor;
+        final boolean oversize;
+        final int boxTop, boxBottom, cursorRow, rectTop, rows, rectW;
+
+        Plan(int rowBase, int scrollBy, int anchoredCursor, boolean oversize,
+             int boxTop, int boxBottom, int cursorRow, int rectTop, int rows, int rectW) {
+            this.rowBase = rowBase;
+            this.scrollBy = scrollBy;
+            this.anchoredCursor = anchoredCursor;
+            this.oversize = oversize;
+            this.boxTop = boxTop;
+            this.boxBottom = boxBottom;
+            this.cursorRow = cursorRow;
+            this.rectTop = rectTop;
+            this.rows = rows;
+            this.rectW = rectW;
+        }
+    }
+
+    /**
+     * Decides where a chunk's rectangle lands, without touching the console.
+     *
+     * A screen row maps into the rectangle as (row - rowShift - rectTop): the rectangle already
+     * carries rowBase in its top (below), rowShift is how far the scroll above moved the content
+     * up and rectTop is its unshifted first row. Getting this wrong paints a chunk that
+     * starts below the top of the screen into the wrong rows (or, when the rectangle is one row
+     * tall, nowhere at all).
+     *
+     * A chunk that addresses the cursor first and then fills at least a whole screen is a screen
+     * repaint: the dashboard block, a pager page. On a terminal with an alternate screen "\e[H"
+     * is the visible top, but this console has no alternate screen and ConEmuHk reads it as row 0
+     * of a scrollback buffer that is thousands of rows tall - not where the application means to
+     * draw, and drawing there leaves the user's screen untouched. Anchor those blocks at the
+     * window's top row instead.
+     *
+     * One scroll moves at most a whole screen, so it can only fit a chunk whose tail reaches at
+     * most one screen past the buffer end. Past that the rectangle stays taller than the buffer
+     * and the paint addresses rows that no longer exist; ConEmuHk scrolls that case line by line
+     * and gets it right, so it has to be handed over *before* scrolling: a console this writer
+     * already moved would be scrolled twice. A long result set that does fit after the one scroll
+     * stays here, where this writer pays most.
+     */
+    static Plan plan(Geom g) {
+        int rowBase = (g.originRow == 0 && g.winTop > 0 && g.boxBottom - g.boxTop + 1 >= g.winBottom - g.winTop)
+                ? g.winTop
+                : 0;
+        int anchored = g.cursorRow + rowBase;
+        int overflow = anchored + 1 - g.height; // the cursor may need a row past the buffer end
+        int by = overflow > 0 ? Math.min(overflow, g.height) : 0;
+        boolean oversize = by > 0 && g.boxBottom - by - Math.max(g.boxTop - by, 0) + 1 > g.height;
+        int boxTop = g.boxTop - by;
+        int boxBottom = g.boxBottom - by;
+        int cursorRow = anchored - by;
+        int rectTop = Math.max(boxTop, 0);
+        return new Plan(rowBase, by, anchored, oversize, boxTop, boxBottom, cursorRow,
+                rectTop, boxBottom - rectTop + 1, Math.max(g.boxWidth, 1));
     }
 
     // ---- measuring and painting ------------------------------------------------------------
@@ -622,7 +603,7 @@ public final class BulkCellWriter {
                 continue;
             }
             if (c == '\r') {
-                if (isSafe() && (i + 1 >= len || buf[i + 1] != '\n')) {
+                if (CONFIG.safe && (i + 1 >= len || buf[i + 1] != '\n')) {
                     return no("bare-cr"); // safe mode keeps to CRLF
                 }
                 col = 0; // a bare CR rewrites the current row, which the rectangle handles
@@ -720,7 +701,6 @@ public final class BulkCellWriter {
     private boolean painted;
     // the visible window as of the start of the chunk, so followCursor needs no extra call
     private int winLeft, winRight, winTop, winBottom;
-    private final short cursorSize;
     // 25h/25l seen in the chunk being written: -1 none, 1 show, 0 hide
     private int pendingCursorVisible = -1;
     private int dirtyTo;
@@ -825,7 +805,7 @@ public final class BulkCellWriter {
                 return i + 1;
             }
             if (c == 'H' || c == 'f') {
-                if (isSafe()) {
+                if (CONFIG.safe) {
                     return -1; // safe mode: cursor addressing goes to ConEmuHk
                 }
                 if (n >= MAX_ARGS) {
@@ -835,7 +815,7 @@ public final class BulkCellWriter {
                 return seekCursor(n) ? i + 1 : -1;
             }
             if (c == 'K') {
-                if (isSafe()) {
+                if (CONFIG.safe) {
                     return -1; // safe mode: erase line goes to ConEmuHk
                 }
                 if (n >= MAX_ARGS) {
@@ -970,8 +950,8 @@ public final class BulkCellWriter {
         if (v == 0) {
             // DisplayParm::Reset: colours go back to the *default* one, never to the colour the
             // previous chunk left behind (Ansi.cpp:562)
-            fg = ANSI2CON[defAttr & 0x07] | (((defAttr & 0x08) != 0) ? 8 : 0);
-            bg = ANSI2CON[(defAttr >> 4) & 0x07] | (((defAttr & 0x80) != 0) ? 8 : 0);
+            fg = clrMap(defAttr);
+            bg = clrMap(defAttr >> 4);
             bold = false;
             underline = (defAttr & LVB_UNDERSCORE) != 0;
             reverse = false;
@@ -994,14 +974,14 @@ public final class BulkCellWriter {
             fg = v - 30;
             fg256 = false;
         } else if (v == 39) {
-            fg = ANSI2CON[defAttr & 0x07] | (((defAttr & 0x08) != 0) ? 8 : 0);
+            fg = clrMap(defAttr);
             fg256 = false;
         } else if (v >= 40 && v <= 47) {
             bg = v - 40;
             bg256 = false;
             brightBack = false;
         } else if (v == 49) {
-            bg = ANSI2CON[(defAttr >> 4) & 0x07] | (((defAttr & 0x80) != 0) ? 8 : 0);
+            bg = clrMap(defAttr >> 4);
             bg256 = false;
             brightBack = false;
         } else if (v >= 90 && v <= 97) {
@@ -1023,10 +1003,9 @@ public final class BulkCellWriter {
     private static int ansiFrom256(int index) {
         if (index < 16) {
             // RgbMap[0..15] is ClrMap[n & 7] | (n >= 8 ? 8 : 0), which already *is* the console colour
-            // for that index - and this writer stores ANSI indices that attrOf() converts, so the
-            // index has to go through unchanged. Converting it here as well double converted it and
-            // painted the prompt cyan instead of yellow: 38;5;3 -> ClrMap[3] = 6 (yellow), which was
-            // then fed back through ANSI2CON as if it were an ANSI index -> 3 -> cyan.
+            // for that index, and attrOf() converts the stored index on the way out - so it has to go
+            // through unchanged here, or it is converted twice: 38;5;3 -> ClrMap[3] = 6 -> ANSI2CON -> 3,
+            // which paints a yellow prompt cyan.
             return index;
         }
         int color;
@@ -1038,14 +1017,12 @@ public final class BulkCellWriter {
             color = (v << 16) | (v << 8) | v;
         }
         // the result is a console colour index: convert it back to the ANSI index this writer tracks
-        int con = conIndexFromRgb(color);
-        return ANSI2CON[con & 7] | ((con & 8) != 0 ? 8 : 0);
+        return clrMap(conIndexFromRgb(color));
     }
 
     /** true colour SGR: the same conversion, with the colour given directly */
     private static int ansiFromRgb(int r, int g, int b) {
-        int con = conIndexFromRgb((b << 16) | (g << 8) | r);
-        return ANSI2CON[con & 7] | ((con & 8) != 0 ? 8 : 0);
+        return clrMap(conIndexFromRgb((b << 16) | (g << 8) | r));
     }
 
     private static final int[] LEVELS = {0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF};
@@ -1083,8 +1060,8 @@ public final class BulkCellWriter {
 
     /** the state an SGR reset returns to, and the state a chunk starts from */
     private void resetSgrState() {
-        fg = ANSI2CON[chunkAttr & 0x07] | (((chunkAttr & 0x08) != 0) ? 8 : 0);
-        bg = ANSI2CON[(chunkAttr >> 4) & 0x07] | (((chunkAttr & 0x80) != 0) ? 8 : 0);
+        fg = clrMap(chunkAttr);
+        bg = clrMap(chunkAttr >> 4);
         bold = false;
         underline = (chunkAttr & LVB_UNDERSCORE) != 0;
         reverse = (chunkAttr & LVB_REVERSE) != 0;
@@ -1097,9 +1074,8 @@ public final class BulkCellWriter {
         // ConEmu derives the bright foreground bit from SGR 90-97, from \e[1m ("bold") when the
         // background is not itself bright, or from the colour index itself; a 256 colour or true
         // colour keeps its own bit and treats bold as an annotation (Ansi.cpp:780-793)
-        int f = ANSI2CON[fg & 0x07]
-                | ((((fg & 0x08) != 0) || (bold && !fg256 && !brightBack)) ? 0x08 : 0);
-        int b = ANSI2CON[bg & 0x07] | (((bg & 0x08) != 0) ? 0x08 : 0);
+        int f = clrMap(fg) | ((bold && !fg256 && !brightBack) ? 0x08 : 0);
+        int b = clrMap(bg);
         int a = f | (b << 4);
         if (underline) {
             a |= LVB_UNDERSCORE;
@@ -1157,19 +1133,34 @@ public final class BulkCellWriter {
      * does, so the viewport sometimes has to be moved by hand - ConEmuHk does the same for its own
      * line feeds (Ansi.cpp:2065-2072). Working from the geometry cached at the start of the chunk
      * keeps this free: the common cases need no call at all.
+     */
+    private void followCursor(int paintedTop, int paintedRows) {
+        int newTop = viewportTop(hasOrigin, paintedTop, paintedRows, cursorRow, winTop, winBottom, height);
+        if (newTop < 0) {
+            return;
+        }
+        int windowRows = winBottom - winTop;
+        if (screen.setWindow(winLeft, newTop, winRight, newTop + windowRows)) {
+            winTop = newTop;
+            winBottom = newTop + windowRows;
+        }
+    }
+
+    /**
+     * Where the viewport top has to move so the chunk just painted is readable, or -1 to leave the
+     * window alone.
      *
      *   - the chunk painted at least a whole screen and addressed the cursor first: it is a screen
      *     repaint (the dashboard block, a pager screen, "snap" output), so show it from its top row.
-     *     conhost follows a cursor that moves *down* (verified: the Win7 trace moves the window one
-     *     row per CRLF chunk) but never back up, so without this the viewport stays where the last
-     *     longer output left it and the repaint's first rows are never seen - the Win7 VM showed a 73
-     *     row block repainted into rows 0..63 while the window sat at 9..72;
+     *     conhost follows a cursor that moves *down* but never back up, so without this the viewport
+     *     stays where the last longer output left it and the repaint's first rows are never seen;
      *   - the cursor ended above the window: follow it up.
      *
      * Window height is preserved, only Top/Bottom move, and vertical only: a buffer much wider than
      * its window must not be scrolled sideways by a long line.
      */
-    private void followCursor(int paintedTop, int paintedRows) {
+    static int viewportTop(boolean hasOrigin, int paintedTop, int paintedRows,
+                           int cursorRow, int winTop, int winBottom, int height) {
         int windowRows = winBottom - winTop;
         int newTop;
         if (hasOrigin && paintedRows >= windowRows && paintedTop < winTop) {
@@ -1177,53 +1168,10 @@ public final class BulkCellWriter {
         } else if (cursorRow < winTop) {
             newTop = cursorRow;
         } else {
-            return;
+            return -1;
         }
         newTop = Math.max(0, Math.min(newTop, height - 1 - windowRows));
-        if (newTop == winTop) {
-            return;
-        }
-        if (K32.I.SetConsoleWindowInfo(
-                h, true, new RECTV((short) winLeft, (short) newTop, (short) winRight, (short) (newTop + windowRows)))) {
-            winTop = newTop;
-            winBottom = newTop + windowRows;
-        }
-    }
-
-    /**
-     * DECTCEM (SGR ?25h/?25l). ConEmuHk applies it with SetConsoleCursorInfo (Ansi.cpp:3308), so a
-     * chunk that carries it must not simply be dropped: the pager and the dashboard hide the cursor
-     * around their repaints. Only the visibility is touched - the cursor size is read once and kept.
-     */
-    private void setCursorVisible(boolean visible) {
-        if (cursorSize < 0) {
-            return; // no cursor info: leave it to whatever is there
-        }
-        CURSORINFO ci = new CURSORINFO();
-        ci.dwSize = cursorSize;
-        ci.bVisible = visible ? 1 : 0;
-        ci.write();
-        K32.I.SetConsoleCursorInfo(h, ci);
-    }
-
-    private boolean scrollUp(int by) {
-        if (by <= 0) {
-            return true;
-        }
-        CHARINFO fill = new CHARINFO();
-        fill.UnicodeChar = ' ';
-        // what the console itself uses when it scrolls on a newline at the last buffer row
-        fill.Attributes = chunkAttr;
-        RECTV full = new RECTV((short) 0, (short) 0, (short) (width - 1), (short) (height - 1));
-        return K32.I.ScrollConsoleScreenBufferW(h, full, full, new COORDV((short) 0, (short) (-by)), fill);
-    }
-
-    private Kernel32.CONSOLE_SCREEN_BUFFER_INFO info() {
-        Kernel32.CONSOLE_SCREEN_BUFFER_INFO csbi = new Kernel32.CONSOLE_SCREEN_BUFFER_INFO();
-        if (Kernel32.GetConsoleScreenBufferInfo(console, csbi) == 0) {
-            return null;
-        }
-        return csbi;
+        return newTop == winTop ? -1 : newTop;
     }
 
     /**

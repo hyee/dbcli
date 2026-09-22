@@ -88,7 +88,7 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
 
         if (("conemu").equals(System.getenv("ANSICON_DEF"))) {
             type = TYPE_WINDOWS_CONEMU;
-            writer = new WinConsoleWriter(console, 1);
+            writer = new ConEmuWriter(console);
         } else if (System.getenv("WT_PROFILE_ID") != null && System.getenv("WT_SESSION") != null) {
             type = type != null ? type : "xterm-256color";
             writer = newConsoleWriter(console);
@@ -99,7 +99,7 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                     writer = newConsoleWriter(console);
                 } else {
                     type = TYPE_WINDOWS_CONEMU;
-                    writer = new WinConsoleWriter(console, 1);
+                    writer = new ConEmuWriter(console);
                 }
             } else {
                 type = type != null ? type : OSUtils.IS_CONEMU ? TYPE_WINDOWS_CONEMU : TYPE_WINDOWS;

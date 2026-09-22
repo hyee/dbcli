@@ -11,11 +11,11 @@ import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Renders ANSI by handing the text to ConEmuHk(64).dll, ConEmu's in-process ANSI processor.
- *
- * Used by WinConsoleWriter for a console without ENABLE_VIRTUAL_TERMINAL_PROCESSING (Windows 7 and
+ * Renders ANSI by handing the text to ConEmuHk(64).dll, ConEmu's in-process ANSI processor, so this
+ * is the console writer for a console without ENABLE_VIRTUAL_TERMINAL_PROCESSING (Windows 7 and
  * older, or an explicit ANSICON_DEF=conemu): the DLL hooks the console API and WriteProcessed3
- * turns the escape sequences into console API calls.
+ * turns the escape sequences into console API calls. A console that renders the escapes itself gets
+ * {@link WinConsoleWriter}.
  */
 public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
 
@@ -49,7 +49,7 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
             report("dbcli: ConEmuHk is unavailable, console output is written without ANSI rendering");
         }
         //optional fast path (DBCLI_BULK_WRITE=on), see BulkCellWriter
-        this.bulkWriter = BulkCellWriter.isEnabled() ? new BulkCellWriter(console) : null;
+        this.bulkWriter = BulkCellWriter.CONFIG.enabled ? new BulkCellWriter(console) : null;
     }
 
     private static boolean loadLibrary() {
@@ -159,11 +159,8 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
         }
     }
 
-    /**
-     * One bounded line, once. The old handler built a second copy of the whole buffer and called
-     * substring(0, 32) on it, which threw StringIndexOutOfBoundsException for any buffer shorter
-     * than 32 chars - inside the catch block, so it masked the failure it was reporting.
-     */
+    /** One bounded line, once per writer: this runs inside a failure path, so it must not allocate
+     *  a second copy of the buffer or throw on its own way out. */
     private void report(String message) {
         if (reported.compareAndSet(false, true)) {
             System.err.println(message);

@@ -2,42 +2,24 @@ package org.dbcli;
 
 import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 
-import static org.jline.nativ.Kernel32.*;
+import static org.jline.nativ.Kernel32.WriteConsoleW;
 
+/**
+ * Writes JLine's finished text straight to the console handle, so the console itself has to render
+ * the escapes: the writer for a VTP console and for Windows Terminal. A console that cannot render
+ * them gets {@link ConEmuWriter}, which hands the text to ConEmuHk instead.
+ */
 public final class WinConsoleWriter extends AbstractWindowsConsoleWriter {
-    /** index asking for the in-process ANSI renderer, see ConEmuWriter */
-    private static final int CONEMU = 1;
-    private final ConEmuWriter conEmuWriter;
     private final long console;
     private final int[] writtenChars = new int[1];
 
-    public WinConsoleWriter(long console, int index) {
+    public WinConsoleWriter(long console) {
         super();
         this.console = console;
-        //Index 1 renders ANSI in-process through ConEmuHk; every other index writes the text
-        //through WriteConsoleW (the console then is a VTP one, or Windows Terminal's).
-        this.conEmuWriter = index == CONEMU ? new ConEmuWriter(console) : null;
-    }
-
-    public WinConsoleWriter(long console) {
-        this(console, 2);
     }
 
     @Override
-    protected final void writeConsole(char[] text, int len) {
-        if (conEmuWriter != null) {
-            conEmuWriter.writeConsole(text, len);
-        } else {
-            WriteConsoleW(console, text, len, writtenChars, 0);
-        }
-    }
-
-    @Override
-    public void close() {
-        if (conEmuWriter != null) {
-            //prints the optional bulk-writer statistics; it never unloads ConEmuHk
-            conEmuWriter.close();
-        }
-        super.close();
+    protected void writeConsole(char[] text, int len) {
+        WriteConsoleW(console, text, len, writtenChars, 0);
     }
 }

@@ -141,13 +141,14 @@ public final class Console {
                     .jansi(false)
                     .jna("jna".equals(mode))
                     .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode) || "default".equals(mode))
-                    .ffm("ffm".equals(mode)) // || "default".equals(mode) default to disable due to possible warning
+                    // ffm stays out of the default mode set: it can warn on start up
+                    .ffm("ffm".equals(mode))
                     .nativeSignals(true)
                     .signalHandler(Terminal.SignalHandler.SIG_IGN)
                     .build();
         }
         //A dumb terminal carries no size, which degenerates every width-dependent layout (grid/colwrap/line
-        //trimming). Defaults are unchanged; DBCLI_BUFFER_COLS/DBCLI_BUFFER_ROWS (or COLUMNS/LINES) opt into a fixed size.
+        //trimming). DBCLI_BUFFER_COLS/DBCLI_BUFFER_ROWS (or COLUMNS/LINES) opt into a fixed size.
         if (this.terminal instanceof DumbTerminal) {
             int cols = envInt("DBCLI_BUFFER_COLS", envInt("COLUMNS", 0));
             int rows = envInt("DBCLI_BUFFER_ROWS", envInt("LINES", 0));
@@ -326,7 +327,7 @@ public final class Console {
         //whole screen goes out as one block (home, rows, erase to end of line). The writer then paints
         //it with a single WriteConsoleOutputW instead of one cursor addressed write per row, which is
         //the difference between "the screen appears" and "the screen paints itself line by line".
-        if (bulkDisplay()) {
+        if (isBulkBlockEnabled(terminal)) {
             int height = getScreenHeight();
             List<AttributedString> lines = Arrays.stream(args)
                     .map(s -> s == null ? null : AttributedString.fromAnsi(s))
@@ -369,22 +370,18 @@ public final class Console {
     }
 
 
-    /** the ConEmu console (no ENABLE_VIRTUAL_TERMINAL_PROCESSING) with the rectangle writer enabled */
+    /**
+     * The ConEmu console (no ENABLE_VIRTUAL_TERMINAL_PROCESSING) with the rectangle writer on and not
+     * held to safe mode. A real ConEmu window counts as well: there dbcli gets JLine's native Windows
+     * terminal (Console.java:118 skips dbcli's own WinSysTerminal), whose type is still windows-conemu
+     * (NativeWinSysTerminal.java:74 picks it when TERM is unset and ConEmuPID is set). That is not
+     * incidental - the repaint the screen block replaces goes through Display.clear(), which makes
+     * Display.update emit clear_screen (\e[H\E[J for windows-conemu) and wipes the screen.
+     */
     static boolean isBulkBlockEnabled(Terminal terminal) {
-        return BulkCellWriter.isEnabled()
-                && !BulkCellWriter.isSafe()
+        return BulkCellWriter.CONFIG.enabled
+                && !BulkCellWriter.CONFIG.safe
                 && AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType());
-    }
-
-    private boolean bulkDisplay() {
-        // The screen block is plain ANSI, so it needs no rectangle writer - only a terminal that can
-        // take ANSI as-is. Inside a real ConEmu window dbcli gets JLine's native Windows terminal
-        // (Console.java:118 skips dbcli's own WinSysTerminal there), whose type is still windows-conemu
-        // (NativeWinSysTerminal.java:74 picks it when TERM is unset and ConEmuPID is set) - so this is
-        // true there as well. That matters: the repaint this replaces goes through Display.clear(),
-        // which makes Display.update emit clear_screen (\e[H\E[J for windows-conemu) and wipes the
-        // screen - it is why leaving the pager used to clear everything in a real ConEmu window.
-        return isBulkBlockEnabled(terminal);
     }
 
     public void handleResize(Terminal.Signal signal) {
@@ -579,8 +576,8 @@ public final class Console {
         //Less less=new Less(terminal, null);
         less.noInit = true;
         less.veryQuiet = true;
-        //Digits of the largest line number, not ceil(log10(n)): that came out one short for 1000,
-        //10000, ... and then every numbered row was one column wider than the budget.
+        //Digits of the largest line number, not ceil(log10(n)): log10 comes out one short at 1000,
+        //10000, ... and every numbered row is then one column wider than the budget.
         less.numWidth = Math.max(3, String.valueOf(lines < 10 ? 10 : lines).length());
         less.padding = spaces;
         less.setTitleLines(titleLines);
@@ -592,11 +589,9 @@ public final class Console {
             //a silent '?' for anything the platform charset cannot encode).
             less.runText("", output);
         } catch (Throwable e) {
-            //Must catch Throwable: an Error (the OOM the pager raises on a huge result set) is not an
-            //Exception, so it is the case the old code could not report. Note that an escaping
-            //Throwable *was* already reported by printer.lua's pcall(console.less, ...) - what
-            //vanished was a caught Nothing: the old body printed the stack trace to stderr only, and
-            //a database session has no visible stderr. Report on the terminal as well.
+            //Throwable, not Exception: an Error (the OOM a huge result set raises in the pager) is not
+            //an Exception. And report on the terminal, not to stderr - a database session has no
+            //visible stderr, so a stack trace printed there is a command that appears to do nothing.
             try {
                 println("");
                 println("[more failed: " + e + "]");
