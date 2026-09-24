@@ -1,7 +1,6 @@
 package org.dbcli;
 
 
-import java.io.BufferedWriter;
 import java.io.IOError;
 import java.io.IOException;
 import java.io.Writer;
@@ -22,7 +21,6 @@ import org.jline.terminal.Size;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.terminal.impl.AbstractWindowsTerminal;
 import org.jline.terminal.impl.jni.JniTerminalProvider;
-import org.jline.terminal.impl.jni.win.WindowsAnsiWriter;
 import org.jline.terminal.spi.SystemStream;
 import org.jline.terminal.spi.TerminalProvider;
 import org.jline.utils.InfoCmp;
@@ -113,8 +111,12 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 type = type != null ? type : TYPE_WINDOWS_CONEMU;
                 writer = newConsoleWriter(console);
             } else {
-                type = type != null ? type : TYPE_WINDOWS;
-                writer = new WindowsAnsiWriter(new BufferedWriter(newConsoleWriter(console)));
+                // The console cannot parse the escapes itself and is not ConEmu, so somebody has to
+                // render them: the native renderer in ConEmuWriter does the parsing and paints the
+                // cells. The alternative here was JLine's WindowsAnsiWriter, which issues one console
+                // call per character and costs seconds on a large result set.
+                type = TYPE_WINDOWS_CONEMU;
+                writer = new ConEmuWriter(console);
             }
         }
         // Create terminal
@@ -270,23 +272,35 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         }
     }
 
-    final Size size = new Size();
-    final CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
-
+    /* Two rules, both learned from what they cost.
+     *
+     * The caller keeps what it is handed. One shared, mutated Size used to serve both questions, so a
+     * caller that held getSize() across a getBufferSize() call woke up with 2000x9001 in a variable it
+     * had read as a window (measured: the two calls returned the same object identity). The contract in
+     * this codebase is a copy -- LineDisciplineTerminal.getSize() does exactly that, and jline's own
+     * NativeWinSysTerminal returns distinct objects.
+     *
+     * A failed query is not a size. GetConsoleScreenBufferInfo writes nothing when it fails, so the
+     * struct kept whatever was last in it -- zeros on the first call -- and windowWidth() turned 0-0+1
+     * into a plausible 1x1 while the buffer answer came out a flat 0x0. Display.resize() then reads a
+     * 0 as "one row, two billion columns" and the status bar quietly draws a line the width of an
+     * integer; the width check in Console.setStatus() reads the same zero as "no status bar". Both were
+     * silent. The convention for a failed console call here is getCursorPosition(): throw. */
     public Size getSize() {
-        Kernel32.GetConsoleScreenBufferInfo(outConsole, info);
-        size.setColumns(info.windowWidth());
-        size.setRows(info.windowHeight());
-        return size;
-
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        if (GetConsoleScreenBufferInfo(outConsole, info) == 0) {
+            throw new IOError(new IOException("Could not get the window size: " + getLastErrorMessage()));
+        }
+        return new Size(info.windowWidth(), info.windowHeight());
     }
 
     @Override
     public Size getBufferSize() {
-        Kernel32.GetConsoleScreenBufferInfo(outConsole, info);
-        size.setColumns(info.size.x);
-        size.setRows(info.size.y);
-        return size;
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        if (GetConsoleScreenBufferInfo(outConsole, info) == 0) {
+            throw new IOError(new IOException("Could not get the buffer size: " + getLastErrorMessage()));
+        }
+        return new Size(info.size.x, info.size.y);
     }
 
     private volatile long prevTime = 0;

@@ -4,6 +4,7 @@ import com.sun.jna.Native;
 import com.zaxxer.nuprocess.NuAbstractProcessHandler;
 import com.zaxxer.nuprocess.NuProcess;
 import com.zaxxer.nuprocess.NuProcessBuilder;
+import org.jline.utils.OSUtils;
 
 import java.io.Closeable;
 import java.io.File;
@@ -94,6 +95,11 @@ public class SubSystem {
                         return;
                     }
                     //Busy running a command: never fake completion, count strikes instead.
+                    if (!OSUtils.IS_WINDOWS) {
+                        //NuProcess never calls setsid/setpgid, so the child shares our foreground process
+                        //group and the kernel already delivered SIGINT to it; jline keeps ISIG on.
+                        return;
+                    }
                     if (killRequested) return;
                     int n = ctrlCCount.incrementAndGet();
                     if (n >= 3) {

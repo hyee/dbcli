@@ -23,14 +23,19 @@
  *     introducer: both consoles then print the following graphic byte, so it counts 1.
  *   - TAB is the only C0 control that advances the cursor; the rest of C0, DEL and the
  *     C1 range count 0.
- *   - Malformed UTF-8 counts one column per byte (what a terminal shows as U+FFFD) and
- *     advances a single byte, so illegal bytes can never smuggle in a width class.
+ *   - Malformed UTF-8 counts one column per byte and advances a single byte, so illegal
+ *     bytes can never smuggle in a width class. What the terminal then shows -- a U+FFFD,
+ *     which the table itself gives two columns -- is a rendering, not a width: the byte
+ *     sequence is what the cursor moved over, and it is counted one column at a time.
  *   - Code point widths come from ansi_width_tables.h, generated from Unicode 15:
- *     Mn/Me/Cf -> 0, EastAsianWidth W/F -> 2, everything else, including EAW=A, -> 1,
- *     plus three measured supplements the generator applies: the Cf characters terminals
- *     still draw (soft hyphen, the Prepended_Concatenation_Marks) at 1, conjoining Hangul
- *     jamo at 0, and the Yijing hexagrams at 2. Mc spacing marks such as U+09BE therefore
- *     count 1, which lutf8lib.c's utf8.width gets wrong.
+ *     Mn/Me/Cf -> 0, EastAsianWidth W/F -> 2, plus three measured supplements the generator
+ *     applies: the Cf characters terminals still draw (soft hyphen, the
+ *     Prepended_Concatenation_Marks) at 1, conjoining Hangul jamo at 0, and the Yijing
+ *     hexagrams at 2. EastAsianWidth A -> 2, except for the code points measured one cell in
+ *     every console font (box drawing, block elements, the accented Latin letters), which
+ *     stay 1; see AMBIGUOUS_NARROW in gen_ansi_tables.py for the measurement and what it
+ *     cost. Mc spacing marks such as U+09BE therefore count 1, which lutf8lib.c's utf8.width
+ *     gets wrong.
  *   - There is no grapheme clustering: measured, conhost and xterm lay out one code point
  *     at a time, while Windows Terminal collapses an emoji ZWJ sequence and a
  *     regional-indicator pair into a single cell. Per-code-point matches the majority of

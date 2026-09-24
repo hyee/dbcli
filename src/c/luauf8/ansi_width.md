@@ -27,7 +27,7 @@ replaced** — all that changed is that the byte count can now be attributed to 
 
 ### 1.1 The order in which a code point is decided
 
-`cp_width()` (`ansi_width.c:63-74`) reads the generated `ansi_width_tables.h` (478 intervals plus a
+`cp_width()` (`ansi_width.c:63-74`) reads the generated `ansi_width_tables.h` (594 intervals plus a
 4352-entry per-256-code-point block map, Unicode 15.0.0). The order matters:
 
 | Step | Test | Result |
@@ -36,19 +36,39 @@ replaced** — all that changed is that the byte count can now be attributed to 
 | 2 | `Cc`, DEL, NUL | 0 |
 | 3 | EastAsianWidth `W` or `F` | 2 |
 | 4 | undesignated code points inside the CJK ideograph blocks and Planes 2/3 | 2 (the UAX #11 default) |
-| 5 | everything else, including EAW=`A` | 1 (ambiguous width gets no opt-in; narrow is the shipping default of every terminal in scope) |
+| 5 | EastAsianWidth `A` | 2 — **except** `AMBIGUOUS_NARROW`, which stays 1 |
+
+`AMBIGUOUS_NARROW` is 206 code points measured one cell in **every** console font the console would
+accept (box drawing U+2500..U+254B and U+2550..U+2573, block elements U+2580..U+258F and
+U+2592..U+2595, the accented Latin letters and signs). Step 5 and the exception are the ruling, not a
+default: conhost's answer for an ambiguous code point moves with the **font** and not with the code
+page, so 620 further ambiguous points are wide in some fonts and narrow in others and count 2 here
+anyway. `gen_ansi_tables.py` carries the measurement, the sweep script paths and what the ruling costs.
 
 Three **measured supplements** cover the code points where Unicode's properties and what a terminal
 actually draws disagree: `DRAWN_CF`→1 (SOFT HYPHEN plus the 13 Prepended_Concatenation_Marks),
 `JAMO_ZERO`→0 (conjoining Hangul jamo), `Yijing`→2 (U+4DC0..U+4DFF).
 
-Each is a reading off a real cursor, taken from four witnesses: **conhost** and **Windows Terminal**
+Each is a reading off a real cursor, taken from five witnesses: **conhost** and **Windows Terminal**
 (`CreateFileW("CONOUT$")` + `WriteConsoleW`, then `GetConsoleScreenBufferInfo` to read the cursor
 column back), **xterm** (raw bytes to `/dev/tty` in termios raw mode, position reported back with
 `ESC[6n`), **glibc** (`wcwidth()` over all code points, C.UTF-8), and **`unidata.h`** (this module's
 own second width table). Two caveats shaped the verdicts: `WriteConsoleW` takes UTF-16, so the Windows
-probes cannot test raw malformed bytes at all — only the xterm pty is valid at byte level; and xterm
-mirrors glibc's `wcwidth()` for every assigned code point, so the two are **one** witness, not two.
+probes cannot test raw malformed bytes at all — only the xterm pty is valid at byte level; and xterm's
+*default* answer for every assigned code point is glibc's, which makes the two agree and stops them
+from being counted twice.
+
+xterm is nonetheless the witness that matters for the ruling, because it is the only terminal here that
+ships the ruling as a switch: its `cjkWidth` resource (`-cjk_width`) is documented as "characters with
+East Asian Ambiguous (A) category in UTR 11 have a column width of 2" — step 5 with no exception list —
+and `-mk_width` puts xterm's own tables in front of glibc. All three configurations were run over the
+7,324-point sample (§6): `-cjk_width` agrees with this table on 7,117 points and disagrees on 207 —
+the 206 `AMBIGUOUS_NARROW` code points, which xterm doubles and this table does not, plus SOFT HYPHEN,
+which this table draws at 1 and xterm erases to 0. So the blanket half of the ruling is a shipping
+terminal's answer reproduced point for point, and the exception list is the only place we part company
+with it. That configuration also gives the 128 sampled Mn of U+0300..U+037F zero columns while counting
+every ambiguous letter, digit and sign as two — step 3 before step 5, arrived at independently.
+
 
 ### 1.2 Escapes, control characters and malformed UTF-8
 
@@ -97,32 +117,39 @@ mirrors glibc's `wcwidth()` for every assigned code point, so the two are **one*
 | width | code points | runs | what lands in this class |
 |---|---|---|---|
 | 0 | 2450 | 358 | Mn/Me/Cf combining and format characters, C0 (TAB excepted), DEL, C1, conjoining Hangul jamo |
-| 1 | 929088 | 471 | the default: everything else, including EastAsianWidth=A |
-| 2 | 182573 | 121 | EastAsianWidth W/F, undesignated code points inside the CJK ideograph blocks, Yijing U+4DC0..4DFF |
+| 1 | 788876 | 586 | the default: everything else, including the 206 `AMBIGUOUS_NARROW` code points and the Latin/Greek/Cyrillic letters Unicode does not mark wide |
+| 2 | 320737 | 237 | EastAsianWidth W/F, EastAsianWidth A by the ruling, undesignated code points inside the CJK ideograph blocks, Yijing U+4DC0..4DFF |
 | 8 | 1 | 1 | the reading of a lone TAB in the single-code-point sweep -- see the note below, TAB is not a fixed width |
 
 > The TAB row is an artifact of the **single-code-point** sweep: `ansi_width` starts at col=0, so a lone TAB reads 8. In a real string the width of a TAB depends on which stop it hits -- anything from `1..8` is possible (§4.4).
 
-An earlier sweep reported 953 run-length lines and `other=2049` where this section says 951. It **fed
-the 2048 surrogate code points in as their 3-byte CESU form**; all of them are rejected and each reads 3,
-which adds one `w3=2048` run. This document skips the surrogate range. Both policies, measured:
+Run counts move with the ruling more than code-point counts do: 586 narrow runs against 471 before it,
+because `AMBIGUOUS_NARROW` carves 53 narrow islands out of what was one wide expanse, and 237 wide runs
+against 121 because those islands split the wide runs too. An earlier sweep reported `other=2049` where
+this section says 2048. It **fed the 2048 surrogate code points in as their 3-byte CESU form**; every one
+is rejected and reads one column per byte, which adds one `w3=2048` run. Both policies, measured:
 
 | policy | code points | runs | histogram |
 |---|---|---|---|
-| skip U+D800..DFFF (this document, §4) | 1,112,064 | 951 | 0=2450 / 1=927040 / 2=182573 / 8=1 |
-| feed the surrogate range as its 3-byte CESU form | 1,114,112 | 953 | 0=2450 / 1=927040 / 2=182573 / 3=2048 / 8=1 |
+| skip U+D800..DFFF (this document, §4) | 1,112,064 | 1182 | 0=2450 / 1=788876 / 2=320737 / 8=1 |
+| feed the surrogate range as its 3-byte CESU form | 1,114,112 | 1183 | 0=2450 / 1=788876 / 2=320737 / 3=2048 / 8=1 |
 
 The two agree on everything except the surrogate run, and the `0/1/2` histogram counts match to the digit.
 
 ## 3. How this relates to `utf8.width` (`unidata.h`)
 
 The module ships two width tables: `utf8.ansi_width` (documented here, measured) and `utf8.width`
-(`lutf8lib.c` plus a frozen `unidata.h`). They disagree on 4518 of 1,112,059 code points, in four
-buckets, and **every bucket is `unidata.h`'s error**: 3905 Mc spacing marks judged 0 (measured 1), 311
-C0/C1 controls and conjoining jamo judged 1, 296 trigram/Tai-Xuan-Jing and coarse-range holes judged 2,
-and 6 code points judged 0 where EAW says W. On top of that `utf8.width` takes a **code point integer**,
-so passing it a string silently yields garbage (`Lutf8_width` reads `lua_tointeger`).
-The buckets above are the whole disagreement set; new code should use `ansi_width`.
+(`lutf8lib.c` plus a frozen `unidata.h`). They disagree on 142687 of 1,112,064 code points. One term of
+that sum is the ambiguous ruling (§1.1) and nothing else: 138165 code points East Asian Width `A` — 131217
+of them astral private use, 6948 in the BMP — where `unidata.h` has no wide answer to give. The remaining
+4522 split into four buckets, and **every one of those is `unidata.h`'s error**: 3904 judged 0 where this
+table gives 1 (3851 unassigned holes, 50 Mc spacing marks, 3 letters), 315 judged 1 where this table gives 0
+(64 C0/C1 controls, 231 conjoining Hangul jamo, 20 format and combining marks), 296 judged 2 where this
+table gives 1 (the trigram and Tai-Xuan-Jing blocks plus coarse-range holes), and 6 judged 0 where EAW says
+W -- U+115F, U+302E, U+302F, U+3164, U+16FF0, U+16FF1. A lone TAB is the seventh pair only because
+`utf8.width` never sees one: the sweep hands it a code point integer, and `Lutf8_width` reads
+`lua_tointeger`, so passing it a string silently yields garbage. New code should use `ansi_width`; the
+buckets above are the whole disagreement set but for the ruling.
 
 ## 4. Character width tables (all measured)
 
@@ -492,45 +519,156 @@ resolves to 0.
 | 96 | `U+E0020` | `U+E007F` | 0 |
 | 240 | `U+E0100` | `U+E01EF` | 0 |
 
-### 4.2 Code point intervals of width 2 (121 runs, complete)
+### 4.2 Code point intervals of width 2 (237 runs, complete)
 
 | code points | from | to | width |
 |---|---|---|---|
+| 1 | `U+00A4` | `U+00A4` | 2 |
+| 2 | `U+00A7` | `U+00A8` | 2 |
+| 2 | `U+00B0` | `U+00B1` | 2 |
+| 1 | `U+00B4` | `U+00B4` | 2 |
+| 2 | `U+00B6` | `U+00B7` | 2 |
+| 1 | `U+00D7` | `U+00D7` | 2 |
+| 1 | `U+00F7` | `U+00F7` | 2 |
+| 1 | `U+0111` | `U+0111` | 2 |
+| 2 | `U+0126` | `U+0127` | 2 |
+| 1 | `U+0132` | `U+0132` | 2 |
+| 3 | `U+0149` | `U+014B` | 2 |
+| 1 | `U+01CE` | `U+01CE` | 2 |
+| 1 | `U+01D0` | `U+01D0` | 2 |
+| 1 | `U+01D2` | `U+01D2` | 2 |
+| 1 | `U+01D4` | `U+01D4` | 2 |
+| 1 | `U+01D6` | `U+01D6` | 2 |
+| 1 | `U+01D8` | `U+01D8` | 2 |
+| 1 | `U+01DA` | `U+01DA` | 2 |
+| 1 | `U+01DC` | `U+01DC` | 2 |
+| 1 | `U+02C4` | `U+02C4` | 2 |
+| 1 | `U+02C7` | `U+02C7` | 2 |
+| 3 | `U+02C9` | `U+02CB` | 2 |
+| 1 | `U+02D9` | `U+02D9` | 2 |
+| 1 | `U+02DF` | `U+02DF` | 2 |
+| 17 | `U+0391` | `U+03A1` | 2 |
+| 7 | `U+03A3` | `U+03A9` | 2 |
+| 17 | `U+03B1` | `U+03C1` | 2 |
+| 7 | `U+03C3` | `U+03C9` | 2 |
+| 1 | `U+0401` | `U+0401` | 2 |
+| 64 | `U+0410` | `U+044F` | 2 |
+| 1 | `U+0451` | `U+0451` | 2 |
 | 96 | `U+1100` | `U+115F` | 2 |
+| 1 | `U+2010` | `U+2010` | 2 |
+| 4 | `U+2013` | `U+2016` | 2 |
+| 2 | `U+2018` | `U+2019` | 2 |
+| 2 | `U+201C` | `U+201D` | 2 |
+| 2 | `U+2020` | `U+2021` | 2 |
+| 2 | `U+2025` | `U+2026` | 2 |
+| 1 | `U+2030` | `U+2030` | 2 |
+| 2 | `U+2032` | `U+2033` | 2 |
+| 1 | `U+2035` | `U+2035` | 2 |
+| 1 | `U+203B` | `U+203B` | 2 |
+| 1 | `U+20AC` | `U+20AC` | 2 |
+| 1 | `U+2103` | `U+2103` | 2 |
+| 1 | `U+2105` | `U+2105` | 2 |
+| 1 | `U+2109` | `U+2109` | 2 |
+| 1 | `U+2116` | `U+2116` | 2 |
+| 1 | `U+2121` | `U+2121` | 2 |
+| 1 | `U+2126` | `U+2126` | 2 |
+| 1 | `U+212B` | `U+212B` | 2 |
+| 2 | `U+2153` | `U+2154` | 2 |
+| 4 | `U+215B` | `U+215E` | 2 |
+| 12 | `U+2160` | `U+216B` | 2 |
+| 10 | `U+2170` | `U+2179` | 2 |
+| 1 | `U+2189` | `U+2189` | 2 |
+| 10 | `U+2190` | `U+2199` | 2 |
+| 2 | `U+21B8` | `U+21B9` | 2 |
+| 1 | `U+21D2` | `U+21D2` | 2 |
+| 1 | `U+21D4` | `U+21D4` | 2 |
+| 1 | `U+21E7` | `U+21E7` | 2 |
+| 1 | `U+2200` | `U+2200` | 2 |
+| 2 | `U+2202` | `U+2203` | 2 |
+| 2 | `U+2207` | `U+2208` | 2 |
+| 1 | `U+220B` | `U+220B` | 2 |
+| 1 | `U+220F` | `U+220F` | 2 |
+| 1 | `U+2211` | `U+2211` | 2 |
+| 1 | `U+2215` | `U+2215` | 2 |
+| 1 | `U+221A` | `U+221A` | 2 |
+| 4 | `U+221D` | `U+2220` | 2 |
+| 1 | `U+2223` | `U+2223` | 2 |
+| 1 | `U+2225` | `U+2225` | 2 |
+| 6 | `U+2227` | `U+222C` | 2 |
+| 1 | `U+222E` | `U+222E` | 2 |
+| 4 | `U+2234` | `U+2237` | 2 |
+| 2 | `U+223C` | `U+223D` | 2 |
+| 1 | `U+2248` | `U+2248` | 2 |
+| 1 | `U+224C` | `U+224C` | 2 |
+| 1 | `U+2252` | `U+2252` | 2 |
+| 2 | `U+2260` | `U+2261` | 2 |
+| 4 | `U+2264` | `U+2267` | 2 |
+| 2 | `U+226A` | `U+226B` | 2 |
+| 2 | `U+226E` | `U+226F` | 2 |
+| 2 | `U+2282` | `U+2283` | 2 |
+| 2 | `U+2286` | `U+2287` | 2 |
+| 1 | `U+2295` | `U+2295` | 2 |
+| 1 | `U+2299` | `U+2299` | 2 |
+| 1 | `U+22A5` | `U+22A5` | 2 |
+| 1 | `U+22BF` | `U+22BF` | 2 |
+| 1 | `U+2312` | `U+2312` | 2 |
 | 2 | `U+231A` | `U+231B` | 2 |
 | 2 | `U+2329` | `U+232A` | 2 |
 | 4 | `U+23E9` | `U+23EC` | 2 |
 | 1 | `U+23F0` | `U+23F0` | 2 |
 | 1 | `U+23F3` | `U+23F3` | 2 |
+| 138 | `U+2460` | `U+24E9` | 2 |
+| 21 | `U+24EB` | `U+24FF` | 2 |
+| 2 | `U+25A0` | `U+25A1` | 2 |
+| 7 | `U+25A3` | `U+25A9` | 2 |
+| 2 | `U+25B2` | `U+25B3` | 2 |
+| 2 | `U+25B6` | `U+25B7` | 2 |
+| 2 | `U+25BC` | `U+25BD` | 2 |
+| 2 | `U+25C0` | `U+25C1` | 2 |
+| 3 | `U+25C6` | `U+25C8` | 2 |
+| 1 | `U+25CB` | `U+25CB` | 2 |
+| 4 | `U+25CE` | `U+25D1` | 2 |
+| 4 | `U+25E2` | `U+25E5` | 2 |
+| 1 | `U+25EF` | `U+25EF` | 2 |
 | 2 | `U+25FD` | `U+25FE` | 2 |
+| 2 | `U+2605` | `U+2606` | 2 |
+| 1 | `U+2609` | `U+2609` | 2 |
+| 2 | `U+260E` | `U+260F` | 2 |
 | 2 | `U+2614` | `U+2615` | 2 |
+| 1 | `U+261C` | `U+261C` | 2 |
+| 1 | `U+261E` | `U+261E` | 2 |
+| 1 | `U+2640` | `U+2640` | 2 |
+| 1 | `U+2642` | `U+2642` | 2 |
 | 12 | `U+2648` | `U+2653` | 2 |
+| 2 | `U+2660` | `U+2661` | 2 |
+| 3 | `U+2663` | `U+2665` | 2 |
+| 4 | `U+2667` | `U+266A` | 2 |
+| 2 | `U+266C` | `U+266D` | 2 |
+| 1 | `U+266F` | `U+266F` | 2 |
 | 1 | `U+267F` | `U+267F` | 2 |
 | 1 | `U+2693` | `U+2693` | 2 |
+| 2 | `U+269E` | `U+269F` | 2 |
 | 1 | `U+26A1` | `U+26A1` | 2 |
 | 2 | `U+26AA` | `U+26AB` | 2 |
-| 2 | `U+26BD` | `U+26BE` | 2 |
-| 2 | `U+26C4` | `U+26C5` | 2 |
-| 1 | `U+26CE` | `U+26CE` | 2 |
-| 1 | `U+26D4` | `U+26D4` | 2 |
-| 1 | `U+26EA` | `U+26EA` | 2 |
-| 2 | `U+26F2` | `U+26F3` | 2 |
-| 1 | `U+26F5` | `U+26F5` | 2 |
-| 1 | `U+26FA` | `U+26FA` | 2 |
-| 1 | `U+26FD` | `U+26FD` | 2 |
+| 3 | `U+26BD` | `U+26BF` | 2 |
+| 30 | `U+26C4` | `U+26E1` | 2 |
+| 1 | `U+26E3` | `U+26E3` | 2 |
+| 24 | `U+26E8` | `U+26FF` | 2 |
 | 1 | `U+2705` | `U+2705` | 2 |
 | 2 | `U+270A` | `U+270B` | 2 |
 | 1 | `U+2728` | `U+2728` | 2 |
+| 1 | `U+273D` | `U+273D` | 2 |
 | 1 | `U+274C` | `U+274C` | 2 |
 | 1 | `U+274E` | `U+274E` | 2 |
 | 3 | `U+2753` | `U+2755` | 2 |
 | 1 | `U+2757` | `U+2757` | 2 |
+| 10 | `U+2776` | `U+277F` | 2 |
 | 3 | `U+2795` | `U+2797` | 2 |
 | 1 | `U+27B0` | `U+27B0` | 2 |
 | 1 | `U+27BF` | `U+27BF` | 2 |
 | 2 | `U+2B1B` | `U+2B1C` | 2 |
 | 1 | `U+2B50` | `U+2B50` | 2 |
-| 1 | `U+2B55` | `U+2B55` | 2 |
+| 5 | `U+2B55` | `U+2B59` | 2 |
 | 26 | `U+2E80` | `U+2E99` | 2 |
 | 89 | `U+2E9B` | `U+2EF3` | 2 |
 | 214 | `U+2F00` | `U+2FD5` | 2 |
@@ -543,18 +681,19 @@ resolves to 0.
 | 94 | `U+3131` | `U+318E` | 2 |
 | 84 | `U+3190` | `U+31E3` | 2 |
 | 47 | `U+31F0` | `U+321E` | 2 |
-| 40 | `U+3220` | `U+3247` | 2 |
-| 29245 | `U+3250` | `U+A48C` | 2 |
+| 29293 | `U+3220` | `U+A48C` | 2 |
 | 55 | `U+A490` | `U+A4C6` | 2 |
 | 29 | `U+A960` | `U+A97C` | 2 |
 | 11172 | `U+AC00` | `U+D7A3` | 2 |
-| 512 | `U+F900` | `U+FAFF` | 2 |
+| 1991 | `U+E000` | `U+E7C6` | 2 |
+| 4919 | `U+E7C9` | `U+FAFF` | 2 |
 | 10 | `U+FE10` | `U+FE19` | 2 |
 | 35 | `U+FE30` | `U+FE52` | 2 |
 | 19 | `U+FE54` | `U+FE66` | 2 |
 | 4 | `U+FE68` | `U+FE6B` | 2 |
 | 96 | `U+FF01` | `U+FF60` | 2 |
 | 7 | `U+FFE0` | `U+FFE6` | 2 |
+| 1 | `U+FFFD` | `U+FFFD` | 2 |
 | 4 | `U+16FE0` | `U+16FE3` | 2 |
 | 2 | `U+16FF0` | `U+16FF1` | 2 |
 | 6136 | `U+17000` | `U+187F7` | 2 |
@@ -571,8 +710,10 @@ resolves to 0.
 | 396 | `U+1B170` | `U+1B2FB` | 2 |
 | 1 | `U+1F004` | `U+1F004` | 2 |
 | 1 | `U+1F0CF` | `U+1F0CF` | 2 |
-| 1 | `U+1F18E` | `U+1F18E` | 2 |
-| 10 | `U+1F191` | `U+1F19A` | 2 |
+| 11 | `U+1F100` | `U+1F10A` | 2 |
+| 30 | `U+1F110` | `U+1F12D` | 2 |
+| 58 | `U+1F130` | `U+1F169` | 2 |
+| 61 | `U+1F170` | `U+1F1AC` | 2 |
 | 3 | `U+1F200` | `U+1F202` | 2 |
 | 44 | `U+1F210` | `U+1F23B` | 2 |
 | 9 | `U+1F240` | `U+1F248` | 2 |
@@ -617,6 +758,8 @@ resolves to 0.
 | 9 | `U+1FAF0` | `U+1FAF8` | 2 |
 | 65534 | `U+20000` | `U+2FFFD` | 2 |
 | 65534 | `U+30000` | `U+3FFFD` | 2 |
+| 65534 | `U+F0000` | `U+FFFFD` | 2 |
+| 65534 | `U+100000` | `U+10FFFD` | 2 |
 
 ### 4.3 Raw single-byte readings (0x00..0xFF, run-length compressed)
 
@@ -727,7 +870,7 @@ all 28 rows are `OK`.
 | `U+2E80` | 3 | **2** | CJK RADICAL REPEAT (W) |
 | `U+3000` | 3 | **2** | IDEOGRAPHIC SPACE (F) |
 | `U+3099` | 3 | **0** | COMBINING KANA VOICED (Mn AND W) |
-| `U+3248` | 3 | **1** | CIRCLED NUMBER FORTY-EIGHT (EAW=A) |
+| `U+3248` | 3 | **2** | CIRCLED NUMBER FORTY-EIGHT (EAW=A: wide by the ruling) |
 | `U+4DC0` | 3 | **2** | YI HEXAGRAM 1 (Yijing) |
 | `U+4DFF` | 3 | **2** | YI HEXAGRAM 64 (Yijing) |
 | `U+4E00` | 3 | **2** | CJK UNIFIED IDEOGRAPH-4E00 |
@@ -737,7 +880,9 @@ all 28 rows are `OK`.
 | `U+1F1E6` | 4 | **1** | REGIONAL INDICATOR A |
 | `U+16FE0` | 4 | **2** | TANGUT ITERATION MARK (W) |
 | `U+E0001` | 4 | **0** | LANGUAGE TAG |
-| `U+F0000` | 4 | **1** | PLANE 15 PRIVATE |
+| `U+F0000` | 4 | **2** | PLANE 15 PRIVATE (EAW=A: wide in every font measured) |
+| `U+2500` | 3 | **1** | BOX DRAWINGS LIGHT HORIZONTAL (EAW=A, but 1 cell in all six console fonts) |
+| `U+00B0` | 2 | **2** | DEGREE SIGN (EAW=A: 1 cell in the Western fonts, 2 in the CJK ones) |
 
 ### 4.7 Malformed UTF-8 and the validator
 
@@ -934,12 +1079,16 @@ bytes verbatim):
 
 | Gate | Scope | Result |
 |---|---|---|
-| Build self-check | `build.sh` asserts the model inline on 4 targets (x64 / x86 / linux / linux-arm): SGR skip, wide=2, the four TAB stops, widest-line, the CR/BS high-water mark, the OSC abandon rules, SS2/SS3, the whole drawn Cf set, the jamo syllable, the Yijing block, malformed UTF-8, nil, the `ansi_cut` cuts, and the byte half (value count, per-line attribution, tie-goes-to-the-first-line, CR/CRLF/BS byte attribution, a zero-width line still reporting its own bytes) | all pass, no new compiler warnings |
+| Build self-check | `build.sh` asserts the model inline on 4 targets (x64 / x86 / linux / linux-arm): SGR skip, wide=2, the four TAB stops, widest-line, the CR/BS high-water mark, the OSC abandon rules, SS2/SS3, the whole drawn Cf set, the jamo syllable, the Yijing block, both outcomes of the ambiguous ruling (the six `AMBIGUOUS_NARROW` code points at 1, and private use / U+3248 / degree / black square / right arrow / plane 15 at 2, plus a four-cell box top), malformed UTF-8, nil, the `ansi_cut` cuts, and the byte half (value count, per-line attribution, tie-goes-to-the-first-line, CR/CRLF/BS byte attribution, a zero-width line still reporting its own bytes) | all pass on all four, no new compiler warnings |
 | Independent model, differentially | `awref.lua`: a 1-based mirror of `esc_end` plus its own line splitter, over a 33851-string corpus (31 token classes crossed exhaustively at lengths 1, 2 and 3, plus 28 hand-built multi-line strings) | 0 width mismatches, 0 byte mismatches |
 | Full sweep | every table in §4 of this document, x64 artifact | byte-identical to the linux artifact |
 | Export-name contract | `namecheck.lua <libdir> [misc.lua]`: `utf8.ansi_cut` is a function, `utf8.ulen` is nil, the real definitions sliced out of `lib/misc.lua` `loadstring` cleanly with `string.ansi_cut` present and `string.ulen` nil, `string.wcwidth` returns exactly 2 values, 9 width assertions, and the `local reps,ansi_cut,wcwidth=...` binding line intact | x64 / x86 / linux / linux-arm (qemu) all PASS |
 | Structural assertions | `lua -e loadfile` syntax check, line-ending byte counts (`grid.lua` 100% CRLF, `misc.lua` 100% LF) | not broken |
-| Against glibc | `wcwidth()` over all code points | only U+3248..U+324F disagree (8), the deliberate EAW=A call listed in §4.6 |
+| Against glibc | `wcwidth()` over all code points, `cache/ambiguous/glibc/glibccmp.c` under WSL, locale `C.UTF-8` | of the 282,164 code points glibc gives a width for, **138,156 disagree and every one of them is EastAsianWidth=A** (table 2, glibc 1) — the ambiguous ruling, in one number. Nothing else disagrees: Mn/Me/Cf, W/F, the drawn Cf set, the jamo ranges and the Yijing block all match, so the three measured supplements are supplements to glibc's own answer rather than departures from it. The 831,901 code points glibc answers `-1` for are its "illegal or side-effecting" class and not comparable. |
+| Against conhost, per font | `cache/ambiguous/measure/ambmeasure.c`: every BMP ambiguous code point and 669 astral ones, marker-column readback, six faces each confirmed by `GetCurrentConsoleFontEx` | 47,766 measurements; 7,110 wide in every font, 620 font-split, 229 narrow in every font; the BMP sweep reproduced byte for byte on a second run; code page 437 / 936 / 65001 identical |
+| Against xterm, per code point | `cache/ambiguous/xterm/{xmeasure.c,run1.sh,compare.py}`: the 7,324-point sample the conhost sweep uses (7,314 of them EastAsianWidth=A — all 7,282 BMP ambiguous code points per Unicode 15.0.0 plus 32 astral ones — and 10 non-ambiguous controls), one write per point inside a real xterm 372 under `TERM=xterm`, `XLOCALE=false`, `LC_ALL=C.UTF-8`, position read back with `ESC[6n`; three configurations | **`-cjk_width` (the ruling as a switch): 7,117 agree, 207 differ** — the 206 `AMBIGUOUS_NARROW` points (xterm 2, table 1) plus SOFT HYPHEN (xterm 0, table 1), so the blanket half of the ruling reproduces a shipping terminal exactly and the exception list is the only divergence. Cells consumed `{0:129, 1:6, 2:7189}`: the 129 zeros are the 128 sampled Mn of U+0300..U+037F and U+00AD, i.e. combining marks lose their columns *under* the wide-ambiguous rule, which is this table's step-3-before-step-5 ordering reached independently. **default** (glibc's answer): 353 agree, and all 6,971 differences are table 2 against xterm 1 — the ruling again, same shape as the glibc row above. **`-mk_width`** (xterm's own tables): 344 agree, cells `{0:129, 1:7191, 2:4}` — xterm's built-in table keeps every ambiguous point at one column, which is also what proves the default run really went through glibc. Astral, on the separate 669-point run and both configurations identically: 6 agree, 663 differ, cells `{0:3, 1:664, 2:2}` — `cjkWidth` does not reach past the BMP (the 3 zeros are the Mn variation selectors; the 2 twos are the W controls), so the astral half of the ruling rests on conhost, where a surrogate pair consumes two cells |
+| Against xterm, whole strings | `cache/ambiguous/xterm/{xstring.c,runstr.sh}` over `slines.txt`, costed by the shipped DLL with `sstr.lua`: write a line at a known column, read the cursor back, and the answer is the column count a model has to predict | the exception list, priced in columns. `-cjk_width` doubles what this table keeps narrow — a box top (`┌` + 10 `─` + `┐`) is **24 cells there and 12 here**, 40 `─` is **80 and 40**, `éüÖ` is **5 and 3**, `│░░░░░░░░░│` is **13 and 11** — while on the half of the ruling that was kept the two agree exactly: `10°C → 20°C` 14/14, `a—b` 4/4, `→ ← ↑ ↓` 11/11, `中文中文字` 10/10. Plain `-default` xterm is 12/40/3/11 on those four, i.e. it matches this table on the shapes and loses on `° → —`. Two points the per-code-point sample missed came out of this run: U+2590 and U+2591 stay one column even under `-cjk_width`, so xterm's own blanket rule is not quite blanket either |
+
 
 > `namecheck.lua` first tried to `dofile("lib/misc.lua")` with stubs for `java` and `env`, and failed
 > twice (`:129 String=java.require("java.lang.String")`, then a stub function used as a table index).
@@ -977,8 +1126,14 @@ Conclusion: the per-line bookkeeping inside `walk` is **not free** — `B−A` l
 11.5 ns (`multiline` shows only +0.8 and `tab` even −3.3; those two cells are noise, not a negative
 cost), and the second `lua_pushinteger` is worth a steady 1.3~4.4 ns (median about +2.2). The total
 `C−A` is +3.2~+15.8 ns, i.e. 1% (long ASCII, multi-line) to 15% (the shortest strings) over the
-pre-change artifact. This table was **re-measured against the currently shipped `lib/x64/utf8.dll`**
-(min over 5 interleaved runs per cell) and matches the shape of the 2026-09-07 12:30 round. Given the
+pre-change artifact. This table was measured on **2026-09-08** against the `lib/x64/utf8.dll` shipped
+that day (min over 5 interleaved runs per cell) and matches the shape of the 2026-09-07 12:30 round.
+**It is one table generation behind**: the ambiguous ruling (§1.1 step 5) has since replaced that DLL,
+and the A and B variants in `F:/tools/tmp/{absrc,midlib}` were built from the pre-ruling header, so
+column C now carries a wider interval scan (594 runs, longest scan 28, against the 478 and 15 the A/B
+builds were compiled with) while A and B do not. The deltas are therefore evidence about the *byte
+tracking and the second push*, which no table generation changes, and no longer about absolute cost. A
+refresh means rebuilding all three variants from the current header; it has not been done. Given the
 ±10% run-to-run spread this machine shows, no single row proves anything on its own; what holds up is
 that **9 of the 10 cases are positive in total**, the lone exception `tab` missing by 1.3 ns, inside
 the noise. What that cost buys is a byte count attributable to a line, which is what the padding gate

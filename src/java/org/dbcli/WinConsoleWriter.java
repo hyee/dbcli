@@ -7,7 +7,7 @@ import static org.jline.nativ.Kernel32.WriteConsoleW;
 /**
  * Writes JLine's finished text straight to the console handle, so the console itself has to render
  * the escapes: the writer for a VTP console and for Windows Terminal. A console that cannot render
- * them gets {@link ConEmuWriter}, which hands the text to ConEmuHk instead.
+ * them gets {@link ConEmuWriter}, which paints the cells through the native renderer instead.
  */
 public final class WinConsoleWriter extends AbstractWindowsConsoleWriter {
     private final long console;

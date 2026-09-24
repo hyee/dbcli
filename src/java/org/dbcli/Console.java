@@ -1,6 +1,7 @@
 package org.dbcli;
 
 import com.esotericsoftware.reflectasm.ClassAccess;
+import com.hyee.ansirender.NativeRenderer;
 import com.sun.jna.WString;
 import com.naef.jnlua.LuaState;
 import com.naef.jnlua.util.AbstractTableMap;
@@ -233,7 +234,7 @@ public final class Console {
         };
         Interrupter.listen(this, callback);
         display = new Display(terminal, false);
-        prevSize = new Size(getScreenHeight(), getBufferWidth());
+        prevSize = new Size(getBufferWidth(), getScreenHeight());   //Size is (columns, rows); see :401
         terminal.handle(Terminal.Signal.WINCH, this::handleResize);
     }
 
@@ -303,6 +304,7 @@ public final class Console {
         if (status != null) {
             status.close();
             status.suspend();
+            clearScrollRegion();
         }
         display.setNoWrap(true);
         prevDisplay = null;
@@ -323,11 +325,11 @@ public final class Console {
 
     public void display(String[] args) {
         int width = getBufferWidth();
-        //A dashboard repaint does not need the line editor's diff: with the rectangle writer on, the
-        //whole screen goes out as one block (home, rows, erase to end of line). The writer then paints
-        //it with a single WriteConsoleOutputW instead of one cursor addressed write per row, which is
-        //the difference between "the screen appears" and "the screen paints itself line by line".
-        if (isBulkBlockEnabled(terminal)) {
+        //A dashboard repaint does not need the line editor's diff: when the renderer can take it, the
+        //whole screen goes out as one block (home, rows, erase to end of line). render.dll then paints
+        //the damaged rows as rectangles in one flush instead of one cursor addressed write per row, which
+        //is the difference between "the screen appears" and "the screen paints itself line by line".
+        if (isBlockPaintEnabled(terminal)) {
             int height = getScreenHeight();
             List<AttributedString> lines = Arrays.stream(args)
                     .map(s -> s == null ? null : AttributedString.fromAnsi(s))
@@ -350,9 +352,10 @@ public final class Console {
     }
 
     /**
-     * One screenful as a single sequential write: home, every row, erase to end of line. The rectangle
-     * writer turns that into one WriteConsoleOutputW; anything it declines still gets the whole screen
-     * in one chunk for ConEmuHk instead of one cursor addressed write per row.
+     * One screenful as a single sequential write: home, every row, erase to end of line. The native
+     * renderer paints that as rectangles in one flush; a chunk it declines - or a session where the library
+     * is switched off - still gets the whole screen as one raw write instead of one cursor addressed write
+     * per row, which is the half of the gain that does not need a fast path at all.
      */
     static String screenBlock(List<AttributedString> lines, int rows, int columns) {
         StringBuilder sb = new StringBuilder(16 + (columns + 8) * (rows + 1));
@@ -371,16 +374,20 @@ public final class Console {
 
 
     /**
-     * The ConEmu console (no ENABLE_VIRTUAL_TERMINAL_PROCESSING) with the rectangle writer on and not
-     * held to safe mode. A real ConEmu window counts as well: there dbcli gets JLine's native Windows
+     * The ConEmu console (no ENABLE_VIRTUAL_TERMINAL_PROCESSING) with a renderer that can take the whole
+     * screen as one chunk. A real ConEmu window counts as well: there dbcli gets JLine's native Windows
      * terminal (Console.java:118 skips dbcli's own WinSysTerminal), whose type is still windows-conemu
      * (NativeWinSysTerminal.java:74 picks it when TERM is unset and ConEmuPID is set). That is not
      * incidental - the repaint the screen block replaces goes through Display.clear(), which makes
-     * Display.update emit clear_screen (\e[H\E[J for windows-conemu) and wipes the screen.
+     * Display.update emit clear_screen (\e[H\e[2J for windows-conemu) and wipes the screen.
+     *
+     * <p>This asks the switch, not the live renderer, and that is deliberate: a session where render.dll
+     * refused to load still sends the screen as one sequential chunk instead of one cursor addressed write
+     * per row, which is the better half of the gain. Renamed from isBulkBlockEnabled on 2026-09-23, when
+     * the native renderer replaced the Java rectangle writer it used to ask.
      */
-    static boolean isBulkBlockEnabled(Terminal terminal) {
-        return BulkCellWriter.CONFIG.enabled
-                && !BulkCellWriter.CONFIG.safe
+    static boolean isBlockPaintEnabled(Terminal terminal) {
+        return NativeRenderer.isEnabled()
                 && AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType());
     }
 
@@ -398,6 +405,7 @@ public final class Console {
         if (status != null && !status.isHided() && !status.isSuspended()) {
             status.close();
             status.resize();
+            clearScrollRegion();
             terminal.puts(InfoCmp.Capability.carriage_return);
             terminal.puts(InfoCmp.Capability.clr_eos);
         }
@@ -491,6 +499,25 @@ public final class Console {
     private volatile String prevTime = "";
     private volatile String prevColor = "";
 
+    /**
+     * Take the scroll region back from the status bar.
+     *
+     * <p>jline's {@code Status.reset()} clears the region it reserved with
+     * {@code puts(change_scroll_region, 0, 0)}. {@code csr} is {@code \E[%i%p1%d;%p2%dr}, so that call
+     * compiles to {@code \E[1;1r} -- a region one row tall, which is the opposite of an undo: every line
+     * the session prints afterwards rotates inside the viewport's first row. The fork's Status.reset() now
+     * writes the parameterless {@code \E[r}, which is the reset; this call is what makes a session correct
+     * while the jar still carries the old byte, and because {@code \E[r} is idempotent a rebuilt jar pays
+     * nothing for it.
+     *
+     * <p>Call it after anything that hides or closes the bar, never before: the bar's own teardown is what
+     * leaves the region behind.
+     */
+    private void clearScrollRegion() {
+        terminal.writer().write("\033[r");
+        terminal.flush();
+    }
+
     public boolean setStatus(String title, String color) {
         try {
             final int width = getScreenWidth() - 1;
@@ -500,6 +527,7 @@ public final class Console {
             if (title == null || title.equals("")) {
                 this.status.close();
                 this.status.suspend();
+                clearScrollRegion();
                 this.status = null;
                 return false;
             }
@@ -684,6 +712,7 @@ public final class Console {
                     if (status != null) {
                         this.status.close();
                         this.status.suspend();
+                        clearScrollRegion();   //the console outlives this process; a 1-row region would not
                     }
                     return null;
                 } else {
@@ -738,6 +767,7 @@ public final class Console {
             if (status != null) {
                 status.hide();
                 status.suspend();
+                clearScrollRegion();
             }
             terminal.pause();
             //Save the current console mode before restoring to original mode for native child

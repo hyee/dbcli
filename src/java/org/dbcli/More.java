@@ -183,7 +183,7 @@ final public class More {
         this.display = new Play(terminal);
         this.bindingReader = new BindingReader(terminal.reader());
         this.currentDir = currentDir;
-        this.clrBol = terminal.getStringCapability(InfoCmp.Capability.clr_bol);
+        this.clrBol = terminal.getStringCapability(Capability.clr_bol);
         Path lessrc = configPath != null ? configPath.getConfig("jlessrc") : null;
         boolean ignorercfiles = opts != null && opts.isSet("ignorercfiles");
         if (lessrc != null && !ignorercfiles) {
@@ -388,7 +388,10 @@ final public class More {
 
         try {
             size.copy(terminal.getSize());
-            if (quitIfOneScreen && sources.size() == 2) {
+            //The count that matters is the one after the help source was prepended: upstream Less.java mutates
+            //the caller's list in place, so its `sources.size() == 2` means "help plus one real source". This
+            //copy broke that, which made quit-if-one-screen unreachable and paged a one-line result.
+            if (quitIfOneScreen && list.size() == 2) {
                 if (display(true)) {
                     return;
                 }
@@ -701,7 +704,7 @@ final public class More {
             } finally {
                 terminal.setAttributes(attr);
                 if (prevHandler != null) {
-                    terminal.handle(Terminal.Signal.WINCH, prevHandler);
+                    terminal.handle(Signal.WINCH, prevHandler);
                 }
                 display.exit();
                 if (!noKeypad) {
@@ -2299,9 +2302,10 @@ final public class More {
         /**
          * Paint the whole screen as one sequential block (home, every row, erase to end of line).
          * Display.update addresses every changed row absolutely, and a chunk with more than one cursor
-         * address is exactly what the rectangle writer has to decline - so on this terminal the pager
-         * would be painted row by row by ConEmuHk's renderer, which is what made `more` slow to appear.
-         * As one block it is a single WriteConsoleOutputW rectangle instead.
+         * address is what a renderer has to work hardest on - so on this terminal the pager used to be
+         * painted row by row by the console's own escape handling, which is what made `more` slow to
+         * appear. As one
+         * block it is one flush of rectangles out of render.dll instead.
          *
          * Display's model has to be kept in step with the screen afterwards, otherwise the next
          * incremental repaint would draw against a screen that does not exist: oldLines becomes the
@@ -2312,7 +2316,7 @@ final public class More {
             // isEnterCA (smcup, \e[?1049h) needs no guard: inside a real ConEmu window Console.java
             // does not use WinSysTerminal at all, so a session that reaches this code has no ConEmu GUI
             // to switch screen buffers - and the console handle this writer holds stays the visible one.
-            if (!Console.isBulkBlockEnabled(terminal)) {
+            if (!Console.isBlockPaintEnabled(terminal)) {
                 return false;
             }
             terminal.writer().print(Console.screenBlock(newLines, rows, columns));
@@ -2425,7 +2429,7 @@ final public class More {
                 // Check if terminal supports clr_bol before using it
                 if (clrBol != null) {
                     // clr_bol clears from line start to cursor; cursor stays at current column.
-                    terminal.puts(InfoCmp.Capability.clr_bol);
+                    terminal.puts(Capability.clr_bol);
                     moveCursorToColumn(0);
                 } else {
                     // Fallback: overwrite the line with spaces then return to column 0.

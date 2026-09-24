@@ -448,12 +448,6 @@ assert(u.ansi_width(string.char(240,159,152,128)) == 2, "aw U+1F600 grinning=2")
 assert(u.ansi_width(string.char(240,159,143,187)) == 2, "aw U+1F3FB skin tone=2")
 -- Mc spacing marks DO advance the cursor (measured 1); lutf8lib.c's utf8.width says 0
 assert(u.ansi_width(string.char(224,166,190)) == 1, "aw U+09BE bengali Mc=1")
--- EastAsianWidth=A stays 1: no ambiguous-width opt-in, which is the default every listed
--- terminal ships with. (Not unanimous -- U+3248 below is A and conhost/xterm/glibc say 2.)
-assert(u.ansi_width(string.char(226,148,128)) == 1, "aw U+2500 box drawing=1")
-assert(u.ansi_width(string.char(194,161)) == 1, "aw U+00A1 inv exclam=1")
--- Measured supplements: the code points where Unicode's properties and what a terminal
--- actually draws disagree. Each one is a reading, not a guess.
 local function u8(n)  -- encode one code point by arithmetic, independent of the module
   if n < 0x80 then return string.char(n) end
   if n < 0x800 then return string.char(0xC0 + math.floor(n/0x40), 0x80 + n%0x40) end
@@ -464,6 +458,34 @@ local function u8(n)  -- encode one code point by arithmetic, independent of the
   return string.char(0xF0 + math.floor(n/0x40000), 0x80 + math.floor(n/0x1000)%0x40,
                      0x80 + math.floor(n/0x40)%0x40, 0x80 + n%0x40)
 end
+-- EastAsianWidth=A counts 2. That is the ruling, not a default, and it is not a property of
+-- the code point: conhost's answer moves with the console FONT and not with the code page
+-- (437, 936 and 65001 measure identically), so the sweep in D:\dbcli\cache\ambiguous\measure\
+-- had to run all 7,292 BMP ambiguous code points under six named faces to say anything at all.
+-- Both outcomes are asserted, because the exception is what keeps a box-drawn border, a
+-- progress bar and an accented name in one piece: AMBIGUOUS_NARROW is the 206 code points
+-- every one of those six fonts gave a single cell to.
+assert(u.ansi_width(u8(0x2500)) == 1, "aw U+2500 box horizontal: 1 cell in all six fonts")
+assert(u.ansi_width(u8(0x2502)) == 1, "aw U+2502 box vertical: same measured range")
+assert(u.ansi_width(u8(0x2584)) == 1, "aw U+2584 lower half block: progress-bar stock")
+assert(u.ansi_width(u8(0x2592)) == 1, "aw U+2592 medium shade")
+assert(u.ansi_width(u8(0x00E9)) == 1, "aw e-acute: no font here gives it 2, so Jose stays put")
+assert(u.ansi_width(u8(0x00A1)) == 1, "aw U+00A1 inverted exclamation")
+-- and the three kinds of ambiguous point the ruling settles: wide everywhere, wide in only
+-- some fonts (it follows the ruling anyway), and astral, which the first sweep silently
+-- dropped and the second measured.
+assert(u.ansi_width(u8(0xE000)) == 2, "aw private use: wide in all six fonts")
+assert(u.ansi_width(u8(0x3248)) == 2, "aw U+3248 circled number: ambiguous counts 2")
+assert(u.ansi_width(u8(0x00B0)) == 2, "aw degree sign: 1 in the Western fonts, 2 in the CJK ones")
+assert(u.ansi_width(u8(0x25A0)) == 2, "aw black square: the same font split")
+assert(u.ansi_width(u8(0x2192)) == 2, "aw right arrow: the same font split")
+assert(u.ansi_width(u8(0xF0000)) == 2, "aw plane 15 private use: astral ambiguous counts 2")
+-- a whole border row must still be exactly one cell wide per glyph, which is the only reason
+-- the exception exists
+assert(u.ansi_width(u8(0x250C) .. u8(0x2500) .. u8(0x2500) .. u8(0x2510)) == 4,
+       "aw a box top stays four cells")
+-- Measured supplements: the code points where Unicode's properties and what a terminal
+-- actually draws disagree. Each one is a reading, not a guess.
 -- U+00AD and Unicode's 13 Prepended_Concatenation_Marks are Cf, yet all four sources draw
 -- a cell for them: conhost 1, Windows Terminal 1, xterm 1, glibc 1.
 for _,c in ipairs{0x00AD, 0x0600,0x0601,0x0602,0x0603,0x0604,0x0605,
@@ -484,13 +506,12 @@ assert(u.ansi_width(u8(0xAC00)) == 2, "aw precomposed hangul=2")
 -- lutf8lib's own unidata.h all draw them full width. Only font-driven conhost says 1.
 assert(u.ansi_width(u8(0x4DC0)) == 2, "aw U+4DC0 hexagram 1=2")
 assert(u.ansi_width(u8(0x4DFF)) == 2, "aw U+4DFF hexagram 64=2")
--- These stay 1 on purpose, and unidata.h is the one that is wrong about them. Trigrams and
--- Tai Xuan Jing are EAW=N (glibc 1, xterm 1). U+3248..U+324F are EAW=A, where the 2 that
--- glibc and xterm report is an artifact of glibc merging 3220..A48C into one wide run --
--- Windows Terminal, which keeps a curated table, says 1.
+-- These two stay 1 on purpose, and unidata.h is the one that is wrong about them: trigrams
+-- and Tai Xuan Jing symbols are EAW=N, so the ambiguous ruling never reaches them. (The
+-- EAW=A members of the same neighbourhood, U+3248..U+324F, count 2 -- asserted above, where
+-- the ruling is what is under test rather than the N range beside it.)
 assert(u.ansi_width(u8(0x2630)) == 1, "aw U+2630 trigram=1")
 assert(u.ansi_width(u8(0x1D300)) == 1, "aw U+1D300 tai xuan jing=1")
-assert(u.ansi_width(u8(0x3248)) == 1, "aw U+3248 circled ten=1")
 -- malformed UTF-8 is one column per byte and can never smuggle in a width class
 assert(u.ansi_width(string.char(240,132,184,128)) == 4, "aw overlong 4-byte form")
 assert(u.ansi_width(string.char(237,160,128)) == 3, "aw UTF-16 surrogate")

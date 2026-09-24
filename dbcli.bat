@@ -7,8 +7,6 @@ SET CLASSPATH=
 SET JAVA=
 SET JAVA_TOOL_OPTIONS=
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
-if not defined ANSICON_CMD SET "ANSICON_CMD=.\lib\x64\ConEmuHk64.dll"
-if !ANSICOLOR!==off set ANSICON_CMD=
 If not exist "%TNS_ADMIN%\tnsnames.ora" if defined ORACLE_HOME (set "TNS_ADMIN=%ORACLE_HOME%\network\admin" )
 
 rem read config file
@@ -68,24 +66,26 @@ If not exist "!JAVA_EXE!" (
 
 SET "PATH=.\lib\!bit!;!JAVA_BIN!;!EXT_PATH!;.\bin;!TEMP_PATH!"
 
-rem check if ConEmu dll exists to determine whether use it as the ANSI renderer
-if not defined ANSICON if defined ANSICON_CMD (
-   SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
-   SET ANSICON_DEF=ansicon
-   set DBCLI_BULK_WRITE=on
-   if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
-)
-
-if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jni"
+rem Nothing here picks an ANSI renderer any more. The block that used to sit here tested whether
+rem lib\x86\ConEmuHk.dll existed and set ANSICON_DEF from the answer, which meant the terminal chain a
+rem session got depended on a file on disk. ConEmuHk is retired; render.dll does the parsing and the
+rem painting, and it is found the same way every other native here is -- on PATH, just above.
+rem So the chain is chosen by the console itself now: WinSysTerminal asks it whether it can parse
+rem escapes (ENABLE_VIRTUAL_TERMINAL_PROCESSING) and hands the text to the renderer when it cannot.
+rem ANSICON_DEF is left exactly as the environment set it, and only MSYS is corrected for, because
+rem under MSYS the console is a pty and neither of the Windows branches applies.
 if defined MSYSTEM set "ANSICON_DEF=msys"
-set "ANSICON_CMD="
 
 rem set "ANSICON_DEF=native"
 rem set "ANSICON_DEF=ffm"
 rem set "ANSICON_DEF=jna"
-set DBCLI_BULK_WRITE=on
-rem if "!ANSICON_DEF!"=="ansicon" set "ANSICON_DEF=conemu" 
+rem The native renderer (render.dll in the matching lib subdirectory) parses ANSI and paints the cells, and
+rem it is on unless switched off. Switching it off leaves the writer with a plain raw console write: the
+rem escapes reach the console undigested, which is what a console without ENABLE_VIRTUAL_TERMINAL_PROCESSING
+rem looks like. That is still the first thing to try when a session paints oddly.
+rem set ANSI_RENDER=off
 IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
+
 
 cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*
 popd

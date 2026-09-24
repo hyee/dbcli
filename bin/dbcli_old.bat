@@ -6,8 +6,6 @@ SET JAVA_HOME=
 SET CLASSPATH=
 SET JAVA_TOOL_OPTIONS=
 if not defined CONSOLE_COLOR SET CONSOLE_COLOR=0A
-if not defined ANSICON_CMD SET "ANSICON_CMD=.\lib\x64\ConEmuHk64.dll"
-if !ANSICOLOR!==off set ANSICON_CMD=
 
 if not defined TNS_ADM SET TNS_ADM=d:\Soft\InstanceClient\network\admin
 SET DBCLI_ENCODING=UTF-8
@@ -31,13 +29,10 @@ IF %JRE_HOME:~-1%==\ SET "JRE_HOME=%JRE_HOME:~0,-1%"
 SET bit=x64
 ("!JRE_HOME!\java.exe" -version 2>&1 |findstr /i "64-bit" >nul) || (set bit=x86)
 SET PATH=.\lib\%bit%;%JRE_HOME%;%EXT_PATH%;.\bin;%PATH%
-rem check if ConEmu dll exists to determine whether use it as the ANSI renderer
-if not defined ANSICON if defined ANSICON_CMD (
-   SET ANSICON_EXC=nvd3d9wrap.dll;nvd3d9wrapx.dll
-   SET ANSICON_DEF=ansicon
-   if "!bit!"=="x86" set "ANSICON_CMD=.\lib\x86\ConEmuHk.dll"
-   if not exist "!ANSICON_CMD!" set "ANSICON_DEF=jline"
-)
+rem Which ANSI parser this bat used to pick is settled now: lib\x86\ConEmuHk.dll and lib\x64\ConEmuHk64.dll
+rem no longer ship (render.dll parses the escapes -- see dbcli.bat), so the old probe's answer was always the
+rem jline branch. Written out instead of being rediscovered by testing whether a retired file exists.
+if not defined ANSICON SET ANSICON_DEF=jline
 set "ANSICON_CMD="
 
 rem For win10, don't used both JLINE/Ansicon to escape the ANSI codes
