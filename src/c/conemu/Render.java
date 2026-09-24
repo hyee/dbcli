@@ -1067,6 +1067,23 @@ public class Render {
         gate("mouse modes are counted", b[S_UN + 3] - a[S_UN + 3] == 2, "mouse=" + (b[S_UN + 3] - a[S_UN + 3]));
         gate("and change nothing the model has to trust", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4]));
 
+        /* The two families that reached a final and left no number at all until build -7: `CSI p` in every
+           spelling but the one DECSTR gates on, and a charset designator other than `ESC ( 0`. The host gate
+           proves the model counts them, but it links Render.cpp directly; this is the leg that says the
+           deployed DLL, through a real conhost, does too. It also pins the *kind* of count -- inert, not
+           suspected -- because the difference is what the row below would otherwise have cost: a full-window
+           repaint per frame that carried one. */
+        gotoRow(6);
+        paint("clear for the census leg", "\u001b[0m\u001b[K");
+        a = stats(handle);
+        paint("the -7 arms", "\u001b[p\u001b[61p\u001b)0q");
+        b = stats(handle);
+        gate("the CSI p family and ESC ) c are counted", b[S_UN] - a[S_UN] == 3,
+                "unrecognised=" + (b[S_UN] - a[S_UN]));
+        gate("and none of the three buys a repaint", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4])
+                + ": a charset with no model moves no cursor, so it must not cost a window repaint");
+        text("while the byte after them reached the screen", winT + 6, 0, "q", DEF);
+
         gotoRow(6);
         paint("leave the row as we found it", "\u001b[0m\u001b[K");
     }

@@ -640,10 +640,22 @@ static void gm_charset()
   put(&g, "\033(B");
   putu(&g, &q, 1);
   eq_u("ESC ( B restores", g.cells[0][1].ch, 'q', "default set");
+  eq_u("and neither designator is counted", g.nUnsupported[RC_UN_SUP], 0,
+       "the smacs/rmacs path is modelled; a count here would make the census unreadable as a ratio");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033)0q");                                 /* G1 is unreachable upstream, and so here */
   eq_text(&g, 0, 1, "q", "an ESC ) designator has no effect on G0");
+  eq_u("but ESC ) 0 leaves a count", g.nUnsupported[RC_UN_SUP], 1,
+       "it has no case upstream either (Ansi.cpp:2769-2770 falls to DumpUnknownEscape)");
+  eq_u("counted inert, not suspected", (unsigned)g.modelSuspect, 0, "the arm is read, not assumed");
+
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033%Gq");
+  eq_text(&g, 0, 1, "q", "ESC % G never selects UTF-8: the flag has no writer here or upstream");
+  eq_u("ESC % G counted", g.nUnsupported[RC_UN_SUP], 1,
+       "this is what an application writes when it believes it is turning UTF-8 on, and the census is the "
+       "only place that can still say so afterwards");
 
   rc_reset(&g, 20, 4, 0x07);
   put1(&g, "\033(");
@@ -1559,9 +1571,24 @@ static void geo_region()
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "A\033[!p");
   eq_text(&g, 0, 1, " ", "DECSTR is FullReset upstream (Ansi.cpp:3644-3649), not an attribute reset");
+  eq_u("the DECSTR that took effect leaves no count", g.nUnsupported[RC_UN_SUP], 0,
+       "`CSI !p` with no arguments is the only spelling either leg acts on");
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "A\033[1!p");
   eq_text(&g, 0, 1, "A", "and upstream gates that on ArgC == 0 (:3645)");
+  eq_u("while the spelling it drops leaves one", g.nUnsupported[RC_UN_SUP], 1,
+       "a parameter is enough to reach the same DumpUnknownEscape (:3650-3653) as a final nobody knows");
+
+  /* The hole this closes was a bare `break`: `CSI p` was consumed, did nothing, and said nothing, so the
+     census could not tell "the application asked for a soft reset neither leg carries" from "the
+     application never wrote one". Both spellings below are the same inert else upstream, and both must
+     now be numbers. */
+  rc_reset(&g, 8, 3, 0x07);
+  put(&g, "\033[p\033[61p");
+  eq_text(&g, 0, 1, " ", "and neither of them paints, moves or clears anything beyond that");
+  eq_u("a bare `p` and `61p` are each counted", g.nUnsupported[RC_UN_SUP], 2, "neither is DECSTR");
+  eq_u("counted without suspicion", (unsigned)g.modelSuspect, 0,
+       "the reach is known-inert, so no full repaint is bought");
 
   /* The census and the suspicion: a known-inert sequence is counted and trusted; a final byte neither
      this switch nor ConEmu has a case for is neither. */

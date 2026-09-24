@@ -55,8 +55,11 @@
  * in lib\ and a -4 source tree are two different models of the screen -- the same trap -2 was named for.
  * -6 is the line feed below a narrowed scroll region: it walks the cursor down instead of rotating the
  * region, which is what a two-row status line needs (Render.cpp line_down; MSFT adaptDispatch.cpp:2443
- * scrolls only at `y == bottomMargin`). A -5 binary and a -6 tree disagree about every row above the bar. */
-#define RENDER_BUILD "render-2026-09-24-6"
+ * scrolls only at `y == bottomMargin`). A -5 binary and a -6 tree disagree about every row above the bar.
+ * -7 closes two census holes that left no number at all: `CSI p` (every spelling but the one DECSTR gates
+ * on) and `ESC ) c` / `ESC % c` fell to a bare `break`. Nothing on the screen moves, so this pair is
+ * visible only in the stats line -- which is the whole reason it counts as a shipped change. */
+#define RENDER_BUILD "render-2026-09-24-7"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;

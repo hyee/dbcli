@@ -180,6 +180,50 @@ cannot-coexist bits), `mc5i`, `flash` (`ESC g` would ring a window that is not o
 writes a reply back; a caller waiting for one would hang), and `xenl` — measured as absent on every path,
 so advertising it would be a lie.
 
+Every clause of that list argues from the *output* leg, because that is the leg this library is. Two entries
+in the file are not output at all — `kbs` and the `kf` family are read by the terminal's *input* leg
+(`AbstractWindowsTerminal.getEscapeSequence`, which turns a console key record into the bytes a `KeyMap`
+matches), and no measurement of `render.dll` can adjudicate them. They were settled by reading that leg:
+
+* **`kbs=^H` is correct, and was never a candidate for a "should be DEL" fix.** The value is two literal
+  characters until `Curses.tputs`' caret arm makes it 0x08 (`Curses.java:164-167`, reached from
+  `AbstractWindowsTerminal.java:363-365`), and the reader binds both spellings to the same widget:
+  `ctrl('H')` at `LineReaderImpl:6172` and `del()` (0x7f) at `:6194`. So `^H` and `\177` are
+  interchangeable here — and `^H` is what every other Windows-family entry in this jline ships
+  (`windows.caps`, `windows-256color.caps`, `windows-vtp.caps` all say `kbs=^H`). The value that *does*
+  break editing is a multi-character one that collides with a bound prefix: `kbs=\E[H` is `khome`, which
+  `bindArrowKeys` (`:6470`) binds to `BEGINNING_OF_LINE` after `:6194`, so Backspace would jump instead of
+  deleting. Recorded so the next audit leaves the caret alone.
+* **The `kf` family stops at `kf12`, and the shifted arrows (`kLFT`/`kRIT`/`kUP`/`kDN`/`kHOM`/`kEND`) stop
+  with it.** Adding them would not enable a key: the input leg synthesises those bytes with no caps
+  consulted — any modifier on F1..F4 emits `\E[1;<mod>P..S`, on F5..F12 `\E[<n>;<mod>~`, on arrows/Home/End
+  `\E[1;<mod>[A-F]` (`AbstractWindowsTerminal.java:375-435`, `<mod>` filled by
+  `Curses.tputs(seq, keyState + 1)` at `:441`) — so the sequence arrives whichever way this entry is
+  written, while terminfo can name only the `mod == 2` arm. Naming that arm declares a `key_*` capability,
+  and `bindKeys` binds every present `key_*` capability to `beep` (`LineReaderImpl:6457-6463`) where
+  `bindArrowKeys` (`:6465-6479`) binds no shifted key to a widget; the Ctrl and Alt arms have no name to
+  declare at all, because nothing in this tree decodes them — `modifyFunctionKeys`, `modifyOtherKeys` and
+  `ParsedKey` are zero hits across the whole source. Hardware F13 and above (VK 0x7C..) has no `case` and
+  falls to `default: return null` (`:436-439`), so the event is dropped before any sequence is built. The
+  entry that does carry `kf13..kf44` is the dbcli overlay's `windows-256color.caps:21-30`, which is a clone
+  of xterm's, where an emulator really does send those bytes on the wire; the three jline Windows entries
+  all stop at `kf12`, so stopping there is this family's convention rather than this file's omission.
+
+The same audit added one capability rather than removing anything, and it is the only string in the entry
+that needed a wire test before it could be believed:
+
+* **`rep=%p1%c\E[%p2%{1}%-%db` (xterm's spelling) is advertised, because `ech` was.** The entry's stated rule
+  is a string CEAnsi acts on *and* the renderer models, and `CSI Ps b` satisfies both — upstream has a case
+  that replays `m_LastWrittenChar` through `WriteText` (`Ansi.cpp:3070-3087`, refusing the private form at
+  `:3085`) and `Render.cpp`'s `b` arm is a call to `put_cp` for the same reason. What it took a run to settle
+  is the value. `Curses.doTputs` accepts a conversion only out of `"cdoxXs"` (`Curses.java:425`), so `%c` is
+  the only arm in this file that reaches that code, and `toInteger` (`:502-510`) takes a `Number` or else
+  `Integer.parseInt(toString)` — a `Character` argument is `parseInt("x")` and dies inside the `IOError`
+  `tputs` wraps at `:88`. The working spelling passes the code point as an `int`: `tputs(rep, 0x78, 4)` is
+  `x` + `CSI 3b`, and `CSI 0b` for a count of one repeats nothing, which is what both legs say when the
+  parameter counts repeats rather than cells. `cache/caps-audit/CapsDump.java` asserts all three of those
+  sentences, including the failure, because `tputs(rep, 'x', 4)` is the obvious way to write the check.
+
 ## 5 Cost model
 
 Measured on a real console with a purpose-built C++ benchmark (200 samples, median, frequency check
@@ -274,6 +318,12 @@ The doctrine, in the order that matters:
     spaces when the row is longer: the `line_down` fix arrived with five fresh FAILs, and they were five bad
     expectations rather than five regressions. A helper without a terminator check should get one, or the
     case should not use it.
+12. **A number that does not move is a missing witness, not a pass.** When a stamp's whole effect is a new
+    counter, the gate's census line must be expected to change; if it comes back identical, the corpus never
+    sends that family and the shipped binary's new arm has run nowhere but the host gate, which links the
+    model directly and so cannot speak for the deployed DLL. Either say so, or put the bytes in the console
+    leg. Build -7 came back identical on both arches, and the leg added to answer it is
+    `caseSuspectAlign`'s `\E[p\E[61p\E)0q` block.
 
 Current gates, and how to read them: the host gate (`RenderCheck`, cross-run on a Linux host: colour table,
 full code-point width cross-check, per-UTF-16-unit resumability, damage bounds over the corpus) and the
@@ -425,11 +475,44 @@ a generator change.
   and `AttributedCharSequence` — and parses none on input, matching `KeyMap` prefixes against terminfo
   *input* caps instead. The set it can put on the wire is therefore small and known: `CSI H` + `CSI 2 J`
   (once per frame, because the editor forces a full erase on Windows terminals), `CSI K`, the CUU/CUD/CUF/CUB
-  family, `CSI r;c H`, `CSI K L M @ P`, `ESC 7`/`ESC 8`, `CSI ?1049h/l`, `CSI ?25h/l`, and the SGR set
+  family, `CSI K L M @ P`, `ESC 7`/`ESC 8`, `CSI ?1049h/l`, `CSI ?25h/l`, and the SGR set
   `AttributedCharSequence` hard-codes (`38;5;`/`48;5;` — 256-colour is forced on for this terminal type, so
   truecolour spells nothing here). Three of this project's open worries simply do not apply to the editor:
   it writes **no OSC at all** (OSC 0/2 stays a prompt-side requirement), it **never emits** `CSI Ps b` REP or
   `CSI Ps X` ECH — no code path in the whole tree does — and it **never queries** the terminal.
+  Read that with the next bullet rather than as a reason to leave `rep` out: the entry describes the
+  *terminal*, and an editor that happens not to use a capability is not evidence that the terminal lacks it.
+* **Two sequences reached a final, did nothing and left no count — closed, and their witness is narrower than
+  the change.** `CSI p` in every spelling but the one DECSTR gates on (`interim == '!'` with no arguments,
+  `Ansi.cpp:3645`; the `CSI Ps;Ps!p` restore-memory form drops there too), and a charset designator other than
+  `ESC ( 0` — `ESC ) c` and `ESC % c`, which have no case upstream either (`:2751-2767` covers `ESC (` alone
+  and falls to `DumpUnknownEscape` at `:2769-2770`). Both now spend `RC_UN_SUP` and set no `modelSuspect`:
+  counted as inert, not as a reason to re-adopt the console. The distinction is the half that could have gone
+  wrong silently — a charset with no model moves no cursor, so charging a full-window repaint per frame for it
+  would have been a performance bug wearing a correctness fix. `ESC % G` matters for a second reason: it is
+  what an application writes when it believes it is switching to UTF-8, and the census is the only place that
+  can still say so afterwards. Stamp `render-2026-09-24-7`, deployed for both bitnesses with the -6 pair kept
+  (`cache/witness/census-20260924-7.txt`).
+  What that witness adds, past the usual argument that the host gate links `Render.cpp` directly and so says
+  nothing about the shipped binary: the first -7 gate run came out **byte-identical on its census line** to
+  the -6 one, and since both new arms feed `unrecognised`, an identical line proves the console gate's own
+  corpus contains neither family. That is not a control leg; it is an absence of one. `caseSuspectAlign` now
+  paints `\E[p\E[61p\E)0q` through `render.dll` and a real conhost and asserts the delta of 3, the delta of 0
+  aligns, and the `q` in the cell — 4364 checks, both arches, and the process-wide line reads
+  `unrecognised=6` where -6's read 3.
+  The scope statement is the live session's own line, the first ever captured (`-Native on`, `help`, driven to
+  `exit` so `report()` lands): 65 flushes, 9997 cells, 59 scrolls, and `not modelled: bracketed paste 5` — no
+  `unrecognised` family at all, because a zero is not printed. So neither new arm fires in a real dbcli
+  session today. The reason to land it anyway is the census contract: it is only worth having if it holds for
+  sequences that have not been sent yet, and the report line is what makes "today's output contains none of
+  them" a fact a rollout can read instead of an assumption.
+  The caps half of the same audit is §4's three rulings (`kbs=^H` stays, `kf13` and the shifted arrow names
+  stay out, `rep` is now advertised with xterm's canonical value), pinned by `cache/caps-audit/caps-final.txt`
+  — 81 ok, which means every string was expanded through `Curses.tputs` and not merely parsed. One
+  dependency is outside this library: the entry is a classpath resource, so `rep` and line 1's manifest are
+  inert until the owner rebuilds `JLine3.jar`; nothing in this stack emits `rep` at output time, which is why
+  no jar redeploy and no new DLL build are needed for it.
+
 * **Who answers `CSI 6n` is a question with two different answers, and the earlier one here was wrong.**
   The editor does not ask, and neither does the line editor on this platform: `AbstractWindowsTerminal` does
   not override `getCursorPosition`, so it inherits `AbstractTerminal.java:251`'s unconditional `null`, and

@@ -1165,8 +1165,17 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
       break;
     case 'p':
       /* DECSTR. Upstream gates it on `ArgC == 0 && Pvt == "!"` (Ansi.cpp:3645), and '!' (0x21) reaches us
-         as an interim byte, not in `priv` -- the same slot the ' ' of DECSCUSR uses. */
+         as an interim byte, not in `priv` -- the same slot the ' ' of DECSCUSR uses. Note that this drops
+         the restore-memory spelling `CSI Ps;Ps!p` too, which upstream sends to the same else; gating on
+         "no parameters" is upstream's behaviour, not an oversight here.
+         Every other spelling of `p` hits that `else` (Ansi.cpp:3650-3653), which is DumpUnknownEscape: no
+         state, no body, and in a release build not even a log line (Ansi.cpp:971). Same shape as the `q`
+         arm above, so it is counted the same way -- into SUP, because the *final* is unknown to this switch,
+         without suspicion, because we have read the arm and know it moves nothing. A bare `break` here was
+         the hole this file's own rule forbids: the sequence left no trace, so the census could not tell
+         "the app asked" from "the app never wrote it". */
       if (interim == '!' && !g->nArgs) full_reset(g);
+      else ignored(g, RC_UN_SUP);
       break;
     case 'Z': ignored(g, RC_UN_SUP); break;  /* CBT: no case upstream (:3051-3052), and HTS is ignored
         * too (:2731-2734), so there is no tab stop for a backtab to find. */
@@ -1238,8 +1247,19 @@ static void esc_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
 /* ESC ( <c>: 0 selects the drawing set, B or anything else selects the default (Ansi.cpp:2751-2767). */
 static void esc_charset(RcGrid *g, uint8_t designator, uint8_t c)
 {
-  if (designator == '(') g->charset = (c == '0') ? 1 : 0;
-  /* ')' and '%' are consumed and discarded upstream, so G1 and the UTF-8 flag are unreachable. */
+  if (designator == '(')
+  {
+    /* Both arms are real: upstream's `default` for the third byte sets VTCS_DEFAULT too (:2763-2765), so
+       `ESC ( A` unloads the drawing set here exactly as it does there. This is the `smacs`/`rmacs` path. */
+    g->charset = (c == '0') ? 1 : 0;
+    return;
+  }
+  /* G1 (`ESC ) c`) and the Latin-1/UTF-8 selector (`ESC % G`) have no case upstream at all: they fall to
+     `default: DumpUnknownEscape` (Ansi.cpp:2769-2770), which changes nothing -- so G1 is unreachable and the
+     UTF-8 flag is never set, on either leg. Counted rather than silently eaten, for the same reason as
+     `CSI p`: `ESC % G` is what a program that believes it is turning UTF-8 on writes, and the census is the
+     only place that can still say so afterwards. No suspicion: the arm has been read, and it is inert. */
+  ignored(g, RC_UN_SUP);
 }
 
 /* C0 controls that are not part of a sequence. Width-0 by the tables, so none of them paints a cell. */
@@ -1665,7 +1685,13 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
         }
         if (u == 0x18 || u == 0x1A) { g->mode = RC_GROUND; i++; continue; }   /* CAN / SUB abort */
         /* Any other byte, ESC included, abandons the CSI and is re-examined from ground. ConEmu
-           instead parks it in Pvt and keeps eating (deviation #1, see Render.h). */
+           instead parks it in Pvt and keeps eating (deviation #1, see Render.h).
+           The three abandonment sites in this parser -- here, the ESC-without-a-final below, and the
+           interim arm in RC_ESC_INTERIM -- are deliberately *not* counted, and the reason is worth keeping
+           next to the two arms that are (`CSI p`, `ESC ) c`): a cancelled sequence never completed, so it
+           asked for nothing. The rule is "a sequence that reached a final and did nothing must leave a
+           count"; a half-sequence that the sender aborted with CAN, SUB or a fresh ESC is framing, and the
+           byte that aborted it is re-examined in ground, so no effect is invisible to anyone. */
         g->mode = RC_GROUND;
         continue;
       }
