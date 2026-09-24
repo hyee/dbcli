@@ -58,8 +58,75 @@
  * scrolls only at `y == bottomMargin`). A -5 binary and a -6 tree disagree about every row above the bar.
  * -7 closes two census holes that left no number at all: `CSI p` (every spelling but the one DECSTR gates
  * on) and `ESC ) c` / `ESC % c` fell to a bare `break`. Nothing on the screen moves, so this pair is
- * visible only in the stats line -- which is the whole reason it counts as a shipped change. */
-#define RENDER_BUILD "render-2026-09-24-7"
+ * visible only in the stats line -- which is the whole reason it counts as a shipped change.
+ * -8 is two of them, and both are about rows and bytes that leave the process. The first is the anchor:
+ * `row0` used to be re-derived from `srWindow.Top` on every flush, so a user who scrolled up over the
+ * scrollback and then let output arrive had *their* history repainted -- measured 2026-09-24: view at
+ * buffer row 0, content at row 30, one prompt line, and row 29 was overwritten while row 30 went blank, 72
+ * rectangles, nothing declined. The model now claims its own buffer rows (`RcGrid::baseRow`, the same thing
+ * conhost's `_virtualBottom` and ghostty's `.active` pin are), a slide is only ever paid for a view the
+ * model owns, a scroll moves the model's own rows rather than the whole buffer (`scroll_region`), and the
+ * cursor is no longer parked outside the window a plan leaves behind. The second is the answer leg: DSR and
+ * DA were counted and dropped, so a program that asked hung. A query now arms a queue entry carrying the
+ * cursor as it stood, and `flush_reports` writes the reply back as key events on CONIN$ -- which is why the
+ * stats line grew three slots and this build grew a gate-only export.
+ * -9 is -8's other half: an *adopt* had the same bug the paint had. A resize rebuilds the grid, which threw
+ * the row claim away with it, and the re-read then took its rows from `srWindow` -- so a user who scrolled to
+ * their history and then dragged the window shorter watched that history get adopted into the application's
+ * screen and painted back one viewport lower. The claim now lives on the handle in bottom form (`prevBase +
+ * prevRows - 1`, because a rebuilt grid's `rows` differ and the last content row is the one that means the
+ * same thing on both sides) and `rc_anchor_adopt` carries it across, with conhost's straddle rule behind a
+ * `reshaped` flag: that rule belongs to a new window size and not to a scroll
+ * (`_InternalSetViewportSize` vs `SetViewportOrigin`, screenInfo.cpp:953 / 642), and applying it to every
+ * re-adopt would drop the anchor exactly when the user had scrolled furthest away. A -8 binary and a -9 tree
+ * agree on every paint and disagree on the first resize after a scroll up, which is why the gate grew a
+ * resize leg and this stamp moved with it.
+ * -10 is an eye, not a behaviour: `plan()` reports the last flush's own geometry -- the anchor it started
+ * from, what it slid, what it paid with the buffer, the row0 it therefore addressed model row 0 at, and
+ * whether a move call failed. Every one of those was already in the plan; none of them survived it, and a
+ * gate that can only read the console has to infer a claim from where the ink fell. That inference is exactly
+ * what the scrolled-backbuffer cases turn on: two rows of the same numbered line, 341 buffer rows apart, is
+ * a model painting at a claim its window does not have, and nothing on screen says so. Production is
+ * unchanged by it -- the fields are stores on the flush path, and the export is not on its symbol list.
+ * -11 is what that eye was for. A buffer scroll -- the leg that pays a newline once the window has no room
+ * left to slide -- was addressing `ScrollConsoleScreenBuffer`'s destination as a *relative* offset, and the
+ * API has no such reading: conhost turns the target into a displacement by subtracting the source's own top
+ * (`getset.cpp:948`, then `TextBuffer::ScrollAndClear`). So `-by` asked for a shift of `-(by + srcTop)`, and
+ * the source rect was the band as the plan re-claimed it rather than the band the anchor held before the
+ * slide. Together, on the far side of the slide cap (base 340, window 370, `by` 20 -- measured in
+ * Render.java's scrolled-back case, and the reason it reads as duplicates 341 and 361 rows apart): the whole
+ * model band was hoisted to buffer rows 0..58, over the user's scrollback, and the rows the model then
+ * painted as its own were left holding cells by `by` rows too high. Invisible in the window -- those rows are
+ * dirty and repainted either way -- and exactly what the user sees by scrolling up. rc_scroll_band now owns
+ * that arithmetic, where RenderCheck can pin it without a console; the same call's *column* was shifted by
+ * `-winL` for the same reason, which no gate can currently produce (I22) and which the fix closes anyway. A
+ * -10 binary and a -11 tree agree on every flush that slides and disagree on the first one that has to pay
+ * with the buffer, which is to say: on the scrollback of any session long enough to need one.
+ * -12 is the other half of that same scroll, and it is the #34 defect: the *reach* was band-only everywhere,
+ * including where the buffer had no room left. Write 380 lines of somebody else's text and then 200 of this
+ * program's into a 400-row buffer, against the same program writing the same bytes through the console API
+ * directly: the console keeps the last 400 lines in order, while the renderer froze the first 340 of the
+ * earlier text in rows 0..339 and destroyed 141 of this program's own -- newest lines dropped, older ones
+ * kept, the ring run backwards. A buffer that is full has only one answer to a new line, and conhost's is
+ * `IncrementCircularBuffer` (`_stream.cpp:123-126`), which moves the whole buffer and evicts its top; the
+ * band stays the limit while there are unused rows *below* it, which is the case -8 measured and -11 fixed
+ * the destination of. rc_scroll_band now decides between the two, and the rows inside the claim move to the
+ * same places either way, so the paint is untouched by this -- what changes is everything above it. A -11
+ * binary and a -12 tree agree on every flush that has room below the claim, which is most of a session, and
+ * disagree on the first one after the window reaches the buffer's last row, which is the start of scrolling
+ * for anything longer than a screenful.
+ * -13 says *which* flush that is, and the first cut of -12 got it wrong in the direction only a census can
+ * see. The question is the claim's last row as this flush leaves it (`row0 + rows`), not as it started
+ * (`base + rows`), because a slide spends buffer rows without moving a single cell: 19 of a 20-line debt paid
+ * by sliding the window still leaves the 20th owed an eviction, and paying it with a band scroll instead left
+ * 401 live lines in a 400-row buffer -- measured, in the new census this gate runs, as 399 rows of an
+ * unbroken numbered session, one line missing from the middle of it and the last row blank. Sliding as far as
+ * the buffer allows puts `row0` on `bufH - rows` by construction, so every mixed flush is an eviction and the
+ * band answer survives only where the model has unused rows below it while the user is looking somewhere else
+ * -- which is now pinned on both sides in RenderCheck. A -12 binary
+ * and a -13 tree agree on every flush of a session the window has never run out of room for, and disagree from
+ * the first newline that slides the window to the bottom of the buffer. */
+#define RENDER_BUILD "render-2026-09-25-13"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -126,12 +193,14 @@ enum
  * after that family are the title counters. Growing the family moves the titles, which is why they are
  * derived rather than written out: the Java binding (NativeRenderer.java) and the gate (Render.java) both name slot numbers, and
  * the gate prints both ends of that seam in one run so a slip cannot go unnoticed. The alt counters come
- * after the titles and the FTCS counters after those, and both are new slots -- never a moved one. */
+ * after the titles and the FTCS counters after those, and the query-reply counters after them -- all new
+ * slots, never a moved one. */
 #define STAT_UNSUPPORTED 17
 #define STAT_TITLES      (STAT_UNSUPPORTED + RC_UN_MAX)
 #define STAT_ALT         (STAT_TITLES + 3)
 #define STAT_PROMPT      (STAT_ALT + 2)
-#define STAT_LAST        (STAT_PROMPT + 2)
+#define STAT_REPORT      (STAT_PROMPT + 2)   /* replies written, failed, and refused for want of a slot */
+#define STAT_LAST        (STAT_REPORT + 3)
 
 #ifdef __MINGW32__
 #define CH_UNICODE(ci) ((ci).Char.UnicodeChar)
@@ -150,6 +219,10 @@ typedef struct RcHandle
   int ncells;
   HANDLE con;                      /* CONOUT$, or the handle the caller passed */
   int ownsCon;                     /* only a handle we opened here may be closed here */
+  /* CONIN$, opened the first time this stream asks a question that needs an answer (DSR, DA) and kept until
+     close(). Lazily because a session that never asks should not pay for a handle, and a process that has no
+     console input at all -- a redirected or headless one -- must not fail any earlier than the query. */
+  HANDLE in;
   uint16_t defAttr;
   /* Content from this chunk has reached the console, so a later decline in the same chunk must not send
      the caller back to a raw write with the same bytes: that is how text gets painted twice. */
@@ -160,6 +233,19 @@ typedef struct RcHandle
      ever reads back. */
   int adopt, declines;
   char stopped[128];
+  /* The rows this handle's model last claimed, kept here rather than only in the grid because a resize
+     rebuilds the grid and must not lose the claim with it: rc_anchor_adopt carries it across. `prevWinB` is
+     the window's bottom as the last plan left it, which is the half the grid has no room for -- and the half
+     that tells a slide the painter made from a scroll the user made. Zeroed when the slot goes back to the
+     pool, so a reused handle starts with nothing but the window to go on. */
+  int prevSet, prevBase, prevRows, prevWinB;
+  /* What the last plan asked the console for, named rather than inferred. Everything the gate can read off
+     the screen -- the buffer, the window, the cursor -- says where the console is; none of it says where the
+     painter *believed* its rows were, and the defect this records is exactly the difference between the two.
+     A row the model wrote at a claim nothing on screen reveals is the #35 class of damage, and it is invisible
+     in the cell census. Java_Render_plan reads these back; painting them costs a store per flush. */
+  int trSeq, trReason, trBaseSet, trBaseRow, trWinT, trBase, trSlide, trSlideTo, trBufScroll, trRow0,
+      trWinTop, trRows, trWinRows, trBufH, trPend, trRuns, trDeclined, trMoveFail;
   unsigned long nFlush, nPaints, nDeclines, nApiErrors, nAligns;
   int lastReason;
   char lastError[128];
@@ -181,7 +267,8 @@ static int g_openStatus;           /* the last open() failure, for the caller's 
  * Plain += on diagnostics: this is the same exposure the existing g_openStatus
  * already has, and no painting reads it. */
 static unsigned long g_totUn[RC_UN_MAX], g_totTitle, g_totTitleTrunc, g_titleCalls,
-                     g_totAltSwitch, g_totAltFail, g_totPromptMark;
+                     g_totAltSwitch, g_totAltFail, g_totPromptMark,
+                     g_totRepOk, g_totRepFail, g_totRepFull;
 
 /* Is this pointer one of our slots, and still claimed? The claim is what makes junk pointers and
    already-closed ones the same case: both answer NULL, and no call dereferences anything. A renderer that
@@ -268,22 +355,56 @@ static LONG write_rect(HANDLE con, const RcView *v, const RcPlan *p, int top, in
   return WriteConsoleOutputW(con, cells, size, coord, &rect) ? 0L : (LONG)GetLastError();
 }
 
-static LONG scroll_buffer(HANDLE con, const RcView *v, int by, uint16_t attr)
+/* Scroll the rows a buffer scroll owes up by `by`, filling the rows they vacate.
+ *
+ * Which rows those are is the planner's answer, not this call's: rc_scroll_band (Paint.cpp rule 1b) gives the
+ * band as the *anchor* claimed it before this plan slid the window, moving up by `by` onto the band as it
+ * claims it after -- and, once the claim has the buffer's last row and there is no room left below it, the
+ * whole buffer instead, so that the oldest lines leave the top the way a terminal's do. A first cut here took
+ * the whole buffer unconditionally, and the measurement that ruled it out is worth keeping straight: with the
+ * window at buffer row 30 of a 60-row buffer and the user scrolled up to row 0, it moved 30 rows of somebody
+ * else's history and dropped its top line to pay for one line of this program's output. The damage was not
+ * the reach but the *unconditional* reach -- that buffer was full, so the eviction itself was owed. What is
+ * never owed, and what a band-relative source buys, is moving rows the model has no claim on while rows
+ * below the claim still sit unused; conhost's ordinary output scroller passes GetVirtualViewport() rather
+ * than srWindow (`screenBuffer.cpp:2109,2065`; the field is "not affected by the user scrolling the
+ * viewport", screenInfo.hpp:218) and reaches the ring only at `_stream.cpp:123-126`, past the last row.
+ * ghostty says the same thing as a type for the ordinary case: a program may address the `.active` rows and
+ * nothing else (point.zig:26-30).
+ *
+ * The destination is an absolute row, which is the half that was wrong here for the whole life of this
+ * function: `ScrollConsoleScreenBuffer`'s fourth argument is "the new upper-left position", and conhost turns
+ * it into a displacement by subtracting the source's own top (`getset.cpp:948` -- the empty-request guard
+ * compares `source.top == target.y` outright, and `TextBuffer::ScrollAndClear` shifts by
+ * `target - source.TopLeft`). Handing it the relative `-by` therefore asked for a shift of `-(by + srcTop)`,
+ * which on the far side of the slide cap -- base 340, `by` 20 -- moved the model's whole band to buffer rows
+ * 0..58. Measured, and it is the #35 defect: the visible window never showed the difference, because its rows
+ * are dirty and repainted anyway, and everything the shift destroyed was above it, in the scrollback the user
+ * scrolls up to read. */
+static LONG scroll_region(HANDLE con, const RcView *v, const RcPlan *p, int modelRows,
+                          int by, uint16_t attr)
 {
   CHAR_INFO fill;
   COORD dest;
-  SMALL_RECT whole;
+  SMALL_RECT src;
+  int top, bottom;
+  if (!rc_scroll_band(p, modelRows, v->bufH, &top, &bottom)) return 0L;  /* nothing left to move: not an error */
   memset(&fill, 0, sizeof fill);
   fill.Attributes = attr;
   CH_UNICODE(fill) = ' ';
-  dest.X = 0;
-  dest.Y = (SHORT)(-by);
-  whole.Left = 0;
-  whole.Top = 0;
-  whole.Right = (SHORT)(v->bufW - 1);
-  whole.Bottom = (SHORT)(v->bufH - 1);
+  dest.X = v->winL;
+  dest.Y = (SHORT)(top - by);                 /* absolute, and `by` rows above where the band starts now */
+  /* This one subtraction may ask for a row above the buffer's first, and that is the band's own answer rather
+     than a bug in it: rc_scroll_band clamps `top` to row 0 without reducing `by`, because a claim whose
+     anchor sits above row 0 has already lost those rows -- conhost trims the request to [by..bottom] ->
+     [0..bottom-by] itself (host/output.cpp:365-397), and RenderCheck's "gutter:" case pins that arithmetic.
+     Shortening `by` here would instead move the model's rows to rows the model no longer claims. */
+  src.Left = (SHORT)v->winL;
+  src.Top = (SHORT)top;
+  src.Right = (SHORT)(v->winL + p->paintCols - 1);
+  src.Bottom = (SHORT)bottom;
   SetLastError(0);
-  return ScrollConsoleScreenBufferW(con, &whole, NULL, dest, &fill) ? 0L : (LONG)GetLastError();
+  return ScrollConsoleScreenBufferW(con, &src, NULL, dest, &fill) ? 0L : (LONG)GetLastError();
 }
 
 static LONG park_cursor(HANDLE con, int x, int y)
@@ -293,6 +414,138 @@ static LONG park_cursor(HANDLE con, int x, int y)
   c.Y = (SHORT)y;
   SetLastError(0);
   return SetConsoleCursorPosition(con, c) ? 0L : (LONG)GetLastError();
+}
+
+/* ------------------------------------------------------ the answers a query asked for ------------- */
+
+/* Two small writers, because the replies are built by hand rather than with a wide printf: `swprintf` with
+ * a size argument is the C99 form, and mingw's CRT puts either spelling behind a feature test depending on
+ * the standard level. A query that went unanswered hangs the asker, so the formatter must not be the thing
+ * that depends on a CRT dialect. */
+static void w_lit(wchar_t *b, int *n, int cap, const char *s)
+{
+  for (; *s && *n + 1 < cap; s++) b[(*n)++] = (wchar_t)(unsigned char)*s;
+}
+
+static void w_dec(wchar_t *b, int *n, int cap, int v)
+{
+  char t[12];
+  if (v < 0) v = 0;
+  snprintf(t, sizeof t, "%d", v);
+  w_lit(b, n, cap, t);
+}
+
+/* The reply text for one armed query, without the introducer: the queue entry says which query, and `row`
+ * and `col` are the model position the cursor stood on when it was read. Returns the length.
+ *
+ * DA1 is conhost's own string minus `;52`, the clipboard access that parameter advertises and that this
+ * renderer does not model -- conhost says the same thing itself when its ClipboardWrite feature is off
+ * (adaptDispatch.cpp:1454-1461), and the service class `61` is what the emulator underneath really reports.
+ * Parity is the point rather than pedantry: a chunk this library declines goes to the console unparsed, and
+ * conhost answers *that* query, so a program must not meet two identities in one session. DA2 is conhost's
+ * `>0;10;1` (adaptDispatch.cpp:1471-1474): a VT100, firmware 1.0, PC keyboard. */
+static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *p,
+                      int y, int x, wchar_t *out, int cap)
+{
+  int n = 0;
+  switch (kind)
+  {
+    case RC_REP_DSR:                              /* "are you there" -- "ready" */
+      w_lit(out, &n, cap, "\x1b[0n");
+      break;
+    case RC_REP_CPR:
+    {
+      /* The same arithmetic the painter used to place the cursor in this frame: model row `y` is buffer row
+         `row0 + y`, and a CPR counts from the *window's* top, so the window the plan leaves behind is part of
+         the answer. Clamped, because a cursor below a window the user has scrolled up to the top of is not on
+         any screen -- a row of 0 or a row past the bottom would be an answer no parser was written to read. */
+      int row = p->row0 + y - p->winTop + 1;
+      if (row < 1) row = 1;
+      if (row > g->winRows) row = g->winRows;
+      /* Columns need no clamp: the model row is the buffer row (I7), so a column right of the window is a
+         real cell the user scrolls sideways to see, and conhost reports exactly that (position less the
+         viewport origin, 1-based). */
+      w_lit(out, &n, cap, "\x1b[");
+      w_dec(out, &n, cap, row);
+      w_lit(out, &n, cap, ";");
+      w_dec(out, &n, cap, x + 1);
+      w_lit(out, &n, cap, "R");
+      break;
+    }
+    case RC_REP_DA:
+      w_lit(out, &n, cap, "\x1b[?61;4;6;7;14;21;22;23;24;28;32;42c");
+      break;
+    case RC_REP_DA2:
+      w_lit(out, &n, cap, "\x1b[>0;10;1c");
+      break;
+    default:
+      break;
+  }
+  (void)v;
+  out[n] = 0;
+  return n;
+}
+
+/* Hand every armed query its answer, as key events on the console's input stream -- which is how conhost
+ * does it: "this will generate two key presses (one down, one up) for every character in the string and
+ * place them into the head of the console's input stream" (outputStream.cpp:43-45), built by
+ * SynthesizeKeyEvent(down, 1, vk 0, scan 0, ch, ctrlState 0) (inputBuffer.cpp:799-816). Nothing about the
+ * screen moves here, which is why this is the last thing a flush does rather than part of the plan: the
+ * reply is about the *reader*, and a program blocked on `tput rows` must be woken even by a chunk that
+ * painted nothing at all.
+ *
+ * Only ever called on a flush that is returning success. A declined chunk is replayed to the console
+ * unparsed and conhost answers the same query itself, so answering here too would leave a second reply in
+ * the input stream for the next reader to trip over. */
+static void flush_reports(RcHandle *h, const RcView *v, const RcPlan *p)
+{
+  RcGrid *g = h->g;
+  while (rc_report_pending(g) > 0)
+  {
+    int y = 0, x = 0;
+    const int kind = rc_report_take(g, &y, &x);
+    wchar_t txt[64];
+    const int n = reply_text(kind, g, v, p, y, x, txt, (int)(sizeof txt / sizeof txt[0]));
+    if (n <= 0) { rc_report_result(g, 0); continue; }   /* a kind with no reply: counted, never silent */
+    if (h->in == INVALID_HANDLE_VALUE)
+      h->in = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (h->in == INVALID_HANDLE_VALUE)
+    {
+      /* No input stream to answer into: this handle is attached to a console with no readable input, and
+         every question the stream asked from now on goes unanswered. One sentence in lastError, and the
+         census count, is the whole report -- a per-query retry here buys nothing. */
+      snprintf(h->lastError, sizeof h->lastError, "reply: no CONIN$ (%lu)", (unsigned long)GetLastError());
+      h->nApiErrors++;
+      rc_report_result(g, 0);
+      while (rc_report_pending(g) > 0) { rc_report_take(g, NULL, NULL); rc_report_result(g, 0); }
+      return;
+    }
+    INPUT_RECORD rec[160];
+    int nrec = 0;
+    const int room = (int)(sizeof rec / sizeof rec[0]);
+    for (int i = 0; i < n && nrec + 2 <= room; i++)
+    {
+      rec[nrec].EventType = KEY_EVENT;
+      rec[nrec].Event.KeyEvent.bKeyDown = TRUE;
+      rec[nrec].Event.KeyEvent.wRepeatCount = 1;
+      rec[nrec].Event.KeyEvent.wVirtualKeyCode = 0;
+      rec[nrec].Event.KeyEvent.wVirtualScanCode = 0;
+      rec[nrec].Event.KeyEvent.uChar.UnicodeChar = txt[i];
+      rec[nrec].Event.KeyEvent.dwControlKeyState = 0;
+      rec[nrec + 1] = rec[nrec];
+      rec[nrec + 1].Event.KeyEvent.bKeyDown = FALSE;
+      nrec += 2;
+    }
+    DWORD written = 0;
+    const BOOL ok = WriteConsoleInputW(h->in, rec, (DWORD)nrec, &written);
+    rc_report_result(g, (ok && written == (DWORD)nrec) ? 1 : 0);
+    if (!ok || written != (DWORD)nrec)
+    {
+      snprintf(h->lastError, sizeof h->lastError, "reply=%lu", (unsigned long)GetLastError());
+      h->nApiErrors++;
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ one paint ------------------ */
@@ -320,35 +573,76 @@ static int paint_flush(RcHandle *h)
   {
     snprintf(h->lastError, sizeof h->lastError, "flush: no console (%lu)", (unsigned long)GetLastError());
     g->pendingScrolls = 0;
-    rc_mark_all_dirty(g);
+    rc_drop_base(g);                 /* nothing was read, so nothing is known about where the rows are */
     return FLUSH_API;
   }
   rc_plan_paint(g, &v, &p);
   h->lastReason = p.reason;
   h->nFlush++;
+  /* The census of this flush, taken before anything is executed: a plan that later fails halfway is exactly
+     the case worth reading back, and a field filled after the calls would say nothing about it. `trBase` is
+     the claim the plan started from, which is the row0 it computed minus whatever it then slid -- the one
+     number the screen itself cannot show. */
+  h->trSeq++;
+  h->trReason = p.reason;
+  h->trBaseSet = g->baseSet;
+  h->trBaseRow = g->baseRow;
+  h->trWinT = v.winT;
+  h->trBase = p.row0 - p.slideRows;
+  h->trSlide = p.slideRows;
+  h->trSlideTo = p.slideTo;
+  h->trBufScroll = p.bufScroll;
+  h->trRow0 = p.row0;
+  h->trWinTop = p.winTop;
+  h->trRows = g->rows;
+  h->trWinRows = g->winRows;
+  h->trBufH = v.bufH;
+  h->trPend = g->pendingScrolls;
+  h->trRuns = p.nRuns;
+  h->trDeclined = (p.reason == RC_PLAN_NOGEOM) ? 1 : 0;
+  h->trMoveFail = 0;
 
   if (p.reason == RC_PLAN_NOGEOM) DECLINE(FLUSH_NOGEOM);
 
   int landed = h->landedChunk;
 
-  /* Order is the plan's: slide, then scroll, then cells. Any other order moves the wrong rows. */
+  /* Order is the plan's: slide, then scroll, then cells. Any other order moves the wrong rows.
+     `movedAsPlanned` is why the two are watched at all: the model's anchor may only move with rows the
+     console really moved, or every later rectangle would be addressed to a row nothing owns. */
+  int movedAsPlanned = 1;
   if (p.slideTo >= 0)
   {
     LONG e = park_cursor(h->con, v.winL, p.slideTo);
-    if (e) { snprintf(h->lastError, sizeof h->lastError, "slide=%ld", e); h->nApiErrors++; }
+    if (e) { snprintf(h->lastError, sizeof h->lastError, "slide=%ld", e); h->nApiErrors++; h->trMoveFail = 1; movedAsPlanned = 0; }
     else { landed = 1; h->landedChunk = 1; }
   }
   if (p.bufScroll > 0)
   {
-    LONG e = scroll_buffer(h->con, &v, p.bufScroll, p.scrollAttr);
+    LONG e = scroll_region(h->con, &v, &p, g->rows, p.bufScroll, p.scrollAttr);
     if (e)
     {
       snprintf(h->lastError, sizeof h->lastError, "scroll=%ld", e);
       h->nApiErrors++;
+      h->trMoveFail = 1;
+      movedAsPlanned = 0;
       if (!landed) DECLINE(FLUSH_API);
     }
     else { landed = 1; h->landedChunk = 1; }
   }
+  /* The model owns these buffer rows from here on -- including when nothing moved, which is the case that
+     matters: claiming the anchor at the first paint is what stops a later flush from re-deriving it from a
+     window the user has since dragged over scrollback. A slide carries it down with the window; a buffer
+     scroll leaves it where it is and moves the cells under it, so both plans end on the same `p.row0`, and
+     a pair that did not land may not be claimed at all. */
+  if (movedAsPlanned) rc_set_base(g, p.row0);
+  else rc_drop_base(g);
+  /* The claim travels to the handle in the form a rebuild can carry: bottom rather than top, because the
+     next grid's `rows` may not be this one's. Only what the console really moved may be remembered, so a
+     pair that did not land leaves `prevSet` at whatever the grid says. */
+  h->prevSet = g->baseSet;
+  h->prevBase = g->baseRow;
+  h->prevRows = g->rows;
+  h->prevWinB = p.winTop + g->winRows - 1;
 
   if (p.nRuns > 0)
   {
@@ -429,6 +723,11 @@ static int paint_flush(RcHandle *h)
     }
   }
 
+  /* The queries this chunk armed, answered after the screen they describe is on the console and before the
+     model is told the frame is over: a CPR reports where the cursor was when the question was read, and the
+     rows it is measured against are the ones this flush just placed. */
+  flush_reports(h, &v, &p);
+
   rc_paint_done(g);
 #undef DECLINE
   if (!landed && p.reason == RC_PLAN_EMPTY) return FLUSH_NOTHING;
@@ -449,7 +748,7 @@ static void flush_now(void *ctx)
 /* ------------------------------------------------------- the chunk policy (was Java) ---------- */
 
 extern "C" {                    /* the same language linkage as its definition below the exports */
-static int align_grid(RcHandle *h);
+static int align_grid(RcHandle *h, int reshaped);
 }
 
 /* What the byte stream asked for, over the life of the process, folded in from the model that read it.
@@ -464,6 +763,9 @@ static void fold_counters(RcHandle *h)
   g_totAltSwitch += h->g->nAltSwitch;
   g_totAltFail += h->g->nAltFail;
   g_totPromptMark += h->g->nPromptMark;
+  g_totRepOk += h->g->nReportOk;
+  g_totRepFail += h->g->nReportFail;
+  g_totRepFull += h->g->nReportFull;
 }
 
 static void drop_model(RcHandle *h)
@@ -484,9 +786,14 @@ static void release_all(RcHandle *h)
   free(h->cells);
   h->cells = NULL;
   h->ncells = 0;
+  /* The claim goes with the slot: a reused handle must start as knowing nothing but the window, or a
+     previous session's rows would anchor the next one's first paint. */
+  h->prevSet = h->prevBase = h->prevRows = h->prevWinB = 0;
   if (h->con != INVALID_HANDLE_VALUE && h->ownsCon) CloseHandle(h->con);
   h->con = INVALID_HANDLE_VALUE;
   h->ownsCon = 0;
+  if (h->in != INVALID_HANDLE_VALUE) CloseHandle(h->in);
+  h->in = INVALID_HANDLE_VALUE;
   h->taken = 0;                          /* last: until here the slot still answers its own pointer */
 }
 
@@ -549,8 +856,14 @@ static int readopt(RcHandle *h, int *status)
   CONSOLE_SCREEN_BUFFER_INFO csbi;
   *status = OPEN_NO_CONSOLE;
   if (h->con == INVALID_HANDLE_VALUE || !view_of(h->con, &v, &csbi)) return 0;
+  const int wasRows = h->g ? h->g->winRows : 0;
   if (!build_model(h, v.bufW - v.winL, v.winB - v.winT + 1, h->defAttr, status)) return 0;
-  return align_grid(h) ? 1 : (*status = OPEN_NO_CONSOLE, 0);
+  /* Only a rebuild that changed the window's height is a resize. conhost draws the same line
+     (_InternalSetViewportSize vs SetViewportOrigin, Paint.cpp), and a re-adopt that merely re-read a console
+     whose shape never changed must not drop an anchor the user's scroll-wheel put a whole screen away from
+     the window -- that is the one case the anchor exists for. */
+  const int shaped = (wasRows != 0 && h->g->winRows != wasRows);
+  return align_grid(h, shaped) ? 1 : (*status = OPEN_NO_CONSOLE, 0);
 }
 
 /* The end of the fast path for this console. The reason is kept once and never overwritten, because the
@@ -580,7 +893,7 @@ static int refuse(RcHandle *h, int status)
 static int paint_and_check(RcHandle *h)
 {
   const int r = paint_flush(h);
-  if (r >= 0 && rc_model_suspect(h->g)) align_grid(h);
+  if (r >= 0 && rc_model_suspect(h->g)) align_grid(h, 0);
   return r;
 }
 
@@ -617,7 +930,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_render
        emulated alt screen the console has never heard of. Only a rebuild is honest there. Otherwise align
        first, since align fails exactly when the console's shape is not the model's -- which is the case
        that needs a rebuilt grid anyway. */
-    const int cheap = (h->adopt == RC_ALIGN) && align_grid(h);
+    const int cheap = (h->adopt == RC_ALIGN) && align_grid(h, 0);
     if (cheap) h->adopt = RC_ADOPTED;
     else
     {
@@ -754,7 +1067,10 @@ JNIEXPORT jlong JNICALL Java_com_hyee_ansirender_NativeRenderer_open(JNIEnv *env
   slot->taken = 1;
   slot->con = con;
   slot->ownsCon = (console == 0) ? 1 : 0;
-  slot->adopt = RC_ALIGN;
+  slot->in = INVALID_HANDLE_VALUE;                /* CONIN$ is opened by the first query that needs it */
+  slot->prevSet = slot->prevBase = slot->prevRows = slot->prevWinB = 0;
+  slot->trSeq = 0;                              /* a new session has no last plan to report */
+  slot->adopt = RC_ALIGN;                         /* a new session: the window is all it knows */
   slot->declines = 0;
   slot->stopped[0] = 0;
   slot->cells = NULL;
@@ -852,12 +1168,18 @@ JNIEXPORT jcharArray JNICALL Java_com_hyee_ansirender_NativeRenderer_sgr(JNIEnv 
 }
 
 /**
- * Adopt whatever the console currently shows: the window's cells, the cursor, the attribute. Called
- * before the first chunk, after any FLUSH_NOGEOM, and after a chunk that swallowed a sequence with the
- * reach to move a cursor (see RcGrid::modelSuspect). Parser state is kept, so a half-parsed escape
- * still finishes.
+ * Adopt whatever the console currently shows: the model's rows, the cursor, the attribute. Called before the
+ * first chunk, after any FLUSH_NOGEOM, and after a chunk that swallowed a sequence with the reach to move a
+ * cursor (see RcGrid::modelSuspect). Parser state is kept, so a half-parsed escape still finishes.
+ *
+ * "The model's rows" and "the window's rows" are the same thing until the model has a claim on the buffer --
+ * and after a resize rebuilt the grid under a view the user had scrolled away, they are not: the claim
+ * carries (rc_anchor_adopt), and the read follows it, so the rows the user is looking at are left alone
+ * rather than adopted into the application's screen and painted back one viewport lower. `reshaped` is
+ * that caller's knowledge, which this function cannot recover: by the time it runs, the grid already has the
+ * new height and the console already has the new window, and the two agree by construction.
  */
-static int align_grid(RcHandle *h)
+static int align_grid(RcHandle *h, int reshaped)
 {
   if (!h) return 0;
   RcGrid *g = h->g;
@@ -867,6 +1189,9 @@ static int align_grid(RcHandle *h)
   if (h->con == INVALID_HANDLE_VALUE || !view_of(h->con, &v, &csbi)) return 0;
   if (v.bufW - v.winL != g->cols || v.winB - v.winT + 1 != g->winRows) return 0;
 
+  const int base = rc_anchor_adopt(h->prevSet, h->prevBase, h->prevRows, h->prevWinB, reshaped,
+                                   v.winT, v.winB, v.bufH, g->rows, g->winRows);
+  const int readTop = base + hist;    /* buffer row of the model's first viewport row */
   const int cells = g->cols * g->winRows;
   CHAR_INFO *buf = (CHAR_INFO *)malloc((size_t)cells * sizeof(CHAR_INFO));
   if (!buf) return 0;
@@ -879,8 +1204,8 @@ static int align_grid(RcHandle *h)
   coord.Y = 0;
   rect.Left = (SHORT)v.winL;
   rect.Right = (SHORT)(v.winL + g->cols - 1);
-  rect.Top = (SHORT)v.winT;
-  rect.Bottom = (SHORT)v.winB;
+  rect.Top = (SHORT)readTop;
+  rect.Bottom = (SHORT)(readTop + g->winRows - 1);
   BOOL ok = ReadConsoleOutputW(h->con, buf, size, coord, &rect);
   if (!ok)
   {
@@ -888,8 +1213,9 @@ static int align_grid(RcHandle *h)
     snprintf(h->lastError, sizeof h->lastError, "align read=%lu", (unsigned long)GetLastError());
     return 0;
   }
-  /* The window's rows land on the viewport, i.e. on the model's last winRows rows. What sits above
-     them in the buffer is the user's scrollback: unread, unpainted, and unreachable by the cursor. */
+  /* The rows read land on the viewport, i.e. on the model's last winRows rows. What sits above them in the
+     buffer is the user's scrollback: unread, unpainted, and unreachable by the cursor -- and when the anchor
+     was carried across a rebuild, some of it sits *below* the window the user scrolled to as well. */
   for (int r = 0; r < g->winRows; r++)
     for (int c = 0; c < g->cols; c++)
     {
@@ -903,8 +1229,17 @@ static int align_grid(RcHandle *h)
      there (measured 2026-09-23: 150 units in a 100-column window of a 200-column buffer, srWindow
      unmoved), and those columns are ordinary model columns now, so it is adopted rather than clamped. */
   g->cx = (v.curX >= v.winL && v.curX < v.bufW) ? v.curX - v.winL : 0;
-  g->cy = (v.curY >= v.winT && v.curY <= v.winB) ? hist + v.curY - v.winT : hist;
+  g->cy = (v.curY >= readTop && v.curY <= readTop + g->winRows - 1) ? v.curY - base : hist;
   g->pendingScrolls = 0;
+  /* The rows the read came from are now the model's, and from here the painter never asks the view again: a
+     user who scrolls up a moment later moves a view, not a mapping. This is the claim a first flush would
+     otherwise make -- and the claim a resize rebuilds the grid *around*, which is the whole point of reading
+     at `base` instead of at `v.winT`. */
+  rc_set_base(g, base);
+  h->prevSet = g->baseSet;
+  h->prevBase = g->baseRow;
+  h->prevRows = g->rows;
+  h->prevWinB = v.winB;
   g->onFlush = flush_now;                            /* re-armed: this model is trusted again */
   g->flushCtx = h;
   h->nAligns++;
@@ -918,7 +1253,7 @@ static int align_grid(RcHandle *h)
 
 JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_align(JNIEnv *env, jclass cls, jlong ph)
 {
-  return (jint)align_grid(handle(ph));
+  return (jint)align_grid(handle(ph), 0);
 }
 
 /** [0] flushes [1] rectangle writes [2] declines [3] api errors [4] aligns [5] cells painted
@@ -929,7 +1264,9 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_align(JNIEnv *env
  *  [17+enum RcUnsupported] sequences the stream contained that we consume without modelling, in the
  *  enum's order: [17] unrecognised [18] scroll region [19] alt buffer [20] mouse [21] mode
  *  [22] bracketed paste [23] ConEmu's private OSC 9 [24] any other OSC, which is where a rejected OSC 133
- *  [25] DCS [26] report request
+ *  [25] DCS [26] a report this build will not answer -- a cursor position asked in pixels, `CSI t`, a DA
+ *  with a parameter: the ones it does answer are armed in the model and written back as key events by
+ *  flush_reports()
  *  [27] a CSI that carried ':' (see STAT_TITLES, which the family's length moves)
  *  [STAT_TITLES..] titles accepted by the parser, of those truncated at RC_TITLE_MAX, and titles the
  *  console took.
@@ -937,12 +1274,15 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_align(JNIEnv *env
  *  the ones refused because the snapshot's allocation failed.
  *  [STAT_PROMPT..] OSC 133 marks this process laid down (I23), then the exit code the live grid last read
  *  from a 133;D: RC_EXIT_UNKNOWN before any D arrived, RC_EXIT_UNPARSABLE for one whose code was not a
- *  number. Slots from 17 on are process-wide rather than per-model on purpose (see g_tot*): "did this
- *  session's output ask for an alt buffer, or run a full-screen program, or mark its prompts" is a question
- *  about the byte stream, and a resize in the middle of it must not erase the answer. The last exit code is
- *  the one exception -- the question it answers ("what would a status bar show now") is about the grid
- *  standing here and now, and folding it would mean summing values that do not add. Everything else below
- *  17 describes one model. */
+ *  number.
+ *  [STAT_REPORT..] query replies the console took, replies whose write failed or fell short, and queries
+ *  refused because eight were already waiting. A non-zero middle or last entry is the difference between a
+ *  program that got its answer and one that is still waiting for it. Slots from 17 on are process-wide
+ *  rather than per-model on purpose (see g_tot*): "did this session's output ask for an alt buffer, or run a
+ *  full-screen program, or mark its prompts" is a question about the byte stream, and a resize in the middle
+ *  of it must not erase the answer. The last exit code is the one exception -- the question it answers
+ *  ("what would a status bar show now") is about the grid standing here and now, and folding it would mean
+ *  summing values that do not add. Everything else below 17 describes one model. */
 JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEnv *env, jclass cls, jlong ph)
 {
   RcHandle *h = slot_of(ph);
@@ -983,6 +1323,9 @@ JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEn
     out[STAT_ALT + 1] = (jlong)(g_totAltFail + (g ? g->nAltFail : 0));
     out[STAT_PROMPT] = (jlong)(g_totPromptMark + (g ? g->nPromptMark : 0));
     out[STAT_PROMPT + 1] = g ? (jlong)rc_last_exit(g) : (jlong)RC_EXIT_UNKNOWN;
+    out[STAT_REPORT] = (jlong)(g_totRepOk + (g ? g->nReportOk : 0));
+    out[STAT_REPORT + 1] = (jlong)(g_totRepFail + (g ? g->nReportFail : 0));
+    out[STAT_REPORT + 2] = (jlong)(g_totRepFull + (g ? g->nReportFull : 0));
   }
   jlongArray arr = env->NewLongArray(STAT_LAST);
   if (arr) env->SetLongArrayRegion(arr, 0, STAT_LAST, out);
@@ -1135,6 +1478,97 @@ JNIEXPORT jcharArray JNICALL Java_Render_consoleTitle(JNIEnv *env, jclass cls)
   for (DWORD i = 0; i < n; i++) p[i] = (jchar)t[i];
   env->ReleasePrimitiveArrayCritical(a, p, 0);
   return a;
+}
+
+/** The characters sitting in the console's input stream, consumed by this call. Gate-only, and the only
+ *  witness that can say what a reply *said*: flush_reports already counts whether WriteConsoleInputW took its
+ *  records, and a count is not an answer -- a CPR one row off hangs the program that asked for it, which is
+ *  exactly the bug this function exists to catch. Peek, then read exactly what the peek found, so a gate run
+ *  with nobody typing cannot block. Key-up events are skipped, because a reply is one down/up pair per
+ *  character and the character is in both halves. */
+JNIEXPORT jcharArray JNICALL Java_Render_readInput(JNIEnv *env, jclass cls, jint max)
+{
+  (void)cls;
+  wchar_t txt[512];
+  int n = 0;
+  if (max > (int)(sizeof txt / sizeof txt[0])) max = (int)(sizeof txt / sizeof txt[0]);
+  HANDLE in = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+  if (in == INVALID_HANDLE_VALUE) return NULL;
+  INPUT_RECORD rec[256];
+  DWORD avail = 0, got = 0;
+  /* Peek before reading: a console nobody is typing into would block a plain ReadConsoleInputW, and this
+     gate runs on an allocated console with no window to type into. */
+  if (PeekConsoleInputW(in, rec, 256, &avail) && avail > 0 &&
+      ReadConsoleInputW(in, rec, avail < 256 ? avail : 256, &got))
+  {
+    for (DWORD i = 0; i < got && n < max; i++)
+      if (rec[i].EventType == KEY_EVENT && rec[i].Event.KeyEvent.bKeyDown) txt[n++] = rec[i].Event.KeyEvent.uChar.UnicodeChar;
+  }
+  CloseHandle(in);
+  jcharArray a = env->NewCharArray(n);
+  if (!a) return NULL;
+  if (n > 0)
+  {
+    jchar *p = (jchar *)env->GetPrimitiveArrayCritical(a, NULL);
+    if (p) { for (int i = 0; i < n; i++) p[i] = (jchar)txt[i]; env->ReleasePrimitiveArrayCritical(a, p, 0); }
+  }
+  return a;
+}
+
+/**
+ * Rebuild this handle's model for the console's shape *now* and adopt what it shows: `readopt()`, the same
+ * call render() makes on the chunk after a geometry decline. It is exported for the gate alone because that
+ * is the only difference between the two -- production reaches it through render()'s own state machine, and
+ * a case that drove close()+open() instead would be testing a *new* session, which has no anchor to carry
+ * across the resize, and would never notice.
+ *
+ * The handle is unchanged by it (that is readopt's promise: the pointer Java holds is not something it may
+ * ask C to keep up with), so the gate keeps driving the same model afterwards. Returns 1 on a rebuilt and
+ * re-aligned model, 0 with openStatus() naming the refusal.
+ */
+JNIEXPORT jint JNICALL Java_Render_readopt(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)env; (void)cls;
+  RcHandle *h = slot_of(ph);
+  if (!h) return 0;
+  int status = OPEN_OK;
+  return readopt(h, &status) ? 1 : 0;
+}
+
+/**
+ * The last plan this handle executed, field by field: `plan(h)`, for the gate alone.
+ *
+ * [0] seq (plans since this slot was claimed) [1] reason (enum RcPlanReason) [2] baseSet [3] baseRow
+ * [4] winT as the plan read it [5] the anchor the plan started from [6] rows it slid the window
+ * [7] slideTo (the row it parked the cursor on, -1 for none) [8] bufScroll [9] row0 -- the buffer row it
+ * then addressed model row 0 at [10] winTop it left the window on [11] rows [12] winRows [13] bufH
+ * [14] pendingScrolls it spent [15] runs [16] declined on geometry [17] a move call that failed
+ *
+ * Everything the gate can see otherwise is where the console is; none of it is where the painter believed its
+ * rows were, and the class of defect these fields exist for is the difference between the two -- a row written
+ * at a claim the screen cannot show. Production has no use for it (the plan is consumed by the flush that
+ * built it), so this is exported for the witness and nothing else. `seq` is what says so: a plan from before
+ * the current session would be a stale answer, and a gate that did not notice would be reading its own
+ * history back as evidence.
+ */
+JNIEXPORT jlongArray JNICALL Java_Render_plan(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)cls;
+  RcHandle *h = slot_of(ph);
+  jlong out[18];
+  memset(out, 0, sizeof out);
+  if (h)
+  {
+    out[0] = h->trSeq; out[1] = h->trReason; out[2] = h->trBaseSet; out[3] = h->trBaseRow;
+    out[4] = h->trWinT; out[5] = h->trBase; out[6] = h->trSlide; out[7] = h->trSlideTo;
+    out[8] = h->trBufScroll; out[9] = h->trRow0; out[10] = h->trWinTop; out[11] = h->trRows;
+    out[12] = h->trWinRows; out[13] = h->trBufH; out[14] = h->trPend; out[15] = h->trRuns;
+    out[16] = h->trDeclined; out[17] = h->trMoveFail;
+  }
+  jlongArray arr = env->NewLongArray(18);
+  if (arr) env->SetLongArrayRegion(arr, 0, 18, out);
+  return arr;
 }
 
 typedef BOOL (WINAPI *WriteProcessed3Fn)(LPCWSTR, DWORD, LPDWORD, HANDLE);

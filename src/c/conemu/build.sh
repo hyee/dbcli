@@ -175,7 +175,7 @@ for plat in x86 x64; do
       "Java_Probe_build Java_Probe_prepareConsole Java_Probe_readCells Java_Probe_setCursor Java_Probe_writeText" probe
 
   # The renderer itself: model + planner + JNI shell. the Java binding is the production
-  # caller; the four Java_Render_* exports are the gate's own scaffolding (see RenderJni.cpp).
+  # caller; the Java_Render_* exports are the gate's own scaffolding (see RenderJni.cpp).
   $TC $FLAGS -I"$JDK/include" -I"$JDK/include/win32" \
       -c "$SRC_DIR/RenderJni.cpp" -o "$SCRATCH/out/RenderJni-$plat.o" \
       && $TC $STATIC -shared $KILLAT -o "$SCRATCH/$plat/render.dll" \
@@ -192,7 +192,7 @@ for plat in x86 x64; do
        Java_com_hyee_ansirender_NativeRenderer_align Java_com_hyee_ansirender_NativeRenderer_stats \
        Java_com_hyee_ansirender_NativeRenderer_stopReason Java_com_hyee_ansirender_NativeRenderer_close \
        Java_Render_prepareConsole Java_Render_setGeometry Java_Render_readCells \
-       Java_Render_consoleView" render
+       Java_Render_consoleView Java_Render_readInput Java_Render_readopt Java_Render_plan" render
 done
 
 # ---- host gates: the colour oracle, then the model -------------------------------------------

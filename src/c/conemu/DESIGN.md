@@ -57,9 +57,21 @@ terminal and no human looking at one.
 Production methods on `com.hyee.ansirender.NativeRenderer`: `open`, `render`, `openReason`, `stopReason`,
 `stats`, `close`, `build`. The rest of the exports (`feed`, `flush`, `sgr`, `align`, `openStatus`, and the
 `Java_Render_*` scaffolding: `prepareConsole`, `setGeometry`, `consoleView`, `readCells`, `consoleTitle`,
-`writeHk`) exist for the gate, which drives the model one step at a time and reads cells back out of
-`conhost`. `build.sh` asserts the export list on every build, in both bitnesses; that gate is what catches
-a method written outside the `extern "C"` block as a mangled name.
+`readInput`, `readopt`, `plan`, `writeHk`) exist for the gate, which drives the model one step at a time and reads
+cells back out of `conhost`. Two of those are scaffolding for facts a grid diff cannot reach: `readInput`
+consumes the characters sitting in the console's input stream, which is the only witness to what a reply
+*said* (I29), and `readopt` rebuilds the model on the handle the case already holds, which is the only way to
+exercise a resize's carry of the anchor (I28) — production reaches the same rebuild through `render()`'s own
+state machine, and a case that drove `close()` + `open()` instead would be testing a *new* session, which has
+no anchor to carry. A third, `plan`, is scaffolding for a fact a cell diff **cannot** reach at all: the cells
+say where the console is and never where the painter believed its own rows were, so a plan that addresses the
+right rows for the wrong reason and one that addresses the wrong rows come back looking identical. It returns
+the last plan this handle executed — 18 slots, from `seq` and `reason` through the arithmetic (`base`,
+`slide`, `bufScroll`, `row0`, `winTop`) to the two outcome flags (`declined`, `moveFail`) — and it is what
+turned -11 from a guess into a reading: `seq=422 base=340 slide=0 bufScroll=1 row0=340 winTop=0 moveFail=0`
+says the band and the destination directly, next to the cells it produced. `build.sh` asserts the export list
+on every build, in both bitnesses; that gate is what catches a method written outside the `extern "C"` block
+as a mangled name.
 
 `render()` returns one of three values and the Java side does nothing but pass them on:
 
@@ -92,6 +104,9 @@ buffer row being wider than `RC_MAX_COLS` and the viewport not fitting the model
 
 * the model tracks the console; if the console moved in a way the model did not do, the next chunk is
   preceded by an **align** — the model adopts what is on the screen (I4);
+* an align reads the console **at the model's anchor**, not at the window's top. The rows it adopts are the
+  rows the model claims, and after a resize that is the claim the old grid carried rather than whatever the
+  view happens to be over (I28);
 * a **decline** forces a rebuild: the bytes were about to be put in front of a console the model never
   painted, and after an alt-screen enter/leave there is no console equivalent of the model at all;
 * `RENDER_MAX_DECLINES` consecutive declines stop the renderer, with a sentence in `stopReason()`;
@@ -120,9 +135,9 @@ Each row: the property, where it lives, and the gate that pins it. **No gate** i
 | I1 | Only `cells[r][c]` with `r < rows && c < cols` is valid. `cells[][]` has a fixed `RC_MAX_COLS` stride, so past `cols` you read an earlier generation. | every writer bounds by `g->cols` / `plan.paintCols` | all `geo_*` cases compare through `eq_text`, which truncates at `cols`; the out-of-bounds read itself is guarded only by loop bounds |
 | I2 | The cursor is never in the gutter. | `line_down()` and the coordinate clamp keep `cy` inside the viewport | `plan_gutter`: "gutter: cursor starts on the viewport top" |
 | I3 | The gutter is exactly one screen: `open()` asks for `hist = rows` and is cut to `RC_MAX_ROWS - rows`. So `rows ≤ 128` gets a full-screen gutter, `129..255` gets less than a screen (the top rows can never slide back), `rows ≥ 256` is refused outright (`OPEN_NO_GUTTER`). | `open()` in `RenderJni.cpp`, `RC_MAX_ROWS` in `Render.h` | `caseNoScrollback` (`hist == window height`), `caseOpenRefusal` pins all five refusals and both boundaries of the 255/256 rule. Note `cols`/`rows` of **0 is the "ask the console" sentinel**, not a zero-width grid — a test that wants "too big" must pass a negative. |
-| I4 | `align()` **adopts** the current screen; it does not clear it. | `align_grid` reads the console and copies it into the model | every case's precondition ("align adopts the console"), `caseRealign` |
+| I4 | `align()` **adopts** the current screen; it does not clear it. | `align_grid` reads the console at the model's anchor (I28) and copies what it finds into the model's viewport rows — the gutter above them is not read, and a rebuilt grid adopts the claim it carried rather than the rows under the window | every case's precondition ("align adopts the console"), `caseRealign` |
 | I5 | One flush applies in a fixed order: slide → buffer scroll → rectangles → attribute → cursor. | `paint_flush` | `caseScroll`, `caseManyScreens`, `caseNoScrollback` on a live console |
-| I6 | Geometry: `hist = rows - winRows`, `free_slide = bufH - winRows - winT`, `slide = min(k, free_slide)`, `bufScroll = k - slide`, `row0 = winTop - hist`, `skip`/`drop` from `row0`. | `rc_plan_paint` | `plan_gutter` on both a wide and a scrolling shape, with every one of those numbers asserted |
+| I6 | Geometry: `hist = rows - winRows`, `viewBase = winT - hist`, `base = baseSet ? max(viewBase, baseRow) : viewBase`, `ours = (winT == base + hist)`, `free_slide = ours ? bufH - winRows - winT : 0` (clamped at 0), `slide = min(k, free_slide)`, `bufScroll = k - slide`, `row0 = base + slide`, `winTop = ours ? winT + slide : winT`; `skip`/`drop` from `row0`, and a plan that would address `row0 + rows > bufH` declines whole. A cursor the plan cannot place inside the window the plan leaves behind sets `cursorOffView` and forces `cursorMoved` to 0: following output with a view the user has walked away from is what neither reference terminal does — conhost's `SnapOnOutput` refuses exactly that transaction ("We only want to snap if the user didn't intentionally scroll away", screenInfo.cpp:1715-1726, and `MakeCursorVisible` slides by the least displacement it can, 1684-1705), ghostty's default `scroll-to-bottom` is `{ keystroke = true, output = false }` (Config.zig:10446) and a program cannot address a viewport at all (point.zig:26-30). | `rc_plan_paint` rules 2 and 3, and the clamp at the end of the function | `plan_gutter` on both a wide and a scrolling shape, with every one of those numbers asserted; `plan_anchor` for the `ours` arms and for `cursorOffView` |
 | I7 | **A model row is a buffer row**: `cols == bufW - winL`, so each row is painted to the *buffer* edge. A narrow window is never a reason to decline; only the buffer row width and the viewport height are. | the `cols` comment in `Render.h`; the geometry test in `rc_plan_paint` | `plan_runs`, `plan_declines`, `caseEraseToBufferWidth`, `caseRealign`, `caseWideBuffer`; live: the wide-buffer A/B leg. This is a user ruling ("the model is buffer-wide; I7 does not narrow") made against a measured saving, because wide result sets must print in full. |
 | I8 | The painter never leaves the cursor right of `winR`: the plan carries `curTX = min(winL + cx, winR)` while the model keeps the true column. | `rc_plan_paint` | measured first: conhost slides `srWindow` sideways to include an out-of-window cursor, and the next frame then fails its geometry check. `plan_cursor_past_window`, `caseWrap`, `caseWideBuffer`. |
 | I9 | The mid-chunk paint hook runs inside `rc_feed`: it may call `rc_paint_done`, it must not touch the parser. The grid is consistent at that moment; the input is not consumed. | the `onFlush` hook installed by `open()`, fired from `scroll_up` when the gutter fills | `plan_gutter_hook` (hook called N times, every row painted at least once) |
@@ -135,7 +150,7 @@ Each row: the property, where it lives, and the gate that pins it. **No gate** i
 | I16 | Cursor visibility (`?25h`/`?25l`) costs one `SetConsoleCursorInfo`, and only on a real change. | plan's `setVisible` | `geo_sgr_bits`, `plan_plain`, `plan_declines`; the live gate does not assert `cursorOn` |
 | I17 | An empty plan sends nothing: no read, no rectangle. | `RC_PLAN_EMPTY` and the early return in `paint_flush` | `plan_plain`; `flushQuietly()` in the gate |
 | I18 | A paint failure inside the mid-chunk hook disables mid-chunk painting for that handle until an `align()` re-arms it; the refusal is reported at the end of the chunk. | hook teardown in `RenderJni.cpp`, re-arm at the end of `align_grid` | `caseHookDecline` (refusal leg and recovery leg), `plan_gutter_hook` on the host |
-| I19 | An unsupported sequence is never swallowed silently: **count, and self-heal**. One counter per family. Only `RC_UN_SUP` — "this switch has no case, so its reach is unknown" — marks the frame suspect. Every *known* no-op (mouse tracking, bracketed paste, reports, OSC/DCS framing, modes upstream cases but does nothing for) is counted and leaves the frame trustworthy. The suspect set has narrowed twice: DECSTBM and the alt screen both used to set it and left it when they were modelled. | `unsupported()` / `ignored()`, the self-heal at the end of `flush` and in `align_grid` | `geo_region`'s last block asserts the *current* partition family by family, including "a counted sequence with reach doubts the frame" and "CBT is counted but does not"; `geo_alt`, `gm_wrap_suspect`; `caseSuspectAlign` in the live gate; `report()` prints every non-zero family. Slot indices and `RC_UN_MAX` must never be renumbered — the census is positional on both sides of the seam. |
+| I19 | An unsupported sequence is never swallowed silently: **count, and self-heal**. One counter per family. Only `RC_UN_SUP` — "this switch has no case, so its reach is unknown" — marks the frame suspect. Every *known* no-op (mouse tracking, bracketed paste, the reports this build declines to answer (I29), OSC/DCS framing, modes upstream cases but does nothing for) is counted and leaves the frame trustworthy. The suspect set has narrowed twice: DECSTBM and the alt screen both used to set it and left it when they were modelled. | `unsupported()` / `ignored()`, the self-heal at the end of `flush` and in `align_grid` | `geo_region`'s last block asserts the *current* partition family by family, including "a counted sequence with reach doubts the frame" and "CBT is counted but does not"; `geo_alt`, `gm_wrap_suspect`; `caseSuspectAlign` in the live gate; `report()` prints every non-zero family. Slot indices and `RC_UN_MAX` must never be renumbered — the census is positional on both sides of the seam. |
 | I20 | Why a row wrapped is stored per row: `RC_WRAP_FORCED` (the cursor was pushed off the right edge, so the next line continues this one) and `RC_WRAP_PAD` (a wide glyph did not fit and the whole glyph wrapped, leaving a padded cell). Erasing to the edge or moving the cursor explicitly clears it; `scroll_up`, IL and DL carry it. It is not a `CHAR_INFO` bit and never reaches the console. | `rowWrap[]`, set at the four places that can wrap | `gm_wrap_suspect` covers set, clear, carry. A live-console gate is impossible: the bit cannot be read back, which is exactly the `CHAR_INFO` contract in §5. |
 | I21 | OSC/DCS are never silent. Titles (`0`/`1`/`2`, with upstream's guard: a digit immediately followed by `;` and a non-empty payload) reach the console; every other family gets its own counter — private 9, other OSC, DCS, unterminated title. Over-long titles are truncated at `RC_TITLE_MAX`, not dropped, and the truncation is counted. A title either lands or is counted; there is no third option. | `osc_finish()`, the payload sink, the title fetch in `RenderJni.cpp` | `caseOscTitle` (applied, painted nothing, counted, truncated at the model's own cap, ST-terminated, private family keeps its own counter and does not change the title, abandoned OSC counted but never applied, DCS counted) |
 | I22 | Damage granularity is a **column range**: a dirty row also records `[dirtyLo, dirtyHi]`, and the rectangle write is issued for that range. This is not a narrowing of I7 — the model still stores and can still paint whole buffer rows; the saving is only "columns nobody touched are not rewritten". Ranges are unioned, so a merge can only widen. Two rules bound the risk of painting too *little*: anything that cannot name its range says "whole row" (adopt, `rc_mark_all_dirty`, IL/DL, a scrolled-in row), and the bounds check scans the whole corpus. | `mark_dirty` / `mark_row_dirty` / `rc_mark_all_dirty`; `RcRun.lo/hi`; `build_row` / `write_rect` translate the range into buffer columns | `geo_damage`'s range block, `plan_damage_range`, `check_damage_bounds` (every corpus × every gutter shape, at that shape's own width), `grid_equal` now compares damage too; live `caseNarrowRepaint` and `caseWideBuffer` |
@@ -144,6 +159,10 @@ Each row: the property, where it lives, and the gate that pins it. **No gate** i
 | I25 | DECSTBM (`CSI r`) is a region in the model, not a counted refusal. Bounds are clamped to the viewport when set and never re-clamped. Two resets are fixed: a region exactly covering the viewport is recorded as *no region* (the gutter and scroll paths branch on that, and a coincidental full region must not take the other arm), and a bare `CSI r` resets. A geometry change resets it, so a re-opened grid has no region. IL/DL and `scroll_up` work within it. | `case 'r'`, `region()`, `regSet`/`regTop`/`regBot` | `geo_region`; live: `legsSame("DECSTBM then a scroll", …, TRUE)` — the two legs now agree, and the expectation was flipped when the model gained the feature. That test is why `legsSame` exists: two side-by-side bands let the reference leg scroll *outside* the region and both screens came back blank. |
 | I26 | The terminfo entry advertises only what the renderer actually models. Absence matters as much as presence: a lying terminfo is worse than a short one, because the reader does not re-check, it complies. | `windows-conemu.caps` in the host's terminal library | `geo_jline_stream` replays the bytes the host's own line editor writes — the 11 acsc letters it emits, `ESC (B` returning them to text, and an in-place edit landing on the right columns |
 | I27 | A slot is claimed until it is closed. Ownership (`taken`) and having a model (`g`) are separate; `stats()` and `stopReason()` work on a claimed slot with no model; `open()` claims an unclaimed slot and returns the claim when it refuses. | `slot_of()` vs `handle()`, `open()`, `release_all()` | the four-slot and refusal tests in `caseOpenRefusal`; the census readable after give-up is asserted by the report path in the live gate |
+| I28 | **The anchor is carried across a rebuild, not re-derived from the window.** A grid is rebuilt on a decline, on a resize, and on a `close()`-free re-adopt; each of those would otherwise ask the console where the model's rows are, and the console's answer is the *window* — which the user may have moved, and which a resize has just moved by itself. So the previous claim's **bottom** row is carried into the new grid (`vb - rows + 1`), because a rebuilt grid has a different height and the row the content ends on is the one that means the same thing in both. conhost's straddle sweep — a view that ended up between the old and new window bottom loses the claim — applies **only when the grid changed height** (`reshaped`), because that rule belongs to `_InternalSetViewportSize` (screenInfo.cpp:953, check at 1110-1112) and `SetViewportOrigin`, which is what the scroll wheel drives (642), has no such rule. A carried claim is kept only where the grid it anchors is legal (`vb ≥ winRows-1`, `vb ≤ bufH-1`), which is conhost's own "may not poke above row 0" guard in row-0 form. | `RcHandle::prev*`, `rc_anchor_adopt` | `adopt_anchor` on the host (carry, sweep-when-reshaped, not-swept-on-a-plain-adopt, both illegal-claim arms); live: `caseScrollKeepsHistory`'s resize leg, which calls `readopt()` after dragging the window shorter while the view is scrolled up, and asserts the next prompt lands below the carried anchor with the user's rows unchanged |
+| I29 | A device-status or identification query is **answered**, into the console's input stream, and never silently. One `KEY_EVENT` pair per character at `WriteConsoleInputW`, the same synthesis conhost's own ANSI output leg uses (outputStream.cpp:43-45 → inputBuffer.cpp:799-816), so a program blocked on `tput rows` wakes. Replies are flushed at the **end** of a successful paint, even one that painted nothing — the reply is about the reader, not the screen — and are **never** written for a declined chunk, because conhost answers the replayed bytes itself and a second reply would be stray input for the next reader. The queue is bounded: a query that arrives when it is full is refused and counted, not queued and not dropped. Three counters, no fourth outcome: written, failed, refused-for-full. | `rc_report_*`, `flush_reports`, `reply_text` | `gm_reports` on the host (one reply per query and no second one for a later move, FIFO over the three kinds, the cap, the kinds that arm nothing); live: `caseReports`, whose `eqInput` drains the console's input stream and compares the *text* — `\E[4;7R` for a cursor placed at `CSI 4;7H`, and "answered from the snapshot, not from the cursor now" — which is the only witness that can say what a reply *said*. Census: "replies written=N (M failed, K refused)" |
+| I30 | **While the buffer has room below the claim**, a buffer scroll moves the rows the anchor claimed **before** this flush's slide, and `ScrollConsoleScreenBuffer`'s destination is an **absolute** buffer coordinate. A slide moves no cell — it asks conhost to drag the window over rows that are already where they belong — so the cells that owe a shift of `k` are the ones at `base + r`, which means a source rect starting `k` rows below the row the plan now addresses (`row0 + by`) and ending at the old band's last row (`base + rows - 1`). Getting either half wrong is invisible in the window, because every row the scroll touches is dirty and gets repainted anyway, and fatal in scrollback: a relative destination turns the call into a shift of `-(by + srcTop)` and hoists the model's whole band hundreds of rows up over the user's history. The band is clamped at both ends (a model reaching above row 0, a shape that moved under the plan); a `by` at or beyond the band's height is a no-op with a reason, since `scroll_up` blanks and marks the whole grid in that case and the paint that follows covers it. | `rc_scroll_band` (the arithmetic, console-free), `scroll_region` (the call) | `plan_scroll_band` on the host, over the `room:` (band, nothing of the user's in it), `whole:` and `gutter:` shapes; live: `caseScrollKeepsHistory` (100 lines through a 400-row buffer, then the view scrolled to row 0 and one more line) asserts per chunk that the ink landed inside the claimed band and the window stayed put, and gates its own premise — `base + rows < bufH`, which is what keeps this branch the answer |
+| I31 | **Once the claim a flush leaves behind has the buffer's last row, the scroll's reach is the buffer, not the claim.** A full console buffer has one answer to a new line: everything rides up by `by` and the oldest `by` lines leave the top — conhost's `_stream.cpp:123-126` → `TextBuffer::IncrementCircularBuffer` (reset row 0, advance `_firstRow`: textBuffer.cpp:722-745). The deciding quantity is the plan's **destination** (`row0 + modelRows >= bufH`), never the anchor it started from, because **a slide does not escape an eviction**: sliding is how the claim gets to the last row and it moves no cells, so a flush of `k` lines that slides `f` still owes the remaining `by` evictions — and sliding as far as the buffer allows puts `row0` on `bufH - rows` by construction, which makes every mixed flush an eviction. Inside the claim the rows land identically either way, so the paint is untouched; what changes is everything above it. Where there is no scrollback to move (`row0 == 0`) the two branches coincide. Leaving the eviction unpaid is not conservative: it puts more live lines into the buffer than it has rows, and the shift then drops one of them **in the middle** while the window, being all-dirty, shows nothing. | `rc_scroll_band`'s `full` arm, `scroll_region` | `plan_scroll_band`'s `full:` and `mixed:` shapes (source starts at `by` and ends where the *old* claim ended, lands on row 0, "the claim's own rows ride as before", and a saturated slide's corollary asserted alongside the anchor that would have said otherwise); live: `caseFullBufferEvicts` — 420 numbered lines in 20-line chunks, then the view scrolled to row 0 and one prompt line — which censuses all 400 rows for an unbroken in-order run, compares every row above the claim against a before-capture (`wrong=0 kept=340`), and names the cursor's own blank row rather than assuming every row holds text; oracle: `cache/wide-probe/StartupRepro.java` raw leg vs render leg through `su-cmp.py`, both shapes, "no line the console kept" / "no hole" / "the lines land in order" |
 
 ## 4 Client contract: the terminfo entry
 
@@ -176,9 +195,9 @@ Capabilities deliberately left out, with the reason: `cbt`/`hts`/`tbc` (no tab-s
 applied), `smkx`/`rmkx` (DECCKM selects *input*, which here comes from console records), `blink`, `invis`
 (SGR 5/6/8 store nothing), `rmpch` and the `sgr` 10/11 arms (no font switching), `ncv` (no
 cannot-coexist bits), `mc5i`, `flash` (`ESC g` would ring a window that is not ours to ring),
-`initc`/`ccc` (OSC 4 is consumed, per I21, but the palette does not change), `u6`/`u7` (this parser never
-writes a reply back; a caller waiting for one would hang), and `xenl` — measured as absent on every path,
-so advertising it would be a lie.
+`initc`/`ccc` (OSC 4 is consumed, per I21, but the palette does not change), `u8`/`u9` (both DA queries are
+answered now, but nothing in the host reads a `user8`/`user9`, so a value would be invented here), and
+`xenl` — measured as absent on every path, so advertising it would be a lie.
 
 Every clause of that list argues from the *output* leg, because that is the leg this library is. Two entries
 in the file are not output at all — `kbs` and the `kf` family are read by the terminal's *input* leg
@@ -209,8 +228,8 @@ matches), and no measurement of `render.dll` can adjudicate them. They were sett
   of xterm's, where an emulator really does send those bytes on the wire; the three jline Windows entries
   all stop at `kf12`, so stopping there is this family's convention rather than this file's omission.
 
-The same audit added one capability rather than removing anything, and it is the only string in the entry
-that needed a wire test before it could be believed:
+The same audit added capabilities rather than removing them in two places, and both needed a wire test before
+they could be believed:
 
 * **`rep=%p1%c\E[%p2%{1}%-%db` (xterm's spelling) is advertised, because `ech` was.** The entry's stated rule
   is a string CEAnsi acts on *and* the renderer models, and `CSI Ps b` satisfies both — upstream has a case
@@ -223,6 +242,24 @@ that needed a wire test before it could be believed:
   `x` + `CSI 3b`, and `CSI 0b` for a count of one repeats nothing, which is what both legs say when the
   parameter counts repeats rather than cells. `cache/caps-audit/CapsDump.java` asserts all three of those
   sentences, including the failure, because `tputs(rep, 'x', 4)` is the obvious way to write the check.
+* **`u7=\E[6n` and `u6=\E[%i%d;%dR` are in, and that reverses this file's earlier position** ("this parser
+  never writes a reply back; a caller waiting for one would hang"), because the reply leg now exists (I29):
+  `Render.cpp:1234-1235` arms `CSI 5n`/`CSI 6n` and `flush_reports` writes the answer into `CONIN$` as key
+  events. Read the pair for what each side is: `u7` is the query the host *writes*, `u6` is the *report
+  pattern* the host parses — `CursorSupport.getCursorPosition` (`:83-95`) takes both strings, compiles `u6`
+  into a regex, and only ever asks `user6`/`user7`, which is why `u8`/`u9` stay out even though both DA
+  queries are answered. `%i` is load-bearing rather than decorative: the reply is one-based, counted from the
+  *window's* top (the same arithmetic the painter used, and why the plan, not the parser, computes it), and
+  `%i` is what subtracts it back to the zero-based cursor jline hands to its callers. Two refusals are part
+  of the advertisement, not omissions from it: `CSI ? 6 n` stays unanswered (`Render.cpp:1230-1235`, whose
+guard is `!g->priv` on both arms — an
+  extended question answered with a plain reply is a position the asker did not request), and the queue's
+  limit is a counted refusal rather than an eviction. The cost of advertising is real and stated: a caller
+  that asks now blocks until a reply lands, so on a handle with no readable input the leg says so once in
+  `lastError` and counts the failure instead of retrying per query. Both halves are witnesses of the live
+  gate, not of the model: `caseReports` reads the reply *text* out of the console's input stream, and
+  `cache/caps-audit/CapsDump.java` expands the strings through `Curses.tputs` so that a `%` nobody can
+  render fails the audit rather than the session.
 
 ## 5 Cost model
 
@@ -342,12 +379,53 @@ The doctrine, in the order that matters:
     model directly and so cannot speak for the deployed DLL. Either say so, or put the bytes in the console
     leg. Build -7 came back identical on both arches, and the leg added to answer it is
     `caseSuspectAlign`'s `\E[p\E[61p\E)0q` block.
+13. **A cell diff cannot see a belief, so give the belief an eye.** For three stamps the scroll defect was
+    argued from the planner's source and re-argued, because the console reports where it is and never where
+    the painter believed its own rows were — and a plan that addresses the right rows for the wrong reason
+    leaves exactly the same grid as one that addresses the wrong rows. `plan()` (I30's witness) ended that in
+    one line of output: `base=340 slide=0 bufScroll=1 row0=340 winTop=0 moveFail=0` next to the cells it
+    produced. The general rule: if you find yourself reasoning about an *internal* quantity across several
+    builds, export it.
+14. **An API whose arguments read like every other API's is where the reading goes wrong.**
+    `ScrollConsoleScreenBuffer(h, src, clip, dest, fill)` takes a destination that is an absolute buffer
+    coordinate, not a delta — which is what conhost's own wrapper says: `getset.cpp:947-950` documents
+    `target` as "the top left corner of the destination to paste the copy", and `getset.cpp:959` refuses the
+    call as a no-op on `source.left == target.x && source.top == target.y`, a comparison that is only
+    meaningful in absolute coordinates. A relative `-by` there is not a no-op or an error; it is a
+    correct-looking scroll of `by + srcTop` rows, so the call *succeeded* and the damage only showed as
+    content hoisted hundreds of rows into the user's scrollback. Two consequences for the doctrine: read the
+    callee's source for argument semantics rather than inferring them from the name, and prefer a witness
+    that reads *far* from the operation — the window was clean after that call for four stamps, and the rows
+    0..339 it was wrecking were out of view.
+
+15. **An expectation must count the line the cursor is standing on.** The census written for I31 failed three
+    times before the renderer did, and every one of those failures was the gate's own arithmetic: 420
+    CRLF-terminated lines are 421 lines, the last of them empty, so a 400-row buffer holds 399 lines of text
+    and the cursor's blank. A gate that asserts "every row is a line of the session" is asserting the writer's
+    contract rather than the terminal's, and it will be wrong on the day the renderer is right. Name the blank
+    row in the case, and gate *where* it is (`firstBlankRow() == bufH - 1`) — a hole in the middle is the
+    defect, and it reads exactly like an off-by-one at the end.
+16. **A fix can be right about the mechanism and wrong about which quantity decides.** I30 and I31 are the
+    same scroll; -12 shipped the eviction keyed on the anchor and the census caught it only because it counted
+    every row of a buffer no window was looking at — a mixed flush (slide 19, scroll 1) left 401 live lines in
+    400 rows, which surfaced as one line missing from the *middle* and the last row blank. When two expressions
+    agree on every shape a test happens to build, pin the algebra that makes them agree (here: a saturated
+    slide puts `row0` on `bufH - rows`) and build the shape where they part.
 
 Current gates, and how to read them: the host gate (`RenderCheck`, cross-run on a Linux host: colour table,
 full code-point width cross-check, per-UTF-16-unit resumability, damage bounds over the corpus) and the
 live-console gate (`run.ps1`, both bitnesses: the model drives a real conhost, cells are read back, and the
 optional reference oracle is the retired in-process parser used purely as an A/B comparison). Both print
 totals; quote them only from a fresh run, since the numbers move with the corpus.
+
+Fresh, on `render-2026-09-25-13`: host `checks=3072 fails=0 / RENDERCHECK: ok`; live `checks=4648 failures=0 /
+STAGE0 RUN: ok` on **both** arches (`cache/gate13/gate13.txt`, x86-only iteration in `gate13-x86.txt`). Beyond
+the two standing gates, the scroll family carries a third witness that is neither: `cache/wide-probe/
+StartupRepro.java` writes the same bytes through the plain console API in one process and through render.dll in
+another and dumps both whole buffers, and `su-cmp.py` diffs them — the fit shape (40 + 100 lines, nothing may be
+lost) and the fill shape (380 + 200, where loss is certain and only *divergence* is a defect) both report
+`SU-CMP: ok`, including "the lines land in order raw=399 render=399". That leg is the only one where conhost,
+rather than this document, says what the answer is.
 
 ## 7 Known deviations
 
@@ -450,11 +528,68 @@ x.dll`), which is why a deployment never has to wait for, or kill, the sessions 
 `cache/scratch-pill/who-locks.ps1` names the holding process through the Restart Manager when that surprise
 comes up; finding it is informational only, since the answer is the rename and not the kill.
 
+Three more of the same kind, all paid for by a live leg of the status bar on -13: **a console leg cannot be run
+from a POSIX shell at all** -- Git Bash has no console to attach to, so `drive-dbcli.ps1`/`ConsoleDriver` must be
+started inside one, which in practice means writing a small `.cmd` under the scratch directory and running
+`cmd /c start "" /min /wait cmd /c <file.cmd>` (the wrappers for the -13 legs are `cache/gate13/w15.cmd`,
+`w16.cmd`; the reports they produced name themselves). That command needs `MSYS2_ARG_CONV_EXCL='*'` in the
+environment, because otherwise the POSIX shell rewrites `/min` and `/wait` into paths before `cmd` ever sees
+them. And inside such a wrapper `-Send` must be **double**-quoted: `cmd` does not treat a single quote as a
+quoting character, so `-Send 'set Status on'` arrives split and the driver binds the remainder onto the following
+switch (`-Dbcli`) -- a leg that then "runs" a session with no commands in it, prints a clean-looking grid, and
+reports a verdict about nothing.
+
 The generated width table is produced by `gen_ansi_tables.py`, which is not in this tree; the table is
 never edited by hand. Regenerate, then re-run the host gate: its width cross-check is the thing that catches
 a generator change.
 
 ## 9 Open work
+
+* **A partially failed paint tells the model the paint succeeded.** Found by re-reading the flush, not by any
+  gate, and deliberately not patched yet. `paint_flush` watches its two *moves*: when the slide or the buffer
+  scroll does not land, `movedAsPlanned` drops to 0 (`RenderJni.cpp:616`, `:627`) and the anchor claim is not made
+  but reversed -- `rc_drop_base` at `:638`, which "therefore marks the damage" (`Render.h:409-412`) so the next
+  flush re-derives the address and repaints rather than writing rectangles at rows nothing owns. The host gate
+  pins that promise (`RenderCheck.cpp:2761-2764`: after a drop, row 35 is dirty and the plan re-derives the same
+  `row0` an unclaimed model gives). The *cells* have no such watch. The run loop `break`s on the first failed
+  `write_rect` (`RenderJni.cpp:671-677`) -- correctly, because "the row below would land in the wrong place" --
+  and then falls through to `rc_paint_done(g)` at `:731`, which is `pendingScrolls = 0; rc_clear_dirty(g)`
+  (`Paint.cpp:229-233`) and clears the whole array by `memset` (`Render.cpp:261-264`). The rows the refused runs
+  owned are still unpainted on the console while the model calls them current, nothing re-marks them, and if any
+  earlier run landed then `landed` is already 1, so the flush reports `FLUSH_PAINTED`. The divergence is silent
+  and lasts until something else rebuilds the base -- a geometry change, `readopt`, a collapse.
+  *What is and is not claimed*: no leg has ever produced it, and that is counted rather than remembered -- every
+  witness of this build under `cache/gate13/` and `cache/witness/` prints `apiErrors=0`, **250 readings and not
+  one non-zero**, and the string a refused run writes into `lastError` (`"rect r<top> x<n> c<lo>..<hi> =<e>"`,
+  `RenderJni.cpp:674`) appears in no file there. So the shape is reasoned from the code and nothing else; it needs
+  a `WriteConsoleOutputW` to fail in the middle of a *multi-run* plan, which is also why the gates' own `fails=0`
+  does not by itself cover it. It is a weaker thing than the move failure
+  it is contrasted with -- a refused move corrupts *addresses*, which is why it self-heals; a refused run
+  corrupts *contents* of rows whose address the model still knows right. Two fixes: **(a)** make the clear
+  row-accurate -- `write_rect` reports the row it stopped at, the flush clears dirty up to there and leaves the
+  rest marked, keeping the claim (it is still correct); **(b)** reuse the move path -- on run failure call
+  `rc_paint_done(g)` then `rc_drop_base(g)`, in that order because the drop *is* the re-mark. (b) is three lines
+  and needs no new primitive, at the cost of a whole-viewport repaint on the next flush. Taking neither now:
+  `D:\dbcli\lib` is closed to deploys while another agent develops there, the live gate runs against the deployed
+  dll, and a patch would invalidate every number in §10 without a leg able to show it working. Same family,
+  smaller stakes, also unfixed: `SetConsoleTextAttribute` at `:685` and `SetConsoleCursorInfo` at `:699` ignore
+  their returns, so an attribute or a cursor shape the host refused is still asserted by the model.
+
+* **Quitting a pager that took the alternate screen leaves one prompt row too many.** Recorded while
+  re-witnessing #13/#14 at -13 (`cache/witness/pager13-20260925-13.txt`, OBSERVATION block; raw dumps
+  `cache/jnatest/outrepro/grid-ceoff.txt-s{0..4}.txt`): the two alternate-screen legs each keep a second `SQL>`
+  above the live one -- ceoff restores to `r04|SQL> more cache/pgcorpus`, `r05|SQL>`, `r06|SQL>` with the cursor
+  at `(5,6)`, and the `one14` leg shows the same pair at `r12`/`r13` -- while the one-screen auto-exit that never
+  entered the alternate screen leaves exactly one prompt row (`r11`). It does not break #13: the cursor and the
+  typed command both land on the live row, which is what that task was about. It does sit against the standing
+  invariant this library is held to -- *whether starting or quitting, do not disturb the text the terminal
+  already showed* -- because the extra row is a prompt the host did not owe that position. **The mechanism is
+  not established**, and the two candidates split across the seam: either the restore left the cursor one row
+  above where the restored screen ended and JLine's readline then painted a prompt there (host-side), or a row
+  the main buffer genuinely held before `SM 1048` is being repainted as a prompt (this library's, and
+  `geo_alt`-gated). Distinguishing them needs a leg that dumps the main buffer immediately before entering the
+  alternate screen and immediately after leaving it, which no harness here does yet; that leg, not a guess, is
+  the item.
 
 * **Status bar: modelled, gated, witnessed live -- and one of its live symptoms turned out to be ours.** The
   byte stream a status line produces — `DECSC`, `csr(0, n)`, `DECRC`, the lines at the bottom — is replayed by
@@ -476,7 +611,9 @@ a generator change.
   two lines written there, and `nScrolls == 0` asserted alongside the row contents and the final cursor row —
   because "no scroll" is the half that a correct-looking grid can still get wrong.
   Re-witnessed on a real console against the -6 pair, all three legs in
-  `cache/witness/statusbar-live-20260924-6.txt`: bar opened then `help` -- border on the viewport's
+  `cache/witness/statusbar-live-20260924-6.txt`, and again against -13 in `statusbar-live-20260925-13.txt`
+  (`VERDICT A/B/C: ok`, every row number the same -- the -6 file is now the history, the -13 file is the record):
+  bar opened then `help` -- border on the viewport's
   next-to-last row, title on its last, prompt one row above them, 49 text rows visible where -5 reported 2;
   `help` then bar opened -- the help listing still on rows 36..81, which is the erasure gone; and bar opened,
   `help`, bar closed -- rows 47 and 48 blank again, prompt at 46, nothing above it disturbed. Closing is the
@@ -524,37 +661,61 @@ a generator change.
   session today. The reason to land it anyway is the census contract: it is only worth having if it holds for
   sequences that have not been sent yet, and the report line is what makes "today's output contains none of
   them" a fact a rollout can read instead of an assumption.
-  The caps half of the same audit is §4's three rulings (`kbs=^H` stays, `kf13` and the shifted arrow names
-  stay out, `rep` is now advertised with xterm's canonical value), pinned by `cache/caps-audit/caps-final.txt`
-  — 81 ok, which means every string was expanded through `Curses.tputs` and not merely parsed. One
-  dependency is outside this library: the entry is a classpath resource, so `rep` and line 1's manifest are
-  inert until the owner rebuilds `JLine3.jar`; nothing in this stack emits `rep` at output time, which is why
-  no jar redeploy and no new DLL build are needed for it.
+  The caps half of the same audit is §4's rulings (`kbs=^H` stays, `kf13` and the shifted arrow names stay
+  out, `rep` advertised with xterm's canonical value, and `u6`/`u7` in now that the reply leg exists), pinned
+  by `cache/caps-audit/caps-final.txt` — 81 ok, which means every string was expanded through
+  `Curses.tputs` and not merely parsed. One dependency is outside this library: the entry is a classpath
+  resource, so nothing a session sees depends on the file in the tree until `lib/JLine3.jar` carries it. That
+  gap is now closed and measured rather than predicted: the jar (2026-09-25 01:21, md5
+  `94bb0670b2f5819bcb57a6fb30fcff6a`) holds an entry byte-identical to the owner's source resource
+  `terminal/src/main/resources/org/jline/utils/windows-conemu.caps` (md5
+  `89dea073628196d6e949bdcf2d268f9b`), and `CapsDump` returns `CAPS CHECK: ok` against each of them separately
+  (`cache/caps-audit/caps-13-src.txt`, `caps-13-jar.txt`). Two of those assertions had to move with the entry:
+  they read `u6 NOT advertised`, which was true of the old file and false of the ruling, so a green caps audit
+  was certifying the absence of the reply leg task #29 had just landed — the one real case of a harness
+  becoming a second source of truth by pinning a superseded decision.
 
-* **Who answers `CSI 6n` is a question with two different answers, and the earlier one here was wrong.**
-  The editor does not ask, and neither does the line editor on this platform: `AbstractWindowsTerminal` does
-  not override `getCursorPosition`, so it inherits `AbstractTerminal.java:251`'s unconditional `null`, and
-  the only implementation that would write the query — `CursorSupport.java:83`, reached from the POSIX and
-  external terminals — returns early because `u6`/`u7` are deliberately absent from the entry. Nothing on the
-  dbcli path stalls on a reply the retired in-process parser used to fake. What the retirement does cost is
-  any *third-party* program run inside the console that probes with `CSI 6n` or `CSI c` and waits; that is a
-  real but much narrower claim, and it is the one the open answer-leg task should be about.
-* **A reachable defect the census turned up, in the host rather than in the model — now closed.** The reader's
-  mouse widget calls `terminal.getCursorPosition(...)` (`LineReaderImpl.java:5971`) and dereferences the result
-  without a null check at `:5984`. On Windows that call always returns `null` unless `org.dbcli.WinSysTerminal`
-  is the terminal in use — `AbstractTerminal.java:251-253` is the null — and the `IS_CONEMU` branch at
-  `Console.java:119-122` is exactly what selects some other terminal. The reader's `MOUSE` option is off by
-  default (`Console.java:171`) but a `set mouse` switches it on, so the path was user-reachable: enable the
-  mouse, release button 1 over the prompt, and the reader threw instead of moving the cursor.
-  `Console.enableMouse` now refuses the switch on a terminal that cannot answer the query, and says why.
-  Probing `getCursorPosition()` to decide was rejected deliberately — on an ANSI terminal that call *is* the
-  `CSI 6n` round trip, and nothing answers it (see the counter at `Render.cpp:1160`), so a probe would turn a
-  click-time crash into a start-up hang; the terminal's type decides instead. Witnessed on two live legs: the
-  `WinSysTerminal` leg enables silently, the forced-`IS_CONEMU` leg prints the refusal where the NPE used to
-  be. The other half of that open item — answering reports — stays a decision not to answer: the model counts
-  `CSI 6n`, `CSI c` and window manipulation as `RC_UN_REPORT`, and the terminfo carries no `u6`/`u7` so nothing
-  in this host asks. Answering would mean this library writing into the console input buffer, which it does
-  not do today and which would leave stray bytes for whoever reads input next.
+* **Who answers `CSI 6n` — closed, by answering it.** The earlier reading of this item was that the question
+  does not matter, and it was half right: the editor does not ask, and neither does the line editor on this
+  platform, because `AbstractWindowsTerminal` does not override `getCursorPosition` and so inherits
+  `AbstractTerminal.java:251`'s unconditional `null`, and the only implementation that would write the query
+  is `CursorSupport.java:83`, reached from the POSIX and external terminals. What that reasoning missed is
+  the *third-party* program run inside the console that probes with `CSI 6n` or `CSI c` and waits. It has an
+  answer now (I29), the entry advertises `u6`/`u7` (§4), and the retirement's one real cost is paid. Note the
+  asymmetry that survives the fix: advertising the capability does not give the *host* a cursor query,
+  because no Windows terminal class implements `CursorSupport` — `grep 'Cursor getCursorPosition'` over
+  `terminal/impl` answers `AbstractPosixTerminal`, `ExternalTerminal` and the `AbstractTerminal` null, and
+  nothing else. So `set mouse` still refuses on a non-`WinSysTerminal` session, and says why, which is the
+  other half of this item: the reader's mouse widget dereferenced that null (`LineReaderImpl.java:5971` →
+  `:5984`), the option is off by default but user-reachable, and the refusal turned a click-time NPE into a
+  sentence at the command. Witnessed on two live legs, the `WinSysTerminal` one enabling silently and the
+  forced-`IS_CONEMU` one printing the refusal where the throw used to be.
+* **A paint that wrecked the user's scrollback for six stamps, and what it took to see it.** See I30, I31 and
+  §6 rules 14-16. The first defect was in `scroll_region`'s destination and was invisible in the window for as
+  long as the plan was only ever *argued* about (-11). The second was in the scroll's *reach* (-12, -13): the
+  eviction a full buffer owes was keyed on the anchor instead of on the plan's destination, so a flush that
+  slid 19 lines and scrolled 1 kept the band answer and left 401 live lines in 400 rows. Both were invisible
+  where a user looks, and both were settled only by reading every row of a buffer no window was looking at —
+  first as a hand-written census in the live gate, then against conhost itself, which is the only version of
+  this argument that does not depend on this file being right. Recorded here as open because the *class* of it
+  is still open: any console call whose arguments this library invents is a candidate, and the only defence is a
+  witness that reads outside the region the call touches. Deployed as `render-2026-09-25-13` for both
+  bitnesses; the replaced pair is in `cache/deploy-backup-20260925-021247/{x86,x64}` with the before/after md5
+  in `md5.txt` beside it (that backup also carries the -11 bytes, which were the last ones shipped before the
+  scroll family closed). The whole -8..-13 sequence is in the `RENDER_BUILD` comment at the top of
+  `RenderJni.cpp`, which is where a stamp's *divergence rule* lives: which pairs of binary and tree agree on
+  every paint, and which single flush is where they part.
+  The hand witness for the same arithmetic, `cache/wide-probe/ScrollRepro.java`, had to be split in two for the
+  same reason. It fills a 400-row buffer with 420 lines, which is already past saturation, so the paint it was
+  written to catch takes the eviction branch — and its long-standing verdict "0 rows changed above the claim"
+  came back as a FAIL against a -13 that is behaving correctly. It now runs both shapes and prints which one
+  it is in the same breath: `room` (300 lines, 99 rows free below the claim) keeps the original claim exactly,
+  `full` (420) asserts the weaker and still real one — every row above the claim holds what its neighbour held,
+  in order, with nothing else moved and one line gone from the top. That is also the honest statement of what
+  the user gets: scrolling up during a long session, their history stays complete and legible under them, and
+  ages by one line per line printed, because that is what the buffer is. (`scroll6-room.txt`,
+  `scroll6-full.txt`; both zero FAIL lines on -13. `scroll4.txt` is the stale verdict, kept to show the shape of
+  the mistake.)
 * **The `winL` gap in narrow rectangles (I22).** `write_rect` translates model columns by `winL`. Nothing
   can produce a `winL > 0` shape in either gate — the live helper pins the rectangle's left edge to 0 — so
   the only witness so far is a real session that happened to be horizontally scrolled. Fix by parameterising
@@ -567,8 +728,12 @@ a generator change.
 * **`rowWrap[]` (I20) has no reader yet.** Set, carried and cleared with full gate coverage, waiting for the
   product that needs it (copy/selection and paging that distinguish hard from soft wraps). Do not optimise
   for it or change its meaning before then.
-* **A/B of a wide-buffer scroll** to record deviation 1 above, and the §5 measurement still owed: real
-  session wall clock. The existing harnesses have no timers at all, and a 50-line workload is smaller than
+* **A/B of a wide-buffer scroll** to record deviation 1 above -- still owed, and now distinguishable from what
+  was actually produced at -13: `cache/witness/wide1516-20260925-13.txt` is an A/B of the reader's *line width*
+  (a 170-char line in a 2000-column buffer with a 125-column window, against the same line with the window made
+  the buffer), not of a scroll. Nothing in it moves a buffer row, so deviation 1 remains ungated by any live
+  leg and stands on `plan_runs` plus §3's I31 algebra. The §5 measurement is owed on top of it: real session
+  wall clock. The existing harnesses have no timers at all, and a 50-line workload is smaller than
   the JVM's own startup noise.
 * **Whether the host should emit OSC 133 at all.** The model reads it (I23) and the marks' only current
   reader is the gate; a live session's census shows no prompt has ever been marked. That is a product
@@ -588,3 +753,97 @@ a generator change.
   and nuprocess was folded into the dbcli tree itself at `com\zaxxer\nuprocess`, which the jar build's own
   javac output confirms. `XCOPY` of a missing path prints "File not Found" and returns, so those two lines
   currently copy nothing.
+  The same drift now has a second, measured instance, and it narrows what §10 row 12 is allowed to claim. The
+  audited terminfo entry is `89dea073628196d6e949bdcf2d268f9b`, and the copy inside the *install* tree's
+  `D:\dbcli\lib\JLine3.jar` is that entry — but the copy inside the *repository* tree,
+  `D:\Green\github\dbcli\lib\JLine3.jar`, is still `bc4bfebf71a999da11524b73f99bce59`, and so is the entry in
+  the second jline checkout at `D:\Green\github\jline3.29`. That jar is modified-but-uncommitted in the
+  repository, i.e. somebody is mid-edit, so it was deliberately left alone rather than overwritten. The
+  sentence "the entry that ships is the entry that was audited" is therefore true of the tree the user runs and
+  false of the tree that versions it, and only `unzip -p` on each jar says which is which.
+
+## 10 Task ledger: the thirty-six tracked tasks
+
+This section exists so a later reader can re-walk the work without re-deriving it from the transcript. It is a
+map, not a narrative: one row per tracker task, and each row says **where the behaviour lives**, **what proves
+it**, and **what that proof printed most recently**. The tracker's own subjects are quoted verbatim (they are
+Chinese, and re-wording them would break the join); the ordered list of all 36 is kept in
+`D:\dbcli\cache\trace\taskdump2.txt`, one subject per line, line *n* = task *#n*.
+
+How to re-run the two standing gates, which carry every `render.dll` task between them:
+
+* **Host gate** — `wsl.exe -d Ubuntu-22.04 -- bash -lc 'cd /mnt/d/dbcli && bash src/c/conemu/build.sh'`. It
+  compiles `RenderCheck.cpp` against the console-free core and runs it natively. The passing line is
+  `checks=3072 fails=0` followed by `RENDERCHECK: ok`, in `cache/native-probe/out/rendercheck.txt`. The trap
+  worth recording is that `build.sh --no-colorcheck` **does not run the host gate at all** — the output simply
+  has no `RENDERCHECK:` line, so a run that skipped it looks like a run that passed. Check for the line.
+* **Live gate** — `pwsh -File src/c/conemu/run.ps1 -Arch both`, and it must be given a real console (Git Bash
+  is not one; the established wrapper pattern is a `.cmd` under `cache/gate13/` started with
+  `cmd /c start "" /min /wait cmd /c …`). Both bitnesses must pass: `checks=4648 failures=0`, `RENDERGATE: ok`,
+  `STAGE0 RUN: ok`, currently at `cache/gate13/gate13.txt` — x86 census at line 413, x64 at line 827.
+
+The artifacts these numbers belong to: `lib/x86/render.dll` `3cc1fc150c2a79ef98c4996eeac6fc84`,
+`lib/x64/render.dll` `f56e9fe42f74a1e9778c5b45e5de9892`, both stamp `render-2026-09-25-13`
+(`lib/dbcli.jar` `2297d5175ca1b499caed802f828ef53f`, `lib/JLine3.jar` `94bb0670b2f5819bcb57a6fb30fcff6a`). A row
+that cites an older build says so, because "the gate is green" and "this task was witnessed against the DLL that
+ships" are different claims.
+
+The whole table was walked against that pair on 2026-09-25 in the small hours, not merely re-read. Two standing
+gates were re-run on both arches, and four live legs were re-taken for the tasks whose claim is behavioural
+rather than assertion-shaped: `cache/witness/pager13-20260925-13.txt` (#13, #14), `wide1516-20260925-13.txt`
+(#15, #16), `statusbar-live-20260925-13.txt` (#23, and with it #33's two symptoms), and the A/B of #11 in
+`live-ab-20260925-13.txt`. The sweep produced no regression and one thing each of the four files had not said
+before -- #13's second leg is unreadable, #16's fold-not-trim, #23's jar difference, #11's `0 differing lines` --
+and the rows below record those rather than smoothing them out, because a ledger that only repeats the passing
+half of a witness is not evidence, it is a summary.
+
+| # | Subject | Where it lives | Proof, and what it printed |
+|---|---|---|---|
+| 1 | 通读 conemu 现状代码与文档 | no file — the read-through | It is §2.1's layer list and §7's deviation inventory. Not gated, and not re-runnable; every later row presumes it. |
+| 2 | OSC 族不再静默：分类计数 + 标题落地全链路收口 | `Render.cpp:1354 osc_start`, `:1574 osc_finish`; `RenderJni.cpp:708-722` applies the title with `SetConsoleTitleW` and counts a failure into `lastError` | host `gm_osc`, `gm_osc_family`, `gm_dropped`; live `caseOscTitle` (`"a title is not a rectangle"`, `"an abandoned title"`). -13 census: `titles=3 (1 truncated), 3 applied` (`gate13.txt:413`) — parsed equals applied, which is the whole claim. |
+| 3 | 按 MSFT 参照清单完成 S1/S2/S3/S5/S6-S8/B5 | `Render.cpp` `step_back_col` (BS `:1328`, CUB `:947`), explicit pending-wrap flag, `modelSuspect`, per-row `dirtyLo/dirtyHi` (`Render.h:201`) | host `geo_wrap`, `gm_pending`, `gm_wrap_suspect`, `gm_split_sgr`, `gm_double_esc`, `gm_abandon_and_restart`, `check_resumable`, `plan_damage_range`, `check_damage_bounds`; live `caseWrap`, `caseSuspectAlign`, `caseNarrowRepaint`. In -13 host `3072/0`; the damage bounds print `273 corpus strings x 2 shapes, every damaged row inside a run`. |
+| 4 | 退格落宽字形尾格：先用栅格证人裁决 | decided by measurement, then #15 landed it | See #15 — the same question, asked of the grid before the code was touched. |
+| 5 | B2（脏列区间）待用户复述 I7 裁决后才能开工 | blocked-on-ruling, no code | Cleaved open by #16's ruling; the interval itself is B2 in #3. |
+| 6 | B2 文档收口：DESIGN + MSFT 清单 + 记忆 | §5 cost model, §7, `.dsh/memory/` | Documentation; no gate. |
+| 7 | 在模型层实现 alt screen（47/1047/1049） | `Render.cpp alt_screen()` (I24) | host `geo_alt`, `plan_alt`; live `caseAltScreen`; hand witness `cache/wide-probe/alt5.txt` → `ALT: the alt screen kept its rows to itself`, with `history rows above the window: 0 cell(s) differ` and `viewport rows: 0 cell(s) differ`. |
+| 8 | 计划与执行侧适配 alt 模式 | `Paint.cpp` plan, `Render.java` | live `caseAltScreen`, `caseManyScreens`; -13 census `altbuf=0` and `alt switches=2 (0 refused)`. |
+| 9 | 备用屏门禁（host + JNI 栅格） | `RenderCheck.cpp`, `Render.java` | Both arches at -13: `checks=4648 failures=0` twice (`gate13.txt:414,828`). The -4-era pair is `cache/witness/gate-alt-0004.txt`. |
+| 10 | 修正 windows-conemu.caps 的 xenl | `terminal/src/main/resources/org/jline/utils/windows-conemu.caps` | Measured, then **deleted from the entry rather than added to it** — the tracker subject was amended to say so. A/B witness `cache/witness/caps-xenl-ab.txt` (delayed-wrap flips with `xenl` absent). |
+| 11 | 完成 xenl 修复的实机 A/B 见证 | the caps entry plus the console | `pwsh cache/jnatest/native-ab.ps1 -Control -BugDir …\scratch-lfbug\out\x86 -BugStamp render-lfbug-2026-09-25-2`, re-run at -13 → `cache/witness/live-ab-20260925-13.txt`: `STAGE0 AB: ok`, and the two pairs read as §6 rule 5 predicts — `off vs on … (0 differing line(s))`, which is *one renderer compared with itself* now that ConEmuHk is off disk, against `on vs bug … (58 differing line(s))` with the control's indent census walking (`n=10 min=49 max=62`) while both deployed legs keep one indent (`n=18 min=4 max=4`). 58 is the ceiling for a 32-body-line dump, not a small number: essentially every visible row differs on both sides. Control dll md5 `df0470dceddc6103cd1c00e39d2be7a3`; deployed pair unchanged across the run. |
+| 12 | 审计并补齐 ConEmu infocmp 全部能力 | same caps file | `cache/caps-audit/CapsDump.java`, 81 assertions, driven through `tputs`. -13: `CAPS CHECK: ok` against the source file **and separately against the copy inside `lib/JLine3.jar`** (`caps-audit/caps-13-src.txt`, `caps-13-jar.txt`); the two are byte-identical, so the entry that ships is the entry that was audited. |
+| 13 | 修复退出 more 后提示符与命令行不在同一行 | the dbcli pager: `D:\JavaProjects\jline3.29\dbcli\src\org\dbcli\More.java` (not this DLL) | **No `render.dll` gate exists for this row** — the pager's screen decision is made in Java from `OSUtils.IS_CONEMU`. Live witness only: `cache/jnatest/repro-more-exit.ps1`, both legs (`-ConEmu on` / `off`), against the *deployed* `lib/dbcli.jar` `2297d5175ca1b499caed802f828ef53f` → `cache/witness/pager13-20260925-13.txt`. Re-run at -13, and only one leg measures it: **`VERDICT #13: ok` on ceoff** -- after `q` the console cursor is at `(5,6)` with `r05\|SQL>` *and* `r06\|SQL>` in the grid, so the live prompt row is the cursor row, and the `top` typed after it lands painted on `r06` (`4x170`-style census clean, `ESC-IN-GRID=0`, `~=0`, `last text row10`). The **ceon leg reads `FAIL ceon : no prompt row in the window`, and that FAIL is the harness, not the fix**: `ESC-IN-GRID=83` on that leg (ConEmu's own parser leaves the escapes as cells -- see §6 rule 4), so `grid-facts.ps1`'s `^\s*(SQL\|\d+C)>` never matches and `promptRow` comes back -1; read as raw content, prompt and typed text do share `r105`. No conclusion about #13 is available from the leg whose env var is set, which is worth remembering the next time someone quotes a "both legs" number for this row. |
+| 14 | 修 More 的 quit-if-one-screen 判据 | same file, `quitIfOneScreen` vs the copied list rather than the argument list | Same as #13: no gate, and the check is behavioural — a file that fits one screen must return to the shell without a keypress. Recorded in the same -13 witness: **`VERDICT #14: ok`** -- a 6-row wide-CJK file printed all six lines with no `:`/`(END)` status row, the screen `settled in 1680ms` rather than timing out, and the *proof nothing was waiting for a key* is the next keystroke: the driver typed a second `more` and the shell ran it, then typed a bare `q` and the second pager consumed it. Control in the same session: a 200-row file holds (`settle TIMEOUT after 40113ms (moved=false)`, 48 rows on screen) and is released only by `q`. The deployed bytecode agrees with the subject: `javap -p -c` on `lib/dbcli.jar` shows `107: aload_2` -- the copied `sources` list, help line prepended at `45:` -- where the 2026-09-23 backup had `aload_1`, which is exactly the argument list whose `size()` can never be 2. |
+| 15 | 退格落宽字形尾格：造栅格证人并裁决 | `Render.cpp step_back_col` (:904), used by CUB (:947) and by BS (:1328, which moves and does not erase) | host `geo_wrap`'s `wide back attr` and `wide at cols-2 back`, and `geo_surrogates`' `the replacement takes the whole cell pair`; live `caseWideGlyph`. The reader-typed case is `cache/jnatest/leg-bswide.ps1` — four wide glyphs, one backspace, then two, then an ASCII into the space just erased, each step held mid-edit at U+0001 so the grid shows the cursor at that keystroke; re-run at -13 into `cache/witness/wide1516-20260925-13.txt` as **`#15 VERDICT: ok`** -- `cursor=19,7 r07\|O19C> echo 中文测试` → one BS `cursor=17,7 … echo 中文测 ` → two more `cursor=13,7 … echo 中     ` → `X` at `cursor=14,7`, i.e. every backspace took a whole glyph and parked on that glyph's *first* column, and the ASCII filled one freed cell with no half-glyph residue. All four dumps CLEAN; identical to the -12 witness. §7 item 1 keeps the difference against the retired in-process parser gated on purpose, so the "fix" cannot be restored. |
+| 16 | 裁决 reader 行宽：缓冲区 2000 列 vs 窗口 125 列 | ruled **buffer width, not narrowed** (I7); `Render.cpp` run handling, `Paint.cpp` erase-to-buffer-width | host `plan_runs`; live `caseWideBuffer`, `caseEraseToBufferWidth`. Re-witnessed at -13 with one identical 170-char line typed into two geometries (`cache/witness/wide1516-20260925-13.txt`, **`#16 VERDICT: ok for the design claim`**): with a 2000-column buffer and a 125-column window it lands as a single row `4x170` at columns 5..174, `r05` empty, no warning block -- the line is as wide as the buffer, and `cols-used=125` says only that far of it is *viewed*. With the window made the buffer (`-Mode 'cols=125 lines=30'`) the same line **folds rather than trims**: `4x120` on `r07` plus 50 characters continuing on `r08`, cursor `(50,8)`, all 170 present -- so Lua's warning text ("default to be trimmed") describes a path this build does not take; the trimming branch was left unhunted by instruction, and the finding is recorded as a finding. Two things this row must not be read as claiming: the cursor at `124,4` in leg A is not a defect but `Paint.cpp:201-210`, which clamps the *parked* column into the window because conhost slides the viewport sideways to include a cursor it is told about (measured 2026-09-23, same comment), while the model keeps the true column; and this A/B is of line width, not of a scroll -- §9's wide-buffer-scroll leg is still owed. |
+| 17 | 在模型层实现 DECSTBM 滚动区 | `Render.cpp region()` (I25) | host `geo_region`; live `legsSame("DECSTBM then a scroll", TRUE)` — the assertion that turned a differ into an agree. -13 census `decstbm=0`, i.e. nothing about regions reached the unmodelled counter. |
+| 18 | 补齐编辑与模式类序列 | `Render.cpp` editing arms and mode table | host `geo_edit`, `gm_charset`, `gm_argcap`, `gm_echo`; in -13 `3072/0`. |
+| 19 | 补齐 REP（CSI b）或记为已知惰性 | `Render.cpp` `b` arm; `rep` in the caps entry | `caps-13-src.txt`/`caps-13-jar.txt` print `rep(0x78,4) -> x<e>[3b` as an advertised capability, not an inert one. |
+| 20 | 清点 jline3.29 与 nano 依赖的全部 CSI/OSC | `Render.h` `RC_UN_*` family, §9's nano inventory | host partitions the family (`gm_*`); live `report()` prints the census. -13, identical on both arches: `unrecognised=6 decstbm=0 altbuf=0 mouse=2 mode=0 bracketed paste=0 osc9=1 other osc=2 dcs=1 report=1 colon=1`. Every one of those six is a *counted* sequence, and §9 lists which are deliberately not modelled. |
+| 21 | 在模型层实现 OSC 133（FTCS 语义提示符） | `Render.cpp ftcs_apply` (I23) | host `gm_ftcs`, `geo_ftcs`; live `caseSemanticPrompt`. -13 census: `prompts marked=2, last 133;D`. |
+| 22 | 按主干重建两条控制腿并跑 -Control | `cache/scratch-lfbug/make-control.sh`, `cache/scratch-elbug/make-control.sh` | Both rebuilt from the -13 trunk with exactly one stamp line swapped, and **both must fail** — that is the certificate. `cache/gate13/control-lf2.log`: `render-2026-09-25-13 → render-lfbug-2026-09-25-2`, `checks=3068 fails=4`, `RENDERCHECK: FAILED`. `cache/gate13/control-el.log` and `control-el2.log`: `checks=3084 fails=11`, `RENDERCHECK: FAILED`. The totals differ from trunk's `3072` for the reason §6 rule 3 gives — read a control's `fails`, never its totals, because the damage-bounds check votes twice on an empty plan — and what certifies each leg is its fail *list*, which is exactly the set of assertions that pin the reverted fix. |
+| 23 | 实现 Status bar | `Render.cpp` region + DECSC/DECRC handling, `RenderCheck.cpp status_bar` | host `status_bar` pins three things: the caller's cursor never lands in a status row, ordinary output rotates the region without touching those rows, and `csr` and `CSI r` are different writes. All three live legs re-run at -13 → `cache/witness/statusbar-live-20260925-13.txt`: **`VERDICT A/B/C: ok`**, and every row number matches the -6 record it replaces -- A bar-then-output puts the border/title on 47/48 with 49 text rows; B opening the bar *over a finished `help`* moves the window by exactly the two rows the bar holds (35..83 → 36..84) with the listing still on its rows and 0 rows empty, which is the erasure gone; C closing leaves 47/48 blank with the prompt unmoved at 46, `47 text rows + 2 empty` being the correct end state and not a shortfall (a close deliberately does not redraw the freed rows -- §9's status-bar item). All dumps CLEAN (`ESC-IN-GRID=0`). Two caveats the file itself states and this row inherits: `settle TIMEOUT (moved=false)` landed on different steps than on -6, which is the sampling race memory §43 records and carries no information about the fix; and the jar under these legs is `2297d517…` where -6 pinned `0ea9b33c…`, so the two files agree on *shape*, not on Java behaviour. |
+| 24 | 把 chunk 渲染策略整体下沉到 C | `RenderJni.cpp render()` — one entry (I5) | `build.sh`'s `gate_dll` asserts the whole export table of each `render.dll`, and the assertion is the gate: at -13 both bitnesses print `render all 19 JNI entrypoints exported OK` (12 `Java_com_hyee_ansirender_NativeRenderer_*` production methods plus the 7 `Java_Render_*` the harness needs), and `no @-decorated JNI exports OK`, which is what `--kill-at` buys and what HotSpot's plain-name lookup requires. It was 16 at build -6; the three added are the reply/census legs. |
+| 25 | Java 侧瘦成一次 JNI 调用，并彻底去除 ConEmuHk 依赖 | `com.hyee.ansirender.NativeRenderer`, `Render.java`, `run.ps1` | `STAGE0 RUN: ok` on both arches at -13. The retirement is visible inside the gate's own output: `both-leg A/B skipped: no D:\dbcli\lib\x86\ConEmuHk.dll` (`gate13.txt:3`, and line 417 for x64) — the comparison the old harness ran can no longer be taken, because the other painter is gone from disk. |
+| 26 | 用英文重写 DESIGN.md | this file | English contract, §1–§10. Draft history under `cache/design-en/`. |
+| 27 | 把 ambiguous 码位改为按宽字符建模 | `ansi_width_tables.h`, `AMBIGUOUS_NARROW` | host `check_widths`; §7 records the cross-check against xterm (`7,117` agree, `207` differ, corpus in `cache/ambiguous/xterm/`) and the 47,766 writes this ruling covers. |
+| 28 | 渲染器 Java 迁到 com.hyee.ansirender | package rename + `RenderJni.cpp` symbols | `build.sh:187` asserts the mangled names, so a half-moved tree cannot link. |
+| 29 | 补 DSR/DA 应答腿 + 修 reader 鼠标路径空指针 | `Render.cpp flush_reports` (I29); `LineReaderImpl` mouse path in the jline fork | host `gm_reports`; live `caseReports` (`eqInput`, which reads the reply back off the input stream). -13 census: `replies written=15 (0 failed, 1 refused for a full queue)`, and `mouse=2` counted but not modelled. `u6`/`u7` are advertised in the caps entry (see #12). |
+| 30 | 把清点落进 RcUnsupported 计数与 caps | `Render.h` counters; the caps entry | The live gate asserts the counters *as the stream is fed*, so `228: ok the CSI p family and ESC ) c are counted  unrecognised=3` at -13 (`gate13.txt:228`) is a mid-session number with a cause, and the same counter read after the session prints `6` in the census line — one number per decision, and each is checkable against the sequence that earned it. `caseSuspectAlign` is the leg that watches the delta. |
+| 31 | 删除已退役的 ConEmuHk 双 DLL | `lib/{x86,x64}`, `copy_to_git.bat` | Backup-then-delete with a manifest: `cache/hk-retire-20260924-183238/MANIFEST.txt` holds both md5s. The consequence for this document is #25's line about the both-leg A/B. |
+| 32 | 处置过期的 D:\dbcli\src\java 镜像 | `src\java`, `build-jar.ps1` | Compared first, then archived: `cache/java-mirror-retire-20260924-183622/MANIFEST.txt` and a `tar.gz` at md5 `cf5dca7d…`. §9 records what reading `copy_to_git.bat` corrected. |
+| 33 | 定性 Status bar 的两条实机观察 | `Render.cpp line_down` | Both symptoms were ours, not the host's: MSFT's `_DoLineFeed` (`adaptDispatch.cpp:2443-2453`) scrolls only at `y == bottomMargin`. Pinned in `status_bar` on a second grid that asserts `nScrolls == 0` alongside the row contents and the final cursor row, because "no scroll" is the half a correct-looking grid still gets wrong. Live: #23's -13 legs. |
+| 34 | 修启动/退出时破坏终端原有文本：全角字重复显示 | `Render.cpp` adopt/align (I4) | `cache/wide-probe/StartupRepro.java` + `su-cmp.py`, four legs at -13: `su13-fit-{raw,render}.txt` and `su13-fill-{raw,render}.txt` all print `verdict: ok  nothing cut, nothing repeated, no hole`, with the raw and render legs reporting the same census (`100 row(s) differ … duplicate pairs 0` at the fit shape, `399` at the fill shape) — the raw leg is the oracle and the render leg does not diverge from it. The in-gate half is `caseRealign` and `caseSuspectAlign` (I4), and the raw-vs-render oracle above is the same one I31 cites. |
+| 35 | 修用户上翻时把输出写进 scrollback | `Paint.cpp` — `row0` is never derived from the window top (I30) | host `plan_scroll_band`; live `caseScrollKeepsHistory`. Hand witness at -13, two shapes: `cache/wide-probe/scroll6-room.txt` → `the scrollback the user is reading is untouched (0 rows changed)`; `scroll6-full.txt` → `rode up by exactly 1 row(s), in order (340 rows changed, 0 of them out of place)`. Both `exit=0`. |
+| 36 | 让 resize 保住锚点（conhost 的 straddle 规则） | `rc_anchor_adopt` (I28) in `Render.cpp`; `Paint.cpp` refusal | host `adopt_anchor` and `plan_anchor` (`straddle:`); live resize legs through the gate-only `readopt()`. -13, both arches: `ok the resize rebuilt this handle's model, and only its model`, then `resize at winT=0: anchor carried to row 77 of 400, 41 scrollback rows intact` (`gate13.txt:319,332` and `:733,746`). |
+
+Four honest gaps in the table, stated rather than papered over. **Rows #13 and #14 are dbcli's pager and have no
+`render.dll` gate at any level** -- their only witness is a live console leg, which is weaker than the rest of
+this section and is the first thing to re-run if the pager misbehaves after a jline change; #14's leg is at least
+doubled by a `javap` reading of the shipped bytecode, #13's is not. **Row #13's `ceon` leg is unreadable as
+witnessed** (the harness's own prompt regex cannot parse a grid that still holds 83 literal escapes), so the row
+rests on one leg, not two. **Row #16's ruling now has a produced A/B, and it is the wrong A/B**: what
+`wide1516-20260925-13.txt` measures is *line width* across two geometries, not a wide-buffer scroll, so §9's
+scroll leg is still owed and deviation 1 still rests on the planner's algebra. And **row #23's legs and the -6
+file they replace were run against different jars** (`2297d517…` vs `0ea9b33c…`), so the two agree on the shape
+of the status rows and nothing about Java-side behaviour. If a row's witness file is missing, the row is
+unproven, whatever the two standing gates say.

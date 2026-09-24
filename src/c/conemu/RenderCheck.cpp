@@ -666,6 +666,66 @@ static void gm_charset()
   eq_u("split designator took effect", g.cells[0][0].ch, 0x2500, "");
 }
 
+/* The queue a query goes into, which is the whole of what the model can say about a reply: RenderJni's
+ * drain turns an entry into key events, and everything it needs to say the right thing is here. Two rules
+ * are worth pinning against a grid rather than trusting a live `tput rows`: the entry carries the cursor as
+ * it stood *when the question was read* (a later move must not change the answer), and the queue is FIFO
+ * with a refusal at the far end (an evicted older reply hangs a program already blocked on its first read). */
+static void gm_reports()
+{
+  static RcGrid g;
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[5n");
+  eq_u("a status request arms one reply", (unsigned)rc_report_pending(&g), 1, "");
+  eq_u("and is not counted as one we refuse", g.nUnsupported[RC_UN_REPORT], 0, "");
+  int ry = -1, rx = -1;
+  eq_u("its kind", (unsigned)rc_report_take(&g, &ry, &rx), (unsigned)RC_REP_DSR, "");
+  eq_u("and it armed nothing else", (unsigned)rc_report_pending(&g), 0, "");
+
+  /* The snapshot, which is the subtle half. `CSI 6n` then a move asks about where the cursor was; a drain
+     that reads g->cy at flush time would answer the move instead, which is a fact about a screen the asker
+     never saw. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[3;5H\033[6n\033[6;2H");
+  eq_u("the move did not add a second reply", (unsigned)rc_report_pending(&g), 1, "");
+  rc_report_take(&g, &ry, &rx);
+  eq_u("CPR row is the cursor as it stood", (unsigned)ry, 2, "model row, 0-based; the painter adds row0");
+  eq_u("CPR column likewise", (unsigned)rx, 4, "");
+  eq_u("and the cursor has since moved", (unsigned)g.cy, 5, "the answer must not follow it");
+
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[c\033[>c");
+  eq_u("two identity queries, two replies", (unsigned)rc_report_pending(&g), 2, "");
+  eq_u("the oldest is the primary", (unsigned)rc_report_take(&g, NULL, NULL), (unsigned)RC_REP_DA, "FIFO");
+  eq_u("then the secondary", (unsigned)rc_report_take(&g, NULL, NULL), (unsigned)RC_REP_DA2, "");
+  eq_u("and nothing was refused on the way", g.nUnsupported[RC_UN_REPORT], 0, "both were answered");
+  put(&g, "\033[1c");
+  eq_u("counted", g.nUnsupported[RC_UN_REPORT], 1, "VT52 and friends are not answered");
+  eq_u("and armed nothing", (unsigned)rc_report_pending(&g), 0, "");
+  put(&g, "\033[t");
+  eq_u("window manipulation is counted too", g.nUnsupported[RC_UN_REPORT], 2, "");
+
+  /* The limit, and the direction it refuses in. */
+  rc_reset(&g, 20, 6, 0x07);
+  for (int i = 0; i < RC_REPORT_MAX + 3; i++) put(&g, "\033[6n");
+  eq_u("the queue holds its stated depth", (unsigned)rc_report_pending(&g), (unsigned)RC_REPORT_MAX, "");
+  eq_u("and says so, three times", g.nReportFull, 3, "a refusal, not an eviction");
+  eq_u("the first entry is still the first asked", (unsigned)rc_report_take(&g, &ry, &rx), (unsigned)RC_REP_CPR, "");
+  eq_u("at the position it was asked from", (unsigned)ry, 0, "nine identical queries, no cursor moves");
+  rc_report_result(&g, 1);
+  eq_u("a reply the console took is counted once", g.nReportOk, 1, "");
+  rc_report_result(&g, 0);                         /* no take above this one: what is pinned is the separation */
+  eq_u("and a failed write is counted separately", g.nReportFail, 1, "so the two are never confused");
+
+  /* A reset drops the queue with everything else it owns: the bytes that asked are gone from this model,
+     and a re-adopt cannot answer a question the rebuilt grid never saw. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[5n");
+  eq_u("armed before the reset", (unsigned)rc_report_pending(&g), 1, "");
+  rc_reset(&g, 20, 6, 0x07);
+  eq_u("gone after it", (unsigned)rc_report_pending(&g), 0, "");
+}
+
 static void gm_dropped()
 {
   static RcGrid g;
@@ -1253,7 +1313,16 @@ static void geo_cursor()
   eq_u("mouse counted", g.nUnsupported[RC_UN_MOUSE], 1, "");
   eq_u("bracketed paste counted", g.nUnsupported[RC_UN_DECBP], 1, "");
   eq_u("DECSTBM counted", g.nUnsupported[RC_UN_DECSTBM], 0, "CSI r sets a region now; the slot is census padding");
-  eq_u("DA counted", g.nUnsupported[RC_UN_REPORT], 1, "");
+  eq_u("DA answered instead of counted", g.nUnsupported[RC_UN_REPORT], 0, "a bare `CSI c` arms a reply now");
+  eq_u("and armed exactly one reply", (unsigned)rc_report_pending(&g), 1, "two would leave bytes for the next reader");
+  {
+    int ry = -1, rx = -1;
+    eq_u("the armed reply is DA", (unsigned)rc_report_take(&g, &ry, &rx), (unsigned)RC_REP_DA, "");
+    eq_u("DA snapshot row", (unsigned)ry, 0, "the cursor as it stood when the query was read");
+    eq_u("DA snapshot col", (unsigned)rx, 0, "");
+    eq_u("the queue is empty again", (unsigned)rc_report_pending(&g), 0, "");
+    eq_u("popping an empty queue", (unsigned)rc_report_take(&g, NULL, NULL), (unsigned)RC_REP_NONE, "so a drain loop can stop");
+  }
   eq_u("DECSTBM painted nothing", g.nCells, 0, "modelled, and a region paints no cells");
   eq_u("and the region it asked for is live", (unsigned)g.regSet, 1, "`CSI c` above is DA, not RIS");
 }
@@ -1352,7 +1421,7 @@ static void geo_alt()
   eq_text(&g, 1, 4, "    ", "and the alt's text went with the alt instead of leaking here");
 
   /* The scroll is the case the whole design turns on. A viewport scroll on the main screen is queued and
-     spent on a window slide or a buffer scroll (Paint.cpp rule 2) because those rows are still wanted
+     spent on a window slide or a buffer scroll (Paint.cpp rule 1) because those rows are still wanted
      above the window; the alt has no rows above it, so nothing is queued and the moved rows have to be
      repainted instead. plan_alt() is the half of that which says what reaches the console. */
   rc_reset(&g, 20, 4, 0x07);
@@ -2305,7 +2374,7 @@ static void plan_plain(void)
 
 /*
  * Where the cursor is parked when the line it follows is wider than the window. conhost slides the
- * viewport sideways to include a cursor it is told about -- the same behaviour Paint.cpp rule 2 spends
+ * viewport sideways to include a cursor it is told about -- the same behaviour Paint.cpp rule 3 spends
  * on purpose in the vertical axis, and the reason a wide buffer has one wrap point rather than two (see
  * the 2026-09-23 measurement in Render.java's caseWrap). So the plan clamps the parked column into the
  * window and the model keeps the real one: printing a 300-column table row must not shove the user's
@@ -2391,7 +2460,7 @@ static void plan_scroll_at_buffer_bottom(void)
  * queue at a switch (geo_alt), and the plan is what turns that into "nothing moved the console" plus "every
  * alt row is written again". A slide here would drag the user's view through the real buffer to make room
  * for a screen that is about to be blanked, and a buffer scroll would eat the main screen's scrollback --
- * both are what rule 2 is for on the main screen and neither is allowed on the alt. */
+ * both are what rule 1 is for on the main screen and neither is allowed on the alt. */
 static void plan_alt(void)
 {
   static RcGrid g; RcPlan p; RcView v;
@@ -2518,6 +2587,342 @@ static void plan_gutter(void)
   eq_u("no scrollback: the gutter is dropped", (unsigned)p.drop, 5, "one per scroll, as the buffer eats them");
   eq_u("no scrollback: run starts at the window", (unsigned)p.run[0].top, 36, "");
   eq_u("no scrollback: run rows", (unsigned)p.run[0].nrows, 36, "the viewport exactly");
+}
+
+/* The same anchor, asked the other question: an adopt has to know which rows to *read*, and a resize that
+ * rebuilt the grid under it must not answer "the window's" when the model had a claim.
+ *
+ * conhost's rule for exactly this moment is worth taking whole (screenInfo.cpp:1103-1115): "in general we
+ * want to avoid moving the virtual bottom unless it's aligned with the visible viewport" -- updated when the
+ * viewport's bottom sweeps across it on the way to its new size, or when keeping it would leave the virtual
+ * viewport poking above the buffer's top. The first is a slide the *user* made with the mouse while dragging
+ * the window; the second is the guard that keeps a small buffer's content from being read at a negative row.
+ *
+ * And the sweep is a resize's rule only -- conhost keeps the two moments in different functions,
+ * `_InternalSetViewportSize` (953, the check at 1110-1112) for a new window size and `SetViewportOrigin`
+ * (642) for a scroll, where the sole adjustment is a one-directional advance (714). Hence the `reshaped`
+ * argument, and the case at the bottom that fails if the flag is dropped.
+ *
+ * Carried in bottom form (`prevBase + prevRows - 1`) because the rebuilt grid has a different `rows`: the row
+ * the content ends on is the one that means the same thing on both sides of the resize. */
+static void adopt_anchor(void)
+{
+  /* A model with no claim -- a first adopt, a fresh session -- has nothing but the window to go on. Every
+     other test in this file is that case; naming it here is what stops "we read the window" being mistaken
+     for the rule rather than the fallback. */
+  eq_u("adopt: unclaimed follows the window",
+       (unsigned)rc_anchor_adopt(0, 0, 0, 0, 1, 0, 29, 400, 60, 30), (unsigned)(-30), "winT - gutter");
+
+  /* The measured shape, and the reason the rule exists: the user scrolled to the top of a 400-row buffer
+     (rows 0..29 in view, all of them their history), the model owns 340..399, and they drag the window from
+     30 to 24 rows. Nothing about that gesture moved a cell, so the claim travels: the content's bottom row
+     399 is 24 rows of viewport plus a 24-row gutter above it, i.e. model row 0 at 352. An adopt that read
+     the *window* here would lift 24 history rows into the application's screen and paint them back at
+     376..399 -- the user's own scrollback, one screen down, which is the reported damage arriving through
+     the resize door. */
+  eq_u("adopt: a resize keeps a claim the view never touched",
+       (unsigned)rc_anchor_adopt(1, 340, 60, 29, 1, 0, 23, 400, 48, 24), (unsigned)352, "376..399, out of sight");
+
+  /* A window that grows *over* the claim is a different gesture: the view is about to cover the content, so
+     the anchor is the view's again -- conhost's first two clauses, which are one test each because they
+     straddle in opposite directions. */
+  eq_u("adopt: the view sweeping down over the content takes it",
+       (unsigned)rc_anchor_adopt(1, 171, 60, 29, 1, 221, 250, 400, 60, 30), (unsigned)191,
+       "the claim ended at 230, the window now ends at 250");
+  eq_u("adopt: and sweeping up does too",
+       (unsigned)rc_anchor_adopt(1, 340, 60, 399, 1, 310, 339, 400, 60, 30), (unsigned)280,
+       "the user dragged the view back up to the content");
+  /* Landing exactly on it is not a sweep: conhost compares `<` and `>`, and so does this. */
+  eq_u("adopt: a view that reaches the anchor keeps it",
+       (unsigned)rc_anchor_adopt(1, 340, 60, 29, 1, 370, 399, 400, 60, 30), (unsigned)340, "");
+
+  /* The guard, stated with the numbers that make it fire rather than the sweep's: a claim too near the top of
+     the buffer to anchor a 30-row viewport (its gutter would start above row 0) is conhost's `_virtualBottom
+     < newViewport.Height() - 1`, and the read it prevents is one that would start at row -19. `prevWinB`
+     equals the new bottom here on purpose -- nothing swept, so only the height can be what drops the claim. */
+  eq_u("adopt: a claim too high for the new window is dropped",
+       (unsigned)rc_anchor_adopt(1, -49, 60, 129, 1, 100, 129, 400, 60, 30), (unsigned)70,
+       "the anchor ended at row 10, below the new viewport's own height");
+
+  /* And too low: the buffer shrank from under the model (conhost clamps the window back into it, and the
+     view went to 0..29 with it). The plan declines a paint at those rows and the adopt must not resurrect
+     the claim, or the read would ask for rows the buffer no longer has. */
+  eq_u("adopt: a claim below the buffer is dropped",
+       (unsigned)rc_anchor_adopt(1, 380, 60, 399, 1, 0, 29, 400, 60, 30), (unsigned)(-30),
+       "it ended at 439 of a 400-row buffer");
+
+  /* A resize whose window never came near the claim: the user sat at the top of the buffer and dragged the
+     bottom from 29 to 39. The fallback would read at row -40 -- i.e. at the history under their eyes, once
+     the plan clipped it -- while the bottom that travels puts the new 40-row viewport at 360..399, still out
+     of sight. This is also the arithmetic proof that the *bottom* is the form to carry: a grow whose window
+     bottom does land on vb leaves fallback and carry identical (winT - winRows == vb - 2*winRows + 1), so a
+     test of the rule has to move the window where the two disagree. */
+  eq_u("adopt: a window grown away from the claim still carries it",
+       (unsigned)rc_anchor_adopt(1, 340, 60, 29, 1, 0, 39, 400, 80, 40), (unsigned)320,
+       "not winT - gutter == -40");
+
+  /* The flag's own case, and the reason it exists: the same numbers as the sweeping-down check above, with a
+     re-adopt that only re-read a console whose shape never changed. Applying the sweep here would drop the
+     anchor precisely when the user had scrolled a whole screen away from the window -- the one situation the
+     anchor is there for, and rule 2 arriving through the recovery path instead of the paint path. */
+  eq_u("adopt: a scroll is not a resize",
+       (unsigned)rc_anchor_adopt(1, 171, 60, 29, 0, 221, 250, 400, 60, 30), (unsigned)171,
+       "the window's bottom passed the anchor, but nothing was resized");
+}
+
+/* The anchor: where the model's rows are is the model's business, not the window's.
+ *
+ * This is the case the shipped painter got wrong, and it is the one every other plan test cannot see: they
+ * all hand the planner a window and take the row mapping from it, which is exactly right for a model that
+ * has never painted and exactly wrong for one twenty minutes into a session. The user moving the view over
+ * scrollback changes srWindow and no cell at all, so a plan that re-derives `row0` from it aims its
+ * rectangles at the history the user was reading. Measured on a real console 2026-09-24: content at buffer
+ * rows 30..59, view dragged to row 0, one prompt line through the renderer -> buffer row 29 rewritten, row
+ * 30 blanked, 72 rectangles, nothing declined.
+ *
+ * conhost solves the same problem with `_virtualBottom`, "not affected by the user scrolling the viewport,
+ * only when API calls cause the viewport to move" (screenInfo.hpp:218), and ghostty will not let a program
+ * address the viewport at all (point.zig:26-30). Both then decline to follow output with the view:
+ * ghostty's default is `{ keystroke = true, output = false }` (Config.zig:10446) and SnapOnOutput refuses
+ * once the user has walked away (screenInfo.cpp:1715-1726). The three checks below are those two rules on
+ * one axis. */
+static void plan_anchor(void)
+{
+  static RcGrid g; RcPlan p; RcView v;
+
+  /* A model that owns rows 100..135, a user looking at 20..55, and a two-cell edit. */
+  rc_reset(&g, 120, 36, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 100);
+  putraw(&g, "NEW");
+  view36(&v, 20);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("anchor: paints", (unsigned)p.reason, (unsigned)RC_PLAN_OK, "a moved view is not a geometry change");
+  eq_u("anchor: row0 is the model's", (unsigned)p.row0, 100, "not the view's 20: the edit goes where the text is");
+  eq_u("anchor: run still row 0", (unsigned)p.run[0].top, 0, "model rows, which the executor maps with row0");
+  eq_u("anchor: nothing slid", (unsigned)p.slideTo, (unsigned)-1, "sliding would drag the view through the buffer");
+  eq_u("anchor: and nothing scrolled", (unsigned)p.bufScroll, 0, "no row moved in the model either");
+  eq_u("anchor: the window stays put", (unsigned)p.winTop, 20, "the row the user scrolled to, as found");
+  eq_u("anchor: cursor is off the view", (unsigned)p.cursorOffView, 1, "buffer row 100 of a window at 20..55");
+  eq_u("anchor: so it is not parked", (unsigned)p.cursorMoved, 0, "parking there is how a slide happens");
+
+  /* The same chunk one scroll later: the buffer pays, the view does not move. */
+  rc_reset(&g, 120, 36, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 100);
+  putraw(&g, "\033[36;1HA\r\nB");
+  eq_u("anchor: one scroll queued", (unsigned)g.pendingScrolls, 1, "setup");
+  view36(&v, 20);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("scrolled away: no free slide", (unsigned)p.slideRows, 0, "rule 2: the view is not ours to move");
+  eq_u("scrolled away: the buffer pays", (unsigned)p.bufScroll, 1, "which is what conhost does with the same newline");
+  eq_u("scrolled away: row0 unchanged", (unsigned)p.row0, 100, "a buffer scroll moves cells under the anchor");
+  eq_u("scrolled away: window unmoved", (unsigned)p.winTop, 20, "");
+
+  /* The default, stated so it cannot be mistaken for the bug: a model that has never claimed a row has no
+     evidence but the window, and follows it. This is every other plan test in this file, named. */
+  rc_reset(&g, 120, 36, 0x07);
+  rc_clear_dirty(&g);
+  putraw(&g, "\033[36;1HA\r\nB");
+  view36(&v, 20);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("unclaimed: the window is the anchor", (unsigned)p.row0, 21, "winT+slide, as it has always been");
+  eq_u("unclaimed: and it slides", (unsigned)p.slideTo, 56, "the first paint defines where the model lives");
+  eq_u("unclaimed: cursor moved", (unsigned)p.cursorMoved, 1, "it is inside the window the plan just chose");
+
+  /* A view *below* the claim advances it, and never the other way round (screenInfo.cpp:714-717): an
+     anchor left behind the content would paint the next frame into rows nobody is looking at. */
+  rc_reset(&g, 120, 36, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 100);
+  putraw(&g, "LOW");
+  view36(&v, 120);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("ahead of the anchor: paints", (unsigned)p.reason, (unsigned)RC_PLAN_OK, "");
+  eq_u("ahead of the anchor: row0 follows the view", (unsigned)p.row0, 120, "never pulled back to 100");
+  eq_u("ahead of the anchor: the slide is on the table again", (unsigned)p.cursorOffView, 0, "");
+
+  /* An anchor the buffer cannot hold is a geometry change, and the answer to that is the one this module
+     already has: decline, and let the caller re-read the console. A shrink from under the model is the way
+     to get here, and writing at row 8990+72 of a 9001-row buffer is not an alternative. */
+  rc_reset(&g, 120, 36, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 8990);
+  putraw(&g, "EDGE");
+  view36(&v, 9001 - 36);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("past the end: declines", (unsigned)p.reason, (unsigned)RC_PLAN_NOGEOM, "re-adopt, then paint");
+  eq_u("past the end: names no rows", (unsigned)p.row0, 0, "nothing may address a row it did not plan");
+  eq_u("past the end: no scroll asked for", (unsigned)p.bufScroll, 0, "");
+  eq_u("past the end: no columns", (unsigned)p.paintCols, 0, "");
+
+  /* And the claim is droppable: an operation that failed to land leaves the model not knowing where its own
+     rows are, which is worth a repaint of the viewport and not a rectangle at a guess. */
+  rc_drop_base(&g);
+  eq_u("dropped: the viewport goes dirty", (unsigned)rc_row_dirty(&g, 35), 1, "the promise is a repaint, not silence");
+  rc_plan_paint(&g, &v, &p);
+  eq_u("dropped: re-derived from the window", (unsigned)p.row0, 8965, "the same answer the unclaimed model gives");
+}
+
+/* Rule 1b, on the two shapes the console gate measured and no arithmetic can be trusted without: which
+ * buffer rows a buffer scroll moves, and where it puts them.
+ *
+ * The destination `ScrollConsoleScreenBuffer` is handed is absolute, and conhost turns it into a displacement
+ * by subtracting the source's own top (getset.cpp:948, then TextBuffer::ScrollAndClear). A plan whose slide
+ * paid none of the debt therefore wants the rows the *anchor* held -- `base + k` downward, where k is the whole
+ * shift -- landing on `row0`. Get either end wrong and the damage is invisible in the window, because every
+ * row of the window is dirty and repainted anyway; what it moves instead is the scrollback above it, which is
+ * the one thing rule 2 exists to protect.
+ *
+ * And the reach is two-valued, which is the part a first cut here got wrong in the other direction: once the
+ * claim this flush *leaves behind* has the buffer's last row, the rows above it are the ring's own tail and a
+ * new line can only be paid for by evicting the oldest one, so the source starts at `by` and lands on row 0
+ * (conhost `_stream.cpp:123-126` -> `TextBuffer::IncrementCircularBuffer`). It is the plan's destination that
+ * decides, not the anchor it started from: a slide that saturates against the bottom of the buffer always ends
+ * on that row, whatever the claim looked like before the flush. Both branches are pinned below, on the same
+ * numbers. */
+static void plan_scroll_band(void)
+{
+  static RcGrid g; RcPlan p; RcView v;
+  int top = -1, bottom = -1, n;
+
+  /* The saturated case the gate measured, and the buffer's-full case besides: 60 model rows over a 400-row
+     buffer, the anchor at 340 with the window on the buffer's last row, and 20 newlines the window has no
+     room left to slide for. The claim ends on row 399, so there is nowhere below it to write and the scroll
+     is an eviction: the whole buffer rides up and the top 20 lines leave. */
+  rc_reset_hist(&g, 200, 30, 30, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 340);
+  putraw(&g, "\033[30;1HA\r\n");             /* the viewport's last row, so the newline is a scroll */
+  for (int i = 0; i < 19; i++) putraw(&g, "B\r\n");
+  eq_u("band: the debt is 20 scrolls", (unsigned)g.pendingScrolls, 20, "setup");
+  v = view(200, 400, 0, 370, 99, 399, 0x07, 1, 0, 399);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("band: nothing left to slide", (unsigned)p.slideRows, 0, "setup: the window is on the buffer's bottom");
+  eq_u("band: the buffer pays all of it", (unsigned)p.bufScroll, 20, "setup");
+  eq_u("band: row0 stays claimed", (unsigned)p.row0, 340, "a buffer scroll moves cells under the anchor");
+  eq_u("band: the claim reaches the buffer's last row", (unsigned)(p.row0 + g.rows),
+       (unsigned)v.bufH, "setup: the plan's own destination decides which of the two reaches applies, and "
+                         "nothing else -- the anchor this flush started from is a different row and a "
+                         "different answer (see the mixed case below)");
+  n = rc_scroll_band(&p, g.rows, v.bufH, &top, &bottom);
+  eq_u("full: the source starts at the buffer's top", (unsigned)top, 20,
+       S("`by` rows down, because the `by` above it are the lines leaving the terminal (got %d..%d)", top, bottom));
+  eq_u("full: and runs to the claim's last row", (unsigned)bottom, 399, "");
+  eq_u("full: every live row rides up", (unsigned)n, 380, "the 60 inside the claim and the 320 above it");
+  eq_u("full: it lands on row 0", (unsigned)(top - p.bufScroll), 0,
+       "the destination is absolute; `by` above this source row is the buffer's first row");
+  eq_u("full: the scrollback is in it", (unsigned)(top < p.row0), 1,
+       S("rows 0..%d are the user's, and a full buffer owes their eviction for this line -- in order, one "
+         "shift, not a rewrite", p.row0 - 1));
+  /* The half the eviction must not disturb: inside the claim, the rows that move and where they land are the
+     same as they were for a band scroll, because the model's own shift of `by` is unchanged. Get *that* end
+     wrong and the paint below the eviction is misfiled by `by` rows -- damage in the newest lines rather than
+     in the oldest ones, which is the harder direction to notice. */
+  eq_u("full: the user's rows that join the band", (unsigned)(p.row0 - top), 320,
+       S("rows %d..%d of their scrollback ride with it, in one shift and in order", top, p.row0 - 1));
+  eq_u("full: the claim's own rows ride as before", (unsigned)(bottom - p.row0 + 1), 60,
+       "the whole claim is inside the band, and 60 is what the band scroll moved before this branch existed");
+  eq_u("full: the shift carries 40 of them into the claim",
+       (unsigned)(bottom - (p.row0 + p.bufScroll) + 1), 40,
+       S("and the %d the shift cannot carry are new lines the paint writes", p.bufScroll));
+  for (int r = g.rows - p.bufScroll; r < g.rows; r++)
+    eq_u("full: the rows it leaves behind are painted", (unsigned)rc_row_dirty(&g, r), 1,
+         S("model row %d has no cell above it to move down: the scroll vacates it", r));
+
+  /* The mixed flush, and the case the first cut of this function got wrong: 19 of the debt paid by sliding the
+     window, the 20th by the buffer. The slide saturates -- `free_slide` was exactly 19 -- and a saturated slide
+     always lands the claim on the buffer's last row, because row0 = base + (bufH - rows - base) = bufH - rows.
+     So this is the eviction branch even though the *anchor* the flush started from stopped 19 rows short of
+     it: the buffer holds 401 live lines once these 20 newlines are in, and a row cannot hold two of them. The
+     source still stops where the old claim stopped, because the 19 rows below it moved no cell -- the slide
+     moved the window, not the content. */
+  rc_reset_hist(&g, 200, 30, 30, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 321);
+  putraw(&g, "\033[30;1HA\r\n");
+  for (int i = 0; i < 19; i++) putraw(&g, "B\r\n");
+  v = view(200, 400, 0, 351, 99, 380, 0x07, 1, 0, 380);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("mixed: slide pays 19", (unsigned)p.slideRows, 19, "setup: the buffer has 19 rows left below the window");
+  eq_u("mixed: and the buffer 1", (unsigned)p.bufScroll, 1, "setup");
+  eq_u("mixed: a saturated slide ends on the last row", (unsigned)(p.row0 + g.rows), (unsigned)v.bufH,
+       "the corollary, and the reason this flush evicts while the one below does not");
+  eq_u("mixed: though the anchor it started from did not", (unsigned)(p.row0 - p.slideRows + g.rows),
+       (unsigned)(v.bufH - p.slideRows), "381: a reach keyed on that row is what lost a line in the middle");
+  n = rc_scroll_band(&p, g.rows, v.bufH, &top, &bottom);
+  eq_u("mixed: so the source starts at the debt", (unsigned)top, 1,
+       "the one line above it leaves the top of the buffer, in order, rather than being overwritten in place");
+  eq_u("mixed: and ends where the *anchor* ended", (unsigned)bottom, 380,
+       S("not 399: rows 381..399 are the slide's doing, and the slide moves no cell (got %d..%d)", top, bottom));
+  eq_u("mixed: rows to move", (unsigned)n, 380, "the user's 339 above the claim and the 41 inside it");
+  eq_u("mixed: lands on row 0", (unsigned)(top - p.bufScroll), 0, "");
+  eq_u("mixed: the band carries 40 of the claim's rows",
+       (unsigned)(bottom - (p.row0 + p.bufScroll) + 1), 40,
+       S("%d..%d land on the claim's first 40 rows", p.row0 + p.bufScroll, bottom));
+  eq_u("mixed: 40 plus the 19 slid and the 1 new is the grid",
+       (unsigned)(40 + p.slideRows + p.bufScroll), (unsigned)g.rows,
+       "the slide's rows are painted, not carried: it moved the window and no cell");
+
+  /* The branch the mixed case proves is not dead: a debt the model carries while the user is looking at their
+     own scrollback, with buffer rows still empty below the claim. The window is not on the model's rows, so
+     rule 2 offers no slide at all and the whole debt is the buffer's; but the claim ends at row 259 of 400,
+     so nothing here is owed an eviction. Moving the user's rows on this flush is the same mistake in the other
+     direction -- it destroys lines the terminal still had room for. */
+  rc_reset_hist(&g, 200, 30, 30, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 200);
+  putraw(&g, "\033[30;1HA\r\n");
+  for (int i = 0; i < 4; i++) putraw(&g, "B\r\n");
+  v = view(200, 400, 0, 100, 99, 129, 0x07, 1, 0, 129);   /* the user scrolled 270 rows above the bottom */
+  rc_plan_paint(&g, &v, &p);
+  eq_u("room: the view is the user's", (unsigned)p.slideRows, 0, "rule 2: no slide for a window we do not own");
+  eq_u("room: so the buffer pays all 5", (unsigned)p.bufScroll, 5, "setup");
+  eq_u("room: and the claim stops short of the last row", (unsigned)(p.row0 + g.rows < v.bufH), 1,
+       "200 + 60 < 400: the 140 rows below it are empty, so an eviction would be theft");
+  n = rc_scroll_band(&p, g.rows, v.bufH, &top, &bottom);
+  eq_u("room: the source stays inside the claim", (unsigned)top, 205, "");
+  eq_u("room: to the claim's last row", (unsigned)bottom, 259, "");
+  eq_u("room: rows to move", (unsigned)n, 55, "the 60 the model holds less the 5 it cannot carry");
+  eq_u("room: lands on the claim", (unsigned)(top - p.bufScroll), (unsigned)p.row0, "");
+  eq_u("room: nothing of the user's is in it", (unsigned)(top >= p.row0), 1,
+       S("rows 0..%d are theirs and this flush owes them nothing (got %d..%d)", p.row0 - 1, top, bottom));
+
+  /* A debt the whole band cannot pay, with room still below it: not a scroll at all. scroll_up() blanks and
+     marks every row when the shift is the grid's height, so the paint that follows covers the band completely
+     and moving nothing is both the safe answer and the cheap one. */
+  memset(&p, 0, sizeof p);
+  p.row0 = 300; p.slideRows = 0; p.bufScroll = 60;
+  n = rc_scroll_band(&p, 60, 400, &top, &bottom);
+  eq_u("whole: nothing to move", (unsigned)n, 0, "an empty source is a no-op, not a failed call");
+
+  /* The same debt on a buffer that is full, by contrast, *is* a scroll: 60 lines of output the model cannot
+     carry are 60 lines the terminal has to evict, and the eviction is owed whether or not the band kept
+     anything. This is the pair that says the two reaches are not one rule wearing two hats. */
+  memset(&p, 0, sizeof p);
+  p.row0 = 340; p.slideRows = 0; p.bufScroll = 60;
+  n = rc_scroll_band(&p, 60, 400, &top, &bottom);
+  eq_u("whole: on a full buffer the eviction is still owed", (unsigned)n, 340,
+       S("%d..%d ride up by 60, the top 60 leave", top, bottom));
+  eq_u("whole: and it lands on row 0", (unsigned)(top - p.bufScroll), 0, "");
+
+  /* And the gutter's own clamp: a claim that reaches above the buffer's first row has cells there in the
+     model and no rows to hold them on screen. The band may start at row 0 and no lower -- but the *shift* it
+     carries is still `by`, which is what puts the request's destination above row 0. That is left to conhost
+     on purpose: ScrollRegion pins the target to the clip and shrinks the source to match
+     (host/output.cpp:365-397), the same result as "shift by `by`, lose what hangs off the top". Clamping `by`
+     down here instead would under-move the model's own rows, which is damage inside the claim. */
+  memset(&p, 0, sizeof p);
+  p.row0 = -10; p.slideRows = 0; p.bufScroll = 5;
+  n = rc_scroll_band(&p, 60, 400, &top, &bottom);
+  eq_u("gutter: clamped to the first row", (unsigned)top, 0, "");
+  eq_u("gutter: ends where the claim ends", (unsigned)bottom, 49, "");
+  eq_u("gutter: still a band", (unsigned)(n > 0), 1, S("%d rows", n));
+  eq_u("gutter: and the debt is not reduced to pay for the clamp", (unsigned)(p.bufScroll - top), 5,
+       S("dest = top - by = %d, above the buffer: conhost's to trim, not this band's", top - p.bufScroll));
+  eq_u("gutter: rows conhost actually moves", (unsigned)(bottom - p.bufScroll + 1), 45,
+       S("it moves [%d..%d] onto [0..%d]: the band's first %d rows are the lines leaving the top, and the rows "
+         "it vacates are painted anyway", p.bufScroll, bottom, bottom - p.bufScroll, p.bufScroll - top));
 }
 
 /* rc_feed() must not wait for flush() when a chunk outruns the gutter: the hook is what keeps the
@@ -2841,6 +3246,7 @@ int main(int argc, char **argv)
   gm_osc_family();
   gm_ftcs();
   gm_charset();
+  gm_reports();
   gm_dropped();
   gm_wrap_suspect();
   gm_argcap();
@@ -2870,6 +3276,9 @@ int main(int argc, char **argv)
   plan_scroll_at_buffer_bottom();
   plan_alt();
   plan_gutter();
+  plan_anchor();
+  plan_scroll_band();
+  adopt_anchor();
   plan_gutter_hook();
   plan_runs();
   plan_damage_range();

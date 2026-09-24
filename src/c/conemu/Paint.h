@@ -64,14 +64,21 @@ typedef struct RcPlan
   int reason;
 
   /* Console operations, in this order. slideTo is the buffer row to park the cursor on so conhost
-     slides the window down to it (-1 = no slide); bufScroll then moves the whole buffer up, which is
-     what conhost does itself once the window is on the last buffer row. */
+     slides the window down to it (-1 = no slide); slideRows is how many rows that slide moves, which the
+     executor has to add to the model's anchor only if the park actually landed. bufScroll then moves the
+     model's own rows up -- the region this plan addresses, never the whole buffer, because the rows above it
+     are the history the user is reading (RenderJni.cpp::scroll_region) -- which is what conhost does itself
+     once the window is on the last buffer row, and the only scroll available while the view is somewhere the
+     model does not own. */
   int slideTo;
+  int slideRows;
   int bufScroll;
   uint16_t scrollAttr;        /* attribute ScrollConsoleScreenBuffer fills its new rows with */
 
-  int  row0;                  /* buffer row of model row 0, after slide + scroll; may be negative */
-  int  winTop;                /* buffer row the window ends up on: row0 + the model's gutter */
+  int  row0;                  /* buffer row of model row 0: the model's anchor (Render.h, baseRow) plus
+                                 slideRows. May be negative -- the gutter can reach above the buffer. */
+  int  winTop;                /* buffer row the window ends up on: row0 + the model's gutter while the view
+                                 was ours to move, and the row the user scrolled to when it was not. */
   int  drop;                  /* damaged gutter rows with no buffer row: only a too-short buffer loses these */
   int  paintCols;             /* the buffer row: v->bufW - v->winL, which is g->cols whenever the plan
                                  is OK. It is the geometry test and the ceiling a run's columns are
@@ -84,8 +91,14 @@ typedef struct RcPlan
   int curTX, curTY;           /* the same point in buffer coords. curTX is clamped to the window's right
                                  column: conhost slides the viewport sideways to include a cursor parked
                                  outside it, so a line wider than the window would drag the user's view.
-                                 curTY is not: sliding down for it is the point of slideTo. */
+                                 curTY is not clamped -- sliding down for it is the point of slideTo -- but
+                                 see cursorOffView: when the view is not the model's to move, it is parked
+                                 nowhere. */
   int cursorMoved;            /* 0 => the console is already there and no scroll happened: skip the call */
+  int cursorOffView;          /* 1 => the model's cursor row is outside the window the user is looking at,
+                                 so cursorMoved is forced to 0: following output with the view is what a
+                                 terminal that respects scrollback declines to do (Paint.cpp rule 2). The
+                                 counts stay truthful either way -- this says why no call was made. */
   uint16_t attr;
   int  attrChanged;           /* 0 => the console already holds this attribute */
   int  cursorVisible, setVisible;
@@ -101,5 +114,29 @@ void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p);
 
 /* The caller finished with this plan: consume g->pendingScrolls and clear the damage. */
 void rc_paint_done(RcGrid *g);
+
+/* Where an adopt should read. The other half of rule 2: the window moving is not the content moving, so a
+ * rebuild has to carry the anchor the old grid claimed rather than re-derive it from a view the user may
+ * have scrolled away. prevSet/prevBase/prevRows are the claim the model is about to lose, prevWinB the
+ * window's bottom as that model last planned it, and winT/winB/bufH the console's shape as it is now -- all
+ * in buffer rows, for a grid of `rows` rows whose viewport is `winRows` tall.
+ *
+ * `reshaped` says the grid changed height, and it is the only case in which conhost's straddle rule applies
+ * (screenInfo.cpp:1110-1112, `SetViewportSize`); a same-shape re-read must keep the anchor however far the
+ * user scrolled, which is what it is there for. See the long comment at its definition. */
+int rc_anchor_adopt(int prevSet, int prevBase, int prevRows, int prevWinB, int reshaped,
+                    int winT, int winB, int bufH, int rows, int winRows);
+
+/* Rule 1b: the band a buffer scroll of `p->bufScroll` rows moves, in buffer rows, and how many rows that is
+ * (0 when nothing of the band survives, which is a no-op the caller may not report as a failure -- every
+ * row it would have moved is dirty and the paint that follows covers them). The destination is this source
+ * shifted up by `p->bufScroll`, which is `p->row0` while the claim this flush leaves behind still has buffer
+ * rows below it and the buffer's first row once it does not (`p->row0 + modelRows >= bufH`): at the bottom of
+ * the buffer a new line is bought by evicting the oldest one, which moves the user's scrollback as well and in
+ * what order (conhost's `IncrementCircularBuffer`). It is the destination and not the anchor that decides,
+ * because a slide that runs out of buffer ends on that row. Spelled here rather than at the call so that the
+ * row arithmetic -- the part that decides whether the user's scrollback survives -- is checkable without a
+ * console. */
+int rc_scroll_band(const RcPlan *p, int modelRows, int bufH, int *srcTop, int *srcBottom);
 
 #endif /* ANSIRENDER_PAINT_H */

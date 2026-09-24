@@ -189,6 +189,18 @@ void rc_mark_all_dirty(RcGrid *g)
   for (int r = gutter(g); r < g->rows; r++) mark_row_dirty(g, r);
 }
 
+void rc_set_base(RcGrid *g, int row)
+{
+  g->baseRow = row;
+  g->baseSet = 1;
+}
+
+void rc_drop_base(RcGrid *g)
+{
+  g->baseSet = 0;
+  rc_mark_all_dirty(g);
+}
+
 int rc_row_dirty(const RcGrid *g, int row)
 {
   return (row >= 0 && row < g->rows) ? g->rowDirty[row] : 0;
@@ -406,7 +418,7 @@ static void scroll_up(RcGrid *g, int n)
        the window, and a program's first screenful prints itself over the user's history. (Live witness:
        Render.java "the alt's blanking stopped at the window", with a 30-row gutter over a window two rows
        from the top of the buffer.)
-       Nothing may be spent on a window slide or a buffer scroll either (Paint.cpp rule 2) -- both would
+       Nothing may be spent on a window slide or a buffer scroll either (Paint.cpp rule 1) -- both would
        drag the user's view through the real buffer to make room for a screen that is about to be blanked.
        The rows still have to be blanked and their wrap claims carried, exactly as on the main screen, or the
        bottom row keeps a duplicate of the line that scrolled out of it; and the damage overlay cannot travel
@@ -729,6 +741,24 @@ static void ignored(RcGrid *g, enum RcUnsupported which)
 static int arg(const RcGrid *g, int i, int dflt)
 {
   return (i < g->nArgs && g->args[i] > 0) ? g->args[i] : dflt;
+}
+
+/* Arm a reply the painter owes. Nothing here writes: the console input handle belongs to the process, and
+ * a parser that could reach it would make every host test of this file a test of a handle. So the query
+ * becomes one queue entry carrying the cursor as it stands, and RenderJni.cpp::flush_reports turns the entry
+ * into KEY_EVENT records at the end of the flush that lands the screen they describe.
+ * The queue is FIFO because that is the order the asker will read the replies in, and it refuses rather
+ * than evict: a dropped *older* reply hangs a program already blocked on its first read, while a refused
+ * newer one hangs only a program that asked more times than the console can remember -- and both leave a
+ * number (nReportFull), which is the difference between a limit and a leak. */
+static void arm_report(RcGrid *g, enum RcReport kind)
+{
+  if (g->reportLen >= RC_REPORT_MAX) { g->nReportFull++; return; }
+  struct RcReportItem *it = &g->report[(g->reportHead + g->reportLen) % RC_REPORT_MAX];
+  it->kind = (uint8_t)kind;
+  it->y = (uint16_t)g->cy;
+  it->x = (uint16_t)g->cx;
+  g->reportLen++;
 }
 
 /* `row` is a model row. The cursor is confined to the viewport: a gutter row is scrollback, and on a
@@ -1179,16 +1209,43 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
       break;
     case 'Z': ignored(g, RC_UN_SUP); break;  /* CBT: no case upstream (:3051-3052), and HTS is ignored
         * too (:2731-2734), so there is no tab stop for a backtab to find. */
-    case 'c': unsupported(g, RC_UN_REPORT); break;      /* DA: would need a write back to stdin */
-    case 'n': unsupported(g, RC_UN_REPORT); break;      /* DSR */
+    case 'c':
+      /* Device Attributes. Upstream answers both spellings (Ansi.cpp:3765-3784) and the strings are worth
+         copying verbatim rather than inventing: `CSI c` gets `ESC [ ? 1 ; 2 c` -- "VT100 with Advanced Video
+         Option", which is what a caller that cannot parse a reply still recognises as "a terminal answered" --
+         and `CSI > c` gets `ESC [ > 0 ; 136 ; 0 c`, ConEmu's own choice of lying about being xterm 136 because
+         MinTTY answers 77, rxvt 82 and GNU screen 83 and scripts gate on the number (:3769-3776). Gated on
+         "no parameters, or a single 0" exactly as upstream gates it; anything else is a query with a spelling
+         neither this switch nor ConEmu has an answer for, and stays in the census. */
+      if (g->priv == '>' && (!g->nArgs || g->args[0] == 0)) arm_report(g, RC_REP_DA2);
+      else if (!g->priv && (!g->nArgs || g->args[0] == 0)) arm_report(g, RC_REP_DA);
+      else unsupported(g, RC_UN_REPORT);
+      break;
+    case 'n':
+      /* Device Status Report, and the cursor-position form of it. Upstream answers 5 with `ESC [ 0 n` and 6
+         with `ESC [ row ; col R` computed from the live console (Ansi.cpp:3466-3483 → :2595-2605), where row
+         and col are 1-based and measured from the *window*, not the buffer -- which is why the painter, not
+         this parser, does the arithmetic: only it knows the row0 and the column clamp of the frame the query
+         ends up in.
+         The private spelling `CSI ? 6 n` is deliberately not answered. xterm's extended CPR replies
+         `CSI ? row ; col R`, ConEmu replies the plain form to it, and a program that asked the extended
+         question and got the plain answer reads a cursor position it did not ask for. Declining is the one
+         option that cannot be wrong, so it is the option taken, and it is counted rather than silent. */
+      if (!g->priv && g->nArgs == 1 && g->args[0] == 5) arm_report(g, RC_REP_DSR);
+      else if (!g->priv && g->nArgs == 1 && g->args[0] == 6) arm_report(g, RC_REP_CPR);
+      else unsupported(g, RC_UN_REPORT);
+      break;
     /* Window manipulation. Upstream has a case (:3688-3762) and splits into three kinds: 8/22/23 reach
        Dump*Escape and do nothing, everything outside the list hits a TODO and does nothing, and 14/18/19/21
-       call ReportTerminalPixelSize / ReportTerminalCharSize / ReportConsoleTitle -- which is a write into
-       the application's *input*, exactly what a renderer that owns no pipe cannot answer. Counted as a
-       report, not as an unknown final, because the reach is known and moves no cell: this arm buys no
-       repaint, which is the difference between a gap and a hazard. The caps carry the matching half of the
-       deal (windows-conemu.caps advertises no `u6`/`u7`/`cs`-query string either) -- JLine's cursor-position
-       probe is an unbounded `reader.read()` loop, so a caps entry that let it ask would hang the reader. */
+       call ReportTerminalPixelSize / ReportTerminalCharSize / ReportConsoleTitle.
+       Not answered, and now for a narrower reason than "a renderer owns no input handle" -- it does, since
+       the arms above armed a reply for the painter to write. Three of these four are answerable here and one
+       is not: pixel size needs the client rectangle of a window this library does not have (ConEmu reaches
+       its own GUI through ghConEmuWndDC), and a renderer that guessed it would be the first thing a
+       resizable program anchored its next layout to. The two size-in-characters reports would be exact, and
+       `18t`/`19t` are what a program asks when it wants the screen it already has; nothing in JLine or Nano
+       asks, so the leg stays out until something that runs here does. This is the same rule that decided
+       `rep`: modelled because a real writer emits it, not because the registry lists it. */
     case 't': unsupported(g, RC_UN_REPORT); break;
     default: unsupported(g, RC_UN_SUP); break;
   }
@@ -1625,6 +1682,26 @@ int rc_title_take(RcGrid *g, uint16_t *dst, int cap)
   const int n = g->nTitle;
   g->titlePending = 0;
   return n;
+}
+
+int rc_report_pending(const RcGrid *g) { return g ? g->reportLen : 0; }
+
+int rc_report_take(RcGrid *g, int *row, int *col)
+{
+  if (!g || g->reportLen <= 0) return RC_REP_NONE;
+  const int kind = g->report[g->reportHead].kind;
+  if (row) *row = g->report[g->reportHead].y;
+  if (col) *col = g->report[g->reportHead].x;
+  g->reportHead = (g->reportHead + 1) % RC_REPORT_MAX;
+  if (--g->reportLen == 0) g->reportHead = 0;        /* empty is (0,0), so a reset model reads as a fresh queue */
+  return kind;
+}
+
+void rc_report_result(RcGrid *g, int written)
+{
+  if (!g) return;
+  if (written) g->nReportOk++;
+  else g->nReportFail++;
 }
 
 void rc_feed(RcGrid *g, const uint16_t *units, int n)

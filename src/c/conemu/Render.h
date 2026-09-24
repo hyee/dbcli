@@ -106,6 +106,24 @@ enum RcUnsupported
 #define RC_OSC_OTHER 3
 #define RC_OSC_TITLE 4
 
+/* A query the stream asked and the console has to answer. The model only *arms* these: writing the reply
+ * is a call on the input handle, and this file answers to no handle (the host gate links it with no console
+ * at all). The painter takes the queue at the end of a flush, where the cursor it just parked is the fact
+ * the reply has to match. RC_REP_NONE is what an empty queue answers with.
+ * Each kind has exactly one spelling upstream answers: DSR and CPR are `CSI 5n`/`CSI 6n` (Ansi.cpp:3466-3483),
+ * DA is `CSI c` and DA2 is `CSI >c` (:3765-3784). */
+enum RcReport { RC_REP_NONE = -1, RC_REP_DSR = 0, RC_REP_CPR = 1, RC_REP_DA = 2, RC_REP_DA2 = 3 };
+
+/* Queries in one chunk are rare but legal (`vim` probes more than once at startup), and a reply the queue
+ * had to refuse is a program left waiting, which must be a number and not a rumour. */
+#define RC_REPORT_MAX 8
+
+/* One armed query, with the cursor as it stood when the sequence was read: a CPR answers where the cursor
+ * *was*, so the painter has to know that position and not the one the chunk ends on. Named at file scope
+ * because RcGrid's queue is not the only thing that speaks about it — `rc_report_take` hands one out per
+ * call, and a nested type would have to be spelled through the grid everywhere it goes. */
+struct RcReportItem { uint8_t kind; uint16_t y, x; };
+
 /* What ended a row's line: the two reasons are distinct upstream (`_wrapForced` and
  * `_doubleBytePadded`, Row.hpp:313-317) and a consumer that joins rows for copy or export has to tell
  * them apart -- a padded row's next glyph was moved whole, so the row's own content is complete. */
@@ -218,7 +236,7 @@ typedef struct RcGrid
   /* DECSTBM (CSI top;bot r). Inclusive model rows, and only live while `regSet`: with no region the
      scroll area is the viewport, which is every sequence the application sent before a full-screen program set one.
      Clamped to the viewport when it is set, and never re-clamped afterwards -- rc_reset_hist() is the
-     only thing that changes this grid's geometry, and it zeroes the pair (RenderJni.cpp:459, so a
+     only thing that changes this grid's geometry, and it zeroes the pair (RenderJni.cpp::build_model, so a
      resize cannot strand a region outside the window it was cut for). ConEmu keeps the same state
      (gDisplayOpt.ScrollRegion/Start/End) and, unlike VT100, does NOT home the cursor when it is set
      (Ansi.cpp:4146-4174 has no SetConsoleCursorPosition); the region is also what the writer's line feed,
@@ -275,6 +293,15 @@ typedef struct RcGrid
   int    titlePending;    /* a title OSC terminated and waits for the painter to hand it to the console */
   uint32_t wantLow;     /* a high surrogate ended the last chunk; complete it or paint U+FFFD */
 
+  /* Queries waiting for a reply, oldest first, and the cursor as it stood when each was read. The position
+   * is snapshotted because a CPR answers where the cursor was *when it was asked*: `printf '\e[6n\e[2;3H'`
+   * asks about row 1 and then moves, and reporting the moved-to row would tell the asker something the
+   * screen never showed. It is a model row, so the painter turns it into a screen row with the same
+   * `row0 + r` arithmetic it paints with -- if the viewport slides between the query and the flush, the
+   * answer slides with it, which is the only answer that can still be true. */
+  RcReportItem report[RC_REPORT_MAX];
+  int reportHead, reportLen;
+
   unsigned long nUnsupported[RC_UN_MAX];
   unsigned long nCells, nScrolls, nAstral;
   unsigned long nTitleSet, nTitleTrunc;   /* titles accepted (and, of those, truncated at RC_TITLE_MAX) */
@@ -287,10 +314,34 @@ typedef struct RcGrid
      needs to know whether any of them were marked at all. */
   unsigned long nPromptMark;
 
+  /* Replies the painter wrote, replies the write refused (stdin is no console handle, or it took fewer
+   * records than it was given), and queries refused because the queue was already full. Three counters
+   * because they are three different questions: does this terminal answer, did it answer into a handle
+   * nobody reads, and can it answer that many at once. A query whose model died before its flush is lost
+   * with the model and counted on the handle, not here: rc_reset zeroes this struct, so nothing that wants
+   * to outlive a resize belongs in it. */
+  unsigned long nReportOk, nReportFail, nReportFull;
+
   /* Rows the viewport has scrolled up since the painter last caught up. The painter turns each one
      into a window slide (free: the cells stay where they are) or a buffer scroll, so a scroll costs
      no cell writes -- only the rows that scroll *into* the viewport are marked dirty. */
   int pendingScrolls;
+
+  /* Where the model's rows live in the buffer: the buffer row of model row 0, and whether the model has
+     ever claimed one. This is conhost's `_virtualBottom` (screenInfo.hpp:218: "Tracks the last virtual
+     position the viewport was at. This is not affected by the user scrolling the viewport, only when API
+     calls cause the viewport to move") turned into a row-0 anchor, and ghostty's `.active` pin, which is
+     the region a program may write and is *not* the `.viewport` pin the user moves (point.zig:12-50:
+     "programs cannot address the scrollback or the visible viewport").
+     It exists because srWindow is not such a fact. The user can drag the view over scrollback at any time
+     without touching a cell, and a painter that re-derived its rows from the live window then wrote the
+     current frame into the history it was asked not to disturb -- measured 2026-09-24: the view at row 0
+     of a buffer whose content sat at row 30, one prompt line through the renderer, rewrote buffer row 29
+     and blanked row 30. Unset until an adopt or a paint claims the rows; while unset the window is the only
+     evidence of where the model would go, and deriving it is both correct and what a model that has never
+     painted owes. May be negative when the gutter reaches above the buffer's first row. */
+  int baseRow;
+  int baseSet;
 
   /* The SGR sequences consumed since the last rc_sgr_take()/rc_sgr_clear(), verbatim. This exists because
      ConEmuHk kept a process-wide copy of the attribute state (CEAnsi::gDisplayParm) and re-applied it
@@ -354,6 +405,14 @@ int  rc_row_dirty(const RcGrid *g, int row);
 void rc_clear_dirty(RcGrid *g);
 void rc_mark_all_dirty(RcGrid *g);
 
+/* Claiming where the model's rows are (see RcGrid::baseRow). rc_set_base is what a flush owes once the
+   operations it planned actually landed; rc_drop_base is the other half of the promise: the console did
+   something the model cannot account for, so the next flush re-derives the anchor from the window and
+   repaints the viewport rather than writing rectangles at rows nothing owns. Dropping the claim therefore
+   marks the damage -- a caller that forgot one would keep the stale screen. */
+void rc_set_base(RcGrid *g, int row);
+void rc_drop_base(RcGrid *g);
+
 /* Why a row's line continued: RC_WRAP_NONE / _FORCED / _PAD (S5). A consumer that joins rows for copy,
    pagination or export needs this, and nothing else in the model can tell a soft break from a hard one. */
 int  rc_row_wrap(const RcGrid *g, int row);
@@ -400,6 +459,22 @@ int  rc_title_pending(const RcGrid *g);
    be 0 -- an explicit empty title (ESC ] 0 ; "" ST) is still a title. -1 when cap is too small, and then
    nothing is cleared. Callers pass RC_TITLE_MAX. */
 int  rc_title_take(RcGrid *g, uint16_t *dst, int cap);
+
+/* How many queries are waiting for an answer. The painter loops on this until it drains the queue, and the
+   host gate reads it to prove a query armed exactly one reply -- no more, because answering twice would
+   leave bytes in the input buffer for the next reader, and no less, because a caller that waits would hang
+   on the gap. */
+int  rc_report_pending(const RcGrid *g);
+
+/* Pop the oldest armed query: returns its kind (RC_REP_NONE when the queue is empty) and, when `row` and
+ * `col` are not NULL, the model row and column the cursor stood on when it was asked. The counter of the
+ * outcome belongs to rc_report_result, not here, because only the caller knows whether the console took it. */
+int  rc_report_take(RcGrid *g, int *row, int *col);
+
+/* Say what became of the query the take above this call returned: 1 = the console took every record, 0 = the
+   write failed or fell short. One call per take, in that order; the model keeps no per-entry history, only
+   the two counts. They are here rather than open fields so the model stays the only thing that owns them. */
+void rc_report_result(RcGrid *g, int written);
 
 #ifdef __cplusplus
 }
