@@ -227,27 +227,45 @@ that needed a wire test before it could be believed:
 ## 5 Cost model
 
 Measured on a real console with a purpose-built C++ benchmark (200 samples, median, frequency check
-included), so that the JVM is not part of the measurement:
+included), so that the JVM is not part of the measurement. Two samples exist, and the difference between
+them is itself a fact about the numbers below:
 
-| Operation | Median | |
-|---|---|---|
-| read console view (screen buffer info + cursor info) | 59.1 µs | paid once per flush |
-| `SetConsoleCursorPosition` | 35.6 µs | the entire cost of a slide |
-| `SetConsoleTextAttribute` | 25.7 µs | |
-| `ScrollConsoleScreenBuffer` (one row, whole buffer) | 150.1 µs | 4.2× a slide |
-| `WriteConsoleOutputW` | ≈ 40 µs + 43 ns/cell + 1.5 µs/row | fitted on 100×30 / 4096×1 / 4096×30 |
+| Operation | 2026-09-23 | 2026-09-24 | |
+|---|---|---|---|
+| read console view (screen buffer info + cursor info) | 59.1 µs | 85.4 µs | paid once per flush |
+| `SetConsoleCursorPosition` | 35.6 µs | 48.5 µs | the entire cost of a slide |
+| `SetConsoleTextAttribute` | 25.7 µs | 47.0 µs | |
+| `ScrollConsoleScreenBuffer` (one row, whole buffer) | 150.1 µs | 188.4 µs | 4.2× / 3.9× a slide |
+| `WriteConsoleOutputW` | ≈ 40 µs + 43 ns/cell + 1.5 µs/row | ≈ 60 µs + 41 ns/cell + 3.5 µs/row | fitted on 100×30 / 4096×1 / 4096×30 |
+| our own staging, `build_row`, no console call | 1.03 ns/cell | 1.03 ns/cell | at 4096 columns: 129 µs |
+
+Read the two columns as a **band, not a revision**. Every fixed per-call cost rose 1.4–1.9× between the
+samples — the second run's worst view read is 795 µs against the first run's worst of 97.5 µs, and other
+sessions were live on that machine — while the two things the design actually leans on did not move:
+`WriteConsoleOutputW`'s per-cell throughput (43.2 vs 42.96 ns/cell at 4096×30) and our own staging rate
+(1.03 ns/cell in both samples, to the reported precision). A model built on *ratios* and on per-cell
+throughput is therefore still the right model; a model built on an absolute microsecond figure would have
+been wrong twice. Re-run `bench.sh x64` before quoting an absolute anywhere.
 
 Consequences that shaped the design:
 
 1. **Slide instead of scroll wherever possible** — the plan's first operation exists because it is 4×
-   cheaper and moves no cells.
+   cheaper and moves no cells. Measured again on the 24th: 3.9×.
 2. **Batching at the chunk level, not the flush level.** The per-flush tax is the console read, not JNI;
    "flush less often" trades that tax against gutter pressure (I9).
 3. **Painting to the buffer edge (I7) is charged per cell** — on the default 2000-column profile a
-   full-window repaint of 30 rows is about 2.7 ms against roughly 6.3 ms for the old in-process parser.
-   Since I22 that number is an **upper bound** rather than a constant: a frame pays for the columns it
-   actually dirtied, so a one-cell status line costs one call's fixed overhead, not sixty thousand cells.
-   The user ruling that keeps I7 wide is about output correctness, not speed, and this is the cost of it.
+   full-window repaint of 30 rows is about 2.7 ms (2026-09-24: 2,656 µs for 60,000 cells) against roughly
+   6.3 ms for the old in-process parser. That comparison is now **historical**: the retired parser's DLLs
+   were deleted, so nothing can re-measure the second number. It stays here as the reason the change was
+   made, not as a current claim. Since I22 it is an **upper bound** rather than a constant: a frame pays
+   for the columns it actually dirtied, so a one-cell status line costs one call's fixed overhead, not
+   sixty thousand cells. The user ruling that keeps I7 wide is about output correctness, not speed, and
+   this is the cost of it.
+4. What the bench does **not** measure: it drives a full-width paint (`paintCols = bufW - winL`, with
+   `winL` pinned to 0), so consequence 3's "upper bound" is a claim about the planner rather than a
+   measurement, and the narrow-column path I22 introduced has no timing leg at all. Same gap as `winL` in
+   §9.
+
 
 Shape facts worth remembering, because gates depend on them: the default console profile has a buffer far
 wider and taller than the window (2000 × 9001 vs 120 × 60); Windows Terminal and ConEmu size the buffer to
@@ -542,6 +560,10 @@ a generator change.
   the only witness so far is a real session that happened to be horizontally scrolled. Fix by parameterising
   the geometry helper or adding a gate-only horizontal scroll, then paint one narrow column. Touching
   `RenderJni.cpp` means the build stamp and a full re-run.
+  The same blindness runs through the benchmark: `PaintBench.cpp` sets `paintCols = bufW - winL` with
+  `winL` pinned to 0, so the I22 narrow-column path has **no timing leg either** (§5 consequence 4). A
+  one-cell status line is claimed to cost one call's fixed overhead rather than 60,000 cells, and that
+  claim is currently argued from the planner's structure, not measured.
 * **`rowWrap[]` (I20) has no reader yet.** Set, carried and cleared with full gate coverage, waiting for the
   product that needs it (copy/selection and paging that distinguish hard from soft wraps). Do not optimise
   for it or change its meaning before then.
