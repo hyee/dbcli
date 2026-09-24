@@ -373,14 +373,23 @@ a generator change.
 
 ## 9 Open work
 
-* **Status bar: modelled and gated, not yet witnessed live.** The byte stream a status line produces —
+* **Status bar: modelled, gated and now witnessed live.** The byte stream a status line produces —
   `DECSC`, `csr(0, n)`, `DECRC`, the lines at the bottom — is replayed by the host gate case `status_bar`,
   which pins the three things the feature depends on: the caller's cursor never lands in the status rows,
   ordinary output rotates the region without touching those rows, and the two spellings of "undo the region"
   are different writes. They are, and the difference is the whole story of this bullet: `csr` carries `%i`,
   so `csr(0, 0)` compiles to `CSI 1;1r`, a region one row tall — the opposite of a reset, and enough to make
-  every later line feed rotate inside the top row. `CSI r` is the reset. What is still owed is the live
-  witness: a session with the bar switched on, and one switched off, both read off the screen.
+  every later line feed rotate inside the top row. `CSI r` is the reset.
+  The live leg ran on a real console with `ConEmuHk` already absent from disk (evidence in
+  `cache/witness/statusbar-live-20260924.txt`): `set Status on` draws the bar on the row directly below the
+  prompt, and the cursor sits at column 5 of the prompt row — outside the region, which is the failure mode
+  this feature was specified to avoid. Two things that witness did *not* settle, both upstream of this
+  library. Turning the bar on erases the rows above the prompt: run with the native renderer on and with
+  `DBCLI_NATIVE_RENDER=off` (conhost parsing the same bytes) the final grid is identical — same window rows,
+  same prompt row, same blank rows — so the erasure is the host's and jline's `Display` bookkeeping, not a
+  divergence in the model. And the bar lands one row above the viewport's last row, leaving a blank line
+  beneath it; whether `display.rows` should have been one larger is a question about the host's size, not
+  about escape parsing.
 * **The census of what the host's editor depends on is done.** The reference is the terminal's own built-in
   editor, which is a Java port of `nano` rather than `nano` itself: `Nano.java` writes **zero raw escape
   bytes** — all 4,240 lines emit through four layers only, `Terminal.puts(Capability)`, `Display`, `Status`
@@ -422,6 +431,18 @@ a generator change.
 * **Whether the host should emit OSC 133 at all.** The model reads it (I23) and the marks' only current
   reader is the gate; a live session's census shows no prompt has ever been marked. That is a product
   decision for the host's owner, not this library's.
-* Everything in this directory, the launcher, and both Java trees is **uncommitted**. Committing requires
-  the host's owner to ask first, and the retired in-process parser's two DLLs are still in the install tree
-  for the same reason — deleting them is also that owner's call.
+* **The library is committed; the compile tree still is not.** `5dec33bd` in the host's repository carries
+  this directory, the launcher, `render.dll` for both architectures and the refreshed Java side, and drops the
+  retired in-process parser's two DLLs — they are gone from the install tree as well, backed up with a per-file
+  md5 manifest before deletion. What that commit does *not* cover is `D:\JavaProjects\jline3.29`, whose git
+  repository has zero commits: the tree `javac` actually reads is versioned only by being copied into
+  `src/java`. The copy is the host's own `src\copy_to_git.bat`, and reading it end to end corrects two things
+  this document previously asserted. It is not additive — `del /F/S/Q ".\src\java"` really does empty the
+  directory recursively, which is why the mirror under the install root was safe to delete: the next run of the
+  script rebuilds it. What drifts instead is *when the script is run*, and the two classes that survived in the
+  repository for months after the compile tree dropped them are evidence of that, not of a missing prune.
+  The second correction is worse, because it is silent: the script's `jline3.29\opencsv\src` and
+  `jline3.29\nuprocess\src` paths no longer exist — opencsv builds from `D:\JavaProjects\dbcli\opencsv2\src`,
+  and nuprocess was folded into the dbcli tree itself at `com\zaxxer\nuprocess`, which the jar build's own
+  javac output confirms. `XCOPY` of a missing path prints "File not Found" and returns, so those two lines
+  currently copy nothing.
