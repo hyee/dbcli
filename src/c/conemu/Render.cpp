@@ -464,7 +464,21 @@ static void line_down(RcGrid *g)
 {
   int top, bot;
   region(g, &top, &bot);
-  if (g->cy < bot) g->cy++;
+  /* A cursor below the region's bottom margin walks down and scrolls nothing -- the row it lands on is
+     the caller's own business, not the region's. MSFT's `_DoLineFeed` takes this branch for any row
+     `!= bottomMargin` and clamps to the page bottom (adaptDispatch.cpp:2443-2453). ConEmu agrees by
+     construction rather than by intent: `workRgn` there is the *buffer* (Ansi.cpp:2897) and only `clipRgn`
+     is the region (:2880-2886), and set_y's relative-down arm clamps to the region solely while the cursor
+     is inside it -- from above the region (:2913-2914) or from below it (:2917-2918) the bound is workRgn,
+     i.e. the buffer. So `set_y` cannot say what a cursor below the bottom margin should do; our viewport
+     clamp is the nearest statement of the same non-scroll, and it is what move_row() at :742 already does
+     for a relative move. It is not a corner case here: a status bar is exactly this cursor, because the bar
+     occupies the rows the region gave up. Scrolling instead -- the previous reading of `cy < bot` --
+     collapsed a two-row bar onto one row and rotated the session's text away once per newline.
+     RenderCheck.cpp's status_bar() pins the pair. The clamp is the viewport's last row -- `clxy` would say
+     the same but is defined below, and this file keeps its order one-way. */
+  if (g->cy > bot) { if (g->cy < g->rows - 1) g->cy++; }
+  else if (g->cy < bot) g->cy++;
   else
   /* A region that is the viewport is not a region at all: the whole-model shift below is what carries
      unpainted history out of the gutter and asks for the console scroll (pendingScrolls, rc_scroll_room),

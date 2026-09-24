@@ -244,7 +244,11 @@ The doctrine, in the order that matters:
    first page of a long-line file cannot differ on the EL-blind leg, because EL has nothing to erase.
 5. **Every A/B leg must state its own environment.** Since the renderer defaults to on, a leg that omits
    the switch is a leg with the renderer on, and an "off vs on" comparison of one renderer against itself
-   returns a perfect, meaningless zero.
+   returns a perfect, meaningless zero. Worse than omitted is *unread*: `DBCLI_NATIVE_RENDER` no longer has a
+   reader anywhere — not in the sources, not as a string constant in either deployed jar — so a leg that sets
+   it to `off` is not a weak control, it is the treatment leg wearing a control's label, and the agreement it
+   reports is unfalsifiable rather than merely redundant. Before trusting which leg is which, grep the artifact
+   for the variable and find the code that reads it; if you cannot, the A/B is one leg.
 6. **A dirty console is inherited by the next gate.** When stdout is redirected, no console is allocated
    and the following leg starts on the previous leg's last frame — attributes included. The live gate
    therefore resets SGR *before* erasing, and asserts the window is blank at the default attribute.
@@ -264,6 +268,12 @@ The doctrine, in the order that matters:
     the stats array is positional on both sides, so a jar older than the DLL silently reads someone
     else's counter. The check is against the deployed artifact (`javap` on the jar), and every deployed
     pair is recorded with its stamp, its md5 and a backup taken before the swap.
+11. **A gate helper can invent failures.** `eq_text(g, row, upto, want, ctx)` indexes `want[i]` for every
+    `i < upto` with no NUL guard, so an `upto` larger than the literal walks into the merged string pool and
+    compares real cells against unrelated text. Pass the length you actually mean, padding with explicit
+    spaces when the row is longer: the `line_down` fix arrived with five fresh FAILs, and they were five bad
+    expectations rather than five regressions. A helper without a terminator check should get one, or the
+    case should not use it.
 
 Current gates, and how to read them: the host gate (`RenderCheck`, cross-run on a Linux host: colour table,
 full code-point width cross-check, per-UTF-16-unit resumability, damage bounds over the corpus) and the
@@ -364,8 +374,13 @@ pwsh -NoProfile -File cache/caps-audit/native-census.ps1 -Native on   # a live s
 Notes that cost time when unknown: a control build needs a sibling `luauf8` directory in its scratch tree
 (the width tables are included by relative path); JDK 8's `javac` will not create its own `-d` directory;
 `pwsh -File … -Deploy` swallows the switch — invoke through `-Command`; paths passed to `pwsh -File` from a
-POSIX shell need forward slashes; and the benchmark is deliberately *not* part of `build.sh`, because a
-gate must be able to fail and a measurement has no notion of passing.
+POSIX shell need forward slashes; the benchmark is deliberately *not* part of `build.sh`, because a gate must
+be able to fail and a measurement has no notion of passing; and **a `render.dll` that some live session already
+loaded cannot be written in place** — `cp` fails with "Device or resource busy" — but it can be *replaced*, by
+writing the new bytes next to it and renaming over the old name (`cp new.dll x.dll.new && mv -f x.dll.new
+x.dll`), which is why a deployment never has to wait for, or kill, the sessions holding the previous pair.
+`cache/scratch-pill/who-locks.ps1` names the holding process through the Restart Manager when that surprise
+comes up; finding it is informational only, since the answer is the rename and not the kill.
 
 The generated width table is produced by `gen_ansi_tables.py`, which is not in this tree; the table is
 never edited by hand. Regenerate, then re-run the host gate: its width cross-check is the thing that catches
@@ -373,23 +388,37 @@ a generator change.
 
 ## 9 Open work
 
-* **Status bar: modelled, gated and now witnessed live.** The byte stream a status line produces —
-  `DECSC`, `csr(0, n)`, `DECRC`, the lines at the bottom — is replayed by the host gate case `status_bar`,
-  which pins the three things the feature depends on: the caller's cursor never lands in the status rows,
-  ordinary output rotates the region without touching those rows, and the two spellings of "undo the region"
-  are different writes. They are, and the difference is the whole story of this bullet: `csr` carries `%i`,
-  so `csr(0, 0)` compiles to `CSI 1;1r`, a region one row tall — the opposite of a reset, and enough to make
-  every later line feed rotate inside the top row. `CSI r` is the reset.
-  The live leg ran on a real console with `ConEmuHk` already absent from disk (evidence in
-  `cache/witness/statusbar-live-20260924.txt`): `set Status on` draws the bar on the row directly below the
-  prompt, and the cursor sits at column 5 of the prompt row — outside the region, which is the failure mode
-  this feature was specified to avoid. Two things that witness did *not* settle, both upstream of this
-  library. Turning the bar on erases the rows above the prompt: run with the native renderer on and with
-  `DBCLI_NATIVE_RENDER=off` (conhost parsing the same bytes) the final grid is identical — same window rows,
-  same prompt row, same blank rows — so the erasure is the host's and jline's `Display` bookkeeping, not a
-  divergence in the model. And the bar lands one row above the viewport's last row, leaving a blank line
-  beneath it; whether `display.rows` should have been one larger is a question about the host's size, not
-  about escape parsing.
+* **Status bar: modelled, gated, witnessed live -- and one of its live symptoms turned out to be ours.** The
+  byte stream a status line produces — `DECSC`, `csr(0, n)`, `DECRC`, the lines at the bottom — is replayed by
+  the host gate case `status_bar`, which pins the three things the feature depends on: the caller's cursor
+  never lands in the status rows, ordinary output rotates the region without touching those rows, and the two
+  spellings of "undo the region" are different writes. They are, and the difference is the whole story of that
+  part of the bullet: `csr` carries `%i`, so `csr(0, 0)` compiles to `CSI 1;1r`, a region one row tall — the
+  opposite of a reset, and enough to make every later line feed rotate inside the top row. `CSI r` is the reset.
+  The first live leg (`cache/witness/statusbar-live-20260924.txt`, build -5) put the bar on the row directly
+  below the prompt, with the cursor at column 5 of that prompt row — outside the region, which is the MSFT
+  failure mode this feature was specified to avoid. It also showed two things that leg recorded as *not*
+  settled and as upstream of this library: the bar's two lines arriving as one composite row with a blank row
+  under it, and the session's text above the prompt gone. **Both were a defect in `line_down`, and both are
+  fixed.** A line feed issued while the cursor sat *below* a narrowed region rotated the region and left the
+  cursor where it was, so each newline the bar drew moved one row of the session's text away and folded the
+  bar's second line onto its first. MSFT's `_DoLineFeed` is the authority and was read locally: it scrolls only
+  at `y == bottomMargin` and otherwise clamps to the page bottom (`adaptDispatch.cpp:2443-2453`). The case is
+  pinned in `status_bar` on a second grid — four rows of text, region `1;4r`, cursor driven below it, the bar's
+  two lines written there, and `nScrolls == 0` asserted alongside the row contents and the final cursor row —
+  because "no scroll" is the half that a correct-looking grid can still get wrong.
+  Re-witnessed on a real console against the -6 pair, all three legs in
+  `cache/witness/statusbar-live-20260924-6.txt`: bar opened then `help` -- border on the viewport's
+  next-to-last row, title on its last, prompt one row above them, 49 text rows visible where -5 reported 2;
+  `help` then bar opened -- the help listing still on rows 36..81, which is the erasure gone; and bar opened,
+  `help`, bar closed -- rows 47 and 48 blank again, prompt at 46, nothing above it disturbed. Closing is the
+  one shape that leaves a *correct* gap: the freed rows are not redrawn, because redrawing them is the host's
+  business and not this library's.
+  *How the wrong conclusion survived a control leg* is the part worth keeping. The -5 witness compared `help`
+  then `set Status on` with the native renderer on and with `DBCLI_NATIVE_RENDER=off`, got identical grids,
+  and inferred the host. That comparison could not have come out any other way: the variable has no reader, so
+  both legs ran this parser and this painter (rule 5 above), and what looked like a control was the treatment
+  wearing a control's label.
 * **The census of what the host's editor depends on is done.** The reference is the terminal's own built-in
   editor, which is a Java port of `nano` rather than `nano` itself: `Nano.java` writes **zero raw escape
   bytes** — all 4,240 lines emit through four layers only, `Terminal.puts(Capability)`, `Display`, `Status`
@@ -409,14 +438,22 @@ a generator change.
   dbcli path stalls on a reply the retired in-process parser used to fake. What the retirement does cost is
   any *third-party* program run inside the console that probes with `CSI 6n` or `CSI c` and waits; that is a
   real but much narrower claim, and it is the one the open answer-leg task should be about.
-* **A reachable defect the census turned up, in the host rather than in the model.** The reader's mouse
-  widget calls `terminal.getCursorPosition(...)` (`LineReaderImpl.java:5971`) and dereferences the result
+* **A reachable defect the census turned up, in the host rather than in the model — now closed.** The reader's
+  mouse widget calls `terminal.getCursorPosition(...)` (`LineReaderImpl.java:5971`) and dereferences the result
   without a null check at `:5984`. On Windows that call always returns `null` unless `org.dbcli.WinSysTerminal`
-  is the terminal in use — and the `IS_CONEMU` branch at `Console.java:119-122` is exactly what selects some
-  other terminal. The reader's `MOUSE` option is off by default (`Console.java:171`) but is switched on by a
-  `set mouse` command (`:422`), so the path is user-reachable: enable the mouse, release button 1 over the
-  prompt, and the reader throws instead of moving the cursor. The fix belongs where the null is produced —
-  answer the query from the console API, as `WinSysTerminal.java:488` already does.
+  is the terminal in use — `AbstractTerminal.java:251-253` is the null — and the `IS_CONEMU` branch at
+  `Console.java:119-122` is exactly what selects some other terminal. The reader's `MOUSE` option is off by
+  default (`Console.java:171`) but a `set mouse` switches it on, so the path was user-reachable: enable the
+  mouse, release button 1 over the prompt, and the reader threw instead of moving the cursor.
+  `Console.enableMouse` now refuses the switch on a terminal that cannot answer the query, and says why.
+  Probing `getCursorPosition()` to decide was rejected deliberately — on an ANSI terminal that call *is* the
+  `CSI 6n` round trip, and nothing answers it (see the counter at `Render.cpp:1160`), so a probe would turn a
+  click-time crash into a start-up hang; the terminal's type decides instead. Witnessed on two live legs: the
+  `WinSysTerminal` leg enables silently, the forced-`IS_CONEMU` leg prints the refusal where the NPE used to
+  be. The other half of that open item — answering reports — stays a decision not to answer: the model counts
+  `CSI 6n`, `CSI c` and window manipulation as `RC_UN_REPORT`, and the terminfo carries no `u6`/`u7` so nothing
+  in this host asks. Answering would mean this library writing into the console input buffer, which it does
+  not do today and which would leave stray bytes for whoever reads input next.
 * **The `winL` gap in narrow rectangles (I22).** `write_rect` translates model columns by `winL`. Nothing
   can produce a `winL > 0` shape in either gate — the live helper pins the rectangle's left edge to 0 — so
   the only witness so far is a real session that happened to be horizontally scrolled. Fix by parameterising

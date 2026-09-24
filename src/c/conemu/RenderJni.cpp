@@ -52,8 +52,11 @@
  * handle -- the sequence census outlives the model, which is the only record a private OSC ever went past.
  * -5 is the width table: `ansi_width_tables.h` was regenerated with the ambiguous ruling (EAW=A counts 2,
  * the 206 measured-narrow code points excepted), and that table is compiled into this DLL, so a -4 binary
- * in lib\ and a -4 source tree are two different models of the screen -- the same trap -2 was named for. */
-#define RENDER_BUILD "render-2026-09-24-5"
+ * in lib\ and a -4 source tree are two different models of the screen -- the same trap -2 was named for.
+ * -6 is the line feed below a narrowed scroll region: it walks the cursor down instead of rotating the
+ * region, which is what a two-row status line needs (Render.cpp line_down; MSFT adaptDispatch.cpp:2443
+ * scrolls only at `y == bottomMargin`). A -5 binary and a -6 tree disagree about every row above the bar. */
+#define RENDER_BUILD "render-2026-09-24-6"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;

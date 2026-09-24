@@ -1630,6 +1630,36 @@ static void status_bar()
   put(&g, "\033" "7\033[r\033" "8");
   eq_u("the bare form is the reset", (unsigned)g.regSet, 0, "");
   eq_u("and it moved nothing", (unsigned)g.cy, 3, "`CSI r` homes no cursor (Ansi.cpp:4146-4174)");
+
+  /* The shape the field actually draws: two lines, not one. `Console.setStatus` hands Status a rule of
+     dashes and the text, so Status.update reserves the viewport's last two rows, narrows the region to
+     everything above them (`csr(0, rows-3)`), addresses row rows-2, and separates the lines with a real
+     newline. That newline reaches the model with the cursor BELOW the region's bottom margin, where a
+     line feed must simply move down and scroll nothing: MSFT's `_DoLineFeed` scrolls only at
+     `y == bottomMargin` and otherwise clamps to the page bottom (adaptDispatch.cpp:2443-2453); ConEmu's
+     `set_y` clip leaves a caller outside the region to the viewport too (Ansi.cpp:2913-2918), which is
+     the answer `move_row` at Render.cpp:742 already gives. This case exists because the two answers
+     differ, and on a live 49-row window the wrong one collapsed the bar onto a single row and rotated
+     the session's text away one row per newline. */
+  static RcGrid g2;
+  rc_reset(&g2, 20, 6, 0x07);
+  put(&g2, "\033[1;1HAAAA\nBBBB\nCCCC\nDDDD");
+  put(&g2, "\033" "7\033[1;4r\033" "8");                  /* csr(0, 3): rows 0..3 scroll, 4 and 5 are the bar */
+  put(&g2, "\033[5;1H----------\n==========");            /* cup(4, 0), the rule, a newline, the text */
+  /* `upto` is 11, not 20: eq_text walks `want` byte by byte and a shorter want would read the next
+     literal in the pool, so the count is the want's own length. The 11th cell is the space after the
+     write -- enough to pin that neither line ran past its row. */
+  eq_text(&g2, 4, 11, "---------- ", "the bar's first row keeps its row, and ends there");
+  eq_text(&g2, 5, 11, "========== ", "the newline between the bar's lines moved down, it did not scroll");
+  eq_text(&g2, 0, 5, "AAAA ", "row 0 of the region is where the caller left it");
+  eq_text(&g2, 3, 5, "DDDD ", "and so is its bottom row -- nothing rotated");
+  eq_u("a line feed below the region scrolled nothing", (unsigned)g2.nScrolls, 0, "");
+  eq_u("the cursor is on the bar's second row", (unsigned)g2.cy, 5, "");
+  put(&g2, "\n");                                         /* the newline that ends the last bar row */
+  eq_u("at the page bottom, still below the region, still no scroll", (unsigned)g2.nScrolls, 0,
+       "MSFT clamps to page.Bottom() - 1 rather than cycling the buffer (:2448-2452)");
+  eq_u("the cursor stays on the last row", (unsigned)g2.cy, 5, "");
+  eq_text(&g2, 5, 11, "========== ", "the bar's last row survived its own trailing newline");
 }
 
 /* The character-editing family, which the shipped output never sends but an application on this terminal
