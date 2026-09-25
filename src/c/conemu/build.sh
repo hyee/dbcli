@@ -140,6 +140,40 @@ gate_dll() {  # $1 plat  $2 objdump  $3 dll  $4 "space separated expected export
                  || printf '%s:%s no Win8+ entrypoints OK (Win7 floor)\n' "$plat" "$tag"
 }
 
+# The export list passed to gate_dll is copied by hand out of two Java files, and a hand copy fails in two
+# different ways: it goes short (a real export missing from the list, caught by the loop above only if
+# someone remembers to add it) or it goes *wrong* -- `..._setClipboardPolicy` written for a native method
+# called `setClipboardPolicy0`. A wrong name is invisible to a presence check because the dll really does
+# export the wrong symbol, and nothing catches it at run time either: the Java wrapper catches Throwable so
+# an older dll without the export keeps working, which is also how a mis-bound export reads -- forever, as
+# "the feature is off". So derive the names from the declarations themselves and compare those.
+natives_of() {  # $1 java file  $2 jni prefix  -> the symbol names that file's `native` methods demand
+  grep -E '^[[:space:]]*(([A-Za-z]+[[:space:]]+)+)?native[[:space:]]' "$1" \
+    | grep -oE '[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(' | tr -d ' (' | sed "s|^|$2|" | sort -u
+}
+
+# A comment that happens to hold the word `native` cannot reach the regex above: it requires the line to
+# open with modifiers. The cost is that a native declaration must stay on one line, which both files already
+# do and which the anchored pattern below would break loudly rather than quietly.
+gate_declared() {  # $1 plat  $2 objdump  $3 dll  $4 java  $5 prefix  $6 tag
+  local plat=$1 OD=$2 dll=$3 java=$4 pfx=$5 tag=$6 want have missing n
+  if [ -z "$java" ] || [ ! -f "$java" ]; then
+    printf '%s:%s ! declared-export check SKIPPED: no Java source for %s\n' "$plat" "$tag" "$pfx" >&2
+    FAILED="$FAILED $plat:$tag-declared"
+    return
+  fi
+  want=$(natives_of "$java" "$pfx")
+  n=$(printf '%s\n' "$want" | grep -c . | tr -d ' ')
+  [ "$n" -gt 0 ] || { printf '%s:%s ! %s declares no native methods -- the extractor is wrong\n' \
+                        "$plat" "$tag" "$java" >&2; FAILED="$FAILED $plat:$tag-declared"; return; }
+  have=$($OD -p "$dll" | tr -d '\r' | grep -oE 'Java_[A-Za-z0-9_]+' | sort -u)
+  missing=$(comm -23 <(printf '%s\n' "$want") <(printf '%s\n' "$have"))
+  [ -z "$missing" ] \
+      && printf '%s:%s all %s declared native method(s) bound in %s OK\n' "$plat" "$tag" "$n" "$java" \
+      || { printf '%s:%s ! declared but not exported:%s\n' "$plat" "$tag" "$(printf '%s' "$missing" | tr '\n' ' ')" >&2
+           FAILED="$FAILED $plat:$tag-declared"; }
+}
+
 # Drop the DWARF that the MinGW runtime objects carry. It is not ours: FLAGS has no -g, and each of
 # our .o files has 0 bytes of .debug_*. The distro ships dllcrt2.o/crtbegin.o/libmingw32.a built with
 # -g, and the linker drags them in whatever -static says -- dropping -static left the 340793 bytes of
@@ -158,6 +192,17 @@ strip_debug() {  # $1 strip tool  $2 dll  $3 "plat:tag"  -> appends FAILED
            || { printf '%s ! strip --strip-debug failed on %s\n' "$tag" "$dll" >&2; FAILED="$FAILED $tag-strip"; }; } \
     || printf '%s %s missing, %s keeps its debug info\n' "$tag" "$st" "$(basename "$dll")"
 }
+
+# Where the shipped Java half lives. This tree owns render.dll and the gate's own Render.java, but the
+# caller's class does not live here, and the export names have to be checked against it (see
+# gate_declared). Candidates in the order run.ps1 uses, with no fallback that could quietly turn a real
+# mismatch into a green build: not finding the file is an error this script reports and fails on.
+NR_JAVA=""
+for c in "${DBCLI_JAVA_SRC:-}/com/hyee/ansirender/NativeRenderer.java" \
+         /mnt/d/JavaProjects/jline3.29/dbcli/src/com/hyee/ansirender/NativeRenderer.java \
+         /mnt/d/dbcli/src/java/com/hyee/ansirender/NativeRenderer.java; do
+  [ -n "$c" ] && [ -f "$c" ] && { NR_JAVA="$c"; break; }
+done
 
 for plat in x86 x64; do
   case $plat in
@@ -209,7 +254,12 @@ for plat in x86 x64; do
        Java_Render_prepareConsole Java_Render_setGeometry Java_Render_readCells \
        Java_Render_consoleView Java_Render_readInput Java_Render_readopt Java_Render_plan \
        Java_Render_faultRect Java_Render_consoleTitle Java_Render_consolePalette \
-       Java_Render_censusNames" render
+       Java_Render_censusNames \
+       Java_com_hyee_ansirender_NativeRenderer_setClipboardPolicy0 \
+       Java_com_hyee_ansirender_NativeRenderer_clipboardPolicy0" render
+  gate_declared "$plat" "$OD" "$SCRATCH/$plat/render.dll" "$SRC_DIR/Render.java" "Java_Render_" render
+  gate_declared "$plat" "$OD" "$SCRATCH/$plat/render.dll" "$NR_JAVA" \
+                "Java_com_hyee_ansirender_NativeRenderer_" render
 done
 
 # ---- host gates: the colour oracle, then the model -------------------------------------------

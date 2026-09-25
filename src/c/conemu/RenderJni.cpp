@@ -210,11 +210,26 @@
  * the slot order is the ABI, `stats()` still hands back numbers, and the equality proof is the host gate
  * pinning the whole normalised label list plus a live leg that now compares all eleven names with the dll
  * instead of four indices. `Java_Render_censusNames` is gate-only, like `consolePalette`.
+ * -24 is OSC 52 (I36), and the refactor that made room for it. The if-chain that decided what an OSC means
+ * is now a table of families -- one row per code set, with the name the report prints and the handler the
+ * payload goes to -- because a chain cannot be asked whether two codes are claimed twice or whether a family
+ * it forgot exists; `geo_osc_families` asks both, over every code a sender can write. The sink that had been
+ * a title buffer is now sized for payloads (RC_OSC_MAX, with the title clipping itself to RC_TITLE_MAX as
+ * before, which the existing truncation case still pins). A strict RFC 4648 decoder refuses a whole payload
+ * rather than decoding its prefix, and refuses whitespace inside it, so a sender that wrapped its base64 is
+ * counted rather than pasted wrong. The whitelist is `c` and the empty field only: Windows has one
+ * clipboard, so folding `p` or `s` onto it would answer a different question than the one asked -- where
+ * ghostty folds, it is folding onto a primary selection that really exists there. Reads (`52;c;?`) are
+ * refused whatever the policy says: the reply would put what the user copied into the console's input
+ * stream. The policy defaults to off and is only reachable from the host -- a call, or ANSI_CLIPBOARD read
+ * at class init -- because a sequence that could enable itself would make the default mean nothing. Six
+ * counters and a policy bit joined the census, appended where I19 says; the live leg reads the system
+ * clipboard back through AWT, so the claim is the user's own clipboard, not the model's memory of it.
  * Stamping caveat, learned the hard way this session: a binary can ship with a stale stamp. The -15 build
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-23"
+#define RENDER_BUILD "render-2026-09-26-24"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -298,7 +313,13 @@ enum
    counter is added at the end and an existing one never moves. The last slot is the live bit, not a count:
    a session that ends inside a region is a different finding from one that never entered. */
 #define STAT_SYNC        (STAT_SNAP + 1)
-#define STAT_LAST        (STAT_SYNC + 7)
+/* OSC 52, appended after the sync family: armed, refused-decode, refused-selection, refused-read, then the
+   painter's applied and failed, and last the policy as it stands -- so a census that reports no clipboard
+   write can be read as "the switch is off" or as "nobody asked", without guessing. STAT_LAST moves from
+   "one past the sync block" to "one past this one", which leaves every earlier index where the Java side
+   already reads it. */
+#define STAT_CLIP        (STAT_SYNC + 7)
+#define STAT_LAST        (STAT_CLIP + 7)
 
 #ifdef __MINGW32__
 #define CH_UNICODE(ci) ((ci).Char.UnicodeChar)
@@ -394,7 +415,51 @@ static unsigned long g_totUn[RC_UN_MAX], g_totTitle, g_totTitleTrunc, g_titleCal
                      g_totAltSwitch, g_totAltFail, g_totPromptMark,
                      g_totRepOk, g_totRepFail, g_totRepFull,
                      g_totSyncEngages, g_totSyncNested, g_totSyncHeld,
-                     g_totSyncTimeout, g_totSyncOverflow, g_totSyncDeclined;
+                     g_totSyncTimeout, g_totSyncOverflow, g_totSyncDeclined,
+                     /* OSC 52: the four reasons the parser gave, folded the way the title pair is. They are
+                        counted apart because a rollout reading a single number cannot tell "the host never
+                        turned this on" from "applications are sending base64 this build rejects". */
+                     g_totClipSet, g_totClipBad, g_totClipSel, g_totClipRead;
+/* What the clipboard API answered, on the same reasoning as the titles applied above. */
+static unsigned long g_clipCalls, g_clipFails;
+
+/* Put `chars` UTF-16 units from `wide` on the clipboard as CF_UNICODETEXT, or -- when chars is 0 -- leave the
+ * clipboard empty. open/empty/set/close, which is the order Win32 documents: without the EmptyClipboard a
+ * clear has no way to be expressed at all, and a write leaves whatever other formats the previous owner put
+ * there sitting on the clipboard beside it. Returns RC_CLIP_OK, or which call said no (*why is the Win32
+ * error, kept apart because "another window owns the clipboard" and "the memory manager refused" are
+ * different things to read in a teardown line). */
+#define RC_CLIP_OK 0
+#define RC_CLIP_OPEN 1
+#define RC_CLIP_EMPTY 2
+#define RC_CLIP_ALLOC 3
+#define RC_CLIP_SET 4
+
+static int clip_apply(const wchar_t *wide, int chars, DWORD *why)
+{
+  if (!OpenClipboard(NULL)) { *why = GetLastError(); return RC_CLIP_OPEN; }  /* another window owns it */
+  if (!EmptyClipboard()) { *why = GetLastError(); CloseClipboard(); return RC_CLIP_EMPTY; }
+  if (chars > 0)
+  {
+    const SIZE_T bytes = (SIZE_T)(chars + 1) * sizeof(wchar_t);     /* +1: CF_UNICODETEXT is NUL-terminated */
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (!hg) { *why = GetLastError(); CloseClipboard(); return RC_CLIP_ALLOC; }
+    void *p = GlobalLock(hg);
+    if (p) memcpy(p, wide, bytes);
+    GlobalUnlock(hg);
+    if (!p || !SetClipboardData(CF_UNICODETEXT, hg))
+    {
+      /* After a successful SetClipboardData the system owns the block, so it is freed on this branch
+         only -- freeing it on both is the classic way to corrupt the clipboard. */
+      *why = GetLastError();
+      GlobalFree(hg);
+      CloseClipboard();
+      return RC_CLIP_SET;
+    }
+  }
+  CloseClipboard();
+  return RC_CLIP_OK;
+}
 
 /* Is this pointer one of our slots, and still claimed? The claim is what makes junk pointers and
    already-closed ones the same case: both answer NULL, and no call dereferences anything. A renderer that
@@ -1047,6 +1112,62 @@ static int paint_flush(RcHandle *h)
     }
   }
 
+  /* The clipboard, placed next to the title for the same reason: it is an effect of the chunk that lives
+   * outside the screen buffer, so a failure here cannot spoil a rectangle and is counted rather than
+   * declined.
+   *
+   * The UTF-8 to UTF-16 conversion is strict (`MB_ERR_INVALID_CHARS`), which is a deliberate split from
+   * ghostty handing the bytes over unvalidated (`stream_terminal.zig:722-725`): it stores `text/plain` and
+   * the reader interprets it later, while a Windows clipboard entry has to *be* UTF-16 now, so malformed
+   * input chooses between U+FFFD sprinkles and no write at all. "Nothing, and a counter" is the answer the
+   * application can still act on; a quietly repaired paste is data the sender never sent.
+   *
+   * A zero-length payload is a real request -- clear the clipboard -- so n == 0 writes an empty string
+   * rather than being skipped (xterm's grammar, and ghostty's `52;;` test at
+   * `osc/parsers/clipboard_operation.zig:109-122`).
+   *
+   * Nothing here is restored on close(). The palette is, because OSC 4 changes console state this library
+   * was handed and leaves behind; the clipboard is the user's, and snapshotting it at open() would mean
+   * *reading* it -- the operation the read half of this sequence is refused for.
+   *
+   * One exposure it keeps from the title: a model rebuilt between the chunk that armed the request and the
+   * flush that would have applied it drops the pending write. Both are one-chunk effects, and the
+   * alternative is a 12 KB copy on every resize. */
+  if (rc_clip_pending(g))
+  {
+    uint8_t raw[RC_CLIP_MAX];
+    const int n = rc_clip_take(g, raw, (int)sizeof raw);
+    if (n < 0) h->nApiErrors++;                  /* cannot happen: RC_CLIP_MAX is the model's own cap */
+    else
+    {
+      wchar_t wide[RC_CLIP_MAX + 1];
+      /* A zero-length payload is a request to clear the register, and it has no text to convert:
+         MultiByteToWideChar answers 0 for an empty input, which is the same answer it gives for invalid
+         bytes. Treating the two alike made `OSC 52;;` -- the one spelling that means "forget what I copied"
+         -- fail as if it were a bad encoding. */
+      const int wl = (n == 0) ? 0
+          : MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (LPCSTR)raw, n, wide, RC_CLIP_MAX);
+      if (n > 0 && wl == 0) { g_clipFails++; snprintf(h->lastError, sizeof h->lastError, "clip=utf8=%lu", (unsigned long)GetLastError()); }
+      else
+      {
+        wide[wl] = 0;
+        DWORD why = 0;
+        const int r = clip_apply(wide, wl, &why);
+        if (r == RC_CLIP_OK) g_clipCalls++;
+        else
+        {
+          /* Which Win32 call refused, and with what: `clip=o=5` is a clipboard another window owns right
+             now, `clip=s=1418` is a format nobody will render, and reading them alike would send a rollout
+             looking in the wrong place. */
+          static const char stage[] = "?oeas";                        /* indexed by RC_CLIP_* */
+          g_clipFails++;
+          snprintf(h->lastError, sizeof h->lastError, "clip=%c=%lu",
+                   (r >= 0 && r < (int)sizeof stage) ? stage[r] : '?', (unsigned long)why);
+        }
+      }
+    }
+  }
+
   /* The queries this chunk armed, answered after the screen they describe is on the console and before the
      model is told the frame is over: a CPR reports where the cursor was when the question was read, and the
      rows it is measured against are the ones this flush just placed. */
@@ -1093,6 +1214,10 @@ static void fold_counters(RcHandle *h)
   for (int i = 0; i < RC_UN_MAX; i++) g_totUn[i] += h->g->nUnsupported[i];
   g_totTitle += h->g->nTitleSet;
   g_totTitleTrunc += h->g->nTitleTrunc;
+  g_totClipSet += h->g->nClipSet;
+  g_totClipBad += h->g->nClipBad;
+  g_totClipSel += h->g->nClipSel;
+  g_totClipRead += h->g->nClipRead;
   g_totAltSwitch += h->g->nAltSwitch;
   g_totAltFail += h->g->nAltFail;
   g_totPromptMark += h->g->nPromptMark;
@@ -1783,6 +1908,23 @@ JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_taskbar0(JN
   return arr;
 }
 
+/** OSC 52's switch, and the only way it can be turned on: by the host that loaded this library. Nothing in
+ *  the byte stream can reach it, which is what makes "off" mean off. */
+JNIEXPORT void JNICALL Java_com_hyee_ansirender_NativeRenderer_setClipboardPolicy0(JNIEnv *env, jclass cls, jboolean allow)
+{
+  (void)env; (void)cls;
+  rc_set_clipboard_policy(allow ? RC_CLIP_ALLOW : RC_CLIP_DENY);
+}
+
+/** The other half of the same switch, read back from the library that owns it. A host needs it to tell
+ *  "the export is missing, so an old dll silently kept it off" from "this dll was told off" -- the first is
+ *  a version problem the launcher can report, the second is the state it asked for. */
+JNIEXPORT jboolean JNICALL Java_com_hyee_ansirender_NativeRenderer_clipboardPolicy0(JNIEnv *env, jclass cls)
+{
+  (void)env; (void)cls;
+  return rc_clipboard_policy() ? JNI_TRUE : JNI_FALSE;
+}
+
 /** The last `OSC 9;9` path, or null. Text only -- see the comment above for why nothing opens it. */
 JNIEXPORT jstring JNICALL Java_com_hyee_ansirender_NativeRenderer_workingDirectory0(JNIEnv *env, jclass cls, jlong ph)
 {
@@ -1847,6 +1989,13 @@ JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEn
        prompt family -- a census of what happened cannot say what the terminal currently believes, and a
        synchronized region whose ESU never arrived is exactly that question. */
     out[STAT_SYNC + 6] = g ? (jlong)g->sync : 0;
+    out[STAT_CLIP] = (jlong)(g_totClipSet + (g ? g->nClipSet : 0));
+    out[STAT_CLIP + 1] = (jlong)(g_totClipBad + (g ? g->nClipBad : 0));
+    out[STAT_CLIP + 2] = (jlong)(g_totClipSel + (g ? g->nClipSel : 0));
+    out[STAT_CLIP + 3] = (jlong)(g_totClipRead + (g ? g->nClipRead : 0));
+    out[STAT_CLIP + 4] = (jlong)g_clipCalls;
+    out[STAT_CLIP + 5] = (jlong)g_clipFails;
+    out[STAT_CLIP + 6] = (jlong)rc_clipboard_policy();
   }
   jlongArray arr = env->NewLongArray(STAT_LAST);
   if (arr) env->SetLongArrayRegion(arr, 0, STAT_LAST, out);

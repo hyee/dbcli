@@ -109,7 +109,7 @@ jline4 不发这些，做了对它没收益；单列是因为 classic 控制台�
 | HPR `CSI a` / VPR `CSI e` | 解析后按 CUF/CUD 同款相对移动（视口钳制），~2 行、零新状态。jline4 实测不发送（caps 无 hpr/vpr，直发字面量零命中——`CSI Z` 在 jline4 只作输入键），属**兼容性储备**：从 Unix 移植的程序会发 | WT adaptDispatch.cpp:427/:437（VPR 注释明言"unlike CUD not constrained by margin"）；ghostty stream.zig:1863/:1942 |
 | OSC 4/10/11 调色板 | `SetConsoleScreenBufferInfoEx` 真改 16 色表 + 同步改模型 `RgbMap[0..15]` 与 `defAttr` 相关折叠；`?` 查询回当前值 | ghostty OSC 4/10/11；WT `SetPaletteColor` |
 | OSC 8 超链接 | 学 `rowWrap` 的行级元数据存 URL 区间（不进 `CHAR_INFO`，收养丢弃）；显示面画下划线；宿主查询 API 给 dbcli 做"打开选中链接" | ghostty `hyperlink.zig`；WT `SetHyperlink`/TextBuffer |
-| OSC 52 剪贴板 | 默认**关** + 显式开关 + 白名单（I21 的 #687 教训同款） | ghostty clipboard 策略；WT gate |
+| OSC 52 剪贴板 | ✅ **已落地**（build -24，I36）。默认**关**，只有宿主能开（`ANSI_CLIPBOARD` 或 `NativeRenderer.setClipboardPolicy`），读永远拒；详见 ANSI_SUPPORTS §2.8 | ghostty `clipboard-read/write` 策略（`stream_terminal.zig:678-682`/`:820-826`）；WT **有**：`SetClipboard=52`（`OutputStateMachineEngine.cpp:821`）+ `compatibility.allowOSC52` **默认 true**；ghostty **有**：`clipboard-write=.allow`（默认开）；ConEmu 无（实测 `Ansi.cpp` 无 `case L'5'`）⇒ 本库默认关是**偏离两家参照**、须自证的决定（理由在 I36） |
 | 括号粘贴 `?2004`（宿主协作版） | **DLL 侧**：模式位存进模式表 + DECRPM 应答（2/1）+ 暴露给宿主（DECCKM 同款"计数+存位+暴露"），几乎免费。**宿主侧**（dbcli 输入泵，DLL 之外）：对按键记录流做突发启发式，内存里包 `200~/201~` 喂 reader——`KEY_EVENT_RECORD` 无粘贴标志位，速率启发有误判两面（漏标=现状，误标=键序打散），默认保守。**DLL 永不读 CONIN$**（与应用 pump 抢队列会偷键盘事件；peek-then-inject 无法保证标记先于粘贴字节） | jline4 消费端已就绪（`LineReaderImpl` BEGIN_PASTE 绑定 ：7088）；Windows 腿现无任何合成（AbstractWindowsTerminal 零命中，已验证）；WT/conhost 均不产标记 |
 
 ---
@@ -125,6 +125,7 @@ jline4 不发这些，做了对它没收益；单列是因为 classic 控制台�
 | 斜体/删除线/下划线色的**绘制** | `CHAR_INFO` 16 位属性没有对应位（0x0400..0x2000 是 conhost IME 网格位）；模型侧照旧存储不绘 |
 | DECSCUSR 条形 5/6 | `SetConsoleCursorInfo` 只有块/细条两档；若确认 `SetConsoleCursorShape`（Win10 18297+）可用再单独立项 |
 | OSC 9 的 ConEmu **危险子命令**（`9;1` sleep、`9;2` MessageBox、`9;3` 改环境变量、`9;7` DoProcess 等） | 永不执行（#687 RCE，I21 已定案）。**安全子集已立项 T7**（判据 = WT `DoConEmuAction` adaptDispatch.cpp:3558——WT 实现的就是 ConEmu 方言的安全面：`9;4` 进度、`9;9` CWD、`9;12` ≡ 133;B；其余 `_api.UnknownSequence()`），DLL 侧存模+暴露（进度给宿主状态栏/CWD 存模），不做任务栏跨进程操作，`SetCurrentDirectory` 这类进程副作用永不从输出流触发 |
+| OSC 8 超链接（#56） | **2026-09-26 用户定案不做**（"osc 8不做"）。技术账不变：链接是**区间**不是 cell，只能住在 `rowWrap[]` 旁边并继承 I20 那条"读不回来"的债；只存 URL 不画下划线、也没有宿主查询，序列本身买不到用户看得见的一件事。要重开得先回答"谁消费它"，而不是"别的终端有" |
 
 ---
 
@@ -142,7 +143,7 @@ jline4 不发这些，做了对它没收益；单列是因为 classic 控制台�
 2. P1 DECSET 2026（含超时）        —— 闪烁收益直接给 dbcli 全屏重绘
 3. P1 DECRQM 应答                  —— 让 jline4 的探测拿真答案
 4. P2 SIXEL 误报 → ✅ **已落地**（2026-09-25，jline4 家族层覆写，见 §5）
-5. P2 OSC 4/10/11 / OSC 8 / 52    —— 等 dbcli 有真实消费方再动
+5. P2 OSC 4/10/11 → ✅ -20（I34）；OSC 52 → ✅ -24（I36，默认关）；OSC 8 → ❌ 定案不做（§7）
 ```
 
 每步落地的判据与门禁照 DESIGN §6 的既有风格：模型侧 `RenderCheck` 全覆盖，live 侧双腿（复放 jline4 探测批/全屏重绘字节流）+ census 计数可见。

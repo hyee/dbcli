@@ -93,19 +93,31 @@ public class Render {
        caseSnapOnInput rather than only printed, because that counter is the sole witness that a snap
        reached the console at all: the window's row is equally explainable by a scroll that came from
        somewhere else. */
-    private static final int S_UN = 17, S_COLON = S_UN + 10, S_TITLES = S_UN + 11,
-            S_TITLES_TRUNC = S_UN + 12, S_TITLES_APPLIED = S_UN + 13, S_ALT = S_UN + 14,
-            S_ALT_FAIL = S_UN + 15, S_PROMPTS = S_UN + 16, S_EXIT = S_UN + 17,
-            S_REPLIED = S_UN + 18, S_REPLY_FAIL = S_UN + 19, S_REPLY_FULL = S_UN + 20,
-            S_SNAP = S_UN + 21,
+    /* S_UN + RC_UN_MAX is where the families after the census start, and RC_UN_MAX is 12 since OSC 52
+       joined it. The offsets below are +12 on through the sync family for that reason; they were +11 for
+       eleven slots, and `RenderJni.cpp` moves them by itself because it writes `STAT_UNSUPPORTED +
+       RC_UN_MAX`. That is the whole I19 contract in one line: a slot is appended, never moved, and
+       everything after it shifts together on both sides of the seam. */
+    private static final int S_UN = 17, S_COLON = S_UN + 10, S_TITLES = S_UN + 11 + 1,
+            S_TITLES_TRUNC = S_UN + 12 + 1, S_TITLES_APPLIED = S_UN + 13 + 1, S_ALT = S_UN + 14 + 1,
+            S_ALT_FAIL = S_UN + 15 + 1, S_PROMPTS = S_UN + 16 + 1, S_EXIT = S_UN + 17 + 1,
+            S_REPLIED = S_UN + 18 + 1, S_REPLY_FAIL = S_UN + 19 + 1, S_REPLY_FULL = S_UN + 20 + 1,
+            S_SNAP = S_UN + 21 + 1,
             /* DECSET 2026, appended in the same order as STAT_SYNC in RenderJni.cpp: the regions that opened,
                the nested BSUs, the flushes held, and the three ways a region ended without its ESU. Last is the
                bit itself -- the only slot in this table that is a state rather than a count, and the reason the
                family cannot be read from the counts before it. The engages count is the denominator the other
                four need: held=400 says nothing until you know whether that was 400 regions or four. */
-            S_SYNC = S_UN + 22, S_SYNC_ENGAGES = S_UN + 22, S_SYNC_NESTED = S_UN + 23,
-            S_SYNC_HELD = S_UN + 24, S_SYNC_TIMEOUT = S_UN + 25, S_SYNC_OVERFLOW = S_UN + 26,
-            S_SYNC_DECLINED = S_UN + 27, S_SYNC_ON = S_UN + 28, S_LEN = S_UN + 29;
+            S_SYNC = S_UN + 23, S_SYNC_ENGAGES = S_UN + 23, S_SYNC_NESTED = S_UN + 24,
+            S_SYNC_HELD = S_UN + 25, S_SYNC_TIMEOUT = S_UN + 26, S_SYNC_OVERFLOW = S_UN + 27,
+            S_SYNC_DECLINED = S_UN + 28, S_SYNC_ON = S_UN + 29,
+            /* OSC 52, in RenderJni.cpp's STAT_CLIP order: armed by the parser, then the three reasons a
+               request was refused, then what the clipboard API answered, then the policy bit. The family's
+               census slot is the last name in the label list below, which the gate compares against the
+               dll's own table. */
+            S_CLIP_ARMED = S_UN + 30, S_CLIP_DECODE = S_UN + 31, S_CLIP_SELECTION = S_UN + 32,
+            S_CLIP_READ = S_UN + 33, S_CLIP_WRITES = S_UN + 34, S_CLIP_FAILS = S_UN + 35,
+            S_CLIP_POLICY = S_UN + 36, S_LEN = S_UN + 37;
 
     public static void main(String[] args) {
         System.out.println("render build: " + NativeRenderer.build());
@@ -166,6 +178,7 @@ public class Render {
            whose later rows are read back as they were left. */
         casePalette();
         caseOsc9();
+        caseClipboard();
 
         long[] s = stats(handle);
         gate("no console call failed", s[3] == 0, "apiErrors=" + s[3] + " lastError check below");
@@ -190,7 +203,7 @@ public class Render {
            *words* those indices are printed with, which is the failure where a rollout log says "mouse=4"
            about a counter that moved. Read them from the dll and check them one by one. */
         final String[] LABELS = { "unrecognised", "decstbm", "altbuf", "mouse", "mode", "bracketed paste",
-                "osc9", "other osc", "dcs", "report", "colon" };
+                "osc9", "other osc", "dcs", "report", "colon", "osc clip" };
         final String[] cn = censusNames();
         gate("render.dll names every census slot", cn != null && cn.length == LABELS.length,
                 cn == null ? "null" : "the table has " + cn.length + " rows against " + LABELS.length
@@ -707,6 +720,259 @@ public class Render {
                 tb == null ? "null" : java.util.Arrays.toString(tb));
         gate("and so did the directory", "D:/x".equals(NativeRenderer.workingDirectory(handle)),
                 "got=" + NativeRenderer.workingDirectory(handle));
+    }
+
+    /**
+     * I36: OSC 52, against the real clipboard. The host gate can prove the parser armed the right bytes;
+     * only this leg shows the request travelled through the model, out of the flush, into the system
+     * clipboard, and back out as the same text -- which is what a host is buying when it turns the switch
+     * on. Three things are pinned beside the happy path: the default is off (so the request that this case
+     * then enables has to be refused first, and counted); the read form is refused with the switch on,
+     * because answering it would put the user's own clipboard into the input stream; and a refused request
+     * must leave the clipboard holding what it held, which only a readback can show -- and, to be a
+     * readback at all, that one has to come from outside this process (see the helpers below).
+     *
+     * The clipboard belongs to the user, so this case saves it and puts it back.
+     */
+    private static void caseClipboard() {
+        final String marker = "native-renderer-" + System.nanoTime();
+        /* The encoder is load-bearing for every case below, so it is pinned to RFC 4648's own vectors first:
+           a tail branch that lost its mask would otherwise throw halfway through the case (or, worse, hand
+           the strict decoder a well-formed-looking string that encodes something else) and the numbers this
+           case reports would stop meaning what they say. */
+        gate("the test's own base64 matches RFC 4648",
+                eqStr(b64("a"), "YQ==") && eqStr(b64("ab"), "YWI=") && eqStr(b64("abc"), "YWJj")
+                        && eqStr(b64(""), ""),
+                "a=" + b64("a") + " ab=" + b64("ab") + " abc=" + b64("abc"));
+        if (!clipSeed("clipboard-gate-before")) {
+            System.out.println("  SKIP clipboard: no out-of-process clipboard witness (pwsh Set-/Get-Clipboard)");
+            return;
+        }
+        final String before = clipText();
+        gate("the witness can read what it just wrote", eqStr(before, "clipboard-gate-before"),
+                "read back " + show(before));
+
+        /* ---- off, which is the state a session gets without having asked ---- */
+        gotoRow(3);
+        long[] a = stats(handle);
+        paint("clipboard, policy off", "\u001b]52;c;" + b64(marker) + "\u0007X");
+        long[] b = stats(handle);
+        gate("nothing was written", b[S_CLIP_WRITES] == a[S_CLIP_WRITES],
+                "writes=" + b[S_CLIP_WRITES] + " after " + a[S_CLIP_WRITES]);
+        gate("the refusal is counted", b[S_UN + 11] - a[S_UN + 11] == 1,
+                "clip refused=" + (b[S_UN + 11] - a[S_UN + 11])
+                        + ": a sequence that did nothing must still leave a number");
+        gate("and not also as an unknown OSC", b[S_UN + 7] == a[S_UN + 7],
+                "other osc moved by " + (b[S_UN + 7] - a[S_UN + 7]) + ": code 52 has its own family now");
+        clipIs("the clipboard still holds what it held", before);
+        cell("the text after the OSC painted anyway", winT + 3, 0, 'X', DEF);
+
+        /* ---- on ---- */
+        NativeRenderer.setClipboardPolicy(true);
+        gate("the dll says so", NativeRenderer.clipboardPolicy(), "the call did not reach the library");
+        a = stats(handle);
+        paint("clipboard, policy on", "\u001b]52;c;" + b64(marker) + "\u0007");
+        b = stats(handle);
+        gate("one write reached the clipboard", b[S_CLIP_WRITES] == a[S_CLIP_WRITES] + 1,
+                "writes=" + b[S_CLIP_WRITES] + " failed=" + b[S_CLIP_FAILS]);
+        gate("and nothing was refused", b[S_UN + 11] == a[S_UN + 11], "refused=" + b[S_UN + 11]);
+        clipIs("the text is the text that was sent", marker);
+
+        /* UTF-8 across the same path: the parser keeps bytes, the painter converts them, and a clipboard
+           that mangled them would look right in the model and wrong to the user. */
+        final String cjk = "中文-a";
+        a = stats(handle);
+        paint("clipboard, not ascii", "\u001b]52;c;" + b64(cjk) + "\u0007");
+        clipIs("the wide characters survive the round trip", cjk);
+        gate("and it cost one more write", stats(handle)[S_CLIP_WRITES] == a[S_CLIP_WRITES] + 1,
+                "writes=" + stats(handle)[S_CLIP_WRITES]);
+
+        /* An empty payload is a request to clear, not the absence of one. */
+        a = stats(handle);
+        paint("clipboard, clear", "\u001b]52;;\u0007");
+        gate("clearing is a write too", stats(handle)[S_CLIP_WRITES] == a[S_CLIP_WRITES] + 1,
+                "writes=" + stats(handle)[S_CLIP_WRITES]);
+        /* "empty" is one read, and the reader cannot tell an empty string from no text format at all: both
+           come back as nothing printed. Either is the outcome the request asked for, so the assertion says
+           the weaker true thing rather than pretending to distinguish them. */
+        final String cleared = clipText();
+        gate("and the clipboard is empty", cleared == null || cleared.length() == 0,
+                "read back " + show(cleared));
+
+        /* ---- refusals, with the switch on, and the clipboard left alone ---- */
+        clipSeed(marker);
+        a = stats(handle);
+        paint("clipboard, a target windows has no place for", "\u001b]52;p;" + b64("nope") + "\u0007");
+        b = stats(handle);
+        gate("`p` is refused rather than folded onto the clipboard",
+                b[S_CLIP_SELECTION] == a[S_CLIP_SELECTION] + 1, "selection refusals=" + b[S_CLIP_SELECTION]);
+        gate("no write happened", b[S_CLIP_WRITES] == a[S_CLIP_WRITES], "writes=" + b[S_CLIP_WRITES]);
+        clipIs("so the clipboard still holds the marker", marker);
+
+        a = stats(handle);
+        paint("clipboard, a bad encoding", "\u001b]52;c;YW*j\u0007");
+        b = stats(handle);
+        gate("a payload outside the alphabet is refused whole",
+                b[S_CLIP_DECODE] == a[S_CLIP_DECODE] + 1, "decode refusals=" + b[S_CLIP_DECODE]);
+        clipIs("nothing was overwritten with the good prefix", marker);
+
+        a = stats(handle);
+        paint("clipboard, a read", "\u001b]52;c;?\u0007");
+        b = stats(handle);
+        gate("a read is refused with the write switch on", b[S_CLIP_READ] == a[S_CLIP_READ] + 1,
+                "read refusals=" + b[S_CLIP_READ]);
+        final char[] drained = readInput(16);
+        gate("and nothing was answered into the input stream", drained == null || drained.length == 0,
+                drained == null ? "null" : "read back " + new String(drained));
+        clipIs("the clipboard was not read either", marker);
+
+        /* ---- back to the default, and back to what the user had ---- */
+        NativeRenderer.setClipboardPolicy(false);
+        gate("the switch is off again", !NativeRenderer.clipboardPolicy(), "policy still on");
+        if (before == null || before.length() == 0) {
+            clipClear();
+            final String restored = clipText();
+            gate("and what the user had is back, which here was nothing",
+                    restored == null || restored.length() == 0, "read back " + show(restored));
+        } else {
+            clipSeed(before);
+            clipIs("the user's own clipboard content is back", before);
+        }
+        gate("and the policy slot says off at the end of the run", stats(handle)[S_CLIP_POLICY] == 0,
+                "policy=" + stats(handle)[S_CLIP_POLICY]);
+    }
+
+    /* The clipboard, seen from outside this JVM.
+     *
+     * AWT is the obvious reader and it is the wrong one for this case. Once this process has called
+     * setContents it *is* the clipboard owner, and its Clipboard answers from the object it was handed
+     * instead of asking the window system again -- so every readback after the gate's own seed returns the
+     * gate's string whatever the library wrote. That is a false green in its worst shape: the counters said
+     * a write happened, the readback said the text never changed, and the two were describing different
+     * clipboards. A second process cannot share the writer's cache, and Set-/Get-Clipboard is the cheapest
+     * out-of-process witness on every box this runs on. When pwsh is missing the case says so and skips
+     * rather than falling back to the reader that can lie. */
+    private static final String CLIP_IN =
+            "[Console]::InputEncoding=[Text.Encoding]::UTF8; $t=[Console]::In.ReadToEnd();"
+            + " if ($t.Length -eq 0) { Clear-Clipboard } else { Set-Clipboard -Value $t }";
+    private static final String CLIP_OUT =
+            "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-Clipboard -Raw";
+
+    /** The clipboard's text, or null when the witness could not run at all. Nothing printed is "". */
+    private static String clipText() {
+        final String out = clipChild(CLIP_OUT, null);
+        return out == null ? null : trimEol(out);
+    }
+
+    /** Put text on the clipboard from the witness process. Empty text clears, which is what the library's
+     *  own empty payload has to be compared against. */
+    private static boolean clipSeed(final String text) {
+        return clipChild(CLIP_IN, text == null ? "" : text) != null;
+    }
+
+    private static boolean clipClear() {
+        return clipChild(CLIP_IN, "") != null;
+    }
+
+    /** One read, one assertion. Reading the clipboard costs a process, so the case asks for a sentence and
+     *  the value in it comes from the same single read. */
+    private static void clipIs(final String what, final String want) {
+        final String got = clipText();
+        gate(what, eqStr(got, want), "read back " + show(got));
+    }
+
+    /** Run `pwsh -NoProfile -Command <code>`, feeding `stdin` as UTF-8 when it is not null, and return what
+     *  the child printed. Null means it could not start, timed out, or exited non-zero. The text goes on
+     *  stdin and never into the command line, so no quoting has to be right for the gate to work. */
+    private static String clipChild(final String code, final String stdin) {
+        try {
+            final Process p = new ProcessBuilder("pwsh", "-NoProfile", "-Command", code)
+                    .redirectErrorStream(false).start();
+            if (stdin != null) {
+                final java.io.OutputStream in = p.getOutputStream();
+                in.write(stdin.getBytes("UTF-8"));
+                in.flush();
+                in.close();
+            }
+            final java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            final byte[] buf = new byte[2048];
+            int n;
+            while ((n = p.getInputStream().read(buf)) > 0) {
+                bo.write(buf, 0, n);
+            }
+            if (!p.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroy();
+                return null;
+            }
+            return p.exitValue() != 0 ? null : new String(bo.toByteArray(), "UTF-8");
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Only the line break the console prints after a value, never one the text itself ends with: what is
+     *  on the clipboard is put back on it unchanged, so the restore round-trips a trailing newline. */
+    private static String trimEol(final String s) {
+        int e = s.length();
+        while (e > 0 && (s.charAt(e - 1) == '\n' || s.charAt(e - 1) == '\r')) {
+            e--;
+        }
+        return s.substring(0, e);
+    }
+
+    private static String show(final String s) {
+        if (s == null) {
+            return "(no text)";
+        }
+        final StringBuilder b = new StringBuilder("\"");
+        for (int i = 0; i < s.length() && i < 40; i++) {
+            final char c = s.charAt(i);
+            if (c == '\r') {
+                b.append("\\r");
+            } else if (c == '\n') {
+                b.append("\\n");
+            } else if (c < 0x20) {
+                b.append('?');
+            } else {
+                b.append(c);
+            }
+        }
+        return b.append('"').append(s.length() > 40 ? "..." : "").toString();
+    }
+
+    private static boolean eqStr(final String a, final String b) {
+        return a == null ? b == null : a.equals(b);
+    }
+
+    /**
+     * base64 of UTF-8 bytes, written out here rather than imported: the renderer's own decoder is strict
+     * about padding and about the unused bits of a final group, and a test that leaned on a library encoder
+     * it does not control could produce a string the library is right to refuse.
+     */
+    private static String b64(final String text) {
+        final byte[] raw;
+        try {
+            raw = text.getBytes("UTF-8");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new IllegalStateException(e);
+        }
+        final String alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        final StringBuilder b = new StringBuilder();
+        int i = 0;
+        for (; i + 3 <= raw.length; i += 3) {
+            final int v = ((raw[i] & 0xFF) << 16) | ((raw[i + 1] & 0xFF) << 8) | (raw[i + 2] & 0xFF);
+            b.append(alpha.charAt(v >> 18 & 63)).append(alpha.charAt(v >> 12 & 63))
+                    .append(alpha.charAt(v >> 6 & 63)).append(alpha.charAt(v & 63));
+        }
+        if (raw.length - i == 1) {
+            final int v = (raw[i] & 0xFF) << 16;
+            b.append(alpha.charAt(v >> 18 & 63)).append(alpha.charAt(v >> 12 & 63)).append("==");
+        } else if (raw.length - i == 2) {
+            final int v = ((raw[i] & 0xFF) << 16) | ((raw[i + 1] & 0xFF) << 8);
+            b.append(alpha.charAt(v >> 18 & 63)).append(alpha.charAt(v >> 12 & 63))
+                    .append(alpha.charAt(v >> 6 & 63)).append('=');
+        }
+        return b.toString();
     }
 
     private static void casePalette() {

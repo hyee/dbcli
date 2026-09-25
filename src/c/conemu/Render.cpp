@@ -799,6 +799,7 @@ static const struct RcCensus rc_census[RC_UN_MAX] =
   { "dcs", "a DCS payload, read to its terminator and discarded", 0 },
   { "report", "a query this build will not answer -- `CSI ? 6 n`, a DA with a parameter, `CSI t`", 0 },
   { "colon", "a CSI carrying a ':' subparameter, dropped whole for ConEmu parity (I10, I19)", 0 },
+  { "osc clip", "OSC 52 asked for the clipboard and this build did not give it: policy off, a selection this platform has no place for, a payload that failed the strict decode, a request over the cap, or a read", 0 },
 };
 
 static void unsupported(RcGrid *g, enum RcUnsupported which)
@@ -835,6 +836,13 @@ static void ignored(RcGrid *g, enum RcUnsupported which)
 {
   if (which < RC_UN_MAX) g->nUnsupported[which]++;
 }
+
+/* Process-wide, because the decision belongs to the host that loaded the library and a second handle must
+   not be able to disagree with the first. The Java side sets it once, from its own switch or from an explicit
+   call; nothing in the byte stream can reach it. */
+static int g_clipPolicy = RC_CLIP_DENY;
+void rc_set_clipboard_policy(int allow) { g_clipPolicy = allow ? RC_CLIP_ALLOW : RC_CLIP_DENY; }
+int  rc_clipboard_policy(void) { return g_clipPolicy; }
 
 int rc_census_count(void) { return RC_UN_MAX; }
 const char *rc_census_name(int slot)
@@ -1592,7 +1600,7 @@ static void csi_start(RcGrid *g)
 static void osc_start(RcGrid *g, int kind)
 {
   g->mode = RC_OSC;
-  g->nTitle = 0;
+  g->nOsc = 0;
   g->oscKind = kind;
   g->oscClip = 0;
 }
@@ -1607,14 +1615,14 @@ static void osc_start(RcGrid *g, int kind)
 static int osc_code_of(const RcGrid *g, int *sepAt)
 {
   int i = 0;
-  while (i < g->nTitle && g->title[i] >= '0' && g->title[i] <= '9') i++;
-  *sepAt = (i < g->nTitle && g->title[i] == ';') ? i : -1;
+  while (i < g->nOsc && g->osc[i] >= '0' && g->osc[i] <= '9') i++;
+  *sepAt = (i < g->nOsc && g->osc[i] == ';') ? i : -1;
   if (i == 0) return -1;
-  if (i > 1 && g->title[0] == '0') return RC_OSC_CODE_MAX;
+  if (i > 1 && g->osc[0] == '0') return RC_OSC_CODE_MAX;
   int v = 0;
   for (int j = 0; j < i; j++)
   {
-    v = v * 10 + (g->title[j] - '0');
+    v = v * 10 + (g->osc[j] - '0');
     if (v > RC_OSC_CODE_MAX) return RC_OSC_CODE_MAX;
   }
   return v;
@@ -1878,9 +1886,9 @@ static int osc_field(const RcGrid *g, int sep, int k, int *first, int *len)
   for (;;)
   {
     int j = i;
-    while (j < g->nTitle && g->title[j] != ';') j++;
+    while (j < g->nOsc && g->osc[j] != ';') j++;
     if (n == k) { *first = i; *len = j - i; return 1; }
-    if (j >= g->nTitle) return 0;
+    if (j >= g->nOsc) return 0;
     i = j + 1; n++;
   }
 }
@@ -1933,16 +1941,16 @@ static void palette_osc(RcGrid *g, int code, int sep, int terminated)
     for (int k = 0; osc_field(g, sep, k, &first, &len); k += 2)
     {
       int idx = 0;
-      if (!dec_of(g->title + first, len, &idx) || idx > 255) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      if (!dec_of(g->osc + first, len, &idx) || idx > 255) { unsupported(g, RC_UN_OSC_OTHER); continue; }
       int sf = 0, sl = 0;
       if (!osc_field(g, sep, k + 1, &sf, &sl)) { unsupported(g, RC_UN_OSC_OTHER); break; }
-      if (sl == 1 && g->title[sf] == '?')
+      if (sl == 1 && g->osc[sf] == '?')
       {
         arm_report(g, RC_REP_OSC, 4, idx < 16 ? g->pal16[idx] : g->palette[idx], idx);
         continue;
       }
       uint32_t rgb = 0;
-      if (!color_spec_of(g->title + sf, sl, &rgb)) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      if (!color_spec_of(g->osc + sf, sl, &rgb)) { unsupported(g, RC_UN_OSC_OTHER); continue; }
       palette_set(g, idx, rgb);
     }
     return;
@@ -1957,14 +1965,14 @@ static void palette_osc(RcGrid *g, int code, int sep, int terminated)
     for (int k = 0; osc_field(g, sep, k, &first, &len); k++, resource++)
     {
       if (resource > 12) { unsupported(g, RC_UN_OSC_OTHER); break; }
-      if (len == 1 && g->title[first] == '?')
+      if (len == 1 && g->osc[first] == '?')
       {
         const uint32_t q = g->pal16[(resource == 10) ? (g->defAttr & 0xF) : ((g->defAttr >> 4) & 0xF)];
         arm_report(g, RC_REP_OSC, resource, q, 0);
         continue;
       }
       uint32_t rgb = 0;
-      if (!color_spec_of(g->title + first, len, &rgb)) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      if (!color_spec_of(g->osc + first, len, &rgb)) { unsupported(g, RC_UN_OSC_OTHER); continue; }
       const int idx = nearest_index(g, rgb);
       if (resource == 10) g->defAttr = (uint16_t)((g->defAttr & 0xFFF0) | idx);
       else if (resource == 11) g->defAttr = (uint16_t)((g->defAttr & 0xFF0F) | (idx << 4));
@@ -1989,7 +1997,7 @@ static void palette_osc(RcGrid *g, int code, int sep, int terminated)
     for (int k = 0; osc_field(g, sep, k, &first, &len); k++)
     {
       int idx = 0;
-      if (!dec_of(g->title + first, len, &idx)) { unsupported(g, RC_UN_OSC_OTHER); break; }
+      if (!dec_of(g->osc + first, len, &idx)) { unsupported(g, RC_UN_OSC_OTHER); break; }
       if (idx > 255) { unsupported(g, RC_UN_OSC_OTHER); continue; }
       if (idx < 16) { g->pal16[idx] = (uint32_t)Far3Color::GetStdPalette()[idx];
                       g->palTouched |= (uint16_t)(1u << idx); }
@@ -2041,7 +2049,7 @@ static void osc9_action(RcGrid *g, int sep, int terminated)
      cannot be read as a subcommand by any path the parser has. */
   if (!terminated || sep < 0) { unsupported(g, RC_UN_OSC_PRIV); return; }
   int first = 0, len = 0, sub = 0;
-  if (!osc_field(g, sep, 0, &first, &len) || !dec_of(g->title + first, len, &sub))
+  if (!osc_field(g, sep, 0, &first, &len) || !dec_of(g->osc + first, len, &sub))
   { unsupported(g, RC_UN_OSC_PRIV); return; }
 
   if (sub == 4)
@@ -2049,8 +2057,8 @@ static void osc9_action(RcGrid *g, int sep, int terminated)
     int state = 0, progress = 0, sf = 0, sl = 0;
     if (osc_field(g, sep, 1, &sf, &sl))
     {
-      if (sl && !dec_of(g->title + sf, sl, &state)) { unsupported(g, RC_UN_OSC_PRIV); return; }
-      if (osc_field(g, sep, 2, &sf, &sl) && sl && !dec_of(g->title + sf, sl, &progress))
+      if (sl && !dec_of(g->osc + sf, sl, &state)) { unsupported(g, RC_UN_OSC_PRIV); return; }
+      if (osc_field(g, sep, 2, &sf, &sl) && sl && !dec_of(g->osc + sf, sl, &progress))
       { unsupported(g, RC_UN_OSC_PRIV); return; }
     }
     /* Out of range is refused outright (MSFT :3596-3600 returns without applying); out of *bounds upward*
@@ -2070,9 +2078,9 @@ static void osc9_action(RcGrid *g, int sep, int terminated)
     /* ConEmu's documented spelling wraps the path in quotes. MSFT strips one pair when it finds one and
        takes the value anyway when it does not (:3614-3621) -- both are the same generosity, and the second
        is the one that keeps `9;9;/tmp` working. */
-    if (n >= 3 && g->title[a] == L'"' && g->title[a + n - 1] == L'"') { a++; n -= 2; }
-    if (!path_is_legal(g->title + a, n) || n > RC_TITLE_MAX) { unsupported(g, RC_UN_OSC_PRIV); return; }
-    for (int i = 0; i < n; i++) g->cwd[i] = g->title[a + i];
+    if (n >= 3 && g->osc[a] == L'"' && g->osc[a + n - 1] == L'"') { a++; n -= 2; }
+    if (!path_is_legal(g->osc + a, n) || n > RC_TITLE_MAX) { unsupported(g, RC_UN_OSC_PRIV); return; }
+    for (int i = 0; i < n; i++) g->cwd[i] = g->osc[a + i];
     g->nCwd = n;
     return;
   }
@@ -2106,6 +2114,249 @@ static void osc9_action(RcGrid *g, int sep, int terminated)
  * deviation #1; we abandon and restart, so we get the colour the bytes asked for instead). The 9 family
  * is counted either way: the thing worth recording is "this stream asked ConEmu to run something", and
  * this renderer never runs anything -- that is the whole of the #687 answer. */
+/* The title family (0/1/2). ConEmu's guard is reproduced byte for byte (Ansi.cpp:3845): the digit, then
+   ';' at index 1 -- so "]10;foo" is NOT a title -- then at least one character of payload, so "]0;" alone
+   sets nothing. */
+static void osc_title(RcGrid *g, int code, int sep, int terminated)
+{
+  (void)code;
+  if (sep != 1 || g->nOsc <= 2 || !terminated) { unsupported(g, RC_UN_OSC_OTHER); return; }
+  /* What EscCopyCtrlString hands on (Ansi.cpp:2276-2283): one pair of surrounding double quotes removed.
+     An empty result is still a title -- "]0;""ST" sets the title to "", it does not leave it alone; the
+     gsInitConTitle argument at :3851 is CEStr::c_str's *null* substitute (it returns the default only when
+     the buffer was never allocated), not an empty one. */
+  int from = 2, len = g->nOsc - 2;
+  /* The sink keeps far more than a title now, so the title's own cap became this family's business: clip
+     first, then strip, which is the order the shared buffer used to force by stopping collection at
+     RC_TITLE_MAX units -- "0;" counted, which is why the longest applied title is two units short of the
+     cap. A payload the sink itself could not hold (oscClip) says so through the same counter. */
+  const int clipped = (g->nOsc > RC_TITLE_MAX) || g->oscClip;
+  if (len > RC_TITLE_MAX - 2) len = RC_TITLE_MAX - 2;
+  if (len > 1 && g->osc[from] == '"' && g->osc[from + len - 1] == '"') { from++; len -= 2; }
+  for (int i = 0; i < len; i++) g->osc[i] = g->osc[from + i];
+  g->nOsc = len;
+  g->titlePending = 1;                 /* the painter applies it; a later title in the chunk replaces it */
+  g->nTitleSet++;
+  if (clipped) g->nTitleTrunc++;
+}
+
+/* FTCS (133). `sep == 3` is the guard's form of "the payload really opens with 133;" -- the length of the
+   digit run this code was read from -- so "]0133;A" (leading zero, RC_OSC_CODE_MAX) and "]1334;A" both fail
+   it. An unterminated one is dropped rather than applied: a half-read command says where the shell meant to
+   mark a row but not what it meant there, and a mark in the wrong place is worse than no mark. A rejection
+   is counted as OSC_OTHER and not as suspicious -- 133 moves the cursor only on its own say-so
+   (ftcs_fresh_line), which this model then applied faithfully or not at all, so the grid is never left
+   describing a screen that is not there. */
+static void osc_ftcs(RcGrid *g, int code, int sep, int terminated)
+{
+  (void)code;
+  if (sep != 3 || !terminated) { unsupported(g, RC_UN_OSC_OTHER); return; }
+  if (!ftcs_apply(g, g->osc + sep + 1, g->nOsc - sep - 1)) unsupported(g, RC_UN_OSC_OTHER);
+}
+
+/* `]2004;...` is DECSET 2004 spelled as an OSC, which is the shape MSFT's ConEmu-compatibility arm takes
+   (`DoConEmuAction`, adaptDispatch.cpp:3558). The mode is inert here for the reason ANSI_SUPPORTS section 3
+   gives -- this library is the output leg and never reads a paste -- so the counter that wants the vote is
+   `bracketed paste`, the row whose whole sentence is about that mode. Counting it as `other osc` instead
+   records it as a code this build has no case for, which is a different fact. */
+static void osc_bracket(RcGrid *g, int code, int sep, int terminated)
+{
+  (void)code; (void)sep; (void)terminated;
+  unsupported(g, RC_UN_DECBP);
+}
+
+/* OSC 9's dangerous half -- sleep, MessageBox, set-env, GuiMacro, DoProcess -- is counted and *never run*,
+   which is the whole #687 answer; `osc9_action` owns that boundary. DCS is separated before this table is
+   reached, so a `\eP9;7;...` can only arrive as RC_UN_DCS. */
+static void osc_private9(RcGrid *g, int code, int sep, int terminated)
+{
+  (void)code;
+  osc9_action(g, sep, terminated);
+}
+
+/* The clipboard family (52): `ESC ] 52 ; Pc ; Pd` with Pd base64 of the text, per xterm's ctlseqs, and the
+   same grammar ghostty parses (`osc/parsers/clipboard_operation.zig:20-40`). Three of its rules are copied
+   deliberately and one is ours.
+
+   COPIED -- an empty selection field means the clipboard (`52;;data`, ghostty :24-31); `Pd` of exactly `?` is
+   a *read* and not a write (ghostty decides that downstream too, :685 / Surface.zig:1046); and a bad payload
+   is refused whole rather than partially decoded -- ghostty's own words for the same choice are that
+   corrupted data "must not be silently discarded, since that turns corrupted data into apparently valid
+   data" (`kitty/clipboard_write.zig:169-170`), and its decoder rejects whitespace inside the base64 rather
+   than skipping it the way the SIMD library underneath would (`simd/base64.zig:98-110`).
+
+   OURS -- the selection whitelist. ghostty folds any letter it does not know onto the standard clipboard
+   (`stream_terminal.zig:678-682`) because on X11 and on macOS `p`/`s` name something real: primary is a
+   live buffer there, and macOS answers it with nil and reports unsupported (`NSPasteboard+Extension.swift:
+   137-152`). A Windows console has exactly one clipboard and no other target to fold *onto*, so accepting
+   `p` and quietly writing the clipboard would be a letter answered by a different thing than the one asked
+   for. `c` and the empty field are honoured; every other spelling is refused and counted. MSFT is the third
+   data point and the one that shows what folding costs: it parses the family
+   (`OutputStateMachineEngine.hpp:222` `SetClipboard = 52`) and then throws the field away -- ":1097",
+   "Currently the first parameter `Pc` is ignored" -- so `52;p;data` writes the clipboard there, which is its
+   own unfinished business rather than a design to copy. It also defaults the feature to *allowed*
+   (`compatibility.allowOSC52`, `ControlProperties.h:59`), as does ghostty (`clipboard-write = .allow`); this
+   build defaults to refused, for the reason I36 gives: those two are terminals somebody configured, and a
+   renderer inside someone else's process has no such configuration to lean on.
+
+   The read is refused whatever the policy says, and that is the one place this library is stricter than
+   ghostty: its reply goes straight back into the pty (`stream_terminal.zig:820-826`), which for a terminal
+   we own means putting the user's clipboard content into the console's *input* stream -- an application
+   could read it and a second one could be fed it as keystrokes. ghostty's answer to that is a dialog
+   (`clipboard-read` defaults to `ask`); with no window to show one in, the only honest value is no. */
+static int b64_value(uint16_t u)
+{
+  if (u >= 'A' && u <= 'Z') return u - 'A';
+  if (u >= 'a' && u <= 'z') return 26 + (u - 'a');
+  if (u >= '0' && u <= '9') return 52 + (u - '0');
+  if (u == '+') return 62;
+  if (u == '/') return 63;
+  return -1;
+}
+
+/* Strict base64 into `dst`. Returns the number of bytes, 0 for an empty payload, or -1 for anything that is
+   not a whole, well-formed encoding -- never a partial decode, and never a decode that drops information.
+   Whitespace is rejected rather than skipped (see the note above), which also means a payload an application
+   wrapped over several lines is refused as one unit and shows up in the census instead of arriving mangled.
+   Canonicality is checked the way RFC 4648 section 3.5 asks: the unused bits of a final group must be zero,
+   so a tail that decodes to "the same byte plus a hidden character" is refused too. */
+int rc_b64_decode(const uint16_t *src, int n, uint8_t *dst, int cap)
+{
+  if (n < 0) return -1;
+  if (n == 0) return 0;
+
+  /* Alphabet first: every unit is a data character or padding, nothing else. */
+  int pad = 0;
+  while (pad < n && src[n - 1 - pad] == '=') pad++;
+  if (pad > 2) return -1;
+  const int body = n - pad;
+  for (int i = 0; i < body; i++) if (b64_value(src[i]) < 0) return -1;
+  for (int i = body; i < n; i++) if (src[i] != '=') return -1;   /* padding is a suffix or nothing */
+
+  const int tail = body % 4;
+  if (tail == 1) return -1;                        /* one character encodes no byte */
+  if (pad && tail == 0) return -1;                 /* `ABCD==`: padding after a complete group */
+  if (pad == 1 && tail != 3) return -1;
+  if (pad == 2 && tail != 2) return -1;
+  /* No `(body + pad) % 4` test here on purpose: an unpadded tail (`SGVsbG8` for `Hello`) is legal, which is
+     the `.optional` padding ghostty decodes with, and the two lines above already pin the padded forms down. */
+
+  long out = (long)(body / 4) * 3;
+  if (tail == 2) out += 1;
+  else if (tail == 3) out += 2;
+  if (out > cap) return -1;                        /* over the cap: refuse the whole request */
+
+  int o = 0;
+  for (int i = 0; i + 4 <= body; i += 4)
+  {
+    const unsigned acc = ((unsigned)b64_value(src[i]) << 18) | ((unsigned)b64_value(src[i + 1]) << 12)
+                       | ((unsigned)b64_value(src[i + 2]) << 6) | (unsigned)b64_value(src[i + 3]);
+    dst[o++] = (uint8_t)(acc >> 16);
+    dst[o++] = (uint8_t)((acc >> 8) & 0xFFu);
+    dst[o++] = (uint8_t)(acc & 0xFFu);
+  }
+  if (tail)
+  {
+    unsigned acc = ((unsigned)b64_value(src[body - tail]) << 18) | ((unsigned)b64_value(src[body - tail + 1]) << 12);
+    if (tail == 3) acc |= (unsigned)b64_value(src[body - 1]) << 6;
+    /* The bits that carried no character are at the bottom of the *group*, not of the accumulator: the
+       12 or 18 bits of this tail sit at bits 23..12 or 23..6 because of the shifts above. Masking the
+       accumulator's low nibble instead was this function's first bug, caught by the non-canonical-tail
+       case in gm_clipboard -- `QR==` is a legal-looking encoding of 'A' with a hidden bit set. */
+    const unsigned unusedBits = (tail == 2) ? ((acc >> 12) & 0x0Fu) : ((acc >> 6) & 0x03u);
+    if (unusedBits != 0) return -1;                 /* RFC 4648 3.5: they must be zero */
+    dst[o++] = (uint8_t)(acc >> 16);
+    if (tail == 3) dst[o++] = (uint8_t)((acc >> 8) & 0xFFu);
+  }
+  return o;
+}
+
+static void osc_clip(RcGrid *g, int code, int sep, int terminated)
+{
+  (void)code;
+  /* An abandoned OSC is the framing case every family shares: counted as `other osc`, never applied. */
+  if (!terminated) { unsupported(g, RC_UN_OSC_OTHER); return; }
+
+  /* `sep` is where the code's digits ended, so the payload opens at sep+1 and must hold a second ';' --
+     `52;data` has no selection field at all and is not a request anyone can honour. */
+  int s2 = -1;
+  for (int i = sep + 1; i < g->nOsc; i++) { if (g->osc[i] == ';') { s2 = i; break; } }
+  if (s2 < 0) { g->nClipBad++; unsupported(g, RC_UN_OSC_CLIP); return; }
+
+  /* The selection field: empty means the clipboard, `c` means the clipboard, anything else is a target this
+     platform has no place for. */
+  const int selLen = s2 - (sep + 1);
+  if (!(selLen == 0 || (selLen == 1 && g->osc[sep + 1] == 'c')))
+  { g->nClipSel++; unsupported(g, RC_UN_OSC_CLIP); return; }
+
+  const int from = s2 + 1, len = g->nOsc - from;
+  if (len == 1 && g->osc[from] == '?') { g->nClipRead++; unsupported(g, RC_UN_OSC_CLIP); return; }
+
+  /* The sink clipped this payload, so what we hold is a prefix and a prefix of base64 is not a message. */
+  if (g->oscClip || len > RC_CLIP_ENC_MAX) { g->nClipBad++; unsupported(g, RC_UN_OSC_CLIP); return; }
+
+  uint8_t text[RC_CLIP_MAX];
+  const int n = rc_b64_decode(g->osc + from, len, text, RC_CLIP_MAX);
+  if (n < 0) { g->nClipBad++; unsupported(g, RC_UN_OSC_CLIP); return; }
+  for (int i = 0; i < n; i++)
+  {
+    /* CF_UNICODETEXT is a NUL-terminated string, so a payload that decodes to text containing a NUL cannot
+       be stored at all. Refusing the request says so; storing the prefix would hand the user half a paste. */
+    if (text[i] == 0) { g->nClipBad++; unsupported(g, RC_UN_OSC_CLIP); return; }
+  }
+  if (rc_clipboard_policy() != RC_CLIP_ALLOW) { unsupported(g, RC_UN_OSC_CLIP); return; }
+
+  for (int i = 0; i < n; i++) g->clip[i] = text[i];
+  g->nClip = n;
+  g->clipPending = 1;                            /* the painter writes it; a later OSC 52 replaces it */
+  g->nClipSet++;
+}
+
+/* A family of OSC codes: the numbers it owns, the name the report and the gate give it, and what it does
+ * with a payload.
+ *
+ * This table replaces a chain of six `if (code == ...)` tests in one function. The chain worked; what it
+ * could not say is what the table can be checked against -- which codes are spoken for (so adding a family
+ * cannot quietly collide with one already handled), that every family either acts or counts (I21's rule,
+ * which the old chain satisfied only because its last line happened to be a count), and what each family is
+ * called when a report names it. ghostty is the model for the shape: one parser per sequence under
+ * `src/terminal/osc/parsers/` behind one dispatch; MSFT does the same thing with a VTID-keyed switch
+ * (`OutputStateMachineEngine.hpp:228`). Handlers stay in this file and the parser still touches no console
+ * API, so this is structure, not a new layer.
+ *
+ * Table order is precedence. The ownership sets below are disjoint, and `geo_osc_families` proves it rather
+ * than trusting it -- which is also what makes the order free to read as priority rather than as a
+ * load-bearing accident. */
+struct RcOscFamily
+{
+  const char *name;
+  int  (*owns)(int code);
+  void (*apply)(RcGrid *g, int code, int sep, int terminated);
+};
+
+static int osc_is_title(int c)    { return c == 0 || c == 1 || c == 2; }
+static int osc_is_palette(int c)  { return c == 4 || c == 10 || c == 11 || c == 104 || c == 110 || c == 111; }
+static int osc_is_private9(int c) { return c == 9; }
+static int osc_is_ftcs(int c)     { return c == 133; }
+static int osc_is_bracket(int c)  { return c == 2004; }
+static int osc_is_clip(int c)     { return c == 52; }
+
+static const struct RcOscFamily rc_osc_families[] =
+{
+  { "ConEmu private 9",  osc_is_private9, osc_private9      },
+  { "bracketed paste",   osc_is_bracket,  osc_bracket       },
+  { "palette",           osc_is_palette,  palette_osc       },
+  { "semantic prompt",   osc_is_ftcs,     osc_ftcs          },
+  { "window title",      osc_is_title,    osc_title         },
+  { "clipboard",         osc_is_clip,     osc_clip          },
+};
+
+int rc_osc_family_count(void) { return (int)(sizeof(rc_osc_families) / sizeof rc_osc_families[0]); }
+const char *rc_osc_family_name(int i)
+{ return (i >= 0 && i < rc_osc_family_count()) ? rc_osc_families[i].name : NULL; }
+int rc_osc_family_owns(int i, int code)
+{ return (i >= 0 && i < rc_osc_family_count()) ? rc_osc_families[i].owns(code) : 0; }
+
 static void osc_finish(RcGrid *g, int terminated)
 {
   const int kind = g->oscKind;
@@ -2114,55 +2365,15 @@ static void osc_finish(RcGrid *g, int terminated)
 
   int sep = -1;
   const int code = osc_code_of(g, &sep);
-  /* OSC 9: the safe subset is acted on, the rest is counted and never run (T7). DCS was already
-     separated above, so a `\eP9;7;...` cannot reach this arm as anything but RC_UN_DCS. */
-  if (code == 9) { osc9_action(g, sep, terminated); return; }
-
-  /* `]2004;...` is DECSET 2004 spelled as an OSC, which is the shape MSFT's ConEmu-compatibility arm takes
-     (`DoConEmuAction`, adaptDispatch.cpp:3558). The mode is inert here for the reason section 3 gives -- this
-     library is the output leg and never reads a paste -- so the counter that wants the vote is
-     `bracketed paste`, the one whose whole sentence is about that mode. Counting it as `other osc` instead,
-     which is what happened, records it as a code this build had no case for, and the registry row is what
-     made the contradiction readable. */
-  if (code == 2004) { unsupported(g, RC_UN_DECBP); return; }
-
-  /* The palette family (I34). It has to be tested before the title guard below, because that guard
-     -- upstream's, Ansi.cpp:3845 -- asks for ';' at index 1, and "]10;..." satisfies it: without this
-     arm an OSC 10 would be applied as a *window title*. */
-  if (code == 4 || code == 10 || code == 11 || code == 104 || code == 110 || code == 111)
-  { palette_osc(g, code, sep, terminated); return; }
-
-  /* FTCS. `sep == 3` is the guard's form of "the payload really opens with 133;" -- the digit run this code was
-     read from, so "]0133;A" (leading zero, RC_OSC_CODE_MAX) and "]1334;A" both fail it. An unterminated one is
-     dropped rather than applied: a half-read command says where the shell meant to mark a row but not what it
-     meant there, and a mark in the wrong place is worse than no mark. A rejection is counted as OSC_OTHER and
-     not as suspicious -- 133 moves the cursor only on its own say-so (ftcs_fresh_line), which this model then
-     applied faithfully or not at all, so the grid is never left describing a screen that is not there. */
-  if (code == 133)
+  for (int i = 0; i < rc_osc_family_count(); i++)
   {
-    if (sep != 3 || !terminated) { unsupported(g, RC_UN_OSC_OTHER); return; }
-    if (!ftcs_apply(g, g->title + sep + 1, g->nTitle - sep - 1)) unsupported(g, RC_UN_OSC_OTHER);
+    if (!rc_osc_families[i].owns(code)) continue;
+    rc_osc_families[i].apply(g, code, sep, terminated);
     return;
   }
-
-  /* ConEmu's guard, byte for byte (Ansi.cpp:3845): the digit, then ';' at index 1 -- so "]10;foo" is
-     NOT a title -- then at least one character of payload, so "]0;" alone sets nothing. */
-  if ((code == 0 || code == 1 || code == 2) && sep == 1 && g->nTitle > 2)
-  {
-    if (!terminated) { unsupported(g, RC_UN_OSC_OTHER); return; }
-    /* What EscCopyCtrlString hands on (Ansi.cpp:2276-2283): one pair of surrounding double quotes
-       removed. An empty result is still a title -- "]0;""ST" sets the title to "", it does not leave it
-       alone; the gsInitConTitle argument at :3851 is CEStr::c_str's *null* substitute (it returns the
-       default only when the buffer was never allocated), not an empty one. */
-    int from = 2, len = g->nTitle - 2;
-    if (len > 1 && g->title[from] == '"' && g->title[from + len - 1] == '"') { from++; len -= 2; }
-    for (int i = 0; i < len; i++) g->title[i] = g->title[from + i];
-    g->nTitle = len;
-    g->titlePending = 1;               /* the painter applies it; a later title in the chunk replaces it */
-    g->nTitleSet++;
-    if (g->oscClip) g->nTitleTrunc++;
-    return;
-  }
+  /* The tail is the invariant: a code no family owns is counted, never ignored. `geo_osc_families` is the
+     leg that shows each owned code reaches an action or a count of its own, so this line cannot quietly
+     become the only thing standing between an OSC and silence. */
   unsupported(g, RC_UN_OSC_OTHER);
 }
 
@@ -2224,14 +2435,27 @@ int rc_sgr_take(RcGrid *g, uint16_t *dst, int cap)
   return n;
 }
 
+int rc_clip_pending(const RcGrid *g) { return g->clipPending; }
+
+int rc_clip_take(RcGrid *g, uint8_t *dst, int cap)
+{
+  if (!g->clipPending) return 0;
+  if (!dst || cap < g->nClip) return -1;          /* the same rule as rc_title_take: losing one is a bug */
+  for (int i = 0; i < g->nClip; i++) dst[i] = g->clip[i];
+  const int n = g->nClip;
+  g->clipPending = 0;
+  g->nClip = 0;
+  return n;
+}
+
 int rc_title_pending(const RcGrid *g) { return g->titlePending; }
 
 int rc_title_take(RcGrid *g, uint16_t *dst, int cap)
 {
   if (!g->titlePending) return 0;
-  if (!dst || cap < g->nTitle) return -1;            /* nothing cleared: the title stays pending */
-  for (int i = 0; i < g->nTitle; i++) dst[i] = g->title[i];
-  const int n = g->nTitle;
+  if (!dst || cap < g->nOsc) return -1;            /* nothing cleared: the title stays pending */
+  for (int i = 0; i < g->nOsc; i++) dst[i] = g->osc[i];
+  const int n = g->nOsc;
   g->titlePending = 0;
   return n;
 }
@@ -2330,8 +2554,8 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
         if (u == 0x07) { osc_finish(g, 1); g->mode = RC_GROUND; i++; continue; }               /* BEL */
         if (u == 0x1B) { g->mode = RC_OSC_ESC; i++; continue; }              /* ST, or abandon */
         if (u == 0x18 || u == 0x1A) { osc_finish(g, 0); g->mode = RC_GROUND; i++; continue; }
-        if (g->nTitle < RC_TITLE_MAX) g->title[g->nTitle++] = u;
-        else g->oscClip = 1;                     /* still consumed, and a title from it is counted truncated */
+        if (g->nOsc < RC_OSC_MAX) g->osc[g->nOsc++] = u;
+        else g->oscClip = 1;        /* still consumed; whoever acts on it says it was clipped (I21) */
         i++;
         continue;
       }

@@ -38,7 +38,14 @@
 #define RC_CSI_ARGS   16   /* ConEmu's ArgV holds 16 (Ansi.h:174); surplus args are dropped, not rejected */
 #define RC_INTERIM_MAX 4   /* CSI intermediate bytes we keep; ConEmu's Pvt holds 16 and stops appending when
                               full (Ansi.cpp:1788) -- four is more than any final in this switch can name. */
-#define RC_TITLE_MAX  256  /* OSC payload we keep; longer is truncated, the sequence is still consumed */
+/* How much of an OSC payload is kept. It used to be one buffer of RC_TITLE_MAX units, which was fine while
+   the only long payload anyone acted on was a window title; OSC 52 carries base64 of a whole clipboard
+   register, so the sink had to stop being sized by the title. `RC_TITLE_MAX` now means exactly what it names
+   -- how long an *applied title* is -- and the truncation it counts is measured against that, not against the
+   sink. A payload past RC_OSC_MAX is still consumed and still counted (I21: an OSC is never silent). */
+#define RC_TITLE_MAX  256  /* an applied title is clipped here, "0;" included, and the clipping is counted */
+#define RC_OSC_MAX    32768 /* the sink: units of OSC/DCS payload kept, which is what a title, a palette
+                                request and an OSC 52 clipboard register all share. 64 KB of the grid's 4 MB. */
 #define RC_SGR_ECHO_MAX 1024 /* UTF-16 units of SGR text kept for one chunk, see rc_sgr_take */
 #define RC_SGR_CAP_MAX  64   /* one sequence being captured; a longer one is parsed but not echoed */
 
@@ -95,7 +102,8 @@ enum RcUnsupported
      always printed, and after T6 the *table row* is the single owner of that word, so a symbol rename here
      would be a third file to keep in step for no reader's benefit. */
   RC_UN_OSC_PRIV,
-  RC_UN_OSC_OTHER,  /* any other OSC code we do not act on (4/8/10/52 ...), and an OSC that never terminated */
+  RC_UN_OSC_OTHER,  /* any other OSC code we do not act on, and an OSC that never terminated -- 4/8/10/11 are
+                       I34 and I21's own rows say so, and 52 left this list when it became a family (I36) */
   /* ESC P / X / ^ / _ -- payload framing identical to OSC, discarded. The label this family reaches is
      `dcs`, and the Dcs/BrP pair below is the one place where the words and the counters disagreed. */
   RC_UN_DCS,
@@ -103,7 +111,13 @@ enum RcUnsupported
    * is not one omission but a decision: colon subparameters (SGR 38:2::r:g:b) parse fine upstream, and we
    * drop the whole sequence for ConEmu parity, since ':' is 0x3A and so a Pvt byte for ConEmu too (I10,
    * I19). The count is what would justify revisiting that if an application ever sends the colon form. */
-  RC_UN_REPORT, RC_UN_COLON, RC_UN_MAX
+  RC_UN_REPORT, RC_UN_COLON,
+  /* OSC 52 asked for the clipboard and this build did not give it: the host has the switch off, the request
+     named a selection this platform has no place for, the payload failed the strict decode, the text was
+     over the cap or held a NUL, or the request was a read (`52;c;?`) -- refused whatever the policy says,
+     because the reply would put what the user had copied into the console's *input* stream. Appended, never
+     inserted: the census is positional across three files (I19). */
+  RC_UN_OSC_CLIP, RC_UN_MAX
 };
 
 /* The census table's accessors (Render.cpp). Names and the suspect flag are read by the gates only: the
@@ -112,6 +126,40 @@ int rc_census_count(void);
 const char *rc_census_name(int slot);
 const char *rc_census_sentence(int slot);
 int rc_census_suspect(int slot);
+
+/* The OSC family table (Render.cpp): which families exist, what each is called, and which code each owns.
+   Read by the host gate, which proves the sets are disjoint and that no owned code is silently inert. */
+int rc_osc_family_count(void);
+const char *rc_osc_family_name(int i);
+int rc_osc_family_owns(int i, int code);
+
+/* How much of an OSC 52 payload is accepted, and how much of it is kept. The sink above is 32768 units,
+   which is more base64 than a clipboard write should be: an over-long request is refused whole rather than
+   truncated, because a partial clipboard register is data the application never sent (ghostty's rule for the
+   kitty protocol is the same -- `kitty/clipboard_write.zig:177-181`, "partial clipboard contents must never
+   reach the embedder"). 16384 base64 units decode to 12288 bytes. */
+#define RC_CLIP_ENC_MAX 16384
+#define RC_CLIP_MAX     12288
+
+/* Whether an application may write the user's clipboard through OSC 52. The default is DENY and it is the
+   state a session gets without having asked: this is a library, and a host that has not decided anything has
+   not agreed to let output bytes reach the clipboard. There is no ASK -- the reference terminals that offer
+   it (ghostty's `clipboard-read` default, `Config.zig:2458`) show a dialog, and this library owns no window
+   to show one in, so the honest set is two values. Setting it is a call the host makes
+   (`NativeRenderer.setClipboardPolicy` / its `ANSI_CLIPBOARD` switch), never something the byte stream can
+   do: a sequence that could turn its own permission on would make the default meaningless. */
+#define RC_CLIP_DENY  0
+#define RC_CLIP_ALLOW 1
+void rc_set_clipboard_policy(int allow);
+int  rc_clipboard_policy(void);
+
+/* RFC 4648 base64, strict: the decoded byte count, 0 for an empty payload, or -1 for anything that is not a
+   whole, well-formed encoding. Whitespace and any byte outside the alphabet are refused rather than
+   skipped; padding is optional but must be a suffix of at most two, and the unused bits of a final group
+   must be zero. A refusal refuses the whole payload -- a partial decode would put text somewhere that no
+   application sent. OSC 52 is its first user and a kitty clipboard protocol would be the next, so it is a
+   utility and not a step inside the family. */
+int rc_b64_decode(const uint16_t *src, int n, uint8_t *dst, int cap);
 
 /* What an OSC/DCS introducer said. Kept until the sequence terminates, where it decides which counter
  * (or the title) the payload goes to. */
@@ -383,10 +431,11 @@ typedef struct RcGrid
   int    nInterims;
   int    escInterim;      /* ESC-arm interim/introducer: '(', ')', '%', or a 0x20..0x2F before an ESC final */
   int    csiColon;        /* this CSI carried a ':' subparameter separator; decides RC_UN_COLON */
-  /* The OSC/DCS payload being read. `nTitle` is its length so far and `title` its content, because the
-     only payload anyone acts on is a window title; the rest is measured by the counters below. */
-  int    nTitle;
-  uint16_t title[RC_TITLE_MAX];
+  /* The OSC/DCS payload being read: `nOsc` units of `osc`, and the one sink every family below parses out
+   of it. Named for what it holds rather than for the first thing that ever used it -- the title arm clips
+   itself to RC_TITLE_MAX, while a palette request, an OSC 9 path and an OSC 52 register all read further. */
+  int    nOsc;
+  uint16_t osc[RC_OSC_MAX];
   int    oscKind;         /* RC_OSC_*: what the introducer said, decided before the payload is read */
   /* ConEmu's private OSC 9 family, kept to the subset MSFT acts on (T7, I35): `9;4` taskbar state/progress
      and `9;9` working directory. Both are *reported*, never *obeyed* -- this library has no window to put a
@@ -399,8 +448,15 @@ typedef struct RcGrid
   int    taskbarSeen;
   uint16_t cwd[RC_TITLE_MAX];
   int    nCwd;
-  int    oscClip;         /* this payload outgrew title[]: a title is applied truncated and counted */
+  int    oscClip;         /* this payload outgrew the sink: a title is clipped and counted, OSC 52 is refused */
   int    titlePending;    /* a title OSC terminated and waits for the painter to hand it to the console */
+  /* An OSC 52 write that passed every check and is waiting for the flush. `nClip` is how many bytes of
+     `clip` hold text; a zero-length one is a real request (xterm and ghostty both read an empty payload as
+     "clear the clipboard", `osc/parsers/clipboard_operation.zig:109-122`), which is why `clipPending` says
+     whether there is a request at all rather than leaning on the length. */
+  uint8_t clip[RC_CLIP_MAX];
+  int    nClip;
+  int    clipPending;
   uint32_t wantLow;     /* a high surrogate ended the last chunk; complete it or paint U+FFFD */
 
   /* Queries waiting for a reply, oldest first, and the cursor as it stood when each was read. The position
@@ -415,6 +471,11 @@ typedef struct RcGrid
   unsigned long nUnsupported[RC_UN_MAX];
   unsigned long nCells, nScrolls, nAstral;
   unsigned long nTitleSet, nTitleTrunc;   /* titles accepted (and, of those, truncated at RC_TITLE_MAX) */
+  /* OSC 52, one number per reason a request did not reach the clipboard, so a rollout can tell "the host
+   * never turned this on" from "applications are sending wrapped base64" without guessing. `nClipSet` is
+   * armed, not applied -- the painter's own success count sits beside it in the stats array, the same pair
+   * `nTitleSet` and the console's title calls make. */
+  unsigned long nClipSet, nClipBad, nClipSel, nClipRead;
   /* Screen switches taken (both directions) and refused. A refusal is the snapshot's malloc failing: the
      sequence is then consumed with the screen unchanged, which the model can say honestly -- unlike a
      sequence it swallowed after moving something. */
@@ -577,6 +638,13 @@ int  rc_title_pending(const RcGrid *g);
    be 0 -- an explicit empty title (ESC ] 0 ; "" ST) is still a title. -1 when cap is too small, and then
    nothing is cleared. Callers pass RC_TITLE_MAX. */
 int  rc_title_take(RcGrid *g, uint16_t *dst, int cap);
+
+/* A pending clipboard write, which the painter takes at the end of a successful flush exactly as it takes a
+   pending title. The parser hands over decoded BYTES: turning UTF-8 into UTF-16 is a Win32 call, and this
+   file is compiled with no console API at all -- that is what lets the host gate run it on Linux. The take
+   clears the request, so one write cannot be applied twice. */
+int  rc_clip_pending(const RcGrid *g);
+int  rc_clip_take(RcGrid *g, uint8_t *dst, int cap);
 
 /* How many queries are waiting for an answer. The painter loops on this until it drains the queue, and the
    host gate reads it to prove a query armed exactly one reply -- no more, because answering twice would

@@ -20,7 +20,7 @@
 | 参数个数 | 上限 `RC_CSI_ARGS 16`，超出的参数**丢弃不拒绝**（与 ConEmu ArgV 同） |
 | 参数数值 | 数字累加**饱和在 65535**（偏离 #3：上游是 int 溢出）；`;` 空参数补 0；结尾空参数**不**当 0 下发 |
 | `arg()` 语义 | 参数缺省或为 0 时取默认值（如 `CSI 0 A` = `CSI A`） |
-| OSC/DCS 载荷 | `BEL` 或 `ST(ESC \)` 终止；被 `ESC`/`CAN`/`SUB` 遗弃时**计数、不生效**；超长按 `RC_TITLE_MAX 256` 截断并计数，不丢序列 |
+| OSC/DCS 载荷 | `BEL` 或 `ST(ESC \)` 终止；被 `ESC`/`CAN`/`SUB` 遗弃时**计数、不生效**；收集上限 `RC_OSC_MAX 32768` 个单元，超出后**标题截断到 `RC_TITLE_MAX 256` 并计数，OSC 52 整条拒绝**（一个被腰斩的 base64 不是一条消息），序列本身照常消费 |
 | OSC 码读取 | 按前导数字串精确匹配（`"0133"` 不匹配 `"133"`），超界饱和，防 `]0133;A`/`]1334;A` 误命中 |
 | CAN/SUB | 在 CSI 或 OSC 内到达时中止序列回 ground，被中止的半个序列不计任何账 |
 | 未知序列 | 消费 + 按族计数（见 §6 census）；`RC_UN_SUP` 且来自 `default:` 臂时置 `modelSuspect` |
@@ -130,7 +130,9 @@
 - 参数上限 16、数值饱和 65535（偏离 #3）。
 - **颜色管线**（I15）：`ReSetDisplayParm → ExtPrepareColor → Far3Color 折叠`，折叠表 `vendor/ConEmuRgbMap.h`（RgbMap[256]、ClrMap[8]）与 `vendor/ConEmuColors3.h` 从上游逐字提取、构建期断言条数；**fg==bg 避让**只在背景真走了 COLORREF 折叠（index>15）时挂上（633 样本测出的开关条件）。
 
-### 2.8 OSC（`osc_finish()`，Render.cpp:1574）
+### 2.8 OSC（`osc_finish()` 查 `rc_osc_families[]`，Render.cpp:2337）
+
+分派是一张表而不是一条 `if` 链：每族 `{名字, owns(码), apply(...)}`，表的顺序即优先级，而"互不重叠"这件事现在由 `geo_osc_families` 扫 0..4096 证明——表能改成什么样，取决于有没有门禁在问它。链做不到的正是这条：说不出"没有哪个码被两族同时认领"。
 
 | 码 | 行为 |
 |---|---|
@@ -138,7 +140,8 @@
 | `133`（FTCS） | **一等公民**（`ftcs_apply()`，Render.cpp:1498）：`A`/`N` 起新提示行（需要时先换行——全族唯一动光标处）；`P` 定提示不动行；`L` 纯换行且**不允许带选项**；`B`/`I` 标输入起点（`I` 的输入止于行尾）；`C` 标输出起点并回收 fish 式续行标记；`D` 携退出码（第二字段，非数字按 MSFT 记为错误而非成功），向上搜索最近一个带标记的行盖 SUCCESS/ERROR 戳。`k=c`/`k=s` 选项识别续行（ghostty 规则）；LF/折行本身会把非输出内容所在行补成 CONTINUATION。行标记是**模型私有**的，随每次垂直移动搬运，收养（adopt）后丢弃 |
 | `9`（ConEmu 私有族，T7 已分治） | **安全子集存而不行**：`9;4` 存 `{state,progress}`（state>4 整条拒绝且不套用，progress>100 钳到 100，与 MSFT `adaptDispatch.cpp:3596-3605` 一致）、`9;9` 存路径（剥一对引号，非法字符＝整条拒绝，判据同 `til::is_legal_path`）、`9;12` 直接走 `ftcs_apply("B")`——即 `133;B` 那条码路，不留副本。两者只经 `NativeRenderer.taskbar()/workingDirectory()` **读出去**，本库不画任务栏（没有窗口）也不 `chdir`（输出流里的目录是数据不是命令）。**其余子命令一律计数 `RC_UN_OSC_PRIV`、永不执行**：`9;1` sleep、`9;2` MessageBox、`9;3` 改环境变量、`9;6` GuiMacro、`9;7` DoProcess——#687 的 RCE 保证不变。未终止的载荷在**被遗弃那一刻**计数（此前解析器还泡在里面，无从判定） |
 | `4` / `10` / `11` / `104` / `110` / `111`（调色板，I34） | **真改控制台颜色**：语法照 MSFT（`OutputStateMachineEngine.cpp:955-1000`/`:1062-1092`）——`4` 是 `(索引;说明)*` 对、`?` 就地提问、`10/11` 每字段推进一个资源、`104` 无参清全表且**遇到第一个读不懂的索引就停**（MSFT:846 注明这是 xterm 而非 VTE 的选择）、`110/111` 只在空载荷时复位。说明形式 `#RGB`/`#RRGGBB`/`#RRRRGGGGBBBB`（宽度须三等分）与 `rgb:r/g/b`（各 1-4 位、宽度可不等），按位复制缩放到 8 位；**X11 颜色名不解析**，与任何读不懂的说明同样计 `RC_UN_OSC_OTHER`。索引 0..15 改的是**控制台属性色**（写回 `SetConsoleScreenBufferInfoEx`，见 §5 那一坑）并参与折叠；16..255 只改折叠目标。`10/11` 只能落成**索引**（4 位默认属性），所以查询答的是**生效色**而非请求色 |
-| 其他一切（8/52/…） | 计数 `RC_UN_OSC_OTHER`；被拒的 133 语法、未终止的 133、以及上面那些读不懂的说明也落在这里 |
+| `52`（剪贴板，I36） | **默认关，且只有宿主能开**：`ANSI_CLIPBOARD=on\|1\|true\|yes` 在类初始化时读一次，或 `NativeRenderer.setClipboardPolicy(true)`；字节流里没有任何东西能触到这两个入口——这正是"关"意味着关的原因（census 分辨不出用户配过的终端和脚本配过的终端，策略因此不能由计数代替）。没有 ASK 档：本库没有窗口，也就没有可提问的地方。**读**（`52;c;?`）无论写的开关开着与否都拒绝——答复等于把用户最后复制的东西塞进控制台**输入流**，也就是下一行命令。选择字段只认 `c` 和空：这台机器只有一块剪贴板，ghostty 之所以能折叠 `p`/`s`/`q`/`0-7` 是因为 X11/macOS 真有那些寄存器（`stream_terminal.zig:678-682`）。base64 严格 RFC 4648：整条要么完全合法要么整条拒绝（绝不半个解码），载荷中间的空白是拒绝而非跳过，最后一组的闲置位必须为 0（`QR==` 那种"看着像 A 其实藏着字符"的尾巴被拒），解出 NUL 整条拒绝（`CF_UNICODETEXT` 以 NUL 结尾，存前缀等于给用户半截粘贴），UTF-8 用 `MB_ERR_INVALID_CHARS` 严校验后才转 UTF-16。**空载荷是"清空"这个动作**，不是"没有载荷"。拒绝分四类各自计数（解码/选择/读取/超长），`NativeRenderer` 的收尾行说得清是哪一类。`close()` **不**恢复剪贴板：在 open 时快照就等于读，而读正是被拒的那一半。**ConEmu 根本没有 OSC 52**（实测：`Ansi.cpp` 的 OSC 开关是 `switch (*Code.ArgSZ)`，只有 0/1/2/4/9… 没有 `case L'5'`）。**但两个参照终端都有，而且默认都是开的**：Windows Terminal 有 `OscActionCodes::SetClipboard = 52`（`OutputStateMachineEngine.hpp:222`→`.cpp:821-827`→`adaptDispatch.cpp:3302`），开关是 `compatibility.allowOSC52` / `AllowVtClipboardWrite`，**默认 true**（`ControlProperties.h:59`、`MTSMSettings.h:119`，读进 `Terminal.cpp:106`）；ghostty 的 `clipboard-write` 默认 `.allow`（`Config.zig:2459`）。所以本库的**默认关是有意偏离两个参照**，理由只能是自己的：那两家是**用户自己配置并对自己负责的终端**，配置项存在的前提就是有人打开过它；而一个嵌在别人 JVM 里的渲染库没有那份配置、也没有那个动作的同意方——沉默只能读成"没同意"，不能读成"同意"。能对齐的地方都对齐了：两家都**不答复读取**（WT 解析 `?` 后 `&& !queryClipboard` 直接丢掉，`.cpp:825`），ghostty 靠 `clipboard-read=.ask` 挡住，本库连挡带不答。**与 MSFT 的另一处有意分叉**：它把选择字段整个忽略（`:1097` 注释自陈 "Currently the first parameter `Pc` is ignored"），于是 `52;p;…` 也写剪贴板；本库照 ghostty 的语法表只认 `c` 与空，其余拒绝——折叠是在回答另一个问题，而 MSFT 自己的注释说那是没做完 |
+| 其他一切（8/…） | 计数 `RC_UN_OSC_OTHER`——这条尾巴是不变量：**没有一族认领的码**才被它记账；被拒的 133 语法、未终止的 133、以及上面那些读不懂的说明也落在这里。52 已自立门户，它的拒绝记在 `RC_UN_OSC_CLIP` |
 
 ### 2.9 查询与应答（I29）
 
@@ -205,7 +208,7 @@
 |---|---|---|
 | `CSI t` 窗口操作（含像素尺寸上报 `14t`、字符尺寸 `18t/19t`） | 计数 `RC_UN_REPORT`，不答 | 像素尺寸需要不属于本库的窗口矩形；`18/19` 能答但尚无真实使用方（规则：真实写手在发才建模） |
 | 带参数的 DA（`CSI > 0 ; 1 c` 等） | 计数 `RC_UN_REPORT` | 上游无此应答拼法 |
-| OSC 8 / 52（超链接、剪贴板） | 计数 `RC_UN_OSC_OTHER` | **OSC 8 超链接不支持**（#56）；OSC 52 默认关（安全，#57）。调色板族 4/10/11/104/110/111 已于 I34 落地，不在此列 |
+| OSC 8（超链接） | 计数 `RC_UN_OSC_OTHER` | **不支持**（#56，用户 2026-09-26 定案不做）：链接是**区间**不是 cell，得住在 `rowWrap[]` 旁边并继承 I20 那条永远读不回来的债；只做序列本身换不到用户看得见的一件事。OSC 52 已于 I36 落地（§2.8），不在本行；调色板族 4/10/11/104/110/111 已于 I34 落地，也不在 |
 | ConEmu 私有 OSC `9` 的**危险半区**（`9;1` sleep / `9;2` MessageBox / `9;3` 改环境变量 / `9;6` GuiMacro / `9;7` **DoProcess**） | 计数 `RC_UN_OSC_PRIV`，**永不执行** | #687 RCE：实现其语义的唯一底线是不实现语义。安全半区 `9;4`/`9;9`/`9;12` 见 §2.8——存下来给人读，不等于执行 |
 
 ### 字符集与图形
@@ -249,7 +252,10 @@
 | `RC_MAX_COLS` | 4096 | `open()` 拒绝（OPEN_WIDE），调用方继续用旧 Java 写手 |
 | `RC_MAX_ROWS` | 256 | 行数 ≥256 拒绝（OPEN_NO_GUTTER）；gutter 高度 = 行数 ≤128 时一整屏、129..255 递减 |
 | `RC_CSI_ARGS` | 16 | 超出参数丢弃 |
-| `RC_TITLE_MAX` | 256 | 标题截断 + `nTitleTrunc` 计数，序列本身照常消费 |
+| `RC_TITLE_MAX` | 256 | **套用**的标题长度：截断 + `nTitleTrunc` 计数，序列本身照常消费 |
+| `RC_OSC_MAX` | 32768 | OSC/DCS 载荷**收集**上限（`nOsc` 单元）。越界后标题仍按 `RC_TITLE_MAX` 截断并计数；OSC 52 整条拒绝（`nClipBad`）——截断的 base64 不是消息 |
+| `RC_CLIP_ENC_MAX` | 16384 | OSC 52 载荷的编码长度上限，超出即整条拒绝 |
+| `RC_CLIP_MAX` | 12288 | 解码后的字节上限；`rc_clip_take` 的 cap 就是它，所以"装不下"在解析期就已判完 |
 | `RC_REPORT_MAX` | 8 | 满队列**拒绝**新查询并计 `nReportFull`，不挤旧条目 |
 | `RC_SGR_ECHO_MAX / RC_SGR_CAP_MAX` | 1024 / 64 | SGR 回显仅为证人存根，溢出计 `nSgrDrop`，不影响解析 |
 
@@ -272,7 +278,8 @@
 | `RC_UN_DCS` | DCS/SOS/PM/APC | 否 |
 | `RC_UN_REPORT` | 不答的查询（`CSI t`、带参 DA、`?6n`、非 5/6 的 DSR） | 否 |
 | `RC_UN_COLON` | CSI 携带 `:`（每序列一票） | 否 |
+| `RC_UN_OSC_CLIP` | OSC 52 被拒的四种理由之一：策略关、这台机器没有那块寄存器、载荷没通过严格解码、超出上限，或是一次**读取** | 否 |
 
-配套动作：`modelSuspect` 置位后 painter 对控制台**重收养一次**再清位（自愈）；另有 `nTitleSet/nTitleTrunc`、`nAltSwitch/nAltFail`、`nReportOk/nReportFail/nReportFull`、`nPromptMark` 等专项计数。
+配套动作：`modelSuspect` 置位后 painter 对控制台**重收养一次**再清位（自愈）；另有 `nTitleSet/nTitleTrunc`、`nClipSet/nClipBad/nClipSel/nClipRead`（+ painter 侧的 `g_clipCalls/g_clipFails`）、`nAltSwitch/nAltFail`、`nReportOk/nReportFail/nReportFull`、`nPromptMark` 等专项计数。第 12 个槽是 -24 加的，而 `STAT_TITLES = STAT_UNSUPPORTED + RC_UN_MAX`——所以**加一个槽会把后面每一族的偏移都挪一格**，`Render.java` 与 `NativeRenderer` 两张硬编码表必须同步 +1（真机门禁第一次跑出来的一片 0 就是这件事的收据）。
 
 同步输出一族（`RcGrid`，不在 `RcUnsupported` 里：它们记的是"模式怎么用的"，不是"什么没建模"）：`nSyncEngages`（开过几个区域，是下面所有的分母）、`nSyncNested`（区域内的第二个 BSU）、`nSyncHeld`（被推迟的帧）、`nSyncTimeout`（时钟到点、顺带清模式）、`nSyncOverflow`（gutter 满、区域保留）、`nSyncDeclined`（chunk 被拒，区域结束并走重收养）。加上实时位 `sync`，共 7 个槽，`stats()` 尾部位置契约：`Render.java` 的 `S_SYNC*` 与 `NativeRenderer` 的 `SLOT_SYNC*` 必须与 `RenderJni.cpp` 的 `STAT_SYNC` 一起改，真控制台门禁有一条断言压着数组长度。

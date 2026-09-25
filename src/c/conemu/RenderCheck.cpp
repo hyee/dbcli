@@ -450,8 +450,11 @@ static void gm_osc_family()
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033]10;fg\007\033]4;1;rgb:00/00/00\007\033]52;c;AAAA\007\033]\007");
-  eq_u("other OSC counted", g.nUnsupported[RC_UN_OSC_OTHER], 3,
-       "the name in `10;fg`, 52 and a bare introducer -- `4;1;rgb:00/00/00` is applied now (I34), so it votes nothing");
+  eq_u("other OSC counted", g.nUnsupported[RC_UN_OSC_OTHER], 2,
+       "the name in `10;fg` and a bare introducer -- `4;1;rgb:00/00/00` is applied now (I34), so it votes nothing,"
+       " and 52 left this list for its own family (I36)");
+  eq_u("52 votes in the clipboard's bucket instead", g.nUnsupported[RC_UN_OSC_CLIP], 1,
+       "the sequence is still in the stream above, which is the proof the count moved rather than vanished");
   eq_title(&g, NULL, "none of them is a title");
 
   /* The guard ConEmu really has (Ansi.cpp:3845): the ';' must sit at index 1, so "]10;t" is not a title
@@ -910,11 +913,166 @@ static void gm_osc9()
        "a private OSC that was refused must not poison the picture, only be counted");
 }
 
+/* The clipboard family's own helper: the decoder reads the UTF-16 sink, and a gate that wants to hand it
+   "QQ==" builds the units one at a time rather than pretending a char* is one. */
+static int b64s(const char *s, uint8_t *out, int cap)
+{
+  uint16_t u[64];
+  int n = 0;
+  while (s[n] && n < 64) { u[n] = (uint16_t)(unsigned char)s[n]; n++; }
+  return rc_b64_decode(u, n, out, cap);
+}
+
+/* I36: OSC 52. The decoder is tested as a unit because a refusal that says only "the sequence was rejected"
+ * cannot tell a rollout whether the grammar, the policy or the base64 rejected it -- three different things
+ * to fix in three different places. The family is tested through the parser, which is the only way the
+ * policy and the counters can be seen at all. */
+static void gm_clipboard()
+{
+  static RcGrid g;
+  uint8_t out[64];
+
+  /* ---- the decoder ---- */
+  eq_u("one byte, padded", (unsigned)b64s("QQ==", out, sizeof out), 1, "");
+  eq_u("and it is the byte", (unsigned)out[0], (unsigned)'A', "");
+  eq_u("two bytes", (unsigned)b64s("QUI=", out, sizeof out), 2, "");
+  eq_u("three bytes", (unsigned)b64s("YWJj", out, sizeof out), 3, "");
+  eq_u("which is abc", (unsigned)out[0] * 65536u + (unsigned)out[1] * 256u + (unsigned)out[2],
+       (unsigned)'a' * 65536u + (unsigned)'b' * 256u + (unsigned)'c', "");
+  eq_u("an unpadded tail decodes", (unsigned)b64s("SGVsbG8", out, sizeof out), 5,
+       "ghostty decodes with .optional padding; senders that strip it are the same bytes");
+  eq_u("and to the right text", (unsigned)out[0], (unsigned)'H', "");
+  eq_u("empty is zero, not an error", (unsigned)b64s("", out, sizeof out), 0,
+       "which is a request to clear the clipboard, not the absence of a request");
+  eq_u("one character encodes nothing", (unsigned)(b64s("Q", out, sizeof out) == -1), 1, "");
+  eq_u("a lone pad after a full group", (unsigned)(b64s("QQ=", out, sizeof out) == -1), 1, "");
+  eq_u("three pads", (unsigned)(b64s("A===", out, sizeof out) == -1), 1, "");
+  eq_u("padding must be a suffix", (unsigned)(b64s("QQ=A", out, sizeof out) == -1), 1, "");
+  eq_u("a non-canonical tail is refused", (unsigned)(b64s("QR==", out, sizeof out) == -1), 1,
+       "'Q' and 'R' carry 12 bits for one byte, and the 4 left over are not zero (RFC 4648 3.5)");
+  eq_u("a space inside is refused", (unsigned)(b64s("Y WJ", out, sizeof out) == -1), 1,
+       "so a payload wrapped over lines is refused whole and the census says so, instead of arriving joined");
+  eq_u("a newline inside is refused", (unsigned)(b64s("YW\nj", out, sizeof out) == -1), 1, "");
+  eq_u("any byte outside the alphabet is refused", (unsigned)(b64s("YW*j", out, sizeof out) == -1), 1, "");
+  eq_u("+ and / are the 62nd and 63rd", (unsigned)b64s("++//", out, sizeof out), 3, "");
+  eq_u("over the caller's cap refuses the whole payload",
+       (unsigned)(b64s("YWJjYWJj", out, 3) == -1), 1, "no half-written buffer exists to be mistaken for a paste");
+
+  /* ---- the family, through the parser ---- */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c;YWJj\007");
+  eq_u("with the policy off, one request is refused", g.nUnsupported[RC_UN_OSC_CLIP], 1,
+       "the default is the state a session gets without having asked, and asking is not something a byte stream can do");
+  eq_u("and it is not also an unknown OSC", g.nUnsupported[RC_UN_OSC_OTHER], 0,
+       "the family owns code 52 now, so `other osc` would double-count one sequence");
+  eq_u("nothing is armed", (unsigned)rc_clip_pending(&g), 0, "");
+  eq_u("a refusal by policy is not a decode failure", (unsigned)g.nClipBad, 0,
+       "the report has to be able to say which of the two happened");
+
+  rc_set_clipboard_policy(RC_CLIP_ALLOW);
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c;YWJj\007");
+  eq_u("armed one write", (unsigned)rc_clip_pending(&g), 1, "");
+  eq_u("and refused nothing", g.nUnsupported[RC_UN_OSC_CLIP], 0, "");
+  {
+    uint8_t raw[8];
+    const int n = rc_clip_take(&g, raw, (int)sizeof raw);
+    eq_u("the bytes are what the base64 said", (unsigned)n, 3, "");
+    eq_u("abc", (unsigned)raw[0] * 65536u + (unsigned)raw[1] * 256u + (unsigned)raw[2],
+         (unsigned)'a' * 65536u + (unsigned)'b' * 256u + (unsigned)'c', "");
+  }
+  eq_u("taking it clears the request", (unsigned)rc_clip_pending(&g), 0,
+       "one request, one write: the painter cannot apply the same paste twice");
+
+  /* The empty selection field is the clipboard (ghostty's own grammar); any other letter names a target
+     Windows has no place for, and folding it onto the clipboard would answer a different question. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;;YWJj\007");
+  eq_u("an empty selection means the clipboard", (unsigned)rc_clip_pending(&g), 1, "");
+  /* `52;;` with nothing after the second ';' is not a missing payload -- it is the request to clear the
+     register. That makes it the one case where "armed" and "zero bytes" are both true, and the case a
+     painter gets wrong by reading 0 as failure (which is exactly what MultiByteToWideChar returns for an
+     empty input, so the two look alike downstream). */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;;\007");
+  eq_u("an empty payload arms a clear", (unsigned)rc_clip_pending(&g), 1,
+       "the request is the whole point of the payload, and an absent one says something");
+  eq_u("with nothing to write", (unsigned)g.nClip, 0, "");
+  eq_u("and no refusal of any kind", (unsigned)(g.nClipBad + g.nClipSel + g.nClipRead
+                                                + g.nUnsupported[RC_UN_OSC_CLIP]), 0, "");
+  eq_u("counted as one request", (unsigned)g.nClipSet, 1, "");
+  {
+    uint8_t raw[8];
+    raw[0] = 0x7f;
+    eq_u("which the painter can take", (unsigned)rc_clip_take(&g, raw, (int)sizeof raw), 0, "");
+    eq_u("and the request is consumed", (unsigned)rc_clip_pending(&g), 0, "");
+  }
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;p;YWJj\007");
+  eq_u("`p` is refused, not folded", (unsigned)rc_clip_pending(&g), 0, "");
+  eq_u("under its own counter", (unsigned)g.nClipSel, 1, "");
+  eq_u("one census vote", g.nUnsupported[RC_UN_OSC_CLIP], 1, "");
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;cp;YWJj\007");
+  eq_u("a two-letter selection is not a thing", (unsigned)g.nClipSel, 1, "");
+
+  /* A read is refused whatever the policy says: the reply would put the user's clipboard into the input
+     stream, and this library has no window to ask permission in. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c;?\007\033]52;;?\007");
+  eq_u("two reads, two counts", (unsigned)g.nClipRead, 2, "");
+  eq_u("nothing armed", (unsigned)rc_clip_pending(&g), 0, "even with the write policy on");
+  eq_u("and no reply was queued", (unsigned)rc_report_pending(&g), 0,
+       "answering is the whole thing being refused");
+
+  /* Grammar refusals, each under the decode counter. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c\007\033]52;YWJj\007");
+  eq_u("no selection field, twice", (unsigned)g.nClipBad, 2,
+       "`52;c` has no payload field and `52;base64` has no selection field");
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c;YW*j\007");
+  eq_u("a bad encoding is a decode failure", (unsigned)g.nClipBad, 1, "");
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c;YWJj\033[0mq");   /* the ESC abandons it; [0m is a sequence of its own */
+  eq_u("an abandoned OSC is framing, not a clipboard refusal", g.nUnsupported[RC_UN_OSC_OTHER], 1,
+       "the rule I21 states for every family: never applied, and counted where it belongs");
+  eq_u("and the clipboard counter stays clean", g.nUnsupported[RC_UN_OSC_CLIP], 0,
+       "it never reached a terminator, so it never asked for anything");
+  eq_u("the byte after the ESC is re-examined", (unsigned)g.cells[0][0].ch, (unsigned)'q',
+       "deviation #1: an ESC that abandons an OSC is an introducer again, not a swallowed byte");
+
+  /* A NUL cannot be stored in a NUL-terminated string, so the request is refused rather than truncated. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]52;c;QQAg\007");       /* 'A', NUL, ' ' */
+  eq_u("a decoded NUL refuses the whole payload", (unsigned)g.nClipBad, 1,
+       "storing the prefix would hand the user half a paste with no way to know");
+  eq_u("nothing armed", (unsigned)rc_clip_pending(&g), 0, "");
+
+  /* Over the cap: refused as a unit, under the decode counter, whatever the sink thought. */
+  {
+    static uint16_t big[RC_OSC_MAX];
+    int i, k = 0;
+    big[k++] = 0x1B; big[k++] = ']'; big[k++] = '5'; big[k++] = '2'; big[k++] = ';';
+    big[k++] = 'c'; big[k++] = ';';
+    for (i = 0; i < RC_CLIP_ENC_MAX + 8; i++) big[k++] = 'a';   /* well-formed, and long enough that the
+                                                                   cap is the thing that says no */
+    big[k++] = 0x07;
+    rc_reset(&g, 20, 3, 0x07);
+    rc_feed(&g, big, k);
+    eq_u("over the cap is refused", (unsigned)g.nClipBad, 1, "");
+    eq_u("and nothing armed", (unsigned)rc_clip_pending(&g), 0, "");
+    eq_u("the sequence was still consumed", (unsigned)g.mode, (unsigned)RC_GROUND, "");
+  }
+  rc_set_clipboard_policy(RC_CLIP_DENY);   /* the default, restored for every case after this one */
+}
+
 /* The queue a query goes into, which is the whole of what the model can say about a reply: RenderJni's
  * drain turns an entry into key events, and everything it needs to say the right thing is here. Two rules
  * are worth pinning against a grid rather than trusting a live `tput rows`: the entry carries the cursor as
  * it stood *when the question was read* (a later move must not change the answer), and the queue is FIFO
  * with a refusal at the far end (an evicted older reply hangs a program already blocked on its first read). */
+
 static void gm_reports()
 {
   static RcGrid g;
@@ -1624,7 +1782,7 @@ static void geo_census()
        "which is the day `ignored()` was split out of `unsupported()` and why the two still exist");
   eq_u("the labels, in this order, unchanged",
        (unsigned)(strcmp(dump, "unrecognised, decstbm, altbuf, mouse, mode, bracketed paste, osc9, "
-                               "other osc, dcs, report, colon") == 0), 1,
+                               "other osc, dcs, report, colon, osc clip") == 0), 1,
        "this is the text a rollout reads; renaming one here has to rename it in Render.java's report and in "
        "NativeRenderer's UNMODELLED, and the live gate now checks the first of those at run time");
   eq_u("an out-of-range slot names nothing", (rc_census_name(RC_UN_MAX) == NULL) ? 1u : 0u, 1u, "");
@@ -1650,6 +1808,136 @@ static void geo_census()
   eq_u("nothing about it doubts the frame", (unsigned)rc_model_suspect(&g), 0,
        "a mode this library does not own is inert, not unknown");
   eq_text(&g, 0, 1, "x", "the payload is consumed with the sequence, as every un-acted-on OSC's is");
+}
+
+/* Every way one OSC family is known to be able to leave a mark, in one value.
+ *
+ * The question this answers is "did the handler do anything, or is it a `return;` wearing a name?" -- and
+ * answering it needs a witness list, because the honest alternative (compare the whole grid) is vacuous:
+ * the payload sink is part of the struct, so every probe would "change the model" merely by being parsed.
+ * The sink, the parser's own resumable state and the console geometry are therefore left out, and what is
+ * kept is the set of fields the families can write: the tallies, the colour tables, the attribute the
+ * defaults fold to, the FTCS marks and row semantic, the pending title and clipboard request, and the
+ * reported OSC 9 pair. A family that later acts through a field nobody thought of is a gate that stops
+ * proving something about that family -- which is why the fields are named here rather than hashed. */
+struct OscFx
+{
+  unsigned long un[RC_UN_MAX];
+  unsigned long nTitleSet, nTitleTrunc, nClipSet, nClipBad, nClipSel, nClipRead;
+  unsigned long nPromptMark, nReportOk, nReportFail, nReportFull;
+  uint32_t pal16[16];
+  uint8_t rowMark[RC_MAX_ROWS];
+  int cx, cy, attr, defAttr, titlePending, clipPending, nClip, nCwd;
+  int semanticContent, semanticClearEol, taskbarState, taskbarProgress, taskbarSeen, lastExit, palTouched;
+};
+
+static void osc_fx_get(RcGrid *g, struct OscFx *f)
+{
+  int i;
+  for (i = 0; i < RC_UN_MAX; i++) f->un[i] = g->nUnsupported[i];
+  f->nTitleSet = g->nTitleSet; f->nTitleTrunc = g->nTitleTrunc;
+  f->nClipSet = g->nClipSet; f->nClipBad = g->nClipBad;
+  f->nClipSel = g->nClipSel; f->nClipRead = g->nClipRead;
+  f->nPromptMark = g->nPromptMark;
+  f->nReportOk = g->nReportOk; f->nReportFail = g->nReportFail; f->nReportFull = g->nReportFull;
+  for (i = 0; i < 16; i++) f->pal16[i] = g->pal16[i];
+  for (i = 0; i < RC_MAX_ROWS; i++) f->rowMark[i] = g->rowMark[i];
+  f->cx = g->cx; f->cy = g->cy; f->attr = g->attr; f->defAttr = g->defAttr;
+  f->titlePending = g->titlePending; f->clipPending = g->clipPending;
+  f->nClip = g->nClip; f->nCwd = g->nCwd;
+  f->semanticContent = g->semanticContent; f->semanticClearEol = g->semanticClearEol;
+  f->taskbarState = g->taskbarState; f->taskbarProgress = g->taskbarProgress;
+  f->taskbarSeen = g->taskbarSeen; f->lastExit = g->lastExit; f->palTouched = g->palTouched;
+}
+
+static void geo_osc_families()
+{
+  static RcGrid g;
+  /* One well-formed payload per code the table is allowed to own, and the setup each one needs to be
+     observable at all: `110` with the default foreground already at the seed changes nothing, so the probe
+     that wants to prove 110 *can* act has to move the attribute first. */
+  static const struct { int code; const char *setup, *probe; } probe[] = {
+    {    0, NULL,            "\033]0;gate title\007"  },
+    {    1, NULL,            "\033]1;gate icon\007"   },
+    {    2, NULL,            "\033]2;gate title\007"  },
+    {    4, NULL,            "\033]4;1;rgb:ff/00/00\007" },
+    {    9, NULL,            "\033]9;12\007"           },
+    {   10, NULL,            "\033]10;rgb:ff/ff/ff\007" },
+    {   11, NULL,            "\033]11;rgb:ff/00/00\007" },
+    {   52, NULL,            "\033]52;c;YWJj\007"      },
+    {  104, "\033]4;1;rgb:ff/00/00\007", "\033]104\007" },
+    {  110, "\033]10;rgb:ff/ff/ff\007",  "\033]110\007" },
+    {  111, "\033]11;rgb:ff/ff/ff\007",  "\033]111\007" },
+    {  133, NULL,            "\033]133;A\007"          },
+    { 2004, NULL,            "\033]2004;1\007"         },
+  };
+  const int nf = rc_osc_family_count();
+  const int np = (int)(sizeof probe / sizeof probe[0]);
+  int i, j, k, owned = 0;
+
+  /* Names, because the census row is not the only label a report reads from here. */
+  for (i = 0; i < nf; i++)
+  {
+    const char *nm = rc_osc_family_name(i);
+    int probed = 0;
+    eq_u(S("family %d has a name", i), (unsigned)(nm != NULL && nm[0] != 0), 1, "");
+    for (j = 0; j < i; j++)
+      eq_u(S("family %d does not share %s's name", i, rc_osc_family_name(j)),
+           (unsigned)(strcmp(nm, rc_osc_family_name(j)) != 0), 1,
+           "two families a report could not tell apart");
+    for (k = 0; k < np; k++) if (rc_osc_family_owns(i, probe[k].code)) probed = 1;
+    eq_u(S("%s has a probe", nm), (unsigned)probed, 1,
+         "a family nothing feeds cannot be shown to answer, which is the whole point of listing them");
+  }
+  eq_u("an out-of-range family names nothing", (rc_osc_family_name(nf) == NULL) ? 1u : 0u, 1u, "");
+  eq_u("and owns nothing", (unsigned)rc_osc_family_owns(nf, 2), 0, "");
+
+  /* Disjointness, and the exact extent of what the table claims. Order in the table is precedence, and
+     that is only a free thing to read if no code is claimed twice -- the if-chain this replaced had the
+     same hazard and no way to say it was absent. The second half is the one that catches a new code added
+     to an `owns` predicate: it fails here, and the fix is to add a probe, not to loosen this line. */
+  for (i = 0; i <= 4096; i++)
+  {
+    int claimants = 0;
+    for (j = 0; j < nf; j++) if (rc_osc_family_owns(j, i)) claimants++;
+    if (claimants > 1)
+      eq_u(S("code %d is owned by %d families", i, claimants), 1u, 0u,
+           "the later handler is unreachable, and no test of the earlier one would notice");
+    if (claimants == 1) owned++;
+    if (claimants == 1)
+    {
+      int probed = 0;
+      for (k = 0; k < np; k++) if (probe[k].code == i) probed = 1;
+      if (!probed) eq_u(S("code %d is claimed but never probed", i), 0u, 1u,
+                        "a code with a handler and no test is a code nobody can show arriving");
+    }
+  }
+  eq_u("the table owns exactly the codes this gate feeds", (unsigned)owned, (unsigned)np,
+       "the probe list is the extent of what the parser claims -- grow both together");
+
+  /* Every probe reaches its family, is not swallowed by the tail, and leaves a mark. */
+  for (k = 0; k < np; k++)
+  {
+    struct OscFx before, after;
+    int claimants = 0;
+    for (j = 0; j < nf; j++) if (rc_osc_family_owns(j, probe[k].code)) claimants++;
+    eq_u(S("code %d is spoken for by exactly one family", probe[k].code), (unsigned)claimants, 1,
+         claimants ? "claimed twice above" : "no family owns it, so the tail counts it and the probe is silent");
+
+    rc_reset(&g, 20, 3, 0x07);
+    if (probe[k].setup) put(&g, probe[k].setup);
+    osc_fx_get(&g, &before);
+    put(&g, probe[k].probe);
+    eq_u(S("code %d does not fall through to `other osc`", probe[k].code),
+         (unsigned)un(&g, RC_UN_OSC_OTHER), 0,
+         "the tail's sentence is `a code no family owns`, and dispatching here would make it a lie");
+    eq_u(S("and code %d does not doubt the frame", probe[k].code),
+         (unsigned)rc_model_suspect(&g), 0, "an OSC named by a family is a known no-op at worst");
+    osc_fx_get(&g, &after);
+    eq_u(S("code %d leaves a mark", probe[k].code),
+         (unsigned)(memcmp(&before, &after, sizeof before) != 0), 1,
+         "nothing in the witness list moved: this handler acts on nothing and counts nothing");
+  }
 }
 
 static void geo_scroll()
@@ -4034,6 +4322,7 @@ int main(int argc, char **argv)
   gm_charset();
   gm_palette();
   gm_osc9();
+  gm_clipboard();
   gm_reports();
   gm_dropped();
   gm_wrap_suspect();
@@ -4058,6 +4347,7 @@ int main(int argc, char **argv)
   geo_sgr_bits();
   geo_damage();
   geo_census();
+  geo_osc_families();
   sync_output();
 
   plan_plain();

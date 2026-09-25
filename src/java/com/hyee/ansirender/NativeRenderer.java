@@ -41,17 +41,27 @@ public final class NativeRenderer {
      * titles still has the sequence census, and that census is the only record of a private OSC that went
      * past unexecuted.
      */
-    private static final int SLOT_UNSUPPORTED = 17, SLOT_TITLES = 28, SLOT_TITLES_TRUNC = 29,
-            SLOT_TITLES_APPLIED = 30, SLOT_ALT = 31, SLOT_ALT_REFUSED = 32, SLOT_PROMPT_MARKS = 33,
-            SLOT_LAST_EXIT = 34, SLOT_SNAP = 38,
+    /* The families after the census start at SLOT_UNSUPPORTED + RC_UN_MAX, which is 17 + 12 since OSC 52
+       joined the census: every constant below is therefore one higher than it was for eleven slots, on both
+       sides of the seam at once. RenderJni.cpp derives its own from the enum, which is why a new census slot
+       moves these by itself and why an unreconciled table here shows up as a whole report of zeroes. */
+    private static final int SLOT_UNSUPPORTED = 17, SLOT_TITLES = 29, SLOT_TITLES_TRUNC = 30,
+            SLOT_TITLES_APPLIED = 31, SLOT_ALT = 32, SLOT_ALT_REFUSED = 33, SLOT_PROMPT_MARKS = 34,
+            SLOT_LAST_EXIT = 35, SLOT_SNAP = 39,
             /* DECSET 2026's family, in the order RenderJni.cpp's STAT_SYNC gives them: regions opened, nested
                BSUs, flushes deferred, and the ways a region ended before its ESU. SLOT_SYNC_ON is the mode as
                it stands at teardown, not a count, and it is the one worth reading: a session that ended inside a
                synchronized region is a session where an application sent a BSU and never sent the ESU, and the
                counts next to it say whether that ever cost a frame. */
-            SLOT_SYNC_ENGAGES = 39, SLOT_SYNC_NESTED = 40, SLOT_SYNC_HELD = 41,
-            SLOT_SYNC_TIMEOUT = 42, SLOT_SYNC_OVERFLOW = 43, SLOT_SYNC_DECLINED = 44,
-            SLOT_SYNC_ON = 45, SLOT_LAST = 46;
+            SLOT_SYNC_ENGAGES = 40, SLOT_SYNC_NESTED = 41, SLOT_SYNC_HELD = 42,
+            SLOT_SYNC_TIMEOUT = 43, SLOT_SYNC_OVERFLOW = 44, SLOT_SYNC_DECLINED = 45,
+            SLOT_SYNC_ON = 46,
+            /* OSC 52, in RenderJni.cpp's STAT_CLIP order: armed by the parser, then the three reasons a
+               request was refused, then what the clipboard API answered, then the policy bit. The census
+               slot for the family is the last of UNMODELLED, and the gate's own label list is compared
+               against the dll's table at run time. */
+            SLOT_CLIP_ARMED = 47, SLOT_CLIP_DECODE = 48, SLOT_CLIP_SELECTION = 49, SLOT_CLIP_READ = 50,
+            SLOT_CLIP_WRITES = 51, SLOT_CLIP_FAILS = 52, SLOT_CLIP_POLICY = 53, SLOT_LAST = 54;
 
     /** The two answers Render.h gives a 133;D whose exit code was absent or was not a number. */
     private static final long EXIT_UNKNOWN = -1, EXIT_UNPARSABLE = 0x7FFFFFFFL;
@@ -59,7 +69,7 @@ public final class NativeRenderer {
     /** What each unsupported-sequence counter is, for the one line at teardown. */
     private static final String[] UNMODELLED = {"escape", "scroll region", "alt buffer", "mouse tracking",
             "mode", "bracketed paste", "private OSC 9", "other OSC", "DCS", "report request",
-            "colon subparameter"};
+            "colon subparameter", "clipboard refused"};
 
     /**
      * ANSI_RENDER=off|0|false|no switches the renderer off; anything else -- including nothing at all --
@@ -94,6 +104,60 @@ public final class NativeRenderer {
        this class's natives for anything that touches it -- the gate included. */
     static {
         loadLibrary();
+        /* The clipboard switch is applied here, once, from the launcher's environment -- see
+           {@link #clipboardWriteAllowed()}. Reading it at class init is what keeps "off" honest: nothing in
+           the byte stream can reach this call, so an application that knows OSC 52 cannot enable itself. An
+           older dll has no such export and the result is the behaviour this library always had, so nothing
+           here may fail a startup. */
+        if (loaded && clipboardWriteAllowed()) {
+            try {
+                setClipboardPolicy(true);
+            } catch (Throwable ignored) {
+                /* the export is absent; the clipboard stays closed */
+            }
+        }
+    }
+
+    /**
+     * ANSI_CLIPBOARD=on|1|true|yes lets applications write the system clipboard through OSC 52. Anything
+     * else, including nothing at all, leaves it off -- and unlike {@code ANSI_RENDER}, whose default is on,
+     * this default is off because the effect leaves the screen and reaches the user's other applications.
+     * The launcher that owns the console says so; a program printing bytes into it does not get a vote.
+     */
+    public static boolean clipboardWriteAllowed() {
+        final String v = System.getenv("ANSI_CLIPBOARD");
+        return v != null && (v.equals("1") || v.equalsIgnoreCase("on")
+                || v.equalsIgnoreCase("true") || v.equalsIgnoreCase("yes"));
+    }
+
+    /**
+     * Turns OSC 52 clipboard writes on or off for this process. The environment switch above is how a
+     * launcher does it; this is the same decision made from code, for a host that would rather ask its user
+     * first -- the sequence carries no permission, so enabling it mid-session enables every application's
+     * request from then on. Reading the clipboard is not on offer either way: {@code OSC 52 ; c ; ?} would
+     * answer by putting what the user last copied into the console's <em>input</em> stream.
+     */
+    public static synchronized void setClipboardPolicy(final boolean allow) {
+        if (!loadLibrary()) {
+            return;
+        }
+        try {
+            setClipboardPolicy0(allow);
+        } catch (Throwable ignored) {
+            /* an older render.dll has no such export: off stays off */
+        }
+    }
+
+    /** Whether this process may answer OSC 52 writes. False when the library cannot tell. */
+    public static synchronized boolean clipboardPolicy() {
+        if (!loadLibrary()) {
+            return false;
+        }
+        try {
+            return clipboardPolicy0();
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /** Which build of render.dll is loaded -- in the default report, because a stale DLL is the usual
@@ -309,6 +373,10 @@ public final class NativeRenderer {
 
     private static native String workingDirectory0(long h);
 
+    private static native void setClipboardPolicy0(boolean allow);
+
+    private static native boolean clipboardPolicy0();
+
     public static native void close(long h);
 
     /* Low level, and public only because the console gate in src/c/conemu/Render.java drives the layers
@@ -426,6 +494,44 @@ public final class NativeRenderer {
         if (has(s, SLOT_SYNC_ON) && s[SLOT_SYNC_ON] != 0) {
             b.append("; still inside a synchronized update at close");
         }
+        b.append(clipboard(s));
+        return b.toString();
+    }
+
+    /**
+     * OSC 52, in the order the dll counts it. The write count comes first because it is the number that
+     * matters; the rest are reasons a request did not become a write, and they are on the line because a
+     * session with the switch off and a session whose applications send encodings this library refuses are
+     * different problems to fix, in different files.
+     */
+    private static String clipboard(long[] s) {
+        if (!has(s, SLOT_CLIP_POLICY)) {
+            return "";
+        }
+        final StringBuilder b = new StringBuilder();
+        if (s[SLOT_CLIP_WRITES] != 0) {
+            b.append("; ").append(s[SLOT_CLIP_WRITES]).append(" clipboard write(s) by OSC 52");
+        }
+        if (s[SLOT_CLIP_FAILS] != 0) {
+            b.append(", ").append(s[SLOT_CLIP_FAILS]).append(" refused by the clipboard itself");
+        }
+        final long refused = s[SLOT_CLIP_DECODE] + s[SLOT_CLIP_SELECTION] + s[SLOT_CLIP_READ];
+        if (refused != 0) {
+            b.append("; OSC 52 refused ").append(refused).append(" request(s)");
+            if (s[SLOT_CLIP_DECODE] != 0) {
+                b.append(" (").append(s[SLOT_CLIP_DECODE]).append(" encoding, cap or NUL)");
+            }
+            if (s[SLOT_CLIP_SELECTION] != 0) {
+                b.append(" +").append(s[SLOT_CLIP_SELECTION]).append(" other selection");
+            }
+            if (s[SLOT_CLIP_READ] != 0) {
+                b.append(" +").append(s[SLOT_CLIP_READ]).append(" read");
+            }
+        }
+        /* The policy bit is the one a reader needs to interpret every number above: an all-zero clipboard
+           report means "nothing asked" only if the switch was on. */
+        b.append("; OSC 52 writes ").append(s[SLOT_CLIP_POLICY] != 0 ? "allowed" : "refused by default")
+                .append(" (ANSI_CLIPBOARD, or NativeRenderer.setClipboardPolicy)");
         return b.toString();
     }
 
