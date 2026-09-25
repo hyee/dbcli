@@ -37,8 +37,13 @@ public class Render {
     static native long[] readCells(int x, int y, int w, int h);
     static native long[] consoleView();
     static native char[] consoleTitle();
+    /** The console's own 16 palette entries, read off CONOUT$ -- gate-only, and it takes no handle because
+     *  the leg that needs it most runs after close() has invalidated one. See I34's restore claim. */
+    static native int consolePalette(long[] out16);
     /** Drain up to `max` characters off the console's input stream -- the witness for a DSR/DA reply. */
     static native char[] readInput(int max);
+    /** "name|suspect" for every census slot, in the C enum's order -- the table `stats()` indexes into. */
+    static native String[] censusNames();
     /** Hand bytes to ConEmuHk's WriteProcessed3 -- the fallback leg itself -- on this console. */
     static native int writeHk(char[] text, int len, String dll);
     /** Rebuild this handle's model for the console's shape now, carrying its row claim across: the real
@@ -50,6 +55,10 @@ public class Render {
      *  Where the model believes its rows are is not readable off the console, and every case below that is
      *  about a row written at a claim turns on it. */
     static native long[] plan(long h);
+    /** Arm a one-shot write_rect fault on run `run` of the next plan this handle flushes (`run < 0` disarms)
+     *  and return what is now armed. Gate-only: the #44 defect needs a console call to fail *mid-plan*, and
+     *  no console state can be coaxed into that. See RcHandle::faultRun. */
+    static native int faultRect(long h, int run);
 
     private static long open(int cols, int rows, int defAttr) {
         return NativeRenderer.open(0, cols, rows, defAttr);   /* 0: the DLL opens CONOUT$ itself */
@@ -58,6 +67,7 @@ public class Render {
     private static int feed(long h, char[] t, int off, int len) { return NativeRenderer.feed(h, t, off, len); }
     private static int flush(long h) { return NativeRenderer.flush(h); }
     private static int align(long h) { return NativeRenderer.align(h); }
+    private static int snap(long h) { return NativeRenderer.snap(h); }
     private static long[] stats(long h) { return NativeRenderer.stats(h); }
     private static void close(long h) { NativeRenderer.close(h); }
 
@@ -78,16 +88,36 @@ public class Render {
        pair sits after the titles and the OSC 133 pair after that, and the query-reply triple after those, at
        the end, so a new counter can only ever extend this. The last of the two prompt slots is the one
        per-model counter in the family: see the comment on
-       Java_com_hyee_ansirender_NativeRenderer_stats for why that one does not fold at close(). */
+       Java_com_hyee_ansirender_NativeRenderer_stats for why that one does not fold at close(). S_SNAP is the
+       one after the reply triple -- a per-model count of the views a keystroke moved, asserted by
+       caseSnapOnInput rather than only printed, because that counter is the sole witness that a snap
+       reached the console at all: the window's row is equally explainable by a scroll that came from
+       somewhere else. */
     private static final int S_UN = 17, S_COLON = S_UN + 10, S_TITLES = S_UN + 11,
             S_TITLES_TRUNC = S_UN + 12, S_TITLES_APPLIED = S_UN + 13, S_ALT = S_UN + 14,
             S_ALT_FAIL = S_UN + 15, S_PROMPTS = S_UN + 16, S_EXIT = S_UN + 17,
             S_REPLIED = S_UN + 18, S_REPLY_FAIL = S_UN + 19, S_REPLY_FULL = S_UN + 20,
-            S_LEN = S_UN + 21;
+            S_SNAP = S_UN + 21,
+            /* DECSET 2026, appended in the same order as STAT_SYNC in RenderJni.cpp: the regions that opened,
+               the nested BSUs, the flushes held, and the three ways a region ended without its ESU. Last is the
+               bit itself -- the only slot in this table that is a state rather than a count, and the reason the
+               family cannot be read from the counts before it. The engages count is the denominator the other
+               four need: held=400 says nothing until you know whether that was 400 regions or four. */
+            S_SYNC = S_UN + 22, S_SYNC_ENGAGES = S_UN + 22, S_SYNC_NESTED = S_UN + 23,
+            S_SYNC_HELD = S_UN + 24, S_SYNC_TIMEOUT = S_UN + 25, S_SYNC_OVERFLOW = S_UN + 26,
+            S_SYNC_DECLINED = S_UN + 27, S_SYNC_ON = S_UN + 28, S_LEN = S_UN + 29;
 
     public static void main(String[] args) {
         System.out.println("render build: " + NativeRenderer.build());
         if (prepareConsole() == 0) { System.out.println("FAIL cannot prepare a console"); System.exit(1); }
+        /* Which console that is: every leg below assumes the renderer owns the screen. On a pseudo-console
+           (ConPTY) it does not -- a write of cells is re-serialized to VT and parsed again one level up, so
+           the grid would agree with itself and disagree with the terminal. The gate allocates its own
+           conhost when stdout is a pipe, so the expected answer here is false, and this line is what says
+           which of the two a given log came from. */
+        System.out.println("console: " + (NativeRenderer.isPseudoConsole()
+                ? "pseudo (ConPTY) -- the cell witness below is not testing what it looks like"
+                : "the gate's own conhost window"));
         if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) == 0) {
             System.out.println("FAIL cannot set console geometry"); System.exit(1);
         }
@@ -112,6 +142,7 @@ public class Render {
         caseWideGlyph();
         caseLegsAgree();
         caseWrap();
+        caseDecawm();
         caseBareLf();
         caseNarrowRepaint();
         caseScroll();
@@ -124,7 +155,17 @@ public class Render {
         caseWideBuffer();
         caseScrollKeepsHistory();
         caseFullBufferEvicts();
+        caseSnapOnInput();
         caseOpenRefusal();
+        casePartialPaintFailure();
+        caseRelativeCursor();
+        caseSyncOutput();
+        caseSyncOverflow();
+        /* Last, on purpose: this leg repaints the console palette and erases the viewport to prove an
+           OSC 10 reached the screen, and a leg that clears the screen cannot sit in the middle of a run
+           whose later rows are read back as they were left. */
+        casePalette();
+        caseOsc9();
 
         long[] s = stats(handle);
         gate("no console call failed", s[3] == 0, "apiErrors=" + s[3] + " lastError check below");
@@ -140,6 +181,35 @@ public class Render {
         gate("stats carries the counters the report names", s.length >= S_LEN,
                 "length=" + s.length + (s.length >= S_LEN ? " for a table of " + S_LEN
                         : ": render.dll is older than this gate's slot table of " + S_LEN));
+        /* The other half of that contract. The line above compares the dll's array with *this file's* slot
+           numbers; nothing so far compared this file's with the library's own report -- the text that ships in
+           dbcli.jar and that a rollout actually reads. The two tables are in different trees and reach the same
+           array by index, so the check is reflective: renumber one side and forget the other has to fail here,
+           naming the slot, instead of printing a census whose numbers belong to somebody else's counters. */
+        /* The census's other half. `reportSlotAgrees` compares four *indices*; nothing compared the eleven
+           *words* those indices are printed with, which is the failure where a rollout log says "mouse=4"
+           about a counter that moved. Read them from the dll and check them one by one. */
+        final String[] LABELS = { "unrecognised", "decstbm", "altbuf", "mouse", "mode", "bracketed paste",
+                "osc9", "other osc", "dcs", "report", "colon" };
+        final String[] cn = censusNames();
+        gate("render.dll names every census slot", cn != null && cn.length == LABELS.length,
+                cn == null ? "null" : "the table has " + cn.length + " rows against " + LABELS.length
+                        + " labels in this gate");
+        if (cn != null && cn.length == LABELS.length) {
+            int suspect = 0;
+            for (int i = 0; i < cn.length; i++) {
+                final int bar = cn[i].indexOf('|');
+                gate("census slot " + i + " is named what the report calls it",
+                        bar > 0 && LABELS[i].equals(cn[i].substring(0, bar)),
+                        "the dll says \"" + cn[i] + "\" for a label this gate prints as \"" + LABELS[i] + "\"");
+                if (bar > 0 && "1".equals(cn[i].substring(bar + 1))) suspect++;
+            }
+            gate("one and only one census slot doubts the frame", suspect == 1, "count=" + suspect);
+        }
+        reportSlotAgrees("SLOT_UNSUPPORTED", S_UN);
+        reportSlotAgrees("SLOT_SYNC_OVERFLOW", S_SYNC_OVERFLOW);
+        reportSlotAgrees("SLOT_SYNC_ON", S_SYNC_ON);
+        reportSlotAgrees("SLOT_LAST", S_LEN);
         if (s.length >= S_LEN) {
             System.out.println("  not modelled: unrecognised=" + s[S_UN] + " decstbm=" + s[S_UN + 1]
                     + " altbuf=" + s[S_UN + 2] + " mouse=" + s[S_UN + 3] + " mode=" + s[S_UN + 4]
@@ -150,9 +220,22 @@ public class Render {
                     + "; alt switches=" + s[S_ALT] + " (" + s[S_ALT_FAIL] + " refused)"
                     + "; prompts marked=" + s[S_PROMPTS] + ", last 133;D exit=" + s[S_EXIT]
                     + "; replies written=" + s[S_REPLIED] + " (" + s[S_REPLY_FAIL] + " failed, "
-                    + s[S_REPLY_FULL] + " refused for a full queue)");
+                    + s[S_REPLY_FULL] + " refused for a full queue)"
+                    + "; views snapped back on input=" + s[S_SNAP]
+                    + "; sync updates=" + s[S_SYNC_ENGAGES] + " (" + s[S_SYNC_NESTED] + " nested, "
+                    + s[S_SYNC_HELD] + " flushes held, ended early by " + s[S_SYNC_TIMEOUT] + " timeout / "
+                    + s[S_SYNC_OVERFLOW] + " gutter / " + s[S_SYNC_DECLINED] + " decline)");
         }
         close(handle);
+        /* The other half of I34's promise: the console keeps the palette its user chose. This is read after
+           the close rather than asserted inside casePalette because that is the only moment the restore has
+           actually run -- and `paletteBefore` was taken before this process touched a single entry. */
+        if (paletteBefore != null) {
+            final long[] after = palette();
+            gate("close() handed the console back the palette it found",
+                    after != null && paletteDiff(after, paletteBefore, -1) == null,
+                    after == null ? "unreadable" : String.valueOf(paletteDiff(after, paletteBefore, -1)));
+        }
         System.out.println("checks=" + checks + " failures=" + failures);
         if (failures > 0) { System.out.println("RENDERGATE: FAILED"); System.exit(1); }
         System.out.println("RENDERGATE: ok");
@@ -165,10 +248,31 @@ public class Render {
         int r = flush(handle);
         drainSgr();                           /* production takes the echo every chunk; so does the gate */
         winT = (int) consoleView()[0];    /* a scroll in this chunk moved the window; the rows follow it */
-        gate(what + ": accepted", r == 0 || r == 1, "flush=" + r);
+        /* 3 is FLUSH_HELD: the bytes are in the model and the picture is waiting for the synchronized region
+           to end. It is a consumed chunk, not a failure, and a gate that refused it would refuse the mode. */
+        gate(what + ": accepted", r == 0 || r == 1 || r == 3, "flush=" + r);
     }
 
     private static void flushQuietly() { flush(handle); drainSgr(); }
+
+    /**
+     * One index of {@code NativeRenderer}'s slot table, read from the class by name, against this gate's own
+     * constant for the same counter. Read reflectively because the fields are private and must stay private --
+     * a report table is not an API, and widening it to satisfy a test would be the test dictating the library.
+     */
+    private static void reportSlotAgrees(String field, int want) {
+        final int got;
+        try {
+            final java.lang.reflect.Field f = NativeRenderer.class.getDeclaredField(field);
+            f.setAccessible(true);
+            got = f.getInt(null);
+        } catch (ReflectiveOperationException e) {
+            gate("the report has a slot named " + field, false, e.toString());
+            return;
+        }
+        gate("the shipped report's " + field + " is this gate's slot", got == want,
+                "NativeRenderer." + field + "=" + got + " Render=" + want);
+    }
 
     private static void drainSgr() { NativeRenderer.sgr(handle); }
 
@@ -300,6 +404,46 @@ public class Render {
     private static void eqInput(String what, String want) {
         final String got = input(256);
         gate(what, got.equals(want), "got=" + vis(got) + " want=" + vis(want));
+    }
+
+    /**
+     * The hold's own clock is {@code RC_SYNC_TIMEOUT_MS}, and the seam's only tick is the next flush, so a
+     * timeout leg has to make the test itself wait. Sleeping here is the only way to pass that wall without
+     * lowering the constant the production code reads.
+     */
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Render.h's {@code RC_SYNC_TIMEOUT_MS}. The gate cannot read a C macro, and a leg that guessed a smaller
+     * number would be asserting that the clock is *at least* that big rather than what it is, so the pair is
+     * stated here and the host gate ({@code RenderCheck.cpp}, {@code sync_output}) is the leg that checks the
+     * real constant's behaviour; this is the number the two console legs budget their chunks against.
+     */
+    private static final int SYNC_CLOCK_MS = 100;
+
+    /**
+     * How long one chunk costs this console, in milliseconds -- the minimum of three probes, because a chunk
+     * that happens to be preempted says nothing about the writer. {@link #caseSyncOutput} needs it to know
+     * whether it can afford a region of two held chunks: the clock the mode starts is 100 ms old no matter how
+     * slowly the test got there, so on a console where a paint costs a hundred milliseconds, a second chunk
+     * arrives to a region the timeout already ended. That is the host being slow, not the renderer being wrong,
+     * and the leg shortens itself and says so rather than reporting the difference as a failure.
+     */
+    private static long chunkCostMs() {
+        long best = Long.MAX_VALUE;
+        for (int i = 0; i < 3; i++) {
+            final long t0 = System.nanoTime();
+            paint("cost probe " + i, "\u001b[0m\u001b[2J\u001b[H");
+            final long dt = System.nanoTime() - t0;
+            if (dt < best) best = dt;
+        }
+        return Math.max(1, best / 1_000_000);
     }
 
     // ---- cases -------------------------------------------------------------------------------
@@ -517,6 +661,119 @@ public class Render {
      * the cursor stood when the question was read, not where it stands now -- is the one thing here that a
      * naive drain gets wrong.
      */
+    /**
+     * The palette, witnessed on the console rather than in the model (I34). The host gate already proves
+     * what the parser stored; what only a live run can prove is that the change reached CONOUT$'s ColorTable,
+     * that a read-modify-write left the user's other fifteen alone -- twice, because the second write is the
+     * one that could have reverted the first -- that a colour query comes back as bytes in xterm's 16-bit
+     * form, and that an OSC 10 reaches the screen through the pen and the erase.
+     * These legs run on the gate's own handle on purpose: two live handles on one console each carry their
+     * own row claim (I27/I28), and a second one's second flush declines as NOGEOM for reasons that have
+     * nothing to do with colours. The restore-at-close() witness therefore lives at the end of main(), where
+     * the real close happens, and `paletteBefore` is what it compares against.
+     * The leg ends by putting the console back: 104 restores the standard table and 110/111 the default
+     * attribute, so no later leg inherits a recoloured pen.
+     */
+    /**
+     * The OSC 9 safe subset, read back through the API the host uses (T7). The host gate proves the parse;
+     * what this leg adds is that the two stored facts survive the thing a real session does to a model --
+     * a resize, which rebuilds it -- and that the dangerous half still leaves nothing behind.
+     */
+    private static void caseOsc9() {
+        paint("OSC 9;4", "\u001b]9;4;1;50\u0007");
+        long[] tb = NativeRenderer.taskbar(handle);
+        gate("9;4 reaches the caller as state and progress",
+                tb != null && tb.length == 3 && tb[0] == 1 && tb[1] == 50 && tb[2] == 1,
+                tb == null ? "null" : java.util.Arrays.toString(tb));
+
+        paint("a clamped 9;4", "\u001b]9;4;2;150\u0007");
+        tb = NativeRenderer.taskbar(handle);
+        gate("progress is clamped before anyone sees it", tb != null && tb[1] == 100 && tb[0] == 2,
+                tb == null ? "null" : java.util.Arrays.toString(tb));
+
+        paint("OSC 9;9", "\u001b]9;9;\"D:/x\"\u0007");
+        gate("9;9 strips the quotes ConEmu's spelling adds", "D:/x".equals(NativeRenderer.workingDirectory(handle)),
+                "got=" + NativeRenderer.workingDirectory(handle));
+
+        paint("the dangerous one", "\u001b]9;7;calc.exe\u0007");
+        tb = NativeRenderer.taskbar(handle);
+        final String cwd = NativeRenderer.workingDirectory(handle);
+        gate("9;7 changes neither stored fact", tb != null && tb[0] == 2 && tb[1] == 100 && "D:/x".equals(cwd),
+                "taskbar=" + java.util.Arrays.toString(tb) + " cwd=" + cwd);
+
+        gate("and a rebuild carries both", readopt(handle) == 1, "readopt refused");
+        tb = NativeRenderer.taskbar(handle);
+        gate("the taskbar pair survived the rebuild", tb != null && tb[0] == 2 && tb[1] == 100,
+                tb == null ? "null" : java.util.Arrays.toString(tb));
+        gate("and so did the directory", "D:/x".equals(NativeRenderer.workingDirectory(handle)),
+                "got=" + NativeRenderer.workingDirectory(handle));
+    }
+
+    private static void casePalette() {
+        paletteBefore = palette();
+        gate("the console's palette is readable", paletteBefore != null, "consolePalette returned no table");
+        if (paletteBefore == null) return;
+
+        paint("OSC 4", "\u001b]4;1;rgb:ff/00/00\u0007A");
+        long[] p = palette();
+        gate("it moved the entry the application named", p != null && p[1] == 0x000000FF,
+                p == null ? "unreadable" : "got=0x" + Long.toHexString(p[1]));
+        gate("and left the user's other fifteen alone", p != null && paletteDiff(p, paletteBefore, 1) == null,
+                p == null ? "unreadable" : String.valueOf(paletteDiff(p, paletteBefore, 1)));
+
+        final long[] v0 = consoleView();
+        paint("a second OSC 4", "\u001b]4;2;rgb:00/ff/00\u0007B");
+        final long[] v1 = consoleView();
+        /* Named because every other field of the view can look untouched while the window's bottom moves,
+           and a moved bottom is a geometry decline the next frame has to eat. */
+        gate("and the window it wrote did not move",
+                v0[0] == v1[0] && v0[1] == v1[1] && v0[2] == v1[2] && v0[3] == v1[3] && v0[8] == v1[8],
+                "winT " + v0[0] + "->" + v1[0] + " winL " + v0[1] + "->" + v1[1]
+                        + " buf " + v0[2] + "x" + v0[3] + "->" + v1[2] + "x" + v1[3]
+                        + " winB " + v0[8] + "->" + v1[8] + " attr 0x" + Long.toHexString(v0[4])
+                        + "->0x" + Long.toHexString(v1[4]));
+        p = palette();
+        gate("the second write added its own entry", p != null && p[2] == 0x0000FF00,
+                p == null ? "unreadable" : "got=0x" + Long.toHexString(p[2]));
+        gate("without reverting the first", p != null && p[1] == 0x000000FF,
+                p == null ? "unreadable" : "got=0x" + Long.toHexString(p[1]));
+
+        readInput(0);
+        paint("a colour query", "\u001b]4;1;?\u0007");
+        eqInput("a query answers in xterm's 16-bit form",
+                "\u001b]4;1;rgb:ffff/0000/0000\u001b\\");
+
+        /* The default is model-side on this console (I34), so the witness is what a default *does*: an SGR
+           reset puts it in the pen, the erase paints the screen with the pen. 0x00000080 is the standard
+           table's entry 4, so a correct round trip lands the viewport on attribute 4. */
+        paint("OSC 10 then reset then erase", "\u001b]10;rgb:80/00/00\u0007\u001b[m\u001b[2J");
+        cell("the default the query named is the default the screen shows", winT + 2, 0, ' ', 0x04);
+
+        paint("restore", "\u001b]104\u0007\u001b]110\u0007\u001b]111\u0007");
+        p = palette();
+        gate("104 put the standard table back on the console",
+                p != null && p[1] == 0x00800000 && p[2] == 0x00008000,
+                p == null ? "unreadable" : "1=0x" + Long.toHexString(p[1]) + " 2=0x" + Long.toHexString(p[2]));
+        paint("a reset and an erase after the restore", "\u001b[m\u001b[2J");
+        cell("and the default attribute came back too", winT + 2, 0, ' ', 0x07);
+    }
+
+    private static long[] paletteBefore;
+
+    private static long[] palette() {
+        long[] p = new long[16];
+        return consolePalette(p) == 16 ? p : null;
+    }
+
+    private static String paletteDiff(long[] a, long[] b, int skip) {
+        for (int i = 0; i < 16; i++) {
+            if (i == skip) continue;
+            if (a[i] != b[i]) return "entry " + i + ": got 0x" + Long.toHexString(a[i])
+                    + " want 0x" + Long.toHexString(b[i]);
+        }
+        return null;
+    }
+
     private static void caseReports() {
         readInput(0);                                /* start from a queue this case alone has filled */
         long[] a = stats(handle);
@@ -578,6 +835,35 @@ public class Render {
         StringBuilder eight = new StringBuilder();
         for (int i = 0; i < 8; i++) eight.append("\u001b[0n");
         eqInput("none lost, none duplicated", eight.toString());
+
+        /* jline4's capability probe batch, byte for byte (AbstractTerminal.probeModes): kitty's keyboard
+           query, the three DECRQM asks, and DA1 as the fence. `CSI ?u` used to follow ConEmu's unconditional
+           restore (Ansi.cpp:4194) and teleport the cursor to the last DECSC, and a probe is exactly the
+           thing that must never move a cursor -- so this leg saves a position, walks away from it, replays
+           the batch and demands the console cursor still stand where it walked to. Of the three DECRQM ids,
+           only 2026 is answered: this build has no state for 2027 (grapheme reflow) or 2048 (in-band resize),
+           and jline4 reads a missing reply as NOT_SUPPORTED -- the honest verdict -- while any permanent
+           status number would be read two opposite ways (AbstractTerminal.java:663-667). So the exact bytes
+           below are the contract: one DECRPM for the mode that is modelled, then the fence, nothing else. */
+        readInput(0);
+        a = stats(handle);
+        paint("a saved position the probe must not reach", "\u001b[3;5H\u001b[s\u001b[8;12H");
+        long[] walked = consoleView();
+        paint("the probe batch", "\u001b[?u\u001b[?2026$p\u001b[?2027$p\u001b[?2048$p\u001b[c");
+        long[] afterProbe = consoleView();
+        b = stats(handle);
+        gate("the probe left the cursor where it stood",
+                afterProbe[5] == walked[5] && afterProbe[6] == walked[6],
+                "(" + walked[5] + "," + walked[6] + ") -> (" + afterProbe[5] + "," + afterProbe[6] + ")");
+        gate("and three ids in it voted as refused modes", b[S_UN + 4] - a[S_UN + 4] == 3,
+                "mode=" + (b[S_UN + 4] - a[S_UN + 4]) + " -- `?u`, then 2027 and 2048 unanswered");
+        eqInput("the probe's one DECRPM, for 2026, and then the fence",
+                "\u001b[?2026;" + (b[S_SYNC_ON] == 1 ? 2 : 1) + "$y"
+                        + "\u001b[?61;4;6;7;14;21;22;23;24;28;32;42c");
+        paint("the DECRC that save belongs to", "\u001b[u");
+        afterProbe = consoleView();
+        gate("while the plain `CSI u` still restores", afterProbe[5] == 4 && afterProbe[6] == winT + 2,
+                "(" + afterProbe[5] + "," + afterProbe[6] + ") winT=" + winT);
     }
 
     /**
@@ -691,6 +977,17 @@ public class Render {
          * report agreement (it did, on the first run of this case). */
         legsSame("DECSTBM then a scroll",
                 "\u001b[2;4r" + "AAAA\u001b[B" + "BBBB\u001b[B" + "CCCC\n", Boolean.TRUE, dll, 1);
+        /* DECAWM off is modelled now (I35), and this is the one pair of legs that must NOT agree. ConEmu's
+         * own `?7` arm leaves the SetConsoleMode commented out (Ansi.cpp:3268-3281) and hands the text to
+         * WriteConsoleW, where the console's ENABLE_WRAP_AT_EOL is still on: the character past the margin
+         * opens a row there and overwrites the last column here. Accepted because matching the fallback leg
+         * would mean ignoring a mode both reference terminals act on. The product's own dictionary defines
+         * WRAP/UNWRAP (`lua/ansi.lua`) with its call sites commented out, so this is the third-party case --
+         * an editor or a progress line drawn through this library -- and not a dbcli behaviour. */
+        /* The `?7h` is part of the case, not a courtesy: one grid serves every leg of this run, so a mode
+         * left off here would quietly un-wrap caseWrap and everything after it -- which is what the first
+         * run of this case did, failing two assertions three cases later. */
+        legs("DECAWM off at the margin", "\u001b[?7l" + line(BUF_W) + "Q\u001b[?7h", Boolean.FALSE, dll);
     }
 
     /** A row of `n` distinguishable columns, so a one-column shift between the legs is visible. */
@@ -947,6 +1244,58 @@ public class Render {
         paint("one past the buffer row", "Z");
         cell("so the next character starts the next row", winT + 7, 0, 'Z', DEF);
         span("and that row is blank to the buffer edge", winT + 7, 1, BUF_W - 1, ' ', DEF);
+    }
+
+    /**
+     * I35: DECAWM off, on a real console. The host gate can prove the model refuses to wrap; only this leg
+     * shows the screen holding still with it -- the buffer row's last column carries the last of three
+     * overwrites, the row under it never started, and the console cursor is parked at the window's right
+     * edge while the model keeps the column it really means. A renderer that clamped its own grid and left
+     * conhost's cursor a row down would paint the next chunk into a row the model says does not exist, which
+     * is the split this library's whole design exists to refuse.
+     */
+    private static void caseDecawm() {
+        /* Both rows are cleaned through the renderer first. caseWrap, which runs just above, leaves a 'Z'
+           at the first column of the row below its own -- precisely where "nothing wrapped" has to be read,
+           and the first run of this case failed on that leftover rather than on anything it sent. */
+        gotoRow(6);
+        paint("decawm clean head", "\u001b[K");
+        gotoRow(7);
+        paint("decawm clean tail", "\u001b[K");
+        gotoRow(6);
+        final String fill = line(BUF_W);
+        paint("decawm off", "\u001b[?7l" + fill + "XYZ");
+        long[] r = row(winT + 6);
+        boolean ok = r != null;
+        for (int i = 0; ok && i < BUF_W - 1; i++)
+            ok = (int) (r[i] & 0xFFFF) == fill.charAt(i) && (int) ((r[i] >>> 16) & 0xFFFF) == DEF;
+        gate("the row holds everything up to the margin", ok, "row " + (winT + 6));
+        cell("and the margin holds the last of three overwrites", winT + 6, BUF_W - 1, 'Z', DEF);
+        cell("the row below never started", winT + 7, 0, ' ', DEF);
+        long[] v = consoleView();
+        gate("the console cursor stays inside the window", v[5] == WIN_W - 1 && v[6] == winT + 6,
+                "(" + v[5] + "," + v[6] + ") winT=" + winT);
+        gate("so the window did not slide after it", v[1] == 0, "winL=" + v[1]);
+        long[] s = stats(handle);
+        gate("while the model still knows the line is at the buffer's last column",
+                s[10] == BUF_W - 1, "cx=" + s[10]);
+
+        /* DECSET 7 resumes the wrap from the next character. The fill is immediate and not pending, so the
+           character that reaches the margin is drawn there and only the one after it opens a row -- the
+           same four-discriminator fact I22 pins for the wrap-on case. */
+        paint("decawm on", "\u001b[?7hA");
+        cell("the overwrite lands in the margin", winT + 6, BUF_W - 1, 'A', DEF);
+        v = consoleView();
+        gate("and the cursor wrapped", v[5] == 0 && v[6] == winT + 7,
+                "(" + v[5] + "," + v[6] + ") winT=" + winT);
+        paint("decawm after wrap", "B");
+        cell("the next character starts the row", winT + 7, 0, 'B', DEF);
+        span("and that row is blank to the buffer edge", winT + 7, 1, BUF_W - 1, ' ', DEF);
+
+        gotoRow(6);
+        paint("decawm restore row", "\u001b[K");
+        gotoRow(7);
+        paint("decawm restore tail", "\u001b[K");
     }
 
     /**
@@ -2035,6 +2384,198 @@ public class Render {
         handle = outer;
     }
 
+    /**
+     * A keystroke is the one event that may move a window the user scrolled away from. Rule 2 forbids a
+     * flush from doing it, and conhost pairs that ban with {@code SnapOnInput}: a key-down makes the cursor
+     * visible again (input.cpp:171-178 -> screenInfo.cpp:1631-1666). The catch is that conhost fires that
+     * snap only for a console in VTP mode, and this renderer exists for consoles where VTP is off -- so the
+     * leg is ours or nobody's. {@code rc_snap_view} (Paint.cpp) decides, {@code snap} (RenderJni.cpp)
+     * executes one {@code SetConsoleCursorPosition}, and WinSysTerminal calls it on a key-down.
+     *
+     * <p>Four things are pinned here, one per way getting them wrong is damage rather than a cosmetic miss:
+     * <ul>
+     * <li>the target is the model's <em>cursor</em> row, not the buffer's last one -- the least displacement
+     * that reveals it. Aiming at the bottom instead would throw a user who had read one line of history past
+     * everything above the prompt, which is why {@code want < BUF_H - 1} is asserted: it is the gate that
+     * makes the two answers differ in the numbers, so a wrong implementation cannot pass by luck;</li>
+     * <li>a snap writes no cell. The rows it reveals are the ones this model painted, and everything above
+     * them is the user's scrollback, which has to come back byte-identical (the same {@code diffRows}
+     * witness caseScrollKeepsHistory uses);</li>
+     * <li>an invisible cursor means an application owns the screen, so a key must not drag the view under it
+     * mid-frame (conhost's own guard, screenInfo.cpp:1728-1733, and the same one in rc_snap_view);</li>
+     * <li>the displacement is least, and that is checkable as a number: the window returns to exactly the row
+     * it held before the scroll. "the prompt drifted again" is the sound of this being wrong by one.</li>
+     * </ul>
+     *
+     * <p>The enum below mirrors Paint.h's RC_SNAP_*, and the counter is asserted rather than only printed --
+     * a window sitting on the model's rows is equally explainable by a scroll from somewhere else, so
+     * nSnaps is the sole witness that the park actually reached the console.
+     */
+    private static void caseSnapOnInput() {
+        final int NOGEOM = 0, NOCHANGE = 1, PARK = 2;   /* Paint.h, in rc_snap_view's order */
+        final String PROMPT = "SQL > ready";
+        long outer = handle;                            /* the parked model: alive, and main() reports it */
+        handle = 0;
+        /* Order-independent, as every case here: the previous one left the console wide and 300 rows deep. */
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) == 0) {
+            gate("snap geometry", false, "setGeometry");
+            handle = outer;
+            return;
+        }
+        handle = open(BUF_W, WIN_H, DEF);
+        gate("a model with scrollback above it opened", handle != 0 && align(handle) == 1, null);
+        if (handle == 0) { handle = outer; return; }
+        flushQuietly();
+        paint("clean start", "\u001b[0m\u001b[2J\u001b[H");
+        winT = (int) consoleView()[0];
+
+        /* Enough history to drive the claim well down -- sixty lines is not: the first thirty fill the
+           viewport without sliding the window, and the model's own gutter swallows the next thirty, so the
+           claim ends at row 1 and there is no scrollback left to protect. A hundred puts the anchor past the
+           window's height, which is what makes "rows above the claim" a real band. And, unlike
+           caseScrollKeepsHistory, a prompt line with no trailing newline, because that is the state a
+           keystroke is typed into: the cursor parked on the model's last row, nothing owed. */
+        final int CHUNK = 20, NLINES = 100;
+        for (int i = 0; i < NLINES; i += CHUNK) {
+            final int last = Math.min(i + CHUNK, NLINES) - 1;
+            StringBuilder sb = new StringBuilder();
+            for (int k = i; k <= last; k++) sb.append("SNAP ").append(k).append(" - rows to scroll to\r\n");
+            paint("SNAP " + i + ".." + last, sb.toString());
+        }
+        paint("the prompt", PROMPT);
+
+        long[] v = consoleView();
+        winT = (int) v[0];
+        long[] s = stats(handle);
+        final int hist = (int) s[15];
+        final int base = winT - hist;                        /* the model's anchor, while the view is its own */
+        /* The row the prompt's ink is actually on, read off the buffer. That is the row a keystroke owes the
+           user, and taking it from the console rather than from plan() is what stops this case from agreeing
+           with a model that had simply recorded the wrong claim: the snap is judged against the ink. */
+        final int want = findRow(PROMPT, 0, BUF_H);
+        gate("the prompt was painted, in the rows the model claims", want >= base,
+                "want=" + want + " anchor=" + base + " gutter=" + hist);
+        gate("the window had slid down the buffer", winT > WIN_H, "winT=" + winT + " of " + BUF_H);
+        gate("the model claims rows the user can scroll up to", base > WIN_H,
+                "base=" + base + " gutter=" + hist);
+        gate("the prompt is the window's bottom row, so a keystroke here costs nothing",
+                want == winT + WIN_H - 1, "want=" + want + " winT=" + winT);
+        gate("and it is not the buffer's last row", want < BUF_H - 1,
+                "want=" + want + " of " + BUF_H + ": that equality is what would let a snap-to-bottom pass");
+        final int snaps0 = (int) s[S_SNAP];
+        gate("a keystroke with the prompt on screen answers NOCHANGE", snap(handle) == NOCHANGE, null);
+        v = consoleView();
+        gate("and moved nothing", v[0] == winT, "winT=" + v[0] + " was " + winT);
+        gate("counting no snap either", (int) stats(handle)[S_SNAP] == snaps0, "snaps=" + stats(handle)[S_SNAP]);
+
+        /* The user scrolls up to read what the session printed. setGeometry is the wheel: it leaves the
+           window at (0,0) and the console cursor with it, and tells the renderer nothing. */
+        long[][] was = new long[base][];
+        boolean readable = true;
+        for (int r = 0; r < base; r++) {
+            was[r] = row(r);
+            if (was[r] == null) readable = false;
+        }
+        gate("every scrollback row is readable", readable, "the diff below is worthless without this");
+        if (!readable) { close(handle); handle = outer; return; }
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) == 0) {
+            gate("the scroll", false, "setGeometry");
+            close(handle);
+            handle = outer;
+            return;
+        }
+        v = consoleView();
+        final int oldWinT = winT;
+        gate("the view is at the buffer's top now", v[0] == 0, "winT=" + v[0]);
+        gate("and the prompt the user is about to type at is below it", want > v[0] + WIN_H - 1,
+                "want=" + want + " winB=" + (v[0] + WIN_H - 1));
+        s = stats(handle);
+        final int cells = (int) s[5], aligns = (int) s[4], flushes = (int) s[0];
+        gate("the keystroke snaps", snap(handle) == PARK, null);
+        v = consoleView();
+        s = stats(handle);
+        gate("the window slid the least way that reveals the cursor's row",
+                v[0] + WIN_H - 1 == want, "winT=" + v[0] + " winB=" + (v[0] + WIN_H - 1) + " want=" + want);
+        gate("which is the row it was on before the scroll, so nothing drifted", v[0] == oldWinT,
+                "winT=" + v[0] + " was " + oldWinT);
+        gate("and the console cursor sits on that row", v[6] == want, "curY=" + v[6]);
+        StringBuilder why = new StringBuilder();
+        int changed = diffRows(was, 0, base, why);
+        gate("the snap wrote none of the " + base + " scrollback rows", changed == 0,
+                "changed=" + changed + why);
+        gate("painted no cell either", (int) s[5] == cells, "cells=" + (s[5] - cells));
+        gate("and did not re-adopt the console to do it", (int) s[4] == aligns, "aligns=" + s[4]);
+        gate("nor flushed anything", (int) s[0] == flushes, "flushes=" + s[0]);
+        gate("exactly one snap was counted", (int) s[S_SNAP] == snaps0 + 1, "snaps=" + s[S_SNAP]);
+        gate("nothing was declined on the way", s[2] == 0, "declines=" + s[2]);
+        gate("and no console call failed", s[3] == 0, "apiErrors=" + s[3]);
+
+        /* Once the view has the row, a keystroke owes nothing again -- and this is the leg that keeps the
+           next dozen keys from calling SetConsoleCursorPosition over a view that is already right. */
+        gate("a second keystroke answers NOCHANGE", snap(handle) == NOCHANGE, null);
+        v = consoleView();
+        gate("with the window still where the first put it", v[0] == oldWinT, "winT=" + v[0]);
+        gate("and still one snap in total", (int) stats(handle)[S_SNAP] == snaps0 + 1,
+                "snaps=" + stats(handle)[S_SNAP]);
+
+        /* ---- an application owns the screen now: a key must not move the view -------------------------
+         * `?25l` is how vim, less and every alternate-screen program says so, and conhost reads the same
+         * meaning (screenInfo.cpp:1728-1733). Without this guard a keystroke mid-repaint would slide the
+         * window under a cursor the program had deliberately hidden, which is damage to a screen the
+         * renderer is not painting. */
+        paint("a program hides the cursor", "\u001b[?25l");
+        v = consoleView();
+        gate("the console's cursor is invisible now", v[7] == 0, "cursorOn=" + v[7]);
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) == 0) {
+            gate("the scroll away from a hidden cursor", false, "setGeometry");
+            close(handle);
+            handle = outer;
+            return;
+        }
+        v = consoleView();
+        gate("the user has scrolled up from the program's screen", v[0] == 0, "winT=" + v[0]);
+        gate("so a keystroke refuses to move the view", snap(handle) == NOCHANGE, null);
+        v = consoleView();
+        gate("the window stayed at the buffer's top", v[0] == 0, "winT=" + v[0]);
+        gate("and no snap was counted for it", (int) stats(handle)[S_SNAP] == snaps0 + 1,
+                "snaps=" + stats(handle)[S_SNAP]);
+        gate("the scrollback is still byte-identical through all of it",
+                diffRows(was, 0, base, why) == 0, why.length() > 0 ? why.toString() : null);
+        why.setLength(0);
+
+        /* And the guard is a state, not a verdict for the rest of the session: the program gives the cursor
+           back, the model knows it (Render.cpp keeps `cursorVisible` from `?25h`), and the very next key
+           snaps again. A leg that latched the refusal would leave this user's prompt out of view forever. */
+        paint("the program gives the cursor back", "\u001b[?25h");
+        v = consoleView();
+        gate("the console's cursor is visible again", v[7] == 1, "cursorOn=" + v[7]);
+        gate("and the next keystroke snaps", snap(handle) == PARK, null);
+        v = consoleView();
+        gate("onto the prompt's row, at least displacement", v[0] + WIN_H - 1 == want,
+                "winT=" + v[0] + " want=" + want);
+        s = stats(handle);
+        gate("two snaps counted in this session", (int) s[S_SNAP] == snaps0 + 2, "snaps=" + s[S_SNAP]);
+        changed = diffRows(was, 0, base, why);
+        gate("still no cell written by either", changed == 0, "changed=" + changed + why);
+        why.setLength(0);
+        gate("and the console never refused a call", s[3] == 0, "apiErrors=" + s[3]);
+        System.out.println("  snap-on-input: window 0 -> " + v[0] + " twice, prompt row " + want
+                + " of " + BUF_H + ", " + base + " scrollback rows intact");
+
+        /* The last answer a snap can give, and the one a caller must not act on: the window is no longer the
+           model's shape, so the row it would park to means something else on that console. render() reaches
+           the same NOGEOM through rc_plan_paint and heals it by re-adopting; the key path has nothing to
+           heal, because the next flush re-derives the view from the console anyway. */
+        if (setGeometry(BUF_W, BUF_H, WIN_W, 24, DEF) == 0) {
+            gate("the geometry for the shape-refusal leg", false, "setGeometry");
+        } else {
+            gate("a window that is not the model's shape answers NOGEOM", snap(handle) == NOGEOM, null);
+        }
+
+        close(handle);
+        handle = outer;
+    }
+
     /* open() refusing a console is a contract with the caller, and the number it leaves in openStatus()
        is the whole of it: NativeRenderer keeps the shipped Java writer on any 0, and its report line
        names the reason a rollout reads. Four of the five codes are reachable from explicit arguments, so
@@ -2127,5 +2668,347 @@ public class Render {
         }
         for (int i = 1; i < heldN; i++) close(held[i]);
         handle = outer;
+    }
+
+    /**
+     * #44: a plan that landed part of itself and then had a run refused.
+     *
+     * The defect was in the tail of the flush, not in the failure: `rc_paint_done(g)` clears the whole dirty
+     * array whatever happened to the runs, so a refusal left the model claiming rows it had never written,
+     * and its next frame contained them not. Nothing on screen distinguishes that from a chunk nobody ever
+     * asked for -- it shows only in what the *following* flush decides to paint. So this leg's job is to
+     * make a real WriteConsoleOutputW fail in the middle of a plan, which no console state can be talked
+     * into, and then read the next flush's cells.
+     *
+     * It runs on its own handle, last in the list, and restores the wide shape the case before it left:
+     * the session handle's counters are asserted by the census at the end of main(), and an armed fault in
+     * that handle would read as a console call that failed and was papered over -- which is the very thing
+     * the census forbids.
+     */
+    private static void casePartialPaintFailure() {
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) == 0) {
+            gate("standard geometry for the fault leg", false, "setGeometry");
+            return;
+        }
+        long h = open(BUF_W, WIN_H, DEF);
+        if (h == 0) { gate("a second model for the fault", false, "open=" + h); return; }
+        align(h);
+        final char[] clear = "\u001b[0m\u001b[2J\u001b[H".toCharArray();
+        feed(h, clear, 0, clear.length);
+        flush(h);
+        NativeRenderer.sgr(h);
+        final int top = (int) consoleView()[0];
+
+        /* Two rows, far apart: a run is one rectangle of consecutive rows, so one chunk that damages rows
+           2 and 11 is the smallest plan with a middle to fail in. FIRST is the run that must land, SECOND
+           the one that must not. */
+        final char[] chunk = "\u001b[3;1HFIRST\u001b[12;1HSECOND".toCharArray();
+        long[] a = stats(h);
+        gate("the fault arms on the plan's second run", faultRect(h, 1) == 1, "armed=" + faultRect(h, 1));
+        feed(h, chunk, 0, chunk.length);
+        int r = flush(h);
+        NativeRenderer.sgr(h);
+        long[] b = stats(h);
+        gate("a flush that landed one run is still accepted", r == 0, "flush=" + r);
+        gate("the refused run is counted as the console call it was", b[3] - a[3] == 1,
+                "apiErrors=" + (b[3] - a[3]));
+        long[] pl = plan(h);
+        gate("the plan really did have two runs", pl[15] == 2, "runs=" + pl[15]
+                + ": one run would make this a whole failure, not a partial one");
+        text("the run that landed is on the console", top + 2, 0, "FIRST", DEF);
+        cell("and the run after it is not", top + 11, 0, ' ', DEF);
+
+        /* The witness. rc_paint_done ran, so a model that stopped here believes row 11 holds SECOND; the fix
+           is the rc_drop_base that follows it, which re-marks every row and so puts row 11 back in the *next*
+           plan. Without the drop, a chunk about somewhere else entirely paints row 19 and row 11 stays blank
+           for the rest of the session -- and a cell read taken now, not later, is the only thing that can
+           tell those two apart. */
+        a = b;
+        final char[] one = "\u001b[20;1HZ".toCharArray();
+        feed(h, one, 0, one.length);
+        gate("the next chunk is accepted", flush(h) == 0, null);
+        NativeRenderer.sgr(h);
+        b = stats(h);
+        pl = plan(h);
+        text("the row the refusal stranded came back unprompted", top + 11, 0, "SECOND", DEF);
+        cell("with the character this chunk actually asked for", top + 19, 0, 'Z', DEF);
+        gate("and it cost no second console failure", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+        gate("the fault was one-shot: nothing is armed now", faultRect(h, -1) == -1,
+                "armed=" + faultRect(h, -1));
+        close(h);
+    }
+
+    /**
+     * HPR ({@code CSI a}) and VPR ({@code CSI e}) on a real screen. ConEmu has no case for either final --
+     * they reach its {@code default:} and DumpUnknownEscape -- so on the fallback leg these bytes move
+     * nothing at all, which is exactly the state a cell witness can tell apart from "parsed and obeyed".
+     * The leg that matters is the pair on the region's bottom row: CUD is clipped there by DECSTBM and VPR
+     * walks straight past it, the one behavioural difference MSFT spells out in the comment on each
+     * ("Unlike CUD, this is not constrained by margin settings", adaptDispatch.cpp:427/:437).
+     */
+    private static void caseRelativeCursor() {
+        /* DECSTBM at rows 13..16 and both moves measured from inside the viewport: on whatever shape an
+           earlier case ended on -- caseNoScrollback leaves a window with no room to slide, and a window
+           shorter than row 16 makes every one of these rows land outside it -- winT + 15 is not a row the
+           screen has, and the leg reports a geometry problem as a motion problem. */
+        if (!standardGeometry("the relative-motion leg")) return;
+        final long[] a = stats(handle);
+        /* A region of model rows 12..15, and the cursor on its bottom row. Everything below starts there, so
+           the two moves are the same distance from the same place and only the margin rule differs. */
+        paint("a region and its bottom row", "\u001b[0m\u001b[13;16r\u001b[16;1H");
+        long[] v = consoleView();
+        gate("the region put the cursor on its bottom row", v[5] == 0 && v[6] == winT + 15,
+                "(" + v[5] + "," + v[6] + ") winT=" + winT);
+        paint("CUD is clipped by the region", "\u001b[BX");
+        text("the clipped CUD printed on the region's bottom row", winT + 15, 0, "X", DEF);
+        paint("VPR walks past it", "\u001b[2eY");
+        /* VPR is vertical only: it carries the column with it, and X had left the cursor on column 1. So Y
+           lands on column 1 of the row two past the region's bottom -- the row CUD could not reach, at a column
+           VPR did not touch. Both halves of that claim are on the screen, and a horizontal move would have
+           written at column 0. */
+        text("the row below the region holds VPR's character", winT + 17, 1, "Y", DEF);
+        cell("in the column the cursor was already in", winT + 17, 0, ' ', DEF);
+        cell("and the row the region ended on is untouched", winT + 16, 0, ' ', DEF);
+        paint("HPR", "\u001b[5aZ");
+        text("HPR moved the column on the same row", winT + 17, 7, "Z", DEF);
+        cell("leaving the cells it stepped over alone", winT + 17, 6, ' ', DEF);
+        cell("from the very first of them", winT + 17, 3, ' ', DEF);
+        v = consoleView();
+        gate("the cursor is where the two moves say it is", v[5] == 8 && v[6] == winT + 17,
+                "(" + v[5] + "," + v[6] + ") want (8," + (winT + 17) + ")");
+        paint("both clamp to the viewport", "\u001b[999e\u001b[999a");
+        v = consoleView();
+        gate("VPR stops at the last row, HPR at the last column",
+                v[5] == WIN_W - 1 && v[6] == winT + WIN_H - 1,
+                "(" + v[5] + "," + v[6] + ") want (" + (WIN_W - 1) + "," + (winT + WIN_H - 1) + ")");
+        final long[] b = stats(handle);
+        /* The census is what distinguishes this from a silent regression elsewhere: an unmodelled final would
+           have shown up here as two more counts, and the whole point of implementing the pair is that it is
+           no longer one. */
+        gate("neither final is counted as unsupported", b[S_UN] - a[S_UN] == 0,
+                "RC_UN_SUP +" + (b[S_UN] - a[S_UN]));
+        gate("and nothing was declined on their account", b[2] - a[2] == 0, "declines +" + (b[2] - a[2]));
+        paint("region back to the whole viewport", "\u001b[r");
+    }
+
+    /**
+     * DECSET 2026 -- the synchronized region, on the console rather than in the model. The claim being
+     * witnessed is not "the bit flipped" (the host gate has that) but that a region costs the screen
+     * <em>nothing</em> until it closes, and then exactly one paint for everything inside it. jline4's
+     * {@code Display} wraps every full-screen update in BSU/ESU, so "rectangle count 0 during the region" is
+     * the difference between a table that arrives in one frame and one that flickers into existence.
+     * <p>
+     * The timeout leg is the safety valve, and the only one that can be driven from a test: an application
+     * that dies between its BSU and its ESU must leave a terminal that keeps updating.
+     */
+    private static void caseSyncOutput() {
+        /* The console this case needs is one with scrollback: a region that cannot slide its window is a region
+           where the gutter valve fires on every frame, and the legs below are about deferral, not pressure. The
+           earlier cases leave whatever shape they ended on, so this takes its own -- see caseNoScrollback. */
+        if (!standardGeometry("the synchronized-region leg")) return;
+        long[] a = stats(handle);
+        paint("BSU on its own", "\u001b[0m\u001b[?2026h");
+        long[] b = stats(handle);
+        gate("the region is open", b[S_SYNC_ON] == 1, "sync=" + b[S_SYNC_ON]);
+        gate("and counted as one region", b[S_SYNC_ENGAGES] - a[S_SYNC_ENGAGES] == 1,
+                "engages=" + (b[S_SYNC_ENGAGES] - a[S_SYNC_ENGAGES]));
+        /* A chunk that only moves state has no plan to hold, and counting it as a held frame would make the
+           census claim deferred pictures that were never candidates for one. */
+        gate("but a chunk with nothing to paint is not held", b[S_SYNC_HELD] - a[S_SYNC_HELD] == 0,
+                "held=" + (b[S_SYNC_HELD] - a[S_SYNC_HELD]));
+        gate("and the console saw no rectangle either", b[1] - a[1] == 0, "rects=" + (b[1] - a[1]));
+
+        paint("a second BSU inside it", "\u001b[?2026h");
+        b = stats(handle);
+        gate("does not stack a region", b[S_SYNC_ON] == 1 && b[S_SYNC_ENGAGES] - a[S_SYNC_ENGAGES] == 1,
+                "engages=" + (b[S_SYNC_ENGAGES] - a[S_SYNC_ENGAGES]));
+        gate("but is counted as the nesting it was", b[S_SYNC_NESTED] - a[S_SYNC_NESTED] == 1,
+                "nested=" + (b[S_SYNC_NESTED] - a[S_SYNC_NESTED]));
+
+        /* Close what the state legs opened, and time the console while it is shut: a probe inside a region
+           measures a held flush, which costs the console nothing, and the number would be a lie about the
+           host. The leg below is the only one in this case whose claim depends on wall-clock time. */
+        paint("end the state legs' region", "\u001b[?2026l");
+        final long cost = chunkCostMs();
+        /* SYNC_CLOCK_MS is Render.h's RC_SYNC_TIMEOUT_MS, and the clock starts on the region's first held
+           flush, so a second chunk that has to be held as well must arrive inside the remaining window. Two
+           chunks' worth of cost leaves the leg no margin on a console slower than that, and there the honest
+           version of the claim is the one chunk it can still witness. */
+        final int nhold = 2 * cost < SYNC_CLOCK_MS ? 2 : 1;
+        if (nhold == 1) {
+            System.out.println("  one-chunk hold leg: a chunk costs " + cost + "ms on this console"
+                    + " and the region's clock is " + SYNC_CLOCK_MS + "ms");
+        }
+        a = stats(handle);
+        paint("a region and its first row", "\u001b[0m\u001b[?2026h\u001b[21;1HHELD-A");
+        if (nhold == 2) paint("and its second row", "\u001b[23;1HHELD-B");
+        b = stats(handle);
+        gate("every chunk of the region was held", b[S_SYNC_HELD] - a[S_SYNC_HELD] == nhold,
+                "held=" + (b[S_SYNC_HELD] - a[S_SYNC_HELD]) + " want " + nhold);
+        gate("and none of it reached the console", b[1] - a[1] == 0, "rects=" + (b[1] - a[1]));
+        cell("the screen still does not have the first row", winT + 20, 0, ' ', DEF);
+        if (nhold == 2) cell("nor the second", winT + 22, 0, ' ', DEF);
+
+        paint("ESU", "\u001b[?2026l");
+        b = stats(handle);
+        text("the row arrives on the flush that closed the region", winT + 20, 0, "HELD-A", DEF);
+        if (nhold == 2) text("the second one with it", winT + 22, 0, "HELD-B", DEF);
+        /* One flush for the whole region, and one rectangle per row it held -- the rows did not arrive as
+           they were written. That is the difference between a table in one frame and a table flickering into
+           existence, which is the reason the mode exists. */
+        gate("in one paint, not one per chunk", b[1] - a[1] == nhold, "rects=" + (b[1] - a[1]));
+        gate("and the region is closed", b[S_SYNC_ON] == 0, "sync=" + b[S_SYNC_ON]);
+        gate("no timeout was needed for any of it", b[S_SYNC_TIMEOUT] - a[S_SYNC_TIMEOUT] == 0,
+                "timeouts=" + (b[S_SYNC_TIMEOUT] - a[S_SYNC_TIMEOUT]));
+
+        /* A BSU with no ESU. The release is the *next* flush after the clock runs out, which is also the only
+           clock this seam has -- so the leg sleeps, then asks for a frame, and expects that frame to carry
+           the row that was sitting in the model. */
+        a = stats(handle);
+        paint("a region nobody closes", "\u001b[?2026h\u001b[25;1HLEAKED");
+        b = stats(handle);
+        gate("its row is held", b[S_SYNC_HELD] - a[S_SYNC_HELD] == 1 && b[S_SYNC_ON] == 1,
+                "held=" + (b[S_SYNC_HELD] - a[S_SYNC_HELD]) + " sync=" + b[S_SYNC_ON]);
+        cell("and not on the screen", winT + 24, 0, ' ', DEF);
+        /* Past Render.h's RC_SYNC_TIMEOUT_MS (100), which this gate cannot read from Java. A leg that slept
+           half as long would be asserting that the timeout is *at least* this big, not that it fired. */
+        sleep(200);
+        paint("a later chunk, past the timeout", "\u001b[26;1HLATER");
+        b = stats(handle);
+        text("the leaked row painted with it", winT + 24, 0, "LEAKED", DEF);
+        text("and so did the one that broke the wait", winT + 25, 0, "LATER", DEF);
+        gate("the timeout fired once", b[S_SYNC_TIMEOUT] - a[S_SYNC_TIMEOUT] == 1,
+                "timeouts=" + (b[S_SYNC_TIMEOUT] - a[S_SYNC_TIMEOUT]));
+        gate("and it cleared the mode, so the next frame is not held too", b[S_SYNC_ON] == 0,
+                "sync=" + b[S_SYNC_ON]);
+
+        /* A query asked inside a region. Its answer belongs to the reader, and a terminal that held replies
+           with the picture would hang the program that is waiting for one -- so this is the leg that proves
+           the hold is about the screen and not about the flush. */
+        a = stats(handle);
+        readInput(0);                                 /* the CPR below is the only thing in this queue */
+        paint("a CPR inside a region", "\u001b[0m\u001b[?2026h\u001b[28;1H\u001b[6n\u001b[28;14HPAID");
+        final String got = input(64);
+        b = stats(handle);
+        gate("the reply came while the picture was held",
+                got.contains("\u001b[28;1R") && b[S_SYNC_HELD] - a[S_SYNC_HELD] >= 1,
+                "got=" + vis(got) + " held=" + (b[S_SYNC_HELD] - a[S_SYNC_HELD]));
+        cell("and the row is still off screen", winT + 27, 13, ' ', DEF);
+        paint("close it", "\u001b[?2026l");
+        text("the region's text lands when it closes", winT + 27, 13, "PAID", DEF);
+    }
+
+    /**
+     * The hold's capacity limit, which is the console's and not the region's. A synchronized region defers
+     * paints while the model keeps scrolling, and the console follows a scrolling model by sliding its window
+     * up its own buffer -- {@code rows - winRows} rows of slide, and then no more. Past that the console has to
+     * scroll for real, which throws away its top row, and a frame that was never painted cannot be recovered
+     * from anywhere. So scroll_up's own relief valve outranks the mode, and this case is the witness that it
+     * does: a region longer than the gutter has to put pictures on the screen <em>before</em> its ESU.
+     * <p>
+     * The gutter is not a number this case invents -- {@code plan()[11] - plan()[12]} is the model's own, and
+     * the model's is one viewport, because that is what {@code open()} gives it (RenderJni.cpp, "a gutter as
+     * tall as the viewport"). On the standard geometry that is 30 rows, so the leg runs 72 lines and expects
+     * the valve two chunks in.
+     * <p>
+     * Asserting on the counter alone would not be enough — {@code overflow > 0} is a claim about the model's
+     * arithmetic. The claim about the console is that the newest line of the chunk which forced a paint is
+     * inside the window at that moment, and it is checked on every forced paint rather than inferred at the end.
+     */
+    private static void caseSyncOverflow() {
+        if (!standardGeometry("the gutter-pressure leg")) return;
+        paint("a clean viewport, no region", "\u001b[0m\u001b[?2026l\u001b[2J\u001b[H");
+        long[] pl = plan(handle);
+        final int winRows = (int) pl[12];
+        final int gutter = (int) (pl[11] - pl[12]);
+        if (gutter <= 0) {
+            System.out.println("  skip the gutter-pressure leg: this model has no room to slide into");
+            return;
+        }
+        /* One line per model row, plus the window's own height to get the cursor to the bottom before the
+           first scroll: that is where pendingScrolls reaches the gutter from a fresh viewport. The margin past
+           it is what makes the leg repeat the thing being tested rather than hit it once. */
+        final int nlines = gutter + winRows + 12;
+        final long[] a = stats(handle);
+        int paintedDuring = 0;                    /* chunks that painted with the mode open */
+        for (int i = 0; i < nlines; i += 20) {
+            final int last = Math.min(i + 20, nlines) - 1;
+            StringBuilder sb = new StringBuilder(i == 0 ? "\u001b[0m\u001b[?2026h" : "");
+            for (int k = i; k <= last; k++) sb.append(rowTag(k)).append("\r\n");
+            final long[] s = stats(handle);
+            final int open = (int) s[S_SYNC_ON];
+            final long rects = s[1];
+            paint("region lines " + i + ".." + last, sb.toString());
+            if (open == 1 && stats(handle)[1] > rects) paintedDuring++;
+        }
+        long[] b = stats(handle);
+        final long over = b[S_SYNC_OVERFLOW] - a[S_SYNC_OVERFLOW];
+        final long blew = b[S_SYNC_TIMEOUT] - a[S_SYNC_TIMEOUT];
+        /* The counter is the claim about the model's arithmetic; this is the claim about the console: the
+           screen changed while the region was still open. Without the valve the whole region would be one held
+           frame and every one of these chunks would have painted nothing. */
+        gate("the gutter forced frames before the ESU", paintedDuring >= 1,
+                "paintedChunks=" + paintedDuring + " over " + nlines + " lines and a " + gutter + "-row gutter");
+        gate("and some chunks really were deferred", b[S_SYNC_HELD] - a[S_SYNC_HELD] >= 1,
+                "held=" + (b[S_SYNC_HELD] - a[S_SYNC_HELD]));
+        /* Every frame the region lost is explained by one of the two hatches, and the two are mutually
+           exclusive in the flush that produces them -- a full gutter is not also a timed-out clock. A chunk
+           that painted for a third reason while the mode was open is a bug this catches; a chunk that painted
+           after the clock ended the region is not counted at all, which is why the tally is over the chunks
+           that started with the mode on. */
+        gate("each one was the valve or the clock, and only once", over + blew == paintedDuring,
+                "overflow=" + over + " timeout=" + blew + " painted=" + paintedDuring);
+        gate("the valve fired at least once", over >= 1,
+                "overflow=" + over + " painted=" + paintedDuring);
+        /* The distinction between the two hatches, stated on the console: filling the gutter paints this
+           frame and leaves the region open, while the clock is the release of a region nobody closed and it
+           clears the mode. Only the second can explain the region being shut here. */
+        gate("a frame lost to the gutter does not end the region", b[S_SYNC_ON] == 1 || blew >= 1,
+                "sync=" + b[S_SYNC_ON] + " overflow=" + over + " timeout=" + blew);
+        final long rectsAtClose = b[1];
+        paint("close it", "\u001b[?2026l");
+        b = stats(handle);
+        gate("the ESU found nothing left to defer", b[S_SYNC_ON] == 0, "sync=" + b[S_SYNC_ON]);
+        gate("and no console call failed on the way", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+
+        /* The convergence claim, and the one that would be lost if the valve had swallowed a scroll: every row
+           the window shows is a row of this region's output, in order, with no gap. Reading the last line and
+           then walking up from it is deliberate -- findRow gives the row the console really put it on, so the
+           walk checks the window's own geometry rather than a row number this test computed. */
+        pl = plan(handle);
+        final int at = findRow(rowTag(nlines - 1), winT, winT + (int) pl[12]);
+        gate("the region's last line is on the screen", at >= 0,
+                "want " + rowTag(nlines - 1) + " in rows " + winT + ".." + (winT + (int) pl[12]));
+        if (at >= 0) {
+            for (int k = 1; k < winRows - 1 && nlines - 1 - k >= 0; k++)
+                text("row " + k + " above it is the line before", at - k, 0, rowTag(nlines - 1 - k), DEF);
+        }
+    }
+
+    /** The region lines of {@link #caseSyncOverflow}, fixed-width so no two of them share a prefix. */
+    private static String rowTag(int i) {
+        return "OVERFLOW-" + (i < 10 ? "000" : i < 100 ? "00" : i < 1000 ? "0" : "") + i;
+    }
+
+    /**
+     * Put the console back at the shape the gate opened with and hand {@code handle} a model that matches it,
+     * blanking the viewport so a case that reads cells does not have to know what the previous one left there.
+     * Returns false -- having said so -- when the geometry cannot be had, which is the only way a leg can be
+     * skipped rather than silently wrong.
+     */
+    private static boolean standardGeometry(String what) {
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) == 0) {
+            gate(what + ": standard geometry", false, "setGeometry");
+            return false;
+        }
+        final long outer = handle;
+        handle = open(BUF_W, WIN_H, DEF);
+        gate(what + ": a model over the standard window", handle != 0 && align(handle) == 1, null);
+        if (handle == 0) { handle = outer; return false; }
+        close(outer);
+        flushQuietly();
+        paint(what + ": blank start", "\u001b[0m\u001b[2J\u001b[H");
+        winT = (int) consoleView()[0];
+        return true;
     }
 }

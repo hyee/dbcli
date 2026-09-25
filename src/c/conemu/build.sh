@@ -51,6 +51,17 @@
 #   -D_WIN32_WINNT=0x0601 is the Win7 floor this library supports; the API whitelist check below enforces
 #     that nothing Win8+ crept in (same rule src/c/jnlua/build.sh applies).
 #   * JNI headers come from the JDK of the matching bitness (jni.h + include/win32/jni_md.h).
+#   * TC_X86/OD_X86/ST_X86 and TC_X64/OD_X64/ST_X64 override the toolchain names, which is what lets the
+#     same script run under a WSL cross toolchain (the defaults) or under a native MSYS2 install
+#     (TC_X86=/mingw32/bin/i686-w64-mingw32-g++, TC_X64=/mingw64/bin/x86_64-w64-mingw32-g++). Nothing else
+#     about the build differs between the two, and the live gate is the arbiter of that claim.
+#     MEASURED 2026-09-25, and the answer is that WSL stays the default: the same script end to end is
+#     40 s under WSL and 58 s under MSYS2, and MSYS2 additionally cannot run the two host gates -- they
+#     are Linux binaries by design (no wine on this box), so `out/colorcheck` is an Exec format error and
+#     the mingw build names them `*.exe`. WSL's own startup is only ~1 s of the 40, and the colour oracle
+#     is ~8 s of it (--no-colorcheck), so the rest is compiling four translation units twice plus the
+#     0x110000-code-point width cross-check. If a faster loop is ever needed, that is where to look --
+#     not at the toolchain, which has now been checked.
 #   * The runnable half of ColorCheck and all of RenderCheck are HOST builds (clang++ here): there is
 #     no wine on this box, so a Windows binary could be built but not executed. Four typedefs are the
 #     whole price for ColorCheck; Render.cpp needs none, which is why the model is console-free.
@@ -150,8 +161,8 @@ strip_debug() {  # $1 strip tool  $2 dll  $3 "plat:tag"  -> appends FAILED
 
 for plat in x86 x64; do
   case $plat in
-    x86) TC=i686-w64-mingw32-g++  OD=i686-w64-mingw32-objdump  ST=i686-w64-mingw32-strip  JDK="$JDK_X86"; KILLAT="-Wl,--kill-at" ;;
-    x64) TC=x86_64-w64-mingw32-g++ OD=x86_64-w64-mingw32-objdump ST=x86_64-w64-mingw32-strip JDK="$JDK_X64"; KILLAT="" ;;
+    x86) TC=${TC_X86:-i686-w64-mingw32-g++}   OD=${OD_X86:-i686-w64-mingw32-objdump} ST=${ST_X86:-i686-w64-mingw32-strip} JDK="$JDK_X86"; KILLAT="-Wl,--kill-at" ;;
+    x64) TC=${TC_X64:-x86_64-w64-mingw32-g++} OD=${OD_X64:-x86_64-w64-mingw32-objdump} ST=${ST_X64:-x86_64-w64-mingw32-strip} JDK="$JDK_X64"; KILLAT="" ;;
   esac
   command -v "$TC" >/dev/null 2>&1 || { printf '%s: %s not installed\n' "$plat" "$TC" >&2; FAILED="$FAILED $plat:toolchain"; continue; }
   [ -f "$JDK/include/jni.h" ] || { printf '%s: JNI headers not found under %s\n' "$plat" "$JDK" >&2; FAILED="$FAILED $plat:jni-headers"; continue; }
@@ -191,8 +202,14 @@ for plat in x86 x64; do
        Java_com_hyee_ansirender_NativeRenderer_flush Java_com_hyee_ansirender_NativeRenderer_sgr \
        Java_com_hyee_ansirender_NativeRenderer_align Java_com_hyee_ansirender_NativeRenderer_stats \
        Java_com_hyee_ansirender_NativeRenderer_stopReason Java_com_hyee_ansirender_NativeRenderer_close \
+       Java_com_hyee_ansirender_NativeRenderer_snap \
+       Java_com_hyee_ansirender_NativeRenderer_isPseudoConsole \
+       Java_com_hyee_ansirender_NativeRenderer_taskbar0 \
+       Java_com_hyee_ansirender_NativeRenderer_workingDirectory0 \
        Java_Render_prepareConsole Java_Render_setGeometry Java_Render_readCells \
-       Java_Render_consoleView Java_Render_readInput Java_Render_readopt Java_Render_plan" render
+       Java_Render_consoleView Java_Render_readInput Java_Render_readopt Java_Render_plan \
+       Java_Render_faultRect Java_Render_consoleTitle Java_Render_consolePalette \
+       Java_Render_censusNames" render
 done
 
 # ---- host gates: the colour oracle, then the model -------------------------------------------

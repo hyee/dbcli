@@ -70,13 +70,18 @@ static const uint16_t G0_DRAWING[31] = {
  *
  * attr{} is zero-initialised upstream, so every "|=" there is an "=" here.
  */
-uint16_t rc_attr(const RcSgr *s, uint16_t defAttr)
+/* Console attribute -> the index rc_attr's 4-bit paths expect. ClrMap is an involution, so this is the same
+   table read the other way and the pair is an identity for all sixteen values. */
+static int attr_to_index(int attr)
 {
+  return (int)(ClrMap[attr & 7] | (attr & 8));
+}
+
+uint16_t rc_attr(const RcGrid *g, const RcSgr *s)
+{
+  const uint32_t *pal = g->palette;   /* 256-colour indices the application may have rewritten (I34) */
   DWORD fg, bg;
   int fg24 = 0, bg24 = 0;
-
-  (void)defAttr;   /* the default is folded in at Reset()/SGR 39/49 time, exactly like ConEmu's
-                      CONFORECOLOR(GetDefaultTextAttr()), not here. */
 
   if (s->fgKind)
   {
@@ -84,7 +89,7 @@ uint16_t rc_attr(const RcSgr *s, uint16_t defAttr)
     else
     {
       if (s->fg > 15) fg24 = 1;
-      fg = RgbMap[((DWORD)s->fg) & 0xFF];
+      fg = pal[((DWORD)s->fg) & 0xFF];
     }
   }
   else if (s->fg & 0x8)
@@ -104,7 +109,7 @@ uint16_t rc_attr(const RcSgr *s, uint16_t defAttr)
     else
     {
       if (s->bg > 15) bg24 = 1;
-      bg = RgbMap[((DWORD)s->bg) & 0xFF];
+      bg = pal[((DWORD)s->bg) & 0xFF];
     }
   }
   else if (s->bg & 0x8)
@@ -121,7 +126,10 @@ uint16_t rc_attr(const RcSgr *s, uint16_t defAttr)
   if (fg24)
   {
     nForeColor = fg & 0xFFFFFF;
-    Far3Color::Color2FgIndex(nForeColor, n);
+    /* The live palette is handed to the fold, and the vendored helper's memo has to be told about it:
+       `static LastColor/LastIndex` caches the previous answer by colour alone, so without the guard a colour
+       folded before an OSC 4 keeps folding to the index it had before the change. */
+    Far3Color::Color2FgIndex(nForeColor, n, (const COLORREF*)g->pal16);
   }
   else
   {
@@ -132,7 +140,7 @@ uint16_t rc_attr(const RcSgr *s, uint16_t defAttr)
   {
     DWORD nBackColor = bg & 0xFFFFFF;
     /* Equal is passed upstream but never read inside Color2BgIndex; kept for fidelity. */
-    Far3Color::Color2BgIndex(nBackColor, nBackColor == nForeColor ? TRUE : FALSE, n);
+    Far3Color::Color2BgIndex(nBackColor, nBackColor == nForeColor ? TRUE : FALSE, n, (const COLORREF*)g->pal16);
   }
   else
   {
@@ -511,6 +519,24 @@ static void newline(RcGrid *g)
   line_down(g);
 }
 
+/* One cell back to the pen, with no erase of its own and no claim taken off the row. The wrap rules below
+   need it twice: "this glyph was not drawn, so nothing may stand here". */
+static void blank_cell(RcGrid *g, int row, int col)
+{
+  if (row < 0 || row >= g->rows || col < 0 || col >= g->cols) return;
+  g->cells[row][col].ch = ' ';
+  g->cells[row][col].attr = g->attr;
+  mark_dirty(g, row, col, col);
+}
+
+/* The column a cursor pinned at the right margin rests on, off a wide glyph's back half. `step_back_col`
+   is the same rule and cannot be reused: it works from the current cursor. */
+static int last_free_col(const RcGrid *g, int row, int col)
+{
+  if (col > 0 && (g->cells[row][col].attr & RC_LVB_TRAILING)) col--;
+  return col < 0 ? 0 : col;
+}
+
 static void put_cell(RcGrid *g, uint16_t ch, int w)
 {
   if (w <= 0) return;            /* Mn/Me/Cf and the C0 range contribute no cell */
@@ -518,6 +544,18 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
 
   if (g->cx + w > g->cols)
   {
+    if (!g->wrapMode)
+    {
+      /* DECAWM off: the margin ends the line, so a 2-column glyph with one column left is not drawn at
+         all. Both references drop it whole rather than split it -- MSFT clears the cell it could not fit
+         (`Row.cpp:474-481`, "Ignore the character. There's no correct alternative way to handle this
+         situation") and its anti-deadlock guard names the same case for wrap off
+         (MSFT_TERMINAL_REFERENCE.md section 2.1). Clearing that cell, rather than leaving whatever was there
+         before, is what keeps the row honest: the glyph is gone, and a stale character would read as
+         content the application never sent. */
+      if (w == 2) blank_cell(g, g->cy, g->cx);
+      return;
+    }
     /* conhost with ENABLE_WRAP_AT_EOL moves to the next row the moment the last column is filled,
        so a 2-column glyph that does not fit starts the next row whole (JLine's columnSplitLength
        agrees). The shipped Java writer declines this case and hands it to ConEmuHk instead; here it
@@ -530,6 +568,9 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
     line_down(g);
   }
 
+  if (w == 1 && (g->cells[g->cy][g->cx].attr & RC_LVB_LEADING))
+    blank_cell(g, g->cy, g->cx + 1);   /* the pair is a unit (I16): overwrite its front and the back is
+                                          no longer anybody's glyph */
   g->cells[g->cy][g->cx].ch = ch;
   g->cells[g->cy][g->cx].attr = (uint16_t)(g->attr | (w == 2 ? RC_LVB_LEADING : 0));
   if (w == 2)
@@ -543,6 +584,14 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
 
   if (g->cx >= g->cols)
   {
+    if (!g->wrapMode)
+    {
+      /* Held at the margin, and no wrap claim: nothing ran off the edge, so copy and export must not join
+         this row to the next. The cursor keeps its column, which is the whole point -- the application
+         asked for a line that ends here, and a fixed-width status line overwrites this cell from now on. */
+      g->cx = last_free_col(g, g->cy, g->cols - 1);
+      return;
+    }
     g->rowWrap[g->cy] = RC_WRAP_FORCED;   /* text reached the margin and continued on the next row */
     g->cx = 0;
     line_down(g);
@@ -562,7 +611,11 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
   g->nAstral++;
   if (w >= 2)
   {
-    if (g->cx + 2 > g->cols) { g->rowWrap[g->cy] = RC_WRAP_PAD; g->cx = 0; line_down(g); }
+    if (g->cx + 2 > g->cols)
+    {
+      if (!g->wrapMode) { blank_cell(g, g->cy, g->cx); return; }   /* drop whole, as put_cell does (I35) */
+      g->rowWrap[g->cy] = RC_WRAP_PAD; g->cx = 0; line_down(g);
+    }
     g->cells[g->cy][g->cx].ch = hi;
     g->cells[g->cy][g->cx].attr = (uint16_t)(g->attr | RC_LVB_LEADING);
     g->cells[g->cy][g->cx + 1].ch = lo;
@@ -570,9 +623,16 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
     mark_dirty(g, g->cy, g->cx, g->cx + 1);
     g->nCells += 2;
     g->cx += 2;
-    if (g->cx >= g->cols) { g->rowWrap[g->cy] = RC_WRAP_FORCED; g->cx = 0; line_down(g); }
+    if (g->cx >= g->cols)
+    {
+      if (!g->wrapMode) { g->cx = last_free_col(g, g->cy, g->cols - 1); return; }
+      g->rowWrap[g->cy] = RC_WRAP_FORCED; g->cx = 0; line_down(g);
+    }
     return;
   }
+  /* Two columns of a different kind: half a surrogate pair is not a character either, so with the margin
+     one column away the pair is dropped as a unit rather than written as one lone high surrogate. */
+  if (!g->wrapMode && g->cx + 2 > g->cols) { blank_cell(g, g->cy, g->cx); return; }
   put_cell(g, hi, 1);
   put_cell(g, lo, 1);
 }
@@ -612,24 +672,31 @@ static void sgr_reset(RcGrid *g, int keep_underline)
   /* DisplayParm::Reset (Ansi.cpp:562-571) zeroes the struct and then seeds the two colours from the
      *frozen* default -- not from the live console attribute, which is what the fallback leg would
      have shown. The underscore bit therefore comes back false, unconditionally. */
-  s->fg = g->defAttr & 0x0F;
-  s->bg = (g->defAttr >> 4) & 0x0F;
+  /* `defAttr` is a console *attribute* -- it is what `csbi.wAttributes` said, and rc_reset_hist fills the
+     cells with it -- while these two slots are *indices*: rc_attr turns an index back into an attribute
+     through ClrMap. Seeding one with the other therefore converts twice, and because ClrMap is its own
+     inverse ({0,4,2,6,1,5,3,7}) the double conversion is only invisible for the palindromic entries. With a
+     profile whose default foreground is FORE_BLUE (attribute 1) the pen came back red (4) while the cells the
+     same reset had just filled were blue, so the model disagreed with itself before anything was written.
+     Converting on the way in makes the round trip an identity for all sixteen values. */
+  s->fg = attr_to_index(g->defAttr & 0x0F);
+  s->bg = attr_to_index((g->defAttr >> 4) & 0x0F);
   s->seeded = 1;
   if (keep_underline) s->underline = (g->defAttr & RC_LVB_UNDERSCORE) ? 1 : 0;
-  g->attr = rc_attr(s, g->defAttr);
+  g->attr = rc_attr(g, s);
 }
 
 /* ConEmu stores SGR 39/49 as "the default colour", in the 4-bit space, from the frozen default. */
 static void sgr_default_fg(RcGrid *g)
 {
-  g->sgr.fg = g->defAttr & 0x0F;
+  g->sgr.fg = attr_to_index(g->defAttr & 0x0F);   /* the same index/attribute round trip as sgr_reset */
   g->sgr.fgKind = RC_CLR4B;
   g->sgr.brightFore = 0;
 }
 
 static void sgr_default_bg(RcGrid *g)
 {
-  g->sgr.bg = (g->defAttr >> 4) & 0x0F;
+  g->sgr.bg = attr_to_index((g->defAttr >> 4) & 0x0F);
   g->sgr.bgKind = RC_CLR4B;
   g->sgr.brightBack = 0;
 }
@@ -698,10 +765,41 @@ static void sgr_apply(RcGrid *g, const int *a, int n)
         break;
     }
   }
-  g->attr = rc_attr(s, g->defAttr);
+  g->attr = rc_attr(g, s);
 }
 
 /* ------------------------------------------------------------- sequence dispatch --------------- */
+
+/* The census, as data. One row per `RcUnsupported` slot, in the enum's order, holding the label the report
+ * prints, the sentence for what was skipped, and whether counting that slot makes the frame suspect.
+ *
+ * Before this table the same eleven facts lived in three places -- the comments inside the enum, the
+ * `which == RC_UN_SUP` test in unsupported() below, and the label lists `Render.java` and
+ * `NativeRenderer.java` each carry -- and only four of the Java indices were checked against anything.
+ * I19 makes the census a positional contract across three files, so a slot renamed on one side and not the
+ * other prints a confident wrong number forever, and the only thing that notices is a human reading a log.
+ * The live gate now compares all eleven labels against this table, and the host gate pins the table itself
+ * (including the one-entry-per-suspect fact), which is what lets `modelSuspect` be a column rather than a
+ * special case.
+ *
+ * The order is the ABI: `RenderJni.cpp stats()` walks these slots by index and the Java side hardcodes the
+ * positions, so a row may be re-worded and a new one appended, but nothing in the middle may move. */
+struct RcCensus { const char *name; const char *sentence; int suspect; };
+
+static const struct RcCensus rc_census[RC_UN_MAX] =
+{
+  { "unrecognised", "a CSI whose final byte neither this dispatch nor ConEmu's parser has a case for, so its reach is assumed rather than known", 1 },
+  { "decstbm", "dead since DECSTBM became a modelled region (I25); the slot stays where it is because the census is positional", 0 },
+  { "altbuf", "the alt-screen snapshot could not be taken -- a switch that was asked for and refused", 0 },
+  { "mouse", "mouse tracking asked for; this library generates no mouse reports", 0 },
+  { "mode", "a mode this model holds no state for (the private set it does hold answers DECRQM instead)",0 },
+  { "bracketed paste", "DECSET 2004 asked for; the paste is executed by the host's input leg, which this library does not own", 0 },
+  { "osc9", "a ConEmu-private OSC 9 outside the safe subset -- sleep, MessageBox, GuiMacro, DoProcess", 0 },
+  { "other osc", "an OSC neither acted on nor answered, including one that never terminated", 0 },
+  { "dcs", "a DCS payload, read to its terminator and discarded", 0 },
+  { "report", "a query this build will not answer -- `CSI ? 6 n`, a DA with a parameter, `CSI t`", 0 },
+  { "colon", "a CSI carrying a ':' subparameter, dropped whole for ConEmu parity (I10, I19)", 0 },
+};
 
 static void unsupported(RcGrid *g, enum RcUnsupported which)
 {
@@ -718,8 +816,8 @@ static void unsupported(RcGrid *g, enum RcUnsupported which)
    * counted by ignored() below instead, and the frame stays trusted. The alt buffer left this list when
    * ?47/?1047/?1049 became a modelled switch (alt_screen); the only thing still counted there is a
    * snapshot that failed to allocate, which by itself moves nothing. */
-  if (which == RC_UN_SUP)
-    g->modelSuspect = 1;
+  if (rc_census[which].suspect)
+    g->modelSuspect = 1;      /* the table's one 1, and the host gate keeps it the only one (I19) */
 }
 
 /* A sequence whose effect on the screen is *known* -- none -- so the frame stays trusted and only the
@@ -738,6 +836,14 @@ static void ignored(RcGrid *g, enum RcUnsupported which)
   if (which < RC_UN_MAX) g->nUnsupported[which]++;
 }
 
+int rc_census_count(void) { return RC_UN_MAX; }
+const char *rc_census_name(int slot)
+{ return (slot >= 0 && slot < RC_UN_MAX) ? rc_census[slot].name : NULL; }
+const char *rc_census_sentence(int slot)
+{ return (slot >= 0 && slot < RC_UN_MAX) ? rc_census[slot].sentence : NULL; }
+int rc_census_suspect(int slot)
+{ return (slot >= 0 && slot < RC_UN_MAX) ? rc_census[slot].suspect : 0; }
+
 static int arg(const RcGrid *g, int i, int dflt)
 {
   return (i < g->nArgs && g->args[i] > 0) ? g->args[i] : dflt;
@@ -750,14 +856,19 @@ static int arg(const RcGrid *g, int i, int dflt)
  * The queue is FIFO because that is the order the asker will read the replies in, and it refuses rather
  * than evict: a dropped *older* reply hangs a program already blocked on its first read, while a refused
  * newer one hangs only a program that asked more times than the console can remember -- and both leave a
- * number (nReportFull), which is the difference between a limit and a leak. */
-static void arm_report(RcGrid *g, enum RcReport kind)
+ * number (nReportFull), which is the difference between a limit and a leak.
+ * `idx` is for the kinds that answer about a numbered thing rather than about the cursor: an OSC colour
+ * reply names the table index it belongs to (I34), and for that kind it replaces the cursor snapshot, which
+ * nobody reads. Every other kind passes 0 and gets the cursor as it stands. */
+static void arm_report(RcGrid *g, enum RcReport kind, int mode, int status, int idx)
 {
   if (g->reportLen >= RC_REPORT_MAX) { g->nReportFull++; return; }
   struct RcReportItem *it = &g->report[(g->reportHead + g->reportLen) % RC_REPORT_MAX];
   it->kind = (uint8_t)kind;
-  it->y = (uint16_t)g->cy;
+  it->y = (uint16_t)(kind == RC_REP_OSC ? idx : g->cy);
   it->x = (uint16_t)g->cx;
+  it->mode = (uint32_t)mode;
+  it->status = (uint32_t)status;
   g->reportLen++;
 }
 
@@ -886,6 +997,11 @@ static void full_reset(RcGrid *g)
   g->regSet = 0;
   g->cursorShape = -1;
   g->cursorVisible = 1;
+  g->wrapMode = 1;   /* RIS/DECSTR put every mode back, including the one with no caps entry (I35) */
+  /* RIS ends a synchronized region with everything else it ends. The alternative -- leaving the bit set and
+     letting the painter hold the reset's own scroll -- is the one case where a hold could swallow the very
+     sequence that would have cleared it. */
+  g->sync = 0;
   scroll_up(g, g->winRows);
   clxy(g, gutter(g), 0);
 }
@@ -909,8 +1025,54 @@ static int step_back_col(const RcGrid *g, int n)
   return col;
 }
 
-/* CSI with a final byte in hand. interim carries the 0x20..0x2F bytes (' ' selects cursor shape). */
-static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
+/* The CSI intermediates are matched the way ConEmu matches its Pvt buffer: the whole thing, length
+   included. `PvtLen == 1 && Pvt[0] == L' '` (:3657) is one byte that happens to be a space, so a
+   two-byte interim is not DECSCUSR there and is not DECSCUSR here either. */
+static int interim_is(const RcGrid *g, uint8_t ch)
+{
+  return g->nInterims == 1 && g->interims[0] == ch;
+}
+
+static void interim_push(RcGrid *g, uint8_t ch)
+{
+  if (g->nInterims < RC_INTERIM_MAX) g->interims[g->nInterims++] = ch;
+}
+
+/* DECRQM's answer, for the modes whose state this struct actually holds. The numbers are VT500's
+   (1 = reset, 2 = set), and the two that describe a *permanent* fact -- 3 permanently reset, 4
+   permanently set -- are never sent here, for two reasons that point the same way.
+     The vocabulary is not stable. xterm and DEC read 4 as "permanently set"; jline4 documents 3 that
+   way and 4 as "permanently reset" (AbstractTerminal.java:663-667), and treats 1/2/3 as SUPPORTED
+   (:685). So for any mode this renderer has no state for, whichever permanent number it answers, one
+   of the two readers is told the opposite of the truth -- and #52 already learned what it costs when a
+   number this library emits is read by an outside program as a capability claim.
+     And the number buys nothing. `parseDecrpm` returns NOT_SUPPORTED for a reply it cannot find
+   exactly as it does for a 4 (:677-689), so to the one consumer in the house silence and 4 are the
+   same verdict. Silence is also the ruling this file already made for the extended `CSI ? 6 n`: answer
+   what the model can prove, count what it cannot.
+   Two ids in the family jline4 probes are absent for that reason:
+     2027 (grapheme reflow) and 2048 (in-band window resize) -- this build wraps at cells and reports
+       geometry out of band, so "set" is false and either permanent number is unreadable. Both already
+       vote `RC_UN_MODE` on the `h`/`l` side, and `$p` leaves the same count.
+     1048 -- xterm lists it as "alternating cursor position", which is what we implement (`?1048h` saves,
+       `?1048l` restores, Render.cpp's `h`/`l` block), and that is an *event*, not a state a reply could
+       report. `cursorVisible` is the state a caller means when it asks about a cursor, and that is 25. */
+static int mode_status(const RcGrid *g, int id, int *out)
+{
+  switch (id)
+  {
+    case 25:   *out = g->cursorVisible ? 2 : 1; return 1;
+    case 7:    *out = g->wrapMode ? 2 : 1; return 1;   /* modelled, so answerable (I35) */
+    case 47: case 1047: case 1049:
+               *out = g->alt ? 2 : 1; return 1;      /* the three spellings share one slot (I14's alt screen) */
+    case 2026: *out = g->sync ? 2 : 1; return 1;     /* 1 and 2 both reach jline4 as SUPPORTED (:685) */
+    default:   return 0;
+  }
+}
+
+/* CSI with a final byte in hand. The 0x20..0x2F bytes it names are in g->interims (' ' selects cursor
+   shape), because which interim a final had is a property of the sequence, not of the last byte read. */
+static void csi_dispatch(RcGrid *g, uint8_t final)
 {
   switch (final)
   {
@@ -934,16 +1096,20 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
     case 'A': move_row(g, -arg(g, 0, 1)); break;
     case 'B': move_row(g, arg(g, 0, 1)); break;
     case 'C': clxy(g, g->cy, g->cx + arg(g, 0, 1)); break;
-    /* HPR (`CSI a`) and VPR (`CSI e`) are the two final bytes this dispatch used to alias onto CUF and
-       CUDL -- and ConEmu has no case for either one. Verified against the switch in Ansi.cpp: the finals it
-       handles are `@ A B C D E F H J K L M P S T X b c d f h l m n p q r s t u`, so `a` and `e` fall through
-       to its own default (Ansi.cpp:3816), which is DumpUnknownEscape -- a no-op in a release build
-       (:971), so the cursor does not move and nothing prints. ghostty implements both (stream.zig:1863
-       HPR -> cursor_col_relative, :1942 VPR) and so does MSFT (adaptDispatch.cpp:427/:437, whose comment
-       notes VPR is "unlike CUD not constrained by margin"): the two references agree with each other and
-       neither agrees with ConEmu, and the fallback leg *is* ConEmu. Counted, and suspicion-free for the
-       same reason `Z` is -- nothing moved. */
-    case 'a': case 'e': ignored(g, RC_UN_SUP); break;
+    /* HPR (`CSI a`) and VPR (`CSI e`). They used to be counted and dropped, because ConEmu has no case for
+       either one: the finals its CSI switch handles are `@ A B C D E F H J K L M P S T X b c d f h l m n p q
+       r s t u`, so `a`/`e` reach `default:` -> DumpUnknownEscape (Ansi.cpp:3816 -> :971), a no-op in a release
+       build. Both references implement them, and agree on the one detail that makes them more than aliases for
+       CUF/CUD: **they are not constrained by the scroll region.** ghostty routes them to
+       `cursor_col_relative`/`cursor_pos_relative` (stream.zig:1863/:1942) and MSFT says so in the comment on
+       each one -- "Unlike CUF/CUD, this is not constrained by margin settings" (adaptDispatch.cpp:427/:437) --
+       with both landing on `_CursorMovePosition(..., wrapAround=false)`, whose clamps are the screen's edges.
+       So VPR is `clxy` (viewport) and *not* `move_row` (region), and that difference is the whole reason this
+       case cannot simply alias onto 'B'. A program that pinned a region with `CSI r` and then walked out of it
+       with `CSI e` gets the region on the fallback leg (ConEmu drops the sequence: cursor stays) and gets the
+       viewport here -- which is what every other terminal it was ever tested on gives it. */
+    case 'a': clxy(g, g->cy, g->cx + arg(g, 0, 1)); break;
+    case 'e': clxy(g, g->cy + arg(g, 0, 1), g->cx); break;
     case 'D': clxy(g, g->cy, step_back_col(g, arg(g, 0, 1))); break;
     case 'E': move_row(g, arg(g, 0, 1)); g->cx = 0; break;
     case 'F': move_row(g, -arg(g, 0, 1)); g->cx = 0; break;
@@ -1114,39 +1280,61 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
     }
 
     case 's': g->saveX = g->cx; g->saveY = g->cy; break;
-    case 'u': clxy(g, g->saveY, g->saveX); break;   /* restore is unconditional upstream (Ansi.cpp:4194) */
+    /* DECRC, and the one place this model deliberately diverges from ConEmu, where "restore is
+       unconditional" (Ansi.cpp:4194 -- PvtLen is never consulted for 'u'). The private spelling
+       `CSI ?u` is kitty's keyboard-flags *query*, and it is on the wire: jline4's probe batch opens
+       with it (AbstractTerminal.probeModes), so obeying upstream teleports the cursor to the last
+       DECSC on every round of capability probing. Windows Terminal and ghostty both route a
+       private-marker final to their query/ignore arms and never move the cursor, so the divergence
+       is toward the two references that answer this sequence at all, not away from parity.
+       The store `CSI ?s` is left alone: a save nobody restores costs nothing, while the restore is
+       the half that actually moves the cursor. */
+    case 'u':
+      if (g->priv) { ignored(g, RC_UN_MODE); break; }
+      clxy(g, g->saveY, g->saveX);
+      break;
 
-    /* DECSTBM. ConEmu's acceptance test is mirrored exactly, including the three ways it differs from
-       VT (Ansi.cpp:3142-3150 + SetScrollRegion :4146-4174): a region it rejects *clears* the region
-       rather than being ignored, so `CSI r`, one argument alone, or top above bot all return the whole
-       viewport to scrolling; a zero parameter is accepted and clamps to the viewport's first row, so
-       `CSI 0;35r` means `CSI 1;35r`; and setting a region does NOT home the cursor, which the comment
-       in Status.java:234 ("usually moves the cursor") assumes it does. The private form `CSI ?r` is
-       also accepted, because upstream never checks PvtLen for this final byte.
+    /* DECSTBM. Two defaults, one refusal, and one clamp.
+       A missing or zero parameter names the edge of the viewport, so `CSI 3r` is "rows 3..bottom" and
+       `CSI ;4r` is "rows 1..4". Both references do that (MSFT adaptDispatch.cpp:2243-2257, whose comment at
+       :2239 spells out `[3;r -> 3,h`), and upstream does not: Ansi.cpp:3142 demands `ArgC >= 2`, so a
+       one-parameter call fell through to `SetScrollRegion(false)` here and *cleared* a region somebody had
+       just asked for. A contradictory pair (`3;2r`) is likewise ignored by both references, and ignoring is
+       not the same act as clearing -- clearing hands the next line feed the whole viewport, which is the
+       #47/#48 failure with a different trigger. Those two are the reason this is no longer a mirror of
+       upstream; what the mirror keeps is the clamp below and the no-home rule.
+       Zero clamps to the viewport's first row (`CSI 0;35r` = `CSI 1;35r`), setting a region does NOT home the
+       cursor -- which is what the comment in Status.java:234 ("usually moves the cursor") assumes it does --
+       and the private form `CSI ?r` is accepted, because upstream never checks PvtLen for this final byte.
        The parameters are viewport-relative (`GetWorkingRegion(.., true)` at :4108-4127, which is
        srWindow), which is the same frame this model addresses rows in, so the gutter can never be pulled
        into a region. The clamp happens once, here, and is never revisited: the viewport's row span cannot
        move under a live grid, because rc_reset_hist() is the only writer of cols/rows/winRows and the
        painter refuses to realign a geometry change rather than re-cutting one it was asked for
-       (RenderJni.cpp:574) -- the caller reopens, and a reopened grid has no region. */
+       (RenderJni.cpp:574) -- the caller reopens, and a reopened grid has no region.
+       A bottom past the viewport is pulled back to its last row rather than rejected, which is a deliberate
+       split from MSFT (:2260 rejects): "scroll below row 3" is the application's intent, and throwing the
+       whole request away to honour a literal parameter is the worse of the two wrongs. For the same reason a
+       degenerate `Pt == Pb` is accepted as a one-row region where both references refuse it -- `Status.reset()`
+       reaches this parser as `CSI 1;1r` (JLine's `csr` at a 0x0 size through `%i`, and Display.java:112 is the
+       layer that makes that size), and refusing it would leave the bar's region stuck on. That tolerance is
+       load-bearing, and it is the reason the rule here is `t > b` rather than `t >= b`. */
     case 'r':
     {
-      int t = arg(g, 0, 1), b = arg(g, 1, 1);
       const int top = gutter(g);
+      const int page = g->rows - top;              /* the 1-based rows the parameters may name */
+      if (!g->nArgs) { g->regSet = 0; break; }     /* `CSI r` is the reset form */
+      int t = arg(g, 0, 1), b = arg(g, 1, page);
+      if (t <= 0) t = 1;
+      if (b <= 0 || b > page) b = page;
+      if (t > page) t = page;
+      if (t > b) break;                            /* inverted: leave whatever region is live */
+      const int rt = top + t - 1, rb = top + b - 1;
       g->regSet = 0;
-      if (g->nArgs >= 2 && t >= 0 && b >= t)
-      {
-        int rt = top + (t > 0 ? t - 1 : 0);
-        int rb = top + (b > 0 ? b - 1 : 0);
-        if (rt < top) rt = top;
-        if (rb > g->rows - 1) rb = g->rows - 1;
-        if (rt > g->rows - 1) rt = g->rows - 1;
-        if (rb < rt) rb = rt;
-        /* Normalise "the region is the viewport" back to no region at all: the paths that keep the
-           gutter and the console scroll in mind branch on exactly that, and a region that happens to
-           cover everything must not cost them. */
-        if (!(rt == top && rb == g->rows - 1)) { g->regSet = 1; g->regTop = rt; g->regBot = rb; }
-      }
+      /* Normalise "the region is the viewport" back to no region at all: the paths that keep the gutter and
+         the console scroll in mind branch on exactly that, and a region that happens to cover everything
+         must not cost them. MSFT normalises the same way for `apt` (:2262-2270). */
+      if (!(rt == top && rb == g->rows - 1)) { g->regSet = 1; g->regTop = rt; g->regBot = rb; }
       break;
     }
     case 'h': case 'l':
@@ -1159,6 +1347,17 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
       if (g->priv == '?')
       {
         if (v == 25) g->cursorVisible = on;
+        else if (v == 7) g->wrapMode = on ? 1 : 0;   /* DECAWM (I35) -- `CSI 7h` is GATM, not this */
+        else if (v == 2026)
+        {
+          /* DECSET/RESET 2026, the synchronized-output mode. Off is unconditional -- a `?2026l` nobody armed
+             is exactly as inert as it looks, and gating it on `sync` would only hide a leaked BSU from the
+             census. On is the half with a convention to follow: xterm has no depth (the first ESU ends the
+             region whatever the BSU count), so a nested BSU is counted and dropped rather than stacked, and
+             the application that sends one gets the frame the single-level model describes. */
+          if (on) { if (g->sync) g->nSyncNested++; else { g->sync = 1; g->nSyncEngages++; } }
+          else g->sync = 0;
+        }
         else if (v == 47 || v == 1047 || v == 1049) alt_screen(g, on);
         else if (v == 1048) { if (on) { g->saveX = g->cx; g->saveY = g->cy; } else clxy(g, g->saveY, g->saveX); }
         else if (v == 9 || v == 1000 || v == 1002 || v == 1003 || v == 1004 ||
@@ -1180,7 +1379,7 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
       break;
     }
     case 'q':
-      if (interim == ' ' && !g->priv)
+      if (interim_is(g, ' ') && !g->priv)
       {
         /* DECSCUSR. Upstream really does implement it (:3656-3686), and does so with the one call this
            model is allowed to make on Win7: GetConsoleCursorInfo/SetConsoleCursorInfo with dwSize 100 for
@@ -1194,31 +1393,70 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
       else ignored(g, RC_UN_SUP);   /* `CSI q` with no interim byte: XTSSZ, no case upstream */
       break;
     case 'p':
-      /* DECSTR. Upstream gates it on `ArgC == 0 && Pvt == "!"` (Ansi.cpp:3645), and '!' (0x21) reaches us
-         as an interim byte, not in `priv` -- the same slot the ' ' of DECSCUSR uses. Note that this drops
-         the restore-memory spelling `CSI Ps;Ps!p` too, which upstream sends to the same else; gating on
-         "no parameters" is upstream's behaviour, not an oversight here.
-         Every other spelling of `p` hits that `else` (Ansi.cpp:3650-3653), which is DumpUnknownEscape: no
-         state, no body, and in a release build not even a log line (Ansi.cpp:971). Same shape as the `q`
-         arm above, so it is counted the same way -- into SUP, because the *final* is unknown to this switch,
-         without suspicion, because we have read the arm and know it moves nothing. A bare `break` here was
-         the hole this file's own rule forbids: the sequence left no trace, so the census could not tell
-         "the app asked" from "the app never wrote it". */
-      if (interim == '!' && !g->nArgs) full_reset(g);
+    {
+      /* DECRQM -- `CSI ? Ps $ p`. ConEmu has no case for it at all (:3650-3653 sends every `p` it does not
+         recognise to DumpUnknownEscape), so this is an addition rather than a parity item, and the reason it
+         is worth one is jline4's probe batch: it asks 2026/2027/2048 in one write and then looks each reply
+         up by its mode number (`parseDecrpm`, AbstractTerminal.java:675-690), so an id this switch leaves
+         unanswered simply resolves to NOT_SUPPORTED there, while an id it answers is believed.
+         Only the private spelling with exactly one parameter and exactly one interim byte is a request
+         (interim_is is the whole-buffer comparison upstream does with Pvt); every other `$p` -- no `?`, two
+         parameters, no parameter -- is a spelling this switch has no answer for, and it is counted rather
+         than guessed at. Modes outside mode_status() get no reply at all: a reply is a claim about state,
+         and for `?999$p` the state is not ours to describe. Silence is also what this file already decided
+         for `CSI ? 6 n`, whose extended form is declined rather than answered with the plain-form answer
+         (:1276-1280), and the rule generalises: answer what you can prove, count what you cannot.
+       DECSTR -- `CSI ! p` with no parameter -- keeps the rest of this case. Upstream gates it on
+         `ArgC == 0 && PvtLen == 1 && Pvt[0] == L'!'` (Ansi.cpp:3645), and '!' (0x21) is an interim byte, not
+         a private one -- but both ranges are appended into the *same* Pvt buffer there (:1788), so `? ! p` is
+         a two-byte Pvt and upstream refuses it. That is the whole reason the test below reads `!g->priv` as
+         well: with the intermediates in a slot of their own, the two ranges were tested separately and the
+         hybrid spelling reset a console nothing else resets. It also drops the restore-memory spelling
+         `CSI Ps;Ps!p`, which upstream sends to the same place; gating on "no parameters" is upstream's
+         behaviour, not an oversight here.
+       Everything left hits the last two lines, and they are numbers rather than a bare `break` for the reason
+         this file states everywhere: a sequence that reached a final and did nothing must leave a count, so
+         the census can tell "the application asked" from "the application never wrote it". `$` says the
+         sequence was about a mode, which is why it votes MODE and not SUP. */
+      int st = 0;
+      if (interim_is(g, '$') && g->priv == '?' && g->nArgs == 1 && mode_status(g, g->args[0], &st))
+        arm_report(g, RC_REP_DECRPM, g->args[0], st, 0);
+      else if (interim_is(g, '!') && !g->priv && !g->nArgs) full_reset(g);
+      else if (interim_is(g, '$')) ignored(g, RC_UN_MODE);
       else ignored(g, RC_UN_SUP);
       break;
+    }
     case 'Z': ignored(g, RC_UN_SUP); break;  /* CBT: no case upstream (:3051-3052), and HTS is ignored
         * too (:2731-2734), so there is no tab stop for a backtab to find. */
     case 'c':
-      /* Device Attributes. Upstream answers both spellings (Ansi.cpp:3765-3784) and the strings are worth
-         copying verbatim rather than inventing: `CSI c` gets `ESC [ ? 1 ; 2 c` -- "VT100 with Advanced Video
-         Option", which is what a caller that cannot parse a reply still recognises as "a terminal answered" --
-         and `CSI > c` gets `ESC [ > 0 ; 136 ; 0 c`, ConEmu's own choice of lying about being xterm 136 because
-         MinTTY answers 77, rxvt 82 and GNU screen 83 and scripts gate on the number (:3769-3776). Gated on
-         "no parameters, or a single 0" exactly as upstream gates it; anything else is a query with a spelling
-         neither this switch nor ConEmu has an answer for, and stays in the census. */
-      if (g->priv == '>' && (!g->nArgs || g->args[0] == 0)) arm_report(g, RC_REP_DA2);
-      else if (!g->priv && (!g->nArgs || g->args[0] == 0)) arm_report(g, RC_REP_DA);
+      /* Device Attributes -- and the one reply in this file that says something about the terminal it is
+         *not*. Two facts have to be held at once, so read them in order.
+         (1) The strings are conhost's own, not ConEmu's (deviation 8): `CSI c` answers `?61;4;6;7;14;21;22;23;
+             24;28;32;42c` (minus the `;52` clipboard bit this renderer does not model) and `CSI > c` answers
+             `>0;10;1c`. Upstream's pair is `?1;2c` and `>0;136;0c` (Ansi.cpp:3765-3784, ConEmu claiming xterm
+             136 because MinTTY answers 77, rxvt 82 and GNU screen 83 and scripts gate on the number), and it is
+             *not* copied because a chunk this library declines goes to the console unparsed -- conhost answers
+             that one itself -- so a session would meet two terminal identities out of one question. Deviation
+             8 exists for that reason, and the live leg (`caseReports`) asserts the exact bytes.
+         (2) Within that string, `4` is **Sixel Graphics** -- Microsoft's own list, `adaptDispatch.cpp:1441`
+             ("4 = Sixel Graphics"), and the same clone's `DeviceAttributes` really does have a SixelParser
+             behind it. It is *not* the VT100 "132-column mode" bit, which is what an earlier draft of these
+             notes asserted; corrected against the source, and the correction matters because it is the whole
+             difference between "we claim a wider screen" (harmless) and "we claim to draw graphics" (not).
+             We do not: the DCS arm above drops every payload and counts `RC_UN_DCS`, so a sixel stream sent
+             here disappears silently.
+         The claim is therefore inherited from the machine underneath and cannot be retracted in the reply:
+         removing the bit would make this answer disagree with the one conhost gives for the declined half of
+         the same session, which is the thing deviation 8 was written to prevent. The place a claim *can* be
+         vetoed without falsifying a byte is the consumer that reads it, and that is where it was vetoed --
+         jline4's family layer returns false for `Mode.SIXEL` regardless of DA1 (ANSI_TODO section 5), so
+         `SixelGraphics` never emits the payload. The remaining half of this item is telling jline4 upstream,
+         which is a public action and is left for a human to send; the text is prepared at
+         `cache/p52/jline4-sixel-report.md`.
+         Gated on "no parameters, or a single 0" exactly as upstream gates it; anything else is a query with a
+         spelling neither this switch nor ConEmu has an answer for, and stays in the census. */
+      if (g->priv == '>' && (!g->nArgs || g->args[0] == 0)) arm_report(g, RC_REP_DA2, 0, 0, 0);
+      else if (!g->priv && (!g->nArgs || g->args[0] == 0)) arm_report(g, RC_REP_DA, 0, 0, 0);
       else unsupported(g, RC_UN_REPORT);
       break;
     case 'n':
@@ -1231,8 +1469,8 @@ static void csi_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
          `CSI ? row ; col R`, ConEmu replies the plain form to it, and a program that asked the extended
          question and got the plain answer reads a cursor position it did not ask for. Declining is the one
          option that cannot be wrong, so it is the option taken, and it is counted rather than silent. */
-      if (!g->priv && g->nArgs == 1 && g->args[0] == 5) arm_report(g, RC_REP_DSR);
-      else if (!g->priv && g->nArgs == 1 && g->args[0] == 6) arm_report(g, RC_REP_CPR);
+      if (!g->priv && g->nArgs == 1 && g->args[0] == 5) arm_report(g, RC_REP_DSR, 0, 0, 0);
+      else if (!g->priv && g->nArgs == 1 && g->args[0] == 6) arm_report(g, RC_REP_CPR, 0, 0, 0);
       else unsupported(g, RC_UN_REPORT);
       break;
     /* Window manipulation. Upstream has a case (:3688-3762) and splits into three kinds: 8/22/23 reach
@@ -1345,7 +1583,7 @@ static void csi_start(RcGrid *g)
   g->mode = RC_CSI;
   g->priv = 0;
   g->csiColon = 0;
-  g->interim = 0;
+  g->nInterims = 0;
   g->nArgs = 0;
   g->digit = 0;
   g->cur = 0;
@@ -1558,6 +1796,303 @@ static int ftcs_apply(RcGrid *g, const uint16_t *p, int n)
 }
 
 
+/* ------------------------------------------------- OSC 4 / 10 / 11 -- the palette (I34) -------- */
+
+/* ConEmu parses this family and does nothing with it -- Ansi.cpp:3845's guard accepts "4;..." because the
+   semicolon is at index 1, and then its switch has no case for 4, 10, 11 or 104 -- so nothing below is a
+   parity question with the fallback leg. The grammar is MSFT's, because MSFT implements it:
+   OutputStateMachineEngine.cpp:955-1000 (the `index;spec` pairs), :1062-1092 (the resource walk) and
+   types/utils.cpp:180-344 (the spec forms and their scaling). */
+
+static int hex_digit_of(uint16_t u)
+{
+  if (u >= '0' && u <= '9') return u - '0';
+  if (u >= 'a' && u <= 'f') return u - 'a' + 10;
+  if (u >= 'A' && u <= 'F') return u - 'A' + 10;
+  return -1;
+}
+
+/* One component: 1..4 hex digits scaled to 8 bits. MSFT scales the `rgb:` form by bit replication
+   (`f`->0xFF, `ff`->0xFF, `fff`->0xFF, `ffff`->0xFF) but the `#` form by a 0x10 multiplier, which makes
+   `#f` 0xF0 -- two spellings of one colour, two answers. This uses the replication rule for both, which is
+   also what `rgb:f/f/f` gives in MSFT, so the only divergence from the reference is the internal
+   inconsistency it drops. */
+static int comp_of(const uint16_t *p, int n, uint32_t *out)
+{
+  if (n < 1 || n > 4) return 0;
+  uint32_t v = 0;
+  for (int i = 0; i < n; i++)
+  {
+    const int d = hex_digit_of(p[i]);
+    if (d < 0) return 0;
+    v = (v << 4) | (uint32_t)d;
+  }
+  *out = n == 1 ? v * 0x11u : n == 2 ? v : n == 3 ? v >> 4 : v >> 8;
+  return 1;
+}
+
+/* `#RGB` / `#RRGGBB` / `#RRRRGGGGBBBB` (equal widths only -- MSFT's size gate at utils.cpp:236 accepts
+   exactly 4, 7, 10 or 13 units) or `rgb:r/g/b` with 1..4 digits per component and widths that need not
+   match (its size gate is 9..18 units, which is the same rule stated over the whole string).
+   Anything else -- including an X11 colour name, which this build does not resolve (I34) -- returns 0.
+   The result is a COLORREF, 0x00BBGGRR, because that is what the fold consumes. */
+static int color_spec_of(const uint16_t *f, int n, uint32_t *out)
+{
+  uint32_t c[3] = { 0, 0, 0 };
+  if (n <= 1) return 0;
+
+  if (f[0] == '#')
+  {
+    const int body = n - 1;
+    if (body != 3 && body != 6 && body != 9 && body != 12) return 0;
+    const int w = body / 3;
+    for (int i = 0; i < 3; i++) if (!comp_of(f + 1 + i * w, w, &c[i])) return 0;
+  }
+  else if (n >= 9 && n <= 18 && (f[0] == 'r' || f[0] == 'R') &&
+           (f[1] == 'g' || f[1] == 'G') && (f[2] == 'b' || f[2] == 'B') && f[3] == ':')
+  {
+    int a = -1, b = -1;
+    for (int i = 4; i < n; i++)
+    {
+      if (f[i] != '/') continue;
+      if (a < 0) a = i; else if (b < 0) b = i; else return 0;      /* a third slash is not a colour */
+    }
+    if (a < 0 || b < 0) return 0;
+    if (!comp_of(f + 4, a - 4, &c[0])) return 0;
+    if (!comp_of(f + a + 1, b - a - 1, &c[1])) return 0;
+    if (!comp_of(f + b + 1, n - b - 1, &c[2])) return 0;
+  }
+  else return 0;
+
+  *out = (c[2] << 16) | (c[1] << 8) | c[0];
+  return 1;
+}
+
+/* The k-th `;`-separated field of an OSC payload, counted from after the code's own separator. */
+static int osc_field(const RcGrid *g, int sep, int k, int *first, int *len)
+{
+  /* `sep < 0` means the payload has no `;` after the code at all -- `]104` and `]110` are exactly that, and
+     reading them as if the code itself were field zero would reset table entry 104. */
+  if (sep < 0) return 0;
+  int i = sep + 1, n = 0;
+  for (;;)
+  {
+    int j = i;
+    while (j < g->nTitle && g->title[j] != ';') j++;
+    if (n == k) { *first = i; *len = j - i; return 1; }
+    if (j >= g->nTitle) return 0;
+    i = j + 1; n++;
+  }
+}
+
+/* A decimal field with no sign and no trailing junk; 0 on anything else, which is how MSFT's
+   StringToUint failure is read here. */
+static int dec_of(const uint16_t *p, int n, int *out)
+{
+  if (n < 1) return 0;
+  int v = 0;
+  for (int i = 0; i < n; i++)
+  {
+    if (p[i] < '0' || p[i] > '9') return 0;
+    v = v * 10 + (p[i] - '0');
+    if (v > 0xFFFF) return 0;
+  }
+  *out = v;
+  return 1;
+}
+
+static void palette_set(RcGrid *g, int idx, uint32_t rgb)
+{
+  /* Two ranges, two tables (see Render.h): below 16 the entry is a console attribute's colour, which is
+     both what the fold searches and what the console is told; at or above 16 it is only the RGB a
+     256-colour index means, because a 4-bit attribute has nowhere else to put it. */
+  if (idx < 16)
+  {
+    g->pal16[idx] = rgb;
+    g->palTouched |= (uint16_t)(1u << idx);   /* the painter writes back only the bits set here (I34) */
+  }
+  else g->palette[idx] = rgb;
+  g->attr = rc_attr(g, &g->sgr);   /* the colour under the current pen may now fold differently */
+}
+
+/* The nearest index for a colour, using the same fold the cells go through. `shift` picks the nibble. */
+static int nearest_index(const RcGrid *g, uint32_t rgb)
+{
+  WORD n = 0;
+  Far3Color::Color2FgIndex((COLORREF)rgb, n, (const COLORREF*)g->pal16);
+  return (int)(n & 0xF);
+}
+
+static void palette_osc(RcGrid *g, int code, int sep, int terminated)
+{
+  if (!terminated) { unsupported(g, RC_UN_OSC_OTHER); return; }   /* same rule as titles and 133 */
+
+  int first = 0, len = 0;
+  if (code == 4)
+  {
+    for (int k = 0; osc_field(g, sep, k, &first, &len); k += 2)
+    {
+      int idx = 0;
+      if (!dec_of(g->title + first, len, &idx) || idx > 255) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      int sf = 0, sl = 0;
+      if (!osc_field(g, sep, k + 1, &sf, &sl)) { unsupported(g, RC_UN_OSC_OTHER); break; }
+      if (sl == 1 && g->title[sf] == '?')
+      {
+        arm_report(g, RC_REP_OSC, 4, idx < 16 ? g->pal16[idx] : g->palette[idx], idx);
+        continue;
+      }
+      uint32_t rgb = 0;
+      if (!color_spec_of(g->title + sf, sl, &rgb)) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      palette_set(g, idx, rgb);
+    }
+    return;
+  }
+
+  if (code == 10 || code == 11)
+  {
+    /* MSFT walks the resources forward one per field (:803-819), so `10;a;b` is 10 then 11, and a field it
+       cannot parse still consumes a step. The answer to a query is the colour the console will really show,
+       which for a default means the index it was folded to -- not the RGB that was asked for (I34). */
+    int resource = code;
+    for (int k = 0; osc_field(g, sep, k, &first, &len); k++, resource++)
+    {
+      if (resource > 12) { unsupported(g, RC_UN_OSC_OTHER); break; }
+      if (len == 1 && g->title[first] == '?')
+      {
+        const uint32_t q = g->pal16[(resource == 10) ? (g->defAttr & 0xF) : ((g->defAttr >> 4) & 0xF)];
+        arm_report(g, RC_REP_OSC, resource, q, 0);
+        continue;
+      }
+      uint32_t rgb = 0;
+      if (!color_spec_of(g->title + first, len, &rgb)) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      const int idx = nearest_index(g, rgb);
+      if (resource == 10) g->defAttr = (uint16_t)((g->defAttr & 0xFFF0) | idx);
+      else if (resource == 11) g->defAttr = (uint16_t)((g->defAttr & 0xFF0F) | (idx << 4));
+      else { unsupported(g, RC_UN_OSC_OTHER); continue; }         /* 12, the cursor colour, has no slot */
+      g->attr = rc_attr(g, &g->sgr);
+    }
+    return;
+  }
+
+  if (code == 104)
+  {
+    /* No fields resets the table; with fields, MSFT stops at the first index it cannot parse, and its own
+       comment says that is xterm's choice over VTE's (:846). */
+    if (!osc_field(g, sep, 0, &first, &len))
+    {
+      for (int i = 0; i < 256; i++) g->palette[i] = RgbMap[i];
+      for (int i = 0; i < 16; i++) g->pal16[i] = (uint32_t)Far3Color::GetStdPalette()[i];
+      g->palTouched = 0xFFFF;
+      g->attr = rc_attr(g, &g->sgr);
+      return;
+    }
+    for (int k = 0; osc_field(g, sep, k, &first, &len); k++)
+    {
+      int idx = 0;
+      if (!dec_of(g->title + first, len, &idx)) { unsupported(g, RC_UN_OSC_OTHER); break; }
+      if (idx > 255) { unsupported(g, RC_UN_OSC_OTHER); continue; }
+      if (idx < 16) { g->pal16[idx] = (uint32_t)Far3Color::GetStdPalette()[idx];
+                      g->palTouched |= (uint16_t)(1u << idx); }
+      else g->palette[idx] = RgbMap[idx];
+    }
+    g->attr = rc_attr(g, &g->sgr);
+    return;
+  }
+
+  if (code == 110 || code == 111)
+  {
+    /* MSFT resets these only on an empty payload and notes that xterm and VTE disagree otherwise (:855-866).
+       The default attribute returns to what the console had when this handle opened, which is `defAttrSeed`. */
+    if (osc_field(g, sep, 0, &first, &len)) { unsupported(g, RC_UN_OSC_OTHER); return; }
+    g->defAttr = (uint16_t)((code == 110) ? ((g->defAttr & 0xFFF0) | (g->defAttrSeed & 0xF))
+                                          : ((g->defAttr & 0xFF0F) | (g->defAttrSeed & 0xF0)));
+    g->attr = rc_attr(g, &g->sgr);
+    return;
+  }
+}
+
+/* ------------------------------------------------- OSC 9 -- the safe subset (T7) --------------- */
+
+/* ConEmu's private family is the one place where "count it and do nothing" was itself the safety property:
+ * the #687 report is an OSC 9;7 that runs a process. MSFT implements the same dialect and draws the same
+ * line -- DoConEmuAction (adaptDispatch.cpp:3558-3647) acts on 9;4, 9;9 and 9;12 and sends EVERYTHING ELSE
+ * to UnknownSequence() -- so the boundary is no longer ours to guess, and the dangerous subcommands stay
+ * unanswered here exactly as they are unanswered there.
+ * Nothing below can move the process. The taskbar pair is *reported*, because a renderer owns no window and
+ * therefore has no taskbar to paint; the directory is *stored as text*, because a working directory taken
+ * from an output stream is a prompt injection with a path on it. Both are read through the seam by whoever
+ * asked for them. */
+
+/* MSFT's til::is_legal_path screens the ASCII range through a path filter and lets everything above it
+   through; its own test states the pair that survives and the one that does not
+   (`C:\Users\...\Users\;Why not` yes, `"Quote-un-quote users` no -- ut_til/string.cpp:247-249). Control
+   characters and the double quote are what that filter rejects in the range that matters here. */
+static int path_is_legal(const uint16_t *p, int n)
+{
+  if (n <= 0) return 0;
+  for (int i = 0; i < n; i++)
+    if (p[i] < 0x20 || p[i] == 0x7F || p[i] == L'"') return 0;
+  return 1;
+}
+
+static void osc9_action(RcGrid *g, int sep, int terminated)
+{
+  /* A DCS never reaches here: osc_finish() classifies RC_OSC_DCS before this arm, so `\eP9;7;calc.exe\e\\`
+     cannot be read as a subcommand by any path the parser has. */
+  if (!terminated || sep < 0) { unsupported(g, RC_UN_OSC_PRIV); return; }
+  int first = 0, len = 0, sub = 0;
+  if (!osc_field(g, sep, 0, &first, &len) || !dec_of(g->title + first, len, &sub))
+  { unsupported(g, RC_UN_OSC_PRIV); return; }
+
+  if (sub == 4)
+  {
+    int state = 0, progress = 0, sf = 0, sl = 0;
+    if (osc_field(g, sep, 1, &sf, &sl))
+    {
+      if (sl && !dec_of(g->title + sf, sl, &state)) { unsupported(g, RC_UN_OSC_PRIV); return; }
+      if (osc_field(g, sep, 2, &sf, &sl) && sl && !dec_of(g->title + sf, sl, &progress))
+      { unsupported(g, RC_UN_OSC_PRIV); return; }
+    }
+    /* Out of range is refused outright (MSFT :3596-3600 returns without applying); out of *bounds upward*
+       on progress is clamped instead (:3601-3605), because "750%" is a program that means 100%. */
+    if (state > 4) { unsupported(g, RC_UN_OSC_PRIV); return; }
+    if (progress > 100) progress = 100;
+    g->taskbarState = state;
+    g->taskbarProgress = progress;
+    g->taskbarSeen = 1;
+    return;
+  }
+
+  if (sub == 9)
+  {
+    if (!osc_field(g, sep, 1, &first, &len)) { unsupported(g, RC_UN_OSC_PRIV); return; }
+    int a = first, n = len;
+    /* ConEmu's documented spelling wraps the path in quotes. MSFT strips one pair when it finds one and
+       takes the value anyway when it does not (:3614-3621) -- both are the same generosity, and the second
+       is the one that keeps `9;9;/tmp` working. */
+    if (n >= 3 && g->title[a] == L'"' && g->title[a + n - 1] == L'"') { a++; n -= 2; }
+    if (!path_is_legal(g->title + a, n) || n > RC_TITLE_MAX) { unsupported(g, RC_UN_OSC_PRIV); return; }
+    for (int i = 0; i < n; i++) g->cwd[i] = g->title[a + i];
+    g->nCwd = n;
+    return;
+  }
+
+  if (sub == 12)
+  {
+    /* "treat this position as the prompt start". MSFT's own comment says it is basically 133;B
+       (:3631-3637), so it goes into the same function with the same argument rather than into a copy of
+       what that argument does -- the row marking, the continuation claim and the exit-code search all come
+       along for free, and cannot drift apart from it later. */
+    const uint16_t B = L'B';
+    if (ftcs_apply(g, &B, 1)) return;
+    unsupported(g, RC_UN_OSC_PRIV);
+    return;
+  }
+
+  unsupported(g, RC_UN_OSC_PRIV);   /* 1, 2, 3, 6, 7, 42 and every other subcommand: counted, never run */
+}
+
+
 /* The OSC/DCS payload is over -- BEL, ST, or abandoned by an ESC or a CAN/SUB. One classification, made
  * here rather than at the introducer, because the parser cannot tell a title from "\e]9;7;calc.exe"
  * until it has read the payload.
@@ -1579,7 +2114,23 @@ static void osc_finish(RcGrid *g, int terminated)
 
   int sep = -1;
   const int code = osc_code_of(g, &sep);
-  if (code == 9) { unsupported(g, RC_UN_OSC_PRIV); return; }
+  /* OSC 9: the safe subset is acted on, the rest is counted and never run (T7). DCS was already
+     separated above, so a `\eP9;7;...` cannot reach this arm as anything but RC_UN_DCS. */
+  if (code == 9) { osc9_action(g, sep, terminated); return; }
+
+  /* `]2004;...` is DECSET 2004 spelled as an OSC, which is the shape MSFT's ConEmu-compatibility arm takes
+     (`DoConEmuAction`, adaptDispatch.cpp:3558). The mode is inert here for the reason section 3 gives -- this
+     library is the output leg and never reads a paste -- so the counter that wants the vote is
+     `bracketed paste`, the one whose whole sentence is about that mode. Counting it as `other osc` instead,
+     which is what happened, records it as a code this build had no case for, and the registry row is what
+     made the contradiction readable. */
+  if (code == 2004) { unsupported(g, RC_UN_DECBP); return; }
+
+  /* The palette family (I34). It has to be tested before the title guard below, because that guard
+     -- upstream's, Ansi.cpp:3845 -- asks for ';' at index 1, and "]10;..." satisfies it: without this
+     arm an OSC 10 would be applied as a *window title*. */
+  if (code == 4 || code == 10 || code == 11 || code == 104 || code == 110 || code == 111)
+  { palette_osc(g, code, sep, terminated); return; }
 
   /* FTCS. `sep == 3` is the guard's form of "the payload really opens with 133;" -- the digit run this code was
      read from, so "]0133;A" (leading zero, RC_OSC_CODE_MAX) and "]1334;A" both fail it. An unterminated one is
@@ -1645,13 +2196,14 @@ static void sgr_captured(RcGrid *g)
   g->nSgrEcho += g->nCap;
 }
 
-/* Does this CSI/ESC final byte change the attribute state? Mirrors the dispatch: a private byte makes
- * ConEmu drop the whole SGR, so '?31m' must not be echoed either. DECSTR's '!' is an interim byte -- the
- * same slot DECSCUSR's ' ' occupies -- and never arrives in `priv`, which only collects 0x30..0x3F. */
-static int echoes(uint8_t interim, uint8_t final, int priv)
+/* Does this CSI final byte change the attribute state? Mirrors the dispatch: a private byte makes
+ * ConEmu drop the whole SGR, so '?31m' must not be echoed either. DECSTR's '!' is an interim byte, and
+ * 'm' has no interim of its own, so only the 'p' case has to look at the set -- but both cases gate on
+ * `priv`, because upstream puts the two ranges in one buffer and tests its length (see csi_dispatch). */
+static int echoes(const RcGrid *g, uint8_t final)
 {
-  if (final == 'm') return !priv;
-  if (final == 'p') return interim == '!';            /* DECSTR resets the attributes */
+  if (final == 'm') return !g->priv;
+  if (final == 'p') return interim_is(g, '!') && !g->priv;   /* DECSTR resets the attributes */
   return 0;
 }
 
@@ -1686,12 +2238,12 @@ int rc_title_take(RcGrid *g, uint16_t *dst, int cap)
 
 int rc_report_pending(const RcGrid *g) { return g ? g->reportLen : 0; }
 
-int rc_report_take(RcGrid *g, int *row, int *col)
+int rc_report_take(RcGrid *g, struct RcReportItem *out)
 {
   if (!g || g->reportLen <= 0) return RC_REP_NONE;
-  const int kind = g->report[g->reportHead].kind;
-  if (row) *row = g->report[g->reportHead].y;
-  if (col) *col = g->report[g->reportHead].x;
+  const struct RcReportItem head = g->report[g->reportHead];
+  if (out) *out = head;
+  const int kind = head.kind;
   g->reportHead = (g->reportHead + 1) % RC_REPORT_MAX;
   if (--g->reportLen == 0) g->reportHead = 0;        /* empty is (0,0), so a reset model reads as a fresh queue */
   return kind;
@@ -1743,7 +2295,7 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
         if (u >= 0x20 && u <= 0x2F)                  /* intermediates: ' ' before 'q', nothing else we model */
         {
           cap_push(g, u);
-          g->interim = u;
+          interim_push(g, (uint8_t)u);
           i++;
           continue;
         }
@@ -1752,8 +2304,8 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
           if (g->digit) push_arg(g, g->cur);         /* a trailing empty parameter is NOT a zero */
           g->mode = RC_GROUND;
           cap_push(g, u);
-          if (echoes((uint8_t)g->interim, (uint8_t)u, g->priv)) sgr_captured(g);
-          csi_dispatch(g, (uint8_t)g->interim, (uint8_t)u);
+          if (echoes(g, (uint8_t)u)) sgr_captured(g);
+          csi_dispatch(g, (uint8_t)u);
           /* One票 per sequence for the colon form, whichever final it carried: this is the number that
              says whether the ConEmu-parity decision in \u00a713.2 ever costs a real application anything. */
           if (g->csiColon) unsupported(g, RC_UN_COLON);
@@ -1803,11 +2355,11 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
            but it is counted on its own -- a DCS never carries a window title, so telling it apart is what
            makes the title counter mean what it says. */
         if (u == 'P' || u == 'X' || u == '^' || u == '_') { osc_start(g, RC_OSC_DCS); i++; continue; }
-        if (u == '(' || u == ')' || u == '%') { g->mode = RC_ESC_INTERIM; g->interim = u; i++; continue; }
+        if (u == '(' || u == ')' || u == '%') { g->mode = RC_ESC_INTERIM; g->escInterim = u; i++; continue; }
         /* SS2/SS3: esc_end() counts the introducer as the whole sequence, so the byte that follows is
            ordinary text. Swallowing it would drop a column from the line. */
         if (u == 'N' || u == 'O') { g->mode = RC_GROUND; i++; continue; }
-        if (u >= 0x20 && u <= 0x2F) { g->mode = RC_ESC_INTERIM; g->interim = u; i++; continue; }
+        if (u >= 0x20 && u <= 0x2F) { g->mode = RC_ESC_INTERIM; g->escInterim = u; i++; continue; }
         if (u >= 0x30 && u <= 0x7E)
         {
           cap_push(g, u);
@@ -1823,7 +2375,7 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
 
       case RC_ESC_INTERIM:
       {
-        uint8_t intro = (uint8_t)g->interim;
+        uint8_t intro = (uint8_t)g->escInterim;
         if (intro == '(' || intro == ')' || intro == '%')
         {
           /* One byte of payload and the sequence is over, whoever it designated. */
@@ -1832,7 +2384,7 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
           i++;
           continue;
         }
-        if (u >= 0x20 && u <= 0x2F) { g->interim = u; i++; continue; }   /* more intermediates */
+        if (u >= 0x20 && u <= 0x2F) { g->escInterim = u; i++; continue; }   /* more intermediates */
         g->mode = RC_GROUND;
         if (u >= 0x30 && u <= 0x7E) esc_dispatch(g, intro, (uint8_t)u);
         i++;
@@ -1900,7 +2452,9 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   g->winRows = winRows;
   g->cy = histRows;                                 /* the viewport's first row, whatever the gutter is */
   g->defAttr = defAttr;
+  g->defAttrSeed = defAttr;   /* what OSC 110/111 go back to (I34) */
   g->cursorVisible = 1;
+  g->wrapMode = 1;            /* out of reset DECAWM is on, in VT and in both references */
   g->cursorShape = -1;     /* memset above says 0, which here would mean "a DECSCUSR asked for the thin
                               cursor" -- the two are only told apart by this, and the difference is that a
                               session nobody shaped may not touch the user's console cursor height. */
@@ -1910,6 +2464,13 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
      `lastExit` is 0 for "the command succeeded", which is a claim, not an absence: -1 until a 133;D says so. */
   g->lastUnit = ' ';
   g->lastExit = -1;
+  /* The fold table starts at upstream's own colours (I34): an OSC 4 that never arrives must not change a
+     single pixel, and the console's live ColorTable is deliberately not consulted here -- on Win10/11 it is
+     Campbell while this fold has always used ConEmu's table, so seeding from the screen would recolour
+     every 256-colour and true-colour SGR in the product. A rebuilt grid carries the previous table instead
+     (RenderJni.cpp's build_model), so an application's OSC 4 survives a resize. */
+  for (int i = 0; i < 256; i++) g->palette[i] = RgbMap[i];
+  for (int i = 0; i < 16; i++) g->pal16[i] = (uint32_t)Far3Color::GetStdPalette()[i];
   sgr_reset(g, 1);                                   /* the underscore bit comes from the default */
   for (int r = 0; r < g->rows; r++)
     for (int c = 0; c < cols; c++)

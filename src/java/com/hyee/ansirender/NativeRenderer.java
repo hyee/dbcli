@@ -43,7 +43,15 @@ public final class NativeRenderer {
      */
     private static final int SLOT_UNSUPPORTED = 17, SLOT_TITLES = 28, SLOT_TITLES_TRUNC = 29,
             SLOT_TITLES_APPLIED = 30, SLOT_ALT = 31, SLOT_ALT_REFUSED = 32, SLOT_PROMPT_MARKS = 33,
-            SLOT_LAST_EXIT = 34, SLOT_LAST = 35;
+            SLOT_LAST_EXIT = 34, SLOT_SNAP = 38,
+            /* DECSET 2026's family, in the order RenderJni.cpp's STAT_SYNC gives them: regions opened, nested
+               BSUs, flushes deferred, and the ways a region ended before its ESU. SLOT_SYNC_ON is the mode as
+               it stands at teardown, not a count, and it is the one worth reading: a session that ended inside a
+               synchronized region is a session where an application sent a BSU and never sent the ESU, and the
+               counts next to it say whether that ever cost a frame. */
+            SLOT_SYNC_ENGAGES = 39, SLOT_SYNC_NESTED = 40, SLOT_SYNC_HELD = 41,
+            SLOT_SYNC_TIMEOUT = 42, SLOT_SYNC_OVERFLOW = 43, SLOT_SYNC_DECLINED = 44,
+            SLOT_SYNC_ON = 45, SLOT_LAST = 46;
 
     /** The two answers Render.h gives a 133;D whose exit code was absent or was not a number. */
     private static final long EXIT_UNKNOWN = -1, EXIT_UNPARSABLE = 0x7FFFFFFFL;
@@ -112,6 +120,40 @@ public final class NativeRenderer {
     }
 
     /**
+     * The view the user typed at: bring the prompt back if they had scrolled away from it. One call per key
+     * press, and it is a no-op unless the model's cursor row is off the window, so a session that never
+     * touches the scroll wheel never pays for it.
+     *
+     * <p>This is the leg conhost refuses to provide here. Its own input path snaps the view on a keystroke
+     * only for a console in VTP mode, and the mode this renderer exists for is the one where VTP is off -- so
+     * on a classic console driven by this library, nothing else ever moves the window back down and the user
+     * types blind into a screen they cannot see. Silent once the library has stopped: a renderer that gave up
+     * no longer knows where its rows are.
+     *
+     * <p>Silent, too, when the console has no symbol to give. A jar newer than the dll beside it throws
+     * UnsatisfiedLinkError here, and this runs on the caller's input pump: a view-alignment nicety must not
+     * be able to stop a terminal reading keys. So the library swallows that one error, once, and says so --
+     * in here rather than in every caller, because the skew is this library's problem and its only witness.
+     * The paint keeps working through it; only the snap is lost, which is why it does not set #stopped.
+     */
+    public synchronized void snapOnInput() {
+        if (h == 0 || stopped != null || snapMissing) {
+            return;
+        }
+        try {
+            snap(h);
+        } catch (UnsatisfiedLinkError e) {
+            /* One retry can never succeed: a symbol absent from the export table is absent for the life of
+               the process. Trying again would print once per keystroke. */
+            snapMissing = true;
+            System.err.println("native renderer: no snap-on-input -- " + e.getMessage()
+                    + " (the library is older than the jar that loaded it; repaints are unaffected)");
+        }
+    }
+
+    private boolean snapMissing;
+
+    /**
      * One line of counters at teardown. It is the witness that a session ran on the native path at all: a
      * grid that looks right proves the same thing whether the library painted it or the console did.
      */
@@ -132,7 +174,7 @@ public final class NativeRenderer {
         System.err.println("native renderer: " + s[0] + " flush(es), " + s[1] + " rectangle(s), "
                 + s[5] + " cell(s), " + s[6] + " scroll(s), " + s[4] + " align(s); " + s[2]
                 + " decline(s), " + s[3] + " console call(s) failed, " + s[16]
-                + " SGR capture overflow(s)" + unmodelled(s));
+                + " SGR capture overflow(s)" + unmodelled(s) + snapped(s));
     }
 
     /** Releases the native model and, if the library opened it, the console. Never unloads the DLL. */
@@ -181,6 +223,41 @@ public final class NativeRenderer {
      */
     public static native long open(long console, int cols, int rows, int defAttr);
 
+    /**
+     * Whether the console this process is attached to is a pseudo-console: the headless conhost a ConPTY
+     * client (Windows Terminal, VS Code, an agent driving a pty) puts between the application and the
+     * terminal that parses the escapes itself.
+     *
+     * <p>Ask this before choosing a writer, and do not substitute an environment variable for it.
+     * {@code WT_SESSION} is inherited by a classic conhost window started from inside a WT session, so the
+     * variable mis-classifies exactly the window where the two answers differ; this reads the fact off the
+     * console's own window, which is VtIo mode as conhost reports it.
+     *
+     * <p>True means do not paint. Under a pseudo-console a write of cells is turned back into escape
+     * sequences by a serializer that knows nothing about a model, so the rows this renderer chose, the
+     * scroll it paid and the screen an adopt merely re-read all reach the user's terminal as new output --
+     * and the terminal's scrollback, not this process, decides what history means.
+     */
+    public static native boolean isPseudoConsole();
+
+    /**
+     * {@link #isPseudoConsole()} in the one form a caller may use before it knows whether it is talking to a
+     * library that can answer: null means "classify without this fact". A missing render.dll and an older one
+     * -- an install whose jar has not caught up with the DLL, or the reverse -- both lack the export, and a
+     * terminal-classification step must not turn that into a startup failure. Callers that get null fall
+     * back to the environment, which is weaker and says so where it is used.
+     */
+    public static Boolean pseudoConsole() {
+        if (!loadLibrary()) {
+            return null;
+        }
+        try {
+            return Boolean.valueOf(isPseudoConsole());
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     /** render()'s work: adopt if needed, parse, paint, and apply the decline/re-adopt/give-up policy. */
     private static native int render(long h, char[] text, int off, int len);
 
@@ -192,6 +269,45 @@ public final class NativeRenderer {
 
     /** Counters for {@link #report()}; the slot table is in RenderJni.cpp, the names this uses are SLOT_*. */
     public static native long[] stats(long h);
+
+    /**
+     * What the last {@code OSC 9;4} asked for, as {@code {state, progress, seen}}, or null when there is
+     * nothing to report. The library parses the safe part of ConEmu's private dialect (the same line
+     * microsoft/terminal draws at {@code DoConEmuAction}) and stops there: it owns no window, so the caller
+     * with a taskbar -- or a status bar -- is the one that acts. {@code state} is 0..4 as the sequence said,
+     * {@code progress} is clamped to 0..100, and {@code seen} says whether any {@code 9;4} arrived at all,
+     * because state 0 is an instruction ("remove the indicator") and not an absence.
+     */
+    public static long[] taskbar(long h) {
+        if (!loadLibrary()) {
+            return null;
+        }
+        try {
+            return taskbar0(h);
+        } catch (Throwable ignored) {
+            return null;                       /* an older render.dll has no such export */
+        }
+    }
+
+    private static native long[] taskbar0(long h);
+
+    /**
+     * The directory the last {@code OSC 9;9} named, or null. Text only, on purpose: a working directory read
+     * out of an output stream is data about where a shell believes it is, and calling {@code chdir} on it
+     * from a renderer would be the same class of overreach as the {@code 9;7} this library never runs.
+     */
+    public static String workingDirectory(long h) {
+        if (!loadLibrary()) {
+            return null;
+        }
+        try {
+            return workingDirectory0(h);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static native String workingDirectory0(long h);
 
     public static native void close(long h);
 
@@ -208,6 +324,14 @@ public final class NativeRenderer {
 
     /** Adopt the console's current cells, cursor and attribute; 0 when its shape is not the model's. */
     public static native int align(long h);
+
+    /**
+     * Move the window so the model's cursor row is on it, the least way that can be done. Writes no cell:
+     * the buffer already holds the rows this model painted, and the window only decides which of them the
+     * user is looking at. Returns 2 when it asked the console to move, 1 when there was nothing to do, 0
+     * when the console's shape is not the model's and an {@link #align} is what that console needs.
+     */
+    public static native int snap(long h);
 
     /** The open() refusal as a code, for a gate that asserts which refusal it got. */
     public static native int openStatus();
@@ -285,12 +409,40 @@ public final class NativeRenderer {
             b.append(s[SLOT_LAST_EXIT] == EXIT_UNPARSABLE ? "?not a number"
                     : Long.toString(s[SLOT_LAST_EXIT]));
         }
+        /* Only the facts a reader can act on. A region that ended normally is the whole point of the mode and
+           needs no line; a flush that was held is worth a number, and a timeout is worth a sentence -- it means
+           an application started a synchronized update and never finished it, which is a bug in it that this
+           library quietly worked around. An overflow says the opposite: the application behaved, and its region
+           was longer than this console's scrollback gutter, so the frames it wanted coalesced anyway. Both are
+           per-session findings, not per-frame ones. */
+        if (has(s, SLOT_SYNC_TIMEOUT) && s[SLOT_SYNC_TIMEOUT] != 0) {
+            b.append("; ").append(s[SLOT_SYNC_TIMEOUT])
+                    .append(" synchronized update(s) timed out (a BSU without its ESU)");
+        }
+        if (has(s, SLOT_SYNC_OVERFLOW) && s[SLOT_SYNC_OVERFLOW] != 0) {
+            b.append("; ").append(s[SLOT_SYNC_OVERFLOW])
+                    .append(" frame(s) painted early to keep the scrollback gutter from overflowing");
+        }
+        if (has(s, SLOT_SYNC_ON) && s[SLOT_SYNC_ON] != 0) {
+            b.append("; still inside a synchronized update at close");
+        }
         return b.toString();
     }
 
     /** Whether the loaded dll's array reaches slot {@code i} -- see the length gate in {@link #unmodelled}. */
     private static boolean has(long[] s, int i) {
         return s.length > i;
+    }
+
+    /**
+     * The one clause that is not about the byte stream: how many times a keystroke found the user scrolled
+     * away from the prompt and moved the view back. It stays off the line until it happens, because a session
+     * that reports it is a session where somebody lost the prompt -- and that is the sentence worth having.
+     */
+    private static String snapped(long[] s) {
+        return has(s, SLOT_SNAP) && s[SLOT_SNAP] != 0
+                ? "; " + s[SLOT_SNAP] + " view(s) snapped back on input"
+                : "";
     }
 
     private static boolean loadLibrary() {

@@ -144,6 +144,16 @@ static void putraw(RcGrid *g, const char *s)
   rc_feed(g, buf, n);
 }
 
+/* The take below hands out the whole queue entry; most gates want one field of it and nothing else. */
+static int take_xy(RcGrid *g, int *row, int *col)
+{
+  struct RcReportItem it;
+  const int kind = rc_report_take(g, &it);
+  if (row) *row = it.y;
+  if (col) *col = it.x;
+  return kind;
+}
+
 static void put(RcGrid *g, const char *s)
 {
   corpus_add(s);
@@ -440,7 +450,8 @@ static void gm_osc_family()
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033]10;fg\007\033]4;1;rgb:00/00/00\007\033]52;c;AAAA\007\033]\007");
-  eq_u("other OSC counted", g.nUnsupported[RC_UN_OSC_OTHER], 4, "10, 4, 52 and a bare introducer");
+  eq_u("other OSC counted", g.nUnsupported[RC_UN_OSC_OTHER], 3,
+       "the name in `10;fg`, 52 and a bare introducer -- `4;1;rgb:00/00/00` is applied now (I34), so it votes nothing");
   eq_title(&g, NULL, "none of them is a title");
 
   /* The guard ConEmu really has (Ansi.cpp:3845): the ';' must sit at index 1, so "]10;t" is not a title
@@ -666,6 +677,239 @@ static void gm_charset()
   eq_u("split designator took effect", g.cells[0][0].ch, 0x2500, "");
 }
 
+/* OSC 4 / 10 / 11 -- the palette (I34). The grammar is MSFT's because MSFT implements it and ConEmu does
+ * nothing, and the two tables are the whole point of the family: an index below 16 is the colour of a
+ * *console attribute* (it goes to the console and to the fold), one at or above 16 is only the RGB a
+ * 256-colour index means, because a 4-bit attribute has nowhere else to put it. What a host grid can witness
+ * is the model side; that the console really changed, and that it came back on close(), is the live leg.
+ * Every expectation below is in COLORREF order (0x00BBGGRR), which is what this tree's colour domain is --
+ * `RgbMap[17] == 0x5f0000` is xterm's 00005f read that way, and SGR 38;2 packs `(b<<16)|(g<<8)|r`. */
+static void gm_palette()
+{
+  static RcGrid g;
+
+  /* The default attribute is an attribute; the pen has to come back as the same colour the reset filled
+     the cells with. Attribute 1 is FORE_BLUE and ClrMap[1] is 4, so before the conversion at the seed sites
+     a blue-default profile got a red pen and a blue screen out of one rc_reset. */
+  rc_reset(&g, 20, 4, 0x01);
+  eq_u("a blue-default profile keeps a blue pen", g.attr & 0x0F, 1,
+       "the cells the same reset filled are attribute 1; the pen must not be 4");
+  eq_u("and the fill agrees", g.cells[0][0].attr & 0x0F, 1, "");
+  put(&g, "Z");
+  eq_u("a character written into it lands blue", g.cells[0][0].attr & 0x0F, 1, "");
+  rc_reset(&g, 20, 4, 0x01);
+  put(&g, "\033[37mX\033[m");
+  eq_u("SGR 0 after an explicit colour returns to the default, not to its double conversion",
+       (unsigned)(g.attr & 0x0F), 1, "37 makes the pen white; the reset must land on 1, not on ClrMap[1]");
+  put(&g, "\033[37m\033[39m");
+  eq_u("and SGR 39 says the same", (unsigned)(g.attr & 0x0F), 1, "");
+
+  /* The spec forms. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]4;1;rgb:11/22/33\007");
+  eq_u("rgb:r/g/b lands in the attribute table", g.pal16[1], 0x00332211, "COLORREF: red 0x11, green 0x22, blue 0x33");
+  eq_u("and asks for exactly that entry to be written", g.palTouched, 1u << 1, "");
+  put(&g, "\033]4;2;#4080c0\007");
+  eq_u("#RRGGBB parses", g.pal16[2], 0x00C08040, "");
+  put(&g, "\033]4;3;#0f0\007");
+  eq_u("#RGB replicates the nibble", g.pal16[3], 0x0000FF00,
+       "MSFT's sharp-form multiplier would say 0xF0 here while its rgb: form says 0xFF; this uses one rule");
+  put(&g, "\033]4;4;#0000ffff0000\007");
+  eq_u("#RRRRGGGGBBBB scales down", g.pal16[4], 0x0000FF00, "");
+  put(&g, "\033]4;5;rgb:f/ff/0f0\007");
+  eq_u("the rgb: form allows unequal widths", g.pal16[5], 0x000FFFFF, "f->0xFF, ff->0xFF, 0f0->0x0F");
+
+  /* What is not a colour, and what a refusal costs. */
+  put(&g, "\033]4;6;orange\007");
+  eq_u("a name is counted", g.nUnsupported[RC_UN_OSC_OTHER], 1, "I34 says why this build does not resolve names");
+  eq_u("and stores nothing", g.palTouched, (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5),
+       "bits 1..5, and not 6");
+  put(&g, "\033]4;300;#ffffff\007");
+  eq_u("an index past the table is counted too", g.nUnsupported[RC_UN_OSC_OTHER], 2, "");
+  put(&g, "\033]4;7;#12\007");
+  eq_u("a sharp form with a bad width is counted", g.nUnsupported[RC_UN_OSC_OTHER], 3, "");
+  put(&g, "\033]4;7;rgb:1/2\007");
+  eq_u("a truncated rgb: form is counted", g.nUnsupported[RC_UN_OSC_OTHER], 4, "");
+
+  /* Two ranges, two tables. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]4;196;rgb:ff/00/00\007");
+  eq_u("index 196 goes into the 256 table", g.palette[196], 0x000000FFu, "pure red as a COLORREF");
+  eq_u("and asks the console for nothing", g.palTouched, 0, "there is no console slot 196");
+  eq_u("the attribute table is untouched", g.pal16[4], 0x00000080u, "attribute 4 is still the standard dark red");
+
+  /* The fold follows the table it was given -- the reason the model owns a palette at all. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38;2;18;52;86mX");
+  const unsigned before = g.attr & 0xF;
+  put(&g, "\033]4;9;rgb:12/34/56\007");
+  put(&g, "\033[38;2;18;52;86mY");
+  eq_u("the same colour now folds to the entry that was made for it", g.attr & 0xF, 9,
+       "an exact match in the table the application just wrote");
+  eq_u("and that fold was elsewhere before the change", before, 1,
+       "the bucket logic answers 1 for 0x12/0x34/0x56; the exact match answers 9 only after the write");
+
+  /* Queries arm through the same queue as DSR and DECRQM. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]4;0;rgb:01/02/03;1;?\007");
+  eq_u("a set and an ask in one payload arm one reply", (unsigned)rc_report_pending(&g), 1, "");
+  eq_u("the pair before the ask was applied", g.pal16[0], 0x00030201u, "");
+  {
+    struct RcReportItem it;
+    eq_u("its kind is OSC", (unsigned)rc_report_take(&g, &it), (unsigned)RC_REP_OSC, "");
+    eq_u("it names the resource", (unsigned)it.mode, 4, "");
+    eq_u("and the index that asked", (unsigned)it.y, 1, "not 0: that one was set, not asked about");
+    eq_u("with the colour the console will show", it.status, g.pal16[1], "");
+  }
+
+  /* OSC 10/11: a default is an index on this console, so an RGB is folded and the *effective* colour is
+     what a query answers with. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]10;rgb:80/00/00\007");
+  eq_u("the default foreground moved to the nearest index", g.defAttr & 0xF, 4,
+       "the table is indexed by console attribute, and 4 is FORE_RED");
+  eq_u("and the console's own attribute is not", g.attr & 0xF, 7,
+       "on this console that field *is* the pen, so an OSC 10 cannot be pushed at it (I34)");
+  eq_u("the background nibble did not move", (g.defAttr >> 4) & 0xF, 0, "");
+  put(&g, "\033]11;rgb:00/ff/00\007");
+  eq_u("the default background follows the same rule", (g.defAttr >> 4) & 0xF, 10, "");
+  put(&g, "\033]11;?\007");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("a default query carries no index", (unsigned)it.y, 0, "only `4` names one");
+    eq_u("and answers with the colour of the index chosen", it.status, g.pal16[10],
+         "the effective colour, not the RGB that was asked for (I34)");
+  }
+  put(&g, "\033]10;red;green\007");
+  eq_u("MSFT walks resources forward one per field, and names fail on the way",
+       g.nUnsupported[RC_UN_OSC_OTHER], 2, "");
+
+  /* Resets. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]4;3;rgb:ff/ff/ff\007\033]104\007");
+  eq_u("104 with no payload restores the standard table", g.pal16[3], 0x00808000u, "");
+  eq_u("and marks all sixteen for the console", g.palTouched, 0xFFFFu,
+       "restoring is a write like any other, and the console keeps the user's other entries");
+  put(&g, "\033]4;4;rgb:ff/ff/ff\007\033]4;5;rgb:ff/ff/ff\007\033]104;4\007");
+  eq_u("104 with an index restores that one", g.pal16[4], 0x00000080u, "");
+  eq_u("and leaves its neighbour set", g.pal16[5], 0x00FFFFFFu, "");
+  put(&g, "\033]104;7;x;8\007");
+  eq_u("104 stops at the first index it cannot parse", g.nUnsupported[RC_UN_OSC_OTHER], 1,
+       "MSFT:846 records that this is xterm's choice over VTE's");
+  eq_u("so the index after the junk was never reached", g.pal16[8], 0x00808080u, "still the standard grey");
+
+  /* 110/111, and the payload that never closed. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]10;rgb:80/00/00\007\033]110\007");
+  eq_u("110 with an empty payload restores the default foreground", g.defAttr & 0xF, 7,
+       "the seed the handle found, not a guess at a colour");
+  put(&g, "\033]10;rgb:80/00/00\007\033]110;1\007");
+  eq_u("110 with a payload counts and does nothing", g.nUnsupported[RC_UN_OSC_OTHER], 1,
+       "MSFT:855-866 notes xterm and VTE disagree here");
+  eq_u("and the default stays where it was", g.defAttr & 0xF, 4, "the same FORE_RED the write chose");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]4;1;rgb:00/00/00");
+  put(&g, "\033[5n");
+  eq_u("an unterminated palette write counts and applies nothing", g.nUnsupported[RC_UN_OSC_OTHER], 1,
+       "the same rule titles and 133 use");
+  eq_u("nothing was touched", g.palTouched, 0, "");
+  eq_u("and the abandoned sequence still left the queue alone", (unsigned)rc_report_pending(&g), 1,
+       "the `CSI 5n` that restarted the parser is its own question");
+}
+
+/* The OSC 9 safe subset (T7). ConEmu's private dialect is where the #687 remote-code report lives, so the
+ * gate has two jobs: prove the three subcommands MSFT acts on really do what MSFT does, and prove that
+ * everything else -- including the shapes that look one byte away from acting -- leaves nothing stored. */
+static void gm_osc9()
+{
+  static RcGrid g;
+
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]9;4;1;50\007");
+  eq_u("9;4 stores the state", (unsigned)g.taskbarState, 1, "");
+  eq_u("and the progress", (unsigned)g.taskbarProgress, 50, "");
+  eq_u("and says it saw one", (unsigned)g.taskbarSeen, 1, "state 0 is an instruction, not an absence");
+  eq_u("with nothing counted", g.nUnsupported[RC_UN_OSC_PRIV], 0, "");
+
+  put(&g, "\033]9;4;2;150\007");
+  eq_u("progress past 100 clamps", (unsigned)g.taskbarProgress, 100,
+       "MSFT :3601-3605: a program that means 750% means the bar is full");
+  eq_u("and the state came along", (unsigned)g.taskbarState, 2, "");
+
+  put(&g, "\033]9;4;9;50\007");
+  eq_u("a state past 4 is refused outright", (unsigned)g.taskbarState, 2,
+       "MSFT returns without applying (:3596-3600) -- the old value stays");
+  eq_u("and counted as the private family it is", g.nUnsupported[RC_UN_OSC_PRIV], 1, "");
+
+  put(&g, "\033]9;4\007");
+  eq_u("bare 9;4 is the remove form", (unsigned)g.taskbarState, 0, "");
+  eq_u("with the progress cleared too", (unsigned)g.taskbarProgress, 0, "");
+  put(&g, "\033]9;4;3;25\007\033]9;4;\007");
+  eq_u("an empty state field is not an error", (unsigned)g.taskbarState, 0,
+       "MSFT only bails on a field that is both unparseable and non-empty (:3581-3584)");
+
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]9;9;\"D:/\"\007");
+  eq_u("9;9 strips one pair of quotes", (unsigned)g.nCwd, 3, "ConEmu's documented spelling");
+  eq_u("first unit", g.cwd[0], L'D', "");
+  eq_u("second unit", g.cwd[1], L':', "");
+  eq_u("third unit", g.cwd[2], L'/', "");
+  put(&g, "\033]9;9;/tmp\007");
+  eq_u("and an unquoted path is taken anyway", (unsigned)g.nCwd, 4, "MSFT :3616-3621 does the same");
+  put(&g, "\033]9;9;C:\001x\007");   /* SOH, not BEL: \a would have ended the OSC */
+  eq_u("a control character in the path refuses it", (unsigned)g.nCwd, 4, "still /tmp");
+  eq_u("counted", g.nUnsupported[RC_UN_OSC_PRIV], 1, "");
+  put(&g, "\033]9;9;\"a\"b\"\007");
+  eq_u("and an inner quote survives the strip only to fail legality", (unsigned)g.nCwd, 4,
+       "the pair comes off, then `a\"b` is rejected -- til::is_legal_path's own test case");
+  put(&g, "\033]9;9;\007");
+  eq_u("an empty path stores nothing", (unsigned)g.nCwd, 4, "");
+  eq_u("and counts -- the third refusal in a row", g.nUnsupported[RC_UN_OSC_PRIV], 3,
+       "the control character, the inner quote and the empty field each vote once");
+
+  /* 9;12 must be the *same* path as 133;B, not a copy of it: compare every field one of them can move. */
+  static RcGrid a, b;
+  rc_reset(&a, 20, 4, 0x07);
+  rc_reset(&b, 20, 4, 0x07);
+  put(&a, "abc\033]133;B\007");
+  put(&b, "abc\033]9;12\007");
+  eq_u("9;12 marks the row the way 133;B does", (unsigned)b.rowMark[a.cy], (unsigned)a.rowMark[a.cy], "");
+  eq_u("with the same content claim", (unsigned)b.semanticContent, (unsigned)a.semanticContent,
+       "RC_SC_INPUT, which is what makes the next line a command line");
+  eq_u("and the same end-of-line rule", (unsigned)b.semanticClearEol, (unsigned)a.semanticClearEol, "");
+  eq_u("cursor where it was", (unsigned)b.cy, (unsigned)a.cy, "neither form moves the cursor");
+  eq_u("and nothing counted for 9;12", b.nUnsupported[RC_UN_OSC_PRIV], 0, "");
+
+  /* The dangerous half of the family, and the shapes that must not reach it. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]9;7;calc.exe\007");
+  eq_u("9;7 counts and stores nothing", g.nUnsupported[RC_UN_OSC_PRIV], 1,
+       "the #687 shape: the answer is that no path through this file runs it");
+  eq_u("no directory", (unsigned)g.nCwd, 0, "");
+  eq_u("no taskbar", (unsigned)g.taskbarSeen, 0, "");
+  put(&g, "\033]9;2;boom\007\033]9;3;E=1\007\033]9;1;5\007\033]9;6;GuiMacro(\"x\")\007");
+  eq_u("MessageBox, set-env, sleep and GuiMacro all just count", g.nUnsupported[RC_UN_OSC_PRIV], 5, "");
+  put(&g, "\033]9\007");
+  eq_u("a bare 9 with no subcommand counts", g.nUnsupported[RC_UN_OSC_PRIV], 6, "");
+  put(&g, "\033]9;x\007");
+  eq_u("and so does an unparseable subcommand", g.nUnsupported[RC_UN_OSC_PRIV], 7, "");
+  put(&g, "\033]9;4;1;60");
+  eq_u("an unterminated 9;4 has applied nothing yet", (unsigned)g.taskbarProgress, 0,
+       "the payload is still open, so there is nothing to count either");
+  eq_u("and has not counted yet", g.nUnsupported[RC_UN_OSC_PRIV], 7, "");
+  put(&g, "\033[\007");                          /* abandon and restart: the OSC closes as unterminated */
+  eq_u("the abandoned 9;4 counts once", g.nUnsupported[RC_UN_OSC_PRIV], 8,
+       "same rule as titles and 133: a half-read command is not a claim, but it is a record");
+  eq_u("and still applies nothing", (unsigned)g.taskbarProgress, 0, "");
+  put(&g, "\033P9;7;calc.exe\033\\\033]9;12\007");
+  eq_u("a DCS wearing the same digits is the DCS counter", g.nUnsupported[RC_UN_DCS], 1,
+       "osc_finish separates the framings before any subcommand is read");
+  eq_u("while the real 9;12 acted", (unsigned)g.semanticContent, RC_SC_INPUT, "");
+  eq_u("and the frame is still trusted", (unsigned)g.modelSuspect, 0,
+       "a private OSC that was refused must not poison the picture, only be counted");
+}
+
 /* The queue a query goes into, which is the whole of what the model can say about a reply: RenderJni's
  * drain turns an entry into key events, and everything it needs to say the right thing is here. Two rules
  * are worth pinning against a grid rather than trusting a live `tput rows`: the entry carries the cursor as
@@ -679,7 +923,7 @@ static void gm_reports()
   eq_u("a status request arms one reply", (unsigned)rc_report_pending(&g), 1, "");
   eq_u("and is not counted as one we refuse", g.nUnsupported[RC_UN_REPORT], 0, "");
   int ry = -1, rx = -1;
-  eq_u("its kind", (unsigned)rc_report_take(&g, &ry, &rx), (unsigned)RC_REP_DSR, "");
+  eq_u("its kind", (unsigned)take_xy(&g, &ry, &rx), (unsigned)RC_REP_DSR, "");
   eq_u("and it armed nothing else", (unsigned)rc_report_pending(&g), 0, "");
 
   /* The snapshot, which is the subtle half. `CSI 6n` then a move asks about where the cursor was; a drain
@@ -688,7 +932,7 @@ static void gm_reports()
   rc_reset(&g, 20, 6, 0x07);
   put(&g, "\033[3;5H\033[6n\033[6;2H");
   eq_u("the move did not add a second reply", (unsigned)rc_report_pending(&g), 1, "");
-  rc_report_take(&g, &ry, &rx);
+  take_xy(&g, &ry, &rx);
   eq_u("CPR row is the cursor as it stood", (unsigned)ry, 2, "model row, 0-based; the painter adds row0");
   eq_u("CPR column likewise", (unsigned)rx, 4, "");
   eq_u("and the cursor has since moved", (unsigned)g.cy, 5, "the answer must not follow it");
@@ -696,8 +940,8 @@ static void gm_reports()
   rc_reset(&g, 20, 6, 0x07);
   put(&g, "\033[c\033[>c");
   eq_u("two identity queries, two replies", (unsigned)rc_report_pending(&g), 2, "");
-  eq_u("the oldest is the primary", (unsigned)rc_report_take(&g, NULL, NULL), (unsigned)RC_REP_DA, "FIFO");
-  eq_u("then the secondary", (unsigned)rc_report_take(&g, NULL, NULL), (unsigned)RC_REP_DA2, "");
+  eq_u("the oldest is the primary", (unsigned)rc_report_take(&g, NULL), (unsigned)RC_REP_DA, "FIFO");
+  eq_u("then the secondary", (unsigned)rc_report_take(&g, NULL), (unsigned)RC_REP_DA2, "");
   eq_u("and nothing was refused on the way", g.nUnsupported[RC_UN_REPORT], 0, "both were answered");
   put(&g, "\033[1c");
   eq_u("counted", g.nUnsupported[RC_UN_REPORT], 1, "VT52 and friends are not answered");
@@ -705,12 +949,105 @@ static void gm_reports()
   put(&g, "\033[t");
   eq_u("window manipulation is counted too", g.nUnsupported[RC_UN_REPORT], 2, "");
 
+  /* DECRQM. ConEmu has no such reply -- every `p` it does not recognise goes to DumpUnknownEscape
+     (Ansi.cpp:3650-3653) -- so the numbers below are the VT500 ones (1 reset, 2 set, 3 permanently reset,
+     4 permanently set) and only the first two ever appear: 3 and 4 claim a permanence this model cannot
+     keep, and the block after this one is the evidence that the two readers do not even agree on what they
+     mean. A mode the table does not name is counted and left unanswered rather than guessed at.
+     The snapshot is the half that needed the queue entry to grow: the answer belongs to the moment the
+     request was read, so a chunk that turns the mode off afterwards still gets "it was on". */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2026h\033[?2026$p\033[?2026l");
+  eq_u("one request, one reply", (unsigned)rc_report_pending(&g), 1, "neither the DECSET nor the RESET speaks");
+  {
+    struct RcReportItem it;
+    eq_u("its kind is DECRPM", (unsigned)rc_report_take(&g, &it), (unsigned)RC_REP_DECRPM, "");
+    eq_u("the reply names the mode that was asked", (unsigned)it.mode, 2026,
+         "jline4 reads the number back out of the reply, so a reply about the wrong id is worse than none");
+    eq_u("and the state it had when the request was read", (unsigned)it.status, 2,
+         "the `?2026l` that followed is a later fact, exactly as a cursor move after a CPR is");
+  }
+  eq_u("answering a query votes in no census", g.nUnsupported[RC_UN_MODE], 0, "");
+
+  /* The two ids of jline4's probe batch that this build holds no state for. They are the ones a permanent
+     number was written for, and they are the reason no number is sent at all: DEC and xterm read DECRPM 4 as
+     "permanently set" while jline4 documents 4 as "permanently reset" (AbstractTerminal.java:663-667), so
+     either spelling lies to one of the two -- and `parseDecrpm` already reaches NOT_SUPPORTED for a mode it
+     finds no reply for (:677-689), which is the verdict both of them should be given. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2027$p\033[?2048$p");
+  eq_u("reflow and in-band resize answer nothing", (unsigned)rc_report_pending(&g), 0,
+       "2048 is the resize notification, not the paste mode: this build wraps at cells and reports size out of band");
+  eq_u("and each votes for the mode it asked about", g.nUnsupported[RC_UN_MODE], 2,
+       "the count its DECSET already costs, so `h` and `$p` cannot disagree about who owns a mode");
+
+  /* The order the answered ids leave in. jline4 writes its batch as one string and looks each reply up by
+     number, so the one failure this queue must not have is a reply about the wrong id. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?25$p\033[?2026$p\033[?1049$p");
+  {
+    struct RcReportItem first, second, third;
+    eq_u("three requests queued", (unsigned)rc_report_pending(&g), 3, "");
+    rc_report_take(&g, &first);
+    rc_report_take(&g, &second);
+    rc_report_take(&g, &third);
+    eq_u("first out is first in", (unsigned)first.mode, 25, "");
+    eq_u("the middle keeps its own answer", (unsigned)second.mode, 2026, "");
+    eq_u("and so does the tail", (unsigned)third.mode, 1049, "");
+    eq_u("a region nobody opened is reported as reset", (unsigned)second.status, 1,
+         "1, not a permanent number: the mode is understood and currently off, and jline4 reads both 1 and 2 as SUPPORTED (:685)");
+  }
+
+  /* Modes with a real state behind them, read through the same table. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?25$p");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("a fresh grid reports the cursor visible", (unsigned)it.status, 2, "");
+  }
+  put(&g, "\033[?25l\033[?25$p");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("and `?25l` is a fact the reply carries", (unsigned)it.status, 1, "");
+  }
+  put(&g, "\033[?1049h\033[?1049$p\033[?47$p");
+  {
+    struct RcReportItem alt, legacy;
+    rc_report_take(&g, &alt);
+    rc_report_take(&g, &legacy);
+    eq_u("1049 on the alternate screen answers set", (unsigned)alt.status, 2, "");
+    eq_u("and 47 is the same slot, so it cannot disagree", (unsigned)legacy.status, 2,
+         "three spellings, one bit (I14): a reply that contradicted the DECSET that moved it would be the lie");
+  }
+
+  /* What is *not* a request. Each of these is a spelling a program can send, and each has to leave a number
+     rather than a reply it cannot be held to. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?999$p");
+  eq_u("a mode neither leg models answers nothing", (unsigned)rc_report_pending(&g), 0,
+       "and that is a decision, not a gap: see the `?6n` ruling this one follows");
+  eq_u("counted as the mode it asked about", g.nUnsupported[RC_UN_MODE], 1, "not SUP: the `$` says what it was");
+  put(&g, "\033[2026$p");
+  eq_u("the non-private request is counted too", g.nUnsupported[RC_UN_MODE], 2,
+       "ANSI 2026 does not exist; the probe always carries the `?`");
+  eq_u("and armed nothing", (unsigned)rc_report_pending(&g), 0, "");
+  put(&g, "\033[?1;2$p");
+  eq_u("a request with two parameters is not one", g.nUnsupported[RC_UN_MODE], 3, "");
+  put(&g, "\033[?$p");
+  eq_u("and one with no parameter is not either", g.nUnsupported[RC_UN_MODE], 4, "");
+  put(&g, "\033[?2026!p");
+  eq_u("a different interim with the same final still votes SUP", g.nUnsupported[RC_UN_SUP], 1,
+       "`!` is DECSTR's byte, and with a parameter it is nothing at all");
+  eq_u("while the census of modes did not move", g.nUnsupported[RC_UN_MODE], 4, "");
+
   /* The limit, and the direction it refuses in. */
   rc_reset(&g, 20, 6, 0x07);
   for (int i = 0; i < RC_REPORT_MAX + 3; i++) put(&g, "\033[6n");
   eq_u("the queue holds its stated depth", (unsigned)rc_report_pending(&g), (unsigned)RC_REPORT_MAX, "");
   eq_u("and says so, three times", g.nReportFull, 3, "a refusal, not an eviction");
-  eq_u("the first entry is still the first asked", (unsigned)rc_report_take(&g, &ry, &rx), (unsigned)RC_REP_CPR, "");
+  eq_u("the first entry is still the first asked", (unsigned)take_xy(&g, &ry, &rx), (unsigned)RC_REP_CPR, "");
   eq_u("at the position it was asked from", (unsigned)ry, 0, "nine identical queries, no cursor moves");
   rc_report_result(&g, 1);
   eq_u("a reply the console took is counted once", g.nReportOk, 1, "");
@@ -1055,6 +1392,128 @@ static void geo_wrap()
   eq_u("row wrapped after a full row", (unsigned)g.cy, 1, "");
 }
 
+/* I35: DECAWM -- `CSI ?7 l` ends the line at the margin instead of continuing it on the next row.
+   Both reference terminals act on the mode (MSFT keeps it as private mode 7 and answers DECRQM for it),
+   and the product's own ANSI dictionary names both spellings (`lua/ansi.lua`'s WRAP/UNWRAP), so refusing
+   the sequence was silence in answer to a request that has a meaning. ConEmu's own arm leaves the
+   SetConsoleMode commented out (Ansi.cpp:3268-3281), which is what makes this a documented deviation
+   rather than a parity item -- and the terminfo entry keeps `smam`/`rmam` out, because it also describes
+   sessions where that parser reads the stream (I26). */
+static void geo_decawm()
+{
+  static RcGrid g;
+  const uint16_t wide = 0x4E00;
+  const uint16_t narrowAstral[2] = { 0xD834, 0xDD1E };   /* U+1D11E: astral, EAW N, so two units one column each */
+  struct RcReportItem it;
+
+  /* The margin is where the line ends. */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[?7l0123456789abc");
+  eq_text(&g, 0, 10, "012345678c", "three characters past the margin overwrote the last cell");
+  eq_u("cursor holds at the margin", (unsigned)g.cx, 9, "the cell a fixed-width status line keeps redrawing");
+  eq_u("cursor never left the row", (unsigned)g.cy, 0, "nothing scrolled for a line that ended here");
+  eq_u("the row claims no wrap", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_NONE,
+       "copy and export must not join a row the application ended");
+  eq_u("the row below is blank", (unsigned)g.cells[1][0].ch, (unsigned)' ', "");
+
+  /* DECSET 7 takes effect on the very next character. The wrap is immediate, not pending (I22's four
+     discriminators), so the character that fills the last column is drawn there and only the one after it
+     starts the next row -- which is the difference this case had wrong on its first run. */
+  put(&g, "\033[?7hZ");
+  eq_u("the character that filled the row landed in it", (unsigned)g.cells[0][9].ch, (unsigned)'Z', "");
+  eq_u("the row that had ended is forced", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_FORCED, "");
+  eq_u("cursor wrapped to the next row", (unsigned)g.cy, 1, "");
+  put(&g, "Y");
+  eq_text(&g, 1, 1, "Y", "and the next character starts it");
+
+  /* A wide glyph with one column left is dropped whole, and the column it could not use is cleared.
+     MSFT's words for the same choice: "Ignore the character. There's no correct alternative way to
+     handle this situation." (Row.cpp:474-494) */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[?7l012345678");
+  eq_u("nine columns written", (unsigned)g.nCells, 9, "");
+  putu(&g, &wide, 1);
+  eq_u("the glyph is not on the grid", (unsigned)g.cells[0][9].ch, (unsigned)' ',
+       "cleared, rather than left holding whatever passed this way before");
+  eq_u("no trailing bit on it", (unsigned)(g.cells[0][9].attr & RC_LVB_TRAILING), 0, "");
+  eq_u("a dropped glyph charges no cell", (unsigned)g.nCells, 9, "");
+  eq_u("cursor still at the margin", (unsigned)g.cx, 9, "");
+  eq_u("no pad claim", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_NONE,
+       "the row was not left short so a glyph could start the next one");
+  eq_u("no row was started", (unsigned)g.cy, 0, "");
+
+  /* Two columns left is enough: the pair lands, and the cursor comes off its back half. */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[?7l01234567");
+  putu(&g, &wide, 1);
+  eq_u("front half at cols-2", (unsigned)(g.cells[0][8].attr & RC_LVB_LEADING),
+       (unsigned)RC_LVB_LEADING, "");
+  eq_u("back half at cols-1", (unsigned)(g.cells[0][9].attr & RC_LVB_TRAILING),
+       (unsigned)RC_LVB_TRAILING, "");
+  eq_u("the margin clamp stepped off the back half", (unsigned)g.cx, 8,
+       "the rule step_back_col exists for: a cursor never rests inside a glyph");
+  put(&g, "x");
+  eq_u("the front half is overwritten", (unsigned)g.cells[0][8].ch, (unsigned)'x', "");
+  eq_u("its partner went with it", (unsigned)g.cells[0][9].ch, (unsigned)' ', "");
+  eq_u("no orphaned trailing bit", (unsigned)(g.cells[0][9].attr & RC_LVB_TRAILING), 0, "");
+  eq_u("cursor on the last column", (unsigned)g.cx, 9, "");
+
+  /* The trim belongs to the cell pair, not to the mode: a narrow glyph over a wide one's front half ends
+     the glyph wherever the cursor happened to be put. With DECAWM on and a CUP, that is the same shape. */
+  rc_reset(&g, 10, 3, 0x07);
+  putu(&g, &wide, 1);
+  put(&g, "\033[1;1HA");
+  eq_u("overwrite of the front half", (unsigned)g.cells[0][0].ch, (unsigned)'A', "");
+  eq_u("ends the back half too", (unsigned)g.cells[0][1].ch, (unsigned)' ',
+       "conhost trims the cluster the same way (Row.cpp's ReplaceCharacters)");
+  eq_u("no stray trailing bit", (unsigned)(g.cells[0][1].attr & RC_LVB_TRAILING), 0,
+       "left alone, it would be copied as part of a glyph that is no longer there");
+
+  /* Half a surrogate pair is not a character either, so a narrow astral glyph is dropped as a unit
+     rather than written as one lone high surrogate in the last cell. */
+  eq_u("the oracle widths U+1D11E as one column", (unsigned)rc_width(0x1D11E), 1,
+       "this case is about the two-unit arm, and it only reaches that arm if the glyph is narrow");
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[?7l012345678");
+  putu(&g, narrowAstral, 2);
+  eq_u("neither half landed", (unsigned)g.cells[0][9].ch, (unsigned)' ', "");
+  eq_u("and nothing wrapped to the next row", (unsigned)g.cells[1][0].ch, (unsigned)' ', "");
+
+  /* DECRQM answers what the model now holds, snapshot and all. */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[?7$p");
+  eq_u("one request, one reply", (unsigned)rc_report_pending(&g), 1, "");
+  eq_u("its kind", (unsigned)rc_report_take(&g, &it), (unsigned)RC_REP_DECRPM, "");
+  eq_u("the mode that was asked about", (unsigned)it.mode, 7, "");
+  eq_u("set, out of reset", (unsigned)it.status, 2, "DECAWM is on after a reset in VT and in both references");
+  put(&g, "\033[?7l\033[?7$p");
+  eq_u("the set spelled here is the one that answers", (unsigned)rc_report_pending(&g), 1,
+       "`?7l` itself is silent");
+  rc_report_take(&g, &it);
+  eq_u("and says reset", (unsigned)it.status, 1, "");
+  eq_u("none of this voted in the census", (unsigned)g.nUnsupported[RC_UN_MODE], 0,
+       "an answered query is not an unmodelled request");
+
+  /* RIS and DECSTR both put the mode back with everything else they reset. */
+  put(&g, "\033[?7l\033[!p\033[?7$p");
+  rc_report_take(&g, &it);
+  eq_u("DECSTR restores it", (unsigned)it.status, 2,
+       "a mode with no terminfo entry is still a mode a reset owns");
+  put(&g, "\033[?7l\033c\033[?7$p");
+  rc_report_take(&g, &it);
+  eq_u("RIS restores it", (unsigned)it.status, 2, "");
+
+  /* `CSI 7 h/l` without the `?` is GATM, not DECAWM, and stays unmodelled. */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[7l\033[7h");
+  eq_u("the two GATM spellings are counted as modes", (unsigned)g.nUnsupported[RC_UN_MODE], 2,
+       "only the private spelling is DECAWM");
+  eq_u("and left the wrap alone", (unsigned)g.wrapMode, 1, "");
+  put(&g, "0123456789");
+  eq_u("so the row still wraps", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_FORCED, "");
+}
+
+
 /**
  * The wrap column is the BUFFER row, not the window. Measured 2026-09-23 on a fresh conhost with this
  * machine's console profile (a 2000x9001 buffer, a 120x60 window): a raw WriteConsoleW of 150 units put
@@ -1131,6 +1590,66 @@ static void geo_surrogates()
   const uint16_t low = 0xDE00;
   putu(&g, &low, 1);
   eq_u("a lone low surrogate", g.cells[0][0].ch, 0xFFFD, "");
+}
+
+/* T6, and the reason a table replaced a test: `stats()` is positional across three files (I19), the labels
+ * that turn those numbers into a sentence are written in two of them, and until now four indices had a check
+ * and eleven names had none. This pins the table itself -- one row per slot, no two slots sharing a label,
+ * exactly one of them doubting the frame, and the label list spelled out so a rename has to be a decision
+ * made in three places with the gate naming the one that was forgotten. */
+static void geo_census()
+{
+  static RcGrid g;
+  static char dump[1024];
+  const int n = rc_census_count();
+  int i, j, suspects = 0, slot = -1;
+
+  eq_u("one row per slot", (unsigned)n, (unsigned)RC_UN_MAX, "the enum's own count, so a new slot must be appended with a row");
+  dump[0] = 0;
+  for (i = 0; i < n; i++)
+  {
+    const char *nm = rc_census_name(i), *se = rc_census_sentence(i);
+    eq_u(S("slot %d has a name", i), (unsigned)(nm != NULL && nm[0] != 0), 1, "");
+    eq_u(S("slot %d says what was skipped", i), (unsigned)(se != NULL && se[0] != 0), 1, "");
+    for (j = 0; j < i; j++)
+      eq_u(S("slot %d does not share slot %d's label", i, j),
+           (unsigned)(strcmp(nm, rc_census_name(j)) != 0), 1, "two labels a report cannot tell apart");
+    if (rc_census_suspect(i)) { suspects++; slot = i; }
+    if (i) strncat(dump, ", ", sizeof dump - strlen(dump) - 1);
+    strncat(dump, nm, sizeof dump - strlen(dump) - 1);
+  }
+  eq_u("exactly one slot doubts the frame", (unsigned)suspects, 1,
+       "the reach belongs to the unknown final alone; every other family is a known no-op");
+  eq_u("and it is the first slot", (unsigned)slot, (unsigned)RC_UN_SUP,
+       "which is the day `ignored()` was split out of `unsupported()` and why the two still exist");
+  eq_u("the labels, in this order, unchanged",
+       (unsigned)(strcmp(dump, "unrecognised, decstbm, altbuf, mouse, mode, bracketed paste, osc9, "
+                               "other osc, dcs, report, colon") == 0), 1,
+       "this is the text a rollout reads; renaming one here has to rename it in Render.java's report and in "
+       "NativeRenderer's UNMODELLED, and the live gate now checks the first of those at run time");
+  eq_u("an out-of-range slot names nothing", (rc_census_name(RC_UN_MAX) == NULL) ? 1u : 0u, 1u, "");
+
+  /* The flag is now data, so the behaviour it used to encode needs re-pinning from both sides. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033[1;2:3m");
+  eq_u("the colon family still counts", (unsigned)un(&g, RC_UN_COLON), 1, "");
+  eq_u("and still does not cost a repaint", (unsigned)rc_model_suspect(&g), 0, "");
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033[1\\");
+  eq_u("the unknown final still does", (unsigned)rc_model_suspect(&g), 1, "");
+
+  /* A row of the registry is not only a label: it claims that whatever reaches that counter is *described*
+     by it. Two rows failed that claim, and writing the table down is what made them visible. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "]2004;1x");
+  eq_u("a `]2004;` OSC is counted as the bracketed-paste request it is",
+       (unsigned)un(&g, RC_UN_DECBP), 1,
+       "`other osc`'s own sentence says the code had no case here, which is a different fact from the one asked");
+  eq_u("and not also as an unrecognised OSC", (unsigned)un(&g, RC_UN_OSC_OTHER), 0,
+       "one sequence, one counter: two votes would let the census add up past the sequences it saw");
+  eq_u("nothing about it doubts the frame", (unsigned)rc_model_suspect(&g), 0,
+       "a mode this library does not own is inert, not unknown");
+  eq_text(&g, 0, 1, "x", "the payload is consumed with the sequence, as every un-acted-on OSC's is");
 }
 
 static void geo_scroll()
@@ -1302,6 +1821,60 @@ static void geo_cursor()
   eq_u("ESC 8 x", (unsigned)g.cx, 0, "ESC 7 saved (0,0); attributes are NOT saved");
   eq_u("ESC 8 keeps the SGR", g.attr, 0x4007, "ESC 7 saved the position, not the inverse bit");
 
+  /* The private spelling of DECRC is not DECRC. Upstream restores unconditionally (Ansi.cpp:4194 never
+     looks at PvtLen for 'u'), and that is a defect a real consumer can prove: jline4 opens its capability
+     probe batch with kitty's `CSI ?u` query (AbstractTerminal.probeModes), so every probe round jerked the
+     cursor to whatever was saved last. WT and ghostty both route a private-marker final to their
+     query/ignore arms. The gate is a deliberate divergence, so it needs both halves pinned: the query
+     stays put, and the plain DECRC that caps `rc`/`sc` keeps working. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[s\033[6;9H");
+  eq_u("saved at home, moved away", (unsigned)g.cy, 5, "row");
+  eq_u("moved away", (unsigned)g.cx, 8, "column");
+  put(&g, "\033[?u");
+  eq_u("`CSI ?u` restores nothing -- row stays", (unsigned)g.cy, 5, "the probe-batch cursor jerk");
+  eq_u("column stays", (unsigned)g.cx, 8, "");
+  eq_u("and the query is counted as a refused mode", g.nUnsupported[RC_UN_MODE], 1,
+       "same bucket as `?12h`, because its reach is known to be nothing");
+  eq_u("without making the frame suspect", (unsigned)g.modelSuspect, 0, "a full repaint for a probe is the old bug");
+  put(&g, "\033[u");
+  eq_u("the plain `CSI u` still restores", (unsigned)g.cy, 0, "xterm's DECRC carries no private marker");
+  eq_u("both columns", (unsigned)g.cx, 0, "");
+  eq_u("and a real restore is not counted", g.nUnsupported[RC_UN_MODE], 1, "still the one from the query");
+
+  /* HPR and VPR, and the one thing that makes them more than CUF/CUD aliases: they are clamped to the
+     viewport, not to the scroll region (MSFT says it in the comment on each, adaptDispatch.cpp:427/:437).
+     ConEmu drops both finals outright, so every assertion here is a deliberate divergence and the pair that
+     pins it is `CSI e` and `CSI B` from the same row of the same region. */
+  rc_reset(&g, 20, 6, 0x07);
+  const unsigned supBefore = g.nUnsupported[RC_UN_SUP];
+  put(&g, "\033[H\033[3a");
+  eq_u("HPR moves the column", (unsigned)g.cx, 3, "`CSI 3a` from column 0");
+  eq_u("and leaves the row alone", (unsigned)g.cy, 0, "");
+  put(&g, "\033[2e");
+  eq_u("VPR moves the row", (unsigned)g.cy, 2, "`CSI 2e` from row 0");
+  eq_u("and leaves the column alone", (unsigned)g.cx, 3, "");
+  put(&g, "\033[a\033[e");
+  eq_u("HPR with no parameter is 1", (unsigned)g.cx, 4, "xterm: absent or zero is the default");
+  eq_u("VPR with no parameter is 1", (unsigned)g.cy, 3, "");
+  put(&g, "\033[0a\033[0e");
+  eq_u("zero means the default too, not a step back", (unsigned)g.cx, 5, "");
+  eq_u("in both", (unsigned)g.cy, 4, "");
+  put(&g, "\033[2;4r\033[4;1H");           /* region rows 2..4, cursor on its bottom row */
+  eq_u("the region put the cursor at its bottom", (unsigned)g.cy, 3, "setup for the pair below");
+  put(&g, "\033[B");
+  eq_u("CUD cannot walk out of the region", (unsigned)g.cy, 3, "the behaviour this model already had");
+  put(&g, "\033[4;1H\033[e");
+  eq_u("VPR walks past the region's bottom", (unsigned)g.cy, 4, "the divergence, both halves pinned");
+  put(&g, "\033[99e\033[99a");
+  eq_u("VPR is clamped to the viewport bottom", (unsigned)g.cy, 5, "rows-1 of a 6-row grid");
+  eq_u("HPR is clamped to the last column", (unsigned)g.cx, 19, "cols-1 of a 20-column grid");
+  eq_u("neither final is counted as unsupported any more", g.nUnsupported[RC_UN_SUP], supBefore,
+       "the census is how a reader tells `a`/`e` from a byte this dispatch has never heard of");
+  put(&g, "\033[3;5r\033[5;1H\033[2e");
+  eq_u("a VPR aimed past a region near the bottom stops at the screen, not past it", (unsigned)g.cy, 5,
+       "region rows 3..5, cursor on its bottom, asked for two more");
+
   rc_reset(&g, 20, 6, 0x07);
   put(&g, "\033[?25l");
   eq_u("DECSCNM ?25 hides", (unsigned)g.cursorVisible, 0, "");
@@ -1317,11 +1890,11 @@ static void geo_cursor()
   eq_u("and armed exactly one reply", (unsigned)rc_report_pending(&g), 1, "two would leave bytes for the next reader");
   {
     int ry = -1, rx = -1;
-    eq_u("the armed reply is DA", (unsigned)rc_report_take(&g, &ry, &rx), (unsigned)RC_REP_DA, "");
+    eq_u("the armed reply is DA", (unsigned)take_xy(&g, &ry, &rx), (unsigned)RC_REP_DA, "");
     eq_u("DA snapshot row", (unsigned)ry, 0, "the cursor as it stood when the query was read");
     eq_u("DA snapshot col", (unsigned)rx, 0, "");
     eq_u("the queue is empty again", (unsigned)rc_report_pending(&g), 0, "");
-    eq_u("popping an empty queue", (unsigned)rc_report_take(&g, NULL, NULL), (unsigned)RC_REP_NONE, "so a drain loop can stop");
+    eq_u("popping an empty queue", (unsigned)rc_report_take(&g, NULL), (unsigned)RC_REP_NONE, "so a drain loop can stop");
   }
   eq_u("DECSTBM painted nothing", g.nCells, 0, "modelled, and a region paints no cells");
   eq_u("and the region it asked for is live", (unsigned)g.regSet, 1, "`CSI c` above is DA, not RIS");
@@ -1516,16 +2089,33 @@ static void geo_region()
        "only a whole-viewport scroll can be a window slide");
   eq_u("and is still counted as a scroll", g.nScrolls, 1, "");
 
-  /* Rejected regions clear the region rather than being ignored (Ansi.cpp:3147-3150). */
+  /* A rejected request must not *clear*. Both references ignore it -- MSFT states it outright at
+     adaptDispatch.cpp:2242 ("an illegal combo (eg, 3;2r) is ignored") -- and ignoring is a different act from
+     clearing: clearing hands the next line feed the whole viewport, which is the #47/#48 failure with a new
+     trigger. Upstream clears (Ansi.cpp:3147-3150) and this arm mirrored it until every "upstream does the
+     same" reason in these files was re-read for an independent one. */
   put(&g, "\033[3;2r");
-  eq_u("top above bottom clears", (unsigned)g.regSet, 0, "");
+  eq_u("top above bottom leaves the live region alone", (unsigned)g.regSet, 1, "");
+  eq_u("at its own top", (unsigned)g.regTop, 1, "");
+  eq_u("and its own bottom", (unsigned)g.regBot, 3, "");
+  /* One parameter is legal and defaults the other edge to the viewport -- the case upstream's `ArgC >= 2`
+     quietly turned into a reset. */
   put(&g, "\033[2r");
-  eq_u("one argument alone clears", (unsigned)g.regSet, 0, "");
+  eq_u("one argument names the top", (unsigned)g.regTop, 1, "row 2 of the viewport");
+  eq_u("and the bottom defaults to the viewport's last row", (unsigned)g.regBot, 4, "");
   put(&g, "\033[r");
-  eq_u("no argument clears", (unsigned)g.regSet, 0, "");
+  eq_u("no argument is the reset form", (unsigned)g.regSet, 0, "");
   put(&g, "\033[1;99r");
-  eq_u("a region clamped to the full height is normalised away", (unsigned)g.regSet, 0,
-       "same rows, but the paths that carry history out of the gutter branch on exactly this");
+  eq_u("a whole-viewport request is normalised away", (unsigned)g.regSet, 0,
+       "whatever the parameter that got it there: the paths that carry history out of the gutter branch on this");
+  /* The clamp is the split from MSFT, which rejects an out-of-range bottom outright (:2260). Clamping keeps
+     the intent -- "scroll from row 3 down" -- and on a 3-row viewport that intent is a one-row region. */
+  rc_reset(&g, 8, 5, 0x07);
+  put(&g, "\033[4;99r");
+  eq_u("a bottom past the viewport clamps instead of refusing", (unsigned)g.regSet, 1,
+       "MSFT would ignore this whole request; the app asked for rows 4..end and that is what it gets");
+  eq_u("top", (unsigned)g.regTop, 3, "");
+  eq_u("bottom is the viewport's last row", (unsigned)g.regBot, 4, "");
 
   /* A zero parameter is accepted and clamps to the viewport's first row -- :4150's own comment. */
   rc_reset(&g, 8, 5, 0x07);
@@ -1648,6 +2238,19 @@ static void geo_region()
   eq_u("while the spelling it drops leaves one", g.nUnsupported[RC_UN_SUP], 1,
        "a parameter is enough to reach the same DumpUnknownEscape (:3650-3653) as a final nobody knows");
 
+  /* A private byte and an intermediate are two ranges of the *same* accumulating buffer upstream:
+     Ansi.cpp:1788 appends every byte that is neither a digit, a ';' nor a final into Pvt -- 0x20..0x2F and
+     0x30..0x3F alike -- and each consumer then compares the buffer's length (`ArgC == 0 && PvtLen == 1 &&
+     Pvt[0] == L'!'`, :3645). So `? ! p` has a two-byte Pvt there and is not a soft reset. This model kept
+     the two ranges in two independent slots and tested only the interim, which let the hybrid spelling
+     reset a console. DECSCUSR's arm has carried the private-byte gate all along (:1213); this arm never
+     got the same test, because with one interim slot there was nothing to distinguish "?" from "!". */
+  rc_reset(&g, 8, 3, 0x07);
+  put(&g, "A\033[?!p");
+  eq_text(&g, 0, 1, "A", "`CSI ? ! p` resets nothing -- upstream's Pvt would read \"?!\"");
+  eq_u("and the refusal is counted", g.nUnsupported[RC_UN_SUP], 1,
+       "an unknown final with a body we did not run, exactly as the parameterised spelling above");
+
   /* The hole this closes was a bare `break`: `CSI p` was consumed, did nothing, and said nothing, so the
      census could not tell "the application asked for a soft reset neither leg carries" from "the
      application never wrote one". Both spellings below are the same inert else upstream, and both must
@@ -1662,8 +2265,11 @@ static void geo_region()
   /* The census and the suspicion: a known-inert sequence is counted and trusted; a final byte neither
      this switch nor ConEmu has a case for is neither. */
   rc_reset(&g, 8, 3, 0x07);
-  put(&g, "\033[?12h\033[?7l\033[?1h\033[?2004h\033[?1000h\033[?1005l");
-  eq_u("?12, ?7 and ?1 are counted as modes", g.nUnsupported[RC_UN_MODE], 3, "");
+  put(&g, "\033[?12h\033[?7l\033[?1h\033[?2004h\033[?1000h\033[?1005l\033[?7h");
+  eq_u("?12 and ?1 are counted as modes", g.nUnsupported[RC_UN_MODE], 2,
+       "?7 left this list when DECAWM became a modelled mode (I35); it is still in the stream above, which"
+       " is the proof -- the count fell by exactly its two spellings");
+  eq_u("and the mode is back on", (unsigned)g.wrapMode, 1, "the trailing `?7h` is part of the stream, not a fix-up");
   eq_u("bracketed paste has its own bucket", g.nUnsupported[RC_UN_DECBP], 1, "");
   eq_u("the mouse family has its own, and ?1005 is in it", g.nUnsupported[RC_UN_MOUSE], 2, "");
   eq_u("none of them doubts the frame", (unsigned)g.modelSuspect, 0,
@@ -1824,6 +2430,21 @@ static void geo_edit()
   put(&g, "\033[3 q");
   eq_u("blinking underline is kept as the parameter", (unsigned)g.cursorShape, 3,
        "3..6 all fold to the thin side in cursor_height(), because the console has two shapes, not six");
+
+  /* The two intermediates below are the reason the interim is a set and not a slot. Upstream appends both
+     into one Pvt buffer (:1788) and DECSCUSR then asks for `PvtLen == 1` (:3657), so "! " is refused there;
+     a slot that the later byte overwrites reported the junk spelling `! SP q` as if it were the real
+     request, because ' ' happened to arrive last. The same trap is wider than one sequence: any final whose
+     interim is chosen by arrival order can be spoofed by a junk byte in front of it, and the long run after
+     it is that trap at its most obvious -- ten intermediates, none of which is "exactly one space". */
+  put(&g, "\033[! q");
+  eq_u("an interim of two bytes selects no cursor shape", (unsigned)g.cursorShape, 3,
+       "unchanged from the leg above: Pvt would be \"!\", two bytes, and the arm wants length 1");
+  eq_u("and the sequence is counted as the unknown final it was", g.nUnsupported[RC_UN_SUP], 3, "");
+  put(&g, "\033[          q");
+  eq_u("a run of intermediates past the buffer still selects nothing", (unsigned)g.cursorShape, 3,
+       "the extras are dropped as they are upstream, where a full Pvt stops appending (:1788)");
+  eq_u("and counted once more", g.nUnsupported[RC_UN_SUP], 4, "");
 
   /* REP (`CSI Ps b`) is text, not a cell poke. Upstream builds a buffer of the one character it remembers and
      hands it to WriteText (Ansi.cpp:3070-3087), so it wraps at the margin, obeys the drawing set, takes the
@@ -2219,6 +2840,70 @@ static void geo_damage()
   rc_clear_dirty(&g);
   put(&g, "\033[3;1H\033[2M");
   for (int r = 0; r < 6; r++) eq_full(&g, r, "DL likewise");
+}
+
+/*
+ * DECSET 2026 as the model sees it. The hold itself belongs to the seam (RenderJni.cpp::paint_flush) and this
+ * file has no console to watch it with, so what is pinned here are the two things the seam reads: the bit, and
+ * the damage the bit defers. The second is the load-bearing one. The seam throws a whole plan away and counts
+ * on the rows it was built from still being marked when the region ends; a model that cleared its own dirty
+ * flags mid-region would turn "paint one frame instead of ten" into "paint nothing at all", and nothing on the
+ * screen would say which of the two happened. Render.java's caseSyncOutput is the other half -- the one that
+ * can only be asserted where a console exists.
+ */
+static void sync_output()
+{
+  static RcGrid g;
+  rc_reset(&g, 20, 6, 0x07);
+  eq_u("no region after a reset", (unsigned)g.sync, 0, "the census and the bit both come from rc_reset's memset");
+  eq_u("and nothing counted", g.nSyncEngages, 0u, "");
+
+  put(&g, "\033[?2026h");
+  eq_u("BSU opens the region", (unsigned)g.sync, 1, "");
+  eq_u("and is counted as one region", g.nSyncEngages, 1u, "");
+  eq_u("without making the frame suspect", (unsigned)g.modelSuspect, 0, "a mode this file knows cannot be a swallowed byte");
+  put(&g, "\033[?2026h");
+  eq_u("a nested BSU does not stack", (unsigned)g.sync, 1, "xterm has no depth: the first ESU ends the region");
+  eq_u("it counts", g.nSyncNested, 1u, "");
+  eq_u("and does not open a second region", g.nSyncEngages, 1u, "the denominator stays honest");
+
+  put(&g, "ab");
+  eq_u("the region's writes are dirty", (unsigned)rc_row_dirty(&g, 0), 1, "");
+  eq_u("and the bit does not consume them", (unsigned)g.sync, 1, "the model has no console to hold for");
+  put(&g, "\033[?2026l");
+  eq_u("ESU closes the region", (unsigned)g.sync, 0, "");
+  eq_u("leaving the damage exactly where the seam left it", (unsigned)rc_row_dirty(&g, 0), 1,
+       "this is the whole deferral contract: the next flush repaints what the region accumulated");
+
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2026l");
+  eq_u("an ESU nobody armed changes nothing", (unsigned)g.sync, 0, "inert, not an error");
+  eq_u("and opens no region to be counted against", g.nSyncEngages, 0u, "");
+
+  /* I29's boundary, drawn from the model's side: a reply belongs to the reader, so the region must not be able
+     to arm-or-not-arm it. The seam's half of the same rule is that it writes the queue during a hold; if the
+     parser refused to arm while sync was set, a `tput rows` inside a frame would hang until the timeout. */
+  put(&g, "\033[?2026h\033[6n");
+  eq_u("a query inside a region still arms its reply", (unsigned)rc_report_pending(&g), 1u, "");
+  eq_u("and arming it does not end the region", (unsigned)g.sync, 1, "");
+  while (rc_report_pending(&g) > 0) { rc_report_take(&g, NULL); rc_report_result(&g, 1); }
+
+  put(&g, "\033[?2026h");
+  eq_u("the region is the one from the query leg, not a second", (unsigned)g.sync, 1, "nested");
+  put(&g, "\033c");
+  eq_u("RIS ends the region with everything else it ends", (unsigned)g.sync, 0,
+       "leaving the bit set would hold the reset's own scroll forever");
+  put(&g, "\033[?2026h");
+  eq_u("and again", (unsigned)g.sync, 1, "");
+  put(&g, "\033[!p");
+  eq_u("DECSTR is the same full_reset and ends it the same way", (unsigned)g.sync, 0, "");
+  eq_u("three BSUs, two openings", g.nSyncEngages, 2u,
+       "the third was nested, and a reset closes a region without being an ESU or an engage -- the census "
+       "counts what the application asked for, not what the mode ended up doing about it");
+
+  rc_reset(&g, 20, 6, 0x07);
+  eq_u("the family reads back clean after a geometry reset", g.nSyncNested, 0u, "");
+  eq_u("including the holds", g.nSyncHeld, 0u, "rc_reset memsets the census with the grid");
 }
 
 /* ======================================================== 5. resumability ===================== */
@@ -3162,6 +3847,107 @@ static void plan_declines(void)
   eq_u("h-scroll: cursor x", (unsigned)p.curTX, 41, "winL + model column 1");
 }
 
+/* Snap-on-input: the row a keystroke is allowed to bring into view, and the four reasons it may not.
+ *
+ * This is the other half of rule 2's contract. Rule 2 says a flush may not move a window the user scrolled
+ * away from; a keystroke is the one event that says the user is done looking and wants their prompt, and
+ * conhost implements exactly that pair (input.cpp:177 -> SnapOnInput -> _makeCursorVisible ->
+ * MakeCursorVisible, screenInfo.cpp:1631-1712). Two of its facts are pinned here because getting them wrong
+ * is damage rather than a cosmetic miss: the target is the *cursor's* row, so the window moves the least way
+ * that reveals it (snapping to the buffer's last row would throw a user who read one line of history past
+ * everything above the prompt), and an invisible cursor means an application owns the screen, so a key must
+ * not drag the view under it mid-frame.
+ *
+ * The row arithmetic is the same kind the plan is checked on -- buffer rows, a claim, and a window -- and it
+ * is checked on nothing else, because the call that finally moves the window is one the console answers and
+ * the live gate witnesses. */
+static void plan_snap(void)
+{
+  static RcGrid g; RcView v; int row = -1, col = -1;
+
+  /* 60 model rows over a 400-row buffer: 30 of gutter, then the 30 the window shows. Claimed at buffer row
+     340, the viewport's rows are 370..399 and the prompt line -- the model's last -- is buffer row 399. */
+  rc_reset_hist(&g, 200, 30, 30, 0x07);
+  rc_clear_dirty(&g);
+  rc_set_base(&g, 340);
+  putraw(&g, "\033[30;1HP");                  /* viewport-relative: row 30 of a 30-row window is the prompt line */
+  eq_u("snap: the cursor is on the model's last row", (unsigned)g.cy, 59,
+       "CSI r H addresses the viewport, never the gutter (Render.cpp::clxy), so 30 of 30 lands on row 59");
+  eq_u("snap: and the claim puts it on the buffer's last", (unsigned)(g.baseRow + g.cy), 399, "setup");
+
+  /* The user scrolled to the top of the buffer. A flush may not follow output down here; a keystroke may. */
+  v = view(200, 400, 0, 0, 199, 29, 0x07, 1, 0, 0);
+  eq_u("snap: off the view the user moved", (unsigned)rc_snap_view(&g, &v, &row, &col),
+       (unsigned)RC_SNAP_PARK, "");
+  eq_u("snap: aims at the cursor's own row", (unsigned)row, 399,
+       "not the buffer's bottom, not the window's: the row the model's cursor sits on, and conhost slides to it");
+  eq_u("snap: and at its column", (unsigned)col, (unsigned)g.cx, "the window starts at column 0 here");
+
+  /* Back on the prompt: nothing to do, and no console call. This is every keystroke of an ordinary session. */
+  v = view(200, 400, 0, 370, 199, 399, 0x07, 1, 0, 399);
+  eq_u("snap: already looking at it", (unsigned)rc_snap_view(&g, &v, &row, &col),
+       (unsigned)RC_SNAP_NOCHANGE, "the common case, and the one that must cost nothing");
+  eq_u("snap: so no row is named", (unsigned)row, (unsigned)-1, "a PARK is the only answer that names one");
+
+  /* The other direction, and the case that says the target is the cursor rather than the bottom of the
+     buffer: the prompt row is *above* a window the user pushed past it, so the least displacement is upward.
+     A snap-to-last-row would move nothing here, and the user would still be looking at blank rows. */
+  putraw(&g, "\033[1;1H");                   /* clamped into the viewport: its first row, model row 30 */
+  eq_u("snap: the cursor is now on the viewport's first row", (unsigned)g.cy, 30, "setup");
+  v = view(200, 410, 0, 375, 199, 404, 0x07, 1, 0, 400);
+  eq_u("snap: a view below the prompt is the same defect", (unsigned)rc_snap_view(&g, &v, &row, &col),
+       (unsigned)RC_SNAP_PARK, "");
+  eq_u("snap: and the park is upward, onto the claimed row", (unsigned)row, 370, S("got %d", row));
+
+  /* An invisible cursor is conhost's guard, and not decoration: ?25l means an application took the screen,
+     and a key that yanks the view under it is the app's business rather than the terminal's. */
+  putraw(&g, "\033[?25l");
+  v = view(200, 410, 0, 0, 199, 29, 0x07, 1, 0, 0);
+  eq_u("snap: an invisible cursor is not made visible by a key",
+       (unsigned)rc_snap_view(&g, &v, &row, &col), (unsigned)RC_SNAP_NOCHANGE, "");
+  putraw(&g, "\033[?25h");
+  eq_u("snap: and the same view snaps once the cursor is back",
+       (unsigned)rc_snap_view(&g, &v, &row, &col), (unsigned)RC_SNAP_PARK, "the guard was the flag alone");
+
+  /* A column past the window's right edge must not drag the view sideways -- Paint.cpp rule 4 measured that
+     conhost slides horizontally for a cursor parked outside it. The row is the point of a snap; the columns
+     the user chose to look at are not up for revision because their line was wider than the window. */
+  while (g.cx < 150) putraw(&g, "z");
+  eq_u("snap: setup walked the column past the window", (unsigned)(g.cx > 99), 1, "setup");
+  v = view(200, 400, 0, 0, 99, 29, 0x07, 1, 0, 0);
+  eq_u("snap: sideways is out of scope", (unsigned)rc_snap_view(&g, &v, &row, &col),
+       (unsigned)RC_SNAP_PARK, "");
+  eq_u("snap: so the column is clamped into the window", (unsigned)col, 99, S("got %d", col));
+  eq_u("snap: and the row still is the model's", (unsigned)row, 370, S("got %d", row));
+
+  /* Two answers that must be no-ops rather than chases: a model that never painted has only the user's window
+     to go on, and a claim past the buffer's last row has no view that could show it. */
+  rc_set_base(&g, 340);
+  rc_drop_base(&g);
+  v = view(200, 400, 0, 0, 199, 29, 0x07, 1, 0, 0);
+  eq_u("snap: no claim, no snap", (unsigned)rc_snap_view(&g, &v, &row, &col), (unsigned)RC_SNAP_NOCHANGE,
+       "the window is the only truth an unanchored model has, and it is the user's");
+  rc_set_base(&g, 900);
+  eq_u("snap: a claim off the buffer is not chased",
+       (unsigned)rc_snap_view(&g, &v, &row, &col), (unsigned)RC_SNAP_NOCHANGE,
+       "parking a cursor at a row the buffer does not have is a failed call, not a view");
+
+  /* A console whose shape is not the model's: the caller re-adopts, exactly as it does for a plan. */
+  rc_set_base(&g, 340);
+  v = view(200, 400, 0, 0, 199, 24, 0x07, 1, 0, 0);
+  eq_u("snap: a shorter window is a resize, not a snap",
+       (unsigned)rc_snap_view(&g, &v, &row, &col), (unsigned)RC_SNAP_NOGEOM, "");
+  v = view(320, 400, 0, 0, 319, 29, 0x07, 1, 0, 0);
+  eq_u("snap: a wider row neither", (unsigned)rc_snap_view(&g, &v, &row, &col),
+       (unsigned)RC_SNAP_NOGEOM, "cols is bufW - winL, rule 1's own test");
+
+  /* A snap moves a window and writes no cell, so everything the next flush reads about the model has to be
+     as it left it. rc_snap_view takes the grid by const pointer, which is the compiler's half of this claim;
+     the two rows below are the half it cannot check. */
+  eq_u("snap: the claim outlives it unchanged", (unsigned)g.baseRow, 340, "");
+  eq_u("snap: and no scroll debt was spent on it", (unsigned)g.pendingScrolls, 0, "");
+}
+
 /* ================================================================== main ====================== */
 
 /*
@@ -3246,6 +4032,8 @@ int main(int argc, char **argv)
   gm_osc_family();
   gm_ftcs();
   gm_charset();
+  gm_palette();
+  gm_osc9();
   gm_reports();
   gm_dropped();
   gm_wrap_suspect();
@@ -3254,6 +4042,7 @@ int main(int argc, char **argv)
   gm_pending();
 
   geo_wrap();
+  geo_decawm();
   geo_wrap_wide_buffer();
   geo_surrogates();
   geo_scroll();
@@ -3268,6 +4057,8 @@ int main(int argc, char **argv)
   geo_ftcs();
   geo_sgr_bits();
   geo_damage();
+  geo_census();
+  sync_output();
 
   plan_plain();
   plan_cursor_past_window();
@@ -3278,6 +4069,7 @@ int main(int argc, char **argv)
   plan_gutter();
   plan_anchor();
   plan_scroll_band();
+  plan_snap();
   adopt_anchor();
   plan_gutter_hook();
   plan_runs();

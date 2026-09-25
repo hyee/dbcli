@@ -36,6 +36,8 @@
 #define RC_MAX_COLS   4096
 #define RC_MAX_ROWS   256
 #define RC_CSI_ARGS   16   /* ConEmu's ArgV holds 16 (Ansi.h:174); surplus args are dropped, not rejected */
+#define RC_INTERIM_MAX 4   /* CSI intermediate bytes we keep; ConEmu's Pvt holds 16 and stops appending when
+                              full (Ansi.cpp:1788) -- four is more than any final in this switch can name. */
 #define RC_TITLE_MAX  256  /* OSC payload we keep; longer is truncated, the sequence is still consumed */
 #define RC_SGR_ECHO_MAX 1024 /* UTF-16 units of SGR text kept for one chunk, see rc_sgr_take */
 #define RC_SGR_CAP_MAX  64   /* one sequence being captured; a longer one is parsed but not echoed */
@@ -88,15 +90,28 @@ enum RcUnsupported
    * positional (RenderJni.cpp reads STAT_UNSUPPORTED + i and the Java side hardcodes the indices), so
    * renumbering would silently relabel every counter the rollout gate reads. */
   RC_UN_DECSTBM, RC_UN_ALTBUF, RC_UN_MOUSE, RC_UN_MODE, RC_UN_DECBP,
-  RC_UN_OSC_PRIV,   /* ESC ] 9 ; ...: ConEmu-specific -- sleep, MessageBox, GuiMacro, DoProcess. Never executed. */
+  /* ESC ] 9 ; ...: ConEmu-specific -- sleep, MessageBox, GuiMacro, DoProcess. Never executed. The symbol
+     and the report label are deliberately different: `osc9` is what `Render.java` and `NativeRenderer` have
+     always printed, and after T6 the *table row* is the single owner of that word, so a symbol rename here
+     would be a third file to keep in step for no reader's benefit. */
+  RC_UN_OSC_PRIV,
   RC_UN_OSC_OTHER,  /* any other OSC code we do not act on (4/8/10/52 ...), and an OSC that never terminated */
-  RC_UN_DCS,        /* ESC P / X / ^ / _ -- payload framing identical to OSC, discarded */
+  /* ESC P / X / ^ / _ -- payload framing identical to OSC, discarded. The label this family reaches is
+     `dcs`, and the Dcs/BrP pair below is the one place where the words and the counters disagreed. */
+  RC_UN_DCS,
   /* A CSI that carried ':' among its parameter bytes. Counted separately from the family above because it
    * is not one omission but a decision: colon subparameters (SGR 38:2::r:g:b) parse fine upstream, and we
    * drop the whole sequence for ConEmu parity, since ':' is 0x3A and so a Pvt byte for ConEmu too (I10,
    * I19). The count is what would justify revisiting that if an application ever sends the colon form. */
   RC_UN_REPORT, RC_UN_COLON, RC_UN_MAX
 };
+
+/* The census table's accessors (Render.cpp). Names and the suspect flag are read by the gates only: the
+   stats array itself is positional and carries numbers, never text. */
+int rc_census_count(void);
+const char *rc_census_name(int slot);
+const char *rc_census_sentence(int slot);
+int rc_census_suspect(int slot);
 
 /* What an OSC/DCS introducer said. Kept until the sequence terminates, where it decides which counter
  * (or the title) the payload goes to. */
@@ -111,18 +126,30 @@ enum RcUnsupported
  * at all). The painter takes the queue at the end of a flush, where the cursor it just parked is the fact
  * the reply has to match. RC_REP_NONE is what an empty queue answers with.
  * Each kind has exactly one spelling upstream answers: DSR and CPR are `CSI 5n`/`CSI 6n` (Ansi.cpp:3466-3483),
- * DA is `CSI c` and DA2 is `CSI >c` (:3765-3784). */
-enum RcReport { RC_REP_NONE = -1, RC_REP_DSR = 0, RC_REP_CPR = 1, RC_REP_DA = 2, RC_REP_DA2 = 3 };
+ * DA is `CSI c` and DA2 is `CSI >c` (:3765-3784). DECRPM is not upstream's -- ConEmu has no DECRQM at all
+ * (:3650-3653 sends every `p` it does not recognise to DumpUnknownEscape) -- and it is here because jline4's
+ * mode probe asks for it and reads the *absence* of an answer as an answer about something else. OSC colour
+ * replies (`OSC 4;idx;?` and `OSC 10/?`) are neither upstream's nor jline4's: the writer that asks is `vim`,
+ * which probes the background colour at startup to decide `background=dark|light`, and MSFT answers the same
+ * three forms (I34). */
+enum RcReport { RC_REP_NONE = -1, RC_REP_DSR = 0, RC_REP_CPR = 1, RC_REP_DA = 2, RC_REP_DA2 = 3,
+                RC_REP_DECRPM = 4, RC_REP_OSC = 5 };
 
 /* Queries in one chunk are rare but legal (`vim` probes more than once at startup), and a reply the queue
  * had to refuse is a program left waiting, which must be a number and not a rumour. */
 #define RC_REPORT_MAX 8
 
-/* One armed query, with the cursor as it stood when the sequence was read: a CPR answers where the cursor
+/* One queued query, with the cursor as it stood when the sequence was read: a CPR answers where the cursor
  * *was*, so the painter has to know that position and not the one the chunk ends on. Named at file scope
- * because RcGrid's queue is not the only thing that speaks about it — `rc_report_take` hands one out per
- * call, and a nested type would have to be spelled through the grid everywhere it goes. */
-struct RcReportItem { uint8_t kind; uint16_t y, x; };
+ * because RcGrid's queue is not the only thing that speaks about it -- `rc_report_take` hands one out per
+ * call, and a nested type would have to be spelled through the grid everywhere it goes.
+ * `mode` and `status` are the same snapshot for the other kinds that need one: DECRQM asks about a mode at a
+ * point in the stream, and a chunk that turns the mode off after asking still gets the answer it asked for
+ * (`CSI ?2026h` then `CSI ?2026$p` in one write means "is it on", not "what happened by the end"). Both are
+ * zero for every kind that does not name a mode. For an OSC colour reply (I34) `mode` carries the resource
+ * number the reply opens with, `status` the COLORREF that answers it, and `y` the table index -- which is why
+ * the pair is 32-bit wide: a colour does not fit in 16. */
+struct RcReportItem { uint8_t kind; uint16_t y, x; uint32_t mode, status; };
 
 /* What ended a row's line: the two reasons are distinct upstream (`_wrapForced` and
  * `_doubleBytePadded`, Row.hpp:313-317) and a consumer that joins rows for copy or export has to tell
@@ -248,7 +275,23 @@ typedef struct RcGrid
 
   RcSgr   sgr;
   uint16_t attr;          /* rc_attr() of the current state: what SetConsoleTextAttribute would get */
-  uint16_t defAttr;       /* frozen console default (Ansi.cpp:691-709) */
+  uint16_t defAttr;       /* frozen console default (Ansi.cpp:691-709) -- frozen until OSC 10/11 moves it (I34) */
+  uint16_t defAttrSeed;     /* the console default as this handle found it; OSC 110/111 restore it */
+  /* The palette OSC 4/10/11 write (I34). 256 entries because the fold reads indices past 15 even though a
+     classic console *displays* only 16: 0..15 are also pushed to the console -- `palTouched` says which ones
+     are still owed -- and 16..255 change only which index a 256-colour or true-colour SGR folds to.
+     Seeded from `RgbMap` by rc_reset_hist(), i.e. from upstream's own table rather than from the console's
+     live one, so an untouched session folds exactly as it folded before this mode existed (I34 says why that
+     is the conservative choice and what gap it leaves). COLORREF order (0x00BBGGRR), like every other colour
+     in this struct, because it is what `Far3Color::Color2FgIndex` consumes. */
+  uint32_t palette[256];
+  /* The colour of each *console attribute*, which is a different thing from the table above and cannot be
+     folded into it: `RgbMap[0..15]` are attribute values (0..15), not COLORREFs -- that is upstream's own
+     mixed domain, and it is why `rc_attr` gates the 24-bit path on "> 15". This is the 16-entry colour table
+     `Far3Color::Color2FgIndex` searches, seeded from its `GetStdPalette()`, and it is also what gets pushed
+     to the console. OSC 4 with an index below 16 moves one entry of this table; at or above 16, one of that. */
+  uint32_t pal16[16];
+  uint16_t palTouched;              /* bit i: console entry i changed and the painter has not written it */
   int    charset;         /* 0 = VTCS_DEFAULT, 1 = VTCS_DRAWING (only ESC ( touches it, Ansi.cpp:2751) */
   /* The last code point written to the grid, for REP (`CSI b`, "repeat the previous glyph"). ConEmu keeps
    * the same thing -- CEAnsi::m_LastWrittenChar (Ansi.h:197) -- and two of its quirks are load-bearing here:
@@ -267,6 +310,51 @@ typedef struct RcGrid
   uint8_t semanticContent;
   uint8_t semanticClearEol;
   int    cursorVisible;   /* DECSCYM ?25: ConEmu drives SetConsoleCursorInfo (Ansi.cpp:3295-3322) */
+  /* DECSET 2026 -- Synchronized Output. One bit, and it is a mode like any other: the parser owns it, it is
+   * set by `?2026h` and cleared by `?2026l` and by `full_reset`, and nothing else in this file reads it.
+   * The reader is the JNI seam (RenderJni.cpp::paint_flush), which is where the console calls live and so the
+   * only place a "hold the plan" decision can be made without inventing a second model. ConEmu has no case
+   * for 2026 at all (Ansi.cpp:3197-3427 tests the mode numbers it knows and falls to DumpUnknownEscape), so
+   * this is a deliberate divergence in the same direction MSFT and ghostty went: the mode is real, an
+   * application is already sending it (jline4's Display wraps every full-screen update in BSU/ESU), and the
+   * fallback leg is the terminal that ignores it.
+   * The reason a timeout has to ship with the bit is in the seam's comment, not here: a held plan is a claim
+   * that an ESU will come, and a program that dies mid-region would otherwise leave the screen frozen at the
+   * last painted frame forever. */
+  uint8_t sync;
+  /* DECAWM -- `CSI ?7 h/l`. On is the margin wraps, off is the margin ends the line and every further
+     character overwrites the last cell. The reason this build stopped refusing it is that both reference
+     terminals act on it (MSFT keeps it as private mode 7: DispatchTypes.hpp:527, set at
+     adaptDispatch.cpp:1799, DECRQM-readable at :1969), and this library parses whatever the screen it owns
+     is handed: an editor or a progress line drawn through it can send `?7l`, and until now that request was
+     answered with silence. The product's own dictionary defines both spellings (`lua/ansi.lua`'s WRAP and
+     UNWRAP) but has no live call site -- the code that used UNWRAP is commented out at :346-352 -- so this
+     is the third-party case, not a dbcli bug being fixed, and the design that keeps it from being a mere
+     flag is I35. The terminfo entry still does not advertise `smam`/`rmam`, which is a separate question:
+     the entry describes a session where ConEmu's own parser may be reading the stream, and it ignores `?7`
+     (its SetConsoleMode is commented out, Ansi.cpp:3268-3281) -- I26 forbids claiming that half. */
+  uint8_t wrapMode;
+  /* Regions opened. This is the denominator for every count below it: `held` alone cannot say whether an
+     application paints one screen per region or a thousand, and `timeout` alone cannot say the leak rate. */
+  unsigned long nSyncEngages;
+  /* A nested BSU (`?2026h` while already in a region). xterm's convention is that the second is a no-op and
+   * the first ESU ends the region -- there is no depth, and jline4 does not nest -- so this only counts how
+   * often an application asked for something we deliberately did not do. */
+  unsigned long nSyncNested;
+  /* How the region ended, which is the difference between "the mode worked" and "the mode was survived".
+     Each of these is a different reason for a frame to reach the screen without waiting for its ESU, and a
+     reader that saw only one number could not tell a well-behaved application from one that leaks a BSU
+     every third prompt:
+       held      -- flush attempts deferred (the mode doing its job; also the volume of a region).
+       timeout   -- a frame had been waiting past RC_SYNC_TIMEOUT_MS when the next chunk arrived, so it
+                    painted early and the mode was cleared. The only sign of a leaked ESU.
+       overflow  -- the gutter was full (pendingScrolls reached rc_scroll_room) so this frame had to paint
+                    to give the model somewhere to scroll into; the region stays open. Without this the
+                    hold would disable scroll_up's own relief valve (Render.cpp:471) and the next scroll
+                    would evict history that was never painted.
+       declined  -- the chunk could not be executed at all, so the model is no longer the console's
+                    mirror; the region ends and the adopt/align path takes over. */
+  unsigned long nSyncHeld, nSyncTimeout, nSyncOverflow, nSyncDeclined;
   /* DECSCUSR (`CSI Ps SP q`), kept as the parameter rather than as a console value: -1 = nothing has asked
      (so the painter must not touch the console's cursor height at all), 0 = ConEmu's "default", 1/2 =
      block, 3-6 = the thin shape. Upstream can only give a console a block or a 15-row cursor through the
@@ -282,13 +370,35 @@ typedef struct RcGrid
   int    args[RC_CSI_ARGS];
   int    digit;           /* a parameter is being accumulated */
   int    cur;
-  int    interim;         /* CSI intermediate bytes (0x20..0x2F) */
+  /* The CSI intermediate bytes (0x20..0x2F) of the sequence being read, in arrival order. A set, not a
+     slot, because upstream's buffer is one: ConEmu appends every non-digit, non-';', non-final byte into
+     Pvt (Ansi.cpp:1788) and then asks for its *length* -- `PvtLen == 1 && Pvt[0] == L' '` for DECSCUSR
+     (:3657), `PvtLen == 1 && Pvt[0] == L'!'` for DECSTR (:3645). Overwriting one slot instead made the
+     last byte win, so the junk spelling `CSI ! SP q` looked exactly like the real DECSCUSR. Bytes past the
+     cap are dropped, which is what a full Pvt does upstream; neither arm can be satisfied by a longer run
+     anyway, since both compare against length one.
+     The ESC introducer is a different lifetime -- it names a charset, not a parameter, and it is set
+     between an ESC and its final, where no CSI state applies -- so it keeps its own field. */
+  uint8_t interims[RC_INTERIM_MAX];
+  int    nInterims;
+  int    escInterim;      /* ESC-arm interim/introducer: '(', ')', '%', or a 0x20..0x2F before an ESC final */
   int    csiColon;        /* this CSI carried a ':' subparameter separator; decides RC_UN_COLON */
   /* The OSC/DCS payload being read. `nTitle` is its length so far and `title` its content, because the
      only payload anyone acts on is a window title; the rest is measured by the counters below. */
   int    nTitle;
   uint16_t title[RC_TITLE_MAX];
   int    oscKind;         /* RC_OSC_*: what the introducer said, decided before the payload is read */
+  /* ConEmu's private OSC 9 family, kept to the subset MSFT acts on (T7, I35): `9;4` taskbar state/progress
+     and `9;9` working directory. Both are *reported*, never *obeyed* -- this library has no window to put a
+     bar on and never changes the process's directory from an output stream -- and `9;12` needs no field
+     because it is routed straight into the FTCS path it is equivalent to. `taskbarState` is 0 until a `9;4`
+     arrives, which is also "remove the indicator", so 0 is a real value and not an absence: the absence is
+     `taskbarSeen`. */
+  int    taskbarState;
+  int    taskbarProgress;
+  int    taskbarSeen;
+  uint16_t cwd[RC_TITLE_MAX];
+  int    nCwd;
   int    oscClip;         /* this payload outgrew title[]: a title is applied truncated and counted */
   int    titlePending;    /* a title OSC terminated and waits for the painter to hand it to the console */
   uint32_t wantLow;     /* a high surrogate ended the last chunk; complete it or paint U+FFFD */
@@ -364,6 +474,14 @@ typedef struct RcGrid
   void *flushCtx;
 } RcGrid;
 
+/* How long a synchronized region may hold a flush before the next one paints anyway. MSFT's renderer waits
+   100 ms (`constexpr DWORD timeout = 100` in renderer.cpp::_synchronizeWithOutput) and then paints with the
+   mode still set; this clears the mode too, because the seam that waits has no render thread of its own --
+   its only clock is the arrival of the next flush. A value too long is a screen that stops updating for that
+   much longer; a value too short only costs the frame the region was meant to make atomic. Same number,
+   chosen for the same reason. */
+#define RC_SYNC_TIMEOUT_MS 100
+
 /* RC_ESC_N is deliberately absent: esc_end() measures SS2/SS3 (ESC N, ESC O) as the introducer only,
  * because both consoles then print the following graphic byte -- so the parser returns to ground
  * immediately and the next unit is ordinary text, not a swallowed shift-out. */
@@ -395,7 +513,7 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n);
 
 /* The console attribute for an SGR state: ExtPrepareColor's order, with Far3Color's folding and its
  * fg==bg correction applied only when the background actually went through that fold. */
-uint16_t rc_attr(const RcSgr *s, uint16_t defAttr);
+uint16_t rc_attr(const RcGrid *g, const RcSgr *s);
 
 /* Display columns of one code point, per the ansi_width tables (0, 1 or 2; controls come back 0). */
 int rc_width(uint32_t cp);
@@ -466,10 +584,11 @@ int  rc_title_take(RcGrid *g, uint16_t *dst, int cap);
    on the gap. */
 int  rc_report_pending(const RcGrid *g);
 
-/* Pop the oldest armed query: returns its kind (RC_REP_NONE when the queue is empty) and, when `row` and
- * `col` are not NULL, the model row and column the cursor stood on when it was asked. The counter of the
- * outcome belongs to rc_report_result, not here, because only the caller knows whether the console took it. */
-int  rc_report_take(RcGrid *g, int *row, int *col);
+/* Pop the oldest queued query: returns its kind (RC_REP_NONE when the queue is empty) and, when `out` is
+ * not NULL, the whole entry -- the model position the cursor stood on when it was read, and for DECRPM the
+ * mode it asked about with the status that position had at that moment. The counter of the outcome belongs
+ * to rc_report_result, not here, because only the caller knows whether the console took it. */
+int  rc_report_take(RcGrid *g, struct RcReportItem *out);
 
 /* Say what became of the query the take above this call returned: 1 = the console took every record, 0 = the
    write failed or fell short. One call per take, in that order; the model keeps no per-entry history, only

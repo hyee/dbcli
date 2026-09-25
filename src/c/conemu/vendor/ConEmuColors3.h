@@ -63,7 +63,11 @@ public:
 		int Index = - 1;
 		static COLORREF LastColor;
 		static int LastIndex;
-		if (LastColor == Color)
+		/* dbcli deviation: the memo keys on the colour alone, so it is only valid while the table is the
+		   static one. With a caller-supplied palette (Render.cpp's live OSC 4 table, I34) the same colour can
+		   map to a different index after a change, and a memo that ignores the table would freeze the old
+		   answer for the rest of the process. */
+		if (apPalette == NULL && LastColor == Color)
 		{
 			Index = LastIndex;
 		}
@@ -110,7 +114,8 @@ public:
 		int Index = -1;
 		static COLORREF LastColor;
 		static int LastIndex;
-		if (LastColor == Color)
+		/* Same memo guard as Color2FgIndex above. */
+		if (apPalette == NULL && LastColor == Color)
 		{
 			Index = LastIndex;
 		}

@@ -125,8 +125,96 @@
  * band answer survives only where the model has unused rows below it while the user is looking somewhere else
  * -- which is now pinned on both sides in RenderCheck. A -12 binary
  * and a -13 tree agree on every flush of a session the window has never run out of room for, and disagree from
- * the first newline that slides the window to the bottom of the buffer. */
-#define RENDER_BUILD "render-2026-09-25-13"
+ * the first newline that slides the window to the bottom of the buffer.
+ * -14 is a leg the renderer was missing rather than a bug it had. A flush may not move a window the user
+ * scrolled away from (rule 2, and -8 is what made that true), and conhost pairs that ban with
+ * `SnapOnInput`: a key-down brings the cursor back into view (input.cpp:171-178 -> screenInfo.cpp:1631-1666).
+ * conhost fires that snap only for a console in VTP mode, which is the mode this renderer exists for the
+ * absence of -- so on a ConEmu-rendered console nothing at all moved the view back, and a user who scrolled
+ * up to read output and then typed watched their characters go into a screenful of history they could not
+ * see. rc_snap_view decides (Paint.h, pinned by RenderCheck without a console), `snap` executes one
+ * SetConsoleCursorPosition -- least displacement, no cell written -- and WinSysTerminal calls it on a key
+ * that conhost itself would treat as input. A -13 binary and a -14 tree agree on every paint and disagree
+ * on the first keystroke after a scroll up.
+ * -15 answers a question the Java side has been guessing at: is this console a ConPTY one? WT_SESSION is
+ * inherited by a classic conhost window started from inside a WT session, so every env-var test of it
+ * mis-classifies that window, and the previous answer at this stamp painted cells into a buffer a
+ * serializer was already turning back into VT for a terminal that parses them (see
+ * Java_com_hyee_ansirender_NativeRenderer_isPseudoConsole for the source-cited read of VtIo mode off the
+ * window class). This stamp changes no paint; it moves the decision to where the fact is. A -14 binary and a
+ * -15 tree agree on every console the classifier got right and disagree on the one it got wrong.
+ * -16 gates DECRC (`CSI u`) on the private marker. Upstream ConEmu restores unconditionally, and that is
+ * a defect a consumer can prove: jline4's capability probe batch opens with kitty's `CSI ?u` query
+ * (AbstractTerminal.probeModes), so every probe round jerked the cursor to the last DECSC. WT and ghostty
+ * route a private-marker final to their query/ignore arms, which is where this now agrees with them. This
+ * stamp changes no paint either; it changes where the cursor stands after a probe.
+ * -17 is DECSET 2026. A synchronized region defers its frames now -- *every* frame, including the chunk that
+ * opens the region, which is where an application writes the top of its new screen -- and the deferral has two
+ * escape hatches that are deliberately not the same: the 100 ms clock ends the region and clears the mode,
+ * because a leaked BSU must not cost the rest of the session its pictures, while a full scrollback gutter
+ * paints this frame and leaves the region open, because a held scroll evicts history no one can repaint.
+ * Six counters came with it (engages, nested, held, timeout, overflow, declined) and the stats array grew by
+ * them: RenderJni.cpp, Render.java's slot table and NativeRenderer's are one contract read positionally, and
+ * the live gate checks the length. This stamp changes what reaches the screen and when.
+ * -18 is the interim set plus DECRQM. CSI intermediates accumulate into a set compared by whole length the way
+ * upstream compares its Pvt buffer (Ansi.cpp:1788, :3645, :3657), which retires two spellings that used to pass
+ * here as legal: `CSI ! SP q` set a cursor shape, and `CSI ? ! p` ran a hard reset. And `CSI ? <mode> $ p`
+ * answers now, for the three bits this model holds (25, the alternate-screen family, 2026) and using only
+ * statuses 1 and 2. The permanent pair is never sent: DEC and xterm read 4 as "permanently set" while jline4's
+ * doc reads 4 as "permanently reset", so a number those two readers invert lies to one of them -- for 2048 it
+ * would promise window sizes arriving in the data stream -- and the asker looks replies up by mode number, so
+ * an unanswered id costs it nothing (`parseDecrpm`, AbstractTerminal.java:675-690). No stats slot moved: the
+ * queue entry carries the mode and the status, and written replies were already counted.
+ * -21 is the OSC 9 safe subset (T7). 9;4 stores a taskbar state and progress, 9;9 stores a working
+ * directory as text, and 9;12 is routed into the FTCS 133;B path rather than reimplemented; both stored facts
+ * are read-only through the seam (NativeRenderer.taskbar / workingDirectory) and survive a rebuild, because a
+ * resize is not a re-open. Nothing here acts: no window means no taskbar to paint, and a directory taken from
+ * an output stream stays a string. Every other subcommand -- 9;1 sleep, 9;2 MessageBox, 9;3 set-env, 9;6
+ * GuiMacro, 9;7 DoProcess -- keeps counting RC_UN_OSC_PRIV and running nothing, exactly as MSFT sends them to
+ * UnknownSequence.
+ * -22 is DECAWM (I35): `CSI ?7 h/l` decides whether the margin ends the line or the row wraps at it. The
+ * mode left the census's MODE bucket, DECRQM answers it, and RIS/DECSTR put it back on. With it off a glyph
+ * that cannot fit the last column is dropped whole -- MSFT clears the same cell it could not fit, and says
+ * why (Row.cpp:474-494, "there's no correct alternative way to handle this situation") -- and the cursor
+ * holds at the margin instead of opening a row, so a fixed-width status line overwrites one cell forever and
+ * no RC_WRAP_FORCED claim is made for a row that never overflowed. Two things came with it: writing a narrow
+ * glyph over a wide one's front half now blanks the orphaned back half (the pair is I16's unit, and with no
+ * wrap this would be manufactured on every row rather than only where a CUP happened to land), and the
+ * margin clamp steps off a trailing half, because a cursor must never rest inside a glyph. The terminfo
+ * entry keeps `smam`/`rmam` out, which is a different question from the mode: the entry also describes
+ * sessions where ConEmu's own parser reads the stream, and its `?7` arm leaves SetConsoleMode commented out.
+ * -19 is DECSTBM's validation, found by re-reading every "upstream does not do it either" reason in these
+ * files for an independent one. `CSI 3r` now means rows 3..bottom instead of clearing the region (upstream
+ * demands ArgC >= 2 at Ansi.cpp:3142, so a one-parameter call was a silent reset), and an inverted `3;2r` is
+ * ignored instead of clearing -- ignoring and clearing are different acts, because clearing hands the next
+ * line feed the whole viewport, which is the #47/#48 failure with a new trigger. Both references agree on
+ * those two; where this build still splits from MSFT is the clamp it keeps (an out-of-range bottom is pulled
+ * to the viewport's last row, and `Pt == Pb` is accepted as a one-row region, because Status.reset() arrives
+ * as `CSI 1;1r` and refusing it would leave the bar's region stuck on).
+ * -20 is the palette: OSC 4/10/11/104/110/111 (I34), with the grammar taken from MSFT because ConEmu parses
+ * these and does nothing. An index below 16 changes a console attribute's colour -- written back through
+ * SetConsoleScreenBufferInfoEx read-modify-write, so naming one entry cannot recolour the other fifteen --
+ * and at or above 16 it changes only which index a 256-colour or true-colour SGR folds to, because a 4-bit
+ * attribute has nowhere else to put it. close() restores the table the handle found. Two things came with
+ * it that are not the mode: the vendored fold's `static LastColor/LastIndex` memo is now bypassed when a
+ * caller supplies a table (it keyed on the colour alone and would freeze a pre-change answer), and
+ * `defAttr` was being copied into the SGR slots as if it were an index when it is an attribute -- with
+ * ClrMap an involution, the double conversion is invisible for the palindromic entries and wrong for the
+ * rest, so a profile whose default foreground is FORE_BLUE got a red pen over blue cells out of one
+ * rc_reset. Control: reverting that conversion fails exactly the four new assertions, all of them
+ * `got 0x4 want 0x1`. *
+ * -23 is the census table (T6). One static row per RcUnsupported slot -- label, sentence, and whether
+ * counting it makes the frame suspect -- so `unsupported()` reads a column where it used to compare against
+ * one enum member, and the labels stop being a third thing written down (the enum's comments, this file's
+ * stats layout, and two Java report tables said the same eleven names four ways). Nothing moved by a byte:
+ * the slot order is the ABI, `stats()` still hands back numbers, and the equality proof is the host gate
+ * pinning the whole normalised label list plus a live leg that now compares all eleven names with the dll
+ * instead of four indices. `Java_Render_censusNames` is gate-only, like `consolePalette`.
+ * Stamping caveat, learned the hard way this session: a binary can ship with a stale stamp. The -15 build
+ * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
+ * same string while being different bytes. A version string identifies intent, not content -- ship census
+ * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
+#define RENDER_BUILD "render-2026-09-26-23"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -139,6 +227,10 @@ enum
      Replaying would print the text twice, so the caller keeps its raw leg out of it and simply re-adopts
      the console before the next chunk. */
   FLUSH_RESYNC = 2,
+  /* DECSET 2026 held this one: the chunk is parsed and the model owns its bytes, but no console call was
+     made and the damage is left marked for the flush that ends the region. Positive, because the caller must
+     not replay the bytes -- they are in the model, which is the thing the eventual paint will draw. */
+  FLUSH_HELD = 3,
   FLUSH_NOGEOM = -1,               /* the console's shape is not the model's: re-adopt */
   /* -2 was FLUSH_WIDE: a buffer row longer than the scratch. The model row IS a buffer row now, so the
      only width that can reach the painter is one the grid was built for, and open() refuses anything
@@ -200,7 +292,13 @@ enum
 #define STAT_ALT         (STAT_TITLES + 3)
 #define STAT_PROMPT      (STAT_ALT + 2)
 #define STAT_REPORT      (STAT_PROMPT + 2)   /* replies written, failed, and refused for want of a slot */
-#define STAT_LAST        (STAT_REPORT + 3)
+#define STAT_SNAP        (STAT_REPORT + 3)   /* views a keystroke brought back onto the model's cursor */
+/* DECSET 2026: regions opened, nested BSU, flushes held, and the three ways a region ends without its ESU.
+   Appended for the rule every slot in this table follows -- the Java side reads these positionally, so a new
+   counter is added at the end and an existing one never moves. The last slot is the live bit, not a count:
+   a session that ends inside a region is a different finding from one that never entered. */
+#define STAT_SYNC        (STAT_SNAP + 1)
+#define STAT_LAST        (STAT_SYNC + 7)
 
 #ifdef __MINGW32__
 #define CH_UNICODE(ci) ((ci).Char.UnicodeChar)
@@ -223,6 +321,11 @@ typedef struct RcHandle
      close(). Lazily because a session that never asks should not pay for a handle, and a process that has no
      console input at all -- a redirected or headless one -- must not fail any earlier than the query. */
   HANDLE in;
+  /* The console's own 16 entries as this handle first found them, and whether it has changed any of them
+     since. The palette is console state that outlives the process on a shared buffer, so a renderer that
+     recoloured it and left would be a vandal (I34). */
+  uint32_t palOrig[16];
+  int    palSaved;
   uint16_t defAttr;
   /* Content from this chunk has reached the console, so a later decline in the same chunk must not send
      the caller back to a raw write with the same bytes: that is how text gets painted twice. */
@@ -246,7 +349,28 @@ typedef struct RcHandle
      in the cell census. Java_Render_plan reads these back; painting them costs a store per flush. */
   int trSeq, trReason, trBaseSet, trBaseRow, trWinT, trBase, trSlide, trSlideTo, trBufScroll, trRow0,
       trWinTop, trRows, trWinRows, trBufH, trPend, trRuns, trDeclined, trMoveFail;
-  unsigned long nFlush, nPaints, nDeclines, nApiErrors, nAligns;
+  unsigned long nFlush, nPaints, nDeclines, nApiErrors, nAligns, nSnaps;
+  /* Gate-only fault injection: fail the *i*-th run of the next plan instead of calling the console, once.
+     The defect it witnesses (#44) lives on an error path no console state can be coaxed into -- a
+     WriteConsoleOutputW that succeeds for run 0 and fails for run 1 -- and "the model lied about having
+     painted" is exactly the thing a cell read can see and a green regression cannot. -1 is armed off, which
+     is what every handle starts at and what the arming export sets it back to after one hit, so a fault can
+     never survive into a later case. Production has no way to reach a non-negative value. */
+  int faultRun;
+  /* DECSET 2026: the tick of the first flush this region held, valid only while syncHolding is set. The
+     timeout is not a nicety -- a program that dies between BSU and ESU would otherwise leave every later
+     chunk parsed, modelled and never painted, which is a frozen screen rather than a stale one. MSFT's
+     renderer waits 100 ms and then paints anyway, clearing the mode on the way
+     (renderer.cpp::_synchronizeWithOutput); this is the same rule read from the only clock this seam has,
+     which is the arrival of the next flush.
+     A separate `holding` flag rather than a sentinel in the tick itself, because tick 0 is a legal value:
+     it is GetTickCount()'s reading at process start and again every 49.7 days, and storing "no region" as
+     0 would make the seam forget one hold in that window in exchange for a field. The elapsed test is a
+     DWORD subtraction, which is wrap-safe by construction -- the only comparison that survives the clock
+     rolling over underneath it. GetTickCount, not GetTickCount64: build.sh's Win8+ API whitelist rejects
+     the latter, and this file is built for XP-era consoles as well as for the ones that have it. */
+  DWORD syncSince;
+  int   syncHolding;
   int lastReason;
   char lastError[128];
 } RcHandle;
@@ -268,7 +392,9 @@ static int g_openStatus;           /* the last open() failure, for the caller's 
  * already has, and no painting reads it. */
 static unsigned long g_totUn[RC_UN_MAX], g_totTitle, g_totTitleTrunc, g_titleCalls,
                      g_totAltSwitch, g_totAltFail, g_totPromptMark,
-                     g_totRepOk, g_totRepFail, g_totRepFull;
+                     g_totRepOk, g_totRepFail, g_totRepFull,
+                     g_totSyncEngages, g_totSyncNested, g_totSyncHeld,
+                     g_totSyncTimeout, g_totSyncOverflow, g_totSyncDeclined;
 
 /* Is this pointer one of our slots, and still claimed? The claim is what makes junk pointers and
    already-closed ones the same case: both answer NULL, and no call dereferences anything. A renderer that
@@ -435,17 +561,32 @@ static void w_dec(wchar_t *b, int *n, int cap, int v)
   w_lit(b, n, cap, t);
 }
 
-/* The reply text for one armed query, without the introducer: the queue entry says which query, and `row`
- * and `col` are the model position the cursor stood on when it was read. Returns the length.
+static void w_hex4(wchar_t *b, int *n, int cap, unsigned v)
+{
+  char t[8];
+  snprintf(t, sizeof t, "%04x", v & 0xFFFFu);
+  w_lit(b, n, cap, t);
+}
+
+/* The reply text for one queued query, without the introducer: the queue entry says which query, and `it`
+ * carries the model position the cursor stood on when it was read, plus the mode and status a DECRQM asked
+ * about. Returns the length.
  *
  * DA1 is conhost's own string minus `;52`, the clipboard access that parameter advertises and that this
  * renderer does not model -- conhost says the same thing itself when its ClipboardWrite feature is off
  * (adaptDispatch.cpp:1454-1461), and the service class `61` is what the emulator underneath really reports.
  * Parity is the point rather than pedantry: a chunk this library declines goes to the console unparsed, and
  * conhost answers *that* query, so a program must not meet two identities in one session. DA2 is conhost's
- * `>0;10;1` (adaptDispatch.cpp:1471-1474): a VT100, firmware 1.0, PC keyboard. */
+ * `>0;10;1` (adaptDispatch.cpp:1471-1474): a VT100, firmware 1.0, PC keyboard.
+ *
+ * DECRPM is the one reply whose text is decided before the queue is walked, because it is about a point in
+ * the stream rather than about the screen at the end of it: `it->mode` is the number that was asked and
+ * `it->status` is what that mode was when the request was read. ConEmu has no such reply, so there is no
+ * upstream string to copy -- the shape is the VT500 one, `CSI ? <mode> ; <status> $ y`, and only the two
+ * statuses this model can prove ever appear; Render.cpp's `mode_status` says why the permanent pair are left
+ * unasked and unanswered. */
 static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *p,
-                      int y, int x, wchar_t *out, int cap)
+                      const struct RcReportItem *it, wchar_t *out, int cap)
 {
   int n = 0;
   switch (kind)
@@ -455,11 +596,12 @@ static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *
       break;
     case RC_REP_CPR:
     {
-      /* The same arithmetic the painter used to place the cursor in this frame: model row `y` is buffer row
-         `row0 + y`, and a CPR counts from the *window's* top, so the window the plan leaves behind is part of
-         the answer. Clamped, because a cursor below a window the user has scrolled up to the top of is not on
-         any screen -- a row of 0 or a row past the bottom would be an answer no parser was written to read. */
-      int row = p->row0 + y - p->winTop + 1;
+      /* The same arithmetic the painter used to place the cursor in this frame: model row `it->y` is buffer
+         row `row0 + y`, and a CPR counts from the *window's* top, so the window the plan leaves behind is
+         part of the answer. Clamped, because a cursor below a window the user has scrolled up to the top of
+         is not on any screen -- a row of 0 or a row past the bottom would be an answer no parser was
+         written to read. */
+      int row = p->row0 + it->y - p->winTop + 1;
       if (row < 1) row = 1;
       if (row > g->winRows) row = g->winRows;
       /* Columns need no clamp: the model row is the buffer row (I7), so a column right of the window is a
@@ -468,8 +610,36 @@ static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *
       w_lit(out, &n, cap, "\x1b[");
       w_dec(out, &n, cap, row);
       w_lit(out, &n, cap, ";");
-      w_dec(out, &n, cap, x + 1);
+      w_dec(out, &n, cap, it->x + 1);
       w_lit(out, &n, cap, "R");
+      break;
+    }
+    case RC_REP_DECRPM:
+      w_lit(out, &n, cap, "\x1b[?");
+      w_dec(out, &n, cap, it->mode);
+      w_lit(out, &n, cap, ";");
+      w_dec(out, &n, cap, it->status);
+      w_lit(out, &n, cap, "$y");
+      break;
+    case RC_REP_OSC:
+    {
+      /* `OSC 4;<idx>;rgb:RRRR/GGGG/BBBB ST`, or without the index for a default (`OSC 10;...`). That is
+         MSFT's own spelling scaled to 16 bits per component -- adaptDispatch.cpp:3338 and :3417, whose
+         comment says the scaling exists "to match xterm's 16-bit color report format". The colour
+         reported is the one this console will really show: for a default that is the entry the request
+         folded to, not the RGB that was asked for, because a 4-bit terminal has no other answer to give
+         (I34). */
+      const uint32_t c = it->status;                    /* COLORREF order, 0x00BBGGRR */
+      w_lit(out, &n, cap, "\x1b]");
+      w_dec(out, &n, cap, (int)it->mode);
+      if (it->mode == 4) { w_lit(out, &n, cap, ";"); w_dec(out, &n, cap, it->y); }
+      w_lit(out, &n, cap, ";rgb:");
+      w_hex4(out, &n, cap, (c & 0xFFu) * 0x0101u);
+      w_lit(out, &n, cap, "/");
+      w_hex4(out, &n, cap, ((c >> 8) & 0xFFu) * 0x0101u);
+      w_lit(out, &n, cap, "/");
+      w_hex4(out, &n, cap, ((c >> 16) & 0xFFu) * 0x0101u);
+      w_lit(out, &n, cap, "\x1b\\");
       break;
     }
     case RC_REP_DA:
@@ -502,10 +672,10 @@ static void flush_reports(RcHandle *h, const RcView *v, const RcPlan *p)
   RcGrid *g = h->g;
   while (rc_report_pending(g) > 0)
   {
-    int y = 0, x = 0;
-    const int kind = rc_report_take(g, &y, &x);
+    struct RcReportItem it;
+    const int kind = rc_report_take(g, &it);
     wchar_t txt[64];
-    const int n = reply_text(kind, g, v, p, y, x, txt, (int)(sizeof txt / sizeof txt[0]));
+    const int n = reply_text(kind, g, v, p, &it, txt, (int)(sizeof txt / sizeof txt[0]));
     if (n <= 0) { rc_report_result(g, 0); continue; }   /* a kind with no reply: counted, never silent */
     if (h->in == INVALID_HANDLE_VALUE)
       h->in = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE,
@@ -518,7 +688,7 @@ static void flush_reports(RcHandle *h, const RcView *v, const RcPlan *p)
       snprintf(h->lastError, sizeof h->lastError, "reply: no CONIN$ (%lu)", (unsigned long)GetLastError());
       h->nApiErrors++;
       rc_report_result(g, 0);
-      while (rc_report_pending(g) > 0) { rc_report_take(g, NULL, NULL); rc_report_result(g, 0); }
+      while (rc_report_pending(g) > 0) { rc_report_take(g, NULL); rc_report_result(g, 0); }
       return;
     }
     INPUT_RECORD rec[160];
@@ -548,6 +718,68 @@ static void flush_reports(RcHandle *h, const RcView *v, const RcPlan *p)
   }
 }
 
+/* Push palette entries at the console, and put the geometry back if the round trip moved it.
+ *
+ * Read-modify-write, because `SetConsoleScreenBufferInfoEx` replaces the *whole* table: an application that
+ * set one colour must not silently recolour the user's other fifteen. `src` supplies the colours for the bits
+ * set in `mask`; the first write of a handle also records what the console had, so close() can hand it back.
+ *
+ * The round trip is not inert, and this is the part that was paid for: on this machine's conhost, writing the
+ * struct straight back after reading it costs the window one row (srWindow.Bottom 29 -> 28 for a 30-row
+ * window). The next plan then reads "the console's shape is not the model's" and declines, so setting a
+ * colour would have shrunk the user's viewport and refused to paint for the rest of the session -- and the
+ * same thing happened at close(), where a 24-row leg found a 23-row window. Repair it through the API that
+ * owns the window rect, and only when the console actually disagrees. `keep` is the shape to preserve: the
+ * flush passes what it read at the top of the same frame, and close() reads one fresh, because there is no
+ * frame to agree with. Returns 0 when the palette write itself failed. */
+static int apply_palette(RcHandle *h, const uint32_t *src, uint16_t mask,
+                         const CONSOLE_SCREEN_BUFFER_INFO *keep)
+{
+  CONSOLE_SCREEN_BUFFER_INFOEX ex;
+  memset(&ex, 0, sizeof ex);
+  ex.cbSize = sizeof ex;
+  if (!GetConsoleScreenBufferInfoEx(h->con, &ex)) { h->nApiErrors++; return 0; }
+  if (!h->palSaved)
+  {
+    for (int i = 0; i < 16; i++) h->palOrig[i] = (uint32_t)ex.ColorTable[i];
+    h->palSaved = 1;
+  }
+  for (int i = 0; i < 16; i++)
+    if (mask & (uint16_t)(1u << i)) ex.ColorTable[i] = (COLORREF)src[i];
+  /* `wAttributes` is left exactly as it was read. On this console that field *is* the pen -- the flush above
+     has just set it from the plan -- so writing the model's default into it would fight
+     SetConsoleTextAttribute every frame for a colour the application asked for once. An OSC 10/11 is
+     therefore model-side here: every cell this library writes carries an explicit attribute, so the effect is
+     complete for output and differs only for a fill conhost makes itself (I34). */
+  if (!SetConsoleScreenBufferInfoEx(h->con, &ex))
+  {
+    /* Left dirty on purpose: the next flush tries again, and the count says it is not landing. */
+    snprintf(h->lastError, sizeof h->lastError, "palette=%lu", (unsigned long)GetLastError());
+    h->nApiErrors++;
+    return 0;
+  }
+  CONSOLE_SCREEN_BUFFER_INFO now;
+  if (GetConsoleScreenBufferInfo(h->con, &now)
+      && (now.srWindow.Left != keep->srWindow.Left || now.srWindow.Top != keep->srWindow.Top
+          || now.srWindow.Right != keep->srWindow.Right || now.srWindow.Bottom != keep->srWindow.Bottom
+          || now.dwSize.X != keep->dwSize.X || now.dwSize.Y != keep->dwSize.Y))
+  {
+    COORD want;
+    want.X = keep->dwSize.X;
+    want.Y = keep->dwSize.Y;
+    if (want.X != now.dwSize.X || want.Y != now.dwSize.Y) SetConsoleScreenBufferSize(h->con, want);
+    SetConsoleWindowInfo(h->con, TRUE, &keep->srWindow);
+    CONSOLE_SCREEN_BUFFER_INFO again;
+    if (!GetConsoleScreenBufferInfo(h->con, &again)
+        || again.srWindow.Bottom != keep->srWindow.Bottom || again.dwSize.Y != keep->dwSize.Y)
+    {
+      snprintf(h->lastError, sizeof h->lastError, "palette-geometry=%lu", (unsigned long)GetLastError());
+      h->nApiErrors++;
+    }
+  }
+  return 1;
+}
+
 /* ------------------------------------------------------------------ one paint ------------------ */
 
 /* Execute the pending plan. Needs no JNIEnv, because rc_feed() can ask for it in the middle of a
@@ -565,8 +797,13 @@ static int paint_flush(RcHandle *h)
      is exactly when the emulated alt screen stops being a claim anyone can support. render() answers by
      rebuilding the model rather than re-aligning it, and the console's own screen becomes the truth. A
      restore of the model's snapshot into a console that has its own idea of that screen would be the one
-     thing guaranteed to disagree with it. */
-#define DECLINE(code) do { h->nDeclines++; if (h->landedChunk) { h->lastReason = p.reason; return FLUSH_RESYNC; } \
+     thing guaranteed to disagree with it. A decline also ends any synchronized region: the hold is a claim that
+     the model and the console will meet again at the ESU, and a chunk that could not be executed is the one
+     event that proves they will not -- the frame the region was protecting is now the frame the adopt path has
+     to repaint anyway, so holding the next one would only delay the recovery. */
+#define DECLINE(code) do { h->nDeclines++; \
+                           if (g->sync) { g->sync = 0; g->nSyncDeclined++; h->syncHolding = 0; } \
+                           if (h->landedChunk) { h->lastReason = p.reason; return FLUSH_RESYNC; } \
                            return (code); } while (0)
 
   if (h->con == INVALID_HANDLE_VALUE || !view_of(h->con, &v, &csbi))
@@ -604,7 +841,70 @@ static int paint_flush(RcHandle *h)
 
   if (p.reason == RC_PLAN_NOGEOM) DECLINE(FLUSH_NOGEOM);
 
+  /* DECSET 2026, and the whole of what the mode does from here: the plan this chunk produced is thrown away
+     unexecuted, the damage it was built from is left marked, and the next flush therefore paints everything
+     the region accumulated in one go. Nothing is *stored* about the deferred rows -- the model already holds
+     them, and a second copy of a 4 MB grid to say "these cells changed" would be the worst kind of honesty.
+     *
+     The timeout is what makes this safe to ship rather than merely correct: the hold is a promise that an ESU
+     arrives, and the only evidence that it did not is the next chunk asking to be painted. So the region's
+     first held flush starts a clock -- and is itself held, see below -- and a flush that finds the clock past
+     RC_SYNC_TIMEOUT_MS paints, and clears the mode while it is at it, exactly as MSFT's renderer does
+     (renderer.cpp:540-570: `WaitOnAddress` for at most `timeout = 100` ms, then
+     `SetRenderMode(Mode::SynchronizedOutput, false)`), because an application that leaked its BSU must not
+     have the rest of its session swallowed one frame at a time. A region that never sees another chunk needs
+     no such mercy: nothing is waiting to be shown, and the screen holds the last frame it was given.
+     *
+     The replies go out either way. A query's answer is about the reader, not the screen (see
+     flush_reports above), and a program that asks `tput rows` inside its own synchronized region while we
+     wait for its ESU is a program that hangs. Its CPR is answered from the plan this flush declined, which
+     describes exactly where the rows will be when the region ends.
+     *
+     An empty plan is not held: a chunk of cursor moves only opens or closes the region, and counting those as
+     holds would make the census say "frames were deferred" about a session that deferred none.
+     *
+     The hold has a capacity limit, and it is the console's, not the region's. scroll_up asks for a paint once
+     pendingScrolls fills the gutter (Render.cpp:471) because that is the last moment the rows about to be
+     evicted still exist on screen; a flush that answers "not yet" to that request does not stop the model
+     scrolling, so the next line the program prints pushes history out of a buffer the console never painted
+     and it is gone. So a full gutter outranks the mode: paint this frame, count the preemption, and leave the
+     region open -- the next chunk can hold again, and it will get its own RC_SYNC_TIMEOUT_MS of it. */
+  const int room = rc_scroll_room(g);
+  const int gutterFull = (room > 0 && g->pendingScrolls >= room);
+  if (g->sync && p.reason != RC_PLAN_EMPTY && !gutterFull)
+  {
+    const DWORD now = GetTickCount();
+    if (h->syncHolding && (DWORD)(now - h->syncSince) > (DWORD)RC_SYNC_TIMEOUT_MS)
+    {
+      g->sync = 0; g->nSyncTimeout++; h->syncHolding = 0;
+    }
+    else
+    {
+      /* The frame that starts the clock is deferred like every other one in the region. Letting it through
+         would be a different and much weaker promise -- "the second frame onward is atomic" -- and the first
+         frame is where the tear shows: an application writes its BSU together with the top of the new screen,
+         so a renderer that paints that chunk has just drawn the top of the new frame over the old one before
+         starting to be careful. The clock is still one per region: only a flush that finds no clock running
+         sets one, and a held flush never re-arms it, so 100 ms bounds the age of the region and not the gap
+         between its chunks -- MSFT's floor of ~10 FPS for a region that never closes, unchanged. */
+      if (!h->syncHolding) { h->syncHolding = 1; h->syncSince = now; }
+      g->nSyncHeld++;
+      flush_reports(h, &v, &p);
+      return FLUSH_HELD;
+    }
+  }
+  else
+  {
+    if (gutterFull && g->sync && p.reason != RC_PLAN_EMPTY) g->nSyncOverflow++;
+    h->syncHolding = 0;
+  }
+
   int landed = h->landedChunk;
+  /* Set by anything that leaves a row this plan owns unpainted. The moves have `movedAsPlanned` and the
+     anchor to fall back on; the *cells* had no watch at all -- `rc_paint_done` at the end of the flush
+     clears the whole dirty array, so a run that was refused stayed stale on the screen while the model
+     called it current, and nothing re-marked it. `paintUndone` is that watch. */
+  int paintUndone = 0;
 
   /* Order is the plan's: slide, then scroll, then cells. Any other order moves the wrong rows.
      `movedAsPlanned` is why the two are watched at all: the model's anchor may only move with rows the
@@ -654,6 +954,7 @@ static int paint_flush(RcHandle *h)
       {
         snprintf(h->lastError, sizeof h->lastError, "scratch %d cells", need);
         h->nApiErrors++;
+        paintUndone = 1;               /* every row of this plan is still unpainted */
         if (!landed) DECLINE(FLUSH_API);
       }
       else { h->cells = fresh; h->ncells = need; }
@@ -668,11 +969,17 @@ static int paint_flush(RcHandle *h)
            as an nrows x w array, so any other stride shifts every row after the first. */
         for (int r = 0; r < nrows; r++)
           build_row(g, top + r, lo, hi, h->cells + (size_t)r * w);
-        LONG e = write_rect(h->con, &v, &p, top, nrows, lo, hi, h->cells);
+        /* The gate's armed fault takes this run's place, once (see RcHandle::faultRun). It reports the same
+           shape a real refusal does -- a nonzero error, nothing on screen -- because the code under test is
+           what happens *after* the error, not the error itself. */
+        LONG e;
+        if (h->faultRun == i) { h->faultRun = -1; e = (LONG)ERROR_INVALID_PARAMETER; }
+        else e = write_rect(h->con, &v, &p, top, nrows, lo, hi, h->cells);
         if (e)
         {
           snprintf(h->lastError, sizeof h->lastError, "rect r%d x%d c%d..%d =%ld", top, nrows, lo, hi, e);
           h->nApiErrors++;
+          paintUndone = 1;             /* and the runs after this one never ran either */
           break;                       /* the row below would land in the wrong place: stop */
         }
         landed = 1;
@@ -682,7 +989,14 @@ static int paint_flush(RcHandle *h)
     }
   }
 
-  if (p.attrChanged) SetConsoleTextAttribute(h->con, (WORD)p.attr);
+  if (p.attrChanged && !SetConsoleTextAttribute(h->con, (WORD)p.attr))
+  {
+    /* An attribute the host refused is an attribute the console does not have, and the model's next frame
+       will not repaint it -- it only writes what changed. Counted, because a silent mismatch between the
+       model's attribute and the cell's is exactly the kind of divergence that reads as a colour bug. */
+    snprintf(h->lastError, sizeof h->lastError, "attr=%lu", (unsigned long)GetLastError());
+    h->nApiErrors++;
+  }
   if (p.setVisible || p.setShape)
   {
     /* One call for both, because both are the same CONSOLE_CURSOR_INFO: visibility is what ?25h/l has
@@ -696,8 +1010,18 @@ static int paint_flush(RcHandle *h)
     {
       if (p.setVisible) ci.bVisible = p.cursorVisible ? TRUE : FALSE;
       if (p.setShape) ci.dwSize = (DWORD)p.shapeHeight;
-      SetConsoleCursorInfo(h->con, &ci);
+      if (!SetConsoleCursorInfo(h->con, &ci))
+      {
+        snprintf(h->lastError, sizeof h->lastError, "cursorinfo=%lu", (unsigned long)GetLastError());
+        h->nApiErrors++;
+      }
     }
+  }
+  if (h->g && h->g->palTouched)
+  {
+    /* OSC 4 wrote some of the first sixteen entries (I34). The write and the geometry repair it
+       forces are the same code close() uses, so neither path can move the user's window. */
+    if (apply_palette(h, h->g->pal16, h->g->palTouched, &csbi)) h->g->palTouched = 0;
   }
   if (p.cursorMoved)
   {
@@ -728,7 +1052,16 @@ static int paint_flush(RcHandle *h)
      rows it is measured against are the ones this flush just placed. */
   flush_reports(h, &v, &p);
 
+  /* Done first, dropped second, and the order is the whole fix. rc_paint_done consumes the scrolls the plan
+     performed and clears the damage array; on a flush whose runs were refused, that cleared array is a lie
+     about rows still sitting unpainted on the console, and nothing else would ever re-mark them.
+     rc_drop_base is the re-mark -- it is the same recourse a refused *move* already takes, for the same
+     reason: better one whole-viewport repaint on the next flush than a model that quietly disagrees with the
+     screen until a geometry change or a re-adopt happens to rebuild it. The anchor claim is not touched: a
+     refused *run* addresses the right rows and misses their contents, which is a weaker failure than the
+     refused *move* above, where the addresses themselves went wrong. */
   rc_paint_done(g);
+  if (paintUndone) rc_drop_base(g);
 #undef DECLINE
   if (!landed && p.reason == RC_PLAN_EMPTY) return FLUSH_NOTHING;
   return FLUSH_PAINTED;
@@ -766,6 +1099,12 @@ static void fold_counters(RcHandle *h)
   g_totRepOk += h->g->nReportOk;
   g_totRepFail += h->g->nReportFail;
   g_totRepFull += h->g->nReportFull;
+  g_totSyncEngages += h->g->nSyncEngages;
+  g_totSyncNested += h->g->nSyncNested;
+  g_totSyncHeld += h->g->nSyncHeld;
+  g_totSyncTimeout += h->g->nSyncTimeout;
+  g_totSyncOverflow += h->g->nSyncOverflow;
+  g_totSyncDeclined += h->g->nSyncDeclined;
 }
 
 static void drop_model(RcHandle *h)
@@ -782,6 +1121,16 @@ static void drop_model(RcHandle *h)
    of leak a long session remembers. */
 static void release_all(RcHandle *h)
 {
+  /* Hand the console back the palette this handle found, before the model that remembers it goes away.
+     Read-modify-write for the same reason the flush does it, and the entries still owed (a refusal left
+     them dirty) go back too -- the user's table is the one that was there first. */
+  if (h->palSaved && h->con != INVALID_HANDLE_VALUE)
+  {
+    CONSOLE_SCREEN_BUFFER_INFO keep;
+    if (GetConsoleScreenBufferInfo(h->con, &keep))
+      apply_palette(h, h->palOrig, 0xFFFF, &keep);
+    h->palSaved = 0;
+  }
   drop_model(h);
   free(h->cells);
   h->cells = NULL;
@@ -835,8 +1184,43 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     *status = OPEN_BIG;
     return 0;
   }
+  /* Colours and the default attribute are application-set state, and a rebuild is the application's
+     resize, not its reset: dropping them here would hand a session back the colours it asked to leave
+     behind. `defAttr` is frozen against the *console* (I12), never against an OSC 10/11 that moved it. */
+  uint32_t keepPal[256], keep16[16];
+  uint16_t keepTouched = 0;
+  uint16_t keepAttr = (uint16_t)defAttr;
+  /* The OSC 9 face (T7) is application-set state too: a resize is not a re-open, and a shell that told the
+     terminal where it is does not repeat itself because the window changed height. */
+  int keepTb[3] = { 0, 0, 0 }, keepCwd = 0, keepWrap = 1;
+  uint16_t keepCwdBuf[RC_TITLE_MAX];
+  const int haveKeep = h->g != NULL;
+  if (haveKeep)
+  {
+    memcpy(keepPal, h->g->palette, sizeof keepPal);
+    memcpy(keep16, h->g->pal16, sizeof keep16);
+    keepTouched = h->g->palTouched;
+    keepAttr = h->g->defAttr;
+    keepTb[0] = h->g->taskbarState; keepTb[1] = h->g->taskbarProgress; keepTb[2] = h->g->taskbarSeen;
+    keepWrap = h->g->wrapMode;
+    keepCwd = h->g->nCwd;
+    if (keepCwd > 0) memcpy(keepCwdBuf, h->g->cwd, (size_t)keepCwd * sizeof keepCwdBuf[0]);
+  }
   drop_model(h);
   h->g = fresh;
+  if (haveKeep)
+  {
+    memcpy(fresh->palette, keepPal, sizeof keepPal);
+    memcpy(fresh->pal16, keep16, sizeof keep16);
+    fresh->palTouched = keepTouched;
+    fresh->defAttr = keepAttr;
+    fresh->taskbarState = keepTb[0];
+    fresh->taskbarProgress = keepTb[1];
+    fresh->taskbarSeen = keepTb[2];
+    fresh->wrapMode = (uint8_t)keepWrap;   /* a resize is not a request to start wrapping again */
+    if (keepCwd > 0) { memcpy(fresh->cwd, keepCwdBuf, (size_t)keepCwd * sizeof fresh->cwd[0]); }
+    fresh->nCwd = keepCwd;
+  }
   h->g->onFlush = flush_now;                      /* fires inside rc_feed when the gutter is full */
   h->g->flushCtx = h;
   h->defAttr = (uint16_t)defAttr;
@@ -1079,7 +1463,8 @@ JNIEXPORT jlong JNICALL Java_com_hyee_ansirender_NativeRenderer_open(JNIEnv *env
   /* A slot is reused, so a fresh model must not be reported with the previous one's counters: the gate
      reads stats()[2] and [3] as "this model declined / failed nothing", and NativeRenderer's rollout
      report says the same about the model it is running. */
-  slot->nFlush = slot->nPaints = slot->nDeclines = slot->nApiErrors = slot->nAligns = 0;
+  slot->nFlush = slot->nPaints = slot->nDeclines = slot->nApiErrors = slot->nAligns = slot->nSnaps = 0;
+  slot->faultRun = -1;                      /* a reused slot must not inherit a fault it never armed */
   slot->lastReason = 0;
   slot->lastError[0] = 0;
   if (!build_model(slot, cols, rows, defAttr, &hist_status))
@@ -1256,18 +1641,107 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_align(JNIEnv *env
   return (jint)align_grid(handle(ph), 0);
 }
 
+/**
+ * Bring the model's cursor row back into the window, because the user just typed at it. conhost does this
+ * for itself in `SnapOnInput` -- for a VTP console only (input.cpp:171-178), and this renderer runs where
+ * VTP is off, so the leg has to exist here or nowhere. See Paint.h::rc_snap_view for why the target is the
+ * cursor's row and not the buffer's last one.
+ *
+ * One console call, and it is the call the slide already makes: `SetConsoleCursorPosition` makes the row
+ * visible by moving the window the least way it can, which is the same `MakeCursorVisible` conhost's snap
+ * routes through. No cell is written. The buffer already holds the rows this model painted, and the window
+ * only changes which of them the user is looking at -- so a snap cannot damage history, which is the whole
+ * reason it is allowed to move a view the user chose. The plan's other operations are not on this path:
+ * pendingScrolls and the damage stay exactly as they are, and a snap between two flushes is invisible to the
+ * next one except that its window now sits on the model's rows again.
+ *
+ * The enum from Paint.h is returned verbatim, so a caller that wants to know whether anything moved reads
+ * RC_SNAP_PARK back; a park that the console refused is counted as an API error and answers NOCHANGE-style
+ * 1 all the same, because the model's claim is what it was either way and the next flush re-derives the
+ * view from the console like every flush does.
+ */
+JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_snap(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)env; (void)cls;
+  RcHandle *h = handle(ph);
+  if (!h) return RC_SNAP_NOGEOM;
+  RcView v;
+  CONSOLE_SCREEN_BUFFER_INFO csbi;
+  if (h->con == INVALID_HANDLE_VALUE || !view_of(h->con, &v, &csbi))
+  {
+    snprintf(h->lastError, sizeof h->lastError, "snap: no console (%lu)", (unsigned long)GetLastError());
+    return RC_SNAP_NOGEOM;
+  }
+  int row = -1, col = -1;
+  const int r = rc_snap_view(h->g, &v, &row, &col);
+  if (r != RC_SNAP_PARK) return (jint)r;
+  if (park_cursor(h->con, col, row))
+  {
+    snprintf(h->lastError, sizeof h->lastError, "snap=%lu", (unsigned long)GetLastError());
+    h->nApiErrors++;
+    return (jint)r;
+  }
+  h->nSnaps++;
+  return (jint)r;
+}
+
+/**
+ * Is the console this process is attached to a pseudo-console -- the headless conhost a ConPTY client
+ * (Windows Terminal, VS Code, any agent driving a pty) puts between the application and the terminal that
+ * parses the escapes itself?
+ *
+ * The answer is read off the console's window rather than off an environment variable, because the two
+ * disagree in exactly the case that matters: WT_SESSION is inherited by a plain conhost window started from
+ * inside a WT session (`cmd /c start cmd`), and that window parses nothing, so an env-var test hands it to
+ * the wrong writer. conhost is the authority -- `GetConsoleWindow` returns the `PseudoConsoleWindow` handle
+ * if and only if `gci.IsInVtIoMode()` is set (getset.cpp:1262-1275), and the real `ConsoleWindowClass`
+ * window otherwise (window.cpp:39). The class name is therefore VtIo mode read directly, and VtIo mode is
+ * precisely "somebody above me is re-serializing my buffer to VT".
+ *
+ * That is the fact a writer choice turns on. Under VtIo a WriteConsoleOutputW is not a write to cells at
+ * all: `VtIo::Writer::WriteInfos` (VtIo.cpp:771-830) walks the run and turns it into VT for the terminal,
+ * so every rule this renderer holds about rows, rectangles and the buffer scroll is applied twice -- once
+ * by a model and once by a serializer that has no notion of one. And the repaint an *adopt* performs covers
+ * cells this program merely read, cmd's own text among them, which is output the terminal has already
+ * shown; re-emitting it puts it in the scrollback again. Wide pairs are the sharpest edge of that path: a
+ * run beginning on a glyph's trailing half, or ending on its leading one, is replaced by a space
+ * (VtIo.cpp:786-806) -- the pair survives in the buffer and is lost on the way out.
+ *
+ * The comparison is done by hand rather than with `_wcsicmp`/`lstrcmpiW`, because which wide comparator a
+ * given CRT and a given import library expose is exactly the dialect question the formatters below are
+ * commented for. A console with no window answers false, which is this library's own safe side: with no
+ * window nothing above us is re-serializing, so a caller that wants escapes rendered still has to do it.
+ */
+JNIEXPORT jboolean JNICALL Java_com_hyee_ansirender_NativeRenderer_isPseudoConsole(JNIEnv *env, jclass cls)
+{
+  (void)env; (void)cls;
+  static const wchar_t PSEUDO[] = L"PseudoConsoleWindow";
+  HWND w = GetConsoleWindow();
+  if (!w) return JNI_FALSE;
+  wchar_t name[32];
+  const int n = GetClassNameW(w, name, (int)(sizeof name / sizeof name[0]));
+  if (n != (int)(sizeof PSEUDO / sizeof PSEUDO[0]) - 1) return JNI_FALSE;
+  for (int i = 0; i < n; i++)
+  {
+    wchar_t a = name[i], b = PSEUDO[i];
+    if (a >= L'A' && a <= L'Z') a = (wchar_t)(a - L'A' + L'a');
+    if (b >= L'A' && b <= L'Z') b = (wchar_t)(b - L'A' + L'a');
+    if (a != b) return JNI_FALSE;
+  }
+  return JNI_TRUE;
+}
+
 /** [0] flushes [1] rectangle writes [2] declines [3] api errors [4] aligns [5] cells painted
  *  [6] scrolls [7] astral [8] last reason  [9] pendingScrolls  [10] cx [11] cy (a model row)
  *  [12] attr [13] defAttr [14] winRows [15] gutter rows above the viewport [16] SGR sequences not
  *  echoed because the capture or the accumulator filled up -- colour parity is then best effort
  *
  *  [17+enum RcUnsupported] sequences the stream contained that we consume without modelling, in the
- *  enum's order: [17] unrecognised [18] scroll region [19] alt buffer [20] mouse [21] mode
- *  [22] bracketed paste [23] ConEmu's private OSC 9 [24] any other OSC, which is where a rejected OSC 133
- *  [25] DCS [26] a report this build will not answer -- a cursor position asked in pixels, `CSI t`, a DA
- *  with a parameter: the ones it does answer are armed in the model and written back as key events by
- *  flush_reports()
- *  [27] a CSI that carried ':' (see STAT_TITLES, which the family's length moves)
+ *  enum's order, one slot per row of `rc_census` in Render.cpp -- which is where their names, their
+ *  sentences and the one that sets `modelSuspect` now live. They are deliberately not restated here: this
+ *  array is positional across three files (I19) and a second copy of the labels is a third thing to forget
+ *  to update. `Render.java` reads the table through `censusNames()` and compares all eleven at run time.
+ *  [27] is the last of the family, a CSI that carried ':' (see STAT_TITLES, which the family's length moves)
  *  [STAT_TITLES..] titles accepted by the parser, of those truncated at RC_TITLE_MAX, and titles the
  *  console took.
  *  [STAT_ALT..] alt-screen switches (each direction of ?47/?1047/?1049 counts once) and, of the entries,
@@ -1275,14 +1749,50 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_align(JNIEnv *env
  *  [STAT_PROMPT..] OSC 133 marks this process laid down (I23), then the exit code the live grid last read
  *  from a 133;D: RC_EXIT_UNKNOWN before any D arrived, RC_EXIT_UNPARSABLE for one whose code was not a
  *  number.
+ *  [STAT_SNAP] views a keystroke brought back onto the model's cursor row: the SnapOnInput this console
+ *  will not do for itself, because conhost fires that only in VTP mode and this renderer exists for the
+ *  mode where it is off (input.cpp:171-178).
  *  [STAT_REPORT..] query replies the console took, replies whose write failed or fell short, and queries
  *  refused because eight were already waiting. A non-zero middle or last entry is the difference between a
- *  program that got its answer and one that is still waiting for it. Slots from 17 on are process-wide
+ *  program that got its answer and one that is still waiting for it.
+ *  [STAT_SYNC..] DECSET 2026: regions opened, nested BSUs, flushes deferred, and the three ways a region can
+ *  end without its ESU (a frame that waited past the timeout, a gutter that filled up under the hold, a chunk
+ *  that could not be executed at all). The last slot is the live bit rather than a count -- a stream that ends
+ *  inside a region is a finding, not a rate. Slots from 17 on are process-wide
  *  rather than per-model on purpose (see g_tot*): "did this session's output ask for an alt buffer, or run a
  *  full-screen program, or mark its prompts" is a question about the byte stream, and a resize in the middle
  *  of it must not erase the answer. The last exit code is the one exception -- the question it answers
  *  ("what would a status bar show now") is about the grid standing here and now, and folding it would mean
  *  summing values that do not add. Everything else below 17 describes one model. */
+/* The OSC 9 safe subset's stored face (T7), for the host that has a place to put it. Both are read-only and
+ * both answer null when there is nothing to say: no model, or -- for the directory -- no `9;9` yet. The
+ * taskbar triple carries `seen` apart from `state` because state 0 is a real instruction ("remove the
+ * indicator") and must not be confused with "this stream never asked".
+ * This library deliberately does not act on either: it owns no window, so there is no taskbar to paint, and
+ * it does not change the process's directory from an output stream -- that is the whole of the #687 posture,
+ * kept while the safe subset is parsed. */
+JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_taskbar0(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)cls;
+  RcHandle *h = slot_of(ph);
+  const RcGrid *g = h ? h->g : NULL;
+  if (!g) return NULL;
+  jlong out[3] = { (jlong)g->taskbarState, (jlong)g->taskbarProgress, (jlong)g->taskbarSeen };
+  jlongArray arr = env->NewLongArray(3);
+  if (arr) env->SetLongArrayRegion(arr, 0, 3, out);
+  return arr;
+}
+
+/** The last `OSC 9;9` path, or null. Text only -- see the comment above for why nothing opens it. */
+JNIEXPORT jstring JNICALL Java_com_hyee_ansirender_NativeRenderer_workingDirectory0(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)cls;
+  RcHandle *h = slot_of(ph);
+  const RcGrid *g = h ? h->g : NULL;
+  if (!g || g->nCwd <= 0) return NULL;
+  return env->NewString((const jchar *)g->cwd, (jsize)g->nCwd);
+}
+
 JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEnv *env, jclass cls, jlong ph)
 {
   RcHandle *h = slot_of(ph);
@@ -1323,9 +1833,20 @@ JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEn
     out[STAT_ALT + 1] = (jlong)(g_totAltFail + (g ? g->nAltFail : 0));
     out[STAT_PROMPT] = (jlong)(g_totPromptMark + (g ? g->nPromptMark : 0));
     out[STAT_PROMPT + 1] = g ? (jlong)rc_last_exit(g) : (jlong)RC_EXIT_UNKNOWN;
+    out[STAT_SNAP] = (jlong)h->nSnaps;
     out[STAT_REPORT] = (jlong)(g_totRepOk + (g ? g->nReportOk : 0));
     out[STAT_REPORT + 1] = (jlong)(g_totRepFail + (g ? g->nReportFail : 0));
     out[STAT_REPORT + 2] = (jlong)(g_totRepFull + (g ? g->nReportFull : 0));
+    out[STAT_SYNC] = (jlong)(g_totSyncEngages + (g ? g->nSyncEngages : 0));
+    out[STAT_SYNC + 1] = (jlong)(g_totSyncNested + (g ? g->nSyncNested : 0));
+    out[STAT_SYNC + 2] = (jlong)(g_totSyncHeld + (g ? g->nSyncHeld : 0));
+    out[STAT_SYNC + 3] = (jlong)(g_totSyncTimeout + (g ? g->nSyncTimeout : 0));
+    out[STAT_SYNC + 4] = (jlong)(g_totSyncOverflow + (g ? g->nSyncOverflow : 0));
+    out[STAT_SYNC + 5] = (jlong)(g_totSyncDeclined + (g ? g->nSyncDeclined : 0));
+    /* Not a counter: whether a region is open *now*. The distinction is the one S_EXIT already makes in the
+       prompt family -- a census of what happened cannot say what the terminal currently believes, and a
+       synchronized region whose ESU never arrived is exactly that question. */
+    out[STAT_SYNC + 6] = g ? (jlong)g->sync : 0;
   }
   jlongArray arr = env->NewLongArray(STAT_LAST);
   if (arr) env->SetLongArrayRegion(arr, 0, STAT_LAST, out);
@@ -1401,11 +1922,13 @@ JNIEXPORT jint JNICALL Java_Render_setGeometry(JNIEnv *env, jclass cls, jint buf
   return ok ? 1 : 0;
 }
 
-/** [0] winT [1] winL [2] bufW [3] bufH [4] attr [5] curX [6] curY [7] cursorOn -- what the gate needs
- *  to know where the window slid to. Production reads nothing through here. */
+/** [0] winT [1] winL [2] bufW [3] bufH [4] attr [5] curX [6] curY [7] cursorOn [8] winB -- what the gate
+ *  needs to know where the window slid to. The bottom is the ninth because a `SetConsoleScreenBufferInfoEx`
+ *  that moves the window without moving its top is otherwise invisible to every other field here, and that is
+ *  exactly the failure the palette leg had to find. Production reads nothing through here. */
 JNIEXPORT jlongArray JNICALL Java_Render_consoleView(JNIEnv *env, jclass cls)
 {
-  jlong out[8];
+  jlong out[9];
   memset(out, 0, sizeof out);
   HANDLE con = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
@@ -1416,12 +1939,12 @@ JNIEXPORT jlongArray JNICALL Java_Render_consoleView(JNIEnv *env, jclass cls)
     if (view_of(con, &v, &csbi))
     {
       out[0] = v.winT; out[1] = v.winL; out[2] = v.bufW; out[3] = v.bufH;
-      out[4] = v.attr; out[5] = v.curX; out[6] = v.curY; out[7] = v.cursorOn;
+      out[4] = v.attr; out[5] = v.curX; out[6] = v.curY; out[7] = v.cursorOn; out[8] = v.winB;
     }
     CloseHandle(con);
   }
-  jlongArray arr = env->NewLongArray(8);
-  if (arr) env->SetLongArrayRegion(arr, 0, 8, out);
+  jlongArray arr = env->NewLongArray(9);
+  if (arr) env->SetLongArrayRegion(arr, 0, 9, out);
   return arr;
 }
 
@@ -1574,6 +2097,21 @@ JNIEXPORT jlongArray JNICALL Java_Render_plan(JNIEnv *env, jclass cls, jlong ph)
 typedef BOOL (WINAPI *WriteProcessed3Fn)(LPCWSTR, DWORD, LPDWORD, HANDLE);
 
 /**
+ * Arm the one-shot write_rect fault (RcHandle::faultRun) on run `run` of the next plan; `run < 0` disarms.
+ * Gate-only scaffolding, in the family of Java_Render_plan/readopt: production cannot reach it and
+ * NativeRenderer has no binding for it. Returns the value now armed, so the caller reads the slot back
+ * instead of trusting that arming took.
+ */
+JNIEXPORT jint JNICALL Java_Render_faultRect(JNIEnv *env, jclass cls, jlong ph, jint run)
+{
+  (void)env; (void)cls;
+  RcHandle *h = slot_of(ph);
+  if (!h) return -2;                          /* no such handle: nothing is armed anywhere */
+  h->faultRun = (int)run;
+  return h->faultRun;
+}
+
+/**
  * Hand bytes to the fallback leg itself -- ConEmuHk's WriteProcessed3, the same export ConEmuWriter calls
  * through JNA in production -- and report how many it consumed.
  *
@@ -1625,6 +2163,55 @@ JNIEXPORT jint JNICALL Java_Render_writeHk(JNIEnv *env, jclass cls, jcharArray t
   CloseHandle(con);
   env->ReleasePrimitiveArrayCritical(text, (void *)chars, 0);
   return ok ? (jint)written : (jint)-6;
+}
+
+/* gate-only: the console's own 16 palette entries, read straight off CONOUT$ rather than through a handle,
+ * because the leg that needs it most is the one that runs after close() has invalidated the handle.
+ * Production has no caller; build.sh's export whitelist carries the name. */
+JNIEXPORT jint JNICALL Java_Render_consolePalette(JNIEnv *env, jclass cls, jlongArray out)
+{
+  (void)cls;
+  CONSOLE_SCREEN_BUFFER_INFOEX ex;
+  memset(&ex, 0, sizeof ex);
+  ex.cbSize = sizeof ex;
+  HANDLE con = CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+  if (con == INVALID_HANDLE_VALUE) return -1;
+  const BOOL ok = GetConsoleScreenBufferInfoEx(con, &ex);
+  CloseHandle(con);
+  if (!ok) return -2;
+  if (!out || env->GetArrayLength(out) < 16) return -3;
+  jlong *v = (jlong *)env->GetPrimitiveArrayCritical(out, NULL);
+  if (!v) return -4;
+  for (int i = 0; i < 16; i++) v[i] = (jlong)(unsigned long)ex.ColorTable[i];
+  env->ReleasePrimitiveArrayCritical(out, v, 0);
+  return 16;
+}
+
+/** The census table, as a gate can read it: one "name|suspect" per RcUnsupported slot, in the enum's order.
+ *  Gate-only, because the production census is numbers and the words already live in the Java report. What
+ *  this buys is the half of I19's positional contract that nothing checked: `Render.java` compares its own
+ *  eleven labels against these, item by item, so a slot renamed on one side of the seam fails a gate instead
+ *  of printing a confident wrong number into a rollout log. */
+JNIEXPORT jobjectArray JNICALL Java_Render_censusNames(JNIEnv *env, jclass cls)
+{
+  (void)cls;
+  const int n = rc_census_count();
+  jclass str = env->FindClass("java/lang/String");
+  if (str == NULL) return NULL;
+  jobjectArray out = env->NewObjectArray(n, str, NULL);
+  if (out == NULL) return NULL;
+  for (int i = 0; i < n; i++)
+  {
+    char one[64];
+    const char *nm = rc_census_name(i);
+    sprintf(one, "%s|%d", nm ? nm : "?", rc_census_suspect(i));
+    jstring s = env->NewStringUTF(one);
+    if (s == NULL) return NULL;
+    env->SetObjectArrayElement(out, i, s);
+    env->DeleteLocalRef(s);
+  }
+  return out;
 }
 
 }  // extern "C"

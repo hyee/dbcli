@@ -1,0 +1,148 @@
+# ANSI_TODO — render.dll 作为第三方类库的补充路线
+
+快照 2026-09-25。上游参照：**jline4**（`D:\JavaProjects\jline4`，这是dbcli将会更新的第三方库，render.dll 的真实调用方）+ **Windows Terminal**（本地克隆 `cache/msfterm`，行号坐标沿用 `MSFT_TERMINAL_REFERENCE.md` 的已核清单）+ **ghostty**。
+姊妹文档：`ANSI_SUPPORTS.md`（现状支持矩阵）、`CONEMU_ANSI_DEFECTS.md`（上游缺陷清单）、`MSFT_TERMINAL_REFERENCE.md`（WT 参照）。
+
+**定调**：补充清单不从"新终端有什么"出发，从**jline4 实际打到 render.dll 的字节**出发——caps 驱动的路径（I26）已经全部建模，剩下的差距全在 jline4 的直发字面量里。下表是逐树 grep 过的主源码清单（测试与 demo 排除）。
+
+---
+
+## 1 jline4 真实发射清单（消费契约）
+
+| 序列 | 发射点 | render.dll 现状 |
+|---|---|---|
+| **探测批**：`CSI ?u` + `CSI ?2026$p` + `CSI ?2027$p` + `CSI ?2048$p` + `CSI c` | `AbstractTerminal.probeModes()`（AbstractTerminal.java:620-631，`CSI_DEC="\033[?"`:113）；任何 `isModeSupported()` 首调触发，reader 开 `Option.KITTY_KEYBOARD` 即走（LineReaderImpl.java:703→704） | `?u` **误执行成 DECRC（P0）**；`$p` 忽略+计数；`c` 有应答 |
+| `CSI ?2026h/l`（BSU/ESU） | `Display` 全屏更新（Display.java:134-135/495/846，byte 模式 `rawEsc`）+ `Terminal.begin/endSynchronizedUpdate`（Terminal.java:1505/1529） | 计数 `RC_UN_MODE` 丢弃 ⇒ 同步输出未生效（P1） |
+| `CSI ?2004h/l` | LineReaderImpl.java:707-711（`Option.BRACKETED_PASTE`） | 计数 `RC_UN_DECBP`；输入侧，忽略正确 |
+| `CSI 9999E` | LineReaderImpl.java:6623（ConEmu activate hack，仅 `TYPE_WINDOWS_CONEMU`） | 已支持（`E` 臂钳制）✓ |
+| `CSI ?1004h/l`、鼠标 `?1000…` | Windows 腿 `trackFocus/trackMouse` 覆写为**只置内存标志**（AbstractWindowsTerminal.java:501/717），不发字节 | 不在电线上 ✓ |
+| caps 驱动（csr/sc/rc/cup/el/ed/il/dl/ich/dch/ech/indn/rin/1049/u6/u7…） | `Status.java`、`Display.java`、reader | 全部已建模（I26）✓ |
+| OSC（title/hyperlink/133…） | jline4 主干 **0 处直发**；133 是 dbcli 自己发的（I23 已建模） | — |
+| 图形（Sixel/iTerm2/Kitty） | `SixelGraphics` 等存在，由探测结果门控（见 §4 的 SIXEL 误报） | DCS 载荷丢弃+`RC_UN_DCS` 计数 |
+
+---
+
+## 2 P0 —— `CSI ?u` 加 priv 门（真 bug，不是缺特性）
+
+**现象**：jline4 的探测批以 `CSI ?u`（kitty 键盘查询）开头；`Render.cpp` `case 'u'`（约 :1117）不查 `priv`，直接 `clxy(saveY, saveX)`——**jline4 每做一轮模式探测，光标就瞬移到上次 DECSC 位置**。reader 只要开过 `KITTY_KEYBOARD` 选项就会发生。
+
+**为什么现在才成立**："restore is unconditional upstream" 是 ConEmu 的行为（Ansi.cpp:4194）；参照对象换成 WT/ghostty 后不再成立——两者的 CSI 分发都把带 private marker 的 final 路由为查询/忽略，不执行 DECRC。
+
+**修法**（约 2 行）：
+
+```
+case 'u': if (g->priv) { ignored(g, RC_UN_MODE); break; } clxy(g, g->saveY, g->saveX); break;
+```
+
+**门禁**：`RenderCheck` 加"priv 'u' 不动光标 + 计一票"与"裸 `CSI u` 照旧恢复"两条；live 侧复放 jline4 探测批，断言光标只被 `CSI c` 的应答路径触碰。
+
+---
+
+## 3 P1 —— DECSET 2026 同步输出（收益最大）
+
+**现状**：`Display` 每次全屏更新都发 BSU/ESU，注释明说"不支持的终端静默忽略"——现在确实是静默忽略，于是全屏表格/状态栏重绘照旧逐 chunk 上屏，**2026 要治的闪烁一点没治**。dbcli 的全屏重绘正是 flicker 大户。
+
+**实现**（模型一位 + paint 门）：
+
+1. `RcGrid` 加 `uint8_t sync;`；`?2026 h/l`（`'h'/'l'` 臂）置/清，`full_reset` 清。
+2. painter 在 `sync` 期间**暂存计划不落屏**——挂点就是现有 `onFlush`/`pendingScrolls` 那套：置位时让 flush 改为积累，`?2026 l` 到达时一次刷出。
+3. **超时必须一起抄**（防应用漏发 ESU 永久冻结画面）：参照 WT/conhost 的带超时同步输出；ghostty 是渲染端帧门（`Mode.synchronized_output`）。超时到期按普通 flush 放行并把这一次记进 census。
+4. 深度：jline4 不嵌套；若收到嵌套 BSU，按 xterm 惯例第二次是 no-op（计数）。
+
+**门禁**：BSU→写→ESU ⇒ 一次 flush；BSU→写→超时 ⇒ 放行且计数；BSU 后 alt 屏切换/查询应答（I29 的应答**不**被 sync 扣住——它属于 reader 不是屏）。
+
+---
+
+## 4 P1 —— DECRQM/DECRPM 应答（`CSI ? <mode> $ p` → `CSI ? <mode> ; <status> $ y`）—— 已落地，见 DESIGN #51
+
+**原状**：`$`（0x24）与 DECSCUSR 的空格共用单 `interim` 槽，`'p'` 臂只认 `'!'` ⇒ `$p` 全部落计数、无应答；槽位问题先由 #59（interim 升级为集合）解决。
+
+**jline4 侧的容忍度**（这一条决定应答表可以有多小）：`probeModes` 一次写出 `CSI ?u` + `?2026$p` + `?2027$p` + `?2048$p` + `CSI c`，之后 `parseDecrpm`（AbstractTerminal.java:675-690）**按模式号回查**，不是按位置读 ⇒ 少答一个 id 不会错位后面的答案；查不到的号它直接给 `NOT_SUPPORTED`，与答 `4` 同效。
+
+**应答表**（`mode_status`，Render.cpp:950）——只答模型真持有的状态，只用 1/2 两个数：
+
+| 模式 | 应答 |
+|---|---|
+| 25 | `cursorVisible` → 2（set）/ 1（reset） |
+| 47 / 1047 / 1049 | `g->alt`（三种拼法同一个位，答案不能互相矛盾） |
+| 2026 | `g->sync` → 置位 2，否则 1（jline4 把 1 和 2 都读成 SUPPORTED，:685） |
+| 2027 / 2048 / 其余 | **不应答**，计 `RC_UN_MODE` |
+
+**为什么 3/4 一个都不发**：VT500 的 3 = permanently reset、4 = permanently set，而 jline4 的注释把两者反过来写（:663-667）——同一个字节在两个读者眼里意思相反。于是对“本 build 没有状态可报”的模式发任一永久值，必对其中一方说谎；2048 尤其致命，答“永久置位”等于宣称窗口尺寸变化会进数据流，信了的程序连 `?2048h` 都不发也等不到通知。沉默则两边都不骗：对 jline4 是 `NOT_SUPPORTED`（正确结论），对其他读者是“这台终端没回答”。与 `CSI ? 6 n` 的裁决同形（Render.cpp:1327 起：宁可不答，也不给一个没被问到的答案）。
+
+**1048 也不答**：xterm 把 1048 列为 "alternating cursor position"，本 build 的 `?1048h/l` 正是存/取光标——那是**事件**，不是能被报告的状态；真在问光标状态的调用者要的是 25。WORK_ORDER T4 建议的“25/1048 → `cursorVisible`”据此有意偏离。
+
+**门禁**：宿主侧每模式应答文本、快照语义（同一 chunk 内 `?2026h ?2026$p ?2026l` 仍答 2）、队列 FIFO 保序、不应答组的 `RC_UN_MODE` 计数；真终端侧原样重放探测批并断言精确字节流 `\e[?2026;<st>$y` + DA1 fence（Render.java:707）。
+
+---
+
+## 5 P2 —— SIXEL 误报（已修，2026-09-25，修在 jline4 家族层；render.dll 不动）
+
+**机制更正**（本节初版说"conhost 的 4 是 132 列模式"——**错**，已按 WT 源码核正）：conhost 的 DA1 注释明确
+`4 = Sixel Graphics`（microsoft/terminal `terminal/adapter/adaptDispatch.cpp` `DeviceAttributes()`，本仓库克隆
+`cache/msfterm` :1441），且现代 conhost 的 GDI 渲染器真的画 sixel（`src/renderer/gdi/state.cpp` 的 StretchBlt 配置）。
+jline4 的 `parseSixelFromDa1`（AbstractTerminal.java:736-741，`contains(";4;")`）作为**解析**没有病，解析器不改。
+
+真问题是**声明 ≠ 家族可保证的渲染能力**：老版 inbox conhost 声明这个位多年却没有 sixel 渲染器；dbcli 的
+render.dll 在写通路上把 DCS 整体丢弃（`RC_UN_DCS` 计数）；最新 conhost/WT 才真画——同一个位在三种宿主上
+真假不一，jline4 无从分辨。信了它，`SixelGraphics` 就会发出一段静默消失的 DCS 载荷。
+
+**修复（Information Expert：家族层否决）**：`AbstractWindowsTerminal.isModeSupported(Mode.SIXEL)` 覆写返回
+`false`——Windows 控制台家族的写通路不能保证画得出图，就不声明该能力。效果：`SixelGraphics.isSixelSupported`
+的探测链（override > DA1 探测 > 静态表）第二层直接落空，静态层里 windows-* 类型不在 sixel 表 ⇒ 净效果
+SIXEL=false；`setSixelSupportOverride` 逃生门保留；SIXEL 单独提问不再触发探测批（顺带不再发出 `CSI ?u`
+等探测字节）。能证明写通路可达 sixel 渲染器的子类可再覆写。已验证：单文件 javac --release 8 编译通过
+（`cache/jline4-sixel-fix/`，未打包、未发布到 `lib` —— `lib/Jline3.jar` 是 3.29 产物，不携带本覆写；它随 jline4 树发布才生效）。
+**记账**：这条改的是 `D:\JavaProjects\jline4` 里的 `AbstractWindowsTerminal.java`，属于"动了依赖"，已按硬约定登记进
+`JLINE_CHANGES.md`（含四问与"上游报告待人工提交"的出口 `cache/p52/jline4-sixel-report.md`）。
+**机制口径更正**：`4` 在 DA1 里就是 Sixel（MSFT 自己的注释 `adaptDispatch.cpp:1441`），不是 132 列（132 列在 xterm 的表里是 `1`）；
+本仓库早期笔记与本台账 #52 标题的"132 列"说法是错的，已改。DA1 应答文本与 `render.dll` 一个字节都不动（注释级修改，重建后 md5 与部署件逐字节相同＝对照证据）。
+
+---
+
+## 6 P2（可选，非 jline4 需求，是 dbcli 自身利益）
+
+jline4 不发这些，做了对它没收益；单列是因为 classic 控制台上**可行**：
+
+| 项 | 落法 | 参照 |
+|---|---|---|
+| HPR `CSI a` / VPR `CSI e` | 解析后按 CUF/CUD 同款相对移动（视口钳制），~2 行、零新状态。jline4 实测不发送（caps 无 hpr/vpr，直发字面量零命中——`CSI Z` 在 jline4 只作输入键），属**兼容性储备**：从 Unix 移植的程序会发 | WT adaptDispatch.cpp:427/:437（VPR 注释明言"unlike CUD not constrained by margin"）；ghostty stream.zig:1863/:1942 |
+| OSC 4/10/11 调色板 | `SetConsoleScreenBufferInfoEx` 真改 16 色表 + 同步改模型 `RgbMap[0..15]` 与 `defAttr` 相关折叠；`?` 查询回当前值 | ghostty OSC 4/10/11；WT `SetPaletteColor` |
+| OSC 8 超链接 | 学 `rowWrap` 的行级元数据存 URL 区间（不进 `CHAR_INFO`，收养丢弃）；显示面画下划线；宿主查询 API 给 dbcli 做"打开选中链接" | ghostty `hyperlink.zig`；WT `SetHyperlink`/TextBuffer |
+| OSC 52 剪贴板 | 默认**关** + 显式开关 + 白名单（I21 的 #687 教训同款） | ghostty clipboard 策略；WT gate |
+| 括号粘贴 `?2004`（宿主协作版） | **DLL 侧**：模式位存进模式表 + DECRPM 应答（2/1）+ 暴露给宿主（DECCKM 同款"计数+存位+暴露"），几乎免费。**宿主侧**（dbcli 输入泵，DLL 之外）：对按键记录流做突发启发式，内存里包 `200~/201~` 喂 reader——`KEY_EVENT_RECORD` 无粘贴标志位，速率启发有误判两面（漏标=现状，误标=键序打散），默认保守。**DLL 永不读 CONIN$**（与应用 pump 抢队列会偷键盘事件；peek-then-inject 无法保证标记先于粘贴字节） | jline4 消费端已就绪（`LineReaderImpl` BEGIN_PASTE 绑定 ：7088）；Windows 腿现无任何合成（AbstractWindowsTerminal 零命中，已验证）；WT/conhost 均不产标记 |
+
+---
+
+## 7 明确不做（记录防重开）
+
+| 项 | 理由 |
+|---|---|
+| 鼠标 `?9/?1000-1015`、焦点 `?1004`、DECCKM `?1`、kitty 键盘模式位 | Windows 腿的输入来自控制台记录，`track*` 只置内存标志（AbstractWindowsTerminal.java:501/717），模式位无从生效 |
+| 括号粘贴的 **DLL 侧标记合成** | 标记必须先于粘贴字节入流；粘贴字节由 conhost 整串注入，DLL 读 CONIN$ 会与应用 pump 抢队列（偷键盘事件），peek-then-inject 无时序保证。可行路径见 §6"宿主协作版"：DLL 只存位+应答+暴露，打标在宿主泵 |
+| 延迟换行 | **显示面就是 conhost 本身**：四条判别式双腿一致已定案（ANSI_SUPPORTS §2.10），改成立即换行只会和 conhost 分叉 |
+| 图形协议（Sixel/kitty/iTerm2） | DCS/OSC 丢弃+计数已正确；物理显示面画不出 |
+| 斜体/删除线/下划线色的**绘制** | `CHAR_INFO` 16 位属性没有对应位（0x0400..0x2000 是 conhost IME 网格位）；模型侧照旧存储不绘 |
+| DECSCUSR 条形 5/6 | `SetConsoleCursorInfo` 只有块/细条两档；若确认 `SetConsoleCursorShape`（Win10 18297+）可用再单独立项 |
+| OSC 9 的 ConEmu **危险子命令**（`9;1` sleep、`9;2` MessageBox、`9;3` 改环境变量、`9;7` DoProcess 等） | 永不执行（#687 RCE，I21 已定案）。**安全子集已立项 T7**（判据 = WT `DoConEmuAction` adaptDispatch.cpp:3558——WT 实现的就是 ConEmu 方言的安全面：`9;4` 进度、`9;9` CWD、`9;12` ≡ 133;B；其余 `_api.UnknownSequence()`），DLL 侧存模+暴露（进度给宿主状态栏/CWD 存模），不做任务栏跨进程操作，`SetCurrentDirectory` 这类进程副作用永不从输出流触发 |
+
+---
+
+## 8 两条契约提醒（补充特性时别破坏）
+
+1. **宽度的两个神谕并存**：2027 探测拿到 NOT_SUPPORTED 后，jline4 用自己的 `WCWidth`+图位簇分组算宽（WCWidth.java:749 起），render.dll 用 `ansi_width` 表——分歧已由用户裁定以 `ansi_width` 为唯一神谕，**别**因"jline4 也在算宽"做双向对齐。
+2. **探测批的收口依赖 DA1**：jline4 靠"DA1 应答到达"结束探测等待（fence），而 render.dll 的应答只在**成功 flush 末尾**写入 CONIN$（I29）——这条时序别破坏，否则每次首探测白等 probeTimeout。§3 的 sync 门**不得**扣住 `flush_reports`（应答属于 reader，不属于屏）。
+
+---
+
+## 9 建议顺序
+
+```
+1. P0 `CSI ?u` priv 门            —— 半小时级，修真 bug，门禁两条
+2. P1 DECSET 2026（含超时）        —— 闪烁收益直接给 dbcli 全屏重绘
+3. P1 DECRQM 应答                  —— 让 jline4 的探测拿真答案
+4. P2 SIXEL 误报 → ✅ **已落地**（2026-09-25，jline4 家族层覆写，见 §5）
+5. P2 OSC 4/10/11 / OSC 8 / 52    —— 等 dbcli 有真实消费方再动
+```
+
+每步落地的判据与门禁照 DESIGN §6 的既有风格：模型侧 `RenderCheck` 全覆盖，live 侧双腿（复放 jline4 探测批/全屏重绘字节流）+ census 计数可见。

@@ -232,6 +232,29 @@ void rc_paint_done(RcGrid *g)
   rc_clear_dirty(g);
 }
 
+/* The view a keystroke is entitled to ask for. No console call and no mutation of the model: like every
+ * other row decision in this file, it is arithmetic on the claim and the window, so RenderCheck can pin the
+ * cases the live console would only demonstrate by damaging something. */
+int rc_snap_view(const RcGrid *g, const RcView *v, int *row, int *col)
+{
+  if (row) *row = -1;
+  if (col) *col = -1;
+  if (!g || !v || g->cols <= 0 || g->winRows <= 0) return RC_SNAP_NOGEOM;
+  if (v->bufW <= 0 || v->bufH < v->winT) return RC_SNAP_NOGEOM;
+  /* Rule 1's test, same as the plan's: the model addresses whole buffer rows, and a console whose row width
+     or window height disagrees has nothing for these numbers to mean. */
+  if (v->bufW - v->winL != g->cols || v->winB - v->winT + 1 != g->winRows) return RC_SNAP_NOGEOM;
+  if (!g->baseSet) return RC_SNAP_NOCHANGE;   /* a model that never painted has no rows to be shown */
+  if (!g->cursorVisible) return RC_SNAP_NOCHANGE;   /* conhost's guard, and the same reason */
+  const int want = g->baseRow + g->cy;
+  if (want < 0 || want > v->bufH - 1) return RC_SNAP_NOCHANGE;
+  if (want >= v->winT && want <= v->winB) return RC_SNAP_NOCHANGE;
+  *row = want;
+  const int maxc = v->winR - v->winL;
+  *col = v->winL + (g->cx > maxc ? maxc : (g->cx < 0 ? 0 : g->cx));
+  return RC_SNAP_PARK;
+}
+
 /* Rule 2 seen from the other end: an adopt has to know which rows to read, and after a resize the honest
  * answer is not always "the window's". A rebuild throws the grid away and with it the anchor, so the carry
  * is arithmetic on the claim the *old* grid had -- and conhost's rule for exactly that moment is worth

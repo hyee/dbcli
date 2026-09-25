@@ -139,4 +139,38 @@ int rc_anchor_adopt(int prevSet, int prevBase, int prevRows, int prevWinB, int r
  * console. */
 int rc_scroll_band(const RcPlan *p, int modelRows, int bufH, int *srcTop, int *srcBottom);
 
+/* What a keystroke may do to the view. The three outcomes are named because the caller may only touch the
+ * console for one of them: NOCHANGE covers both "the user is already looking at the prompt" and "the model
+ * has nothing to show", and only PARK carries a row and a column to park the cursor on. */
+enum
+{
+  RC_SNAP_NOGEOM = 0,  /* the console's shape is not the model's: the caller re-adopts, as for a plan */
+  RC_SNAP_NOCHANGE,    /* nothing to do, and nothing owed: the view already has it, or there is no claim */
+  RC_SNAP_PARK         /* the model's cursor row is outside the window; bring it in, at least displacement */
+};
+
+/* conhost's `SnapOnInput`, which is what makes a classic console follow the user's typing after they scrolled
+ * up to read history (input.cpp:177 -> SCREEN_INFORMATION::SnapOnInput, screenInfo.cpp:1707). Three facts of
+ * that reference are load-bearing here and none of them is this renderer's taste:
+ *
+ *  - It asks for the *cursor* to be made visible, never for the bottom of the buffer (`_makeCursorVisible`,
+ *    1728-1733), and `MakeCursorVisible` (1631-1666) slides the window by the least displacement that brings
+ *    the row inside -- up if the row is above the view, down if below. Snapping to the buffer's last row
+ *    instead would jump a user who was reading one line of history past everything above their prompt.
+ *  - It is guarded on the cursor being *visible*. An application that hid the cursor owns the screen and
+ *    does not want a keystroke dragging the view under it mid-frame.
+ *  - conhost fires it only for a console in VTP mode (input.cpp:171-178) -- and the mode this renderer
+ *    exists for is exactly the one where VTP is off. So nothing else will snap this user's view: the call
+ *    has to come from the reader of the keystrokes, and the row it aims at has to come from the model.
+ *
+ * `want` is `baseRow + g->cy` rather than the plan's `row0 + g->cy`, because a plan has not run: the claim is
+ * the model's own, and a slide would only move the window to where that claim already is. The row is refused
+ * when it is not on the buffer at all -- a claim past the buffer's end has no view that could show it, and a
+ * park there would be a cursor move conhost may or may not answer.
+ *
+ * The column is clamped into the window for the reason Paint.cpp rule 4 measures: conhost slides the viewport
+ * sideways to include a cursor parked outside it, and dragging a user's view horizontally is not part of
+ * following their typing. Returns the enum above; `row`/`col` are filled only for RC_SNAP_PARK. */
+int rc_snap_view(const RcGrid *g, const RcView *v, int *row, int *col);
+
 #endif /* ANSIRENDER_PAINT_H */
