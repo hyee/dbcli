@@ -285,15 +285,31 @@ that the Console APIs expect"），并且**同时往 VT 流里补 `\r\n`** 让�
 再移交，而且要双向落地**（我们只回放了 SGR 给 ConEmuHk；游标的 pending 状态与"我们吞掉的会动游标的序列"
 没有对等回放）。配合 §7.1 的标脏，就是完整的一套。
 
-### 7.4 会碰外部系统的 OSC 一律默认关
+### 7.4 会碰外部系统的 OSC 走一张能力位图——但**默认值一条一个样**，剪贴板那条是开的
 
 `ITermDispatch::OptionalFeature`（`terminal/adapter/ITermDispatch.hpp:28-33`）只有三项：
-`ChecksumReport`、`ClipboardWrite`、`DesktopNotification`；由客户端逐个开
-（`cascadia/TerminalCore/Terminal.cpp:270`：`features.set(ChecksumReport, settings.AllowVtChecksumReport())`）。
-即：**OSC 52（写剪贴板）、通知、屏幕校验和**这类"能从输出流触发外部效果"的，全部是显式 opt-in。
-这就是 ConEmu #687（私有 OSC 可执行程序 = RCE）、#2624/#2627（OSC 52）的标准答案，
-也回答了我们 §6 "若实现 ConEmu 私有 OSC 要默认禁用"该长什么样：不是"一个开关"，而是
-**一个只有少数几项、默认全 false 的能力位图 + 在 DECDSR/DECRQM 里如实报"不支持"**。
+`ChecksumReport`、`ClipboardWrite`、`DesktopNotification`；由客户端逐个填
+（`cascadia/TerminalCore/Terminal.cpp:270`：`features.set(ChecksumReport, settings.AllowVtChecksumReport())`，
+`:271` 同款填 `ClipboardWrite`）。**这一层 §7.4 的原判断成立**：外部效果不是"一个开关"，而是
+**一张只有几项的能力位图 + 在 DECDSR/DECRQM 里如实报"不支持"**，也正是 ConEmu #687（私有 OSC 可执行程序 = RCE）
+与 #2624/#2627（OSC 52）的标准答案。
+
+**但"默认全 false"这一半在 2026-09-26 被自己推翻**（为 I36 复核时打开设置表看到的，`file:line` 为证）：
+
+| 能力 | 设置名 | 默认 | 坐标 |
+|---|---|---|---|
+| DECRQCRA 屏幕校验和 | `compatibility.allowDECRQCRA` | **false** | `MTSMSettings.h:118` |
+| OSC 52 写剪贴板 | `compatibility.allowOSC52` / `AllowVtClipboardWrite` | **true** | `MTSMSettings.h:119`、`ControlProperties.h:59`、`Terminal.cpp:106` |
+| OSC 9 桌面通知 | `AllowOscNotifications` | false | `ControlProperties.h:60` |
+| kitty 键盘模式 | `AllowKittyKeyboardMode` | true | `ControlProperties.h:52` |
+
+⇒ 上游把**剪贴板写**当成默认允许（那条设置的存在是为了**关**它），把**校验和报告**当成默认拒绝。⇒ 对我们真正的含义有两条：
+① 参照的默认值不提供"我们也该默认关"的支持，也不提供"该默认开"的支持——**它是一次上游裁决的结果，不是判据**
+（[[feedback-upstream-not-a-reason]] 的正反两面都在这里）；② WT 能默认开，是因为它面对的是**自己配置过的终端用户**；
+render.dll 寄生在别人的 JVM 里，没有那份配置，所以 I36 的默认关是自证的分叉，写进 DESIGN 而不是抄来的。
+另外 WT 的 OSC 52 **解析读取但从不作答**（`OutputStateMachineEngine.cpp:825` 的 `&& !queryClipboard`），
+且**整个忽略选择字段 `Pc`**（`:1097` 注释自陈 "Currently the first parameter `Pc` is ignored"）——
+前者我们与它一致（我们更严：连政策档都不给），后者我们不抄（折叠＝用另一个东西回答被问的那个问题）。
 
 ## 8 输出卫生：控制字符、CRLF、消毒
 
