@@ -299,8 +299,12 @@ Beyond these three, **no re-architecture in this round**:
   **marker synthesis inside the DLL** (the `?2004` mode BIT itself is T4's stored state — the
   role-mismatch rationale for why the DLL never synthesizes markers is in ANSI_TODO §6/§7), deferred
   wrap, graphics protocols, italic/strikethrough painting, **the dangerous OSC 9 ConEmu subcommands**
-  (`9;1/9;2/9;3/9;7…` — never executed, #687; the safe subset is T7), OSC 4/8/52,
+  (`9;1/9;2/9;3/9;7…` — never executed, #687; the safe subset is T7), OSC 8,
   DECOM/DECLRMM, configurable tab stops;
+- Two names that used to sit in that list have since landed, and one was closed by ruling: OSC 4/10/11 at
+  build -20 (I34), OSC 52 at -24 (I36 — off by default, enableable only by the host), and OSC 8 by the
+  user's decision on 2026-09-26, with the technical debt that keeps it closed written into `ANSI_TODO.md` §7
+  rather than left as a preference;
 - The jline4-side work (SIXEL family-level refusal) is DONE — nothing in this order touches jline4;
 - The kitty keyboard query (`?u`) counts and never answers — the DA1 fence on jline4's side is part of
   the design; do NOT "helpfully" implement the kitty protocol.
