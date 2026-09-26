@@ -231,6 +231,31 @@ enum RcPromptMark
   RC_PM_ERROR = 4           /* a `D` with any other code, including one that was not a number at all */
 };
 
+/* Everything a row knows about itself, in one word-sized struct so that the two operations over it --
+ * "travel with the content" and "this row arrived blank" -- are each one statement. Split across three
+ * arrays, both operations were three statements, and build -25's #5 was the predictable result: a recycled
+ * row was cleared of two of the three and kept a live mark column from a row that had moved.
+ * `col` is only meaningful while `mark` is not RC_PM_NONE; keeping it inside the struct rather than beside it
+ * is the point, because "mark without a column" and "column without a mark" are both states no consumer can
+ * interpret, and a struct assignment cannot produce either. */
+typedef struct RcRowState
+{
+  uint8_t  wrap;            /* RC_WRAP_*: why this row's line continued (I20) */
+  uint8_t  mark;            /* RC_PM_*: which FTCS region begins here (I23) */
+  uint16_t col;             /* the column that mark started at */
+} RcRowState;
+
+#define RC_ROW_CLEAN { RC_WRAP_NONE, RC_PM_NONE, 0 }
+
+/* The refactor's equality proof: packing the three arrays into one struct per row must not have changed the
+   grid's footprint, or #73 would be a memory decision smuggled in as a tidiness one. 256+256+512 is what
+   `rowWrap` (1 byte) + `rowMark` (1) + `markCol` (2) cost per row, and the same again for the alt snapshot.
+   Asserted rather than measured because the number that matters is "unchanged on every platform this builds
+   on", not the LP64 figure a host run happens to print. */
+static_assert(sizeof(RcRowState) == 4, "RcRowState must cost exactly what rowWrap+rowMark+markCol did per row");
+static_assert(sizeof(RcRowState) * RC_MAX_ROWS == (1 + 1 + 2) * RC_MAX_ROWS,
+              "the row-state array must not change the grid's footprint");
+
 /* The content the *cursor* is writing, as opposed to the content a row begins in. Kept because it is what
  * makes the marks land without a shell's help: under both references, a line feed taken while the cursor is
  * inside a prompt or user input marks the row it arrives on as a continuation (ghostty Terminal.zig:2330-2357
@@ -275,17 +300,19 @@ typedef struct RcGrid
      change that cannot name its columns (an adopt, IL/DL, a row scrolling in blank) says [0, cols-1].
      A run of the plan is the union of its rows' ranges, so a narrow range never hides a wide neighbour. */
   uint16_t dirtyLo[RC_MAX_ROWS], dirtyHi[RC_MAX_ROWS];
-  /* Why each row's line continued, RC_WRAP_* (S5). Travels with the content on every vertical shift, and
-     is cleared by anything that empties the row's last column: the claim is "text ran to the margin", so a
-     row whose tail was erased no longer makes it. align() cannot recover it -- ReadConsoleOutputW returns
-     no wrap information -- so an adopt clears the viewport's bits. */
-  uint8_t rowWrap[RC_MAX_ROWS];
-  /* FTCS semantic marks (RC_PM_*), one per row, and the column the mark started at -- the prompt's own
-     start column, which is what a "select this command" consumer needs to avoid taking the whole row.
-     Neither is a cell attribute and neither reaches the console: like rowWrap, ReadConsoleOutputW cannot
-     return them, so an adopt cannot recover them and every vertical shift must carry them by hand. */
-  uint8_t  rowMark[RC_MAX_ROWS];
-  uint16_t markCol[RC_MAX_ROWS];
+  /* What a row knows about *itself*: why its line continued (S5, RC_WRAP_*), and which FTCS region begins it
+     (RC_PM_* plus the column the mark started at -- the prompt's own start column, which is what a "select
+     this command" consumer needs in order not to take the whole row).
+
+     One struct, not three arrays. The shape is forced by two facts that the arrays made easy to separate:
+     neither field is a cell attribute and neither reaches the console, so `ReadConsoleOutputW` cannot return
+     them -- an adopt cannot recover them, and **every vertical shift has to carry them by hand**. And a
+     recycled row has to forget them wholly. Build -25 fixed exactly the failure this layout makes
+     impossible: `shift_region` carried `wrap` and `mark` and left a live `col` behind on a row that had
+     moved. ghostty packs the same facts into one `Row = packed struct(u64)` whose `reset()` is a single
+     8-byte store (`page.zig:2014`, `:2133`); MSFT keeps them inside `ROW` too (`Row.hpp:313-317`). Our
+     version is 4 bytes because a mark column needs 16 bits and nothing here needs more. */
+  RcRowState rowState[RC_MAX_ROWS];
   /* Set when the stream contained a sequence that could have moved the console's cursor or changed which
      rows scroll, and we consumed it without modelling it (S3). The counters say *what* we skipped; this
      says *this frame is no longer known*, and the painter answers by re-adopting the console once. Only
@@ -304,10 +331,11 @@ typedef struct RcGrid
      the model's viewport either way, which is why this costs one full repaint per switch and no new API. */
   uint8_t alt;
   RcCell *snap;
-  uint8_t snapWrap[RC_MAX_ROWS];    /* the wrap claims (I20) of the saved rows, same order as snap */
-  uint8_t  snapMark[RC_MAX_ROWS];   /* and the FTCS marks, for the same reason: the alt screen must not
-                                       lose the row the command started on (Render.cpp::alt_screen) */
-  uint16_t snapCol[RC_MAX_ROWS];
+  /* The row states of the saved viewport rows, in the same order as `snap`, for the same reason the cells
+     are snapshotted: leaving the alternate screen must not lose which row a command started on, and the two
+     halves of that fact cannot be recovered from the console. Carried as whole structs so a save or a restore
+     cannot do what -25's #5 did to a shift -- move two of three. */
+  RcRowState snapState[RC_MAX_ROWS];
 
   /* DECSTBM (CSI top;bot r). Inclusive model rows, and only live while `regSet`: with no region the
      scroll area is the viewport, which is every sequence the application sent before a full-screen program set one.

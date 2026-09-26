@@ -217,7 +217,7 @@ int rc_row_dirty(const RcGrid *g, int row)
 
 int rc_row_wrap(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? g->rowWrap[row] : (int)RC_WRAP_NONE;
+  return (row >= 0 && row < g->rows) ? g->rowState[row].wrap : (int)RC_WRAP_NONE;
 }
 
 /* align() reads cells, and neither of a row's private claims is a cell: ReadConsoleOutputW carries no wrap
@@ -226,17 +226,13 @@ int rc_row_wrap(const RcGrid *g, int row)
    the rows it replaced. Renamed from rc_forget_wrap for that reason: it was never only about the wrap. */
 void rc_forget_row_state(RcGrid *g)
 {
-  for (int r = gutter(g); r < g->rows; r++)
-  {
-    g->rowWrap[r] = RC_WRAP_NONE;
-    g->rowMark[r] = RC_PM_NONE;
-    g->markCol[r] = 0;
-  }
+  const RcRowState clean = RC_ROW_CLEAN;
+  for (int r = gutter(g); r < g->rows; r++) g->rowState[r] = clean;
 }
 
 int rc_row_mark(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? (int)g->rowMark[row] : (int)RC_PM_NONE;
+  return (row >= 0 && row < g->rows) ? (int)g->rowState[row].mark : (int)RC_PM_NONE;
 }
 
 /* The column the row's mark was made at -- the prompt's own start, which is what a consumer that wants to
@@ -244,7 +240,7 @@ int rc_row_mark(const RcGrid *g, int row)
    taking the whole row would take that too. */
 int rc_mark_col(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? (int)g->markCol[row] : 0;
+  return (row >= 0 && row < g->rows) ? (int)g->rowState[row].col : 0;
 }
 
 int rc_last_exit(const RcGrid *g)
@@ -308,12 +304,12 @@ int rc_validate_grid(const RcGrid *g, char *msg, int len)
 
   for (r = 0; r < g->rows; r++)
   {
-    const uint8_t wrap = g->rowWrap[r];
+    const uint8_t wrap = g->rowState[r].wrap;
     if (wrap != RC_WRAP_NONE && wrap != RC_WRAP_FORCED && wrap != RC_WRAP_PAD)
-      RC_BAD("row %d: rowWrap=%d is not one of NONE/FORCED/PAD", r, (int) wrap);
-    if (g->rowMark[r] > RC_PM_ERROR) RC_BAD("row %d: rowMark=%d is not a known mark", r, (int) g->rowMark[r]);
-    if (g->rowMark[r] != RC_PM_NONE && g->markCol[r] >= g->cols)
-      RC_BAD("row %d: a mark claims column %u of a %d-column row", r, g->markCol[r], g->cols);
+      RC_BAD("row %d: rowState.wrap=%d is not one of NONE/FORCED/PAD", r, (int) wrap);
+    if (g->rowState[r].mark > RC_PM_ERROR) RC_BAD("row %d: rowState.mark=%d is not a known mark", r, (int) g->rowState[r].mark);
+    if (g->rowState[r].mark != RC_PM_NONE && g->rowState[r].col >= g->cols)
+      RC_BAD("row %d: a mark claims column %u of a %d-column row", r, g->rowState[r].col, g->cols);
     if (g->rowDirty[r])
     {
       /* A dirty row has to name a range that exists. The rectangle the painter sends is cut from these two
@@ -391,7 +387,7 @@ static void fill_span(RcGrid *g, int row, int from, int to, uint16_t attr)
   }
   /* An erase that reaches the margin ends the row's claim to have overflowed: nothing ran off its right
      edge any more, whatever was there before. Erases short of the margin leave the claim alone. */
-  if (to >= g->cols - 1) g->rowWrap[row] = RC_WRAP_NONE;
+  if (to >= g->cols - 1) g->rowState[row].wrap = RC_WRAP_NONE;
   mark_dirty(g, row, from, to);
   heal_pairs(g, row, from - 1, to + 1);
 }
@@ -407,23 +403,21 @@ static void fill_row(RcGrid *g, int row, int from, uint16_t attr)
 /* What a row knows about *itself*: why its line ended (I20) and which FTCS region it begins (I23). Both
    belong to the content, not to the row number, so both must travel together on every vertical shift --
    a soft-wrapped table row that scrolls up one row is still the first half of a line, and a prompt that
-   scrolls up is still where that command started. They move in one call because the failure mode of the
-   pair is forgetting half of it, which no grid witness can see: neither bit reaches the console, so
-   neither can be read back after the fact.
+   scrolls up is still where that command started. Neither fact reaches the console, so no grid witness can
+   see one of them being left behind: the only defence is a shape in which "carry the row's state" cannot be
+   written as a half. That is what the struct is for -- build -25's #5 was this call carrying two of three
+   fields, and the fix was a fourth line rather than a rule.
    The damage overlay has its own carry (scroll_carry) because it is a paint-cost fact, not a content one. */
 static void row_carry(RcGrid *g, int dst, int src)
 {
-  g->rowWrap[dst] = g->rowWrap[src];
-  g->rowMark[dst] = g->rowMark[src];
-  g->markCol[dst] = g->markCol[src];
+  g->rowState[dst] = g->rowState[src];
 }
 
 /* A row that arrived blank knows nothing: it overflowed nowhere and no command started on it. */
 static void row_reset_state(RcGrid *g, int row)
 {
-  g->rowWrap[row] = RC_WRAP_NONE;
-  g->rowMark[row] = RC_PM_NONE;
-  g->markCol[row] = 0;
+  const RcRowState clean = RC_ROW_CLEAN;
+  g->rowState[row] = clean;
 }
 
 /* What a line ending does to the FTCS claims the cursor is carrying (I23). Both references put this on the
@@ -447,10 +441,10 @@ static void ftcs_line_ended(RcGrid *g)
     g->semanticClearEol = 0;
     return;
   }
-  if (g->cy >= 0 && g->cy < g->rows && g->rowMark[g->cy] == RC_PM_NONE)
+  if (g->cy >= 0 && g->cy < g->rows && g->rowState[g->cy].mark == RC_PM_NONE)
   {
-    g->rowMark[g->cy] = RC_PM_CONTINUATION;
-    g->markCol[g->cy] = 0;
+    g->rowState[g->cy].mark = RC_PM_CONTINUATION;
+    g->rowState[g->cy].col = 0;
     g->nPromptMark++;
   }
 }
@@ -675,7 +669,7 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
 
        The row left behind keeps its own reason: it did not overflow, its last glyph was moved whole to
        spare it a split (conhost's _doubleBytePadded). Copy and export join the two differently. */
-    g->rowWrap[g->cy] = RC_WRAP_PAD;
+    g->rowState[g->cy].wrap = RC_WRAP_PAD;
     g->cx = 0;
     line_down(g);
   }
@@ -706,7 +700,7 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
       g->cx = last_free_col(g, g->cy, g->cols - 1);
       return;
     }
-    g->rowWrap[g->cy] = RC_WRAP_FORCED;   /* text reached the margin and continued on the next row */
+    g->rowState[g->cy].wrap = RC_WRAP_FORCED;   /* text reached the margin and continued on the next row */
     g->cx = 0;
     line_down(g);
   }
@@ -728,7 +722,7 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
     if (g->cx + 2 > g->cols)
     {
       if (!g->wrapMode) { blank_cell(g, g->cy, g->cx); return; }   /* drop whole, as put_cell does (I35) */
-      g->rowWrap[g->cy] = RC_WRAP_PAD; g->cx = 0; line_down(g);
+      g->rowState[g->cy].wrap = RC_WRAP_PAD; g->cx = 0; line_down(g);
     }
     g->cells[g->cy][g->cx].ch = hi;
     g->cells[g->cy][g->cx].attr = (uint16_t)(g->attr | RC_LVB_LEADING);
@@ -741,7 +735,7 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
     if (g->cx >= g->cols)
     {
       if (!g->wrapMode) { g->cx = last_free_col(g, g->cy, g->cols - 1); return; }
-      g->rowWrap[g->cy] = RC_WRAP_FORCED; g->cx = 0; line_down(g);
+      g->rowState[g->cy].wrap = RC_WRAP_FORCED; g->cx = 0; line_down(g);
     }
     return;
   }
@@ -1079,9 +1073,7 @@ static int alt_screen(RcGrid *g, int on)
       for (int r = 0; r < nrows; r++)
       {
         memcpy(&g->snap[(size_t)r * g->cols], &g->cells[hist + r][0], (size_t)g->cols * sizeof(RcCell));
-        g->snapWrap[r] = g->rowWrap[hist + r];
-        g->snapMark[r] = g->rowMark[hist + r];
-        g->snapCol[r] = g->markCol[hist + r];
+        g->snapState[r] = g->rowState[hist + r];
       }
       g->alt = 1;
     }
@@ -1097,9 +1089,7 @@ static int alt_screen(RcGrid *g, int on)
   for (int r = 0; r < nrows; r++)
   {
     memcpy(&g->cells[hist + r][0], &g->snap[(size_t)r * g->cols], (size_t)g->cols * sizeof(RcCell));
-    g->rowWrap[hist + r] = g->snapWrap[r];
-    g->rowMark[hist + r] = g->snapMark[r];
-    g->markCol[hist + r] = g->snapCol[r];
+    g->rowState[hist + r] = g->snapState[r];
   }
   g->alt = 0;
   g->pendingScrolls = 0;
@@ -1880,9 +1870,9 @@ static void ftcs_prompt(RcGrid *g, int continuation)
   g->semanticContent = RC_SC_PROMPT;
   g->semanticClearEol = 0;
   if (g->cy < 0 || g->cy >= g->rows) return;
-  if (g->rowMark[g->cy] != RC_PM_NONE && g->rowMark[g->cy] != RC_PM_CONTINUATION) return;
-  g->rowMark[g->cy] = (uint8_t)(continuation ? RC_PM_CONTINUATION : RC_PM_PROMPT);
-  g->markCol[g->cy] = (uint16_t)g->cx;
+  if (g->rowState[g->cy].mark != RC_PM_NONE && g->rowState[g->cy].mark != RC_PM_CONTINUATION) return;
+  g->rowState[g->cy].mark = (uint8_t)(continuation ? RC_PM_CONTINUATION : RC_PM_PROMPT);
+  g->rowState[g->cy].col = (uint16_t)g->cx;
   g->nPromptMark++;
 }
 
@@ -1936,8 +1926,8 @@ static int ftcs_apply(RcGrid *g, const uint16_t *p, int n)
       /* The fish heuristic, and the only place a mark is ever taken away (Terminal.zig:2185-2198): a row that
        * is still at column 0 when its output starts was never a prompt line, it was the continuation of one.
        * fish has no PS2 and does not send `k=c`, so without this its wrapped prompts stay marked. */
-      if (g->cy >= 0 && g->cy < g->rows && g->cx == 0 && g->rowMark[g->cy] != RC_PM_NONE)
-        g->rowMark[g->cy] = RC_PM_NONE;
+      if (g->cy >= 0 && g->cy < g->rows && g->cx == 0 && g->rowState[g->cy].mark != RC_PM_NONE)
+        g->rowState[g->cy].mark = RC_PM_NONE;
       return 1;
     case 'D':
     {
@@ -1953,9 +1943,9 @@ static int ftcs_apply(RcGrid *g, const uint16_t *p, int n)
        * replaces its code, which is what MSFT does too. */
       for (int r = g->cy; r >= 0 && r < g->rows; r--)
       {
-        if (g->rowMark[r] == RC_PM_NONE) continue;
+        if (g->rowState[r].mark == RC_PM_NONE) continue;
         if (have != 0)
-          g->rowMark[r] = (uint8_t)((have == 1 && code == 0) ? RC_PM_SUCCESS : RC_PM_ERROR);
+          g->rowState[r].mark = (uint8_t)((have == 1 && code == 0) ? RC_PM_SUCCESS : RC_PM_ERROR);
         return 1;
       }
       return 1;                              /* a verdict with nothing to mark: the code is still the log's */

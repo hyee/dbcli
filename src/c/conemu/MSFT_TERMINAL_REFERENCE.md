@@ -75,7 +75,7 @@
 
 我们现在是**立即换行**：`put_cell` 写完 `g->cx += w; if (g->cx >= g->cols) { g->cx = 0; line_down(g); }`
 （`Render.cpp:274-279`），`case 0x0D: g->cx = 0;`（`:583`）**无法撤销**那次 `line_down`。
-`geo_wrap`（`RenderCheck.cpp:1633`）验的是"填满一行后写下一个字符"，那一例**两种模型结果相同**
+`geo_wrap`（`RenderCheck.cpp:1650`）验的是"填满一行后写下一个字符"，那一例**两种模型结果相同**
 （延迟模型会先补换行再写），所以现在没有门禁能区分。⚠ 以下四种能区分，全部未跑：
 
 | 输入（行宽 N） | 立即换行（我们） | 延迟换行（上游/VT） |
@@ -446,10 +446,10 @@ Writer::Submit()                           // 一次性发出
 | # | 它更好在哪 | 上游证据 | 我们的现状 | 可抄？ |
 |---|---|---|---|---|
 | B1 | 一行 = 文本 / 偏移 / 属性**三份分离**，属性还是 RLE | `Row.hpp:20`、`:285-311`、`:309` | 稠密 4 B/格、属性每格一份（`Render.h:67`、DESIGN §5 的 4 MB/句柄） | 结构不能抄，效果（B2/B6）能 |
-| **B2** | **脏与画的粒度是 run/矩形，不是整行** | `IRenderEngine.hpp:81/:92/:68/:73`、`gdi/invalidate.cpp:29-41` | ~~脏 = 一行，画 = 填满 `paintCols`~~ **已改**：脏 = 一行 + 一个列区间（`Render.h:276` `dirtyLo/dirtyHi`），画 = 发那个矩形（`RenderJni.cpp:532` `write_rect`、`:1042` 调用）；`paintCols` 降级成"几何判断与上界"，不再是每 run 的宽度 | **已抄**（= DESIGN I22，见 §13.1 末段的落地记录） |
-| B3 | 字形边界退格是**具名原语** | `Row.cpp:373-376`（`NavigateToPrevious` → `_adjustBackward`） | BS 曾内联 `g->cx--`，现在是 `step_back_col`（`Render.cpp:1663`） | 抄（= §1 的 S1） |
-| B4 | 软换行是**行上的两个独立位** | `Row.hpp:313-317`（`_wrapForced` / `_doubleBytePadded`） | 只有 `rowDirty`，两条换行出口（`Render.cpp:606`/`:637`，收窄区时 `:659`/`:672`）事后不可辨 | 抄（= S5，顺手把两个来源分开） |
-| B5 | 参数"缺席"与"0"在**类型层**区分（`optional`），子参数另有区间表 | `stateMachine.cpp:505-545`（`_parameterLimitOverflowed`、`_subParameterRanges`） | `g->digit` 已保住"trailing empty ≠ 0"（`Render.cpp:2589`）；`:` 按 ConEmu 口径当 Pvt 整条丢（`Render.cpp:1177`、置 `g->priv` 在 `:2603`） | **不抄**，改成定性记档（见下） |
+| **B2** | **脏与画的粒度是 run/矩形，不是整行** | `IRenderEngine.hpp:81/:92/:68/:73`、`gdi/invalidate.cpp:29-41` | ~~脏 = 一行，画 = 填满 `paintCols`~~ **已改**：脏 = 一行 + 一个列区间（`Render.h:302` `dirtyLo/dirtyHi`），画 = 发那个矩形（`RenderJni.cpp:532` `write_rect`、`:1042` 调用）；`paintCols` 降级成"几何判断与上界"，不再是每 run 的宽度 | **已抄**（= DESIGN I22，见 §13.1 末段的落地记录） |
+| B3 | 字形边界退格是**具名原语** | `Row.cpp:373-376`（`NavigateToPrevious` → `_adjustBackward`） | BS 曾内联 `g->cx--`，现在是 `step_back_col`（`Render.cpp:1725`） | 抄（= §1 的 S1） |
+| B4 | 软换行是**行上的两个独立位** | `Row.hpp:313-317`（`_wrapForced` / `_doubleBytePadded`） | ~~只有 `rowDirty`，两条换行出口事后不可辨~~ **已抄**（= S5）：一行一个 `RC_WRAP_*` 枚举（`FORCED` 推到边缘 / `PAD` 宽字整对挪走 / `NONE`），出口在两个写入函数里各一对 —— `put_cell` 的 `Render.cpp:672`/`:703` 与 `put_pair` 的 `:725`/`:738`；`!wrapMode`（DECAWM 关，I35）那三分支一条声明都不留，因为什么都没有跑出边缘。枚举而非两位，是因为"两位都置"在这套出口里没有意义 | **已抄**（形状不同，理由见左） |
+| B5 | 参数"缺席"与"0"在**类型层**区分（`optional`），子参数另有区间表 | `stateMachine.cpp:505-545`（`_parameterLimitOverflowed`、`_subParameterRanges`） | `g->digit` 已保住"trailing empty ≠ 0"（`Render.cpp:2651`）；`:` 按 ConEmu 口径当 Pvt 整条丢（`Render.cpp:2661`、置 `g->priv` 在 `:2665`） | **不抄**，改成定性记档（见下） |
 | B6 | 行宽是**数据**（`_columnCount`）不是常量 | `Row.hpp:309` | `cols = bufW - winL`，每行按它算（I7） | B2 落地后代价为 0，先不单独做 |
 | B7 | （反面自查）**两条"看着更好"的**：问字体要宽度、resize 时 reflow | `IRenderEngine.hpp:94`、`TextBuffer::ReflowRows` | 我们画不了字形（抄了就是 #1330 的成因）、没有 scrollback 所有权（只能 `align()` 收养，I4） | **明确不抄**，列出来是防"见好就抄" |
 
@@ -463,7 +463,9 @@ Writer::Submit()                           // 一次性发出
 `PaintBufferLine(span<const Cluster>, coord, fTrimLeft)`——一行递过去的是一串 run（外加"尾部空格可裁"这个提示），
 脏区走 `GetDirtyArea` 的**矩形列表**，滚动则只把脏矩形平移（`invalidate.cpp:29-41`，`_szInvalidScroll` 累加 delta）。
 
-最小实现：`rowDirty[]` 旁边加 `uint16_t dirtyLo[]` / `dirtyHi[]`，`mark_dirty` 接 `(col, w)` 并取 min/max，
+最小实现（**这段写于 B2 落地前，`Render.cpp` 那几个行号和"现在"一词都是当时的**；实现见 DESIGN 的 I22 与 §36，今天的位置是
+`scroll_up` `Render.cpp:522`、`fill_span` `:378`，区间已随 `row_carry`/`scroll_carry` 一起搬，`mark_dirty` 已接列）：
+`rowDirty[]` 旁边加 `uint16_t dirtyLo[]` / `dirtyHi[]`，`mark_dirty` 接 `(col, w)` 并取 min/max，
 `write_rect` 的矩形从 `[0, paintCols)` 变成 `[lo, hi]`。**四处必须一起改对**（漏一处就是画漏/画错，且只会以
 "偶发残影"的形式出现，很难看）：
 

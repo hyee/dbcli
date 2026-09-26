@@ -921,7 +921,7 @@ static void gm_osc9()
   rc_reset(&b, 20, 4, 0x07);
   put(&a, "abc\033]133;B\007");
   put(&b, "abc\033]9;12\007");
-  eq_u("9;12 marks the row the way 133;B does", (unsigned)b.rowMark[a.cy], (unsigned)a.rowMark[a.cy], "");
+  eq_u("9;12 marks the row the way 133;B does", (unsigned)b.rowState[a.cy].mark, (unsigned)a.rowState[a.cy].mark, "");
   eq_u("with the same content claim", (unsigned)b.semanticContent, (unsigned)a.semanticContent,
        "RC_SC_INPUT, which is what makes the next line a command line");
   eq_u("and the same end-of-line rule", (unsigned)b.semanticClearEol, (unsigned)a.semanticClearEol, "");
@@ -1960,7 +1960,7 @@ struct OscFx
   unsigned long nTitleSet, nTitleTrunc, nClipSet, nClipBad, nClipSel, nClipRead;
   unsigned long nPromptMark, nReportOk, nReportFail, nReportFull;
   uint32_t pal16[16];
-  uint8_t rowMark[RC_MAX_ROWS];
+  RcRowState rowState[RC_MAX_ROWS];   /* whole structs: a mirror that copies one field is how #73 started */
   int cx, cy, attr, defAttr, titlePending, clipPending, nClip, nCwd;
   int semanticContent, semanticClearEol, taskbarState, taskbarProgress, taskbarSeen, lastExit, palTouched;
 };
@@ -1975,7 +1975,7 @@ static void osc_fx_get(RcGrid *g, struct OscFx *f)
   f->nPromptMark = g->nPromptMark;
   f->nReportOk = g->nReportOk; f->nReportFail = g->nReportFail; f->nReportFull = g->nReportFull;
   for (i = 0; i < 16; i++) f->pal16[i] = g->pal16[i];
-  for (i = 0; i < RC_MAX_ROWS; i++) f->rowMark[i] = g->rowMark[i];
+  for (i = 0; i < RC_MAX_ROWS; i++) f->rowState[i] = g->rowState[i];
   f->cx = g->cx; f->cy = g->cy; f->attr = g->attr; f->defAttr = g->defAttr;
   f->titlePending = g->titlePending; f->clipPending = g->clipPending;
   f->nClip = g->nClip; f->nCwd = g->nCwd;
@@ -3223,6 +3223,24 @@ static void geo_ftcs()
   eq_u("deleting a row above brings the prompt back", (unsigned)rc_row_mark(&g, 2), RC_PM_PROMPT, "");
   eq_text(&g, 2, 3, "cmd", "with its text");
 
+  /* The column in transit, which is the field #73's whole-struct carry exists to protect. Every rc_mark_col()
+     assertion above is on a row that either stayed put or was blanked, so a carry written field by field --
+     mark and wrap across, the number left behind -- passes all of them: the two rows it would corrupt read 0
+     in and 0 out, because a mark made at the margin has no column to lose. This one is made at column 4 and
+     *moved*, so the lost half shows. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[3;5H\033]133;P\007");
+  eq_u("a prompt made mid-row", (unsigned)rc_row_mark(&g, 2), RC_PM_PROMPT, "");
+  eq_u("remembers its column", (unsigned)rc_mark_col(&g, 2), 4, "");
+  put(&g, "\033[1;1H\033[1M");
+  eq_u("deleting above moves the mark up", (unsigned)rc_row_mark(&g, 1), RC_PM_PROMPT, "");
+  eq_u("and its column the whole way", (unsigned)rc_mark_col(&g, 1), 4,
+       "a half-carry reads 0 here, which a consumer takes for 'the prompt starts at the margin'");
+  put(&g, "\033[1;1H\033[1L");
+  eq_u("inserting it back down carries it down", (unsigned)rc_mark_col(&g, 2), 4,
+       "the guard is the shape, not the direction");
+  eq_u("while the row that came in has neither", (unsigned)rc_row_mark(&g, 1), RC_PM_NONE, "");
+
   /* The alt screen is a different screen, so it has different claims -- and the user's prompt row is exactly
      what a full-screen program must not be able to overwrite with its own. */
   rc_reset(&g, 20, 4, 0x07);
@@ -3490,10 +3508,10 @@ static int grid_equal(const RcGrid *a, const RcGrid *b, char *why, size_t n)
      and nothing above would notice. So does the FTCS content the cursor carries, because that is what decides
      the *next* line feed's claim. */
   for (int r = 0; r < a->rows; r++)
-    if (a->rowWrap[r] != b->rowWrap[r] || a->rowMark[r] != b->rowMark[r] || a->markCol[r] != b->markCol[r])
+    if (a->rowState[r].wrap != b->rowState[r].wrap || a->rowState[r].mark != b->rowState[r].mark || a->rowState[r].col != b->rowState[r].col)
     {
       snprintf(why, n, "row %d state %d/%d/%d vs %d/%d/%d", r,
-               a->rowWrap[r], a->rowMark[r], a->markCol[r], b->rowWrap[r], b->rowMark[r], b->markCol[r]);
+               a->rowState[r].wrap, a->rowState[r].mark, a->rowState[r].col, b->rowState[r].wrap, b->rowState[r].mark, b->rowState[r].col);
       return 0;
     }
   if (a->semanticContent != b->semanticContent || a->semanticClearEol != b->semanticClearEol)
