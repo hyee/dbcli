@@ -437,6 +437,18 @@ typedef struct RcGrid
      the entry describes a session where ConEmu's own parser may be reading the stream, and it ignores `?7`
      (its SetConsoleMode is commented out, Ansi.cpp:3268-3281) -- I26 forbids claiming that half. */
   uint8_t wrapMode;
+  /* IRM -- insert mode, `CSI 4 h/l` and `CSI ?4 h/l`. One bit, two spellings, because the references split:
+   * MSFT registers it as a *standard* mode (`IRM_InsertReplaceMode = ANSIStandardMode(4)`,
+   * DispatchTypes.hpp:520, set at adaptDispatch.cpp:1767 and DECRQM-readable at :1943) and ghostty's C ABI
+   * tag says the same (`ModeTag{ .value = 4, .ansi = true }`, c/terminal.zig:2625), while DEC's VT500 manual
+   * and xterm accept the private `?4` for the identical function. Refusing either one would be the I38
+   * mistake again -- a refusal whose reason describes the implementation instead of the terminal.
+   * What it does is one move: a written glyph calls the same `insert_cells` an ICH performs, for the glyph's
+   * own width, and only while the glyph fits strictly inside the row. ConEmu ignores `?4` outright
+   * (Ansi.cpp:3323-3329, "ignored for now"), so the terminfo entry still does not advertise
+   * `smir`/`rmir`/`mir` -- the entry describes a session where that parser may be reading the bytes, and I26
+   * forbids claiming the other half's behaviour (the same reason `smam`/`rmam` stay out). */
+  uint8_t insertMode;
   /* The tab stops (#70): a table, not arithmetic. One byte per column of the widest model -- 4 KB against the
    * megabytes the cells already cost, and a reader gets to say `tabStop[c]` instead of a mask.
    * `tabsDefaults` is the other half and the reason the table can be empty at all: it says whether the columns

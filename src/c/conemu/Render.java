@@ -184,6 +184,7 @@ public class Render {
         caseSoftReset();
         caseArgClamp();
         caseTabStops();
+        caseInsert();
         caseRelativeCursor();
         caseSyncOutput();
         caseSyncOverflow();
@@ -1473,6 +1474,20 @@ public class Render {
         noOrphan("nothing crossed the shift as a lone half", winT + 5);
         paint("pull it back", "\u001b[6;1H\u001b[1P");
         noOrphan("DCH leaves no half behind", winT + 5);
+        /* The narrow case, which is the one that used to be invisible. ICH and DCH move text, so every column
+           from the cursor to the row's end is damage even though the only cells whose *value* changed are the
+           gap -- and a run is the union of a row's claimed columns, so a claim that stops at the gap paints the
+           gap and leaves the shifted text standing where it used to be. The wide-glyph legs above cannot see
+           this: their shift breaks a pair, and healing a pair claims the cells it touches. This row has no
+           pairs at all, so the only thing covering it is the claim. */
+        paint("a narrow row, then ICH 3 at column 5", "\u001b[8;1HABCDEFGH\u001b[8;5H\u001b[3@");
+        cell("the opened gap is blank", winT + 7, 4, ' ', DEF);
+        cell("and E, which moved, is at the column the model put it in", winT + 7, 7, 'E', DEF);
+        cell("with G behind it", winT + 7, 9, 'G', DEF);
+        paint("and DCH 3 pulls the same tail back", "\u001b[8;5H\u001b[3P");
+        cell("E is under the cursor again", winT + 7, 4, 'E', DEF);
+        cell("and H stands at the end of the text", winT + 7, 7, 'H', DEF);
+        paint("clear the band", "\u001b[8;1H\u001b[J");
         paint("restate the row", "\u001b[6;1H\u4e2d\u6587ab");
         /* One cell of an erase can reach only the head of a pair. The tail is then a glyph with no head, and
            the user sees it as a second copy of whatever was there; healing it means blanking the partner. */
@@ -1655,6 +1670,45 @@ public class Render {
         v = consoleView();
         gate("from column 9 a tab reaches 16, which nobody set", v[5] == 16, "col=" + v[5] + " want 16");
         paint("leave the window where the next case expects it", "\u001b[1;1H");
+    }
+
+    /**
+     * IRM (#77, I40) on the screen rather than in the struct. The host gate can already read the model's
+     * cells; what only a console can answer is whether the text the model pushed right *arrived* there, and
+     * whether the mode survived the rebuild a resize performs -- `readopt` is the path production takes and a
+     * gate that cannot reach it would pass while every resize silently dropped the mode.
+     */
+    private static void caseInsert() {
+        if (!standardGeometry("the insert-mode leg")) return;
+        final long[] a = stats(handle);
+        paint("a row of text", "\u001b[10;1HABCDEFGH");
+        paint("IRM on, home to column 5, write one glyph", "\u001b[?4h\u001b[10;5HZ");
+        cell("the glyph stands where the cursor was", winT + 9, 4, 'Z', DEF);
+        cell("and E, which the write displaced, is one column right of it", winT + 9, 5, 'E', DEF);
+        cell("with the rest of the row riding along", winT + 9, 7, 'G', DEF);
+        paint("IRM off: the next cell is overwritten, not pushed", "\u001b[?4lY");
+        cell("Y took the column under the cursor", winT + 9, 5, 'Y', DEF);
+        cell("and what stood there moved nobody", winT + 9, 6, 'F', DEF);
+
+        /* The carry. Restate the row, arm the mode, rebuild the model the way a resize does, and ask the same
+           question again. (The first version of this leg left the mode disarmed from the assertion above and
+           then passed a green console to a red expectation -- the model was right, the leg was wrong, and it
+           is the same mistake §10's -28 row records from the other side.) */
+        paint("restate it, arm the mode, home the cursor", "\u001b[10;1HABCDEFGH\u001b[?4h\u001b[10;5H");
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        paint("one glyph, with nobody having re-armed the mode", "X");
+        cell("X is at the cursor", winT + 9, 4, 'X', DEF);
+        cell("and E is still beside it", winT + 9, 5, 'E', DEF);
+        cell("because a resize is not a reset: the mode is terminal state, carried like DECAWM and the tabs",
+                winT + 9, 6, 'F', DEF);
+        paint("RIS puts replace mode back", "\u001bc");
+        paint("restate the row and write at column 5", "\u001b[10;1HABCDEFGH\u001b[10;5HW");
+        cell("W overwrote E instead of pushing it", winT + 9, 4, 'W', DEF);
+        cell("and F did not move", winT + 9, 5, 'F', DEF);
+        final long[] b = stats(handle);
+        gate("none of it was counted as unknown", b[S_UN] - a[S_UN] == 0,
+                "unrecognised=" + (b[S_UN] - a[S_UN]));
+        paint("leave the band clear for the next leg", "\u001b[10;1H\u001b[J\u001b[1;1H");
     }
 
     // ---- both legs, one console ----------------------------------------------------------------

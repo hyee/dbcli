@@ -3110,16 +3110,136 @@ static void status_bar()
 
 /* The character-editing family, which the shipped output never sends but an application on this terminal
    may: ICH, DCH, and the DECSCUSR parameter the painter turns into a cursor height. */
+/* IRM (#77, I40): insert mode is a write-side claim on the same primitive an ICH performs, so its legs are
+   the write path -- which is the path that had never been asked to shift anything before. */
+static void geo_irm()
+{
+  static RcGrid g;
+
+  /* The mode, in both spellings. DEC's private `?4` and the ANSI 4 both references register are the same
+     bit, so the second must act like the first rather than be counted as a mode nobody knows. */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "ABCD");
+  put(&g, "\033[1;2H\033[?4hX");
+  eq_text(&g, 0, 8, "AXBCD   ", "a written glyph opens room for itself and the tail rides right");
+  eq_u("and the cursor stands after the glyph it wrote", (unsigned)g.cx, 2, "");
+  put(&g, "Y");
+  eq_text(&g, 0, 8, "AXYBCD  ", "the next one pushes again from where the cursor is now");
+  put(&g, "\033[?4lZ");
+  eq_text(&g, 0, 8, "AXYZCD  ", "`?4l` is back to overwriting: the cell under the cursor is replaced, not moved");
+  eq_u("and the row's tail did not ride along", (unsigned)g.cx, 4, "one column for one glyph, no push");
+
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "ABCD");
+  put(&g, "\033[1;2H\033[4hX");
+  eq_text(&g, 0, 8, "AXBCD   ", "the ANSI spelling of the same mode (MSFT registers 4, ghostty tags it ansi)");
+  eq_u("and it was not counted as an unknown mode", (unsigned)un(&g, RC_UN_MODE), 0, "");
+
+  /* The margin, where there is nothing to push. ghostty's print takes the insert arm only while
+     `cursor.x + width < cols` (Terminal.zig:1522-1528); a glyph that would run off the end overwrites and
+     then wraps under the ordinary rule, because inserting zero columns is not a thing. */
+  rc_reset(&g, 6, 3, 0x07);
+  put(&g, "\033[?4hABCDEF");
+  eq_text(&g, 0, 6, "ABCDEF", "each glyph opened room for itself until the row was full, and the last one "
+                              "reached the margin where there is nothing left to push");
+  put(&g, "\033[1;5HZ");                /* one column short of the end: the insert runs, and the tail falls off */
+  eq_text(&g, 0, 6, "ABCDZE", "E rode right over F, and F is gone: an insert that kept the row's length kept it");
+  put(&g, "\033[1;6HY");                /* at the margin there is nothing to push */
+  eq_text(&g, 0, 6, "ABCDZY", "so the write overwrites the last cell instead of inserting zero columns");
+
+  /* A wide glyph costs two columns, so it opens two -- and the pair it moves must not be cut by the shift. */
+  rc_reset(&g, 10, 3, 0x07);
+  {
+    const uint16_t wide = 0x3042;
+    put(&g, "AB");
+    putu(&g, &wide, 1);                                /* columns 2 and 3 */
+    put(&g, "\033[?4h");
+    put(&g, "\033[1;3H");
+    put(&g, "X");
+    eq_u("the glyph stands where the cursor was", RC_CELLS(&g, 0)[2].ch, 'X',
+         "one column opened, one column written");
+    eq_u("the pair rode one column right, together", (unsigned)(RC_CELLS(&g, 0)[3].attr & RC_LVB_LEADING),
+         (unsigned)RC_LVB_LEADING, "its head moved and its tail moved with it");
+    eq_u("and the tail is still a tail", (unsigned)(RC_CELLS(&g, 0)[4].attr & RC_LVB_TRAILING),
+         (unsigned)RC_LVB_TRAILING, "");
+    no_orphan(&g, 0, "an IRM write beside a wide glyph");
+  }
+
+  /* The damage claim a write under IRM files. This is the whole point of #77's other half: the glyph changed
+     one cell and the row changed from there to the end, and a run is the union of the claimed columns. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "ABCDEFGHIJKLMNOP");
+  rc_clear_dirty(&g);
+  put(&g, "\033[?4h\033[1;5HZ");
+  eq_u("an IRM write claims from the cursor", (unsigned)RC_LO(&g, 0), 4, "where its first changed cell is");
+  eq_u("to the end of the row", (unsigned)RC_HI(&g, 0), 19, "P moved one column right, so the screen must hear about it");
+
+  /* What the mode answers, and what it costs in the census. A state the model holds is a state DECRQM can
+     report, under either spelling of the number DEC assigned it. */
+  rc_reset(&g, 20, 6, 0x07);
+  {
+    struct RcReportItem it;
+    put(&g, "\033[?4$p");
+    rc_report_take(&g, &it);
+    eq_u("a fresh grid is in replace mode", (unsigned)it.status, 1, "off is a state, not an absence");
+    put(&g, "\033[?4h\033[?4$p");
+    rc_report_take(&g, &it);
+    eq_u("`?4h` is the difference the reply carries", (unsigned)it.status, 2, "");
+    put(&g, "\033[4$p");
+    rc_report_take(&g, &it);
+    eq_u("and the ANSI spelling answers the same question", (unsigned)it.status, 2,
+         "the mode was set by that spelling, so a probe using it must not be told the number is unknown");
+    eq_u("with nothing left counted", (unsigned)un(&g, RC_UN_MODE), 0,
+         "IRM is modelled, so neither `4h` nor `4$p` is a mode this build cannot name");
+    put(&g, "\033[2026$p");
+    eq_u("while a number with no ANSI registration is still counted", (unsigned)un(&g, RC_UN_MODE), 1,
+         "ANSI 2026 does not exist; answering it would be inventing the spelling (the rest of the "
+         "non-private field is #87's)");
+  }
+
+  /* Both resets clear it -- MSFT's SoftReset names InsertReplace (:2989) and its HardReset calls SoftReset --
+     and the reset is the only thing that does: a resize carries the mode, because a resize is not a reset. */
+  rc_reset(&g, 10, 3, 0x07);
+  put(&g, "\033[?4hAB");
+  put(&g, "\033[1;2H\033c");
+  eq_u("RIS is back in replace mode", (unsigned)g.insertMode, 0, "");
+  put(&g, "\033[?4h");
+  put(&g, "\033[!p");
+  eq_u("and so is DECSTR", (unsigned)g.insertMode, 0, "the same list MSFT's SoftReset works through");
+  put(&g, "\033[?4h");
+  eq_u("the mode is on again for the alt's sake", (unsigned)g.insertMode, 1, "setup");
+  put(&g, "\033[?1049h");
+  eq_u("entering the alternate screen does not change it", (unsigned)g.insertMode, 1,
+       "it is terminal state, like DECAWM and the tab table (I38's ruling on the other axis)");
+  put(&g, "\033[?1049l");
+  eq_u("and leaving finds it where it was", (unsigned)g.insertMode, 1, "");
+}
+
 static void geo_edit()
 {
   static RcGrid g;
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "ABCD");
+  rc_clear_dirty(&g);                        /* the claim under test is the edit's, not the setup's */
   put(&g, "\033[1;2H\033[2@");
   eq_text(&g, 0, 8, "A  BCD  ", "ICH blanks *at* the cursor and pushes the tail from there right");
   eq_u("ICH leaves the cursor where it was", (unsigned)g.cx, 1, "");
+  /* The tail that moved is damage. What the painter sends is the union of a row's claimed columns, so a
+     claim that stops at the gap it opened leaves the pushed text standing on the screen at its old columns:
+     measured on a 20-column row before these lines existed, `CSI 3@` at column 5 claimed [4,6] and planned
+     one run [4,6] while every column from 4 to 19 had changed. The vertical case has said this out loud for
+     a long time ("a row that arrives at a new number claiming no damage paints nothing and keeps the stale
+     screen"); the horizontal one was only ever witnessed through a wide glyph, where the pair healing
+     incidentally claimed the row -- which is why a leg that passes can still be a leg that proves nothing. */
+  eq_u("ICH claims from the cursor", (unsigned)RC_LO(&g, 0), 1, "where its first changed cell is");
+  eq_u("to the end of the row", (unsigned)RC_HI(&g, 0), (unsigned)(g.cols - 1),
+       "everything right of the gap moved, not just the gap");
+  rc_clear_dirty(&g);
   put(&g, "\033[1;2H\033[P");
   eq_text(&g, 0, 8, "A BCD   ", "DCH pulls the tail back left over the gap and blanks the row's end");
+  eq_u("DCH claims from the cursor", (unsigned)RC_LO(&g, 0), 1, "not from the blanks it landed on");
+  eq_u("and to the row's end", (unsigned)RC_HI(&g, 0), (unsigned)(g.cols - 1),
+       "the old leg read the cells in the model, which is not the screen");
   put(&g, "\033[1;2H\033[99P");
   eq_text(&g, 0, 2, "A ", "an over-long DCH clears the row from the cursor and stops at the margin");
   eq_text(&g, 0, 8, "A       ", "nothing wrapped, nothing moved on the row below");
@@ -4889,6 +5009,7 @@ int main(int argc, char **argv)
   geo_tabs();
   geo_region();
   status_bar();
+  geo_irm();
   geo_edit();
   geo_jline_stream();
   geo_ftcs();

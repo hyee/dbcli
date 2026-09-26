@@ -429,6 +429,32 @@ static void fill_row(RcGrid *g, int row, int from, uint16_t attr)
   fill_span(g, row, from, g->cols - 1, attr);
 }
 
+/* Open `n` blank cells at `col` and push the rest of the row right, dropping what leaves the end. ICH is
+ * this on its own, and a write under IRM is this followed by the write -- which is why it is one function and
+ * not two loops that have to agree.
+ *
+ * The damage claim is [col, cols-1], not the gap. `fill_span` claims the n cells it blanked, and that is the
+ * part a caller could guess: the text right of the gap did not change *value* under the fill, it changed
+ * **place**, and a run is the union of the rows' claimed columns -- so claiming only the gap paints the blank
+ * and leaves the pushed text standing on the screen at the columns it has already left. Measured before this
+ * existed: `CSI 3@` at column 5 of a 20-column row planned exactly one run [4,6] while columns 4..19 differed
+ * from the model. The vertical case has carried that rule in its own comment for a long time; the horizontal
+ * one was only ever witnessed through a wide glyph, where the pair healing below incidentally claimed cells
+ * and so hid the hole. */
+static void insert_cells(RcGrid *g, int row, int col, int n)
+{
+  if (row < 0 || row >= g->rows || col < 0 || col >= g->cols || n <= 0) return;
+  if (n > g->cols - col) n = g->cols - col;
+  for (int c = g->cols - 1; c >= col + n; c--) RC_CELLS(g, row)[c] = RC_CELLS(g, row)[c - n];
+  fill_span(g, row, col, col + n - 1, g->attr);
+  /* A shift by n keeps every pair whose two cells are both inside the moved span and destroys the ones the
+     fill covers; what it cannot be trusted to notice is a half that crossed the boundary, so the row is
+     checked. The fill healed its own two edges; this catches the far side of a pair that moved out from
+     under its own head. */
+  heal_pairs(g, row, 0, g->cols - 1);
+  mark_dirty(g, row, col, g->cols - 1);
+}
+
 /* A row that arrived blank knows nothing: it overflowed nowhere and no command started on it.
    `rotate_span` is why this is the only per-row bookkeeping a vertical move needs any more: the row's own
    claims (I20's wrap, I23's mark and its column) and its damage range are indexed through the row order, so
@@ -688,6 +714,15 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
     g->cx = 0;
     line_down(g);
   }
+
+  /* IRM (#77): under insert mode a written glyph opens room for itself rather than overwriting what is
+     there -- the same move an ICH performs, for exactly the `w` columns this glyph costs, and the write then
+     lands in the gap it made. Only while the glyph fits strictly inside the row: at the margin there is
+     nothing to push, and both references say it that way (ghostty's print takes the insert arm only while
+     `cursor.x + width < cols`, Terminal.zig:1522-1528; MSFT inserts inside `state.columnLimit` and lets the
+     shared clamp and the delayed-wrap flag handle the end, adaptDispatch.cpp:154-168). This is one branch on
+     the hottest path in the library, and RowBench's no-scroll column is the witness that it costs nothing. */
+  if (g->insertMode && g->cx + w < g->cols) insert_cells(g, g->cy, g->cx, w);
 
   RC_CELLS(g, g->cy)[g->cx].ch = ch;
   RC_CELLS(g, g->cy)[g->cx].attr = (uint16_t)(g->attr | (w == 2 ? RC_LVB_LEADING : 0));
@@ -1223,6 +1258,8 @@ static void full_reset(RcGrid *g)
   g->cursorShape = -1;
   g->cursorVisible = 1;
   g->wrapMode = 1;   /* RIS/DECSTR put every mode back, including the one with no caps entry (I35) */
+  g->insertMode = 0; /* and IRM is on that list in both references: MSFT's SoftReset names InsertReplace
+                        (:2989) and its HardReset calls SoftReset (:3063), so either reset clears it */
   tabs_reset(g);     /* and the tab stops are part of "as at power-up", whatever MSFT's HardReset omits */
   /* RIS ends a synchronized region with everything else it ends. The alternative -- leaving the bit set and
      letting the painter hold the reset's own scroll -- is the one case where a hold could swallow the very
@@ -1253,6 +1290,8 @@ static void soft_reset(RcGrid *g)
   g->regSet = 0;
   g->cursorVisible = 1;
   g->wrapMode = 1;
+  g->insertMode = 0;   /* MSFT's SoftReset names InsertReplace explicitly (:2989). The tab interval is not on
+                          that list and not here either -- #70's leg pins the difference between the two. */
   g->sync = 0;
   g->saveX = g->cx;
   g->saveY = g->cy;
@@ -1315,6 +1354,7 @@ static int mode_status(const RcGrid *g, int id, int *out)
   {
     case 25:   *out = g->cursorVisible ? 2 : 1; return 1;
     case 7:    *out = g->wrapMode ? 2 : 1; return 1;   /* modelled, so answerable (I35) */
+    case 4:    *out = g->insertMode ? 2 : 1; return 1;  /* IRM (I40): a state the model holds is reportable */
     case 47: case 1047: case 1049:
                *out = g->alt ? 2 : 1; return 1;      /* the three spellings share one slot (I14's alt screen) */
     case 2026: *out = g->sync ? 2 : 1; return 1;     /* 1 and 2 both reach jline4 as SUPPORTED (:685) */
@@ -1466,21 +1506,16 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
         /* Both are row-local and both stop at the row's end: the cells in front of the cursor are all there
            is to insert before or delete. The bound is what makes `g->cols - n` below safe. */
         const int n = count_arg(g, 0, g->cols - g->cx);
-        if (final == '@')
-        {
-          for (int c = g->cols - 1; c >= g->cx + n; c--) RC_CELLS(g, g->cy)[c] = RC_CELLS(g, g->cy)[c - n];
-          fill_span(g, g->cy, g->cx, g->cx + n - 1, g->attr);
-        }
+        if (final == '@') insert_cells(g, g->cy, g->cx, n);
         else
         {
           for (int c = g->cx; c + n < g->cols; c++) RC_CELLS(g, g->cy)[c] = RC_CELLS(g, g->cy)[c + n];
           fill_span(g, g->cy, g->cols - n, g->cols - 1, g->attr);
+          /* The same claim ICH needed: everything from the cursor right changed place, and the blanked tail
+             is only where the change landed. */
+          heal_pairs(g, g->cy, 0, g->cols - 1);
+          mark_dirty(g, g->cy, g->cx, g->cols - 1);
         }
-        /* A shift by n keeps every pair whose two cells are both inside the moved span and destroys the
-           ones the fill covers; what it cannot be trusted to notice is a half that crossed the boundary, so
-           the row is checked. The fill above healed its own two edges; this catches the far side of a pair
-           that moved out from under its own head. */
-        heal_pairs(g, g->cy, 0, g->cols - 1);
       }
       break;
     }
@@ -1609,7 +1644,11 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          the 1 and drops the 2004. Both are mirrored by looking at args[0] alone. */
       int on = (final == 'h');
       int v = g->nArgs ? g->args[0] : 0;
-      if (g->priv == '?')
+      /* IRM (I40). Both spellings, one bit: DEC's private `?4` and the ANSI-4 the references actually
+         register (MSFT DispatchTypes.hpp:520, ghostty c/terminal.zig:2625). A caller that sends either gets
+         the same mode, because they are the same mode. */
+      if (v == 4 && (g->priv == '?' || g->priv == 0)) g->insertMode = (uint8_t)(on ? 1 : 0);
+      else if (g->priv == '?')
       {
         if (v == 25) g->cursorVisible = on;
         else if (v == 7) g->wrapMode = on ? 1 : 0;   /* DECAWM (I35) -- `CSI 7h` is GATM, not this */
@@ -1632,10 +1671,12 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       }
       else ignored(g, RC_UN_MODE);
       /* The modes in that last arm that have a body upstream, and why ignoring them is still parity:
-         4 (IRM) is "ignored for now" in ConEmu itself (:3323-3329), which makes `smir`/`rmir` a claim
-         neither leg can keep; 7 (DECAWM) only records WrapAt=80 for ConEmu's own writer, because the
+         7 (DECAWM) only records WrapAt=80 for ConEmu's own writer, because the
          SetConsoleMode that would really toggle ENABLE_WRAP_AT_EOL_OUTPUT is commented out (:3268-3281,
-         and the dead block at :3428-3457); 20 (LF/NL) sets a flag whose only reader adds a CR to the
+         and the dead block at :3428-3457); 4 (IRM) was in that sentence too until #77 modelled it --
+         ConEmu still says "ignored for now" (:3323-3329), which is why the terminfo entry goes on not
+         advertising `smir`/`rmir`/`mir` while this parser acts on the mode (I26, and I40);
+         20 (LF/NL) sets a flag whose only reader adds a CR to the
          writer's LF (:1181), and this model already folds the column on every newline. Of the rest, 1
          (DECCKM), 9/1000-1015 and 2004 change input, 3 sets a ConEmu GUI display option, 12 is an arm
          whose only statement is a commented-out dump, and 1034/7786/7787/7711 are marked ignored or are
@@ -1688,7 +1729,16 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          the census can tell "the application asked" from "the application never wrote it". `$` says the
          sequence was about a mode, which is why it votes MODE and not SUP. */
       int st = 0;
-      if (interim_is(g, '$') && g->priv == '?' && g->nArgs == 1 && mode_status(g, g->args[0], &st))
+      /* Answer the query when the model holds the state, and only under a spelling that mode really has.
+         `?` is DECSET's private marker; ANSI 4 is the number DEC itself assigns IRM, and both references
+         register it there (MSFT `IRM_InsertReplaceMode = ANSIStandardMode(4)`, DispatchTypes.hpp:520; ghostty
+         `ModeTag{ .value = 4, .ansi = true }`, c/terminal.zig:2625) -- so a probe that sends `CSI 4$p` asks a
+         question this parser can answer, and it would be a new kind of silence to set the mode from that
+         spelling and then pretend not to know it. Every other number stays private-only: `CSI 2026$p` has no
+         such licence, which is the leg in RenderCheck.cpp that pins it. The rest of the non-private field is
+         #87's, and it is about numbers, not about this one. */
+      if (interim_is(g, '$') && g->nArgs == 1 &&
+          (g->priv == '?' || (g->priv == 0 && g->args[0] == 4)) && mode_status(g, g->args[0], &st))
         arm_report(g, RC_REP_DECRPM, g->args[0], st, 0);
       else if (interim_is(g, '!') && !g->priv && !g->nArgs) soft_reset(g);
       else if (interim_is(g, '$')) ignored(g, RC_UN_MODE);
@@ -3003,6 +3053,7 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   g->defAttrSeed = defAttr;   /* what OSC 110/111 go back to (I34) */
   g->cursorVisible = 1;
   g->wrapMode = 1;            /* out of reset DECAWM is on, in VT and in both references */
+  g->insertMode = 0;          /* and IRM is off: it is a mode, and a fresh grid has no mode a caller asked for */
   tabs_reset(g);              /* the interval is a claim about the terminal, and a fresh one has it */
   g->cursorShape = -1;     /* memset above says 0, which here would mean "a DECSCUSR asked for the thin
                               cursor" -- the two are only told apart by this, and the difference is that a

@@ -229,7 +229,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-30"
+#define RENDER_BUILD "render-2026-09-26-31"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -1324,7 +1324,7 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
   uint16_t keepAttr = (uint16_t)defAttr;
   /* The OSC 9 face (T7) is application-set state too: a resize is not a re-open, and a shell that told the
      terminal where it is does not repeat itself because the window changed height. */
-  int keepTb[3] = { 0, 0, 0 }, keepCwd = 0, keepWrap = 1;
+  int keepTb[3] = { 0, 0, 0 }, keepCwd = 0, keepWrap = 1, keepIrm = 0;
   int keepCols = 0, keepTabsDefaults = 1;
   uint8_t keepTab[RC_MAX_COLS];
   uint16_t keepCwdBuf[RC_TITLE_MAX];
@@ -1337,6 +1337,7 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     keepAttr = h->g->defAttr;
     keepTb[0] = h->g->taskbarState; keepTb[1] = h->g->taskbarProgress; keepTb[2] = h->g->taskbarSeen;
     keepWrap = h->g->wrapMode;
+    keepIrm = h->g->insertMode;
     /* The tab table is the same kind of fact as the palette: something the application claimed, which a
      * resize did not revoke. Beyond the old width the defaults reappear if nobody cleared them
      * (`rc_tabs_widen`), which is MSFT's `_InitTabStopsForWidth` (:2799-2817) and the half of the rule that
@@ -1359,6 +1360,7 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     fresh->taskbarProgress = keepTb[1];
     fresh->taskbarSeen = keepTb[2];
     fresh->wrapMode = (uint8_t)keepWrap;   /* a resize is not a request to start wrapping again */
+    fresh->insertMode = (uint8_t)keepIrm;  /* and not one to stop inserting, either (I40) */
     memcpy(fresh->tabStop, keepTab, sizeof keepTab);
     fresh->tabsDefaults = keepTabsDefaults;
     rc_tabs_widen(fresh, keepCols);   /* a resize is not a reset: only the tail it revealed gets the interval */
