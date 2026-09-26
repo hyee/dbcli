@@ -13,6 +13,7 @@
 #include "Render.h"
 
 #include <algorithm>   /* std::max/min inside Far3Color */
+#include <stdio.h>     /* snprintf, for the message rc_validate_grid writes on a violation */
 #include <stdlib.h>    /* the alt screen's snapshot: malloc at the first entry (alt_screen) */
 #include <string.h>
 
@@ -269,6 +270,77 @@ void rc_clear_model_suspect(RcGrid *g)
 void rc_clear_dirty(RcGrid *g)
 {
   memset(g->rowDirty, 0, sizeof(g->rowDirty));
+}
+
+/* The model's own invariants, read back over the live part of the grid. See Render.h: this is a witness and
+ * not a guard -- no production path calls it, and it repairs nothing. Every check below is a property the
+ * rest of this file *claims* to maintain, so a violation is either a real defect or a claim that was never
+ * true; both are worth a line of text instead of a screen that quietly looks wrong.
+ * The list is deliberately conservative -- only what the code guarantees today. A cursor resting on a
+ * trailing half is NOT on the list: `step_back_col` keeps a leftward move off a glyph, but a CUP may name any
+ * column and MSFT's `SetXPosition` does not refuse one either, so "the cursor never rests inside a glyph" is
+ * a rule about moves, not about positions. */
+int rc_validate_grid(const RcGrid *g, char *msg, int len)
+{
+  int r, c;
+  msg[0] = '\0';
+
+#define RC_BAD(...) do { snprintf(msg, (size_t) len, __VA_ARGS__); return 1; } while (0)
+
+  if (g->cols < 1 || g->cols > RC_MAX_COLS) RC_BAD("cols=%d outside 1..%d", g->cols, RC_MAX_COLS);
+  if (g->rows < 1 || g->rows > RC_MAX_ROWS) RC_BAD("rows=%d outside 1..%d", g->rows, RC_MAX_ROWS);
+  if (g->winRows < 1 || g->winRows > g->rows) RC_BAD("winRows=%d outside 1..rows(%d)", g->winRows, g->rows);
+  if (g->cx < 0 || g->cx >= g->cols) RC_BAD("cursor column %d outside 0..%d", g->cx, g->cols - 1);
+  /* The cursor addresses the viewport, never the gutter: a row above it is unpainted history, and a painter
+     that addressed one would write to rows it has no plan for. */
+  if (g->cy < g->rows - g->winRows || g->cy >= g->rows)
+    RC_BAD("cursor row %d outside the viewport %d..%d", g->cy, g->rows - g->winRows, g->rows - 1);
+  if (g->saveX < 0 || g->saveX >= g->cols) RC_BAD("saved column %d outside 0..%d", g->saveX, g->cols - 1);
+  if (g->saveY < 0 || g->saveY >= g->rows) RC_BAD("saved row %d outside 0..%d", g->saveY, g->rows - 1);
+  if (g->regSet && !(g->regTop >= 0 && g->regTop <= g->regBot && g->regBot < g->rows))
+    RC_BAD("region %d..%d is not an ordered span inside 0..%d", g->regTop, g->regBot, g->rows - 1);
+  if (g->nInterims < 0 || g->nInterims > RC_INTERIM_MAX)
+    RC_BAD("nInterims=%d outside 0..%d", g->nInterims, RC_INTERIM_MAX);
+  if (g->charset != 0 && g->charset != 1) RC_BAD("charset=%d is neither VTCS_DEFAULT nor VTCS_DRAWING", g->charset);
+  if (g->cursorVisible != 0 && g->cursorVisible != 1) RC_BAD("cursorVisible=%d", g->cursorVisible);
+  if (g->semanticContent < RC_SC_OUTPUT || g->semanticContent > RC_SC_PROMPT)
+    RC_BAD("semanticContent=%d outside RC_SC_OUTPUT..RC_SC_PROMPT", g->semanticContent);
+
+  for (r = 0; r < g->rows; r++)
+  {
+    const uint8_t wrap = g->rowWrap[r];
+    if (wrap != RC_WRAP_NONE && wrap != RC_WRAP_FORCED && wrap != RC_WRAP_PAD)
+      RC_BAD("row %d: rowWrap=%d is not one of NONE/FORCED/PAD", r, (int) wrap);
+    if (g->rowMark[r] > RC_PM_ERROR) RC_BAD("row %d: rowMark=%d is not a known mark", r, (int) g->rowMark[r]);
+    if (g->rowMark[r] != RC_PM_NONE && g->markCol[r] >= g->cols)
+      RC_BAD("row %d: a mark claims column %u of a %d-column row", r, g->markCol[r], g->cols);
+    if (g->rowDirty[r])
+    {
+      /* A dirty row has to name a range that exists. The rectangle the painter sends is cut from these two
+         numbers, so an empty or out-of-range pair is a row that is either never repainted or painted past
+         the model's own width. */
+      if (g->dirtyLo[r] > g->dirtyHi[r])
+        RC_BAD("row %d: dirty range %u..%u is inverted", r, g->dirtyLo[r], g->dirtyHi[r]);
+      if (g->dirtyHi[r] >= g->cols)
+        RC_BAD("row %d: dirty range %u..%u reaches past the %d-column row", r, g->dirtyLo[r], g->dirtyHi[r], g->cols);
+    }
+    /* I16, over every row of the grid rather than only the ones an edit just touched. */
+    for (c = 0; c < g->cols; c++)
+    {
+      const uint16_t a = g->cells[r][c].attr;
+      if (a & RC_LVB_LEADING)
+      {
+        if (c + 1 >= g->cols || !(g->cells[r][c + 1].attr & RC_LVB_TRAILING))
+          RC_BAD("row %d column %d: a LEADING U+%x with no trailing half beside it",
+                 r, c, g->cells[r][c].ch);
+        c++;                                    /* the pair is one unit; do not re-read its tail */
+      }
+      else if (a & RC_LVB_TRAILING)
+        RC_BAD("row %d column %d: a TRAILING half whose LEADING is gone", r, c);
+    }
+  }
+#undef RC_BAD
+  return 0;
 }
 
 /* I16 as a property of the grid rather than a hope: no cell may claim to be half of a 2-column glyph whose

@@ -21,6 +21,7 @@ by test, not by position.
 | Never *execute* ConEmu-private OSC 9 | Nothing in the family runs anything: no sleep, no MessageBox, no environment write, no GuiMacro, no DoProcess. Three subcommands are *stored* or *routed* -- `9;4` keeps a taskbar state and progress, `9;9` keeps a path as text, `9;12` goes into the FTCS `133;B` path it is equivalent to -- which is the same line microsoft/terminal draws at `DoConEmuAction` (adaptDispatch.cpp:3558-3647), and neither stored fact is obeyed: this library owns no window and never changes the process's directory from an output stream. Everything else is counted and ignored (ConEmu issue #687). |
 | One width oracle | Display widths come from the `ansi_width` table in `src\c\luauf8`, which `rc_width()` links through the generated `ansi_width_tables.h`. No WCWidth or jansi table may be substituted, and the locale and the font are not consulted. |
 | Output is the same on every Windows version | The model does not depend on `ENABLE_VIRTUAL_TERMINAL_PROCESSING`, and a model row is a **buffer** row (I7), so wrap points and erase extents agree with the console regardless of window width. |
+| A feature's absence needs a **technical** reason, not a local non-user | This is a third-party renderer: its callers are other programs, so "nothing in dbcli sends that" is **not** a reason to leave a sequence unmodelled or a capability undeclared (ruled by the user 2026-09-26, and it re-opens every "no consumer" sentence in `ANSI_SUPPORTS.md` §3 -- see #76). The admissible reasons are: the console offers no surface for it (no attribute bit for blink/invis, no window rectangle for `CSI t`), honouring it would be a claim about the *other* parser that may read the same bytes in the same session (I26: `smam`/`rmam`, `initc`/`ccc`), or it is a floor chosen deliberately for safety (the OSC 9 execution half; OSC 52's default-off). Everything else is work to do: #70 makes `cbt`/`hts`/`tbc` true rather than undeclared, and #76 is the sweep. |
 | No test artifacts in the project tree | Everything the build and the gates produce goes to a scratch directory (`cache\native-probe` by default). |
 
 The reason this library exists is not speed, although it is fast. It is that a console which cannot parse
@@ -457,6 +458,16 @@ case declined to witness and said so. Rule 12 read from the other side: a green 
 not evidence, and neither is a red from a branch that cannot tell who wrote.
 
 
+19. **An oracle's silence is evidence only about what it claims to see, so state the boundary by breaking
+    it twice.** The grid oracle (#72) went through two arms before it was trusted. Removing the pair heal from
+    ICH/DCH makes it say `row 0 column 1: a TRAILING half whose LEADING is gone` -- the arm that proves it can
+    see. Removing IL/DL's column home makes it **silent**, correctly: a cursor at column 7 is not an
+    inconsistency, it is a wrong-but-legal state, and only the leg that asserts the column catches it. That
+    second arm is in the record because the failure mode of a good oracle is over-trust: a green from it means
+    "no invariant on the list was broken", not "the screen is right", and the list is written where a reader
+    can argue with it (`Render.cpp::rc_validate_grid`). The same rule is why the live gate asserts the oracle's
+    *run count* (436 chunks per arch) rather than resting on an absence of red -- rule 12, one stamp later.
+
 Current gates, and how to read them: the host gate (`RenderCheck`, cross-run on a Linux host: colour table,
 full code-point width cross-check, per-UTF-16-unit resumability, damage bounds over the corpus) and the
 live-console gate (`run.ps1`, both bitnesses: the model drives a real conhost, cells are read back, and the
@@ -534,6 +545,29 @@ linear write is wrong before the renderer has done anything.
 One red on the way was not the renderer's either. See rule 17: the clipboard leg's out-of-process reader caught a
 third party's write, and the gate now classifies a mismatch before it reports one.
 
+
+Fresh, on `render-2026-09-26-26`: host `checks=5201 fails=0 / RENDERCHECK: ok`, live `checks=5689 failures=0 /
+RENDERGATE: ok / STAGE0 RUN: ok` on **both** arches against copies of the installed bytes
+(`cache/p63/live26b.txt`, x86 summary :922, x64 :1844). The stamp is one feature: `rc_validate_grid()`, the
+model's own invariants as a function (#72). The host number grew by 965 because the check now runs at the end
+of **every feed** -- all three host paths (whole string, uint16 array, unit-at-a-time) -- over every corpus
+string; the live number grew by one because the live gate asserts the export ran 436 times per arch and found
+nothing, which is the difference between an arm and a decoration. Nothing was violated: the model was already
+consistent, and that is the baseline future stamps are measured against, not a claim the oracle is inert.
+
+What it checks, and what it deliberately does not: geometry bounds, the cursor inside the viewport (a gutter
+row is history the painter has no plan for), the saved cursor inside the grid, the region an ordered span,
+`rowWrap`/`rowMark` within their enums, a mark's column inside the row, every dirty row naming a range that
+exists, and I16 across **every** cell of every row. A cursor resting on a trailing half is **not** on the list
+-- `step_back_col` keeps leftward moves off a glyph, but a CUP may name any column and MSFT's `SetXPosition`
+does not refuse one either, so that "invariant" would be a red waiting to be explained. See rule 19 for how
+both the seeing arm and the silent arm were run.
+
+The pass also caught one of its own witnesses: the clipboard case's final restore failed on x86 with the
+register holding the test's own marker, because it attempted the clear **once** and one `pwsh` child had simply
+not landed it. The restore is the only leg in that case whose subject is the *user* rather than the library, so
+it now retries and, on the non-empty-owner path, refuses to degrade into a skip -- if the restore did not land,
+the gate says so out loud.
 
 ## 7 Known deviations
 
@@ -862,7 +896,7 @@ a generator change.
   sentence "the entry that ships is the entry that was audited" is therefore true of the tree the user runs and
   false of the tree that versions it, and only `unzip -p` on each jar says which is which.
 
-## 10 Task ledger: the seventy-one tracked tasks
+## 10 Task ledger: the seventy-seven tracked tasks
 
 This section exists so a later reader can re-walk the work without re-deriving it from the transcript. It is a
 map, not a narrative: one row per tracker task, and each row says **where the behaviour lives**, **what proves
@@ -886,12 +920,13 @@ How to re-run the two standing gates, which carry every `render.dll` task betwee
   distro whose `g++` is missing (this box's default WSL has none) `CC_HOST=$(command -v clang++ || command -v g++)
   bash build.sh` from inside `src/c/conemu`. It
   compiles `RenderCheck.cpp` against the console-free core and runs it natively. The passing line is
-  `checks=4236 fails=0` followed by `RENDERCHECK: ok`, in `cache/native-probe/out/rendercheck.txt` (3072 at
-  build -13, 3118 at -16, 3222 at -17, 3318 at -18, 3329 at -19, 3502 at -20, 3632 at -21, 3713 at -22, 3803 and 3810 at -23, 4054 and 4065 at -24, 4236 at -25; the steps are the pseudo-console and snap legs, then the
+  `checks=5201 fails=0` followed by `RENDERCHECK: ok`, in `cache/native-probe/out/rendercheck.txt` (3072 at
+  build -13, 3118 at -16, 3222 at -17, 3318 at -18, 3329 at -19, 3502 at -20, 3632 at -21, 3713 at -22, 3803 and 3810 at -23, 4054 and 4065 at -24, 4236 at -25, 5201 at -26; the steps are the pseudo-console and snap legs, then the
   `?u` priv gate plus the partial-paint fault legs, then DECSET 2026 and HPR/VPR, then the interim set and DECRQM, then DECSTBM's validation, then OSC 4/10/11, then OSC 9, then DECAWM, then OSC 52 with the
   family table's disjointness and coverage sweep, then the six cell-integrity witnesses (`heal_pairs` and
   `no_orphan` over every row of every replayed corpus, IL/DL's column, ECH's row clamp, `soft_reset`, the
-  recycled row's `markCol`, and what `lastUnit` is allowed to remember). The `build.sh` export check grew a
+  recycled row's `markCol`, and what `lastUnit` is allowed to remember), then the grid oracle running at the
+  end of every feed. The `build.sh` export check grew a
   second, derived leg in
   `NativeRenderer.java` and demands the dll export each one, because the hand-written whitelist above can be
   *wrong* -- not short, wrong -- and a wrong JNI name is a feature that silently never existed.
@@ -903,13 +938,14 @@ How to re-run the two standing gates, which carry every `render.dll` task betwee
 * **Live gate** — `pwsh -File src/c/conemu/run.ps1 -Arch both`, and it must be given a real console (Git Bash
   is not one; the established wrapper pattern is a `.cmd` under `cache/gate13/` started with
   `cmd /c start "" /min /wait cmd /c …`; Git Bash rewrites a bare `/min`, so prefix the wrapper with
-  `MSYS2_ARG_CONV_EXCL='*'`). Both bitnesses must pass: `checks=5688 failures=0`, `RENDERGATE: ok`,
-  `STAGE0 RUN: ok`, currently at `cache/p63/live25-final.txt`, which is the run against copies of the **deployed**
+  `MSYS2_ARG_CONV_EXCL='*'`). Both bitnesses must pass: `checks=5689 failures=0`, `RENDERGATE: ok`,
+  `STAGE0 RUN: ok`, currently at `cache/p63/live26b.txt`, which is the run against copies of the **deployed**
   bytes (`-Scratch D:/dbcli/cache/p63/deployed`, md5-equal to `lib/{x86,x64}/render.dll`: x86 stamp at :68, IL/DL
-  from :724, ECH from :741, the pair-integrity leg from :751, DECSTR from :774, clipboard from :865, summary at
-  :921; x64 stamp at :989, summary at :1842). 5469 at -22, 5482 at -23, 5517 at -24, 5688 at -25 -- and the +171
-  is the finding of §6's -25 entry: four console legs that had never existed, because no leg had ever sent IL, DL,
-  ECH, ICH, DCH, REP or DECSTR. **The count depends on a flag the script cannot default to**: `caseLegsAgree` prints
+  from :724, ECH from :741, the pair-integrity leg from :751, DECSTR from :774, clipboard from :865, the grid
+  oracle's own assertion at :898, summary at :922; x64 stamp at :990, summary at :1844). 5469 at -22, 5482 at
+  -23, 5517 at -24, 5688 at -25 (the +171 is the finding of §6's -25 entry: four console legs that had never
+  existed, because no leg had ever sent IL, DL, ECH, ICH, DCH, REP or DECSTR), 5689 at -26 (the +1 is the
+  oracle's own "it ran" assertion, and it is a different thing from the 436 runs behind it). **The count depends on a flag the script cannot default to**: `caseLegsAgree` prints
   `SKIP both-leg A/B` and no failures when it finds no ConEmuHk, and `lib/{x86,x64}` on this install ships
   `render.dll` only, so several stamps were run without a single A/B check. Pass
   `-Install D:/dbcli/cache/p61/hk` (a tree holding `lib/x86/ConEmuHk.dll` and `lib/x64/ConEmuHk64.dll`, both
@@ -924,12 +960,13 @@ How to re-run the two standing gates, which carry every `render.dll` task betwee
   It prints its `console:` line before painting, which puts `isPseudoConsole` through the real JNI ABI as a
   side effect of the gate.
 
-The artifacts these numbers belong to, as of build `render-2026-09-26-25`: `lib/x86/render.dll`
-`017d026f77dcfd063c3adf124dd8b54e` (157227) and `lib/x64/render.dll` `8a3958f71a13eb25174963a3611ac56d`
-(153013), both printing stamp `render-2026-09-26-25` when read back through the live gate re-run against copies
-of *those installed bytes* (`cache/p63/live25-final.txt`, anchored in the bullet above). The pair -25 replaced is
-`lib/{x86,x64}/render.dll.20260926-123418.bak` (156705 / 152491, the -24 build); no jar moved, because -25 touched
-the model, the JNI seam and the two gates and nothing in `com.hyee.ansirender`'s Java side, so `lib/dbcli.jar` is
+The artifacts these numbers belong to, as of build `render-2026-09-26-26`: `lib/x86/render.dll`
+`c236a03880797a37a626ceb6aea60a09` (160436) and `lib/x64/render.dll` `0b4ff0a804f8b1da49771822e7235bd1`
+(155704), both printing stamp `render-2026-09-26-26` when read back through the live gate re-run against copies
+of *those installed bytes* (`cache/p63/live26b.txt`). The sizes moved because -26 is real code, not a comment.
+The pair -26 replaced is `lib/{x86,x64}/render.dll.20260926-145440.bak` (157227 / 153013, the -25 build), whose
+own predecessor is `*.20260926-123418.bak` (the -24 pair). No jar moved in either stamp: -25 and -26 touched the
+model, the JNI seam and the two gates, and nothing in `com.hyee.ansirender`'s Java side, so `lib/dbcli.jar` is
 still `fe2a4ed01bb7d13c61dbbb202059fd58` (682094). Re-running the host gate after that deployment re-linked
 `cache/native-probe/{x86,x64}/render.dll` from **unchanged** sources and moved both hashes (`257dbdef…` /
 `92ad2d48…`) at identical sizes and the same stamp -- the ImageBase lesson a third time, and the reason the
@@ -1047,6 +1084,8 @@ half of a witness is not evidence, it is a summary.
 | 69 | 参照 commit history 反查 #6：`lastUnit` 记在宽度判定之前 | `Render.cpp:702` `if (rc_width(cp) > 0) g->lastUnit = cp;` | ghostty assigns `previous_char` inside the printable branch only (`Terminal.zig:1469` -> `:1515`). Storing a zero-width unit made `A` + U+0300 followed by `CSI 3b` draw nothing at all, because the thing being repeated was the mark. Host: `gm_state_reset` pins `lastUnit` to `A` after a combining mark. |
 | 70 | 参照 commit history 反查 #7：`\t` 是硬编码 mod 8，没有 tab stop 表 | `Render.cpp`'s HT arm; the table would live beside `Render.h`'s row arrays | **Open, approved 2026-09-26 as its own pass with a red-first control.** HTS (`ESC H`), TBC (`CSI g`) and CBT (`CSI Z`) are inert today because there is nowhere to back up to. Both references keep a real table (MSFT `adaptDispatch.cpp:2648-2674` walks `_tabStopColumns`; ghostty has `Tabstops.zig` plus `Terminal.zig:2266`, `:2304`), and `\t` is a second entrance to the #66 class: the cursor can land mid-glyph through a tab. This is a state + resize + alt-snapshot + doc + counting change, so it is not folded into a stamp with other work; it goes in after #73 so the table rides the row-state shape rather than the three parallel arrays. |
 | 71 | 在 `src\c\conemu` 补 terminfo / infocmp 一类的文件（用户 2026-09-26 指令） | `terminfo/windows-conemu.caps` (mirror), `terminfo/windows-conemu.ti`, `terminfo/infocmp-windows-conemu.txt`, `terminfo/terminfo_check.sh`, `TERMINFO.md` | The entry the application loads is a jline resource, and `tic` **cannot read it**: its first line carries this project's prose and terminfo parses the commas as field separators (`line 1, col 420: Illegal character - ' '`). So no standard terminfo tool could be pointed at the contract, and the audit harness lived in `cache/`. Now there is a `tic`-clean derivation, a checked-in `infocmp` dump, and a four-leg gate: `tic -x` compiles clean; the `.ti` and the mirrored `.caps` hold the same **90** capabilities spelled alike; `tic -> infocmp` round-trips the same **84** names (names only, on purpose -- `infocmp` rewrites `colors#256` as `colors#0x100`, so a value compare would fail on any entry ever compiled, and the byte-level meaning is the caps harness's job through jline's own decoder); and three copies of the running entry -- mirror, jline source, `lib/JLine3.jar` -- are byte-identical (`89dea0736281`). Arms 1, 2 and 4 were each demonstrated red with one deliberate edit and no other leg moved; **arm 3 was not** -- the only way found to make the dump differ is the way that also makes `tic` complain, which leg 1 catches, so leg 3 stays as the guard against a future ncurses folding or renaming a capability, and that limit is written here rather than in a comment. `TERMINFO.md` also answers the question the jline4 entry raises: of the eight capabilities upstream declares and this one does not, only `kmous` (`MouseSupport.java:85`) and `cbt` (`LineReaderImpl.java:6992`) have readers -- the first is correctly absent because the mouse modes are counted and not implemented, the second is a real (small) cost whose fix is #70, and the remaining six have no reader anywhere in jline4. |
+| 72 | 架构对照轮第 1 项：把栅格完整性做成可调用的小神谕，并让它进 live 门禁 | `Render.cpp::rc_validate_grid` (declared in `Render.h` below the struct), `RenderCheck.cpp::grid_ok` hooked into `put`/`put1`/`putu`, `RenderJni.cpp::Java_Render_validateGrid` (gate-only, the 30th export), `Render.java::gridClean` called from `paint()` plus the run-count assertion | Landed as build -26, first because #75 (rotating rows instead of memmoving them) must not be attempted without an eye on the grid, and second because the user's ruling that this is a third-party library means the oracle is also **API**: a host that wants to assert its own invariants can call it. The list is in the function's comment, with the one thing it deliberately omits named there too (a cursor resting on a trailing half is legal after a CUP; only moves keep off a glyph). Gates: host `5201/0` (+965 = one validation per feed over the corpus), live `5689/0` both arches on the deployed bytes with `runs=436 violations=0` per arch. Arms: removing the ICH/DCH `heal_pairs` call -> `fails=3`, naming `row 0 column 1: a TRAILING half whose LEADING is gone`; removing IL/DL's column home -> **silent**, correctly, which is rule 19 and is written down rather than hidden. The same run caught the clipboard case restoring the register with a single attempt (a flaky `pwsh` child left the test's marker on the user's clipboard) -- now retried, and the restore leg refuses to report a skip. |
+| 76 | 按"第三方库要给调用方特性"的新裁决，重论证 `ANSI_SUPPORTS.md` §3 里每一条拒绝并逐条实现 | `ANSI_SUPPORTS.md` §3's rows; the implementations land wherever each sequence belongs (`Render.cpp`'s CSI/DEC arms, `Render.h`'s state, `Paint.cpp` for anything that touches the console) | Opened by the user's ruling 2026-09-26: "应该实现的特性就要实现，包括且不限于 cbt —— 你开发的是独立的第三方，应给调用方更多的特性支持，而不是因为 dbcli 不用就不做". So each refusal must now answer one of §1's three admissible questions, and the ones that answer none become work. The candidates this pass named, with the question each still has to answer: **mouse modes `?9`/`?1000`-`?1006` + `kmous`** (jline4's `MouseSupport.java:85` reads the cap as the answer to "can this terminal do mouse events"; enabling `ENABLE_MOUSE_INPUT` is a console-mode change, and the library already writes replies into the input stream for CPR, so the surface exists -- the open question is restore-on-close and who owns the mode); **colon subparameters** `38:2::r:g:b`/`4:3` (I10 parity with ConEmu is the only reason they are dropped, and parity is not a floor); **DECOM + left/right margins** (`?69`/`?48`/`DECSLRM`, which is what makes `IL/DL`'s `leftMargin` mean something other than column 0 -- #64's citation is MSFT moving the cursor to *leftMargin*, and we hardcode 0 because no margins exist); **`?2048` in-band resize reports** (we stay silent because 3/4 would lie to one of two readers, but 2 is a claim we could earn by emitting the report); **`CSI t` window ops 22/23** (a title stack is entirely inside our own state -- the honest refusal covers only the pixel-size forms); **`u8`/`u9`** (refused for "no consumer in jline", which is exactly the sentence this ruling retires). Deliberately **not** in scope, each with its floor named: the OSC 9 execution half (#687), OSC 52's default (I36), OSC 8 (the user's own ruling, #56), `smam`/`rmam` and `initc`/`ccc` (I26), blink/invis painting (no console attribute bit). |
 
 The honest gaps in the table, stated rather than papered over. **Rows #13 and #14 are dbcli's pager and have no
 `render.dll` gate at any level** -- their only witness is a live console leg, which is weaker than the rest of

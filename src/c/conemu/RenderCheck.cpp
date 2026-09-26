@@ -171,6 +171,21 @@ static void putraw(RcGrid *g, const char *s)
   rc_feed(g, buf, n);
 }
 
+/* Every string the gates feed has to leave the grid internally consistent, and this is the one place all three
+   feed paths (whole string, unit-at-a-time, uint16 array) can be watched. It is a witness over the model, not
+   a paint assertion: a violation here means some edit left the grid in a state the rest of this file's
+   comments claim is impossible, which is exactly the class -25 fixed (a fill that reaches one half of a wide
+   glyph and not the other). The live gate has its own copy of this eye, through the gate-only export, because
+   the host gate links Render.cpp directly and cannot speak for the dll that ships. */
+static void grid_ok(const RcGrid *g, const char *ctx)
+{
+  char msg[256];
+  g_checks++;
+  if (!rc_validate_grid(g, msg, (int) sizeof msg)) return;
+  g_fails++;
+  printf("  FAIL grid invariants after %s: %s\n", ctx, msg);
+}
+
 /* The take below hands out the whole queue entry; most gates want one field of it and nothing else. */
 static int take_xy(RcGrid *g, int *row, int *col)
 {
@@ -185,9 +200,10 @@ static void put(RcGrid *g, const char *s)
 {
   corpus_add(s);
   putraw(g, s);
+  grid_ok(g, s);
 }
 
-static void putu(RcGrid *g, const uint16_t *u, int n) { rc_feed(g, u, n); }
+static void putu(RcGrid *g, const uint16_t *u, int n) { rc_feed(g, u, n); grid_ok(g, "a uint16 feed"); }
 
 static void put1(RcGrid *g, const char *s)         /* one unit per call: the chunk-boundary hammer */
 {
@@ -196,6 +212,7 @@ static void put1(RcGrid *g, const char *s)         /* one unit per call: the chu
     uint16_t u = (uint16_t)(unsigned char)*s++;
     rc_feed(g, &u, 1);
   }
+  grid_ok(g, s ? "unit-at-a-time feed" : "unit-at-a-time feed");
 }
 
 /* =========================================================== 1. colour parity ================== */

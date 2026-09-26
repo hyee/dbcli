@@ -254,7 +254,7 @@ for plat in x86 x64; do
        Java_Render_prepareConsole Java_Render_setGeometry Java_Render_readCells \
        Java_Render_consoleView Java_Render_readInput Java_Render_readopt Java_Render_plan \
        Java_Render_faultRect Java_Render_consoleTitle Java_Render_consolePalette \
-       Java_Render_censusNames \
+       Java_Render_censusNames Java_Render_validateGrid \
        Java_com_hyee_ansirender_NativeRenderer_setClipboardPolicy0 \
        Java_com_hyee_ansirender_NativeRenderer_clipboardPolicy0" render
   gate_declared "$plat" "$OD" "$SCRATCH/$plat/render.dll" "$SRC_DIR/Render.java" "Java_Render_" render

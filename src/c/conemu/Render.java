@@ -59,6 +59,8 @@ public class Render {
      *  and return what is now armed. Gate-only: the #44 defect needs a console call to fail *mid-plan*, and
      *  no console state can be coaxed into that. See RcHandle::faultRun. */
     static native int faultRect(long h, int run);
+    /** The grid's own invariants, read out of the shipped dll after a chunk lands. Empty string means clean. */
+    static native String validateGrid(long h);
 
     private static long open(int cols, int rows, int defAttr) {
         return NativeRenderer.open(0, cols, rows, defAttr);   /* 0: the DLL opens CONOUT$ itself */
@@ -189,6 +191,8 @@ public class Render {
 
         long[] s = stats(handle);
         gate("no console call failed", s[3] == 0, "apiErrors=" + s[3] + " lastError check below");
+        gate("the grid oracle ran against every chunk of this run", gridRuns > 300 && gridBad == 0,
+                "runs=" + gridRuns + " violations=" + gridBad);
         gate("every SGR sequence was echoed", s[16] == 0, "sgrNotEchoed=" + s[16]
                 + ": a capture too small to hold a chunk would show up here, not on screen");
         System.out.println("  stats: flushes=" + s[0] + " rectangles=" + s[1] + " declines=" + s[2]
@@ -271,6 +275,27 @@ public class Render {
         /* 3 is FLUSH_HELD: the bytes are in the model and the picture is waiting for the synchronized region
            to end. It is a consumed chunk, not a failure, and a gate that refused it would refuse the mode. */
         gate(what + ": accepted", r == 0 || r == 1 || r == 3, "flush=" + r);
+        gridClean(what);
+    }
+
+    /**
+     * The model's invariants, asked of the binary that ships rather than of the source the host gate links.
+     * A violation prints where it happens, with the chunk that produced it. The tally is asserted at the end
+     * of the run rather than assumed from an absence of red: a new arm that never ran is a green that means
+     * nothing (§6 rule 12).
+     */
+    private static int gridRuns, gridBad;
+    private static void gridClean(String after) {
+        final String bad = validateGrid(handle);
+        gridRuns++;
+        if (bad == null) {
+            gridBad++;
+            System.out.println("  FAIL the grid oracle could not run after " + after);
+            return;
+        }
+        if (bad.length() == 0) return;
+        gridBad++;
+        System.out.println("  FAIL grid invariants after " + after + ": " + bad);
     }
 
     private static void flushQuietly() { flush(handle); drainSgr(); }
@@ -852,12 +877,29 @@ public class Render {
         gate("the switch is off again", !NativeRenderer.clipboardPolicy(), "policy still on");
         if (user == null || user.length() == 0) {
             clipClear();
-            final String restored = clipText();
+            String restored = clipText();
+            if (restored != null && restored.length() != 0) {
+                /* One retry, and the reason is measured: a run of this gate spawns a pwsh per clipboard read,
+                   and one x64 attempt came back holding the test's own marker -- the clear had not landed. A
+                   single flaky child must not read as "the gate wrecked the user's clipboard", which is the
+                   one claim in this case that is about the *user* rather than about the library. */
+                clipClear();
+                restored = clipText();
+            }
             gate("and what the owner had is back, which here was nothing",
                     restored == null || restored.length() == 0, "read back " + show(restored));
         } else {
             clipSeed(user);
-            clipIs("and the register is back to the text its owner had", user);
+            String back = clipText();
+            if (!eqStr(back, user)) {
+                clipSeed(user);                     // one retry: a child that failed is not a claim about the library
+                back = clipText();
+            }
+            /* Not clipIs(): that helper is allowed to *skip* when the register is contended, and this leg is
+               the one place a skip would be a lie -- if the restore did not land, the user's clipboard is
+               holding test text, and the gate has to say so rather than decline to answer. */
+            gate("and the register is back to the text its owner had", eqStr(back, user),
+                    "read back " + show(back) + " want " + show(user));
         }
         gate("and the policy slot says off at the end of the run", stats(handle)[S_CLIP_POLICY] == 0,
                 "policy=" + stats(handle)[S_CLIP_POLICY]);

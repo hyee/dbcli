@@ -133,6 +133,7 @@ int rc_osc_family_count(void);
 const char *rc_osc_family_name(int i);
 int rc_osc_family_owns(int i, int code);
 
+
 /* How much of an OSC 52 payload is accepted, and how much of it is kept. The sink above is 32768 units,
    which is more base64 than a clipboard write should be: an over-long request is refused whole rather than
    truncated, because a partial clipboard register is data the application never sent (ghostty's rule for the
@@ -534,6 +535,17 @@ typedef struct RcGrid
   void (*onFlush)(void *ctx);
   void *flushCtx;
 } RcGrid;
+
+/* The grid's own invariants, checked over the live part of the model. Returns 0 when the grid is internally
+   consistent, 1 when it is not, and writes the first violation into `msg` either way.
+   This is a witness, not a guard: nothing in the renderer calls it on a production path, and it fixes nothing.
+   It exists because a corrupted grid is *silent* -- an orphaned half glyph paints as a duplicated character, a
+   dirty range that names no columns paints a row nobody marked, a cursor on a gutter row addresses rows the
+   painter will not send -- and every one of those looks like a wrong answer about the screen rather than a
+   broken model. Both gates call it: the host gate after every string it feeds, and the live gate through the
+   gate-only export, which is what lets a violation be caught in the binary that ships rather than only in the
+   source that built it. */
+int rc_validate_grid(const RcGrid *g, char *msg, int len);
 
 /* How long a synchronized region may hold a flush before the next one paints anyway. MSFT's renderer waits
    100 ms (`constexpr DWORD timeout = 100` in renderer.cpp::_synchronizeWithOutput) and then paints with the

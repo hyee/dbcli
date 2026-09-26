@@ -229,7 +229,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-25"
+#define RENDER_BUILD "render-2026-09-26-26"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -2361,6 +2361,20 @@ JNIEXPORT jobjectArray JNICALL Java_Render_censusNames(JNIEnv *env, jclass cls)
     env->DeleteLocalRef(s);
   }
   return out;
+}
+
+/* gate-only: the grid's invariants, read back over the live part of the model (Render.h::rc_validate_grid says
+   what is on the list, and why every item on it is silent on a screen when it breaks). The host gate has the
+   same eye and links Render.cpp directly, so it cannot speak for the binary that ships; this is the leg that
+   can. An empty string is the clean answer. */
+JNIEXPORT jstring JNICALL Java_Render_validateGrid(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)cls;
+  RcHandle *h = slot_of(ph);
+  char msg[256];
+  if (h == NULL || h->g == NULL) return env->NewStringUTF("(no model behind this handle)");
+  if (!rc_validate_grid(h->g, msg, (int) sizeof msg)) return env->NewStringUTF("");
+  return env->NewStringUTF(msg);
 }
 
 }  // extern "C"
