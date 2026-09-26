@@ -167,15 +167,15 @@ static void mark_dirty(RcGrid *g, int row, int from, int to)
   if (from < 0) from = 0;
   if (to > g->cols - 1) to = g->cols - 1;
   if (from > to) return;                       /* nothing inside the row: nothing to repaint */
-  if (!g->rowDirty[row])
+  if (!RC_DTY(g, row))
   {
-    g->rowDirty[row] = 1;
-    g->dirtyLo[row] = (uint16_t)from;
-    g->dirtyHi[row] = (uint16_t)to;
+    RC_DTY(g, row) = 1;
+    RC_LO(g, row) = (uint16_t)from;
+    RC_HI(g, row) = (uint16_t)to;
     return;
   }
-  if (from < (int)g->dirtyLo[row]) g->dirtyLo[row] = (uint16_t)from;
-  if (to > (int)g->dirtyHi[row]) g->dirtyHi[row] = (uint16_t)to;
+  if (from < (int)RC_LO(g, row)) RC_LO(g, row) = (uint16_t)from;
+  if (to > (int)RC_HI(g, row)) RC_HI(g, row) = (uint16_t)to;
 }
 
 /* The whole row, for a change that moved cells wherever it liked. */
@@ -212,12 +212,12 @@ void rc_drop_base(RcGrid *g)
 
 int rc_row_dirty(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? g->rowDirty[row] : 0;
+  return (row >= 0 && row < g->rows) ? RC_DTY(g, row) : 0;
 }
 
 int rc_row_wrap(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? g->rowState[row].wrap : (int)RC_WRAP_NONE;
+  return (row >= 0 && row < g->rows) ? RC_ST(g, row).wrap : (int)RC_WRAP_NONE;
 }
 
 /* align() reads cells, and neither of a row's private claims is a cell: ReadConsoleOutputW carries no wrap
@@ -227,12 +227,12 @@ int rc_row_wrap(const RcGrid *g, int row)
 void rc_forget_row_state(RcGrid *g)
 {
   const RcRowState clean = RC_ROW_CLEAN;
-  for (int r = gutter(g); r < g->rows; r++) g->rowState[r] = clean;
+  for (int r = gutter(g); r < g->rows; r++) RC_ST(g, r) = clean;
 }
 
 int rc_row_mark(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? (int)g->rowState[row].mark : (int)RC_PM_NONE;
+  return (row >= 0 && row < g->rows) ? (int)RC_ST(g, row).mark : (int)RC_PM_NONE;
 }
 
 /* The column the row's mark was made at -- the prompt's own start, which is what a consumer that wants to
@@ -240,7 +240,7 @@ int rc_row_mark(const RcGrid *g, int row)
    taking the whole row would take that too. */
 int rc_mark_col(const RcGrid *g, int row)
 {
-  return (row >= 0 && row < g->rows) ? (int)g->rowState[row].col : 0;
+  return (row >= 0 && row < g->rows) ? (int)RC_ST(g, row).col : 0;
 }
 
 int rc_last_exit(const RcGrid *g)
@@ -309,33 +309,55 @@ int rc_validate_grid(const RcGrid *g, char *msg, int len)
   for (c = 0; c < g->cols; c++)
     if (g->tabStop[c] > 1) RC_BAD("tab stop %d holds %u, not a bit", c, (unsigned) g->tabStop[c]);
 
+  /* #75's own invariant, and the one thing a rotation can break: the model's row order has to be a
+   * permutation of the pool. A shift that drops a row, double-books one, or names a pool row past the
+   * model's height is invisible here and obvious on the screen -- two model rows reading the same storage
+   * paints one line twice and loses another, which is the same class of wrong as an orphaned glyph half
+   * and just as unremarkable to anything downstream. The oracle exists for exactly this (its own comment
+   * says a broken model reads as a wrong answer rather than a broken model), and this is why #72 was
+   * scheduled before #75 rather than after it. */
+  {
+    uint8_t seen[RC_MAX_ROWS];
+    memset(seen, 0, sizeof seen);
+    for (r = 0; r < g->rows; r++)
+    {
+      const int p = g->of[r];
+      if (p < 0 || p >= g->rows)
+        RC_BAD("row %d addresses pool row %d, outside 0..%d", r, p, g->rows - 1);
+      if (seen[p])
+        RC_BAD("rows %d and %d are both pool row %d: the row order is not a permutation",
+               r, (int) seen[p] - 1, p);
+      seen[p] = (uint8_t) (r + 1);
+    }
+  }
+
   for (r = 0; r < g->rows; r++)
   {
-    const uint8_t wrap = g->rowState[r].wrap;
+    const uint8_t wrap = RC_ST(g, r).wrap;
     if (wrap != RC_WRAP_NONE && wrap != RC_WRAP_FORCED && wrap != RC_WRAP_PAD)
       RC_BAD("row %d: rowState.wrap=%d is not one of NONE/FORCED/PAD", r, (int) wrap);
-    if (g->rowState[r].mark > RC_PM_ERROR) RC_BAD("row %d: rowState.mark=%d is not a known mark", r, (int) g->rowState[r].mark);
-    if (g->rowState[r].mark != RC_PM_NONE && g->rowState[r].col >= g->cols)
-      RC_BAD("row %d: a mark claims column %u of a %d-column row", r, g->rowState[r].col, g->cols);
-    if (g->rowDirty[r])
+    if (RC_ST(g, r).mark > RC_PM_ERROR) RC_BAD("row %d: rowState.mark=%d is not a known mark", r, (int) RC_ST(g, r).mark);
+    if (RC_ST(g, r).mark != RC_PM_NONE && RC_ST(g, r).col >= g->cols)
+      RC_BAD("row %d: a mark claims column %u of a %d-column row", r, RC_ST(g, r).col, g->cols);
+    if (RC_DTY(g, r))
     {
       /* A dirty row has to name a range that exists. The rectangle the painter sends is cut from these two
          numbers, so an empty or out-of-range pair is a row that is either never repainted or painted past
          the model's own width. */
-      if (g->dirtyLo[r] > g->dirtyHi[r])
-        RC_BAD("row %d: dirty range %u..%u is inverted", r, g->dirtyLo[r], g->dirtyHi[r]);
-      if (g->dirtyHi[r] >= g->cols)
-        RC_BAD("row %d: dirty range %u..%u reaches past the %d-column row", r, g->dirtyLo[r], g->dirtyHi[r], g->cols);
+      if (RC_LO(g, r) > RC_HI(g, r))
+        RC_BAD("row %d: dirty range %u..%u is inverted", r, RC_LO(g, r), RC_HI(g, r));
+      if (RC_HI(g, r) >= g->cols)
+        RC_BAD("row %d: dirty range %u..%u reaches past the %d-column row", r, RC_LO(g, r), RC_HI(g, r), g->cols);
     }
     /* I16, over every row of the grid rather than only the ones an edit just touched. */
     for (c = 0; c < g->cols; c++)
     {
-      const uint16_t a = g->cells[r][c].attr;
+      const uint16_t a = RC_CELLS(g, r)[c].attr;
       if (a & RC_LVB_LEADING)
       {
-        if (c + 1 >= g->cols || !(g->cells[r][c + 1].attr & RC_LVB_TRAILING))
+        if (c + 1 >= g->cols || !(RC_CELLS(g, r)[c + 1].attr & RC_LVB_TRAILING))
           RC_BAD("row %d column %d: a LEADING U+%x with no trailing half beside it",
-                 r, c, g->cells[r][c].ch);
+                 r, c, RC_CELLS(g, r)[c].ch);
         c++;                                    /* the pair is one unit; do not re-read its tail */
       }
       else if (a & RC_LVB_TRAILING)
@@ -365,16 +387,16 @@ static void heal_pairs(RcGrid *g, int row, int from, int to)
   if (to > g->cols - 1) to = g->cols - 1;
   for (int c = from; c <= to; c++)
   {
-    const uint16_t a = g->cells[row][c].attr;
+    const uint16_t a = RC_CELLS(g, row)[c].attr;
     int bad;
     if (a & RC_LVB_LEADING)
-      bad = (c + 1 >= g->cols) || !(g->cells[row][c + 1].attr & RC_LVB_TRAILING);
+      bad = (c + 1 >= g->cols) || !(RC_CELLS(g, row)[c + 1].attr & RC_LVB_TRAILING);
     else if (a & RC_LVB_TRAILING)
-      bad = (c == 0) || !(g->cells[row][c - 1].attr & RC_LVB_LEADING);
+      bad = (c == 0) || !(RC_CELLS(g, row)[c - 1].attr & RC_LVB_LEADING);
     else continue;
     if (!bad) continue;
-    g->cells[row][c].ch = ' ';
-    g->cells[row][c].attr = g->attr;
+    RC_CELLS(g, row)[c].ch = ' ';
+    RC_CELLS(g, row)[c].attr = g->attr;
     mark_dirty(g, row, c, c);
   }
 }
@@ -389,12 +411,12 @@ static void fill_span(RcGrid *g, int row, int from, int to, uint16_t attr)
   if (to >= g->cols) to = g->cols - 1;
   for (int c = from; c <= to; c++)
   {
-    g->cells[row][c].ch = ' ';
-    g->cells[row][c].attr = attr;
+    RC_CELLS(g, row)[c].ch = ' ';
+    RC_CELLS(g, row)[c].attr = attr;
   }
   /* An erase that reaches the margin ends the row's claim to have overflowed: nothing ran off its right
      edge any more, whatever was there before. Erases short of the margin leave the claim alone. */
-  if (to >= g->cols - 1) g->rowState[row].wrap = RC_WRAP_NONE;
+  if (to >= g->cols - 1) RC_ST(g, row).wrap = RC_WRAP_NONE;
   mark_dirty(g, row, from, to);
   heal_pairs(g, row, from - 1, to + 1);
 }
@@ -407,24 +429,16 @@ static void fill_row(RcGrid *g, int row, int from, uint16_t attr)
   fill_span(g, row, from, g->cols - 1, attr);
 }
 
-/* What a row knows about *itself*: why its line ended (I20) and which FTCS region it begins (I23). Both
-   belong to the content, not to the row number, so both must travel together on every vertical shift --
-   a soft-wrapped table row that scrolls up one row is still the first half of a line, and a prompt that
-   scrolls up is still where that command started. Neither fact reaches the console, so no grid witness can
-   see one of them being left behind: the only defence is a shape in which "carry the row's state" cannot be
-   written as a half. That is what the struct is for -- build -25's #5 was this call carrying two of three
-   fields, and the fix was a fourth line rather than a rule.
-   The damage overlay has its own carry (scroll_carry) because it is a paint-cost fact, not a content one. */
-static void row_carry(RcGrid *g, int dst, int src)
-{
-  g->rowState[dst] = g->rowState[src];
-}
-
-/* A row that arrived blank knows nothing: it overflowed nowhere and no command started on it. */
+/* A row that arrived blank knows nothing: it overflowed nowhere and no command started on it.
+   `rotate_span` is why this is the only per-row bookkeeping a vertical move needs any more: the row's own
+   claims (I20's wrap, I23's mark and its column) and its damage range are indexed through the row order, so
+   a move carries them by identity instead of by a call somebody has to remember. Build -25's #5 was a carry
+   here moving two of three fields and -27 made the carry one statement; #75 removed it. The reason the three
+   are one struct stays where the shape is: Render.h's RcRowState comment. */
 static void row_reset_state(RcGrid *g, int row)
 {
   const RcRowState clean = RC_ROW_CLEAN;
-  g->rowState[row] = clean;
+  RC_ST(g, row) = clean;
 }
 
 /* What a line ending does to the FTCS claims the cursor is carrying (I23). Both references put this on the
@@ -448,10 +462,10 @@ static void ftcs_line_ended(RcGrid *g)
     g->semanticClearEol = 0;
     return;
   }
-  if (g->cy >= 0 && g->cy < g->rows && g->rowState[g->cy].mark == RC_PM_NONE)
+  if (g->cy >= 0 && g->cy < g->rows && RC_ST(g, g->cy).mark == RC_PM_NONE)
   {
-    g->rowState[g->cy].mark = RC_PM_CONTINUATION;
-    g->rowState[g->cy].col = 0;
+    RC_ST(g, g->cy).mark = RC_PM_CONTINUATION;
+    RC_ST(g, g->cy).col = 0;
     g->nPromptMark++;
   }
 }
@@ -466,6 +480,32 @@ static void region(const RcGrid *g, int *top, int *bot)
   *bot = g->regSet ? g->regBot : g->rows - 1;
 }
 
+/* The one primitive every vertical move is made of: relabel which pool row sits at which model row, inside
+ * [from, from+span), by `n`. Content moving *up* pulls the rows below it up and hands the rows that left the
+ * span's bottom to its top; moving *down* is the mirror. Either way the span stays a permutation of the pool
+ * -- which is what `rc_validate_grid` now insists on -- and no cell is copied.
+ *
+ * This is #75, and the price that bought it: at a 2000-column buffer and a 128-row window, the row-by-row
+ * `memcpy` this replaces was 99.7 us of a 104.7 us line feed (cache/p63/rot75/before.txt). The rotation is
+ * 24 ns for the same 255 rows.
+ *
+ * What comes free with it is the part that matters for correctness: the row's own claims and its damage
+ * range are indexed through the same order, so they travel with the content by identity rather than by a
+ * carry call somebody has to remember. Build -25's #5 was `shift_region` carrying `wrap` and `mark` and
+ * leaving a live `col` behind, and -27's fix was to make the carry one statement; this removes the statement.
+ * ghostty is one step ahead of us here for the same reason it packs a row into one `u64` (`Row` at
+ * page.zig:2014): its page *is* a list of row slots, and `scrollUp` rotates them (PageList.zig:5252's
+ * recycling is what our `row_reset_state` on the incoming rows mirrors). */
+static void rotate_span(RcGrid *g, int from, int span, int n, int down)
+{
+  int tmp[RC_MAX_ROWS];
+  if (n <= 0 || span <= 0) return;
+  if (n > span) n = span;
+  memcpy(tmp, &g->of[from], (size_t)span * sizeof tmp[0]);
+  for (int k = 0; k < span; k++)
+    g->of[from + k] = down ? tmp[(k - n + span) % span] : tmp[(k + n) % span];
+}
+
 /* Shifts rows [top..bot] by n, up or down, filling the rows the content left behind at the live
  * attribute. Unlike scroll_up() this never touches the gutter or the console window: a region smaller
  * than the viewport has no console scroll to ask for, and the only way to show it is to repaint the
@@ -476,24 +516,9 @@ static void shift_region(RcGrid *g, int n, int top, int bot, int down)
   if (n <= 0) return;
   const int span = bot - top + 1;
   if (n > span) n = span;
-  if (down)
-  {
-    for (int r = bot; r - n >= top; r--)
-    {
-      memcpy(&g->cells[r], &g->cells[r - n], (size_t)g->cols * sizeof(RcCell));
-      row_carry(g, r, r - n);
-    }
-    for (int r = top; r < top + n; r++) fill_row(g, r, 0, g->attr);
-  }
-  else
-  {
-    for (int r = top; r + n <= bot; r++)
-    {
-      memcpy(&g->cells[r], &g->cells[r + n], (size_t)g->cols * sizeof(RcCell));
-      row_carry(g, r, r + n);
-    }
-    for (int r = bot - n + 1; r <= bot; r++) fill_row(g, r, 0, g->attr);
-  }
+  rotate_span(g, top, span, n, down);
+  if (down) for (int r = top; r < top + n; r++) fill_row(g, r, 0, g->attr);
+  else      for (int r = bot - n + 1; r <= bot; r++) fill_row(g, r, 0, g->attr);
   /* fill_row clears a row's wrap claim only when the erase reaches the margin, which a narrowed region
      does not have to: rows below the region still wrap at the buffer's right edge. So every row this shift
      blanked has its own state dropped -- the claim, the semantic mark, *and* the column that mark was made
@@ -509,23 +534,17 @@ static void shift_region(RcGrid *g, int n, int top, int bot, int down)
 
 /* The viewport scrolls up by n; the vacated rows are blank in the current attribute, which is what
  * ScrollConsoleScreenInfo does when the caller passes the live console attribute (as the shipped
- * Java writer has always done). */
-/* The damage overlay travelling with the content it describes. A chunk that writes a row and then scrolls
- * (three lines flushed at once, a dashboard frame that runs off the bottom) leaves those writes n rows
- * higher, and a flag left behind at the old row would paint the wrong one -- the new rows would look right
- * in the model and be blank on screen. The columns ride with the row: a status line that damaged columns
- * 40..59 moves up and still needs only those twenty columns repainted, wherever it now is. A row that
- * arrives at a new number claiming no damage paints nothing and keeps the stale screen. */
-static void scroll_carry(RcGrid *g, int n)
-{
-  for (int r = 0; r + n < g->rows; r++)
-  {
-    g->rowDirty[r] = g->rowDirty[r + n];
-    g->dirtyLo[r] = g->dirtyLo[r + n];
-    g->dirtyHi[r] = g->dirtyHi[r + n];
-  }
-}
-
+ * Java writer has always done).
+ *
+ * The damage overlay and the row's own claims travel with the content by identity now, which is the whole
+ * point of rotating rather than copying: a chunk that writes a row and then scrolls (three lines flushed at
+ * once, a dashboard frame that runs off the bottom) leaves those writes n rows higher, and a flag left
+ * behind at the old row would paint the wrong one -- the new rows would look right in the model and be blank
+ * on screen. The columns ride with the row too: a status line that damaged columns 40..59 moves up and still
+ * needs only those twenty columns repainted, wherever it now is. A row that arrives at a new number claiming
+ * no damage paints nothing and keeps the stale screen. Two hand-written carries used to be responsible for
+ * that, `scroll_carry` for the overlay and `row_carry` for the claims, and -25's #5 is what happens when one
+ * of them is half a statement. */
 static void scroll_up(RcGrid *g, int n)
 {
   if (n <= 0) return;
@@ -540,17 +559,13 @@ static void scroll_up(RcGrid *g, int n)
        from the top of the buffer.)
        Nothing may be spent on a window slide or a buffer scroll either (Paint.cpp rule 1) -- both would
        drag the user's view through the real buffer to make room for a screen that is about to be blanked.
-       The rows still have to be blanked and their wrap claims carried, exactly as on the main screen, or the
-       bottom row keeps a duplicate of the line that scrolled out of it; and the damage overlay cannot travel
-       row-for-row, because a row that was *clean* and merely moved is still a change on the screen. So the
-       whole viewport goes dirty and the caller repaints it. */
+       The rows still have to be blanked and their wrap claims dropped, exactly as on the main screen, or the
+       bottom row keeps a duplicate of the line that scrolled out of it; and the damage overlay is not
+       enough, because a row that was *clean* and merely moved is still a change on a screen nobody scrolled.
+       So the whole viewport goes dirty and the caller repaints it. */
     const int top = gutter(g);
     if (n > g->winRows) n = g->winRows;
-    for (int r = top; r + n < g->rows; r++)
-    {
-      memcpy(&g->cells[r], &g->cells[r + n], (size_t)g->cols * sizeof(RcCell));
-      row_carry(g, r, r + n);
-    }
+    rotate_span(g, top, g->rows - top, n, 0);
     for (int r = g->rows - n; r < g->rows; r++)
     {
       fill_row(g, r, 0, g->attr);                 /* also clears the row's wrap claim, at the margin */
@@ -561,29 +576,21 @@ static void scroll_up(RcGrid *g, int n)
     return;
   }
   if (n > g->rows) n = g->rows;
-  /* Row by row, never as one span: cells[] is a fixed RC_MAX_COLS stride, so a contiguous copy of
-     (rows-n)*cols cells would run row 1's tail into row 0 and leave row 1 where it was. */
-  for (int r = 0; r + n < g->rows; r++)
-    memcpy(&g->cells[r], &g->cells[r + n], (size_t)g->cols * sizeof(RcCell));
+  rotate_span(g, 0, g->rows, n, 0);
   g->nScrolls += (unsigned long)n;
   g->pendingScrolls += n;
-  /* The damage overlay has to travel with the content it describes. A chunk that writes a row and then
-     scrolls (three lines flushed at once, a dashboard frame that runs off the bottom) leaves those
-     writes n rows higher, and a flag left behind at the old row would paint the wrong one -- the new
-     rows would look right in the model and be blank on screen. */
-  scroll_carry(g, n);
-  /* The wrap claim and the semantic mark belong to the content, not to the row number: a soft-wrapped table
-     row that scrolls up one is still the first half of a line, a prompt that scrolls up is still the row a
-     command started on, and one that scrolls in from the gutter arrived blank. */
-  for (int r = 0; r + n < g->rows; r++) row_carry(g, r, r + n);
+  /* The n rows that arrive at the bottom are pool rows that left the top, so they need everything: cells
+     blank in the live attribute, the wrap claim and the semantic mark dropped (a row that scrolls in from
+     the gutter arrived blank, whatever it held before), and a damage claim, because a row coming into the
+     viewport is a row nobody has painted there. */
   for (int r = g->rows - n; r < g->rows; r++)
   {
     mark_row_dirty(g, r);                         /* rows that came into the viewport are unknown */
     row_reset_state(g, r);
     for (int c = 0; c < g->cols; c++)
     {
-      g->cells[r][c].ch = ' ';
-      g->cells[r][c].attr = g->attr;
+      RC_CELLS(g, r)[c].ch = ' ';
+      RC_CELLS(g, r)[c].attr = g->attr;
     }
   }
   /* The grid is consistent at this point and the input is not: ask for a paint now rather than let the
@@ -636,8 +643,8 @@ static void newline(RcGrid *g)
 static void blank_cell(RcGrid *g, int row, int col)
 {
   if (row < 0 || row >= g->rows || col < 0 || col >= g->cols) return;
-  g->cells[row][col].ch = ' ';
-  g->cells[row][col].attr = g->attr;
+  RC_CELLS(g, row)[col].ch = ' ';
+  RC_CELLS(g, row)[col].attr = g->attr;
   mark_dirty(g, row, col, col);
   heal_pairs(g, row, col - 1, col + 1);   /* and take the half it just orphaned with it (I16) */
 }
@@ -646,7 +653,7 @@ static void blank_cell(RcGrid *g, int row, int col)
    is the same rule and cannot be reused: it works from the current cursor. */
 static int last_free_col(const RcGrid *g, int row, int col)
 {
-  if (col > 0 && (g->cells[row][col].attr & RC_LVB_TRAILING)) col--;
+  if (col > 0 && (RC_CELLS(g, row)[col].attr & RC_LVB_TRAILING)) col--;
   return col < 0 ? 0 : col;
 }
 
@@ -676,17 +683,17 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
 
        The row left behind keeps its own reason: it did not overflow, its last glyph was moved whole to
        spare it a split (conhost's _doubleBytePadded). Copy and export join the two differently. */
-    g->rowState[g->cy].wrap = RC_WRAP_PAD;
+    RC_ST(g, g->cy).wrap = RC_WRAP_PAD;
     g->cx = 0;
     line_down(g);
   }
 
-  g->cells[g->cy][g->cx].ch = ch;
-  g->cells[g->cy][g->cx].attr = (uint16_t)(g->attr | (w == 2 ? RC_LVB_LEADING : 0));
+  RC_CELLS(g, g->cy)[g->cx].ch = ch;
+  RC_CELLS(g, g->cy)[g->cx].attr = (uint16_t)(g->attr | (w == 2 ? RC_LVB_LEADING : 0));
   if (w == 2)
   {
-    g->cells[g->cy][g->cx + 1].ch = ch;
-    g->cells[g->cy][g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
+    RC_CELLS(g, g->cy)[g->cx + 1].ch = ch;
+    RC_CELLS(g, g->cy)[g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
   }
   mark_dirty(g, g->cy, g->cx, g->cx + w - 1);
   /* The pair is a unit (I16): overwrite its front and the back is no longer anybody's glyph, and overwrite
@@ -707,7 +714,7 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
       g->cx = last_free_col(g, g->cy, g->cols - 1);
       return;
     }
-    g->rowState[g->cy].wrap = RC_WRAP_FORCED;   /* text reached the margin and continued on the next row */
+    RC_ST(g, g->cy).wrap = RC_WRAP_FORCED;   /* text reached the margin and continued on the next row */
     g->cx = 0;
     line_down(g);
   }
@@ -729,12 +736,12 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
     if (g->cx + 2 > g->cols)
     {
       if (!g->wrapMode) { blank_cell(g, g->cy, g->cx); return; }   /* drop whole, as put_cell does (I35) */
-      g->rowState[g->cy].wrap = RC_WRAP_PAD; g->cx = 0; line_down(g);
+      RC_ST(g, g->cy).wrap = RC_WRAP_PAD; g->cx = 0; line_down(g);
     }
-    g->cells[g->cy][g->cx].ch = hi;
-    g->cells[g->cy][g->cx].attr = (uint16_t)(g->attr | RC_LVB_LEADING);
-    g->cells[g->cy][g->cx + 1].ch = lo;
-    g->cells[g->cy][g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
+    RC_CELLS(g, g->cy)[g->cx].ch = hi;
+    RC_CELLS(g, g->cy)[g->cx].attr = (uint16_t)(g->attr | RC_LVB_LEADING);
+    RC_CELLS(g, g->cy)[g->cx + 1].ch = lo;
+    RC_CELLS(g, g->cy)[g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
     mark_dirty(g, g->cy, g->cx, g->cx + 1);
     heal_pairs(g, g->cy, g->cx - 1, g->cx + 2);   /* the same unit rule as put_cell, for the same reason */
     g->nCells += 2;
@@ -742,7 +749,7 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
     if (g->cx >= g->cols)
     {
       if (!g->wrapMode) { g->cx = last_free_col(g, g->cy, g->cols - 1); return; }
-      g->rowState[g->cy].wrap = RC_WRAP_FORCED; g->cx = 0; line_down(g);
+      RC_ST(g, g->cy).wrap = RC_WRAP_FORCED; g->cx = 0; line_down(g);
     }
     return;
   }
@@ -1130,8 +1137,8 @@ static void blank_viewport(RcGrid *g)
   for (int r = gutter(g); r < g->rows; r++)
     for (int c = 0; c < g->cols; c++)
     {
-      g->cells[r][c].ch = ' ';
-      g->cells[r][c].attr = g->attr;
+      RC_CELLS(g, r)[c].ch = ' ';
+      RC_CELLS(g, r)[c].attr = g->attr;
     }
   rc_forget_row_state(g);
   rc_mark_all_dirty(g);
@@ -1167,8 +1174,8 @@ static int alt_screen(RcGrid *g, int on)
       /* Row by row: `cells` is RC_MAX_COLS wide and `snap` is `cols` wide, so no single copy spans both. */
       for (int r = 0; r < nrows; r++)
       {
-        memcpy(&g->snap[(size_t)r * g->cols], &g->cells[hist + r][0], (size_t)g->cols * sizeof(RcCell));
-        g->snapState[r] = g->rowState[hist + r];
+        memcpy(&g->snap[(size_t)r * g->cols], &RC_CELLS(g, hist + r)[0], (size_t)g->cols * sizeof(RcCell));
+        g->snapState[r] = RC_ST(g, hist + r);
       }
       g->alt = 1;
     }
@@ -1183,8 +1190,8 @@ static int alt_screen(RcGrid *g, int on)
   g->nAltSwitch++;
   for (int r = 0; r < nrows; r++)
   {
-    memcpy(&g->cells[hist + r][0], &g->snap[(size_t)r * g->cols], (size_t)g->cols * sizeof(RcCell));
-    g->rowState[hist + r] = g->snapState[r];
+    memcpy(&RC_CELLS(g, hist + r)[0], &g->snap[(size_t)r * g->cols], (size_t)g->cols * sizeof(RcCell));
+    RC_ST(g, hist + r) = g->snapState[r];
   }
   g->alt = 0;
   g->pendingScrolls = 0;
@@ -1265,7 +1272,7 @@ static int step_back_col(const RcGrid *g, int n)
 {
   int col = g->cx - n;
   if (col < 0) col = 0;
-  if (col > 0 && (g->cells[g->cy][col].attr & RC_LVB_TRAILING)) col--;
+  if (col > 0 && (RC_CELLS(g, g->cy)[col].attr & RC_LVB_TRAILING)) col--;
   return col;
 }
 
@@ -1426,22 +1433,16 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
         g->cx = 0;                                      /* IL/DL home the column and keep the row */
         break;
       }
+      /* Both directions are one rotation of [cursor .. the model's last row], with the rows the move made
+         room for blanked at the end it opened -- and `n` is already bounded by that span above. */
       if (final == 'L')
       {
-        for (int r = g->rows - 1; r >= g->cy + n; r--)
-        {
-          memcpy(&g->cells[r], &g->cells[r - n], (size_t)g->cols * sizeof(RcCell));
-          row_carry(g, r, r - n);
-        }
+        rotate_span(g, g->cy, g->rows - g->cy, n, 1);
         for (int r = g->cy; r < g->cy + n && r < g->rows; r++) { fill_row(g, r, 0, g->attr); row_reset_state(g, r); }
       }
       else
       {
-        for (int r = g->cy; r + n < g->rows; r++)
-        {
-          memcpy(&g->cells[r], &g->cells[r + n], (size_t)g->cols * sizeof(RcCell));
-          row_carry(g, r, r + n);
-        }
+        rotate_span(g, g->cy, g->rows - g->cy, n, 0);
         for (int r = g->rows - n; r < g->rows; r++) { fill_row(g, r, 0, g->attr); row_reset_state(g, r); }
       }
       g->cx = 0;                                         /* the same contract, with or without a region */
@@ -1466,12 +1467,12 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
         const int n = count_arg(g, 0, g->cols - g->cx);
         if (final == '@')
         {
-          for (int c = g->cols - 1; c >= g->cx + n; c--) g->cells[g->cy][c] = g->cells[g->cy][c - n];
+          for (int c = g->cols - 1; c >= g->cx + n; c--) RC_CELLS(g, g->cy)[c] = RC_CELLS(g, g->cy)[c - n];
           fill_span(g, g->cy, g->cx, g->cx + n - 1, g->attr);
         }
         else
         {
-          for (int c = g->cx; c + n < g->cols; c++) g->cells[g->cy][c] = g->cells[g->cy][c + n];
+          for (int c = g->cx; c + n < g->cols; c++) RC_CELLS(g, g->cy)[c] = RC_CELLS(g, g->cy)[c + n];
           fill_span(g, g->cy, g->cols - n, g->cols - 1, g->attr);
         }
         /* A shift by n keeps every pair whose two cells are both inside the moved span and destroys the
@@ -2028,9 +2029,9 @@ static void ftcs_prompt(RcGrid *g, int continuation)
   g->semanticContent = RC_SC_PROMPT;
   g->semanticClearEol = 0;
   if (g->cy < 0 || g->cy >= g->rows) return;
-  if (g->rowState[g->cy].mark != RC_PM_NONE && g->rowState[g->cy].mark != RC_PM_CONTINUATION) return;
-  g->rowState[g->cy].mark = (uint8_t)(continuation ? RC_PM_CONTINUATION : RC_PM_PROMPT);
-  g->rowState[g->cy].col = (uint16_t)g->cx;
+  if (RC_ST(g, g->cy).mark != RC_PM_NONE && RC_ST(g, g->cy).mark != RC_PM_CONTINUATION) return;
+  RC_ST(g, g->cy).mark = (uint8_t)(continuation ? RC_PM_CONTINUATION : RC_PM_PROMPT);
+  RC_ST(g, g->cy).col = (uint16_t)g->cx;
   g->nPromptMark++;
 }
 
@@ -2084,8 +2085,8 @@ static int ftcs_apply(RcGrid *g, const uint16_t *p, int n)
       /* The fish heuristic, and the only place a mark is ever taken away (Terminal.zig:2185-2198): a row that
        * is still at column 0 when its output starts was never a prompt line, it was the continuation of one.
        * fish has no PS2 and does not send `k=c`, so without this its wrapped prompts stay marked. */
-      if (g->cy >= 0 && g->cy < g->rows && g->cx == 0 && g->rowState[g->cy].mark != RC_PM_NONE)
-        g->rowState[g->cy].mark = RC_PM_NONE;
+      if (g->cy >= 0 && g->cy < g->rows && g->cx == 0 && RC_ST(g, g->cy).mark != RC_PM_NONE)
+        RC_ST(g, g->cy).mark = RC_PM_NONE;
       return 1;
     case 'D':
     {
@@ -2101,9 +2102,9 @@ static int ftcs_apply(RcGrid *g, const uint16_t *p, int n)
        * replaces its code, which is what MSFT does too. */
       for (int r = g->cy; r >= 0 && r < g->rows; r--)
       {
-        if (g->rowState[r].mark == RC_PM_NONE) continue;
+        if (RC_ST(g, r).mark == RC_PM_NONE) continue;
         if (have != 0)
-          g->rowState[r].mark = (uint8_t)((have == 1 && code == 0) ? RC_PM_SUCCESS : RC_PM_ERROR);
+          RC_ST(g, r).mark = (uint8_t)((have == 1 && code == 0) ? RC_PM_SUCCESS : RC_PM_ERROR);
         return 1;
       }
       return 1;                              /* a verdict with nothing to mark: the code is still the log's */
@@ -2990,6 +2991,11 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   memset(g, 0, sizeof(*g));
   g->cols = cols;
   g->rows = winRows + histRows;
+  /* The pool starts in order. `of` is the only thing that says which pool row *is* which model row, so a
+   * fresh grid -- and every rebuild, which is a fresh grid wearing the old one's carried state -- is the
+   * identity, and the first scroll is what permutes it. Forgetting this line is not a slow day: it maps
+   * every row onto row 0, and `rc_validate_grid` calls that what it is (a repeated `of`, not a permutation). */
+  for (int r = 0; r < g->rows; r++) g->of[r] = r;
   g->winRows = winRows;
   g->cy = histRows;                                 /* the viewport's first row, whatever the gutter is */
   g->defAttr = defAttr;
@@ -3017,8 +3023,8 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   for (int r = 0; r < g->rows; r++)
     for (int c = 0; c < cols; c++)
     {
-      g->cells[r][c].ch = ' ';
-      g->cells[r][c].attr = defAttr;
+      RC_CELLS(g, r)[c].ch = ' ';
+      RC_CELLS(g, r)[c].attr = defAttr;
     }
   rc_clear_dirty(g);
   return 1;

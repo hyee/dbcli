@@ -464,7 +464,7 @@ Writer::Submit()                           // 一次性发出
 脏区走 `GetDirtyArea` 的**矩形列表**，滚动则只把脏矩形平移（`invalidate.cpp:29-41`，`_szInvalidScroll` 累加 delta）。
 
 最小实现（**这段写于 B2 落地前，`Render.cpp` 那几个行号和"现在"一词都是当时的**；实现见 DESIGN 的 I22 与 §36，今天的位置是
-`scroll_up` `Render.cpp:522`、`fill_span` `:378`，区间已随 `row_carry`/`scroll_carry` 一起搬，`mark_dirty` 已接列）：
+`scroll_up` `Render.cpp:548`、`fill_span` `:407`，区间已随 `rotate_span`（`:499`；#75：行序是一张 `of[]` 表，damage 与行状态按身份随行，`row_carry`/`scroll_carry` 已删）一起搬，`mark_dirty` 已接列）：
 `rowDirty[]` 旁边加 `uint16_t dirtyLo[]` / `dirtyHi[]`，`mark_dirty` 接 `(col, w)` 并取 min/max，
 `write_rect` 的矩形从 `[0, paintCols)` 变成 `[lo, hi]`。**四处必须一起改对**（漏一处就是画漏/画错，且只会以
 "偶发残影"的形式出现，很难看）：

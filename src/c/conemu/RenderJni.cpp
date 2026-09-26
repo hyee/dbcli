@@ -229,7 +229,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-29"
+#define RENDER_BUILD "render-2026-09-26-30"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -527,7 +527,7 @@ static int view_of(HANDLE con, RcView *v, CONSOLE_SCREEN_BUFFER_INFO *csbi)
  * only about which of them this frame has to move. */
 static void build_row(const RcGrid *g, int row, int lo, int hi, CHAR_INFO *dst)
 {
-  const RcCell *src = g->cells[row];
+  const RcCell *src = RC_CELLS(g, row);
   for (int c = lo; c <= hi; c++)
   {
     dst[c - lo].Attributes = src[c].attr;
@@ -1748,8 +1748,8 @@ static int align_grid(RcHandle *h, int reshaped)
   for (int r = 0; r < g->winRows; r++)
     for (int c = 0; c < g->cols; c++)
     {
-      g->cells[hist + r][c].ch = CH_UNICODE(buf[(size_t)r * g->cols + c]);
-      g->cells[hist + r][c].attr = buf[(size_t)r * g->cols + c].Attributes;
+      RC_CELLS(g, hist + r)[c].ch = CH_UNICODE(buf[(size_t)r * g->cols + c]);
+      RC_CELLS(g, hist + r)[c].attr = buf[(size_t)r * g->cols + c].Attributes;
     }
   free(buf);
   g->attr = (uint16_t)csbi.wAttributes;

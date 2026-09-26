@@ -291,6 +291,20 @@ typedef struct RcGrid
   /* Only cells[r][c] with r < rows and c < cols is live; the fixed stride means the rest is stale
      after any row move, so a painter that reads past cols() repaints garbage. */
   RcCell cells[RC_MAX_ROWS][RC_MAX_COLS];
+  /* Which pool row currently *is* the model's row r. The pool is storage and this is order: a scroll
+   * rotates the order instead of moving the cells, which is the difference between touching one int per
+   * row and touching `cols` cells per row. At the shapes this product runs on -- a 2000-column buffer,
+   * the profile this machine's conhost defaults to -- the old row-by-row `memcpy` cost 99.7 us of a
+   * 104.7 us line feed, so 95% of the model's work was moving bytes that did not need to move
+   * (`cache/p63/rot75/before.txt`, #75's unit price). A rotation is 24 ns for the same 255 rows.
+   *
+   * Everything that travels with a row travels through this: the damage overlay and the row's own claims
+   * are indexed physically too, so `scroll_carry` and `row_carry` cannot get half of them left behind --
+   * the failure -25's #5 and -27's row packing were both about. The invariant is that `of` is a
+   * permutation of 0..rows-1, and `rc_validate_grid` checks it, which is why #72's oracle was scheduled
+   * before this change: a half-rotation is otherwise invisible until something paints the wrong row.
+   * Identity (`of[r] == r`) is what a fresh grid and every rebuild leave behind. */
+  int of[RC_MAX_ROWS];
   int cols, rows;
   /* `cols` is the console's BUFFER row (dwSize.X less srWindow.Left), not the window's width: conhost
      wraps a raw write at dwSize.X and leaves the viewport where it is, which is what makes a 120-column
@@ -595,6 +609,16 @@ typedef struct RcGrid
   void (*onFlush)(void *ctx);
   void *flushCtx;
 } RcGrid;
+
+/* Rows are addressed logically everywhere and physically only through these. The rule for a caller: never
+   hold a pointer into the pool across a sequence that can scroll, and never index a per-row array by a
+   model row by hand. Every one of them takes r in [0, rows). */
+#define RC_PHYS(g, r)   ((g)->of[r])
+#define RC_CELLS(g, r)  ((g)->cells[RC_PHYS(g, r)])
+#define RC_ST(g, r)     ((g)->rowState[RC_PHYS(g, r)])
+#define RC_DTY(g, r)    ((g)->rowDirty[RC_PHYS(g, r)])
+#define RC_LO(g, r)     ((g)->dirtyLo[RC_PHYS(g, r)])
+#define RC_HI(g, r)     ((g)->dirtyHi[RC_PHYS(g, r)])
 
 /* The grid's own invariants, checked over the live part of the model. Returns 0 when the grid is internally
    consistent, 1 when it is not, and writes the first violation into `msg` either way.

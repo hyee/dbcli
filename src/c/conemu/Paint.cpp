@@ -150,7 +150,7 @@ void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p)
   for (int r = skip; r < g->rows; r++)
   {
     if (!rc_row_dirty(g, r)) continue;
-    const int lo = g->dirtyLo[r], hi = g->dirtyHi[r];
+    const int lo = RC_LO(g, r), hi = RC_HI(g, r);
     if (first < 0) { first = r; bandLo = lo; }
     if (hi > bandHi) bandHi = hi;
     if (lo < bandLo) bandLo = lo;

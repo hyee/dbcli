@@ -89,7 +89,7 @@ static void eq_text(const RcGrid *g, int row, int upto, const char *want, const 
   }
   for (int i = 0; i < upto; i++)
   {
-    unsigned ch = g->cells[row][i].ch;
+    unsigned ch = RC_CELLS(g, row)[i].ch;
     /* Past the terminator everything is a space. The old form tested `want[i] ? want[i] : ' '`, which reads
        the bytes *after* the literal for every i beyond it -- so a leg asking for ten columns of "r0" was
        comparing that row against whatever the linker happened to place next, and could pass or fail on where
@@ -113,10 +113,10 @@ static void eq_span(const RcGrid *g, int row, int lo, int hi, const char *ctx)
     printf("FAIL  row %d clean, want %d..%d  {%s}\n", row, lo, hi, ctx);
     return;
   }
-  if ((int)g->dirtyLo[row] == lo && (int)g->dirtyHi[row] == hi) return;
+  if ((int)RC_LO(g, row) == lo && (int)RC_HI(g, row) == hi) return;
   g_fails++;
   printf("FAIL  span row %d: got %d..%d want %d..%d  {%s}\n",
-         row, g->dirtyLo[row], g->dirtyHi[row], lo, hi, ctx);
+         row, RC_LO(g, row), RC_HI(g, row), lo, hi, ctx);
 }
 
 /* A row that knows no narrower answer: the whole buffer row. */
@@ -135,19 +135,19 @@ static void no_orphan(const RcGrid *g, int row, const char *ctx)
   g_checks++;
   for (int c = 0; c < g->cols; c++)
   {
-    const unsigned a = g->cells[row][c].attr;
+    const unsigned a = RC_CELLS(g, row)[c].attr;
     int bad;
     if (a & RC_LVB_LEADING)
-      bad = (c + 1 >= g->cols) || !(g->cells[row][c + 1].attr & RC_LVB_TRAILING);
+      bad = (c + 1 >= g->cols) || !(RC_CELLS(g, row)[c + 1].attr & RC_LVB_TRAILING);
     else if (a & RC_LVB_TRAILING)
-      bad = (c == 0) || !(g->cells[row][c - 1].attr & RC_LVB_LEADING);
+      bad = (c == 0) || !(RC_CELLS(g, row)[c - 1].attr & RC_LVB_LEADING);
     else continue;
     if (!bad) continue;
     g_fails++;
     printf("FAIL  row %d column %d is 0x%X, half a glyph with no partner (its cells are 0x%04X | 0x%04X)"
            "  {%s}\n", row, c, (a & RC_LVB_LEADING) ? RC_LVB_LEADING : RC_LVB_TRAILING,
-           (unsigned)g->cells[row][c > 0 ? c - 1 : 0].attr,
-           (unsigned)g->cells[row][c + 1 < g->cols ? c + 1 : c].attr, ctx);
+           (unsigned)RC_CELLS(g, row)[c > 0 ? c - 1 : 0].attr,
+           (unsigned)RC_CELLS(g, row)[c + 1 < g->cols ? c + 1 : c].attr, ctx);
     return;
   }
 }
@@ -716,10 +716,10 @@ static void gm_charset()
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033(0");
   putu(&g, &q, 1);
-  eq_u("ESC ( 0 remap", g.cells[0][0].ch, 0x2500, "q -> horizontal line");
+  eq_u("ESC ( 0 remap", RC_CELLS(&g, 0)[0].ch, 0x2500, "q -> horizontal line");
   put(&g, "\033(B");
   putu(&g, &q, 1);
-  eq_u("ESC ( B restores", g.cells[0][1].ch, 'q', "default set");
+  eq_u("ESC ( B restores", RC_CELLS(&g, 0)[1].ch, 'q', "default set");
   eq_u("and neither designator is counted", g.nUnsupported[RC_UN_SUP], 0,
        "the smacs/rmacs path is modelled; a count here would make the census unreadable as a ratio");
 
@@ -743,7 +743,7 @@ static void gm_charset()
   put1(&g, "0");
   eq_u("charset state after a split designator", (unsigned)g.charset, 1, "resumed");
   putu(&g, &q, 1);
-  eq_u("split designator took effect", g.cells[0][0].ch, 0x2500, "");
+  eq_u("split designator took effect", RC_CELLS(&g, 0)[0].ch, 0x2500, "");
 }
 
 /* OSC 4 / 10 / 11 -- the palette (I34). The grammar is MSFT's because MSFT implements it and ConEmu does
@@ -763,9 +763,9 @@ static void gm_palette()
   rc_reset(&g, 20, 4, 0x01);
   eq_u("a blue-default profile keeps a blue pen", g.attr & 0x0F, 1,
        "the cells the same reset filled are attribute 1; the pen must not be 4");
-  eq_u("and the fill agrees", g.cells[0][0].attr & 0x0F, 1, "");
+  eq_u("and the fill agrees", RC_CELLS(&g, 0)[0].attr & 0x0F, 1, "");
   put(&g, "Z");
-  eq_u("a character written into it lands blue", g.cells[0][0].attr & 0x0F, 1, "");
+  eq_u("a character written into it lands blue", RC_CELLS(&g, 0)[0].attr & 0x0F, 1, "");
   rc_reset(&g, 20, 4, 0x01);
   put(&g, "\033[37mX\033[m");
   eq_u("SGR 0 after an explicit colour returns to the default, not to its double conversion",
@@ -943,7 +943,7 @@ static void gm_osc9()
   rc_reset(&b, 20, 4, 0x07);
   put(&a, "abc\033]133;B\007");
   put(&b, "abc\033]9;12\007");
-  eq_u("9;12 marks the row the way 133;B does", (unsigned)b.rowState[a.cy].mark, (unsigned)a.rowState[a.cy].mark, "");
+  eq_u("9;12 marks the row the way 133;B does", (unsigned)RC_ST(&b, a.cy).mark, (unsigned)RC_ST(&a, a.cy).mark, "");
   eq_u("with the same content claim", (unsigned)b.semanticContent, (unsigned)a.semanticContent,
        "RC_SC_INPUT, which is what makes the next line a command line");
   eq_u("and the same end-of-line rule", (unsigned)b.semanticClearEol, (unsigned)a.semanticClearEol, "");
@@ -1105,7 +1105,7 @@ static void gm_clipboard()
        "the rule I21 states for every family: never applied, and counted where it belongs");
   eq_u("and the clipboard counter stays clean", g.nUnsupported[RC_UN_OSC_CLIP], 0,
        "it never reached a terminator, so it never asked for anything");
-  eq_u("the byte after the ESC is re-examined", (unsigned)g.cells[0][0].ch, (unsigned)'q',
+  eq_u("the byte after the ESC is re-examined", (unsigned)RC_CELLS(&g, 0)[0].ch, (unsigned)'q',
        "deviation #1: an ESC that abandons an OSC is an introducer again, not a swallowed byte");
 
   /* A NUL cannot be stored in a NUL-terminated string, so the request is refused rather than truncated. */
@@ -1364,8 +1364,8 @@ static void gm_wrap_suspect()
     putu(&g, &hira, 1);                               /* does not fit: the whole glyph moves down */
   }
   eq_u("a glyph moved whole pads the row it left", (unsigned)rc_row_wrap(&g, 0), RC_WRAP_PAD, "");
-  eq_u("and the glyph is on the next row, not split", g.cells[1][0].ch, 0x3042, "leading half");
-  eq_u("with its trailing cell", g.cells[1][1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
+  eq_u("and the glyph is on the next row, not split", RC_CELLS(&g, 1)[0].ch, 0x3042, "leading half");
+  eq_u("with its trailing cell", RC_CELLS(&g, 1)[1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
   eq_u("padded, not forced, so a copy does not join the rows", (unsigned)rc_row_wrap(&g, 1), RC_WRAP_NONE, "");
 
   /* An erase that reaches the margin ends the claim: nothing runs off that row any more. */
@@ -1427,7 +1427,7 @@ static void gm_wrap_suspect()
   put(&g, "\033[38:2:1:2:3mX");
   eq_u("a colon CSI is counted once", un(&g, RC_UN_COLON), 1, "");
   eq_u("as colon, not as a mode set", un(&g, RC_UN_MODE), 0, "the two are different decisions");
-  eq_u("and paints the text it carried", g.cells[0][0].ch, 'X', "only the colour is dropped");
+  eq_u("and paints the text it carried", RC_CELLS(&g, 0)[0].ch, 'X', "only the colour is dropped");
   eq_u("which is not a reason to distrust the frame", (unsigned)rc_model_suspect(&g), 0, "");
 
   rc_reset(&g, 20, 4, 0x07);
@@ -1468,7 +1468,7 @@ static void gm_state_reset()
   put(&g, "\033[8");                                   /* DECRC */
   eq_u("a restore after a soft reset lands where the terminal already was", (unsigned)g.cy, 1,
        "the active buffer's saved state is cleared, not left pointing at a stale row (:3005-3008)");
-  eq_u("and no cells moved on the way", g.cells[0][0].ch, 'R', "");
+  eq_u("and no cells moved on the way", RC_CELLS(&g, 0)[0].ch, 'R', "");
 
   /* RIS is the other act, and the same assertions run backwards. */
   put(&g, "\033c");
@@ -1495,7 +1495,7 @@ static void gm_state_reset()
   eq_u("the mark is on its row", (unsigned)rc_row_mark(&g, 2), RC_PM_PROMPT, "");
   eq_u("at the column it was made", (unsigned)rc_mark_col(&g, 2), 4, "");
   put(&g, "\033[3;1H\033[1L");
-  eq_u("IL inside the region blanks the row", g.cells[2][0].ch, ' ', "");
+  eq_u("IL inside the region blanks the row", RC_CELLS(&g, 2)[0].ch, ' ', "");
   eq_u("and the blanked row keeps no mark", (unsigned)rc_row_mark(&g, 2), RC_PM_NONE, "");
   eq_u("nor a column for the mark it no longer has", (unsigned)rc_mark_col(&g, 2), 0,
        "a stale column beside RC_PM_NONE is read as 'select from here' by a jump-to-prompt consumer");
@@ -1521,9 +1521,9 @@ static void gm_state_reset()
   put(&g, "\033(0");                                   /* the drawing set: `n` is a box glyph */
   put(&g, "n");
   put(&g, "\033[2b");
-  eq_u("the repeat replays the code point, so it is remapped the same way", g.cells[0][9].ch,
-       g.cells[0][8].ch, "a stored glyph instead of a stored letter would print 'n' here");
-  eq_u("twice over", g.cells[0][10].ch, g.cells[0][8].ch, "");
+  eq_u("the repeat replays the code point, so it is remapped the same way", RC_CELLS(&g, 0)[9].ch,
+       RC_CELLS(&g, 0)[8].ch, "a stored glyph instead of a stored letter would print 'n' here");
+  eq_u("twice over", RC_CELLS(&g, 0)[10].ch, RC_CELLS(&g, 0)[8].ch, "");
 }
 
 static void gm_argcap()
@@ -1722,12 +1722,12 @@ static void geo_wrap()
   put(&g, "012345678");
   putu(&g, &wide, 1);
   eq_text(&g, 0, 9, "012345678", "row 0 untouched");
-  eq_u("row 0 last column still blank", g.cells[0][9].ch, ' ', "the wide glyph did not split");
-  eq_u("wide front", g.cells[1][0].ch, 0x4E00, "");
-  eq_u("wide front attr", g.cells[1][0].attr & RC_LVB_LEADING, RC_LVB_LEADING, "LEADING");
-  eq_u("wide back", g.cells[1][1].ch, 0x4E00, "conhost repeats the code point");
-  eq_u("wide back attr", g.cells[1][1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "TRAILING");
-  eq_u("wide back keeps the colour", g.cells[1][1].attr & 0xF0, g.cells[1][0].attr & 0xF0, "");
+  eq_u("row 0 last column still blank", RC_CELLS(&g, 0)[9].ch, ' ', "the wide glyph did not split");
+  eq_u("wide front", RC_CELLS(&g, 1)[0].ch, 0x4E00, "");
+  eq_u("wide front attr", RC_CELLS(&g, 1)[0].attr & RC_LVB_LEADING, RC_LVB_LEADING, "LEADING");
+  eq_u("wide back", RC_CELLS(&g, 1)[1].ch, 0x4E00, "conhost repeats the code point");
+  eq_u("wide back attr", RC_CELLS(&g, 1)[1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "TRAILING");
+  eq_u("wide back keeps the colour", RC_CELLS(&g, 1)[1].attr & 0xF0, RC_CELLS(&g, 1)[0].attr & 0xF0, "");
   eq_u("cursor after wide", (unsigned)g.cx, 2, "");
   eq_u("two columns charged", g.nCells, 11, "9 narrow + 1 wide");
 
@@ -1735,8 +1735,8 @@ static void geo_wrap()
   rc_reset(&g, 10, 3, 0x07);
   put(&g, "01234567");
   putu(&g, &wide, 1);
-  eq_u("wide at cols-2 front", g.cells[0][8].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
-  eq_u("wide at cols-2 back", g.cells[0][9].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
+  eq_u("wide at cols-2 front", RC_CELLS(&g, 0)[8].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
+  eq_u("wide at cols-2 back", RC_CELLS(&g, 0)[9].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
   eq_u("cursor wrapped after a full row", (unsigned)g.cx, 0, "");
   eq_u("row wrapped after a full row", (unsigned)g.cy, 1, "");
 }
@@ -1763,13 +1763,13 @@ static void geo_decawm()
   eq_u("cursor never left the row", (unsigned)g.cy, 0, "nothing scrolled for a line that ended here");
   eq_u("the row claims no wrap", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_NONE,
        "copy and export must not join a row the application ended");
-  eq_u("the row below is blank", (unsigned)g.cells[1][0].ch, (unsigned)' ', "");
+  eq_u("the row below is blank", (unsigned)RC_CELLS(&g, 1)[0].ch, (unsigned)' ', "");
 
   /* DECSET 7 takes effect on the very next character. The wrap is immediate, not pending (I22's four
      discriminators), so the character that fills the last column is drawn there and only the one after it
      starts the next row -- which is the difference this case had wrong on its first run. */
   put(&g, "\033[?7hZ");
-  eq_u("the character that filled the row landed in it", (unsigned)g.cells[0][9].ch, (unsigned)'Z', "");
+  eq_u("the character that filled the row landed in it", (unsigned)RC_CELLS(&g, 0)[9].ch, (unsigned)'Z', "");
   eq_u("the row that had ended is forced", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_FORCED, "");
   eq_u("cursor wrapped to the next row", (unsigned)g.cy, 1, "");
   put(&g, "Y");
@@ -1782,9 +1782,9 @@ static void geo_decawm()
   put(&g, "\033[?7l012345678");
   eq_u("nine columns written", (unsigned)g.nCells, 9, "");
   putu(&g, &wide, 1);
-  eq_u("the glyph is not on the grid", (unsigned)g.cells[0][9].ch, (unsigned)' ',
+  eq_u("the glyph is not on the grid", (unsigned)RC_CELLS(&g, 0)[9].ch, (unsigned)' ',
        "cleared, rather than left holding whatever passed this way before");
-  eq_u("no trailing bit on it", (unsigned)(g.cells[0][9].attr & RC_LVB_TRAILING), 0, "");
+  eq_u("no trailing bit on it", (unsigned)(RC_CELLS(&g, 0)[9].attr & RC_LVB_TRAILING), 0, "");
   eq_u("a dropped glyph charges no cell", (unsigned)g.nCells, 9, "");
   eq_u("cursor still at the margin", (unsigned)g.cx, 9, "");
   eq_u("no pad claim", (unsigned)rc_row_wrap(&g, 0), (unsigned)RC_WRAP_NONE,
@@ -1795,16 +1795,16 @@ static void geo_decawm()
   rc_reset(&g, 10, 3, 0x07);
   put(&g, "\033[?7l01234567");
   putu(&g, &wide, 1);
-  eq_u("front half at cols-2", (unsigned)(g.cells[0][8].attr & RC_LVB_LEADING),
+  eq_u("front half at cols-2", (unsigned)(RC_CELLS(&g, 0)[8].attr & RC_LVB_LEADING),
        (unsigned)RC_LVB_LEADING, "");
-  eq_u("back half at cols-1", (unsigned)(g.cells[0][9].attr & RC_LVB_TRAILING),
+  eq_u("back half at cols-1", (unsigned)(RC_CELLS(&g, 0)[9].attr & RC_LVB_TRAILING),
        (unsigned)RC_LVB_TRAILING, "");
   eq_u("the margin clamp stepped off the back half", (unsigned)g.cx, 8,
        "the rule step_back_col exists for: a cursor never rests inside a glyph");
   put(&g, "x");
-  eq_u("the front half is overwritten", (unsigned)g.cells[0][8].ch, (unsigned)'x', "");
-  eq_u("its partner went with it", (unsigned)g.cells[0][9].ch, (unsigned)' ', "");
-  eq_u("no orphaned trailing bit", (unsigned)(g.cells[0][9].attr & RC_LVB_TRAILING), 0, "");
+  eq_u("the front half is overwritten", (unsigned)RC_CELLS(&g, 0)[8].ch, (unsigned)'x', "");
+  eq_u("its partner went with it", (unsigned)RC_CELLS(&g, 0)[9].ch, (unsigned)' ', "");
+  eq_u("no orphaned trailing bit", (unsigned)(RC_CELLS(&g, 0)[9].attr & RC_LVB_TRAILING), 0, "");
   eq_u("cursor on the last column", (unsigned)g.cx, 9, "");
 
   /* The trim belongs to the cell pair, not to the mode: a narrow glyph over a wide one's front half ends
@@ -1812,10 +1812,10 @@ static void geo_decawm()
   rc_reset(&g, 10, 3, 0x07);
   putu(&g, &wide, 1);
   put(&g, "\033[1;1HA");
-  eq_u("overwrite of the front half", (unsigned)g.cells[0][0].ch, (unsigned)'A', "");
-  eq_u("ends the back half too", (unsigned)g.cells[0][1].ch, (unsigned)' ',
+  eq_u("overwrite of the front half", (unsigned)RC_CELLS(&g, 0)[0].ch, (unsigned)'A', "");
+  eq_u("ends the back half too", (unsigned)RC_CELLS(&g, 0)[1].ch, (unsigned)' ',
        "conhost trims the cluster the same way (Row.cpp's ReplaceCharacters)");
-  eq_u("no stray trailing bit", (unsigned)(g.cells[0][1].attr & RC_LVB_TRAILING), 0,
+  eq_u("no stray trailing bit", (unsigned)(RC_CELLS(&g, 0)[1].attr & RC_LVB_TRAILING), 0,
        "left alone, it would be copied as part of a glyph that is no longer there");
 
   /* Half a surrogate pair is not a character either, so a narrow astral glyph is dropped as a unit
@@ -1825,8 +1825,8 @@ static void geo_decawm()
   rc_reset(&g, 10, 3, 0x07);
   put(&g, "\033[?7l012345678");
   putu(&g, narrowAstral, 2);
-  eq_u("neither half landed", (unsigned)g.cells[0][9].ch, (unsigned)' ', "");
-  eq_u("and nothing wrapped to the next row", (unsigned)g.cells[1][0].ch, (unsigned)' ', "");
+  eq_u("neither half landed", (unsigned)RC_CELLS(&g, 0)[9].ch, (unsigned)' ', "");
+  eq_u("and nothing wrapped to the next row", (unsigned)RC_CELLS(&g, 1)[0].ch, (unsigned)' ', "");
 
   /* DECRQM answers what the model now holds, snapshot and all. */
   rc_reset(&g, 10, 3, 0x07);
@@ -1883,19 +1883,19 @@ static void geo_wrap_wide_buffer(void)
   eq_u("200 columns: no wrap in a 2000-column row", (unsigned)g.cy, 0,
        "a 120-column window would have wrapped this at 120");
   eq_u("cursor past the window's right edge", (unsigned)g.cx, 200, "adopted, not clamped, by align()");
-  eq_u("column 119 is on the line", g.cells[0][119].ch, 'z', "the window's last column");
-  eq_u("column 120 is on the line too", g.cells[0][120].ch, 'z', "off screen, and still a cell");
-  eq_u("column 199 is the last", g.cells[0][199].ch, 'z', "");
-  eq_u("row 1 untouched", g.cells[1][0].ch, ' ', "no phantom wrapped row");
+  eq_u("column 119 is on the line", RC_CELLS(&g, 0)[119].ch, 'z', "the window's last column");
+  eq_u("column 120 is on the line too", RC_CELLS(&g, 0)[120].ch, 'z', "off screen, and still a cell");
+  eq_u("column 199 is the last", RC_CELLS(&g, 0)[199].ch, 'z', "");
+  eq_u("row 1 untouched", RC_CELLS(&g, 1)[0].ch, ' ', "no phantom wrapped row");
 
   for (i = 0; i < 1800; i++) u[i] = 'y';
   putu(&g, u, 1800);
   eq_u("filling the last column wraps at once", (unsigned)g.cx, 0, "the same rule geo_wrap pins on a 10-column row");
   eq_u("so the cursor is already on the next row", (unsigned)g.cy, 1,
        "nothing is left sitting past the buffer's edge; the real console is the witness (Render.java)");
-  eq_u("the last column of the buffer row", g.cells[0][1999].ch, 'y', "");
+  eq_u("the last column of the buffer row", RC_CELLS(&g, 0)[1999].ch, 'y', "");
   putu(&g, &one, 1);
-  eq_u("the next cell starts that row", g.cells[1][0].ch, 'z', "wrapped at the buffer's edge");
+  eq_u("the next cell starts that row", RC_CELLS(&g, 1)[0].ch, 'z', "wrapped at the buffer's edge");
   eq_u("and it did not scroll twice", (unsigned)g.cy, 1, "");
 }
 
@@ -1907,9 +1907,9 @@ static void geo_surrogates()
   rc_reset(&g, 20, 3, 0x07);
   putu(&g, pair, 2);
   eq_u("astral counted", g.nAstral, 1, "");
-  eq_u("astral front", g.cells[0][0].ch, 0xD83D, "the pair reaches the grid as two WCHARs");
-  eq_u("astral back", g.cells[0][1].ch, 0xDE00, "");
-  eq_u("astral is wide", g.cells[0][0].attr & RC_LVB_LEADING, RC_LVB_LEADING,
+  eq_u("astral front", RC_CELLS(&g, 0)[0].ch, 0xD83D, "the pair reaches the grid as two WCHARs");
+  eq_u("astral back", RC_CELLS(&g, 0)[1].ch, 0xDE00, "");
+  eq_u("astral is wide", RC_CELLS(&g, 0)[0].attr & RC_LVB_LEADING, RC_LVB_LEADING,
        "U+1F600 is EAW W, so two columns as for CJK. The grid witness on a legacy console has the "
        "last word on this convention; RenderCheck only pins the rule we shipped with.");
 
@@ -1921,24 +1921,24 @@ static void geo_surrogates()
   eq_u("held high surrogate", g.wantLow, 0xD83D, "");
   putu(&g, pair + 1, 1);
   eq_u("completed on the next chunk", g.nCells, 2, "");
-  eq_u("completed front", g.cells[0][0].ch, 0xD83D, "");
+  eq_u("completed front", RC_CELLS(&g, 0)[0].ch, 0xD83D, "");
   eq_u("wantLow cleared on completion", g.wantLow, 0, "");
 
   rc_reset(&g, 20, 3, 0x07);
   putu(&g, pair, 1);
   putu(&g, &a, 1);
-  eq_u("an uncompleted high surrogate", g.cells[0][0].ch, 0xFFFD, "replaced, never half-painted");
+  eq_u("an uncompleted high surrogate", RC_CELLS(&g, 0)[0].ch, 0xFFFD, "replaced, never half-painted");
   /* U+FFFD is EAW=A, measured 2 on the CJK faces and 1 on the Western ones, so by the ruling (I14) it
      costs two columns and whatever follows lands one column further along than it did before. */
-  eq_u("the replacement takes the whole cell pair", g.cells[0][1].attr & RC_LVB_TRAILING,
+  eq_u("the replacement takes the whole cell pair", RC_CELLS(&g, 0)[1].attr & RC_LVB_TRAILING,
        RC_LVB_TRAILING, "U+FFFD's own trailing cell, not a stray glyph");
-  eq_u("the unit after a replacement still lands", g.cells[0][2].ch, 'A', "");
+  eq_u("the unit after a replacement still lands", RC_CELLS(&g, 0)[2].ch, 'A', "");
   eq_u("wantLow cleared", g.wantLow, 0, "");
 
   rc_reset(&g, 20, 3, 0x07);
   const uint16_t low = 0xDE00;
   putu(&g, &low, 1);
-  eq_u("a lone low surrogate", g.cells[0][0].ch, 0xFFFD, "");
+  eq_u("a lone low surrogate", RC_CELLS(&g, 0)[0].ch, 0xFFFD, "");
 }
 
 /* T6, and the reason a table replaced a test: `stats()` is positional across three files (I19), the labels
@@ -2032,7 +2032,9 @@ static void osc_fx_get(RcGrid *g, struct OscFx *f)
   f->nPromptMark = g->nPromptMark;
   f->nReportOk = g->nReportOk; f->nReportFail = g->nReportFail; f->nReportFull = g->nReportFull;
   for (i = 0; i < 16; i++) f->pal16[i] = g->pal16[i];
-  for (i = 0; i < RC_MAX_ROWS; i++) f->rowState[i] = g->rowState[i];
+  /* The mirror is flat and the grid is not: capture by *model* row, which is the row a comparison after a
+     probe asks about. Reading `g->rowState[i]` here would compare storage that a scroll is free to move. */
+  for (i = 0; i < RC_MAX_ROWS; i++) f->rowState[i] = RC_ST(g, i);
   f->cx = g->cx; f->cy = g->cy; f->attr = g->attr; f->defAttr = g->defAttr;
   f->titlePending = g->titlePending; f->clipPending = g->clipPending;
   f->nClip = g->nClip; f->nCwd = g->nCwd;
@@ -2142,8 +2144,8 @@ static void geo_scroll()
   put(&g, "A\r\nB\r\nC");
   eq_text(&g, 0, 1, "B", "A scrolled up and out");
   eq_text(&g, 1, 1, "C", "C on the fresh line");
-  eq_u("scrolled fill char", g.cells[1][1].ch, ' ', "");
-  eq_u("scrolled fill attr", g.cells[1][1].attr, 0x27, "the live attribute, not the default");
+  eq_u("scrolled fill char", RC_CELLS(&g, 1)[1].ch, ' ', "");
+  eq_u("scrolled fill attr", RC_CELLS(&g, 1)[1].attr, 0x27, "the live attribute, not the default");
   eq_u("scrolls counted", g.nScrolls, 1, "");
 
   rc_reset(&g, 8, 3, 0x07);
@@ -2152,7 +2154,7 @@ static void geo_scroll()
   put(&g, "\033[S");
   eq_text(&g, 0, 1, "b", "CSI S scrolls up one");
   eq_text(&g, 1, 1, "c", "");
-  eq_u("CSI S left the bottom blank", g.cells[2][0].ch, ' ', "");
+  eq_u("CSI S left the bottom blank", RC_CELLS(&g, 2)[0].ch, ' ', "");
   put(&g, "\033[A\033[2A");
   eq_u("CUU clamps at the top", (unsigned)g.cy, 0, "");
 }
@@ -2166,8 +2168,8 @@ static void geo_erase()
   eq_u("cursor col", (unsigned)g.cx, 2, "");
   put(&g, "\033[0K");
   eq_text(&g, 2, 2, "XY", "EL 0 leaves the text before the cursor");
-  eq_u("EL 0 blank", g.cells[2][3].ch, ' ', "");
-  eq_u("EL 0 attr is the live one", g.cells[2][3].attr, 0x27, "not the default");
+  eq_u("EL 0 blank", RC_CELLS(&g, 2)[3].ch, ' ', "");
+  eq_u("EL 0 attr is the live one", RC_CELLS(&g, 2)[3].attr, 0x27, "not the default");
   put(&g, "\033[1D\033[1K");
   eq_text(&g, 2, 2, "  ", "EL 1 clears from the line start through the cursor");
   eq_text(&g, 2, 4, "    ", "EL 1 leaves the rest of the row");
@@ -2175,7 +2177,7 @@ static void geo_erase()
   rc_reset(&g, 10, 3, 0x07);
   put(&g, "AB\033[42m\033[2K");
   eq_text(&g, 0, 2, "  ", "EL 2 clears the whole row");
-  eq_u("EL 2 attr", g.cells[0][9].attr, 0x27, "");
+  eq_u("EL 2 attr", RC_CELLS(&g, 0)[9].attr, 0x27, "");
 
   rc_reset(&g, 10, 3, 0x07);
   put(&g, "AB\r\nCD\033[2J");
@@ -2193,7 +2195,7 @@ static void geo_erase()
   eq_u("before ECH", (unsigned)g.cx, 2, "");
   put(&g, "\033[X");
   eq_text(&g, 0, 4, "AB D", "ECH erases one cell at the cursor and keeps the rest");
-  eq_u("ECH attr", g.cells[0][2].attr, 0x07, "the live attribute, which is still the default");
+  eq_u("ECH attr", RC_CELLS(&g, 0)[2].attr, 0x07, "the live attribute, which is still the default");
 
   rc_reset(&g, 10, 3, 0x07);
   put(&g, "ABCDEFGH");
@@ -2204,14 +2206,14 @@ static void geo_erase()
   eq_text(&g, 0, 8, "AB      ", "and the tail too");
   eq_text(&g, 1, 10, "", "ED 0 clears the rows below, every column of them");
   eq_text(&g, 2, 10, "", "including the last");
-  eq_u("ED 0 left row 1 blank", g.cells[1][0].ch, ' ', "");
+  eq_u("ED 0 left row 1 blank", RC_CELLS(&g, 1)[0].ch, ' ', "");
 
   /* a trailing half must not survive an erase over it, or the grid diff shows a ghost cell */
   const uint16_t wide = 0x4E00;
   rc_reset(&g, 10, 3, 0x07);
   putu(&g, &wide, 1);
   put(&g, "\033[1;1H\033[2K");
-  eq_u("erase kills TRAILING", g.cells[0][1].attr & RC_LVB_TRAILING, 0, "");
+  eq_u("erase kills TRAILING", RC_CELLS(&g, 0)[1].attr & RC_LVB_TRAILING, 0, "");
 }
 
 static void geo_cursor()
@@ -2235,7 +2237,7 @@ static void geo_cursor()
   eq_u("a wide glyph takes two columns", (unsigned)g.cx, 2, "setup");
   put(&g, "\b");
   eq_u("BS steps over the whole glyph", (unsigned)g.cx, 0, "not 1: cell 1 is a trailing half");
-  eq_u("BS still erases nothing", g.cells[0][0].ch, 0x3042, "the move is not a delete");
+  eq_u("BS still erases nothing", RC_CELLS(&g, 0)[0].ch, 0x3042, "the move is not a delete");
 
   rc_reset(&g, 20, 6, 0x07);
   putu(&g, &hira, 1);
@@ -2264,7 +2266,7 @@ static void geo_cursor()
 
   rc_reset(&g, 20, 6, 0x07);
   put(&g, "a\tb");
-  eq_u("TAB snaps to a multiple of 8", g.cells[0][8].ch, 'b', "((x+8)>>3)<<3 from x=1");
+  eq_u("TAB snaps to a multiple of 8", RC_CELLS(&g, 0)[8].ch, 'b', "((x+8)>>3)<<3 from x=1");
   put(&g, "\t");
   eq_u("TAB from 9 advances to 16", (unsigned)g.cx, 16, "");
   put(&g, "\t");
@@ -2509,6 +2511,21 @@ static void geo_alt()
   eq_u("the gutter row is not dirty", (unsigned)rc_row_dirty(&g, 3), 0, "nothing about it changed");
   eq_u("the viewport is", (unsigned)rc_row_dirty(&g, 4), 1, "");
   put(&g, "altalt");
+  /* The scroll is the case this comment has been asserting without a witness. `rc_reset` -- the shape every
+     other alt leg in this file uses -- has no gutter, so there `top == 0` and rotating the viewport is
+     indistinguishable from rotating the model: an arm that scrolls the whole model while in the alt came
+     back green until this leg existed. With four rows of scrollback above the viewport, the difference is
+     on the screen: the alt's own rows move, its top row loses what left it, a blank comes in at its bottom,
+     and "gutter" above row 4 does not move. Rotating the model instead pulls the scrollback into the alt and
+     prints a program's first screenful over the user's history. Render.java's "the alt's blanking stopped at
+     the window" is the same claim on a real console; this is the version the host gate can reach. */
+  put(&g, "\033[2J");                            /* a known-empty alt, and 2J stops at the viewport by I25 */
+  put(&g, "\033[1;1HA\033[4;1HD");                /* the alt's first row and its last */
+  put(&g, "\r\n");                                /* at the alt's bottom: this one scrolls */
+  eq_text(&g, 6, 1, "D", "the alt's own rows moved up");
+  eq_text(&g, 7, 1, " ", "and a blank came in at its bottom");
+  eq_text(&g, 4, 1, " ", "the row that left the alt's top is gone for good");
+  eq_text(&g, 3, 6, "gutter", "and the scrollback above the alt is not part of its scroll");
   put(&g, "\033[?1049l");
   eq_text(&g, 3, 6, "gutter", "and it is still there afterwards");
 
@@ -2541,7 +2558,7 @@ static void geo_lines()
   put(&g, "\033[1;1H\033[2M");
   eq_text(&g, 0, 3, "ccc", "DL 2 from the top");
   eq_text(&g, 1, 3, "   ", "the two blanks land at the bottom");
-  eq_u("DL left row 3 blank", g.cells[3][0].ch, ' ', "");
+  eq_u("DL left row 3 blank", RC_CELLS(&g, 3)[0].ch, ' ', "");
 
   /* IL and DL take the cursor to the start of the row they acted on, and keep the row. This is not a
      courtesy to a program that happens to sit at column 0: MSFT states it as the control's own contract
@@ -2755,7 +2772,7 @@ static void geo_tabs()
   put(&g, "\033[1;17H\033[Z");
   eq_u("back-tabs stop at 8, the leading half", (unsigned)g.cx, 8, "a stop the cursor can stand on");
   put(&g, "X");
-  eq_u("writing there evicts its trailing half", (unsigned)g.cells[0][9].ch, ' ',
+  eq_u("writing there evicts its trailing half", (unsigned)RC_CELLS(&g, 0)[9].ch, ' ',
        "I35's narrow-over-leading rule: a narrow write on a LEADING clears the TRAILING it orphaned");
   eq_u("and the cursor moves on by one", (unsigned)g.cx, 9, "the glyph it replaced was two columns wide");
 }
@@ -3112,7 +3129,7 @@ static void geo_edit()
   put(&g, "ABCDEFGH");
   put(&g, "\033[1;8H\033[2@");
   eq_text(&g, 0, 7, "ABCDEFG", "ICH at the last column can only open the one cell left");
-  eq_u("and paints nothing outside the row", g.cells[0][7].ch, ' ', "n clamps to cols-cx");
+  eq_u("and paints nothing outside the row", RC_CELLS(&g, 0)[7].ch, ' ', "n clamps to cols-cx");
 
   /* A pair of cells holding one glyph travels as a pair, and an edit that leaves one half behind does not
      get to keep the other. ghostty makes that a hard property of the grid: `assertIntegrity()` rejects a
@@ -3127,19 +3144,19 @@ static void geo_edit()
   rc_reset(&g, 8, 3, 0x07);
   putu(&g, &wide, 1);
   put(&g, "A");
-  eq_u("setup: the leading half", g.cells[0][0].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
-  eq_u("setup: the trailing half", g.cells[0][1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
+  eq_u("setup: the leading half", RC_CELLS(&g, 0)[0].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
+  eq_u("setup: the trailing half", RC_CELLS(&g, 0)[1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
   put(&g, "\033[1;1H\033[1@");
-  eq_u("ICH moved the leading half right", g.cells[0][1].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
-  eq_u("and the trailing half kept its own bit", g.cells[0][2].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
-  eq_u("the blank is at the cursor column", g.cells[0][0].ch, ' ', "");
-  eq_u("A rode one column further right", g.cells[0][3].ch, 'A', "");
+  eq_u("ICH moved the leading half right", RC_CELLS(&g, 0)[1].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
+  eq_u("and the trailing half kept its own bit", RC_CELLS(&g, 0)[2].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
+  eq_u("the blank is at the cursor column", RC_CELLS(&g, 0)[0].ch, ' ', "");
+  eq_u("A rode one column further right", RC_CELLS(&g, 0)[3].ch, 'A', "");
   no_orphan(&g, 0, "ICH with both halves inside the shifted span");
   put(&g, "\033[1;1H\033[P");
-  eq_u("DCH shifted the pair back: front half at column 0", g.cells[0][0].attr & RC_LVB_LEADING,
+  eq_u("DCH shifted the pair back: front half at column 0", RC_CELLS(&g, 0)[0].attr & RC_LVB_LEADING,
        RC_LVB_LEADING, "the pair survives because both halves moved by the same amount");
-  eq_u("trailing half at column 1", g.cells[0][1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
-  eq_u("and no third cell claims the code point", g.cells[0][2].ch, 'A', "");
+  eq_u("trailing half at column 1", RC_CELLS(&g, 0)[1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
+  eq_u("and no third cell claims the code point", RC_CELLS(&g, 0)[2].ch, 'A', "");
   no_orphan(&g, 0, "DCH with both halves inside the shifted span");
 
   rc_reset(&g, 8, 3, 0x07);
@@ -3166,8 +3183,8 @@ static void geo_edit()
   putu(&g, &wide, 1);
   put(&g, "AB");
   put(&g, "\033[1;2Hz");
-  eq_u("writing over a trailing half blanks the head", g.cells[0][0].ch, ' ', "");
-  eq_u("and the new glyph stands where the cursor was", g.cells[0][1].ch, 'z', "");
+  eq_u("writing over a trailing half blanks the head", RC_CELLS(&g, 0)[0].ch, ' ', "");
+  eq_u("and the new glyph stands where the cursor was", RC_CELLS(&g, 0)[1].ch, 'z', "");
   no_orphan(&g, 0, "a narrow cell written on a trailing half");
 
   rc_reset(&g, 8, 3, 0x07);
@@ -3175,7 +3192,7 @@ static void geo_edit()
   put(&g, "AB");
   put(&g, "\033[1;2H");
   putu(&g, &wide, 1);                                  /* a wide cell written *on* the old one's tail */
-  eq_u("the new glyph owns its own two cells", g.cells[0][1].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
+  eq_u("the new glyph owns its own two cells", RC_CELLS(&g, 0)[1].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
   no_orphan(&g, 0, "a wide cell written over a pair");
 
   /* ECH erases to the end of its own row. "Erase Characters from the current cursor position ... will only
@@ -3261,7 +3278,7 @@ static void geo_edit()
   eq_u("and damages nothing", (unsigned)rc_row_dirty(&g, 0), 0, "");
   put(&g, "\033[1;3H\033[b");
   eq_u("no parameter is the default of one", (unsigned)g.cx, 3, "");
-  eq_u("the cell it painted is the glyph remembered", g.cells[0][2].ch, 'X', "");
+  eq_u("the cell it painted is the glyph remembered", RC_CELLS(&g, 0)[2].ch, 'X', "");
   eq_span(&g, 0, 2, 2, "one column of damage");
   put(&g, "\033[?3b");
   eq_u("a private byte is not REP", (unsigned)g.cx, 3, "upstream gates the whole case on !PvtLen (:3072)");
@@ -3269,19 +3286,19 @@ static void geo_edit()
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[1;3H\033[2b");
-  eq_u("before anything is written, REP repeats a space", g.cells[0][2].ch, ' ',
+  eq_u("before anything is written, REP repeats a space", RC_CELLS(&g, 0)[2].ch, ' ',
        "lastUnit is seeded by rc_reset_hist; upstream's m_LastWrittenChar is whatever survived the last reset");
   eq_span(&g, 0, 2, 3, "a space still damages the cells it is written to");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033(0q");
-  eq_u("the drawing set remaps the glyph", g.cells[0][0].ch, 0x2500, "`ESC ( 0` then q");
+  eq_u("the drawing set remaps the glyph", RC_CELLS(&g, 0)[0].ch, 0x2500, "`ESC ( 0` then q");
   put(&g, "\033[2b");
-  eq_u("and REP repeats the same line glyph", g.cells[0][1].ch, 0x2500, "the remap is still live");
+  eq_u("and REP repeats the same line glyph", RC_CELLS(&g, 0)[1].ch, 0x2500, "the remap is still live");
   put(&g, "\033(B\033[2b");
-  eq_u("leaving the set shows what was remembered: the letter", g.cells[0][3].ch, 'q',
+  eq_u("leaving the set shows what was remembered: the letter", RC_CELLS(&g, 0)[3].ch, 'q',
        "the code point is stored before the charset is applied, so a repeat after `ESC ( B` is plain text");
-  eq_u("one letter per repeat", g.cells[0][4].ch, 'q', "");
+  eq_u("one letter per repeat", RC_CELLS(&g, 0)[4].ch, 'q', "");
 
   rc_reset(&g, 20, 4, 0x07);
   {
@@ -3290,9 +3307,9 @@ static void geo_edit()
   }
   put(&g, "\033[2b");
   eq_u("a wide glyph costs two columns per repeat", (unsigned)g.cx, 6, "one write plus two repeats");
-  eq_u("and keeps the pair convention", (unsigned)(g.cells[0][4].attr & RC_LVB_LEADING),
+  eq_u("and keeps the pair convention", (unsigned)(RC_CELLS(&g, 0)[4].attr & RC_LVB_LEADING),
        (unsigned)RC_LVB_LEADING, "otherwise half a glyph paints");
-  eq_u("its partner trailing", (unsigned)(g.cells[0][5].attr & RC_LVB_TRAILING),
+  eq_u("its partner trailing", (unsigned)(RC_CELLS(&g, 0)[5].attr & RC_LVB_TRAILING),
        (unsigned)RC_LVB_TRAILING, "");
 
   rc_reset(&g, 20, 4, 0x07);
@@ -3300,11 +3317,11 @@ static void geo_edit()
     const uint16_t astral[2] = { 0xD83D, 0xDE00 };  /* U+1F600 */
     putu(&g, astral, 2);
   }
-  const uint16_t hi = g.cells[0][0].ch, lo = g.cells[0][1].ch;
+  const uint16_t hi = RC_CELLS(&g, 0)[0].ch, lo = RC_CELLS(&g, 0)[1].ch;
   put(&g, "\033[1b");
-  eq_u("REP of an astral writes the pair again, high half first", g.cells[0][2].ch, hi,
+  eq_u("REP of an astral writes the pair again, high half first", RC_CELLS(&g, 0)[2].ch, hi,
        "upstream's m_LastWrittenChar is one wchar_t, so a repeat there is the same half twice");
-  eq_u("low half second", g.cells[0][3].ch, lo, "");
+  eq_u("low half second", RC_CELLS(&g, 0)[3].ch, lo, "");
 }
 
 
@@ -3326,8 +3343,8 @@ static void geo_jline_stream()
   const unsigned box[11] = { 0x2518, 0x2510, 0x250C, 0x2514, 0x253C, 0x2500,
                              0x251C, 0x2524, 0x2534, 0x252C, 0x2502 };
   for (int i = 0; i < 11; i++)
-    eq_u(S("jline box letter %d draws its glyph", i + 1), g.cells[0][i].ch, box[i], "");
-  eq_u("and `ESC ( B` closes the set, so the letter after it is text", g.cells[0][11].ch, 'z',
+    eq_u(S("jline box letter %d draws its glyph", i + 1), RC_CELLS(&g, 0)[i].ch, box[i], "");
+  eq_u("and `ESC ( B` closes the set, so the letter after it is text", RC_CELLS(&g, 0)[11].ch, 'z',
        "otherwise a plain 'z' would silently become a greater-or-equal");
 
   /* A mid-line edit, replayed on a 32-column grid so no line end interferes: jline writes the whole line,
@@ -3542,8 +3559,8 @@ static void geo_sgr_bits()
   put(&g, "\033[4mX\033[39;49mY");
   eq_u("39/49 keeps the underline on the pending state", g.attr & RC_LVB_UNDERSCORE,
        RC_LVB_UNDERSCORE, "only SGR 0 clears it");
-  eq_u("the cell painted before 39/49 keeps it too", g.cells[0][0].attr, 0x8007, "0x07 + underline");
-  eq_u("the cell painted after 39/49", g.cells[0][1].attr, 0x8007, "underline is still set");
+  eq_u("the cell painted before 39/49 keeps it too", RC_CELLS(&g, 0)[0].attr, 0x8007, "0x07 + underline");
+  eq_u("the cell painted after 39/49", RC_CELLS(&g, 0)[1].attr, 0x8007, "underline is still set");
 
   /* bold brightens the foreground unless a bright background already claimed the bit (Ansi.cpp:783) */
   rc_reset(&g, 20, 3, 0x07);
@@ -3566,7 +3583,7 @@ static void geo_sgr_bits()
   eq_u("underscore seeded from the default", g.attr, 0x8007, "DisplayParm::Reset seeds colours only");
   put(&g, "\033[0mX");
   eq_u("SGR 0 drops it", g.attr, 0x07, "measured upstream behaviour");
-  eq_u("the painted cell uses the cleared attribute", g.cells[0][0].attr, 0x07, "");
+  eq_u("the painted cell uses the cleared attribute", RC_CELLS(&g, 0)[0].attr, 0x07, "");
 
   /* 38/48 with an index above 255 masks rather than rejects (Ansi.cpp:3568) */
   rc_reset(&g, 20, 3, 0x07);
@@ -3742,25 +3759,25 @@ static int grid_equal(const RcGrid *a, const RcGrid *b, char *why, size_t n)
      split-feed leg is exactly where a range computed from a half-parsed sequence would first differ. */
   for (int r = 0; r < a->rows; r++)
   {
-    if (a->rowDirty[r] != b->rowDirty[r])
+    if (RC_DTY(a, r) != RC_DTY(b, r))
     {
-      snprintf(why, n, "damage row %d flagged %d vs %d", r, a->rowDirty[r], b->rowDirty[r]);
+      snprintf(why, n, "damage row %d flagged %d vs %d", r, RC_DTY(a, r), RC_DTY(b, r));
       return 0;
     }
-    if (!a->rowDirty[r]) continue;
-    if (a->dirtyLo[r] != b->dirtyLo[r] || a->dirtyHi[r] != b->dirtyHi[r])
+    if (!RC_DTY(a, r)) continue;
+    if (RC_LO(a, r) != RC_LO(b, r) || RC_HI(a, r) != RC_HI(b, r))
     {
       snprintf(why, n, "damage row %d is %d..%d vs %d..%d", r,
-               a->dirtyLo[r], a->dirtyHi[r], b->dirtyLo[r], b->dirtyHi[r]);
+               RC_LO(a, r), RC_HI(a, r), RC_LO(b, r), RC_HI(b, r));
       return 0;
     }
   }
   for (int r = 0; r < a->rows; r++)
     for (int c = 0; c < a->cols; c++)
-      if (a->cells[r][c].ch != b->cells[r][c].ch || a->cells[r][c].attr != b->cells[r][c].attr)
+      if (RC_CELLS(a, r)[c].ch != RC_CELLS(b, r)[c].ch || RC_CELLS(a, r)[c].attr != RC_CELLS(b, r)[c].attr)
       {
         snprintf(why, n, "cell(%d,%d) %04X/%04X vs %04X/%04X", r, c,
-                 a->cells[r][c].ch, a->cells[r][c].attr, b->cells[r][c].ch, b->cells[r][c].attr);
+                 RC_CELLS(a, r)[c].ch, RC_CELLS(a, r)[c].attr, RC_CELLS(b, r)[c].ch, RC_CELLS(b, r)[c].attr);
         return 0;
       }
   /* The row state -- why a line ended, and what the shell claimed the row for (I20, I23) -- is part of what a
@@ -3769,10 +3786,10 @@ static int grid_equal(const RcGrid *a, const RcGrid *b, char *why, size_t n)
      and nothing above would notice. So does the FTCS content the cursor carries, because that is what decides
      the *next* line feed's claim. */
   for (int r = 0; r < a->rows; r++)
-    if (a->rowState[r].wrap != b->rowState[r].wrap || a->rowState[r].mark != b->rowState[r].mark || a->rowState[r].col != b->rowState[r].col)
+    if (RC_ST(a, r).wrap != RC_ST(b, r).wrap || RC_ST(a, r).mark != RC_ST(b, r).mark || RC_ST(a, r).col != RC_ST(b, r).col)
     {
       snprintf(why, n, "row %d state %d/%d/%d vs %d/%d/%d", r,
-               a->rowState[r].wrap, a->rowState[r].mark, a->rowState[r].col, b->rowState[r].wrap, b->rowState[r].mark, b->rowState[r].col);
+               RC_ST(a, r).wrap, RC_ST(a, r).mark, RC_ST(a, r).col, RC_ST(b, r).wrap, RC_ST(b, r).mark, RC_ST(b, r).col);
       return 0;
     }
   if (a->semanticContent != b->semanticContent || a->semanticClearEol != b->semanticClearEol)
@@ -4452,7 +4469,7 @@ static void hook_watch(void *ctx)
   }
   for (int i = 0; i < p.nRuns; i++)
     for (int r = p.run[i].top; r < p.run[i].top + p.run[i].nrows; r++)
-      if (g->cells[r][0].ch >= '0' && g->cells[r][0].ch <= '9') g_paintLines++;
+      if (RC_CELLS(g, r)[0].ch >= '0' && RC_CELLS(g, r)[0].ch <= '9') g_paintLines++;
   rc_paint_done(g);                          /* stand in for the painter */
 }
 
@@ -4483,7 +4500,7 @@ static void plan_gutter_hook(void)
   eq_u("hook: final plan drops nothing", (unsigned)p.drop, 0, "");
   for (int i = 0; i < p.nRuns; i++)
     for (int r = p.run[i].top; r < p.run[i].top + p.run[i].nrows; r++)
-      if (g.cells[r][0].ch >= '0' && g.cells[r][0].ch <= '9') g_paintLines++;
+      if (RC_CELLS(&g, r)[0].ch >= '0' && RC_CELLS(&g, r)[0].ch <= '9') g_paintLines++;
   rc_paint_done(&g);
   eq_u("hook: all 200 lines reached a paint", (unsigned long)g_paintLines, 200ul,
        "five screenfuls through a 36-row window: none of it may vanish");
@@ -4822,12 +4839,12 @@ static void check_damage_bounds(void)
         int covered = 0;
         for (int j = 0; j < p.nRuns; j++)
           if (r >= p.run[j].top && r < p.run[j].top + p.run[j].nrows &&
-              p.run[j].lo <= g.dirtyLo[r] && p.run[j].hi >= g.dirtyHi[r]) { covered = 1; break; }
+              p.run[j].lo <= RC_LO(&g, r) && p.run[j].hi >= RC_HI(&g, r)) { covered = 1; break; }
         if (!covered)
         {
           ok = 0; g_fails++;
           printf("FAIL  bounds [%d/%d]: row %d damaged %d..%d and scheduled nowhere\n",
-                 i, s, r, g.dirtyLo[r], g.dirtyHi[r]);
+                 i, s, r, RC_LO(&g, r), RC_HI(&g, r));
         }
       }
     }
