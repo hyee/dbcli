@@ -68,7 +68,7 @@ TERMINFO CHECK: ok
 
 `terminfo_check.sh` proves the **set**. The **meaning** of each string — what `cup(5,10)` or `csr(0,0)` turns
 into on the wire after `%i` and the parameter packing — is asserted by the caps harness, currently
-`cache/caps-audit/CapsDump.java` (81 assertions), driven twice: against the source file and against the copy
+`src/c/conemu/CapsDump.java`, driven by `src/c/conemu/caps_check.ps1` (81 assertions), twice: against the tree's file and against the copy
 inside the jar, byte-compared. It is the leg that caught `rep`'s parameter having to reach `Curses.tputs` as an
 **int** (`toInteger()` parses a `Character` as a String and throws) and the leg that named
 `change_scroll_region`'s `%i` as the reason `Status.reset()` arrives as `CSI 1;1r` rather than as a reset —

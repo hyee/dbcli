@@ -119,7 +119,7 @@ reason inlined in the entry's description line.
 lying terminfo is worse than a short one, because JLine complies with it instead of re-checking — no amount of
 renderer robustness undoes `Display` trusting an `am`/`xenl` claim that is false.
 
-**Witness.** `cache/caps-audit/` (`CapsDump.java`, 81 assertions through `tputs`), run against the source file
+**Witness.** `src/c/conemu/CapsDump.java` with `caps_check.ps1` (81 assertions through `tputs`, plus a byte-for-byte comparison of the tree's file against the jar's own copy), run against the source file
 **and separately against the copy inside the shipped `lib/JLine3.jar`** — `CAPS CHECK: ok` on both, byte-identical
 (#12). Read the caps entry's own comment before editing it; every omission in it is a measured result.
 
