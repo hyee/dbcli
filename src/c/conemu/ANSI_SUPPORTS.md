@@ -1,285 +1,348 @@
-# ANSI_SUPPORTS — C 端（render.dll）ANSI 转义支持矩阵
+# ANSI_SUPPORTS -- the ANSI escape support matrix of the C side (render.dll)
 
-快照 2026-09-25。事实来源是**代码本身**：`Render.cpp`（解析 + 栅格模型）、`Render.h`（状态与计数器）、
-`Paint.cpp`（把模型落成控制台调用）、`RenderJni.cpp`（JNI 落笔、标题、查询应答）。
-上游对照是 ConEmu `Ansi.cpp`（逐条在注释里标了行号）；OSC 133 以 ghostty 与 MSFT terminal 为参照实现。
-不支持的特性**从不静默**：一律消费掉、按族计数（I19），只有"本 switch 无 case 的 final 字节"才会把帧标为
-`modelSuspect`、让 painter 对控制台重收养一次（自愈）。
+Snapshot 2026-09-26, build `render-2026-09-26-24`. The source of truth is **the code itself**:
+`Render.cpp` (parsing + the grid model), `Render.h` (state and counters), `Paint.cpp` (turning the model into
+console calls), `RenderJni.cpp` (the JNI pen, the title, the query replies). The upstream comparison is ConEmu's
+`Ansi.cpp` (every rule carries its line number in the comments); OSC 133 was implemented against ghostty and the
+MSFT terminal as references. An unsupported sequence is **never silent**: it is consumed, counted by family
+(I19), and only "a final byte this switch has no case for" marks the frame `modelSuspect` and makes the painter
+re-adopt the console once (self-healing).
 
-解析单位是 **UTF-16 code unit**；`rc_feed()`（Render.cpp:1707）是可续接状态机，跨 chunk 断开的序列下轮接着解析，
-不存在 ConEmu `gsPrevAnsiPart` 那个 512 字节 reparse 截断窗（偏离 #2）。
+The parse unit is a **UTF-16 code unit**; `rc_feed()` (Render.cpp:2483) is a resumable state machine, so a
+sequence broken across chunks continues in the next one, and ConEmu's 512-byte `gsPrevAnsiPart` reparse window
+simply does not exist here (deviation #2).
 
----
-
-## 1 结构性能力（解析框架）
-
-| 能力 | 行为 |
-|---|---|
-| 状态机 | `RC_GROUND / RC_ESC / RC_ESC_INTERIM / RC_CSI / RC_OSC / RC_OSC_ESC`（Render.h:370） |
-| CSI 字节分类 | 参数 `0x30..0x3F`（含 `;` 与私钥 `? > < = / :`）、中间字节 `0x20..0x2F`（DECSCUSR 的空格、DECSTR 的 `!`；累积成集合，见 §2.6）、final `0x40..0x7E` |
-| 参数个数 | 上限 `RC_CSI_ARGS 16`，超出的参数**丢弃不拒绝**（与 ConEmu ArgV 同） |
-| 参数数值 | 数字累加**饱和在 65535**（偏离 #3：上游是 int 溢出）；`;` 空参数补 0；结尾空参数**不**当 0 下发 |
-| `arg()` 语义 | 参数缺省或为 0 时取默认值（如 `CSI 0 A` = `CSI A`） |
-| OSC/DCS 载荷 | `BEL` 或 `ST(ESC \)` 终止；被 `ESC`/`CAN`/`SUB` 遗弃时**计数、不生效**；收集上限 `RC_OSC_MAX 32768` 个单元，超出后**标题截断到 `RC_TITLE_MAX 256` 并计数，OSC 52 整条拒绝**（一个被腰斩的 base64 不是一条消息），序列本身照常消费 |
-| OSC 码读取 | 按前导数字串精确匹配（`"0133"` 不匹配 `"133"`），超界饱和，防 `]0133;A`/`]1334;A` 误命中 |
-| CAN/SUB | 在 CSI 或 OSC 内到达时中止序列回 ground，被中止的半个序列不计任何账 |
-| 未知序列 | 消费 + 按族计数（见 §6 census）；`RC_UN_SUP` 且来自 `default:` 臂时置 `modelSuspect` |
+Every `file:line` below points into this directory and was correct as of the build named above. Code moves and
+these numbers move with it, which makes them a liability as much as a citation: re-check them with
+`cache/p57/citeview.py` (prints what every citation in the two contract documents currently points at) and
+`cache/p57/citecheck2.py` (flags the ones whose symbol has walked away). A stale line number is a wrong fact
+wearing a citation -- and this pass found twelve of them here, all from code added by other stamps.
 
 ---
 
-## 2 支持的特性
+## 1 Structural capability (the parsing framework)
 
-### 2.1 C0 控制字符（`control()`，Render.cpp:1323）
-
-| 码 | 行为 |
+| Capability | Behaviour |
 |---|---|
-| `BEL 0x07` | 不占格、不响铃 |
-| `BS 0x08` | 左移不擦除；落在宽字形尾半格上时再退一格（`step_back_col`，Render.cpp:904，对应上游 `Row::_adjustBackward`；这正是 #852 族的正确侧） |
-| `HT 0x09` | 固定 **8 列** 制表，钳到行尾；制表位不可配置（见 §3） |
-| `LF 0x0A` | 换行**并折到第 0 列**（conhost 行为，实测 WriteConsoleW 语义）；`IND`/`RI` 保持列 |
-| `CR 0x0D` | 回第 0 列 |
-| 其余 C0 与 `DEL 0x7F` | 忽略，**永不渲染成字形**（#1900/#2158 族的答案） |
-| C1 `0x80..0x9F` | **不解释为控制字符**，按普通码点走宽度表（Cf 类判 0 格，落不到屏上） |
+| State machine | `RC_GROUND / RC_ESC / RC_ESC_INTERIM / RC_CSI / RC_OSC / RC_OSC_ESC` (Render.h:551) |
+| CSI byte classes | parameters `0x30..0x3F` (including `;` and the private bytes `? > < = / :`), intermediates `0x20..0x2F` (DECSCUSR's space, DECSTR's `!`; accumulated into a set, see §2.6), final `0x40..0x7E` |
+| Parameter count | capped at `RC_CSI_ARGS 16`; extra parameters are **dropped, not refused** (as upstream's ArgV) |
+| Parameter values | digits accumulate and **saturate at 65535** (deviation #3: upstream overflows an int); an empty parameter between `;`s is 0; a **trailing** empty parameter is not sent as 0 |
+| `arg()` semantics | a missing or zero parameter takes the default (so `CSI 0 A` = `CSI A`) |
+| OSC/DCS payload | terminated by `BEL` or `ST(ESC \)`; abandoned by `ESC`/`CAN`/`SUB` it is **counted and never applied**; collection is capped at `RC_OSC_MAX 32768` units, and past that a **title is clipped to `RC_TITLE_MAX 256` and counted, while OSC 52 is refused whole** (half a base64 string is not a message) -- the sequence is consumed either way |
+| OSC code reading | matched exactly against the leading digit run (`"0133"` does not match `"133"`), saturating out of range, so `]0133;A` and `]1334;A` cannot hit the wrong family |
+| CAN/SUB | arriving inside a CSI or an OSC aborts the sequence back to ground, and the aborted half is charged to nothing |
+| Unknown sequences | consumed and counted by family (see the §6 census); `RC_UN_SUP` arriving through the `default:` arm also sets `modelSuspect` |
 
-### 2.2 ESC 序列（`esc_dispatch()`，Render.cpp:1254）
+---
 
-| 序列 | 名称 | 行为 |
+## 2 Supported features
+
+### 2.1 C0 control characters (`control()`, Render.cpp:1569)
+
+| Code | Behaviour |
+|---|---|
+| `BEL 0x07` | takes no cell, rings nothing |
+| `BS 0x08` | moves left without erasing; when it lands on the trailing half of a wide glyph it steps one further (`step_back_col`, Render.cpp:1028 -- upstream's `ROW::_adjustBackward`, and the correct side of the #852 family) |
+| `HT 0x09` | fixed **8-column** tabulation, clamped to the end of the line; tab stops are not configurable (see §3) |
+| `LF 0x0A` | moves down **and folds to column 0** (the conhost behaviour, measured WriteConsoleW semantics); `IND`/`RI` keep the column |
+| `CR 0x0D` | to column 0 |
+| other C0 and `DEL 0x7F` | ignored, and **never rendered as a glyph** (the answer to the #1900/#2158 family) |
+| C1 `0x80..0x9F` | **not interpreted as control characters**: they go through the width table as ordinary code points (the Cf class measures 0, so they never reach the screen) |
+
+### 2.2 ESC sequences (`esc_dispatch()`, Render.cpp:1500)
+
+| Sequence | Name | Behaviour |
 |---|---|---|
-| `ESC 7` / `ESC 8` | DECSC/DECRC | 只存取光标坐标，**属性不保存**（上游一致，Ansi.cpp:2719） |
-| `ESC c` | RIS | 全复位（见 `full_reset()`，Render.cpp:882：退出备屏、SGR 复位、清滚动区与光标形状、把视口内容上滚进历史、光标归位） |
-| `ESC D` | IND | 下移一行；列不动。本模型让它**感知滚动区**（上游 ForwardLF 反而不看区域——为一致性保留的偏离） |
+| `ESC 7` / `ESC 8` | DECSC/DECRC | saves and restores the cursor position only; **attributes are not saved** (as upstream, Ansi.cpp:2719) |
+| `ESC c` | RIS | full reset (see `full_reset()`, Render.cpp:1001: leaves the alternate screen, resets SGR, clears the scroll region and the cursor shape, scrolls the viewport's content up into history, homes the cursor) |
+| `ESC D` | IND | one row down, column untouched. This model makes it **region-aware** (upstream's ForwardLF deliberately is not -- a divergence kept for consistency's sake) |
 | `ESC E` | NEL | CR + IND |
-| `ESC M` | RI | 反向换行；在视口顶或滚动区顶时**插入空行**（上游 LinesInsert 语义）；区外光标只移动 |
-| `ESC ( 0` | SCACS | 激活 G0 制表符替换（`G0_DRAWING` 31 项，仅 `0x60..0x7E` 重映射，宽度按原字母算，边框每字母仍 1 格）；`ESC ( B` 及任何其他设计符恢复默认 |
-| `ESC N` / `ESC O` | SS2/SS3 | 只吞引导符，**下一个字节按普通文本打印**（不吞字，不丢列） |
-| `ESC g` / `ESC H` / `ESC =` / `ESC >` | 视觉铃/HTS/keypad | 计数（`RC_UN_MODE`），不动格、不换输入侧 |
-| `ESC ) c`、`ESC % G` | G1 / UTF-8 选择 | 计数（`RC_UN_SUP`）；G1 不可达、UTF-8 旗标从不设置（输入本就是 UTF-16）——与上游 default 臂一致 |
+| `ESC M` | RI | reverse line feed; at the viewport top or the region top it **inserts a blank row** (upstream's LinesInsert semantics); a cursor outside the region only moves |
+| `ESC ( 0` | SCACS | activates the G0 line-drawing substitution (the 31 `G0_DRAWING` entries, remapping `0x60..0x7E` only, width taken from the original letter, so a box border is still one cell per letter); `ESC ( B` and any other designator restore the default |
+| `ESC N` / `ESC O` | SS2/SS3 | swallow the introducer only -- **the next byte prints as ordinary text** (no eaten glyph, no lost column) |
+| `ESC g` / `ESC H` / `ESC =` / `ESC >` | visual bell / HTS / keypad | counted (`RC_UN_MODE`); no cell moves and the input side does not change |
+| `ESC ) c`, `ESC % G` | G1 / UTF-8 selection | counted (`RC_UN_SUP`); G1 is unreachable and the UTF-8 flag is never set (the input is UTF-16 already) -- the same as upstream's default arm |
 
-### 2.3 CSI 光标移动（`csi_dispatch()`，Render.cpp:913）
+### 2.3 CSI cursor movement (`csi_dispatch()`, Render.cpp:1083)
 
-| 序列 | 名称 | 行为 |
+| Sequence | Name | Behaviour |
 |---|---|---|
-| `CSI A` / `CSI B` | CUU/CUD | 垂直移动，`move_row()` 按**滚动区**裁剪（区外光标交给视口边界） |
-| `CSI C` / `CSI D` | CUF/CUB | 水平移动；`D` 落在宽字形尾半格上时再退一格（同 BS） |
-| `CSI E` / `CSI F` | CNL/CPL | 垂直移动 + 第 0 列 |
-| `CSI G` | CHA | 绝对列（1 基） |
-| `CSI H` / `CSI f` | CUP | 行列定位，**视口相对**（永不落进 scrollback gutter），双向钳制 |
-| `CSI d` | VPA | 绝对行（视口相对） |
-| `CSI a` | HPR | 相对**列**移动，**视口**钳制、不受滚动区约束（MSFT `adaptDispatch.cpp:427` "Unlike CUF/CUD, this is not constrained by margin settings"）；缺参/0 参按 1 |
-| `CSI e` | VPR | 相对**行**移动，同上：走 `clxy`（视口）不走 `move_row`（区域），故能从钉住的滚动区底走出去；列保持不变，这是它与 `CSI B` 唯一的行为差别 |
-| `CSI s` / `CSI u` | 保存/恢复光标 | `u` 只在**无私钥**时恢复（`CSI ?u` 是 kitty 的能力查询，上游无私钥门，属缺陷：探测批每轮把光标瞬移到 DECSC 位） |
-| `CSI ?1048 h/l` | 存/取光标 | 与 DECSC/DECRC 同槽 |
+| `CSI A` / `CSI B` | CUU/CUD | vertical movement; `move_row()` clamps to the **scroll region** (a cursor outside the region is handed to the viewport bounds) |
+| `CSI C` / `CSI D` | CUF/CUB | horizontal movement; `D` landing on a wide glyph's trailing half steps one further (the same rule as BS) |
+| `CSI E` / `CSI F` | CNL/CPL | vertical movement plus column 0 |
+| `CSI G` | CHA | absolute column (1-based) |
+| `CSI H` / `CSI f` | CUP | row and column, **viewport-relative** (never lands in the scrollback gutter), clamped both ways |
+| `CSI d` | VPA | absolute row (viewport-relative) |
+| `CSI a` | HPR | relative **column** movement, clamped to the **viewport** and not constrained by the region (MSFT `adaptDispatch.cpp:427`: "Unlike CUF/CUD, this is not constrained by margin settings"); a missing or zero parameter means 1 |
+| `CSI e` | VPR | relative **row** movement, same rule: it takes `clxy` (viewport) rather than `move_row` (region), so it can walk out of a pinned region bottom; the column is preserved, which is its only behavioural difference from `CSI B` |
+| `CSI s` / `CSI u` | save/restore cursor | `u` restores only **without a private byte** (`CSI ?u` is the kitty capability query; upstream has no private-byte guard, which is a defect: every round of capability probing teleports the cursor to the DECSC position) |
+| `CSI ?1048 h/l` | save/restore cursor | the same slot as DECSC/DECRC |
 
-### 2.4 CSI 编辑 / 擦除 / 滚动
+### 2.4 CSI editing / erasing / scrolling
 
-| 序列 | 名称 | 行为 |
+| Sequence | Name | Behaviour |
 |---|---|---|
-| `CSI J` 0/1/2 | ED | 擦屏，**止于视口**（scrollback 不动）；2 号顺带把光标归到视口左上（上游 2J 归位行为） |
-| `CSI K` 0/1/2 | EL | 擦行，整行=整条**缓冲区行**（cols 即 buffer 宽，I7）；擦到行尾会清掉该行的折行声明 |
-| `CSI L` / `CSI M` | IL/DL | 有滚动区时区内平移、区外光标**拒绝**；无区时视口内平移；`n` 超出按跨度钳制（上游会写越区底，属缺陷不抄） |
-| `CSI @` / `CSI P` | ICH/DCH | 行内开槽/收拢，LEADING/TRAILING 半格整体随移（与上游对同一对的做法一致），文本推过行尾不可回捞 |
-| `CSI X` | ECH | 擦 n 格，**可跨到后续行**（ConEmu 语义），但钳制量修正为"真实剩余格数"且止于视口底（上游公式差一格，偏离）；`CSI 0 X` 擦 0 格 |
-| `CSI b` | REP | 重放 `lastUnit`：按文本走（可折行、吃当前属性与字符集重映射、宽字形占 2 格）；重复的是**重映射前**的码点（`ESC ( 0` 后 repeat 出线框字形而非字母）；`CSI 0 b` 不重复；私钥形式拒绝并计数 |
-| `CSI S` / `CSI T` | SU/SD | 滚动区上/下移；无区（或区=视口）时 SU 走整模型滚动（带动 gutter 与控制台滚动），SD 不动光标 |
-| `CSI r` | DECSTBM | 建滚动区。**缺省参数取视口边缘**：`CSI 3r` = 3..末行、`CSI ;4r` = 1..4（两家参照一致：MSFT `adaptDispatch.cpp:2243-2257`，注释 :2239 明写 `[3;r -> 3,h`）；**反序参数被忽略而不是清区**（`3;2r` 保持原区，MSFT :2242 "an illegal combo … is ignored"）——清区与忽略不是同一个动作，清区会把下一条 LF 交给整个视口，正是 #47/#48 那类故障的另一个触发器。这两条都是 2026-09-25 复核"上游也不做"式理由时改掉的：上游 `Ansi.cpp:3142` 要求 `ArgC>=2`，否则 `SetScrollRegion(false)`。仍与上游一致、且与 MSFT 有意分歧的是**钳制**：底参越界拉回视口末行（MSFT :2260 直接拒绝）、`Pt==Pb` 接受为一行区（`Status.reset()` 到这里就是 `CSI 1;1r`，拒了会把状态行的区卡住）。另外：0 号参数钳到视口首行；设区**不归位光标**；`CSI ?r` 也接受；区恰为全视口时归一成"无区"（MSFT 为 `apt` 同样归一，:2262-2270）；参数视口相对，一次性钳死后不再重算（geometry 变更走重开，重开即无区） |
+| `CSI J` 0/1/2 | ED | erases the screen, **stopping at the viewport** (scrollback is untouched); form 2 also homes the cursor to the viewport's top-left (upstream's 2J behaviour) |
+| `CSI K` 0/1/2 | EL | erases the line; "the line" is the whole **buffer row** (cols is the buffer width, I7); erasing to end of line also clears that row's wrap claim |
+| `CSI L` / `CSI M` | IL/DL | shift inside the region when there is one and are **refused** for a cursor outside it; with no region they shift inside the viewport; an `n` beyond the span is clamped (upstream writes past the region bottom -- a defect, not copied) |
+| `CSI @` / `CSI P` | ICH/DCH | open and close slots inside the row, moving LEADING/TRAILING halves as one unit (as upstream does with the same pair); text pushed past the end of the row is gone |
+| `CSI X` | ECH | erases n cells and **may run into the following rows** (ConEmu semantics), but the clamp is corrected to the real remaining cell count and stops at the viewport bottom (upstream's formula is one cell off -- a deviation); `CSI 0 X` erases nothing |
+| `CSI b` | REP | replays `lastUnit` as text (so it can wrap, takes the current attribute and the charset remap, and a wide glyph costs 2 cells); what repeats is the code point **before** the remap (after `ESC ( 0` a repeat draws a box glyph rather than the letter); `CSI 0 b` repeats nothing; the private form is refused and counted |
+| `CSI S` / `CSI T` | SU/SD | scroll the region up/down; with no region (or a region equal to the viewport) SU performs the whole-model scroll (carrying the gutter and the console scroll), and SD leaves the cursor alone |
+| `CSI r` | DECSTBM | creates the scroll region. **Missing parameters take the viewport edges**: `CSI 3r` = 3..last row, `CSI ;4r` = 1..4 (both references agree: MSFT `adaptDispatch.cpp:2243-2257`, whose comment at :2239 spells out `[3;r -> 3,h`); **an inverted pair is ignored rather than clearing the region** (`3;2r` keeps the region; MSFT :2242 "an illegal combo ... is ignored") -- clearing and ignoring are different acts, and clearing hands the next line feed the whole viewport, which is exactly the #47/#48 class of failure with a new trigger. Both were changed on 2026-09-25 while re-examining "upstream does not do it either" as a reason: upstream's `Ansi.cpp:3142` demands `ArgC>=2` and otherwise calls `SetScrollRegion(false)`. What still matches upstream and deliberately differs from MSFT is the **clamping**: a bottom parameter past the viewport is pulled back to its last row rather than rejected (MSFT :2260 refuses), and `Pt==Pb` is accepted as a one-row region (`Status.reset()` arrives here as `CSI 1;1r`, and refusing it would leave the status bar's region stuck). Also: parameter 0 clamps to the viewport's first row; setting a region does **not** home the cursor; `CSI ?r` is accepted too; a region that is exactly the viewport normalises to "no region" (MSFT normalises the same way for `apt`, :2262-2270); parameters are viewport-relative and clamped once, never recomputed (a geometry change goes through a re-open, and a re-open has no region) |
 
-### 2.5 DEC 私有模式（`CSI ? Pm h/l`）
+### 2.5 DEC private modes (`CSI ? Pm h/l`)
 
-只读 `args[0]`（上游只看 ArgV[0]，`?1;2004h` 只作用于 1）：
+Only `args[0]` is read (upstream looks at ArgV[0] alone, so `?1;2004h` acts on 1 only):
 
-| 模式 | 行为 |
+| Mode | Behaviour |
 |---|---|
-| `?25 h/l` | 光标显隐 → painter 的 `SetConsoleCursorInfo`，仅真实变化时调用 |
-| `?47` / `?1047` / `?1049` | 备用屏，**三种同一行为**（对齐 MSFT `ASB_AlternateScreenBuffer`）：进入时快照主视口行（含折行与 FTCS 标记）、清视口；离开时还原并恢复光标；没进入就离开是安全的；备屏无 scrollback，滚出顶部的行即消失、滚动不花控制台滚动；唯一拒绝是快照 malloc 失败（计数 `RC_UN_ALTBUF`） |
-| `?1048 h/l` | 只存/取光标 |
-| `?2026 h/l` | **同步输出**（BSU/ESU）。区域内在屏计划全部推迟：`flush()` 解析照做、模型照更新，但不碰控制台，脏格保持到区域结束，收尾那一次刷出**整个联合**（每行一个矩形，一帧到位）。第一个带内容的 chunk 也推迟——应用写 BSU 时通常已经把新屏顶部一起写出来了。三个出口：ESU（正常）、**100 ms 时钟**（`RC_SYNC_TIMEOUT_MS`，MSFT `renderer.cpp:542` 同值；到点这一帧照画并**清模式**，泄漏 BSU 的应用不能把整场会话一帧一帧吞掉）、**scrollback gutter 满**（`pendingScrolls` 到达 `rc_scroll_room`，此时这一帧必须落地否则历史被逐掉，但**区域保持打开**）。空计划（纯状态/纯光标移动）不算推迟；查询应答**照发**（CPR/DA 是关于读端的事实，等 ESU 会把发问的程序挂住）；`RIS`/`DECSTR` 清位。计数族见 §6：engages/nested/held/timeout/overflow/declined |
-| 其余一切 | 计数 `RC_UN_MODE`（鼠标族 9/1000/1002..1015 与括号粘贴 2004 有**专属**计数器，见 §3/§6） |
+| `?25 h/l` | cursor visibility -> the painter's `SetConsoleCursorInfo`, called only on a real change |
+| `?47` / `?1047` / `?1049` | the alternate screen, **one behaviour for all three** (matching MSFT's `ASB_AlternateScreenBuffer`): entering snapshots the main viewport's rows (wrap claims and FTCS marks included) and clears the viewport; leaving restores both; leaving without entering is safe; the alternate screen has no scrollback, so a row scrolled off the top is gone and scrolling costs no console scroll; the only refusal is a snapshot that failed to allocate (counted `RC_UN_ALTBUF`) |
+| `?1048 h/l` | saves and restores the cursor only |
+| `?2026 h/l` | **synchronized output** (BSU/ESU). While a region is open every on-screen plan is deferred: `flush()` still parses and still updates the model, but touches no console, damage stays marked until the region ends, and the closing flush paints **the whole union** (one rectangle per row, one frame). The first chunk that carries content is deferred too -- an application normally writes its BSU together with the top of the new screen. Three ways out: the ESU (the normal one), a **100 ms clock** (`RC_SYNC_TIMEOUT_MS`, the value MSFT also uses at `renderer.cpp:542`; when it expires the frame paints and the **mode is cleared**, because an application that leaked its BSU must not swallow a whole session one frame at a time), and a **full scrollback gutter** (`pendingScrolls` reaching `rc_scroll_room`: that frame must land or history is evicted, but the **region stays open**). An empty plan (state or cursor moves only) does not count as held; query replies are **sent either way** (a CPR or DA is a fact about the reader, and a program that asked and waits for the answer while we wait for its ESU hangs); `RIS`/`DECSTR` clear the bit. The counting family is in §6: engages/nested/held/timeout/overflow/declined |
+| everything else | counted `RC_UN_MODE` (the mouse family 9/1000/1002..1015 and bracketed paste 2004 have **their own** counters, see §3/§6) |
 
-私有的 `CSI ?7 h/l`（DECAWM）**已经作用**，见 §2.3 的换行模型与 I35（#61，build -22）；非私有的 `CSI 7 h/l` 是 GATM，仍然计数 `RC_UN_MODE`。剩下两条非私有模式的独立理由（"上游也没 case"不构成理由，见 #60 的复核）：**LNM(20)** 是**打印回显**——它改变的是"键入的字符何时进屏幕"，而本库不拥有输入句柄，也没有回显可管；**IRM(4)** 只改变后续 `CSI @`/`CSI P` 的语义，而我们与两家参照一样把 ICH/DCH 当**显式序列**（插入/删除永远照做），所以 IRM 在本模型里没有能改变行为的实体——这与"上游不做"不同：这里缺的是能力（一个有主的插入模式），不是意愿。DECAWM 曾经用同一个句式被拒，理由是"caps 声明了 `am`"；复核之后发现那是两件事：**caps 的 `am` 说的是宿主终端换不换行，而本模型的右缘是我们自己画的**，所以 `?7` 可以做而 `smam`/`rmam` 仍然不进 caps（那条 entry 同时描述 ConEmu 自己解析的会话，那边 `?7` 是被忽略的——I26）。
+The private `CSI ?7 h/l` (DECAWM) **is acted on** -- see the wrap model in §2.3 and I35 (#61, build -22); the
+non-private `CSI 7 h/l` is GATM and is still counted `RC_UN_MODE`. The remaining two non-private modes each have
+their own reason, and "upstream has no case" is not one of them (see the #60 re-examination): **LNM(20)** is print
+**echo** -- what it changes is when a typed character reaches the screen, and this library owns no input handle
+and has no echo to manage; **IRM(4)** only changes the meaning of a later `CSI @`/`CSI P`, and this model treats
+ICH/DCH as **explicit sequences** forever, like both references do (insert and delete always happen as asked), so
+there is no entity in the model whose behaviour IRM could alter. That is a missing capability -- a mode with an
+owner -- not a missing willingness. DECAWM was once refused with that same sentence, arguing that "caps declares
+`am`"; on review that conflated two things: **the caps `am` says whether the host terminal wraps, while this
+model's right edge is drawn by us**, so `?7` can be implemented while `smam`/`rmam` stay out of the caps entry --
+which also describes sessions where ConEmu's own parser reads the bytes and ignores `?7` (I26).
 
-### 2.6 DECSCUSR 与 DECSTR
+### 2.6 DECSCUSR and DECSTR
 
-| 序列 | 行为 |
+| Sequence | Behaviour |
 |---|---|
-| `CSI Ps SP q` | DECSCUSR，1..6 存进 `cursorShape`；缺参/越界 = 0（上游"默认"，即不主动改高度）。painter 映射（`Paint.cpp:55`）：1/2 → 块状（高度 100），0 与 3..6 → 细条（高度 15）——Win7 可达的控制台 API 只有两档，条形折到下划线形与上游一致；**从未发过 `CSI q` 的会话不碰用户的光标高度**（-1 哨兵）。判据是**中间字节集合恰好等于那一个字节**：`CSI ? SP q`、`CSI ! SP q`、一长串空格后接 `q` 都不是 DECSCUSR，计数走 SUP |
-| `CSI !p`（无参、无私有字节） | DECSTR = `full_reset()`（上游 FullReset 同一函数，是**硬**复位，比 VT 的软复位更狠）；带参的 `!p`、带 `?` 的 `?!p` 与其他 `p` 拼法计数 |
-| 中间字节本身 | 累积成集合（`interims[RC_INTERIM_MAX]` + `nInterims`，超界丢弃），消费方按**整串精确比较**（`interim_is()` 要求长度 1）。上游就是这么做的：`Ansi.cpp:1788` 把 `0x20..0x2F` 与 `0x30..0x3F` 追加进同一个 `Pvt` 缓冲，`:3645`/`:3657` 都写成 `PvtLen == 1 && Pvt[0] == X`。单槽"最后一个赢"会让 `! SP q` 冒充真 DECSCUSR |
+| `CSI Ps SP q` | DECSCUSR: 1..6 stored in `cursorShape`; a missing or out-of-range parameter is 0 (upstream's "default", i.e. do not touch the height). The painter maps it (`Paint.cpp:55`): 1/2 -> block (height 100), 0 and 3..6 -> thin (height 15) -- the console APIs reachable from Win7 offer two shapes only, and folding a bar into an underline matches upstream; **a session that never sent `CSI q` does not touch the user's cursor height** (the -1 sentinel). The test is **the intermediate set being exactly that one byte**: `CSI ? SP q`, `CSI ! SP q`, and a run of spaces before the `q` are all *not* DECSCUSR and count as SUP |
+| `CSI !p` (no parameters, no private byte) | DECSTR = `full_reset()` (upstream's FullReset is the same call, and it is a **hard** reset -- harsher than VT's soft one); `!p` with parameters, `?!p`, and every other spelling of `p` are counted |
+| the intermediates themselves | accumulated into a set (`interims[RC_INTERIM_MAX]` + `nInterims`, overflow dropped), and consumers compare the **whole string exactly** (`interim_is()` requires length 1). Upstream does exactly this: `Ansi.cpp:1788` appends `0x20..0x2F` and `0x30..0x3F` into one `Pvt` buffer, and `:3645`/`:3657` both test `PvtLen == 1 && Pvt[0] == X`. A single slot lets the last byte win, which made `! SP q` impersonate a real DECSCUSR |
 
-### 2.7 SGR（`sgr_apply()`，Render.cpp:646）
+### 2.7 SGR (`sgr_apply()`, Render.cpp:713)
 
-| 码 | 行为 |
+| Code | Behaviour |
 |---|---|
-| `0` | 全复位到**冻结的**默认属性（含 SGR 39/49 的默认色） |
-| `1` | 粗体：只作为**提亮**参与 `rc_attr()`（`bold && !brightBack` 时给前景 nibble 补亮位）——xterm 家族的 bold→bright 语义，#1896 平价 |
-| `2` / `22` | 取消粗体 |
-| `4` / `24` | 下划线开/关 → 真落到 `RC_LVB_UNDERSCORE`，绘得出来 |
-| `5` `6` / `25` | 闪烁：**无任何状态**（上游 Ansi.cpp:3530 同样无状态） |
-| `7` / `27` | 反显开/关 → 真落到 `RC_LVB_REVERSE` |
-| `3` / `23`、`9` / `29` | 斜体、删除线：**模型里存着**（`RcSgr.italic/crossed`），但传统控制台属性没有对应位，`rc_attr()` 不输出——不绘制（与 #677/#856 的上游缺口同形状，见 §3） |
-| `39` / `49` | 默认前景/背景（4bit 空间、来自冻结默认） |
-| `30..37` / `40..47` | 标准 16 色 |
-| `90..97` / `100..107` | 亮色 |
-| `38;5;n` / `48;5;n` | 256 色，`n & 0xFF` 掩码不查范围（上游同） |
-| `38;2;r;g;b` / `48;2;r;g;b` | 真彩，`0x00BBGGRR` COLORREF 序 |
+| `0` | reset to the **frozen** default attribute (including the SGR 39/49 default colours) |
+| `1` | bold: participates in `rc_attr()` as **brightening** only (the foreground nibble gains its bright bit when `bold && !brightBack`) -- the xterm family's bold->bright semantics, #1896 parity |
+| `2` / `22` | bold off |
+| `4` / `24` | underline on/off -> lands in `RC_LVB_UNDERSCORE` for real, and is drawn |
+| `5` `6` / `25` | blink: **no state at all** (upstream is the same, Ansi.cpp:3530) |
+| `7` / `27` | reverse video on/off -> lands in `RC_LVB_REVERSE` for real |
+| `3` / `23`, `9` / `29` | italic and crossed out: **kept in the model** (`RcSgr.italic/crossed`) but the legacy console attribute has no bit for them, so `rc_attr()` emits nothing -- stored, not painted (the same shape as upstream's #677/#856 gap, see §3) |
+| `39` / `49` | default foreground/background (in the 4-bit space, from the frozen default) |
+| `30..37` / `40..47` | the standard 16 |
+| `90..97` / `100..107` | the bright 16 |
+| `38;5;n` / `48;5;n` | 256-colour, with an `n & 0xFF` mask and no range test (as upstream) |
+| `38;2;r;g;b` / `48;2;r;g;b` | truecolour, in `0x00BBGGRR` COLORREF order |
 
-配套规则：
+Rules that go with them:
 
-- **无参 `CSI m` = 复位**（按上游惯例记为假设，非实测平价）。
-- **私钥前缀整条丢弃**（`?31m` 什么都不上色，计数 `RC_UN_MODE`）——上游 Ansi.cpp:3494 同样丢弃整条 SGR。
-- **未知参数跳过后循环继续**：`\e[53;31m` 仍上红；截断的 `38/48`（`5`/`2` 后参数不足）不上色、剩余参数继续当普通 SGR 读。
-- 参数上限 16、数值饱和 65535（偏离 #3）。
-- **颜色管线**（I15）：`ReSetDisplayParm → ExtPrepareColor → Far3Color 折叠`，折叠表 `vendor/ConEmuRgbMap.h`（RgbMap[256]、ClrMap[8]）与 `vendor/ConEmuColors3.h` 从上游逐字提取、构建期断言条数；**fg==bg 避让**只在背景真走了 COLORREF 折叠（index>15）时挂上（633 样本测出的开关条件）。
+- **A bare `CSI m` is a reset** (recorded as an assumption from upstream's convention, not measured parity).
+- **A private prefix drops the whole sequence** (`?31m` paints nothing and counts `RC_UN_MODE`) -- upstream's
+  Ansi.cpp:3494 discards the whole SGR the same way.
+- **An unknown parameter is skipped and the loop continues**: `\e[53;31m` still turns red; a truncated `38/48`
+  (fewer parameters after the `5`/`2`) paints nothing and lets the remaining parameters read as ordinary SGR.
+- Parameters cap at 16 and values saturate at 65535 (deviation #3).
+- **The colour pipeline** (I15): `ReSetDisplayParm -> ExtPrepareColor -> the Far3Color fold`, with the folding
+  table `vendor/ConEmuRgbMap.h` (RgbMap[256], ClrMap[8]) and `vendor/ConEmuColors3.h` extracted verbatim from
+  upstream and counted at build time; the **fg==bg avoidance** rides on the result only when the background
+  really went through the COLORREF fold (index > 15) -- the condition the 633-sample measurement produced.
 
-### 2.8 OSC（`osc_finish()` 查 `rc_osc_families[]`，Render.cpp:2337）
+### 2.8 OSC (`osc_finish()` consulting `rc_osc_families[]`, Render.cpp:2344)
 
-分派是一张表而不是一条 `if` 链：每族 `{名字, owns(码), apply(...)}`，表的顺序即优先级，而"互不重叠"这件事现在由 `geo_osc_families` 扫 0..4096 证明——表能改成什么样，取决于有没有门禁在问它。链做不到的正是这条：说不出"没有哪个码被两族同时认领"。
+Dispatch is a table rather than a chain of `if`s: each family is `{name, owns(code), apply(...)}`, table order is
+precedence, and "no code is claimed twice" is now proved by `geo_osc_families` sweeping 0..4096. How far the
+table may be edited is decided by whether a gate asks -- and that is exactly what the chain could never be
+asked, because it could not state that no code has two handlers.
 
-| 码 | 行为 |
+| Code | Behaviour |
 |---|---|
-| `0` / `1` / `2` | **窗口标题真落地**：上游守卫逐字复刻（数字后必须紧跟 `;`，载荷非空，`]10;foo` 不是标题）；剥一层成对双引号（空串仍是标题）；painter `SetConsoleTitleW` 下发；超 `RC_TITLE_MAX 256` 截断并计数，**不丢序列**；未终止的标题计数不生效 |
-| `133`（FTCS） | **一等公民**（`ftcs_apply()`，Render.cpp:1498）：`A`/`N` 起新提示行（需要时先换行——全族唯一动光标处）；`P` 定提示不动行；`L` 纯换行且**不允许带选项**；`B`/`I` 标输入起点（`I` 的输入止于行尾）；`C` 标输出起点并回收 fish 式续行标记；`D` 携退出码（第二字段，非数字按 MSFT 记为错误而非成功），向上搜索最近一个带标记的行盖 SUCCESS/ERROR 戳。`k=c`/`k=s` 选项识别续行（ghostty 规则）；LF/折行本身会把非输出内容所在行补成 CONTINUATION。行标记是**模型私有**的，随每次垂直移动搬运，收养（adopt）后丢弃 |
-| `9`（ConEmu 私有族，T7 已分治） | **安全子集存而不行**：`9;4` 存 `{state,progress}`（state>4 整条拒绝且不套用，progress>100 钳到 100，与 MSFT `adaptDispatch.cpp:3596-3605` 一致）、`9;9` 存路径（剥一对引号，非法字符＝整条拒绝，判据同 `til::is_legal_path`）、`9;12` 直接走 `ftcs_apply("B")`——即 `133;B` 那条码路，不留副本。两者只经 `NativeRenderer.taskbar()/workingDirectory()` **读出去**，本库不画任务栏（没有窗口）也不 `chdir`（输出流里的目录是数据不是命令）。**其余子命令一律计数 `RC_UN_OSC_PRIV`、永不执行**：`9;1` sleep、`9;2` MessageBox、`9;3` 改环境变量、`9;6` GuiMacro、`9;7` DoProcess——#687 的 RCE 保证不变。未终止的载荷在**被遗弃那一刻**计数（此前解析器还泡在里面，无从判定） |
-| `4` / `10` / `11` / `104` / `110` / `111`（调色板，I34） | **真改控制台颜色**：语法照 MSFT（`OutputStateMachineEngine.cpp:955-1000`/`:1062-1092`）——`4` 是 `(索引;说明)*` 对、`?` 就地提问、`10/11` 每字段推进一个资源、`104` 无参清全表且**遇到第一个读不懂的索引就停**（MSFT:846 注明这是 xterm 而非 VTE 的选择）、`110/111` 只在空载荷时复位。说明形式 `#RGB`/`#RRGGBB`/`#RRRRGGGGBBBB`（宽度须三等分）与 `rgb:r/g/b`（各 1-4 位、宽度可不等），按位复制缩放到 8 位；**X11 颜色名不解析**，与任何读不懂的说明同样计 `RC_UN_OSC_OTHER`。索引 0..15 改的是**控制台属性色**（写回 `SetConsoleScreenBufferInfoEx`，见 §5 那一坑）并参与折叠；16..255 只改折叠目标。`10/11` 只能落成**索引**（4 位默认属性），所以查询答的是**生效色**而非请求色 |
-| `52`（剪贴板，I36） | **默认关，且只有宿主能开**：`ANSI_CLIPBOARD=on\|1\|true\|yes` 在类初始化时读一次，或 `NativeRenderer.setClipboardPolicy(true)`；字节流里没有任何东西能触到这两个入口——这正是"关"意味着关的原因（census 分辨不出用户配过的终端和脚本配过的终端，策略因此不能由计数代替）。没有 ASK 档：本库没有窗口，也就没有可提问的地方。**读**（`52;c;?`）无论写的开关开着与否都拒绝——答复等于把用户最后复制的东西塞进控制台**输入流**，也就是下一行命令。选择字段只认 `c` 和空：这台机器只有一块剪贴板，ghostty 之所以能折叠 `p`/`s`/`q`/`0-7` 是因为 X11/macOS 真有那些寄存器（`stream_terminal.zig:678-682`）。base64 严格 RFC 4648：整条要么完全合法要么整条拒绝（绝不半个解码），载荷中间的空白是拒绝而非跳过，最后一组的闲置位必须为 0（`QR==` 那种"看着像 A 其实藏着字符"的尾巴被拒），解出 NUL 整条拒绝（`CF_UNICODETEXT` 以 NUL 结尾，存前缀等于给用户半截粘贴），UTF-8 用 `MB_ERR_INVALID_CHARS` 严校验后才转 UTF-16。**空载荷是"清空"这个动作**，不是"没有载荷"。拒绝分四类各自计数（解码/选择/读取/超长），`NativeRenderer` 的收尾行说得清是哪一类。`close()` **不**恢复剪贴板：在 open 时快照就等于读，而读正是被拒的那一半。**ConEmu 根本没有 OSC 52**（实测：`Ansi.cpp` 的 OSC 开关是 `switch (*Code.ArgSZ)`，只有 0/1/2/4/9… 没有 `case L'5'`）。**但两个参照终端都有，而且默认都是开的**：Windows Terminal 有 `OscActionCodes::SetClipboard = 52`（`OutputStateMachineEngine.hpp:222`→`.cpp:821-827`→`adaptDispatch.cpp:3302`），开关是 `compatibility.allowOSC52` / `AllowVtClipboardWrite`，**默认 true**（`ControlProperties.h:59`、`MTSMSettings.h:119`，读进 `Terminal.cpp:106`）；ghostty 的 `clipboard-write` 默认 `.allow`（`Config.zig:2459`）。所以本库的**默认关是有意偏离两个参照**，理由只能是自己的：那两家是**用户自己配置并对自己负责的终端**，配置项存在的前提就是有人打开过它；而一个嵌在别人 JVM 里的渲染库没有那份配置、也没有那个动作的同意方——沉默只能读成"没同意"，不能读成"同意"。能对齐的地方都对齐了：两家都**不答复读取**（WT 解析 `?` 后 `&& !queryClipboard` 直接丢掉，`.cpp:825`），ghostty 靠 `clipboard-read=.ask` 挡住，本库连挡带不答。**与 MSFT 的另一处有意分叉**：它把选择字段整个忽略（`:1097` 注释自陈 "Currently the first parameter `Pc` is ignored"），于是 `52;p;…` 也写剪贴板；本库照 ghostty 的语法表只认 `c` 与空，其余拒绝——折叠是在回答另一个问题，而 MSFT 自己的注释说那是没做完 |
-| 其他一切（8/…） | 计数 `RC_UN_OSC_OTHER`——这条尾巴是不变量：**没有一族认领的码**才被它记账；被拒的 133 语法、未终止的 133、以及上面那些读不懂的说明也落在这里。52 已自立门户，它的拒绝记在 `RC_UN_OSC_CLIP` |
+| `0` / `1` / `2` | **the window title really lands**: upstream's guard copied verbatim (the digits must be followed by `;`, the payload must be non-empty, `]10;foo` is not a title); one pair of surrounding quotes is stripped (an empty string still *is* a title); the painter applies it with `SetConsoleTitleW`; longer than `RC_TITLE_MAX 256` it is clipped and counted and **the sequence is not lost**; an unterminated title counts and applies nothing |
+| `133` (FTCS) | **a first-class citizen** (`ftcs_apply()`, Render.cpp:1744): `A`/`N` start a new prompt row (moving to one first when needed -- the only place in the family that moves the cursor); `P` sets the prompt without moving the row; `L` is a plain line feed and **may not carry options**; `B`/`I` mark where input begins (`I`'s input ends at the line's end); `C` marks the output start and reclaims a fish-style continuation mark; `D` carries the exit code (the second field; a non-number is an error rather than a success, following MSFT) and stamps SUCCESS/ERROR onto the nearest marked row above it. `k=c`/`k=s` options recognise a continuation (ghostty's rule); a line feed or a wrap itself promotes a non-output row to CONTINUATION. Row marks are **model-private**: they travel with every vertical move and are dropped after an adopt |
+| `9` (ConEmu's private family; T7 split it) | **the safe subset is stored, never obeyed**: `9;4` stores `{state,progress}` (a state > 4 refuses the whole sequence and applies nothing, a progress > 100 clamps to 100 -- as MSFT does at `adaptDispatch.cpp:3596-3605`), `9;9` stores a path (one pair of quotes stripped, one illegal character refuses the whole thing, filtered like `til::is_legal_path`), and `9;12` calls `ftcs_apply("B")` directly -- the same code path as `133;B`, with no second copy of its semantics. Both are read **out** through `NativeRenderer.taskbar()/workingDirectory()`; this library paints no taskbar (it owns no window) and never `chdir`s (a directory from an output stream is data, not a command). **Every other subcommand counts `RC_UN_OSC_PRIV` and is never executed**: `9;1` sleep, `9;2` MessageBox, `9;3` set-environment, `9;6` GuiMacro, `9;7` DoProcess -- #687's RCE answer is unchanged. An unterminated payload counts **at the moment it is abandoned** (until then the parser is still inside it and nothing can be concluded) |
+| `4` / `10` / `11` / `104` / `110` / `111` (the palette, I34) | **they really change the console's colours**: the grammar is MSFT's (`OutputStateMachineEngine.cpp:955-1000`/`:1062-1092`) -- `4` is `(index;spec)*`, `?` inquires in place, `10/11` walk one resource per field, `104` with no fields resets the whole table and **stops at the first index it cannot parse** (MSFT:846 notes that is xterm's choice over VTE's), and `110/111` reset only on an empty payload. Accepted specs are `#RGB`/`#RRGGBB`/`#RRRRGGGGBBBB` (three equal widths) and `rgb:r/g/b` (1-4 digits each, widths may differ), scaled to 8 bits by bit replication; **X11 colour names are not resolved** and join `RC_UN_OSC_OTHER` like any other unreadable spec. Indices 0..15 change the **console attribute colours** (written back through `SetConsoleScreenBufferInfoEx` -- see that trap in §5) and participate in the fold; 16..255 change only the fold's target. `10/11` can only land on an **index** (a 4-bit default attribute), so a query answers with the **effective** colour, not the requested one |
+| `52` (the clipboard, I36) | **off by default, and only the host can turn it on**: `ANSI_CLIPBOARD=on\|1\|true\|yes` read once at class-init, or `NativeRenderer.setClipboardPolicy(true)`; nothing in the byte stream can reach either entry point, which is precisely why "off" means off (the census cannot tell a terminal the user configured from one a script configured, so a count is no substitute for a policy). There is no ASK setting: this library owns no window, so there is nowhere to ask. A **read** (`52;c;?`) is refused whether or not writing is enabled -- answering it would put what the user last copied into the console's **input** stream, i.e. into the next command line. The selection field accepts only `c` and empty: this machine has one clipboard, and ghostty can fold `p`/`s`/`q`/`0-7` only because X11 and macOS really do have those registers (`stream_terminal.zig:678-682`). base64 is strict RFC 4648: whole payload or nothing (never a partial decode), whitespace inside the payload refused rather than skipped, the unused bits of the final group required to be zero (so a tail like `QR==` -- "looks like an A, hides a character" -- is refused), a payload that decodes to a NUL refused whole (`CF_UNICODETEXT` is NUL-terminated, and storing the prefix hands the user half a paste), and the UTF-8 validated with `MB_ERR_INVALID_CHARS` before it becomes UTF-16. **An empty payload is the act of clearing**, not the absence of one. Refusals fall into four counted families (decode / selection / read / over-capacity), so `NativeRenderer`'s closing line can say which. `close()` does **not** restore the clipboard: snapshotting it at open would be the very read this half refuses. **ConEmu has no OSC 52 at all** (measured: its OSC switch is `switch (*Code.ArgSZ)` with cases 0/1/2/4/9… and no `case L'5'`). **But both reference terminals do, and both default to allowing it**: Windows Terminal has `OscActionCodes::SetClipboard = 52` (`OutputStateMachineEngine.hpp:222` -> `.cpp:821-827` -> `adaptDispatch.cpp:3302`), gated by `compatibility.allowOSC52` / `AllowVtClipboardWrite`, **default true** (`ControlProperties.h:59`, `MTSMSettings.h:119`, read at `Terminal.cpp:106`); ghostty's `clipboard-write` defaults to `.allow` (`Config.zig:2459`). So the default here is a **deliberate divergence from both references**, and the reason has to be our own: those two are terminals the user configures and answers for, and a setting exists because somebody turned it on, while a renderer living inside someone else's JVM has no such setting and no party who consented to the act -- silence can only be read as "not agreed", never as "agreed". Where the references agree, we agree: neither **answers** a read (WT parses the `?` and then drops it at `.cpp:825`; ghostty gates reads with `clipboard-read=.ask`), and this build refuses the read outright. One further deliberate split from MSFT: it ignores the selection field entirely (its own comment at `:1097` says "Currently the first parameter `Pc` is ignored"), so `52;p;…` writes the clipboard there, whereas this build follows ghostty's grammar and honours `c` and empty only -- folding answers a different question than the one that was asked, and MSFT's own comment calls that unfinished work |
+| everything else (8/…) | counted `RC_UN_OSC_OTHER` -- and that tail is the invariant: it bills **a code no family owns**. A refused 133 spelling, an unterminated 133, and the unreadable colour specs above also land here. 52 has left this list to run its own family, and its refusals are counted in `RC_UN_OSC_CLIP` |
 
-### 2.9 查询与应答（I29）
+### 2.9 Queries and replies (I29)
 
-| 查询 | 应答（`reply_text()`，RenderJni.cpp:465） |
+| Query | Reply (`reply_text()`, RenderJni.cpp:653) |
 |---|---|
-| `CSI 5 n` | `ESC [ 0 n`（ready） |
-| `CSI 6 n` | `ESC [ row ; col R`，1 基、**按窗口顶**计（与 painter 同一套算术），答复的是**读到查询那一刻**的光标（队列条目快照，`printf '\e[6n\e[2;3H'` 报的是第 1 行） |
-| `CSI c` / `CSI 0 c` | `ESC [ ?61;4;6;7;14;21;22;23;24;28;32;42c` —— **conhost 的身份串**（去掉了 `;52` 剪贴板位），不是 ConEmu 的 `?1;2c`：被拒的 chunk 会原样给 conhost 自己应答，一个会话不能见两个身份 |
-| `CSI > c` / `CSI > 0 c` | `ESC [ >0;10;1c`（conhost 的 DA2） |
-| `OSC 4;<i>;?` / `OSC 10;?` / `OSC 11;?` | `OSC 4;<i>;rgb:RRRR/GGGG/BBBB`（或无索引的 `10;rgb:…`），16 位分量＝字节 ×0x0101，ST 收尾——与 MSFT `adaptDispatch.cpp:3338`/`:3417` 同形。**答的是生效色**：默认色只有 4 位，所以报回来的是折叠后那个索引的颜色 |
-| `CSI ? <mode> $ p` | `ESC [ ? <mode> ; <status> $ y`（DECRPM），**只答模型真持有的状态**：25 → `cursorVisible`、47/1047/1049 → `alt`（三种拼法同一个位，答案不能互相矛盾）、2026 → `sync`；状态只用 1（reset）与 2（set）。快照语义同 CPR（入队时定死：同一块里 `?2026h ?2026$p ?2026l` 仍答"当时是开的"）。上游没有这条应答（`Ansi.cpp:3650-3653` 把认不出的 `p` 全送 DumpUnknownEscape），做的理由是 jline4 的探测批——它按**模式号回查**应答（`parseDecrpm`，AbstractTerminal.java:675-690），不按位置读 |
+| `CSI 5 n` | `ESC [ 0 n` (ready) |
+| `CSI 6 n` | `ESC [ row ; col R`, 1-based, **counted from the window's top** (the same arithmetic the painter used); the answer is the cursor **as it stood when the query was read** (the queue entry is a snapshot -- `printf '\e[6n\e[2;3H'` reports row 1) |
+| `CSI c` / `CSI 0 c` | `ESC [ ?61;4;6;7;14;21;22;23;24;28;32;42c` -- **conhost's identity string** (with the `;52` clipboard bit removed), not ConEmu's `?1;2c`: a declined chunk is handed to conhost, which answers that one itself, and one session must not present two identities |
+| `CSI > c` / `CSI > 0 c` | `ESC [ >0;10;1c` (conhost's DA2) |
+| `OSC 4;<i>;?` / `OSC 10;?` / `OSC 11;?` | `OSC 4;<i>;rgb:RRRR/GGGG/BBBB` (or `10;rgb:…` with no index), 16-bit components = the byte x0x0101, closed with ST -- the same shape as MSFT's `adaptDispatch.cpp:3338`/`:3417`. **The answer is the effective colour**: the defaults are 4-bit, so what comes back is the colour of the index the request folded to |
+| `CSI ? <mode> $ p` | `ESC [ ? <mode> ; <status> $ y` (DECRPM), answering **only state the model really holds**: 25 -> `cursorVisible`, 47/1047/1049 -> `alt` (three spellings of one bit, so they cannot contradict each other or the DECSET that moved them), 2026 -> `sync`; and only the two statuses 1 (reset) and 2 (set). Snapshot semantics as for CPR (fixed when the question is read: `?2026h ?2026$p ?2026l` in one chunk still answers "it was on"). Upstream has no such reply (`Ansi.cpp:3650-3653` sends every `p` it does not know to DumpUnknownEscape); the reason to answer is jline4's probe batch, which looks replies up **by mode number** (`parseDecrpm`, AbstractTerminal.java:675-690) rather than reading them positionally |
 
-机制：查询在解析时**入队**（FIFO，上限 `RC_REPORT_MAX 8`，满时拒绝并计数、不挤占旧条目）；painter 在**成功的 flush 末尾**把应答逐字符写成 `KEY_EVENT` 对写进 `CONIN$`（conhost 自己输出腿的同款合成方式），空 flush 也会写；**被拒（declined）的 chunk 不应答**（字节已回放给 conhost，二次应答就是脏输入）。
+Mechanism: a query is **queued** while parsing (FIFO, capped at `RC_REPORT_MAX 8`; a full queue refuses the new
+query and counts it rather than evicting an older one); the painter writes the answers at the **end of a
+successful flush**, one character at a time, as `KEY_EVENT` pairs into `CONIN$` (the same synthesis conhost's own
+output leg uses), and even an empty flush writes them; a **declined** chunk answers nothing (its bytes were
+handed back to conhost, and a second reply would be dirty input).
 
-### 2.10 宽度、字形与折行
+### 2.10 Width, glyphs and wrapping
 
-| 项 | 行为 |
+| Item | Behaviour |
 |---|---|
-| 宽度神谕 | `rc_width()`（Render.cpp:38）= `src/c/luauf8/ansi_width` 的 Unicode 15 表（jansi/JLine WCWidth 家族被明确排除）；控制字符 0、宽 2、普通 1 |
-| EAW 裁决 | **Ambiguous 一律按宽**，减去 206 个六款字体实测一格的例外（`AMBIGUOUS_NARROW`：制表符/块元素/重音拉丁字母）；无 VS16 提升（`A\uFE0E` 与 `A` 同宽） |
-| 零宽 | Mn/Me/Cf 不产生 cell、不占列（与 xterm/WT/glibc 一致；conhost 给组合符单独一格，**不从**） |
-| 宽字形 | 占 2 格：前格 `LEADING` 后格 `TRAILING`，同码点；放不下时**整体折行**（`RC_WRAP_PAD`），不劈半 |
-| 辅助平面 | 代理对还原成完整码点再定宽；落控制台是原码元对（不折成 U+FFFD）；chunk 边界的高代理由 `wantLow` 持有、下轮续接；孤立低代理写一格 U+FFFD |
-| 折行 | **立即换行**（无延迟换行/pending-wrap）：四条判别式双腿实测一致（CONEMU_ANSI_DEFECTS §2 末，定案不做） |
-| 软/硬换行区分 | 每行一位 `RC_WRAP_FORCED`（顶到右缘）/`RC_WRAP_PAD`（宽字形整体折）供复制/导出拼接用；不入 `CHAR_INFO`，收养后丢弃 |
-| 擦除与属性 | 擦除**整格覆写**不合并，宽字形尾半格被擦即毁（I13，conhost 同） |
+| The width oracle | `rc_width()` (Render.cpp:38) = the Unicode 15 tables in `src/c/luauf8/ansi_width` (the jansi/JLine WCWidth family is explicitly excluded); control characters 0, wide 2, ordinary 1 |
+| The EAW ruling | **Ambiguous counts as wide**, minus the 206 exceptions measured at one cell across six fonts (`AMBIGUOUS_NARROW`: box glyphs, block elements, accented Latin); no VS16 promotion (`A\uFE0E` is as wide as `A`) |
+| Zero width | Mn/Me/Cf produce no cell and take no column (as xterm/WT/glibc; conhost gives a combining mark its own cell, and we **do not** follow it) |
+| Wide glyphs | 2 cells: a `LEADING` and a `TRAILING` half carrying the same code point; when they do not fit the **pair wraps whole** (`RC_WRAP_PAD`) and is never split |
+| The supplementary planes | a surrogate pair is reassembled into the full code point before it is measured; what reaches the console is the original pair of units (never folded to U+FFFD); a high surrogate at a chunk boundary is held in `wantLow` and completed next time; a lone low surrogate writes one U+FFFD cell |
+| Wrapping | **immediate** (no deferred wrap / pending-wrap): the four discriminators agreed on both legs when measured (CONEMU_ANSI_DEFECTS §2 end), so it stays undone |
+| Soft vs hard break | one bit per row, `RC_WRAP_FORCED` (pushed to the right edge) or `RC_WRAP_PAD` (a wide pair wrapped whole), for copy and export to join rows correctly; it is not in `CHAR_INFO` and is dropped after an adopt |
+| Erasing and attributes | an erase **overwrites whole cells** without merging, so a wide glyph's trailing half is destroyed when erased (I13, as conhost does) |
 
 ---
 
-## 3 不支持的特性（均已消费 + 计数，见 §6）
+## 3 Not supported (all consumed and counted; see §6)
 
-### SGR / 颜色
+### SGR / colour
 
-| 项 | 行为 | 备注 |
+| Item | Behaviour | Note |
 |---|---|---|
-| 闪烁 `5/6/25` | 无状态 | 上游同 |
-| 斜体 `3/23`、删除线 `9/29` 的**绘制** | 状态存了，画不出来 | 传统属性无位；真要画需自绘（上游 #677/#856 缺口同源） |
-| `8` 隐形、`53` 上划线、`21` 双下划线、`51/52` 边框、`58/59` 下划线颜色 | 落入"未知参数跳过" | 无对应模型状态 |
-| **colon 子参数** `38:2::r:g:b`、`4:3` 等 | **整条序列丢弃**，计 `RC_UN_COLON` | `:` 在 ConEmu 属 Pvt 字节；这是 I10 平价决策（上游真解析它的是 Windows Terminal），计数是为了将来有应用真发 colon 形式时手里有数 |
-| 256/24bit 色逐字节还原 | 支持，但**经 ConEmu 调色板折叠** | 与"真实色彩"有偏差是特性不是缺陷（#2516 复刻）；`48;2;…` 不退化为色号 8 |
+| blink `5/6/25` | no state | as upstream |
+| **painting** italic `3/23` and crossed-out `9/29` | state kept, nothing drawn | the legacy attribute has no bit; drawing them means drawing ourselves (the same upstream gap as #677/#856) |
+| `8` invisible, `53` overline, `21` double underline, `51/52` framed, `58/59` underline colour | fall under "unknown parameter, skipped" | no state in the model for them |
+| **colon subparameters** `38:2::r:g:b`, `4:3`, … | **the whole sequence is dropped**, counted `RC_UN_COLON` | `:` is a Pvt byte in ConEmu; this is the I10 parity decision (the terminal that really parses them is Windows Terminal), and counting them is so a rollout has a number the day an application starts sending the colon form |
+| 256-colour and 24-bit fidelity | supported, but **through ConEmu's palette fold** | differing from "true colour" is a feature, not a defect (#2516 reproduced); `48;2;…` does not degrade to colour number 8 |
 
-### 定位与制表
+### Positioning and tabs
 
-| 项 | 行为 | 备注 |
+| Item | Behaviour | Note |
 |---|---|---|
-| `CSI Z` CBT、`ESC H` HTS | 丢弃，计 `RC_UN_SUP` | **没有任何 tab-stop 状态**，所以 CBT 无处可退 |
-| 制表位 | 仅 HT 固定 8 列，不可配置 | terminfo 侧相应不给 `cbt/hts/tbc` |
-| 左右边距（DECLRMM/DECSLRM）、原点模式 DECOM | 计数 `RC_UN_MODE` | 未建模 |
+| `CSI Z` CBT, `ESC H` HTS | dropped, counted `RC_UN_SUP` | there is **no tab-stop state at all**, so CBT has nowhere to back up to |
+| tab stops | HT's fixed 8 columns only, not configurable | the terminfo entry correspondingly offers no `cbt/hts/tbc` |
+| left/right margins (DECLRMM/DECSLRM), origin mode DECOM | counted `RC_UN_MODE` | not modelled |
 
-### DEC/ANSI 模式
+### DEC/ANSI modes
 
-| 项 | 行为 | 备注 |
+| Item | Behaviour | Note |
 |---|---|---|
-| `?1` DECCKM（应用光标键） | 计数 `RC_UN_MODE` | 只影响**输入侧**，本渲染器不碰输入编码 |
-| 鼠标 `?9`、`?1000` `?1002` `?1003` `?1004` `?1005` `?1006` `?1015` | 计数 `RC_UN_MOUSE` | 不产生鼠标上报 |
-| 括号粘贴 `?2004` | 计数 `RC_UN_DECBP`；无标记生产者（角色错位：粘贴执行者是 conhost QuickEdit，读取者是 jline 泵，DLL 是输出腿且**不得**读 CONIN$ 抢输入）| 可选升级：DLL 存位+DECRPM 应答+暴露，宿主输入泵做突发打标——见 ANSI_TODO §6 |
-| 其余一切私有/ANSI 模式（含 `?6n` 之外的查询式、`?3`、`?12`、非私有的 `7` GATM、`4` IRM、`20` LNM） | 计数 `RC_UN_MODE` | 上游逐一核对过：要么无 case，要么 case 体为空/被注释；IRM 的真实替代是 `CSI @` 恒插入 |
-| `CSI ? 6 n` 扩展 CPR | **故意不答**，计数 | 扩展问题答普通形式 = 报一个没问的位置；拒绝是不会错的选项 |
-| `?2027$p` / `?2048$p` / `?1048$p` | **故意不答**，计数 `RC_UN_MODE` | 永久值 3/4 在 DEC/xterm 与 jline4 的文档里正好相反（`AbstractTerminal.java:663-667`），发哪一个都对一方说谎（2048 答"永久置位"＝宣称尺寸变化会进数据流）；1048 是存/取光标的**事件**，不是可报的状态。沉默对 jline4 就是 `NOT_SUPPORTED`，与 `?6n` 同一先例 |
+| `?1` DECCKM (application cursor keys) | counted `RC_UN_MODE` | it changes the **input side** only, and this renderer does not touch input encoding |
+| mouse `?9`, `?1000` `?1002` `?1003` `?1004` `?1005` `?1006` `?1015` | counted `RC_UN_MOUSE` | no mouse reports are produced |
+| bracketed paste `?2004` | counted `RC_UN_DECBP`; there is no marker producer (a role mismatch: the paste is performed by conhost's QuickEdit, read by jline's pump, and the DLL is the output leg and **must not** read CONIN$ and steal input) | an optional upgrade: the DLL stores the bit + answers DECRPM + exposes it, and the host's input pump marks bursts -- see ANSI_TODO §6 |
+| every other private/ANSI mode (including the query spellings other than `?6n`, `?3`, `?12`, the non-private `7` GATM, `4` IRM, `20` LNM) | counted `RC_UN_MODE` | each one checked against upstream: no case at all, or a case whose body is empty or commented out; the real replacement for IRM is that `CSI @` always inserts |
+| `CSI ? 6 n` extended CPR | **deliberately unanswered**, counted | answering an extended question with the plain form reports a position nobody asked for; refusing is the option that cannot be wrong |
+| `?2027$p` / `?2048$p` / `?1048$p` | **deliberately unanswered**, counted `RC_UN_MODE` | the permanent values 3/4 mean opposite things in DEC/xterm and in jline4's own documentation (`AbstractTerminal.java:663-667`), so whichever is sent one reader is lied to (2048 answered "permanently set" would claim resize arrives in the data stream); 1048 is a save/restore **event**, not reportable state. Silence is `NOT_SUPPORTED` for that asker, exactly as `?6n` set the precedent |
 
-### 报告与窗口
+### Reports and windows
 
-| 项 | 行为 | 备注 |
+| Item | Behaviour | Note |
 |---|---|---|
-| `CSI t` 窗口操作（含像素尺寸上报 `14t`、字符尺寸 `18t/19t`） | 计数 `RC_UN_REPORT`，不答 | 像素尺寸需要不属于本库的窗口矩形；`18/19` 能答但尚无真实使用方（规则：真实写手在发才建模） |
-| 带参数的 DA（`CSI > 0 ; 1 c` 等） | 计数 `RC_UN_REPORT` | 上游无此应答拼法 |
-| OSC 8（超链接） | 计数 `RC_UN_OSC_OTHER` | **不支持**（#56，用户 2026-09-26 定案不做）：链接是**区间**不是 cell，得住在 `rowWrap[]` 旁边并继承 I20 那条永远读不回来的债；只做序列本身换不到用户看得见的一件事。OSC 52 已于 I36 落地（§2.8），不在本行；调色板族 4/10/11/104/110/111 已于 I34 落地，也不在 |
-| ConEmu 私有 OSC `9` 的**危险半区**（`9;1` sleep / `9;2` MessageBox / `9;3` 改环境变量 / `9;6` GuiMacro / `9;7` **DoProcess**） | 计数 `RC_UN_OSC_PRIV`，**永不执行** | #687 RCE：实现其语义的唯一底线是不实现语义。安全半区 `9;4`/`9;9`/`9;12` 见 §2.8——存下来给人读，不等于执行 |
+| `CSI t` window operations (including the pixel report `14t` and the character sizes `18t/19t`) | counted `RC_UN_REPORT`, not answered | a pixel size needs a window rectangle this library does not own; `18/19` could be answered but there is no consumer yet (the rule: model what a real writer sends) |
+| DA with parameters (`CSI > 0 ; 1 c` and friends) | counted `RC_UN_REPORT` | upstream has no such reply spelling |
+| OSC 8 (hyperlinks) | counted `RC_UN_OSC_OTHER` | **not supported** (#56, ruled out by the user on 2026-09-26): a link is a **range**, not a cell, so it would have to live beside `rowWrap[]` and inherit I20's never-readable-back debt; the sequence alone buys the user nothing visible. OSC 52 landed as I36 (§2.8) and does not belong to this row, and neither does the palette family 4/10/11/104/110/111, landed as I34 |
+| the **dangerous half** of ConEmu's private OSC `9` (`9;1` sleep / `9;2` MessageBox / `9;3` set-environment / `9;6` GuiMacro / `9;7` **DoProcess**) | counted `RC_UN_OSC_PRIV`, **never executed** | #687's RCE: the only floor under executing the semantics is not implementing them. The safe half -- `9;4`/`9;9`/`9;12` -- is in §2.8: stored to be read is not the same as executed |
 
-### 字符集与图形
+### Character sets and graphics
 
-| 项 | 行为 | 备注 |
+| Item | Behaviour | Note |
 |---|---|---|
-| `ESC ) c` G1、`ESC % G` UTF-8 选择 | 计数 `RC_UN_SUP` | 上游 default 臂同；输入已是 UTF-16 |
-| `ESC P/X/^/_`（DCS/SOS/PM/APC） | 载荷按 OSC 同款框架消费后**整体丢弃**，计 `RC_UN_DCS` | 无 Sixel/kitty 图形、无 XTGETTCAP |
-| SS2/SS3 移位 | 只吞引导符，后续字节照常打印 | 不吞字是刻意的（吞了就丢一列） |
+| `ESC ) c` G1, `ESC % G` UTF-8 selection | counted `RC_UN_SUP` | same as upstream's default arm; the input is UTF-16 already |
+| `ESC P/X/^/_` (DCS/SOS/PM/APC) | the payload is consumed with OSC's framing and then **discarded whole**, counted `RC_UN_DCS` | no Sixel or kitty graphics, no XTGETTCAP |
+| SS2/SS3 shifts | only the introducer is swallowed; the byte after it prints normally | not eating the glyph is deliberate (eating one costs a column) |
 
-### 换行模型
+### The wrap model
 
-| 项 | 行为 | 备注 |
+| Item | Behaviour | Note |
 |---|---|---|
-| 延迟换行（pending wrap/DECAWM 推迟） | **不实现** | 四条判别式（满行后 CR+Y、BS+Y、EL、CUA+Y）双腿全部一致；改成延迟只会造出新分叉（#2404 族上游的缺陷温床）。与 `?7` 无关：那条推迟的是"填满最后一格后游标先留在原地"，本模型立即进下一格，关窗时也一样 |
-| DECAWM `CSI ?7 h/l`（**已实现**，I35，#61） | 开=右缘换行（原样）；**关=末格被反复覆盖**：游标停在右缘、那一行**不记** `RC_WRAP_FORCED`、下面不起新行、放不下的字形**整颗丢**（并把那格清成空格） | 包裹是本模型的行为而不是 `ENABLE_WRAP_AT_EOL` 的行为，所以能实现。丢整颗 = MSFT `Row.cpp:474-494`（"Ignore the character..."）+ 它的防死锁守卫；窄字覆盖宽字前随后清掉后半个是 conhost 的 cluster trim（I16 的"字对是一个单位"）；游标绝不留在宽字后半内（`step_back_col` 那条规矩）。`RIS`/`DECSTR` 复位；resize 重建**保持**当前值（一次改尺寸不是"重新开始换行"的请求）；DECRQM `?7$p` 答 1/2；`?7` 不再进 `RC_UN_MODE`。**caps 里仍然没有** `smam`/`rmam`，理由见 §2.5 |
+| deferred wrap (pending wrap / postponing DECAWM) | **not implemented** | all four discriminators (CR+Y after a full row, BS+Y, EL, CUA+Y) agreed on both legs; switching to deferred would only create a new divergence (upstream's breeding ground for the #2404 family). Unrelated to `?7`: what that postpones is "the cursor stays on the last cell after it is filled", and this model moves on immediately, wrap mode or not |
+| DECAWM `CSI ?7 h/l` (**implemented**, I35, #61) | on = wrap at the right edge (unchanged); **off = the last cell is overwritten repeatedly**: the cursor holds at the margin, the row takes **no** `RC_WRAP_FORCED` claim, no row below is started, and a glyph that cannot fit is dropped **whole** (and that cell cleared to blank) | wrapping is this model's behaviour rather than `ENABLE_WRAP_AT_EOL`'s, which is why it can be implemented at all. Dropping whole = MSFT `Row.cpp:474-494` ("Ignore the character. There's no correct alternative way to handle this situation") plus its anti-deadlock guard; clearing the orphaned back half when a narrow glyph overwrites a wide one's front half is conhost's cluster trim (I16's "the pair is one unit"); a cursor never rests inside a wide glyph (the `step_back_col` rule). `RIS`/`DECSTR` restore the mode; a resize rebuild **keeps** the current value (a resize is not a request to start wrapping again); DECRQM answers 1 or 2 for `?7`; `?7` no longer votes `RC_UN_MODE`. The caps entry **still** carries no `smam`/`rmam` -- see §2.5 for why |
 
 ---
 
-## 4 有意偏离 ConEmu 的清单（全部记录在案）
+## 4 Deliberate divergences from ConEmu (each of them on the record)
 
-1. **ESC 遇到未完的 CSI/OSC → 遗弃并重开**（`\e[3\e[31m` 上红色；ConEmu 把 ESC 停驻在 Pvt 里继续吞，打印出 `31m` 文本）——Render.h 偏离 #1。
-2. **可续接状态机取代 512 字节 reparse 窗**（上游的 reparse 会静默丢超限字节）——偏离 #2。
-3. **参数累加饱和 65535**，不复刻上游 int 溢出——偏离 #3，仅在荒谬输入上有差。
-4. **ECH 钳制修正**：用真实剩余格数（上游公式每行差一格，最后一列幸存）；跨行止于视口底。
-5. **IL/DL 越区钳制**：n 超出区高时只清区内（上游按 `dwSize.X * n` 从光标行起写，会冲掉区底以下内容）。
-6. **IND 区域感知**：上游 ForwardLF 不看滚动区；本模型让 LF/IND/NEL/RI 对"哪几行滚动"给同一答案。
-7. **`move_row` 的区裁剪用模型坐标**：上游拿绝对缓冲行比窗口相对光标，差一个窗口位置。
-8. **应答身份用 conhost 串**（DA1 `?61;…`、DA2 `>0;10;1`），不用 ConEmu 的 `?1;2c` / `>0;136;0`：被拒 chunk 由 conhost 亲自应答，身份必须一致。
-9. **辅助平面存原码元**（`put_pair`），`REP` 存完整码点（上游 WCHAR 只存半代理，重放两次半字）。
-10. **IL/DL 的区守卫**：光标不在区内时不作用。这不是"上游能做我们不做"，而是**我们更贴 VT**——xterm 与 MSFT 都只在区内生效；上游 ConEmu 允许光标悬在区上沿时越顶拉行，那是它自己的宽松。
-11. **DECSTBM 的两处不再镜像上游**（2026-09-25 复核"上游也不做"式理由的结果）：单参数按缺省补边缘、反序参数忽略而非清区，两条都与 MSFT/xterm 一致而与 `Ansi.cpp:3142-3150` 不同；钳制与 `Pt==Pb` 容忍仍与上游一致（理由见 §2.4 该行）。
-12. **`SetConsoleScreenBufferInfoEx` 的往返会吃掉一行窗口**（2026-09-25 实测）：把 `Get` 读来的结构原样写回，`srWindow.Bottom` 从 29 变 28（30 行窗口变 29 行），下一帧规划器判定「控制台形状与模型不符」而**整帧拒绝**——设一个颜色就会缩用户的视口并从此不再作画；`close()` 里复位调色板时同样中招（24 行的那条腿读到 23 行）。对策是写回后用 `GetConsoleScreenBufferInfo` 比对，若动了就用 `SetConsoleScreenBufferSize`+`SetConsoleWindowInfo` 修回，两条路径共用同一个 `apply_palette`。**任何走 InfoEx 写路径的新特性都必须带这个修复。**
+1. **An ESC inside an unfinished CSI/OSC abandons and restarts** (`\e[3\e[31m` turns red; ConEmu parks the ESC in
+   Pvt and keeps swallowing, printing the text `31m`) -- Render.h deviation #1.
+2. **A resumable state machine instead of the 512-byte reparse window** (upstream's reparse silently drops what
+   does not fit) -- deviation #2.
+3. **Parameter accumulation saturates at 65535** instead of reproducing upstream's int overflow -- deviation #3,
+   differing only on absurd input.
+4. **ECH's clamp is fixed**: the real remaining cell count (upstream's formula is one cell off per row, so the
+   last column survives); crossing into further rows stops at the viewport bottom.
+5. **IL/DL clamp to the region**: when n exceeds the region's height only the region is filled (upstream writes
+   `dwSize.X * n` starting at the cursor's row, overrunning whatever sits below the region bottom).
+6. **IND is region-aware**: upstream's ForwardLF ignores the scroll region; here LF/IND/NEL/RI all agree about
+   which rows scroll.
+7. **`move_row`'s region clamp uses model coordinates**: upstream compares absolute buffer rows against a
+   window-relative cursor, off by exactly the window's position.
+8. **Reply identities are conhost's strings** (DA1 `?61;…`, DA2 `>0;10;1`), not ConEmu's `?1;2c` / `>0;136;0`: a
+   declined chunk is answered by conhost itself, and the two must not disagree.
+9. **The supplementary planes keep their original units** (`put_pair`), while `REP` stores a full code point
+   (upstream's WCHAR stores half a surrogate and replays the fragment twice).
+10. **IL/DL's region guard**: they do nothing when the cursor is outside the region. That is not "they can, we
+    cannot" -- it is us being **closer to VT**: xterm and MSFT both act inside the region only, and upstream
+    ConEmu lets a cursor parked above the top pull rows over it, which is its own looseness.
+11. **DECSTBM no longer mirrors upstream in two places** (the outcome of the 2026-09-25 review of "upstream does
+    not do it either"): a one-parameter call takes the missing edge from the viewport, and an inverted pair is
+    ignored rather than cleared -- both agree with MSFT/xterm and differ from `Ansi.cpp:3142-3150`. The clamping
+    and the `Pt==Pb` tolerance still agree with upstream (the reasons are in that §2.4 row).
+12. **`SetConsoleScreenBufferInfoEx` eats a window row on the round trip** (measured 2026-09-25): writing the
+    struct straight back after reading it moves `srWindow.Bottom` from 29 to 28 (a 30-row window becomes 29), the
+    next plan then reads NOGEOM and **declines the whole frame** -- setting a colour would shrink the user's
+    viewport and never paint again; the palette restore in `close()` walked into the same thing (a 24-row leg read
+    back 23). The countermeasure is to re-read the plain info after writing and, if the console disagrees, put the
+    rect and size back with `SetConsoleScreenBufferSize` + `SetConsoleWindowInfo`; both paths share one
+    `apply_palette`. **Any new feature that writes through InfoEx has to carry this fix.**
 
 ---
 
-## 5 边界与上限
+## 5 Bounds and limits
 
-| 上限 | 值 | 越界行为 |
+| Limit | Value | Behaviour past it |
 |---|---|---|
-| `RC_MAX_COLS` | 4096 | `open()` 拒绝（OPEN_WIDE），调用方继续用旧 Java 写手 |
-| `RC_MAX_ROWS` | 256 | 行数 ≥256 拒绝（OPEN_NO_GUTTER）；gutter 高度 = 行数 ≤128 时一整屏、129..255 递减 |
-| `RC_CSI_ARGS` | 16 | 超出参数丢弃 |
-| `RC_TITLE_MAX` | 256 | **套用**的标题长度：截断 + `nTitleTrunc` 计数，序列本身照常消费 |
-| `RC_OSC_MAX` | 32768 | OSC/DCS 载荷**收集**上限（`nOsc` 单元）。越界后标题仍按 `RC_TITLE_MAX` 截断并计数；OSC 52 整条拒绝（`nClipBad`）——截断的 base64 不是消息 |
-| `RC_CLIP_ENC_MAX` | 16384 | OSC 52 载荷的编码长度上限，超出即整条拒绝 |
-| `RC_CLIP_MAX` | 12288 | 解码后的字节上限；`rc_clip_take` 的 cap 就是它，所以"装不下"在解析期就已判完 |
-| `RC_REPORT_MAX` | 8 | 满队列**拒绝**新查询并计 `nReportFull`，不挤旧条目 |
-| `RC_SGR_ECHO_MAX / RC_SGR_CAP_MAX` | 1024 / 64 | SGR 回显仅为证人存根，溢出计 `nSgrDrop`，不影响解析 |
+| `RC_MAX_COLS` | 4096 | `open()` refuses (OPEN_WIDE) and the caller keeps using the old Java writer |
+| `RC_MAX_ROWS` | 256 | refused at >= 256 rows (OPEN_NO_GUTTER); the gutter is a full screen at <= 128 rows and shrinks from 129 to 255 |
+| `RC_CSI_ARGS` | 16 | extra parameters are dropped |
+| `RC_TITLE_MAX` | 256 | the length of an **applied** title: clipped plus `nTitleTrunc` counted, the sequence still consumed |
+| `RC_OSC_MAX` | 32768 | how many units of OSC/DCS payload are **collected** (`nOsc`). Past it a title is still clipped to `RC_TITLE_MAX` and counted, while OSC 52 is refused whole (`nClipBad`) -- truncated base64 is not a message |
+| `RC_CLIP_ENC_MAX` | 16384 | the encoded-length cap on an OSC 52 payload; past it the request is refused whole |
+| `RC_CLIP_MAX` | 12288 | the decoded byte cap, which is also `rc_clip_take`'s cap, so "it does not fit" is decided while parsing |
+| `RC_REPORT_MAX` | 8 | a full queue **refuses** the new query and counts `nReportFull`; older entries are never evicted |
+| `RC_SGR_ECHO_MAX / RC_SGR_CAP_MAX` | 1024 / 64 | the SGR echo exists only as a witness stub; overflow counts `nSgrDrop` and never disturbs parsing |
 
 ---
 
-## 6 计数器（census）一览（`RcUnsupported`，Render.h:78）
+## 6 The counters (the census) (`RcUnsupported`, Render.h:87)
 
-槽位序号是 JNI 侧**位置契约**，永不重编号。
+Slot numbers are a **positional contract** with the JNI side and are never renumbered.
 
-| 计数器 | 触发 | 置 `modelSuspect`? |
+| Counter | Trigger | sets `modelSuspect`? |
 |---|---|---|
-| `RC_UN_SUP` | 本 switch 无 case 的 CSI/ESC final（`default:` 臂）⇒ **置疑**；以及已知惰性的 `Z/q 无空格/p 其他拼法`（走 `ignored()`）⇒ **不置疑** | 仅 default 臂 |
-| `RC_UN_DECSTBM` | 死槽（`CSI r` 已建模），仅为位置契约保留 | 否 |
-| `RC_UN_ALTBUF` | 备屏快照 malloc 失败 | 否（序列已消费、屏未动） |
-| `RC_UN_MOUSE` | 鼠标模式族 | 否 |
-| `RC_UN_MODE` | 私钥前缀 SGR、未建模的 DEC/ANSI 模式、ESC g/H/=/> 等 | 否 |
-| `RC_UN_DECBP` | 括号粘贴 2004 | 否 |
-| `RC_UN_OSC_PRIV` | ConEmu 私有 OSC 9（含未终止） | 否 |
-| `RC_UN_OSC_OTHER` | 其他 OSC 码、未终止的标题、被拒/未终止的 133 | 否 |
-| `RC_UN_DCS` | DCS/SOS/PM/APC | 否 |
-| `RC_UN_REPORT` | 不答的查询（`CSI t`、带参 DA、`?6n`、非 5/6 的 DSR） | 否 |
-| `RC_UN_COLON` | CSI 携带 `:`（每序列一票） | 否 |
-| `RC_UN_OSC_CLIP` | OSC 52 被拒的四种理由之一：策略关、这台机器没有那块寄存器、载荷没通过严格解码、超出上限，或是一次**读取** | 否 |
+| `RC_UN_SUP` | a CSI/ESC final this switch has no case for (the `default:` arm) => **suspect**; and the known-inert `Z`, `q` with no interim, and the other spellings of `p` (through `ignored()`) => **not suspect** | the default arm only |
+| `RC_UN_DECSTBM` | a dead slot (`CSI r` is modelled), kept only for the positional contract | no |
+| `RC_UN_ALTBUF` | the alternate-screen snapshot failed to allocate | no (the sequence is consumed and the screen did not move) |
+| `RC_UN_MOUSE` | the mouse mode family | no |
+| `RC_UN_MODE` | private-prefixed SGR, unmodelled DEC/ANSI modes, `ESC g/H/=/>` and friends | no |
+| `RC_UN_DECBP` | bracketed paste 2004 | no |
+| `RC_UN_OSC_PRIV` | ConEmu's private OSC 9 (including unterminated) | no |
+| `RC_UN_OSC_OTHER` | any other OSC code, an unterminated title, a refused or unterminated 133 | no |
+| `RC_UN_DCS` | DCS/SOS/PM/APC | no |
+| `RC_UN_REPORT` | queries that are not answered (`CSI t`, DA with parameters, `?6n`, DSR other than 5/6) | no |
+| `RC_UN_COLON` | a CSI that carried `:` (one vote per sequence) | no |
+| `RC_UN_OSC_CLIP` | one of OSC 52's refusals: policy off, a selection this platform has no place for, a payload that failed the strict decode, a request over the cap -- or a **read** | no |
 
-配套动作：`modelSuspect` 置位后 painter 对控制台**重收养一次**再清位（自愈）；另有 `nTitleSet/nTitleTrunc`、`nClipSet/nClipBad/nClipSel/nClipRead`（+ painter 侧的 `g_clipCalls/g_clipFails`）、`nAltSwitch/nAltFail`、`nReportOk/nReportFail/nReportFull`、`nPromptMark` 等专项计数。第 12 个槽是 -24 加的，而 `STAT_TITLES = STAT_UNSUPPORTED + RC_UN_MAX`——所以**加一个槽会把后面每一族的偏移都挪一格**，`Render.java` 与 `NativeRenderer` 两张硬编码表必须同步 +1（真机门禁第一次跑出来的一片 0 就是这件事的收据）。
+What goes with them: once `modelSuspect` is set the painter **re-adopts the console once** and clears the bit
+(self-healing); besides that there are the family-specific tallies `nTitleSet/nTitleTrunc`,
+`nClipSet/nClipBad/nClipSel/nClipRead` (plus `g_clipCalls/g_clipFails` on the painter's side),
+`nAltSwitch/nAltFail`, `nReportOk/nReportFail/nReportFull` and `nPromptMark`. The 12th slot arrived at -24, and
+`STAT_TITLES = STAT_UNSUPPORTED + RC_UN_MAX` -- so **adding one slot shifts the offset of every family after
+it**, and `Render.java`'s and `NativeRenderer`'s two hardcoded tables have to move by +1 in lockstep (the field
+of zeroes the live gate printed on its first -24 run is the receipt for that).
 
-同步输出一族（`RcGrid`，不在 `RcUnsupported` 里：它们记的是"模式怎么用的"，不是"什么没建模"）：`nSyncEngages`（开过几个区域，是下面所有的分母）、`nSyncNested`（区域内的第二个 BSU）、`nSyncHeld`（被推迟的帧）、`nSyncTimeout`（时钟到点、顺带清模式）、`nSyncOverflow`（gutter 满、区域保留）、`nSyncDeclined`（chunk 被拒，区域结束并走重收养）。加上实时位 `sync`，共 7 个槽，`stats()` 尾部位置契约：`Render.java` 的 `S_SYNC*` 与 `NativeRenderer` 的 `SLOT_SYNC*` 必须与 `RenderJni.cpp` 的 `STAT_SYNC` 一起改，真控制台门禁有一条断言压着数组长度。
+The synchronized-output family (`RcGrid`, deliberately not in `RcUnsupported`: they record *how the mode was
+used*, not *what is unmodelled*): `nSyncEngages` (how many regions opened -- the denominator for all the others),
+`nSyncNested` (a second BSU inside a region), `nSyncHeld` (frames deferred), `nSyncTimeout` (the clock expired,
+which also cleared the mode), `nSyncOverflow` (the gutter filled, the region kept open), `nSyncDeclined` (a chunk
+was refused, so the region ended and the re-adopt path ran). With the live bit `sync` that is seven slots at the
+tail of `stats()`, and the same positional contract: `Render.java`'s `S_SYNC*`, `NativeRenderer`'s `SLOT_SYNC*`
+and `RenderJni.cpp`'s `STAT_SYNC` move together, and the live gate has an assertion holding the array length.
