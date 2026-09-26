@@ -296,7 +296,7 @@ typedef struct RcGrid
    * row and touching `cols` cells per row. At the shapes this product runs on -- a 2000-column buffer,
    * the profile this machine's conhost defaults to -- the old row-by-row `memcpy` cost 99.7 us of a
    * 104.7 us line feed, so 95% of the model's work was moving bytes that did not need to move
-   * (`cache/p63/rot75/before.txt`, #75's unit price). A rotation is 24 ns for the same 255 rows.
+   * (`RowBench.cpp`, #75's unit price; the table is DESIGN.md section 5). A rotation is 24 ns for 255 rows.
    *
    * Everything that travels with a row travels through this: the damage overlay and the row's own claims
    * are indexed physically too, so `scroll_carry` and `row_carry` cannot get half of them left behind --

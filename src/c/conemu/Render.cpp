@@ -486,7 +486,8 @@ static void region(const RcGrid *g, int *top, int *bot)
  * -- which is what `rc_validate_grid` now insists on -- and no cell is copied.
  *
  * This is #75, and the price that bought it: at a 2000-column buffer and a 128-row window, the row-by-row
- * `memcpy` this replaces was 99.7 us of a 104.7 us line feed (cache/p63/rot75/before.txt). The rotation is
+ * `memcpy` this replaces was 99.7 us of a 104.7 us line feed (`RowBench.cpp`, whose table is in
+ * DESIGN.md section 5). The rotation is
  * 24 ns for the same 255 rows.
  *
  * What comes free with it is the part that matters for correctness: the row's own claims and its damage

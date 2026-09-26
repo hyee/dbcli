@@ -8,6 +8,7 @@
 #
 #   src/c/conemu/bench.sh                  # both bitnesses into cache/native-probe
 #   src/c/conemu/bench.sh x64
+#   src/c/conemu/bench.sh --bench     # RowBench.cpp, on the host: no console, so no cross build
 #
 # Run the result on Windows, not under wine (there is none) and not from WSL's interop: the benchmark
 # needs a real console because that is the thing being measured.
@@ -22,10 +23,19 @@ LINK="-static -static-libgcc -static-libstdc++"
 rc=0
 
 want=${1:-both}
+if [ "$want" = --bench ]; then
+  # The row bench measures the model, so it needs no console and no Windows: build it the way the host
+  # gate is built (build.sh's rendercheck line) and run it here.
+  CC_HOST=$(command -v clang++ || command -v g++ || true)
+  [ -n "$CC_HOST" ] || { printf 'no host C++ compiler (clang++ or g++) for --bench\n' >&2; exit 1; }
+  "$CC_HOST" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter -o "$SCRATCH/rowbench" \
+      "$SRC_DIR/RowBench.cpp" "$SRC_DIR/Render.cpp" "$SRC_DIR/Paint.cpp" || exit 1
+  exec "$SCRATCH/rowbench"
+fi
 case "$want" in
   x86|x64|both) : ;;
-  -h|--help) sed -n '1,20p' "$0"; exit 0 ;;
-  *) printf 'usage: bench.sh [x86|x64|both]\n' >&2; exit 2 ;;
+  -h|--help) sed -n '1,24p' "$0"; exit 0 ;;
+  *) printf 'usage: bench.sh [x86|x64|both|--bench]\n' >&2; exit 2 ;;
 esac
 
 mkdir -p "$SCRATCH"
