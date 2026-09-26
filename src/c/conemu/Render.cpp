@@ -971,6 +971,46 @@ static int arg(const RcGrid *g, int i, int dflt)
   return (i < g->nArgs && g->args[i] > 0) ? g->args[i] : dflt;
 }
 
+/* An argument read as a **count of things**, which is the shape every `CSI Ps` that moves, inserts, deletes
+ * or erases has. Two rules belong here rather than at the eight arms that need them: DEC says an omitted
+ * parameter and a zero parameter are the same request and both mean one, and a count cannot exceed what there
+ * is to count. `limit` is that -- the rows a region can reach, the cells in front of the cursor -- and it may
+ * be 0, which means "nothing here to do" and comes back 0.
+ *   `shift_region` and `scroll_up` bound the move again for their own internal callers. That is not this
+ * helper failing twice: the parser clamps what an application *asked for*, the model clamps what a call from
+ * inside this file can mean, and only the first is a decision about the wire. */
+static int count_arg(const RcGrid *g, int i, int limit)
+{
+  int n = arg(g, i, 1);
+  if (n > limit) n = limit;
+  return n > 0 ? n : 0;
+}
+
+/* The same, for the two sequences that read the parameter **raw** because zero is an answer rather than an
+ * absent value: `CSI 0X` erases nothing and `CSI 0b` repeats nothing. ghostty clamps both to one
+ * (Terminal.zig:3443-3446) and is the odd one out; ConEmu lets the zero stand and MSFT's arithmetic agrees
+ * (`std::min(startCol + numChars, GetLineWidth(row))` over a `numChars` that came from `Ps` untranslated).
+ * REP passes `RC_ARG_MAX` for `limit`: it emits *text*, so it wraps and every count is honoured -- the
+ * only ceiling it has is the accumulator's own, which saturates rather than wrapping (deviation #3). */
+static int count_arg_raw(const RcGrid *g, int i, int limit)
+{
+  int n = (i < g->nArgs) ? g->args[i] : 1;
+  if (n > limit) n = limit;
+  return n > 0 ? n : 0;
+}
+
+/* DECSTBM's two parameters are 1-based rows *within the page*, and each defaults to the edge it sits at:
+ * `CSI 3r` is rows 3..bottom, `CSI ;4r` is 1..4. Out of range pulls back to the page rather than refusing,
+ * which is the recorded split from MSFT (`adaptDispatch.cpp:2260` rejects an out-of-range bottom outright);
+ * clamping is the deviation, so it is stated once, here, and `t > b` remains an ignore rather than a swap. */
+static int region_arg(const RcGrid *g, int i, int dflt, int page)
+{
+  int n = arg(g, i, dflt);
+  if (n < 1) n = 1;
+  if (n > page) n = page;
+  return n;
+}
+
 /* Arm a reply the painter owes. Nothing here writes: the console input handle belongs to the process, and
  * a parser that could reach it would make every host test of this file a test of a handle. So the query
  * becomes one queue entry carrying the cursor as it stands, and RenderJni.cpp::flush_reports turns the entry
@@ -1311,16 +1351,25 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
        column kept is a row printed n columns off, once per row. */
     case 'L': case 'M':
     {
-      int n = arg(g, 0, 1), top, bot;
+      int n, top, bot;
       region(g, &top, &bot);
+      if (g->regSet && (g->cy > bot || g->cy < top)) break;
+      /* The limit is the rows this move can actually reach: inside a region that is [cursor .. region bottom],
+         without one it is [cursor .. the model's last row]. For IL the two candidate bounds -- the viewport's
+         height and the rows below the cursor -- ask for the same screen, because a push taller than the space
+         below simply empties it. **For DL they are not the same, and the viewport's height was a real
+         defect**: the blanking loop runs from `rows - n`, so with a gutter and the cursor two rows into the
+         window `CSI 9M` blanked `rows - winRows` .. `rows` -- the rows *above* the cursor -- and left the
+         cursor's own row standing. The application offered the rows below it and only those go; erasing the
+         rest is a side effect of an arithmetic bound nobody had named. Witness: RenderCheck's "reaches no
+         higher", which was red before this line existed. */
+      n = count_arg(g, 0, g->regSet ? bot - g->cy + 1 : g->rows - g->cy);
       if (g->regSet)
       {
-        if (g->cy > bot || g->cy < top) break;
         shift_region(g, n, g->cy, bot, final == 'L');
         g->cx = 0;                                      /* IL/DL home the column and keep the row */
         break;
       }
-      if (n > g->winRows) n = g->winRows;               /* insert or delete within the viewport only */
       if (final == 'L')
       {
         for (int r = g->rows - 1; r >= g->cy + n; r--)
@@ -1354,10 +1403,11 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
      boundary clears at :3322-3342 and :3411-3413. */
     case '@': case 'P':
     {
-      int n = arg(g, 0, 1);
       if (g->cx < g->cols)
       {
-        if (n > g->cols - g->cx) n = g->cols - g->cx;
+        /* Both are row-local and both stop at the row's end: the cells in front of the cursor are all there
+           is to insert before or delete. The bound is what makes `g->cols - n` below safe. */
+        const int n = count_arg(g, 0, g->cols - g->cx);
         if (final == '@')
         {
           for (int c = g->cols - 1; c >= g->cx + n; c--) g->cells[g->cy][c] = g->cells[g->cy][c - n];
@@ -1386,13 +1436,11 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
        attribute, which is what makes `bce` true for this sequence. */
     case 'X':
     {
-      int n = (g->nArgs > 0) ? g->args[0] : 1;
+      /* Read raw, so `CSI 0X` erases nothing, and bounded by the cells in front of the cursor -- which is what
+         makes `fill_span`'s `to` land inside the row without a second clamp of its own. */
+      const int n = count_arg_raw(g, 0, g->cols - g->cx);
       if (n > 0)
-      {
-        int to = g->cx + n - 1;
-        if (to > g->cols - 1) to = g->cols - 1;
-        fill_span(g, g->cy, g->cx, to, g->attr);        /* also heals a glyph the erase cut in half */
-      }
+        fill_span(g, g->cy, g->cx, g->cx + n - 1, g->attr);   /* also heals a glyph the erase cut in half */
       break;
     }
 
@@ -1407,8 +1455,10 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
     case 'b':
     {
       if (g->priv) { ignored(g, RC_UN_MODE); break; }
-      int n = (g->nArgs > 0) ? g->args[0] : 1;
-      while (n-- > 0) put_cp(g, g->lastUnit);
+      /* No geometric bound on purpose: REP is text, so a count larger than the screen scrolls it and keeps
+         going. The only ceiling is the accumulator's, and naming it here says so out loud. */
+      const int want = count_arg_raw(g, 0, RC_ARG_MAX);
+      for (int n = 0; n < want; n++) put_cp(g, g->lastUnit);
       break;
     }
 
@@ -1420,8 +1470,13 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
        where it was -- neither sequence moves the cursor and neither do we). */
     case 'S':
     {
-      int n = arg(g, 0, 1), top, bot;
+      int top, bot;
       region(g, &top, &bot);
+      /* A whole-model scroll can be asked for more rows than the model holds and the surplus is simply the
+         same screen again, so the limit is the model; a region shift is bounded by the region. Either way the
+         count is read through the same door as every other `Ps`, and the guards inside `scroll_up` and
+         `shift_region` stay for the callers that come from inside this file. */
+      const int n = count_arg(g, 0, g->regSet ? bot - top + 1 : g->rows);
       if (!g->regSet && top == gutter(g) && bot == g->rows - 1) scroll_up(g, n);
       else shift_region(g, n, top, bot, 0);
       break;
@@ -1430,7 +1485,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
     {
       int top, bot;
       region(g, &top, &bot);
-      shift_region(g, arg(g, 0, 1), top, bot, 1);
+      shift_region(g, count_arg(g, 0, bot - top + 1), top, bot, 1);
       break;
     }
 
@@ -1479,10 +1534,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       const int top = gutter(g);
       const int page = g->rows - top;              /* the 1-based rows the parameters may name */
       if (!g->nArgs) { g->regSet = 0; break; }     /* `CSI r` is the reset form */
-      int t = arg(g, 0, 1), b = arg(g, 1, page);
-      if (t <= 0) t = 1;
-      if (b <= 0 || b > page) b = page;
-      if (t > page) t = page;
+      int t = region_arg(g, 0, 1, page), b = region_arg(g, 1, page, page);
       if (t > b) break;                            /* inverted: leave whatever region is live */
       const int rt = top + t - 1, rb = top + b - 1;
       g->regSet = 0;
@@ -1734,7 +1786,13 @@ static void control(RcGrid *g, uint16_t u)
 
 static void push_arg(RcGrid *g, int v)
 {
-  if (g->nArgs < RC_CSI_ARGS) g->args[g->nArgs++] = v;
+  if (g->nArgs < RC_CSI_ARGS) { g->args[g->nArgs++] = v; return; }
+  /* The list is full. The sequence still acts on the sixteen it kept, which is what ConEmu's ArgV does
+   * (Ansi.h:174) and what RenderCheck's "16th argument kept" pins; what it did *not* do until #74 was leave
+   * any trace of the seventeenth. A clamp that bites silently is indistinguishable from a parameter list that
+   * fitted, and the caller reading a report cannot tell "it asked for three" from "it asked for forty".
+   * Counted per argument, not per sequence, because that is the number that says how much was lost. */
+  g->nArgTrunc++;
 }
 
 static void csi_start(RcGrid *g)
@@ -1847,7 +1905,10 @@ static int ftcs_exit(const uint16_t *p, int n, int *code)
   int off, len;
   *code = RC_EXIT_UNKNOWN;
   if (!ftcs_field(p, n, 1, &off, &len)) return 0;
-  if (len < 1 || len > 9) return -1;                 /* 10 digits can overflow an int: treat as gibberish */
+  /* Nine digits, not the CSI parser's saturating run: this value is a *claim* -- an index into a table, an
+   * exit code -- and a claim arrived at by truncation would be a different claim. -1 means "there is no
+   * answer to give", which every caller already treats as refusal rather than zero. */
+  if (len < 1 || len > 9) return -1;
   long v = 0;
   for (int i = 0; i < len; i++)
   {
@@ -2654,7 +2715,7 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
           else if (u >= '0' && u <= '9')
           {
             g->digit = 1;
-            g->cur = (g->cur > 6553) ? 65535 : g->cur * 10 + (u - '0');
+            g->cur = (g->cur > RC_ARG_MAX / 10) ? RC_ARG_MAX : g->cur * 10 + (u - '0');
           }
           else
           {

@@ -36,6 +36,13 @@
 #define RC_MAX_COLS   4096
 #define RC_MAX_ROWS   256
 #define RC_CSI_ARGS   16   /* ConEmu's ArgV holds 16 (Ansi.h:174); surplus args are dropped, not rejected */
+/* What the largest parameter this parser can name is. The digit accumulator stops here rather than wrapping,
+   so `CSI 999999999999H` is a request for the last row and not for row 1610612736 mod the screen -- the one
+   reading a caller could never recover from. `count_arg_raw` takes it as REP's ceiling because a repeat emits
+   *text*, wraps at the margin and keeps going: nothing about the grid bounds it, so the only bound left is
+   this one. The OSC side does not saturate: `dec_of` refuses a run longer than nine digits, because an index
+   or an exit code that arrived truncated would be a different claim than the one that was made. */
+#define RC_ARG_MAX    65535
 #define RC_INTERIM_MAX 4   /* CSI intermediate bytes we keep; ConEmu's Pvt holds 16 and stops appending when
                               full (Ansi.cpp:1788) -- four is more than any final in this switch can name. */
 /* How much of an OSC payload is kept. It used to be one buffer of RC_TITLE_MAX units, which was fine while
@@ -521,6 +528,13 @@ typedef struct RcGrid
    * with the model and counted on the handle, not here: rc_reset zeroes this struct, so nothing that wants
    * to outlive a resize belongs in it. */
   unsigned long nReportOk, nReportFail, nReportFull;
+
+  /* Parameters dropped because the list already held `RC_CSI_ARGS`. Upstream loses them the same way --
+   * ConEmu's ArgV holds 16 and never looks at the 17th (Ansi.h:174) -- and the difference between that and a
+   * leak is a number: without this, "the sequence carried three parameters" and "it carried forty and three
+   * were kept" print identically, which is exactly the question a caller is left asking. Same life rule as
+   * the three above: it belongs to the model, and the painter folds it into the process total on release. */
+  unsigned long nArgTrunc;
 
   /* Rows the viewport has scrolled up since the painter last caught up. The painter turns each one
      into a window slide (free: the cells stay where they are) or a buffer scroll, so a scroll costs

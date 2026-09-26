@@ -229,7 +229,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-27"
+#define RENDER_BUILD "render-2026-09-26-28"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -319,7 +319,13 @@ enum
    "one past the sync block" to "one past this one", which leaves every earlier index where the Java side
    already reads it. */
 #define STAT_CLIP        (STAT_SYNC + 7)
-#define STAT_LAST        (STAT_CLIP + 7)
+/* The one limit in the parser that a caller cannot otherwise see: a `CSI` whose parameter list is longer than
+   RC_CSI_ARGS keeps the first sixteen, exactly as ConEmu's ArgV does, and the surplus is gone. Appended after
+   the clipboard block because that is the rule every slot here follows -- nothing that already ships an index
+   moves. `Render.java` asserts its own table against this length and against the jar's, so a slot added here
+   and forgotten there is a red gate, not a silent zero. */
+#define STAT_ARGTRUNC    (STAT_CLIP + 7)
+#define STAT_LAST        (STAT_ARGTRUNC + 1)
 
 #ifdef __MINGW32__
 #define CH_UNICODE(ci) ((ci).Char.UnicodeChar)
@@ -413,7 +419,7 @@ static int g_openStatus;           /* the last open() failure, for the caller's 
  * already has, and no painting reads it. */
 static unsigned long g_totUn[RC_UN_MAX], g_totTitle, g_totTitleTrunc, g_titleCalls,
                      g_totAltSwitch, g_totAltFail, g_totPromptMark,
-                     g_totRepOk, g_totRepFail, g_totRepFull,
+                     g_totRepOk, g_totRepFail, g_totRepFull, g_totArgTrunc,
                      g_totSyncEngages, g_totSyncNested, g_totSyncHeld,
                      g_totSyncTimeout, g_totSyncOverflow, g_totSyncDeclined,
                      /* OSC 52: the four reasons the parser gave, folded the way the title pair is. They are
@@ -1224,6 +1230,7 @@ static void fold_counters(RcHandle *h)
   g_totRepOk += h->g->nReportOk;
   g_totRepFail += h->g->nReportFail;
   g_totRepFull += h->g->nReportFull;
+  g_totArgTrunc += h->g->nArgTrunc;
   g_totSyncEngages += h->g->nSyncEngages;
   g_totSyncNested += h->g->nSyncNested;
   g_totSyncHeld += h->g->nSyncHeld;
@@ -1979,6 +1986,7 @@ JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEn
     out[STAT_REPORT] = (jlong)(g_totRepOk + (g ? g->nReportOk : 0));
     out[STAT_REPORT + 1] = (jlong)(g_totRepFail + (g ? g->nReportFail : 0));
     out[STAT_REPORT + 2] = (jlong)(g_totRepFull + (g ? g->nReportFull : 0));
+    out[STAT_ARGTRUNC] = (jlong)(g_totArgTrunc + (g ? g->nArgTrunc : 0));
     out[STAT_SYNC] = (jlong)(g_totSyncEngages + (g ? g->nSyncEngages : 0));
     out[STAT_SYNC + 1] = (jlong)(g_totSyncNested + (g ? g->nSyncNested : 0));
     out[STAT_SYNC + 2] = (jlong)(g_totSyncHeld + (g ? g->nSyncHeld : 0));
@@ -2375,6 +2383,17 @@ JNIEXPORT jstring JNICALL Java_Render_validateGrid(JNIEnv *env, jclass cls, jlon
   if (h == NULL || h->g == NULL) return env->NewStringUTF("(no model behind this handle)");
   if (!rc_validate_grid(h->g, msg, (int) sizeof msg)) return env->NewStringUTF("");
   return env->NewStringUTF(msg);
+}
+
+/* gate-only: how many parameters this model has dropped for want of room (Render.cpp::push_arg, #74). The
+   host gate can read the field straight out of the struct it links, which makes it no witness at all for the
+   binary that ships -- the same gap -25's four console legs were built to close. Production has no reason to
+   ask: the sequence it acted on is already on the screen. */
+JNIEXPORT jlong JNICALL Java_Render_argTrunc(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)env; (void)cls;
+  RcHandle *h = slot_of(ph);
+  return (jlong)(h && h->g ? (long)h->g->nArgTrunc : -1);
 }
 
 }  // extern "C"

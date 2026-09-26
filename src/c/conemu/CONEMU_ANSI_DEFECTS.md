@@ -145,7 +145,7 @@ cmd/PowerShell + ConEmu 不复现，只在 WSL 下出现）；
 | `あa` + `\b` | 游标 (3,10)，行 `[3042L 3042T 005F]` | 游标 (2,14)，行 `[0020 005F 0061]` | **分叉，错在兜底腿**：Hk 把宽字形按 1 列计数 ⇒ BS 少退一格 ⇒ 下一次写落在尾格上，conhost 清掉前导格。这正是 #852 的形状，也正是本组上面那一串 issue 的根因家族 |
 | `あa` + `\b\b` | (1,10) | (1,14) | **agree** ⇒ 分叉只在"一步且踩进尾格"这一格上，不是两条腿的宽度表不同 |
 
-⇒ 模型的 `step_back_col`（`Render.cpp:1106`，落在 `TRAILING` 再退一步，照上游 `Row::_adjustBackward`）
+⇒ 模型的 `step_back_col`（`Render.cpp:1208`，落在 `TRAILING` 再退一步，照上游 `Row::_adjustBackward`）
 是**对的那一侧**，不为平价而把它改回少退一格。门禁 `Render.java:caseAbWidechar` 族的
 `legs("narrow after wide, then BS", ..., Boolean.FALSE)`——期望"不同"与期望"相同"一样是断言，
 谁将来把它改成 agree，就是在把 #852 抄回来（DESIGN §4.2 第 1 条）。
@@ -183,7 +183,7 @@ cmd/PowerShell + ConEmu 不复现，只在 WSL 下出现）；
 | [2466](https://github.com/ConEmu/ConEmu/issues/2466) | bash+nvim 主题颜色错乱、背景发粉 | 组合症状 | 【低优先】证据弱（只有截图） |
 | [870](https://github.com/ConEmu/ConEmu/issues/870) | Terraform 输出**整段不显示**（疑似 ANSI 颜色库触发） | 转义吞输出 | 【存疑】值得拿它的字节流当解析用例 |
 | [807](https://github.com/ConEmu/ConEmu/issues/807) / [2625](https://github.com/ConEmu/ConEmu/issues/2625) | Sixel / kitty graphics 协议 | 图形协议 | 【缺口】明确不做也要写进文档 |
-| （不是上游 issue：`SGR 38:2::r:g:b`） | colon 子参数**整条不吃色** | `SGR 38/48` 的 `:` 形式 | 【已定性偏离，不修】不是缺口：`:` 落在 ConEmu 的 Pvt 字节范围里，按 I10 的平价规则"私有序列 ⇒ 丢弃"是**兜底腿的现有行为**（上游坐标 `Ansi.cpp:3494`；我们的判据在 `Render.cpp:1177`）。上游 Terminal 用 `_subParameterRanges` 正经解析它（`stateMachine.cpp:505-545`），那是**更对**的一侧，但它不对我们的平价对象。⇒ 唯一做的动作是"不再静默"：`RC_UN_COLON` 单独计一票（`Render.cpp:1177` 说、`:2624` 计），将来真有应用发 colon 形式时手里有数；且它**不**置 `modelSuspect`（不改格就不该逼模型重收养）。门禁 `Render.java caseSuspectAlign`：`"the colon form has its own counter"` + `"and buys no repaint"` |
+| （不是上游 issue：`SGR 38:2::r:g:b`） | colon 子参数**整条不吃色** | `SGR 38/48` 的 `:` 形式 | 【已定性偏离，不修】不是缺口：`:` 落在 ConEmu 的 Pvt 字节范围里，按 I10 的平价规则"私有序列 ⇒ 丢弃"是**兜底腿的现有行为**（上游坐标 `Ansi.cpp:3494`；我们的判据在 `Render.cpp:1217`）。上游 Terminal 用 `_subParameterRanges` 正经解析它（`stateMachine.cpp:505-545`），那是**更对**的一侧，但它不对我们的平价对象。⇒ 唯一做的动作是"不再静默"：`RC_UN_COLON` 单独计一票（`Render.cpp:1217` 说、`:2624` 计），将来真有应用发 colon 形式时手里有数；且它**不**置 `modelSuspect`（不改格就不该逼模型重收养）。门禁 `Render.java caseSuspectAlign`：`"the colon form has its own counter"` + `"and buys no repaint"` |
 
 ## 5 D 组：模式位、光标与 xterm-mode 状态机
 

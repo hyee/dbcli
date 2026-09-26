@@ -61,6 +61,9 @@ public class Render {
     static native int faultRect(long h, int run);
     /** The grid's own invariants, read out of the shipped dll after a chunk lands. Empty string means clean. */
     static native String validateGrid(long h);
+    /* How many parameters the model behind this handle dropped for want of room. Gate-only, like
+       validateGrid: production has no reason to ask, and the host gate cannot answer it for the shipped dll. */
+    static native long argTrunc(long h);
 
     private static long open(int cols, int rows, int defAttr) {
         return NativeRenderer.open(0, cols, rows, defAttr);   /* 0: the DLL opens CONOUT$ itself */
@@ -179,6 +182,7 @@ public class Render {
         caseEchClamp();
         caseHealPairs();
         caseSoftReset();
+        caseArgClamp();
         caseRelativeCursor();
         caseSyncOutput();
         caseSyncOverflow();
@@ -1549,6 +1553,56 @@ public class Render {
         gate("and the reset itself was not counted", b[S_UN] - a[S_UN] == 0,
                 "unrecognised=" + (b[S_UN] - a[S_UN]) + ": `CSI !p` is a modelled sequence now");
         paint("clear the band", "\u001b[r\u001b[4;1H\u001b[J");
+    }
+
+    /**
+     * #74 put every `CSI Ps` that means "how many" behind one named bound, and this is the leg that says the
+     * binary on this machine agrees with the struct the host gate links. Two things are worth reading off a
+     * real console rather than a unit test. The first is the parameter cap: a sequence that names twenty
+     * things acts on the sixteen the model holds, and the loss is now a number the caller can ask for instead
+     * of a silence. The second is the delete-line bound, which is a data-loss shape: the count used to be
+     * clamped to the window's height instead of the rows below the cursor, and with a cursor two rows into the
+     * window `CSI 9999M` erased the rows *above* it and left its own row standing.
+     */
+    private static void caseArgClamp() {
+        if (!standardGeometry("the parameter-bound leg")) return;
+        final long[] a = stats(handle);
+        gate("nothing was truncated when this model opened", argTrunc(handle) == 0,
+                "count=" + argTrunc(handle));
+
+        final StringBuilder wide = new StringBuilder("\u001b[");
+        for (int i = 1; i <= 20; i++) wide.append(i).append(i == 20 ? "H" : ";");
+        paint("a CUP that names twenty parameters", wide.toString());
+        long[] v = consoleView();
+        gate("the first two are the ones it acted on", v[5] == 1 && v[6] == winT,
+                "(" + v[5] + "," + v[6] + ") want (1," + winT + "): row 1, column 2");
+        gate("and four parameters had nowhere to go", argTrunc(handle) == 4,
+                "count=" + argTrunc(handle) + " want 4: the list holds sixteen (ConEmu's ArgV, Ansi.h:174)");
+        paint("a list that fits", "\u001b[2;3H");
+        gate("adds nothing to the count", argTrunc(handle) == 4,
+                "count=" + argTrunc(handle) + ": it counts lost arguments, not sequences");
+        v = consoleView();
+        gate("and that CUP still moved the cursor", v[5] == 2 && v[6] == winT + 1,
+                "(" + v[5] + "," + v[6] + ") want (2," + (winT + 1) + ")");
+
+        paint("five labelled rows", "\u001b[1;1HDL-1\u001b[2;1HDL-2\u001b[3;1HDL-3\u001b[4;1HDL-4\u001b[5;1HDL-5");
+        paint("delete more rows than there are below the cursor", "\u001b[3;1H\u001b[9999M");
+        v = consoleView();
+        gate("the cursor stays on the row it deleted from", v[6] == winT + 2,
+                "row=" + v[6] + " want " + (winT + 2));
+        text("the row above the cursor kept its text", winT, 0, "DL-1", DEF);
+        text("and so did the one above that", winT + 1, 0, "DL-2", DEF);
+        span("the cursor's own row is the first thing erased", winT + 2, 0, 3, ' ', DEF);
+        /* Nothing "comes up" here, and that is the answer rather than a gap: a delete of more rows than the
+           model has below the cursor empties that band, exactly as a delete of two leaves the third where the
+           second was. The ordinary case is `caseEditRows`'s witness; this one is about the reach. */
+        span("and every row below it went with it", winT + 3, 0, 3, ' ', DEF);
+        span("including the window's last", winT + 4, 0, 3, ' ', DEF);
+        final long[] b = stats(handle);
+        gate("none of it was counted as unsupported", b[S_UN] - a[S_UN] == 0,
+                "unrecognised=" + (b[S_UN] - a[S_UN]) + ": IL, DL and a long CUP are all modelled");
+        gate("and nothing was declined", b[2] - a[2] == 0, "declines=" + (b[2] - a[2]));
+        paint("leave the rows clean", "\u001b[1;1H\u001b[J");
     }
 
     // ---- both legs, one console ----------------------------------------------------------------

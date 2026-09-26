@@ -69,10 +69,32 @@ static void eq_u(const char *what, unsigned got, unsigned want, const char *ctx)
 static void eq_text(const RcGrid *g, int row, int upto, const char *want, const char *ctx)
 {
   g_checks++;
+  /* A zero width is not a weak assertion, it is no assertion: the loop below does not run and the call still
+     votes "pass". Two of those existed in this file -- one written this month -- and both were invisible until
+     someone asked why a red arm came back green, which is the same question #73's arm asked. Refuse the shape
+     rather than remember to avoid it. */
+  if (upto <= 0)
+  {
+    g_fails++;
+    printf("FAIL  eq_text(row %d, upto %d) would compare no cells  {%s}\n", row, upto, ctx);
+    return;
+  }
+  /* The other half of the same mistake: `cells[]` is a fixed RC_MAX_COLS stride, so asking past the model's
+     width reads the bytes a *wider* geometry left behind rather than anything this row ever held. */
+  if (upto > g->cols)
+  {
+    g_fails++;
+    printf("FAIL  eq_text(row %d, upto %d) reaches past a %d-column grid  {%s}\n", row, upto, g->cols, ctx);
+    return;
+  }
   for (int i = 0; i < upto; i++)
   {
     unsigned ch = g->cells[row][i].ch;
-    unsigned w = (unsigned char)(want[i] ? want[i] : ' ');
+    /* Past the terminator everything is a space. The old form tested `want[i] ? want[i] : ' '`, which reads
+       the bytes *after* the literal for every i beyond it -- so a leg asking for ten columns of "r0" was
+       comparing that row against whatever the linker happened to place next, and could pass or fail on where
+       its strings sat. `upto > strlen(want)` is the common case here, not a corner. */
+    const unsigned w = ((int)i < (int)strlen(want)) ? (unsigned)(unsigned char)want[i] : ' ';
     if (ch == w) continue;
     g_fails++;
     printf("FAIL  cell(%d,%d)=0x%04X want 0x%04X  {%s}\n", row, i, ch, w, ctx);
@@ -1517,11 +1539,46 @@ static void gm_argcap()
   putraw(&g, seq);
   eq_u("16th argument kept", (unsigned)g.nArgs, 16, "args 0..15");
   eq_u("surplus argument dropped", g.attr, 0x07, "the 31 never reached the SGR");
+  eq_u("and the drop left a number", (unsigned)g.nArgTrunc, 1,
+       "#74: the limit is parity with upstream, the silence was not -- without this a caller cannot tell "
+       "\"three parameters\" from \"forty and sixteen kept\"");
+
+  char seq2[160] = "\033[";
+  for (int i = 0; i < 19; i++) strcat(seq2, "1;");
+  strcat(seq2, "H");
+  corpus_add(seq2);
+  putraw(&g, seq2);
+  eq_u("a twentieth parameter is the fourth loss", (unsigned)g.nArgTrunc, 4, "counted per argument");
+  eq_u("and the sequence still acted on the first", (unsigned)g.cy, 0, "args[0] is 1, so row 1");
+  rc_reset(&g, 20, 4, 0x07);
+  eq_u("a reset drops it, like the report counters beside it", (unsigned)g.nArgTrunc, 0,
+       "Render.h's rule: nothing that wants to outlive a resize belongs in the grid");
+  putraw(&g, "\033[1;2;3H");
+  eq_u("a list that fits costs nothing", (unsigned)g.nArgTrunc, 0, "the counter is not a sequence census");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[999999999999mX");
   eq_u("digits saturate", (unsigned)g.args[0], 65535, "deviation #3: no wrap to a small number");
   eq_u("an enormous SGR applies nothing", g.attr, 0x07, "not a code we know");
+  eq_u("saturating is not truncating, so nothing was dropped", (unsigned)g.nArgTrunc, 0,
+       "the two limits are different acts: one keeps a value, the other loses an argument");
+
+  /* The other two #74 named. Both sequences ask for a count of *cells*, and both had their bound written at
+     the arm as an `if (n > ...)` rather than as a limit -- which is how a bound can be right once and wrong in
+     the one geometry nobody tried. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "abcdefghij\033[1;6H");                       /* ten cells on row 0, cursor back to column 5 */
+  eq_u("setup: the cursor is at column 5", (unsigned)g.cx, 5, "fifteen columns are left");
+  put(&g, "\033[999@");
+  eq_u("ICH does not move the cursor", (unsigned)g.cx, 5, "its whole act is on the row's tail");
+  eq_text(&g, 0, 20, "abcde", "the tail went out past the margin and the rest of the row is the insert");
+  put(&g, "\033[999P");
+  eq_text(&g, 0, 20, "abcde", "DCH of the same impossible number pulls back what is there and stops");
+  put(&g, "\033[1;1Habcdefghijklmnopqr\033[1;20H");
+  eq_u("setup: the cursor on the row's last column", (unsigned)g.cx, 19, "one cell left to erase");
+  put(&g, "\033[999X");
+  eq_text(&g, 0, 19, "abcdefghijklmnopqr", "ECH erases the cell in front of the cursor and reaches no further");
+  eq_u("and does not walk off the end", (unsigned)g.cx, 19, "an erase moves nothing");
 }
 
 static void echo_eq(const char *what, RcGrid *g, const char *want, const char *ctx)
@@ -2139,10 +2196,14 @@ static void geo_erase()
   eq_u("ECH attr", g.cells[0][2].attr, 0x07, "the live attribute, which is still the default");
 
   rc_reset(&g, 10, 3, 0x07);
-  put(&g, "ABCDEFGH\033[1;3H\033[0J");
+  put(&g, "ABCDEFGH");
+  put(&g, "\033[2;1H1234567890");
+  put(&g, "\033[3;1HXYZ");
+  put(&g, "\033[1;3H\033[0J");
   eq_text(&g, 0, 3, "AB ", "ED 0 clears from the cursor to the end of the row");
   eq_text(&g, 0, 8, "AB      ", "and the tail too");
-  eq_text(&g, 1, 0, "", "ED 0 clears the rows below");
+  eq_text(&g, 1, 10, "", "ED 0 clears the rows below, every column of them");
+  eq_text(&g, 2, 10, "", "including the last");
   eq_u("ED 0 left row 1 blank", g.cells[1][0].ch, ' ', "");
 
   /* a trailing half must not survive an erase over it, or the grid diff shows a ghost cell */
@@ -2667,6 +2728,27 @@ static void geo_region()
   put(&g, "\033[3;1HZ\n");
   eq_text(&g, 4, 1, " ", "one-row region: the LF blanked it in place");
   eq_u("and asked the console for nothing", (unsigned)g.pendingScrolls, 0, "");
+
+  /* DL deletes rows **from the cursor down**, so the largest count with anything to delete is the number of
+     rows below the cursor -- and the viewport's height is a different (bigger) number whenever the cursor is
+     not on the viewport's top row. #74 found this by making every count name its limit: with eight gutter
+     rows and the cursor two rows into the viewport, `CSI 9M` blanked the two rows **above** it and left its
+     own row standing, which is text the application never offered to lose. IL never suffered it because its
+     fill loop starts at the cursor; the defect was in the bound, not in the shape. */
+  rc_reset_hist(&g, 4, 4, 8, 0x07);                    /* twelve model rows, the viewport the last four */
+  put(&g, "\033[1;1Hr0\033[2;1Hr1\033[3;1Hr2\033[4;1Hr3");   /* CUP is viewport-relative: rows 8..11 */
+  put(&g, "\033[3;1H\033[9M");
+  eq_text(&g, 8, 4, "r0", "a delete of more rows than there are below the cursor reaches no higher");
+  eq_text(&g, 9, 4, "r1", "");
+  eq_text(&g, 10, 4, "", "the cursor's own row is the first thing erased");
+  eq_text(&g, 11, 4, "", "and the row under it is the last");
+  rc_reset_hist(&g, 4, 4, 8, 0x07);
+  put(&g, "\033[1;1Hr0\033[2;1Hr1\033[3;1Hr2\033[4;1Hr3");
+  put(&g, "\033[3;1H\033[9L");
+  eq_text(&g, 8, 4, "r0", "IL confined the same way, from the same row");
+  eq_text(&g, 9, 4, "r1", "");
+  eq_text(&g, 10, 4, "", "an insert taller than the space below blanks that space and nothing more");
+  eq_text(&g, 11, 4, "", "");
 
   /* ?1048 shares the one saved position that ESC 7 and ?1049 use (XTermSaveRestoreCursor, :4176+). */
   rc_reset(&g, 8, 4, 0x07);
