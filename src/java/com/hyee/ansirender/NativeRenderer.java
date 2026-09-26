@@ -61,7 +61,14 @@ public final class NativeRenderer {
                slot for the family is the last of UNMODELLED, and the gate's own label list is compared
                against the dll's table at run time. */
             SLOT_CLIP_ARMED = 47, SLOT_CLIP_DECODE = 48, SLOT_CLIP_SELECTION = 49, SLOT_CLIP_READ = 50,
-            SLOT_CLIP_WRITES = 51, SLOT_CLIP_FAILS = 52, SLOT_CLIP_POLICY = 53, SLOT_LAST = 54;
+            SLOT_CLIP_WRITES = 51, SLOT_CLIP_FAILS = 52, SLOT_CLIP_POLICY = 53,
+            /* The parser's one limit that a caller cannot otherwise see: a `CSI` whose parameter list is
+               longer than RC_CSI_ARGS keeps the first sixteen and the surplus is gone, exactly as ConEmu's
+               ArgV does. #74 counted it and RenderJni.cpp has written the slot ever since -- and this file
+               declared SLOT_LAST one short of it, which is the shape of miss the length gate in the live
+               harness was written to catch and did not: `s.length >= S_LEN` only ever notices a dll that is
+               too *short*, so an array that outgrew the table read as a clean run with an unread slot. */
+            SLOT_ARGTRUNC = 54, SLOT_LAST = 55;
 
     /** The two answers Render.h gives a 133;D whose exit code was absent or was not a number. */
     private static final long EXIT_UNKNOWN = -1, EXIT_UNPARSABLE = 0x7FFFFFFFL;
@@ -495,6 +502,14 @@ public final class NativeRenderer {
             b.append("; still inside a synchronized update at close");
         }
         b.append(clipboard(s));
+        /* Last because it is the least like the others: every family above is a count of what the byte stream
+           asked for, and this one is a count of what the stream asked for that the parser could not *hold*.
+           Sixteen parameters is the CSI list's whole capacity, so an application that wrote twenty got a
+           sequence acted on with sixteen -- no reply, no diagnostic, and no number anywhere else. */
+        if (has(s, SLOT_ARGTRUNC) && s[SLOT_ARGTRUNC] != 0) {
+            b.append("; ").append(s[SLOT_ARGTRUNC])
+                    .append(" parameter(s) dropped by a CSI list longer than the parser holds");
+        }
         return b.toString();
     }
 

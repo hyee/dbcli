@@ -122,7 +122,11 @@ public class Render {
                dll's own table. */
             S_CLIP_ARMED = S_UN + 30, S_CLIP_DECODE = S_UN + 31, S_CLIP_SELECTION = S_UN + 32,
             S_CLIP_READ = S_UN + 33, S_CLIP_WRITES = S_UN + 34, S_CLIP_FAILS = S_UN + 35,
-            S_CLIP_POLICY = S_UN + 36, S_LEN = S_UN + 37;
+            S_CLIP_POLICY = S_UN + 36,
+            /* #74's counter, and the reason #89 exists: render.dll has written this slot since build -28, and
+               both Java tables declared their last slot one before it. Nothing noticed, because the length
+               check below was a floor and a floor cannot see an array that outgrew the table. */
+            S_ARGTRUNC = S_UN + 37, S_LEN = S_UN + 38;
 
     public static void main(String[] args) {
         System.out.println("render build: " + NativeRenderer.build());
@@ -210,9 +214,16 @@ public class Render {
            The length is asserted rather than assumed: these slot numbers are a seam between enum
            RcUnsupported in Render.h and com.hyee.ansirender.NativeRenderer's SLOT_* constants, and growing the
            family moves the title counters along with it. */
-        gate("stats carries the counters the report names", s.length >= S_LEN,
-                "length=" + s.length + (s.length >= S_LEN ? " for a table of " + S_LEN
-                        : ": render.dll is older than this gate's slot table of " + S_LEN));
+        /* Equality, not a floor. A floor is what let #89 happen: the dll grew a slot at the end, this table
+           and NativeRenderer's both stayed one short, and every gate that claims to watch the seam passed --
+           because the only direction a `>=` can see is a dll that is too old. Both failures are findings: a
+           short array is an outdated binary, a long one is a table that was not updated, and neither gets to
+           print a census whose last column nobody read. */
+        gate("stats() is exactly this gate's slot table", s.length == S_LEN,
+                "length=" + s.length + " against a table of " + S_LEN + ": "
+                        + (s.length == S_LEN ? "the two agree"
+                                : s.length < S_LEN ? "render.dll is older than this gate"
+                                : "render.dll reports slots this gate does not read"));
         /* The other half of that contract. The line above compares the dll's array with *this file's* slot
            numbers; nothing so far compared this file's with the library's own report -- the text that ships in
            dbcli.jar and that a rollout actually reads. The two tables are in different trees and reach the same
@@ -242,6 +253,7 @@ public class Render {
         reportSlotAgrees("SLOT_SYNC_OVERFLOW", S_SYNC_OVERFLOW);
         reportSlotAgrees("SLOT_SYNC_ON", S_SYNC_ON);
         reportSlotAgrees("SLOT_LAST", S_LEN);
+        reportSlotAgrees("SLOT_ARGTRUNC", S_ARGTRUNC);
         if (s.length >= S_LEN) {
             System.out.println("  not modelled: unrecognised=" + s[S_UN] + " decstbm=" + s[S_UN + 1]
                     + " altbuf=" + s[S_UN + 2] + " mouse=" + s[S_UN + 3] + " mode=" + s[S_UN + 4]
@@ -256,7 +268,11 @@ public class Render {
                     + "; views snapped back on input=" + s[S_SNAP]
                     + "; sync updates=" + s[S_SYNC_ENGAGES] + " (" + s[S_SYNC_NESTED] + " nested, "
                     + s[S_SYNC_HELD] + " flushes held, ended early by " + s[S_SYNC_TIMEOUT] + " timeout / "
-                    + s[S_SYNC_OVERFLOW] + " gutter / " + s[S_SYNC_DECLINED] + " decline)");
+                    + s[S_SYNC_OVERFLOW] + " gutter / " + s[S_SYNC_DECLINED] + " decline)"
+                    /* The slot #89 added, printed here so the gate's own output is the witness: a rollout line
+                       that names the counter is the difference between "this build never hit the list limit"
+                       and "nobody looked at it". */
+                    + "; parameters dropped=" + s[S_ARGTRUNC]);
         }
         close(handle);
         /* The other half of I34's promise: the console keeps the palette its user chose. This is read after
@@ -1606,6 +1622,16 @@ public class Render {
         paint("a list that fits", "\u001b[2;3H");
         gate("adds nothing to the count", argTrunc(handle) == 4,
                 "count=" + argTrunc(handle) + ": it counts lost arguments, not sequences");
+        /* The two doors to that number, agreeing. `argTrunc()` is a gate-only export #74 added because
+           stats() had no slot for the figure -- a seam the shipped library does not have. The whole point of
+           #89 is that the same count now rides the report line, where a rollout can read it without a
+           special build; if the two ever disagree, one of them indexes a different slot, and that is the
+           finding this leg exists to make loud rather than to let pass as a zero. */
+        final long[] now = stats(handle);
+        gate("stats() carries the same count the export does",
+                now[S_ARGTRUNC] == argTrunc(handle) && now[S_ARGTRUNC] - a[S_ARGTRUNC] == 4,
+                "stats=" + now[S_ARGTRUNC] + " (delta " + (now[S_ARGTRUNC] - a[S_ARGTRUNC]) + ") export="
+                        + argTrunc(handle) + " want 4 at slot " + S_ARGTRUNC);
         v = consoleView();
         gate("and that CUP still moved the cursor", v[5] == 2 && v[6] == winT + 1,
                 "(" + v[5] + "," + v[6] + ") want (2," + (winT + 1) + ")");
