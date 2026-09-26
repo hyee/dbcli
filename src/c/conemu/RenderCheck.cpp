@@ -103,6 +103,33 @@ static void eq_full(const RcGrid *g, int row, const char *ctx)
   eq_span(g, row, 0, g->cols - 1, ctx);
 }
 
+/* I16 read back as a shape rather than a wish: no cell may claim to be half of a glyph whose other half is
+   somewhere else. Asserted after every edit that moves or erases cells, because the failures worth catching
+   are the ones where the row still spells something plausible -- an orphaned leading half renders as a wide
+   glyph that swallows its neighbour, an orphaned trailing half as a column that is silently not the one the
+   next write lands on, and neither is visible in the text. */
+static void no_orphan(const RcGrid *g, int row, const char *ctx)
+{
+  g_checks++;
+  for (int c = 0; c < g->cols; c++)
+  {
+    const unsigned a = g->cells[row][c].attr;
+    int bad;
+    if (a & RC_LVB_LEADING)
+      bad = (c + 1 >= g->cols) || !(g->cells[row][c + 1].attr & RC_LVB_TRAILING);
+    else if (a & RC_LVB_TRAILING)
+      bad = (c == 0) || !(g->cells[row][c - 1].attr & RC_LVB_LEADING);
+    else continue;
+    if (!bad) continue;
+    g_fails++;
+    printf("FAIL  row %d column %d is 0x%X, half a glyph with no partner (its cells are 0x%04X | 0x%04X)"
+           "  {%s}\n", row, c, (a & RC_LVB_LEADING) ? RC_LVB_LEADING : RC_LVB_TRAILING,
+           (unsigned)g->cells[row][c > 0 ? c - 1 : 0].attr,
+           (unsigned)g->cells[row][c + 1 < g->cols ? c + 1 : c].attr, ctx);
+    return;
+  }
+}
+
 /* ------------------------------------------------------------- feeding helpers ----------------- */
 
 /* The corpus section 5 replays. put() registers, putraw() does not: the colour loop builds 512
@@ -1370,6 +1397,96 @@ static void gm_wrap_suspect()
   eq_u("and sets nothing suspect", (unsigned)rc_model_suspect(&g), 0, "it changes no cell and moves no cursor");
 }
 
+static void gm_state_reset()
+{
+  static RcGrid g;
+
+  /* DECSTR (`CSI ! p`) and RIS (`ESC c`) are two different acts and the difference is everything a
+     full-screen application relies on: the soft one puts state back, the hard one owns the screen. MSFT's
+     SoftReset (:2984-3020) has no cursor move, no erase and no buffer switch in it -- `UseMainScreenBuffer`
+     first appears in HardReset (:3045) -- and ghostty's softReset is the same list. A "reset" that tears the
+     alt screen down pushes the program's own display into the user's history and leaves it printing on the
+     main screen, which is the worst possible answer to a request to start over. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[?1049h");
+  eq_u("the alt screen is live", (unsigned)g.alt, 1, "");
+  put(&g, "\033[31mRED");
+  put(&g, "\033[1;3r\033[2;7H");
+  put(&g, "\033[5 q");                                 /* a shape the reset is not allowed to touch */
+  const unsigned scrolled = g.nScrolls;
+  put(&g, "\033[!p");
+  eq_u("DECSTR leaves the screen it was asked on", (unsigned)g.alt, 1, "");
+  eq_text(&g, 0, 3, "RED", "and erases nothing, so the program's display is still there");
+  eq_u("its cursor does not move", (unsigned)g.cy, 1, "");
+  eq_u("nor its column", (unsigned)g.cx, 6, "");
+  eq_u("nothing was pushed into history", (unsigned)(g.nScrolls == scrolled), 1, "");
+  eq_u("the rendition is back to normal", (unsigned)(g.attr & 0x0F), 7, "");
+  eq_u("the region is put back to the page", (unsigned)g.regSet, 0, "");
+  eq_u("the drawing set is unloaded", (unsigned)g.charset, 0,
+       "MSFT resets the designations on both resets (:3000), which is the smacs state a shell inherits");
+  eq_u("the cursor shape is left alone", (unsigned)g.cursorShape, 5,
+       "DECSTR's list has no shape in it, and the application that asked for one is still on this screen");
+  put(&g, "\033[8");                                   /* DECRC */
+  eq_u("a restore after a soft reset lands where the terminal already was", (unsigned)g.cy, 1,
+       "the active buffer's saved state is cleared, not left pointing at a stale row (:3005-3008)");
+  eq_u("and no cells moved on the way", g.cells[0][0].ch, 'R', "");
+
+  /* RIS is the other act, and the same assertions run backwards. */
+  put(&g, "\033c");
+  eq_u("RIS leaves the alt screen", (unsigned)g.alt, 0, "");
+  eq_u("and homes the cursor", (unsigned)g.cy, 0, "");
+  eq_u("having run a viewport of rows up into history", (unsigned)(g.nScrolls > scrolled), 1, "");
+  put(&g, "\033(B\033(0");
+  eq_u("the charset is loaded by ESC ( 0", (unsigned)g.charset, 1, "");
+  put(&g, "\033c");
+  eq_u("and RIS drops it", (unsigned)g.charset, 0, "a program that died in graphics mode leaves nothing behind");
+
+  /* A row that a region shift blanked arrives with no memory of the row it replaced. All three of the row's
+     own facts have to go: the wrap claim, the semantic mark, and the *column* the mark was made at, which is
+     the third field and the one a consumer reads only through rc_mark_col(). ghostty fixed its own version of
+     this hole by resetting the row whole -- "fully reset row metadata when recycling row storage",
+     PageList.zig:5252 -> Page.zig:1307 -- after which no recycler in that codebase clears some fields and
+     forgets others. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[2;4r");
+  /* `133;P` rather than `133;A`, because `A` starts a fresh line before marking (Terminal.zig:2211-2229, and
+     ftcs_fresh_line() here): at column 4 that moves the prompt down a row and, inside this region, scrolls
+     it. `P` marks where the cursor stands, which is the state the recycler has to clear. */
+  put(&g, "\033[3;5H\033]133;P\007");
+  eq_u("the mark is on its row", (unsigned)rc_row_mark(&g, 2), RC_PM_PROMPT, "");
+  eq_u("at the column it was made", (unsigned)rc_mark_col(&g, 2), 4, "");
+  put(&g, "\033[3;1H\033[1L");
+  eq_u("IL inside the region blanks the row", g.cells[2][0].ch, ' ', "");
+  eq_u("and the blanked row keeps no mark", (unsigned)rc_row_mark(&g, 2), RC_PM_NONE, "");
+  eq_u("nor a column for the mark it no longer has", (unsigned)rc_mark_col(&g, 2), 0,
+       "a stale column beside RC_PM_NONE is read as 'select from here' by a jump-to-prompt consumer");
+  put(&g, "\033[5;5H\033]133;P\007");                   /* below the region, where IL cannot reach */
+  eq_u("a row the region refused keeps its own mark", (unsigned)rc_row_mark(&g, 4), RC_PM_PROMPT, "");
+  eq_u("and its own column", (unsigned)rc_mark_col(&g, 4), 4, "");
+
+  /* REP replays the last character that *occupied a cell*. A combining mark, a ZWSP or a C1 control claims
+     none -- put_cell drops them at `w <= 0` -- so remembering one turns `CSI 3b` into three repetitions of
+     nothing. ghostty assigns `previous_char` in its printable arm, after the width==0 branch has already
+     returned (Terminal.zig:1469 -> :1515), and that ordering is the whole rule. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "A");
+  {
+    static const uint16_t acute = 0x0301;
+    putu(&g, &acute, 1);
+  }
+  eq_u("the mark took no cell", (unsigned)g.cx, 1, "");
+  eq_u("and is not what a repeat would replay", g.lastUnit, 'A', "the last character written is A");
+  put(&g, "\033[3b");
+  eq_text(&g, 0, 4, "AAAA", "three repeats of A, not three copies of a mark that draws nothing");
+  put(&g, "\033[1;9H");
+  put(&g, "\033(0");                                   /* the drawing set: `n` is a box glyph */
+  put(&g, "n");
+  put(&g, "\033[2b");
+  eq_u("the repeat replays the code point, so it is remapped the same way", g.cells[0][9].ch,
+       g.cells[0][8].ch, "a stored glyph instead of a stored letter would print 'n' here");
+  eq_u("twice over", g.cells[0][10].ch, g.cells[0][8].ch, "");
+}
+
 static void gm_argcap()
 {
   /* ConEmu's ArgV holds 16 and silently drops the surplus; matching that keeps a long parameter list
@@ -2347,6 +2464,45 @@ static void geo_lines()
   eq_text(&g, 0, 3, "ccc", "DL 2 from the top");
   eq_text(&g, 1, 3, "   ", "the two blanks land at the bottom");
   eq_u("DL left row 3 blank", g.cells[3][0].ch, ' ', "");
+
+  /* IL and DL take the cursor to the start of the row they acted on, and keep the row. This is not a
+     courtesy to a program that happens to sit at column 0: MSFT states it as the control's own contract
+     ("The IL and DL controls are also expected to move the cursor to the left margin",
+     adaptDispatch.cpp:2150) and ghostty does it in the `defer` of both functions
+     (`cursorAbsolute(scrolling_region.left, start_y)`, Terminal.zig:2977 and :3151). The application that
+     cares is the one redrawing a table: it walks the cursor in to a column, deletes the row, and writes the
+     replacement from wherever the cursor ended up -- with the column kept, every cell of that row lands n
+     columns off, and the drift repeats per row. */
+  rc_reset(&g, 8, 4, 0x07);
+  put(&g, "aaa\r\nbbb\r\nccc");
+  put(&g, "\033[2;4H");                                /* row 1, three columns in */
+  put(&g, "\033[1M");
+  eq_u("DL homes the cursor", (unsigned)g.cx, 0, "the left margin, which is column 0 without DECVSSM");
+  eq_u("and leaves it on the row it deleted from", (unsigned)g.cy, 1, "");
+  eq_text(&g, 1, 3, "ccc", "the delete itself happened");
+  put(&g, "\033[3;6H");
+  put(&g, "\033[1L");
+  eq_u("IL homes it the same way", (unsigned)g.cx, 0, "");
+  eq_u("on its own row", (unsigned)g.cy, 2, "");
+  eq_text(&g, 1, 3, "ccc", "and pushed nothing that the cursor left behind");
+
+  /* Inside a region the same rule holds, because the region is vertical only: the left margin is still 0.
+     The content is placed with CUP rather than newlines, so no line feed here can scroll the region that
+     is already set. */
+  rc_reset(&g, 8, 5, 0x07);
+  put(&g, "\033[2;4r");
+  put(&g, "\033[1;1H1\033[2;1H2\033[3;1H3\033[4;1H4\033[5;1H5");
+  put(&g, "\033[3;5H\033[1M");
+  eq_u("DL in a region homes the cursor too", (unsigned)g.cx, 0, "");
+  eq_u("and stays on its row", (unsigned)g.cy, 2, "");
+  eq_text(&g, 2, 1, "4", "the region's rows moved");
+  eq_text(&g, 0, 1, "1", "the row above the region did not");
+  put(&g, "\033[1;7H");                                 /* above the region, on the row it gave up */
+  put(&g, "\033[1M");
+  eq_u("a cursor the region refused keeps its column", (unsigned)g.cx, 6,
+       "IL/DL outside the margins do nothing at all, cursor included");
+  eq_u("and its row", (unsigned)g.cy, 0, "");
+  eq_text(&g, 0, 1, "1", "and nothing moved underneath it");
 }
 
 /* DECSTBM and everything that scrolls inside it (I25). The assertions are the oracle's own acceptance
@@ -2506,7 +2662,9 @@ static void geo_region()
   eq_u("and DECSC finds the ?1048 save, not its own", (unsigned)g.cy, 1, "one slot, so the later save won");
   eq_u("in both columns", (unsigned)g.cx, 1, "XTermSaveRestoreCursor keeps one position, not two");
 
-  /* A hard reset drops what ConEmu's FullReset drops -- and what it forgets to drop, we drop too. */
+  /* A hard reset drops the region, the modes, the shape and the text: the viewport's worth of rows goes up
+     into history and the cursor comes home. It is the half of the pair that DECSTR may not do, which is why
+     the two are asserted side by side -- they used to be one call. */
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "\033[2;3r\033[?25l\033[1 qX\033c");
   eq_u("RIS cleared the region", (unsigned)g.regSet, 0, "");
@@ -2517,7 +2675,10 @@ static void geo_region()
   eq_u("RIS spent the scroll that a blank viewport owes", (unsigned)g.pendingScrolls, 3, "");
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "A\033[!p");
-  eq_text(&g, 0, 1, " ", "DECSTR is FullReset upstream (Ansi.cpp:3644-3649), not an attribute reset");
+  eq_text(&g, 0, 1, "A", "DECSTR erases nothing -- MSFT's SoftReset has no FillRect, no scroll and no buffer "
+                         "switch in its whole body (:2984-3020, against HardReset's :3028-3050)");
+  eq_u("and moves no cursor", (unsigned)g.cy, 0, "");
+  eq_u("and asks the console for no scroll at all", (unsigned)g.pendingScrolls, 0, "");
   eq_u("the DECSTR that took effect leaves no count", g.nUnsupported[RC_UN_SUP], 0,
        "`CSI !p` with no arguments is the only spelling either leg acts on");
   rc_reset(&g, 8, 3, 0x07);
@@ -2675,9 +2836,15 @@ static void geo_edit()
   eq_text(&g, 0, 7, "ABCDEFG", "ICH at the last column can only open the one cell left");
   eq_u("and paints nothing outside the row", g.cells[0][7].ch, ' ', "n clamps to cols-cx");
 
-  /* The halves of a wide glyph travel as cells, so a shift can split one. Upstream hands the same pair to
-     ScrollConsoleScreenBuffer and gets the same answer (ExtConsole.cpp:1675-1690 moves cells, not glyphs),
-     which is why this pins the oddity instead of the wish. */
+  /* A pair of cells holding one glyph travels as a pair, and an edit that leaves one half behind does not
+     get to keep the other. ghostty makes that a hard property of the grid: `assertIntegrity()` rejects a
+     spacer tail at column 0 or one that does not follow its wide head (page.zig:518-540), and every edit
+     that could straddle a boundary clears the glyph whole instead -- "If our X is a wide spacer tail then we
+     need to erase the previous cell too so we don't split a multi-cell character" (Terminal.zig:3322-3327),
+     `splitCellBoundary()` at each edge of an ECH or a DCH (:3411-3413, :3463-3464), and ECH growing its
+     erase by one cell when the last cell it would take is wide (:3448-3452). The two legs below are the
+     shapes where a cell-shifting implementation cuts a glyph in half: the cursor on the trailing side for
+     ICH, on the leading side for DCH. */
   const uint16_t wide = 0x3042;                        /* U+3042, EAW W */
   rc_reset(&g, 8, 3, 0x07);
   putu(&g, &wide, 1);
@@ -2689,11 +2856,72 @@ static void geo_edit()
   eq_u("and the trailing half kept its own bit", g.cells[0][2].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
   eq_u("the blank is at the cursor column", g.cells[0][0].ch, ' ', "");
   eq_u("A rode one column further right", g.cells[0][3].ch, 'A', "");
+  no_orphan(&g, 0, "ICH with both halves inside the shifted span");
   put(&g, "\033[1;1H\033[P");
   eq_u("DCH shifted the pair back: front half at column 0", g.cells[0][0].attr & RC_LVB_LEADING,
-       RC_LVB_LEADING, "the split is undone by moving the same cells left, not by re-joining them");
+       RC_LVB_LEADING, "the pair survives because both halves moved by the same amount");
   eq_u("trailing half at column 1", g.cells[0][1].attr & RC_LVB_TRAILING, RC_LVB_TRAILING, "");
   eq_u("and no third cell claims the code point", g.cells[0][2].ch, 'A', "");
+  no_orphan(&g, 0, "DCH with both halves inside the shifted span");
+
+  rc_reset(&g, 8, 3, 0x07);
+  put(&g, "x");
+  putu(&g, &wide, 1);                                  /* the glyph occupies columns 1 and 2 */
+  put(&g, "AB");
+  put(&g, "\033[1;3H\033[1@");                         /* ICH with the cursor on the trailing half */
+  eq_text(&g, 0, 6, "x   AB", "the glyph is destroyed whole and the tail still shifts one column");
+  no_orphan(&g, 0, "ICH with the cursor on a trailing half");
+
+  rc_reset(&g, 8, 3, 0x07);
+  put(&g, "x");
+  putu(&g, &wide, 1);
+  put(&g, "AB");
+  put(&g, "\033[1;2H\033[1P");                         /* DCH with the cursor on the leading half */
+  eq_text(&g, 0, 5, "x AB", "the head goes with the erase and the tail that slid into it goes too");
+  no_orphan(&g, 0, "DCH with the cursor on a leading half");
+
+  /* The same rule seen from the write side: CUP and DECRC can park the cursor on either half of a glyph,
+     because the column they name is the column that was asked for. What the model may not do is write one
+     cell and keep the other -- put_cell already destroys the glyph when the cursor sits on its head, and the
+     mirror case has to answer the same way. */
+  rc_reset(&g, 8, 3, 0x07);
+  putu(&g, &wide, 1);
+  put(&g, "AB");
+  put(&g, "\033[1;2Hz");
+  eq_u("writing over a trailing half blanks the head", g.cells[0][0].ch, ' ', "");
+  eq_u("and the new glyph stands where the cursor was", g.cells[0][1].ch, 'z', "");
+  no_orphan(&g, 0, "a narrow cell written on a trailing half");
+
+  rc_reset(&g, 8, 3, 0x07);
+  putu(&g, &wide, 1);
+  put(&g, "AB");
+  put(&g, "\033[1;2H");
+  putu(&g, &wide, 1);                                  /* a wide cell written *on* the old one's tail */
+  eq_u("the new glyph owns its own two cells", g.cells[0][1].attr & RC_LVB_LEADING, RC_LVB_LEADING, "");
+  no_orphan(&g, 0, "a wide cell written over a pair");
+
+  /* ECH erases to the end of its own row. "Erase Characters from the current cursor position ... will only
+     erase characters in the current line, and won't wrap to the next" (adaptDispatch.cpp:706-724, which
+     clamps with `std::min(startCol + numChars, GetLineWidth(row))`), and ghostty clamps the same way with
+     `remaining = cols - cursor.x` (Terminal.zig:3443-3446). An over-long ECH is not a screen clear: the
+     rows below hold text the application did not ask to lose. */
+  rc_reset(&g, 8, 3, 0x07);
+  put(&g, "AAAAAAAA");
+  put(&g, "\033[2;1HBBBBBBBB");
+  put(&g, "\033[1;1H\033[99X");
+  eq_text(&g, 0, 8, "        ", "ECH 99 on a row of 8 erases the row");
+  eq_text(&g, 1, 8, "BBBBBBBB", "and stops at its end, because the row below is a different line");
+  eq_u("with the cursor where the sequence left it", (unsigned)g.cx, 0, "");
+  eq_u("and the row's wrap claim dropped with the margin", (unsigned)rc_row_wrap(&g, 0), RC_WRAP_NONE, "");
+  put(&g, "\033[2;1H\033[3X");
+  eq_text(&g, 1, 8, "   BBBBB", "ECH counts cells from the cursor, on the row the cursor is on");
+
+  rc_reset(&g, 8, 3, 0x07);
+  putu(&g, &wide, 1);
+  put(&g, "AB");
+  put(&g, "\033[1;1H\033[1X");
+  eq_text(&g, 0, 4, "  AB", "ECH takes the whole glyph when it would take half of one");
+  no_orphan(&g, 0, "ECH over a leading half");
 
   /* DECSCUSR: the parameter is what the model keeps, and 0/out-of-range is ConEmu's "default", which for
      a console means the thin side of the only two shapes it has (Ansi.cpp:3677). */
@@ -3090,17 +3318,22 @@ static void geo_damage()
   eq_span(&g, 0, 0, 19, "EL 2 is the whole row because it says so");
   rc_clear_dirty(&g);
   put(&g, "\033[1;11H\033[30X");
-  eq_span(&g, 0, 10, 19, "ECH spends its count on the row's tail first");
-  eq_span(&g, 1, 0, 19, "and crosses the margin into the next row, as the buffer-relative fill upstream does");
-  eq_u("two rows' worth is all the count asked for", (unsigned)rc_row_dirty(&g, 2), 0, "");
+  eq_span(&g, 0, 10, 19, "ECH spends its count on the row's tail and stops at the margin");
+  eq_u("the row below is not the next row of the same erase", (unsigned)rc_row_dirty(&g, 1), 0,
+       "MSFT clamps with `min(startCol + numChars, GetLineWidth(row))` (adaptDispatch.cpp:718) and ghostty "
+       "with `remaining = cols - cursor.x` (Terminal.zig:3445). The old leg here walked down through the "
+       "buffer, which is text the application never named and rows the damage report then repainted blank.");
   rc_clear_dirty(&g);
   put(&g, "\033[1;11H\033[999X");
-  eq_span(&g, 0, 10, 19, "an over-long ECH clamps to what the buffer has");
-  eq_span(&g, 5, 0, 19, "every row down to the last one");
+  eq_span(&g, 0, 10, 19, "an over-long ECH is still one row");
+  eq_u("and the viewport's last row is not part of it", (unsigned)rc_row_dirty(&g, 5), 0, "");
   rc_clear_dirty(&g);
   put(&g, "\033[1;11H\033[0X");
   eq_u("a zero count erases nothing", (unsigned)rc_row_dirty(&g, 0), 0,
-       "upstream reads ArgV[0] raw: `CSI 0X` is not `CSI X`, which is one cell (:3802)");
+       "the parameter is read raw, so `CSI 0X` is not `CSI X`, which is one cell: MSFT's arithmetic gives an "
+       "empty range the same way (startCol + 0 == startCol). ghostty clamps the count to 1 instead "
+       "(@max(count_req, 1), :3446) and is the odd one out; a count of zero asking for nothing is the "
+       "reading this model keeps, because it is the one that needs no special case");
   rc_clear_dirty(&g);
   put(&g, "\033[1;11H\033[X");
   eq_span(&g, 0, 10, 10, "no parameter is the default of one");
@@ -4326,6 +4559,7 @@ int main(int argc, char **argv)
   gm_reports();
   gm_dropped();
   gm_wrap_suspect();
+  gm_state_reset();
   gm_argcap();
   gm_echo();
   gm_pending();

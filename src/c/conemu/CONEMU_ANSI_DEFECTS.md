@@ -77,7 +77,7 @@
 
 > **本轮处置（2026-09-23，栅格证人）**：本组"改成 pending wrap"的动作**不做**。`MSFT_TERMINAL_REFERENCE` §2.2
 > 那四条能区分立即/延迟换行的输入（满行后 `\r`+`Y`、`\b`+`Y`、`\e[K`、`\e[A`+`Y`）已建进
-> `Render.java:430-433`，200 列缓冲区上**四条 legs 全部相同** ⇒ 与兜底腿本就一致，改成延迟只会造出新分叉。
+> `Render.java:1577-1580`，200 列缓冲区上**四条 legs 全部相同** ⇒ 与兜底腿本就一致，改成延迟只会造出新分叉。
 > #317 那条"软换行 ≠ 栅格行"是**真需求**，但它的正确解不是换行时机，而是**每行一个位记下这行是被迫断的**：
 > 已按上游 `_wrapForced`/`_doubleBytePadded` 做成 `rowWrap[]`（DESIGN I20），做选择/复制映射时直接读它。
 
@@ -145,7 +145,7 @@ cmd/PowerShell + ConEmu 不复现，只在 WSL 下出现）；
 | `あa` + `\b` | 游标 (3,10)，行 `[3042L 3042T 005F]` | 游标 (2,14)，行 `[0020 005F 0061]` | **分叉，错在兜底腿**：Hk 把宽字形按 1 列计数 ⇒ BS 少退一格 ⇒ 下一次写落在尾格上，conhost 清掉前导格。这正是 #852 的形状，也正是本组上面那一串 issue 的根因家族 |
 | `あa` + `\b\b` | (1,10) | (1,14) | **agree** ⇒ 分叉只在"一步且踩进尾格"这一格上，不是两条腿的宽度表不同 |
 
-⇒ 模型的 `step_back_col`（`Render.cpp:491`，落在 `TRAILING` 再退一步，照上游 `Row::_adjustBackward`）
+⇒ 模型的 `step_back_col`（`Render.cpp:1106`，落在 `TRAILING` 再退一步，照上游 `Row::_adjustBackward`）
 是**对的那一侧**，不为平价而把它改回少退一格。门禁 `Render.java:caseAbWidechar` 族的
 `legs("narrow after wide, then BS", ..., Boolean.FALSE)`——期望"不同"与期望"相同"一样是断言，
 谁将来把它改成 agree，就是在把 #852 抄回来（DESIGN §4.2 第 1 条）。
@@ -183,7 +183,7 @@ cmd/PowerShell + ConEmu 不复现，只在 WSL 下出现）；
 | [2466](https://github.com/ConEmu/ConEmu/issues/2466) | bash+nvim 主题颜色错乱、背景发粉 | 组合症状 | 【低优先】证据弱（只有截图） |
 | [870](https://github.com/ConEmu/ConEmu/issues/870) | Terraform 输出**整段不显示**（疑似 ANSI 颜色库触发） | 转义吞输出 | 【存疑】值得拿它的字节流当解析用例 |
 | [807](https://github.com/ConEmu/ConEmu/issues/807) / [2625](https://github.com/ConEmu/ConEmu/issues/2625) | Sixel / kitty graphics 协议 | 图形协议 | 【缺口】明确不做也要写进文档 |
-| （不是上游 issue：`SGR 38:2::r:g:b`） | colon 子参数**整条不吃色** | `SGR 38/48` 的 `:` 形式 | 【已定性偏离，不修】不是缺口：`:` 落在 ConEmu 的 Pvt 字节范围里，按 I10 的平价规则"私有序列 ⇒ 丢弃"是**兜底腿的现有行为**（上游坐标 `Ansi.cpp:3494`；我们的判据在 `Render.cpp:505-517`）。上游 Terminal 用 `_subParameterRanges` 正经解析它（`stateMachine.cpp:505-545`），那是**更对**的一侧，但它不对我们的平价对象。⇒ 唯一做的动作是"不再静默"：`RC_UN_COLON` 单独计一票（`Render.cpp:838` 置、`:860` 计），将来真有应用发 colon 形式时手里有数；且它**不**置 `modelSuspect`（不改格就不该逼模型重收养）。门禁 `Render.java caseSuspectAlign`：`"the colon form has its own counter"` + `"and buys no repaint"` |
+| （不是上游 issue：`SGR 38:2::r:g:b`） | colon 子参数**整条不吃色** | `SGR 38/48` 的 `:` 形式 | 【已定性偏离，不修】不是缺口：`:` 落在 ConEmu 的 Pvt 字节范围里，按 I10 的平价规则"私有序列 ⇒ 丢弃"是**兜底腿的现有行为**（上游坐标 `Ansi.cpp:3494`；我们的判据在 `Render.cpp:1177`）。上游 Terminal 用 `_subParameterRanges` 正经解析它（`stateMachine.cpp:505-545`），那是**更对**的一侧，但它不对我们的平价对象。⇒ 唯一做的动作是"不再静默"：`RC_UN_COLON` 单独计一票（`Render.cpp:1177` 说、`:2624` 计），将来真有应用发 colon 形式时手里有数；且它**不**置 `modelSuspect`（不改格就不该逼模型重收养）。门禁 `Render.java caseSuspectAlign`：`"the colon form has its own counter"` + `"and buys no repaint"` |
 
 ## 5 D 组：模式位、光标与 xterm-mode 状态机
 
@@ -286,12 +286,20 @@ ConEmu 声明自己是 xterm-256color，但 msys 侧没有对应 terminfo ⇒ **
 
 以下都是**能在我们的栅格上断言**的判据，建议照现有 `RenderCheck.cpp` 的检查风格补进去：
 
-> **2026-09-23 状态**：第 **1**（四条判别式在 `Render.java:430-433`，结论 legs agree ⇒ 见 §2 末"不做"）、
+> **2026-09-23 状态**：第 **1**（四条判别式在 `Render.java:1577-1580`，结论 legs agree ⇒ 见 §2 末"不做"）、
 > 第 **2**（`geo_wrap` + 新的 `rowWrap` 位区分"整字提前折"与"被推断"，`gm_wrap_suspect`）、
 > 第 **3**（`step_back_col` + §3.1 的双腿证人，含"期望不同"那条门禁）、
 > 第 **7**（未知模式与 colon 分别计票、且不互相污染：`gm_wrap_suspect` + `caseSuspectAlign`）、
 > 第 **10** 的**前置**（`rowWrap[]` 已存在，映射本身还没人读它）已处置。
 > 第 4、5、6、8、9、11 本轮**未动**，仍是建议。
+>
+> **2026-09-26 追加（build -25，参照 commit history 反查，不是上游 issue）**：ECH 跨行擦、IL/DL 不回最左列、
+> ICH/DCH/ECH/写入把宽字形切半格、DECSTR 走 full_reset、recycled 行漏清 `markCol`、`lastUnit` 记了零宽码点
+> ——六条都已修，宿主门禁 `geo_lines`/`geo_edit`/`no_orphan`/`gm_state_reset`/`geo_ftcs`，真终端四腿
+> `caseEditRows`/`caseEchClamp`/`caseHealPairs`/`caseSoftReset`（`Render.java`，两架构 `checks=5688 failures=0`）。
+> 第 7 条 `\t` 的 tab stop 表**已批准、尚未做**（`ANSI_SUPPORTS.md` §3 那三行仍然成立）。
+> 判据：这一族不是抄上游抄出来的错，是**没抄**参照的错——把 ConEmu 当神谕的那几年正好是这些错活着的几年
+> （见 `DESIGN.md` §10 #64-#70 与 [[feedback-upstream-not-a-reason]]）。
 
 1. **单字符触发的折行**（#2404）：填满一行 → 再单独写 1 个字符 → 断言游标到下一行行首、行尾字符未被覆盖。
    同时覆盖"批量写 2 个字符"与"写 1 个字符"两条分支（上游正是在后者上错）。

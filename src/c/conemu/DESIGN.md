@@ -434,6 +434,29 @@ The doctrine, in the order that matters:
     agree on every shape a test happens to build, pin the algebra that makes them agree (here: a saturated
     slide puts `row0` on `bufH - rows`) and build the shape where they part.
 
+17. **A witness to a machine-wide register must classify a mismatch before reporting it.** The clipboard leg
+reads through a second process, which is what made it a witness at all (rule 3's other half), and that second
+process does not own the register. One x64 run came back with exactly one red whose readback was 24 box-drawing
+characters -- a value no path in this library can produce, written by something else on the box between our seed
+and our read. A red there is not cosmetic: the sentence it prints is "the renderer put text on the clipboard that
+it had been told not to", which is the claim the default-off policy exists to prevent. So the two halves of the
+case are shaped differently now. A fidelity claim retries its read, and a value this run *offered* is treated as
+the library's (rule 3's other half again: the marker is per-run and unique, so a match can only have come from
+here); a "nothing was written" claim re-seeds and says in as many words that an outside process held the
+register, because in that direction the counters -- which nothing else can touch -- are the assertion and the
+read was always corroboration. A register that cannot be taken back is reported as a skip, not a pass and not a
+red. The shape was settled by running a deliberate competitor (`cache/p63/clip-hammer.ps1`, writing every 250 ms)
+and reading its output: under sustained contention every clipboard leg is unwitnessable, and the same experiment
+showed the gate had been leaving the *user's* clipboard holding the test's own seed -- it seeded, then "restored"
+the value it had seeded. It now reads what was there before touching anything and puts that back on every exit
+path, which is the same courtesy `close()` owes the palette.
+
+18. **A new arm must be seen to fire, and a witness's own environment can veto it.** The four -25 console legs
+passed on both arches, and the contention branch above fired exactly once -- under the hammer, where the whole
+case declined to witness and said so. Rule 12 read from the other side: a green from a branch that never ran is
+not evidence, and neither is a red from a branch that cannot tell who wrote.
+
+
 Current gates, and how to read them: the host gate (`RenderCheck`, cross-run on a Linux host: colour table,
 full code-point width cross-check, per-UTF-16-unit resumability, damage bounds over the corpus) and the
 live-console gate (`run.ps1`, both bitnesses: the model drives a real conhost, cells are read back, and the
@@ -489,6 +512,28 @@ Fresh, on `render-2026-09-26-24`: host `checks=4065 fails=0 / RENDERCHECK: ok`, 
 **The gate's reader was the writer's cache.** `caseClipboard` first read the clipboard back through AWT, and AWT -- once this JVM has called `setContents` -- answers from the object it was handed rather than asking the window system again. Eight assertions went red with the message "read back the same string I seeded", which reads like a painter that never wrote and was a reader that never looked. The leg now witnesses the clipboard from a second process (`pwsh Set-/Get-Clipboard`) and says `SKIP` out loud where that is unavailable, because the fallback is the reader that can lie. Same family as §6 rule 3 and the shadow-buffer trap in the ConPTY harness: a witness that shares state with the subject is not a witness.
 
 **A wrong JNI name is a feature that never existed.** The export was written `Java_..._setClipboardPolicy` for a Java method named `setClipboardPolicy0`; the wrapper catches `Throwable` -- deliberately, so an older render.dll keeps working -- so the missing link arrived as "the clipboard switch does nothing", forever, on both sides of a green build. The hand-maintained export whitelist could not catch it because it was copied from the same wrong assumption: it proves presence, not correctness of spelling. `build.sh` now derives the demanded symbols from the `native` declarations in the two Java files (12 and 18 of them) and fails the build on any name the dll does not export, so the list can no longer drift in that direction. Third lesson, smaller and bluer: `OSC 52;;` never cleared the clipboard because `MultiByteToWideChar` returns 0 for an empty input and the painter read 0 as a conversion failure -- the one payload whose whole meaning is emptiness needed its own branch, and the Win32 sequence gained the `EmptyClipboard()` that documents it.
+
+Fresh, on `render-2026-09-26-25`: host `checks=4236 fails=0 / RENDERCHECK: ok`, live `checks=5688 failures=0 /
+RENDERGATE: ok / STAGE0 RUN: ok` on **both** arches against copies of the installed bytes
+(`cache/p63/live25-final.txt`; the two runs before it, `cache/p63/live25.txt` and `live25b.txt`, printed -24's
+5517 and that is the story below). Six deviations found by reading MSFT's and ghostty's *commit history* against
+this code are in this stamp (#64-#69), and the pass earned one lesson that is not about any of them.
+
+**The live count did not move, and that was the finding.** -25's first certification printed `checks=5517
+failures=0` -- the number -24 printed. Enumerating every CSI final the console legs send (`cache/p63/seqscan.py`)
+showed why: **no leg had ever sent IL, DL, ECH, ICH, DCH, REP or DECSTR.** Every fix in the stamp was witnessed by
+the host gate, which links `Render.cpp` directly and cannot speak for the dll that ships (rule 12), and by nothing
+else. Four console legs closed it -- `caseEditRows`, `caseEchClamp`, `caseHealPairs`, `caseSoftReset` -- and the
+count moved by 171. Two of their lessons are structural, not local. A leg that calls `standardGeometry()` re-opens
+the handle and blanks the viewport, so it must sit *below* the cases that read rows an earlier scroll left in the
+buffer: placed above `caseRealign`, the new legs erased its evidence and produced eight reds about a row they had
+themselves wiped, which is rule 6's dirty-console trap wearing a different costume. And content inside a region
+has to be placed with CUP, never with `\r\n`: a line feed rotates the region, so an expectation copied from a
+linear write is wrong before the renderer has done anything.
+
+One red on the way was not the renderer's either. See rule 17: the clipboard leg's out-of-process reader caught a
+third party's write, and the gate now classifies a mismatch before it reports one.
+
 
 ## 7 Known deviations
 
@@ -578,6 +623,12 @@ pwsh -NoProfile -File src/c/conemu/run.ps1 -Arch x64
 pwsh -NoProfile -File cache/java-merge/build-jar.ps1          # rebuild the host jar (-Deploy writes lib\; read the report first)
 pwsh -NoProfile -File cache/java-merge/config-check.ps1       # every ANSI_RENDER spelling against the deployed jar
 pwsh -NoProfile -File cache/caps-audit/native-census.ps1 -Native on   # a live session's census line
+```
+
+```sh
+# the terminfo contract (tic/infocmp live in WSL; nothing here touches the checkout without --refresh)
+MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc   'JLINE_CAPS=/mnt/d/JavaProjects/jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps    JAR=/mnt/d/dbcli/lib/JLine3.jar tr -d '' < /mnt/d/dbcli/src/c/conemu/terminfo/terminfo_check.sh | bash -s'
+# the tr is not decoration: core.autocrlf=true with no .gitattributes means a checkout hands bash a CRLF script
 ```
 
 Notes that cost time when unknown: a control build needs a sibling `luauf8` directory in its scratch tree
@@ -811,7 +862,7 @@ a generator change.
   sentence "the entry that ships is the entry that was audited" is therefore true of the tree the user runs and
   false of the tree that versions it, and only `unzip -p` on each jar says which is which.
 
-## 10 Task ledger: the sixty-two tracked tasks
+## 10 Task ledger: the seventy-one tracked tasks
 
 This section exists so a later reader can re-walk the work without re-deriving it from the transcript. It is a
 map, not a narrative: one row per tracker task, and each row says **where the behaviour lives**, **what proves
@@ -835,11 +886,13 @@ How to re-run the two standing gates, which carry every `render.dll` task betwee
   distro whose `g++` is missing (this box's default WSL has none) `CC_HOST=$(command -v clang++ || command -v g++)
   bash build.sh` from inside `src/c/conemu`. It
   compiles `RenderCheck.cpp` against the console-free core and runs it natively. The passing line is
-  `checks=4065 fails=0` followed by `RENDERCHECK: ok`, in `cache/native-probe/out/rendercheck.txt` (3072 at
-  build -13, 3118 at -16, 3222 at -17, 3318 at -18, 3329 at -19, 3502 at -20, 3632 at -21, 3713 at -22, 3803 and 3810 at -23, 4054 and 4065 at -24; the steps are the pseudo-console and snap legs, then the
+  `checks=4236 fails=0` followed by `RENDERCHECK: ok`, in `cache/native-probe/out/rendercheck.txt` (3072 at
+  build -13, 3118 at -16, 3222 at -17, 3318 at -18, 3329 at -19, 3502 at -20, 3632 at -21, 3713 at -22, 3803 and 3810 at -23, 4054 and 4065 at -24, 4236 at -25; the steps are the pseudo-console and snap legs, then the
   `?u` priv gate plus the partial-paint fault legs, then DECSET 2026 and HPR/VPR, then the interim set and DECRQM, then DECSTBM's validation, then OSC 4/10/11, then OSC 9, then DECAWM, then OSC 52 with the
-  family table's disjointness and coverage sweep). The `build.sh` export check grew a second, derived leg in
-  the same stamp: `gate_declared` reads the `native` declarations out of `Render.java` and
+  family table's disjointness and coverage sweep, then the six cell-integrity witnesses (`heal_pairs` and
+  `no_orphan` over every row of every replayed corpus, IL/DL's column, ECH's row clamp, `soft_reset`, the
+  recycled row's `markCol`, and what `lastUnit` is allowed to remember). The `build.sh` export check grew a
+  second, derived leg in
   `NativeRenderer.java` and demands the dll export each one, because the hand-written whitelist above can be
   *wrong* -- not short, wrong -- and a wrong JNI name is a feature that silently never existed.
   trap worth recording is that `build.sh --no-colorcheck` **does not run the host gate at all** — the output
@@ -850,11 +903,13 @@ How to re-run the two standing gates, which carry every `render.dll` task betwee
 * **Live gate** — `pwsh -File src/c/conemu/run.ps1 -Arch both`, and it must be given a real console (Git Bash
   is not one; the established wrapper pattern is a `.cmd` under `cache/gate13/` started with
   `cmd /c start "" /min /wait cmd /c …`; Git Bash rewrites a bare `/min`, so prefix the wrapper with
-  `MSYS2_ARG_CONV_EXCL='*'`). Both bitnesses must pass: `checks=5517 failures=0`, `RENDERGATE: ok`,
-  `STAGE0 RUN: ok`, currently at `cache/p57/live7.txt`, which is the run against copies of the **deployed**
-  bytes (`-Scratch D:/dbcli/cache/p63/deployed`, md5-equal to `lib/{x86,x64}/render.dll`: x86 stamp at :68,
-  clipboard leg from :804, slot family at :858, summary at :861; x64 stamp at :929, clipboard from :1665,
-  summary at :1723). 5469 at -22, 5482 at -23, 5517 at -24. **The count depends on a flag the script cannot default to**: `caseLegsAgree` prints
+  `MSYS2_ARG_CONV_EXCL='*'`). Both bitnesses must pass: `checks=5688 failures=0`, `RENDERGATE: ok`,
+  `STAGE0 RUN: ok`, currently at `cache/p63/live25-final.txt`, which is the run against copies of the **deployed**
+  bytes (`-Scratch D:/dbcli/cache/p63/deployed`, md5-equal to `lib/{x86,x64}/render.dll`: x86 stamp at :68, IL/DL
+  from :724, ECH from :741, the pair-integrity leg from :751, DECSTR from :774, clipboard from :865, summary at
+  :921; x64 stamp at :989, summary at :1842). 5469 at -22, 5482 at -23, 5517 at -24, 5688 at -25 -- and the +171
+  is the finding of §6's -25 entry: four console legs that had never existed, because no leg had ever sent IL, DL,
+  ECH, ICH, DCH, REP or DECSTR. **The count depends on a flag the script cannot default to**: `caseLegsAgree` prints
   `SKIP both-leg A/B` and no failures when it finds no ConEmuHk, and `lib/{x86,x64}` on this install ships
   `render.dll` only, so several stamps were run without a single A/B check. Pass
   `-Install D:/dbcli/cache/p61/hk` (a tree holding `lib/x86/ConEmuHk.dll` and `lib/x64/ConEmuHk64.dll`, both
@@ -869,11 +924,16 @@ How to re-run the two standing gates, which carry every `render.dll` task betwee
   It prints its `console:` line before painting, which puts `isPseudoConsole` through the real JNI ABI as a
   side effect of the gate.
 
-The artifacts these numbers belong to, as of build `render-2026-09-26-24`: `lib/x86/render.dll`
-`8f6e57baec97ef4569bede145f23f78e` (156705) and `lib/x64/render.dll` `604e05c787ed38739f00d8c03cc557bb`
-(152491), both printing stamp `render-2026-09-26-24` when read back through the live gate re-run against
-copies of *those installed bytes* (`cache/p57/live8.txt`, `-Scratch D:/dbcli/cache/p63/deployed`: x86 stamp at
-:68, clipboard leg from :804, slot family at :858, summary at :861; x64 stamp at :929, summary at :1723). The
+The artifacts these numbers belong to, as of build `render-2026-09-26-25`: `lib/x86/render.dll`
+`017d026f77dcfd063c3adf124dd8b54e` (157227) and `lib/x64/render.dll` `8a3958f71a13eb25174963a3611ac56d`
+(153013), both printing stamp `render-2026-09-26-25` when read back through the live gate re-run against copies
+of *those installed bytes* (`cache/p63/live25-final.txt`, anchored in the bullet above). The pair -25 replaced is
+`lib/{x86,x64}/render.dll.20260926-123418.bak` (156705 / 152491, the -24 build); no jar moved, because -25 touched
+the model, the JNI seam and the two gates and nothing in `com.hyee.ansirender`'s Java side, so `lib/dbcli.jar` is
+still `fe2a4ed01bb7d13c61dbbb202059fd58` (682094). Re-running the host gate after that deployment re-linked
+`cache/native-probe/{x86,x64}/render.dll` from **unchanged** sources and moved both hashes (`257dbdef…` /
+`92ad2d48…`) at identical sizes and the same stamp -- the ImageBase lesson a third time, and the reason the
+sentence below insists on hashing `lib/` rather than trusting a build directory. The
 sizes are the evidence that the pair is the pair: the first -24 deployment hashed `1f78169b…`/`729191ce…` at
 exactly these byte counts, and a later re-link of a **comment-only** change moved both hashes while moving no
 code -- GNU ld randomizes the PE ImageBase, so md5 says "different file", the size says "same program", and
@@ -917,7 +977,7 @@ half of a witness is not evidence, it is a summary.
 | # | Subject | Where it lives | Proof, and what it printed |
 |---|---|---|---|
 | 1 | 通读 conemu 现状代码与文档 | no file — the read-through | It is §2.1's layer list and §7's deviation inventory. Not gated, and not re-runnable; every later row presumes it. |
-| 2 | OSC 族不再静默：分类计数 + 标题落地全链路收口 | `Render.cpp:1600 osc_start`, `:2360 osc_finish`; `RenderJni.cpp:1102-1115` applies the title with `SetConsoleTitleW` and counts a failure into `lastError` | host `gm_osc`, `gm_osc_family`, `gm_dropped`; live `caseOscTitle` (`"a title is not a rectangle"`, `"an abandoned title"`). -13 census: `titles=3 (1 truncated), 3 applied` (`gate13.txt:413`) — parsed equals applied, which is the whole claim. |
+| 2 | OSC 族不再静默：分类计数 + 标题落地全链路收口 | `Render.cpp:1689 osc_start`, `:2449 osc_finish`; `RenderJni.cpp:1102-1115` applies the title with `SetConsoleTitleW` and counts a failure into `lastError` | host `gm_osc`, `gm_osc_family`, `gm_dropped`; live `caseOscTitle` (`"a title is not a rectangle"`, `"an abandoned title"`). -13 census: `titles=3 (1 truncated), 3 applied` (`gate13.txt:413`) — parsed equals applied, which is the whole claim. |
 | 3 | 按 MSFT 参照清单完成 S1/S2/S3/S5/S6-S8/B5 | `Render.cpp` `step_back_col` (BS `:1574`, CUB `:1121`), explicit pending-wrap flag, `modelSuspect`, per-row `dirtyLo/dirtyHi` (`Render.h:276`) | host `geo_wrap`, `gm_pending`, `gm_wrap_suspect`, `gm_split_sgr`, `gm_double_esc`, `gm_abandon_and_restart`, `check_resumable`, `plan_damage_range`, `check_damage_bounds`; live `caseWrap`, `caseSuspectAlign`, `caseNarrowRepaint`. In -13 host `3072/0`; the damage bounds print `273 corpus strings x 2 shapes, every damaged row inside a run`. |
 | 4 | 退格落宽字形尾格：先用栅格证人裁决 | decided by measurement, then #15 landed it | See #15 — the same question, asked of the grid before the code was touched. |
 | 5 | B2（脏列区间）待用户复述 I7 裁决后才能开工 | blocked-on-ruling, no code | Cleaved open by #16's ruling; the interval itself is B2 in #3. |
@@ -979,6 +1039,14 @@ half of a witness is not evidence, it is a summary.
 | 61 | DECAWM `?7`：实现或明确不做的决定（连带 caps 的 smam/rmam） | `Render.h` (`wrapMode`), `Render.cpp` (`blank_cell`, `last_free_col`, `put_cell`/`put_pair`'s fit test + trim + margin clamp, the `?7` arm of `h`/`l`, `mode_status`, both reset seeds), `RenderJni.cpp` (`build_model`'s `keepWrap`), `RenderCheck.cpp` (`geo_decawm`, `gm_wrap_suspect`'s census row), `Render.java` (`caseDecawm`, one `legs` arm) | Landed as build -22, and the row's own history is the point: #60 raised it because the refusal had been written as an upstream absence, which is not a reason. The mode is modelled (I35), so `?7l` ends the line at the margin -- cursor holds, no `RC_WRAP_FORCED`, a glyph that cannot fit is dropped whole, per MSFT `Row.cpp:474-494` -- and DECRQM answers it. **The caps half of the question was decided the other way and stays decided**: `smam`/`rmam` are NOT added, because `windows-conemu` also describes sessions where ConEmu's parser reads the bytes and its `?7` arm leaves `SetConsoleMode` commented out (`Ansi.cpp:3268-3281`) -- advertising the pair would be I26's lie about the other parser, and the entry's `am` clause is about the *host* terminal, not about this library's grid. The writer evidence went through a correction of its own on the way: `lua/ansi.lua:150-151` defines WRAP/UNWRAP, but its only call sites are commented out (:346-352), so the claim "an application in this product asks for it" was false as written; what is true is the third-party case -- this library models whatever the screen it owns is handed, and DECAWM is among the most-sent modes in existence. Two invariants the clamp made reachable and had to be enforced with it: the margin clamp steps off a trailing half (a cursor never rests inside a glyph), and a narrow glyph written over a wide one's front half now blanks the orphaned back half -- the pair is I16's unit, and with no-wrap that state would be manufactured on every row that mixed CJK and Latin rather than only where a CUP happened to land. Both resets (RIS, DECSTR) restore the mode; a rebuild carries it (`keepWrap`: a resize is not a request to start wrapping again); the non-private `CSI 7 h/l` is GATM and stays unmodelled, still voting MODE. Two bugs the gates caught, both worth keeping. **One: `build.sh --no-colorcheck` leaves a stale `out/rendercheck`**, and re-running that binary prints a confident green line for the previous build's assertions -- it is how the first -22 "pass" happened, and the doc's own warning at section 8 was not enough to stop it. **Two: `legs()` cases share one grid with every leg that follows**, so `?7l` left behind un-restored failed `caseWrap` two rows away, three cases later; the mode is now turned back on inside the same bytes. Gates: host `checks=3713 fails=0` (3632 before; `geo_decawm` plus the census row, whose `?7l` stayed in the stream as the proof that the MODE count fell by exactly its two spellings). Live `checks=5469 failures=0` on both arches -- **not comparable with -21's 5216**: `caseLegsAgree` prints `SKIP` and no failures when it cannot find a ConEmuHk, `lib/{x86,x64}` on this install has none, and passing `-Install` a tree with both made ~230 A/B checks appear for the first time in several stamps. `DECAWM off at the margin` is the family's first *cell* divergence and it is documented as one: native `Q` at column 199, hk `R` there with its `Q` on the next row. Deployed: `lib/x86` -> `c7667a9fe23535f0bfd791c46def08b1` (146797) and `lib/x64` -> `8b6a6528e705bce1e9f1d0581683d8c0` (143188), backups `render.dll.20260926-0039*.bak`, and `run.ps1 -Scratch cache/p61/deployed` re-ran the gate against copies of those installed bytes. |
 | 62 | WORK_ORDER T6：census 元数据登记表（纯收敛，槽位与 stats 布局不动） | `Render.h`'s `RcUnsupported` family, `unsupported()`/`ignored()` in `Render.cpp`, and the name/suspect/description text each of them carries | **Open, added on the user's request 2026-09-25** (the order marks T6 optional). One static table keyed by slot, holding the report name, whether it sets `modelSuspect`, and the sentence; `unsupported()`/`ignored()` query it. Slot order and the stats layout do not move by one byte -- I19 makes the census a positional contract across `RenderJni.cpp`, `Render.java` and `NativeRenderer.java`, and the live gate checks the array length. Because nothing may change behaviour, the proof is equality, not green: dump the registry to normalised text before and after and diff it empty, alongside a green host gate, and name which entries were previously written in three places. |
 | 63 | WORK_ORDER T7：OSC 9 安全子集分派（9;4 / 9;9 / 9;12） | `Render.cpp` (`osc9_action`, `path_is_legal`, the `code == 9` arm of `osc_finish`), `Render.h` (`taskbarState/Progress/Seen`, `cwd[]`, `nCwd`), `RenderJni.cpp` (`taskbar0`, `workingDirectory0`, the carry in `build_model`), `NativeRenderer.java` (the two wrappers), `build.sh` (two exports) | Landed as build -21 on the user's instruction that ConEmu is not the design oracle: upstream parses this family and does nothing, so the boundary came from MSFT's `DoConEmuAction` (adaptDispatch.cpp:3558-3647), which acts on 9;4, 9;9 and 9;12 and sends **everything else** to `UnknownSequence()`. Two rules were kept from that source rather than invented: an out-of-range taskbar state is refused without applying (":3596-3600") while an out-of-range progress is clamped to 100 (":3601-3605"), and the path is legal-or-nothing through a filter equivalent to `til::is_legal_path` (its own test pair at ut_til/string.cpp:247-249 is the evidence for what that means in practice: a `;` survives, a `"` inside does not). **The library stores and never obeys**: no window means no taskbar to paint, and a working directory read from an output stream stays a string -- which is the whole #687 posture kept while the safe subset is parsed, and the §2 rule is rewritten to say exactly that rather than the old "not parsed into an action under any circumstances", which this row made false. `9;12` calls `ftcs_apply` with the argument `B` instead of reimplementing what prompt-start marking means, so the two spellings cannot drift apart. Both facts survive a rebuild (a resize is not a re-open), which is the live leg's `readopt` pair. Gates: host `gm_osc9` -- 34 assertions covering the clamps, the refusals, the unterminated payload (which counts only once the parser abandons it, a distinction the first draft got wrong), the DCS framing guard, and `9;12` compared field-by-field against `133;B` on two grids: `checks=3632 fails=0`. Live: `caseOsc9` reads both getters back, proves `9;7;calc.exe` changed neither, and proves the carry across `readopt`: `checks=5216 failures=0` on both architectures. Two test bugs found on the way and worth keeping as warnings: writing `\"a\"` intending a control character produces BEL, which *terminates* the OSC instead of being rejected by it; and an unterminated payload has not been counted yet at the moment the assertion is written, because the parser is still inside it. |
+| 64 | 参照 commit history 反查 #1：IL/DL 之后光标要回区域最左列 | `Render.cpp:1250` `case 'L': case 'M':` -- both arms end in `g->cx = 0` (region and no-region), the refused out-of-region arm keeps its column | MSFT states it as the expectation (`adaptDispatch.cpp:2150`, `cursor.SetXPosition(leftMargin)`) and ghostty enforces it in a `defer` (`Terminal.zig:2977`, `:3151`). The cost of the old behaviour is a table redraw: walk in to a column, delete the line, write the replacement from wherever the cursor ended up -- every row n cells off, once per row. Host: `geo_lines`. Live: `caseEditRows` (Render.java), which reads the cursor back from conhost, checks the shifted rows and their wide glyphs, checks the region's own band, and checks that a **refused** IL keeps the column it was refused at, because nothing moved so nothing is owed. Run at -25 on the deployed bytes. |
+| 65 | 参照 commit history 反查 #2：ECH 只擦游标所在的一行 | `Render.cpp:1325` `case 'X':` -- clamped to `g->cols - 1`, one row | Both references say it in prose and clamp the same way: MSFT `adaptDispatch.cpp:706-724` ("only erase characters in the current line, and won't wrap to the next", `std::min(startCol + numChars, GetLineWidth(row))`), ghostty `Terminal.zig:3443-3446`. The row this replaces argued the walk-down was ConEmu's buffer-relative shape and only its off-by-one was wrong; **withdrawn** -- a `CSI 999X` erasing the viewport below the cursor deletes content the application never named, which is the one class of deviation that cannot be paid for with parity (§7's list, [[feedback-upstream-not-a-reason]]). `CSI 0X` still erases nothing: the parameter is read raw, MSFT's arithmetic agrees, ghostty's `@max(count,1)` is the outlier and is named as one. Host: `geo_edit`. Live: `caseEchClamp`, four rows of text and an erase that must not reach any of the three below. |
+| 66 | 参照 commit history 反查 #3：ICH/DCH/ECH/写入都能把宽字形切成半格 | `Render.cpp:286` `heal_pairs(g, row, from, to)`, called from `fill_span` (:324), `blank_cell`, `put_cell`, `put_pair` and both `case '@' case 'P'` arms (:1313) | ghostty calls this an integrity violation and asserts it (`page.zig:518-540`) and clears at every boundary (`Terminal.zig:3322-3342`, `:3411-3413`, `:3448-3452`); MSFT's `Row.cpp:1215` `_adjustBackward` is the same rule read from the other side. One function rather than five fixes because the failure was never "this call forgot" but "nobody can see the far half of a pair from the near one". Host: `no_orphan()` (RenderCheck.cpp:111) now runs over **every row of every replayed corpus**, and `geo_edit` pins the shapes. Live: `caseHealPairs` + `noOrphan()` on real cells. The witness itself went red twice before the code did: the first draft omitted `if (!bad) continue;` and reported every *legal* pair as an orphan, and two correct old assertions were judged broken until the row's attributes were printed -- see the method note in `.dsh/memory/project/project-renderer-cell-integrity.md`. |
+| 67 | 参照 commit history 反查 #4：DECSTR 走的是软复位，不是 full_reset | `Render.cpp:1083` `soft_reset()`; `full_reset()` (:1052) stays RIS's | MSFT's `SoftReset` is `adaptDispatch.cpp:2984-3020`, a list of assignments with no cursor move, no erase and no buffer switch -- those are `HardReset`'s (:3042-3062 (`UseMainScreenBuffer` is at :3047), where `UseMainScreenBuffer` finally appears) -- and it clears the **active** buffer's saved cursor only (GH#19918, :3005-3008). Before -25 a `CSI !p` here left the alternate screen, scrolled a viewport into history and homed the cursor. The saved cursor is cleared by overwriting the two coordinates, because the model has no "is there a save" bit; the cursor **shape** is deliberately left alone (DECSTR's list has none, and `-1` exists so a session that never asked keeps the user's preference). Host: `gm_state_reset`. Live: `caseSoftReset` -- screen kept, cursor kept, pen dropped, DECRC landing where the cursor already stands **plus the control that saves and restores again** so that last claim cannot pass by DECRC being broken. |
+| 68 | 参照 commit history 反查 #5：recycled 行只清了 rowWrap 和 rowMark | `Render.cpp:350` `row_reset_state()` now also zeroes `markCol` | ghostty `046a45a5f`, "fully reset row metadata when recycling row storage" (`PageList.zig:5252` -> `Page.zig:1307 resetRow`), found by reading the *history*, not the tree. `shift_region` handed a recycled row a live `markCol` from a row that had moved, which is I23's prompt-start mark pointing at a column of a line that is not there. Invisible on screen by construction -- it never reaches `CHAR_INFO` -- so the proof is host-side: `geo_ftcs` reads the field, and the ledger entry for it is the reason a model-only fact needs a model-side eye. |
+| 69 | 参照 commit history 反查 #6：`lastUnit` 记在宽度判定之前 | `Render.cpp:702` `if (rc_width(cp) > 0) g->lastUnit = cp;` | ghostty assigns `previous_char` inside the printable branch only (`Terminal.zig:1469` -> `:1515`). Storing a zero-width unit made `A` + U+0300 followed by `CSI 3b` draw nothing at all, because the thing being repeated was the mark. Host: `gm_state_reset` pins `lastUnit` to `A` after a combining mark. |
+| 70 | 参照 commit history 反查 #7：`\t` 是硬编码 mod 8，没有 tab stop 表 | `Render.cpp`'s HT arm; the table would live beside `Render.h`'s row arrays | **Open, approved 2026-09-26 as its own pass with a red-first control.** HTS (`ESC H`), TBC (`CSI g`) and CBT (`CSI Z`) are inert today because there is nowhere to back up to. Both references keep a real table (MSFT `adaptDispatch.cpp:2648-2674` walks `_tabStopColumns`; ghostty has `Tabstops.zig` plus `Terminal.zig:2266`, `:2304`), and `\t` is a second entrance to the #66 class: the cursor can land mid-glyph through a tab. This is a state + resize + alt-snapshot + doc + counting change, so it is not folded into a stamp with other work; it goes in after #73 so the table rides the row-state shape rather than the three parallel arrays. |
+| 71 | 在 `src\c\conemu` 补 terminfo / infocmp 一类的文件（用户 2026-09-26 指令） | `terminfo/windows-conemu.caps` (mirror), `terminfo/windows-conemu.ti`, `terminfo/infocmp-windows-conemu.txt`, `terminfo/terminfo_check.sh`, `TERMINFO.md` | The entry the application loads is a jline resource, and `tic` **cannot read it**: its first line carries this project's prose and terminfo parses the commas as field separators (`line 1, col 420: Illegal character - ' '`). So no standard terminfo tool could be pointed at the contract, and the audit harness lived in `cache/`. Now there is a `tic`-clean derivation, a checked-in `infocmp` dump, and a four-leg gate: `tic -x` compiles clean; the `.ti` and the mirrored `.caps` hold the same **90** capabilities spelled alike; `tic -> infocmp` round-trips the same **84** names (names only, on purpose -- `infocmp` rewrites `colors#256` as `colors#0x100`, so a value compare would fail on any entry ever compiled, and the byte-level meaning is the caps harness's job through jline's own decoder); and three copies of the running entry -- mirror, jline source, `lib/JLine3.jar` -- are byte-identical (`89dea0736281`). Arms 1, 2 and 4 were each demonstrated red with one deliberate edit and no other leg moved; **arm 3 was not** -- the only way found to make the dump differ is the way that also makes `tic` complain, which leg 1 catches, so leg 3 stays as the guard against a future ncurses folding or renaming a capability, and that limit is written here rather than in a comment. `TERMINFO.md` also answers the question the jline4 entry raises: of the eight capabilities upstream declares and this one does not, only `kmous` (`MouseSupport.java:85`) and `cbt` (`LineReaderImpl.java:6992`) have readers -- the first is correctly absent because the mouse modes are counted and not implemented, the second is a real (small) cost whose fix is #70, and the remaining six have no reader anywhere in jline4. |
 
 The honest gaps in the table, stated rather than papered over. **Rows #13 and #14 are dbcli's pager and have no
 `render.dll` gate at any level** -- their only witness is a live console leg, which is weaker than the rest of

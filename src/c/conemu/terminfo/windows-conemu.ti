@@ -1,0 +1,71 @@
+# windows-conemu -- the terminfo entry this renderer's contract is written against.
+#
+# GENERATED-DERIVED copy of org/jline/utils/windows-conemu.caps as shipped by jline, which is the file that
+# is actually READ at run time (terminal/src/main/resources in the source tree, and inside lib/JLine3.jar in
+# the install). This one exists so that `tic`/`infocmp` -- tools that will not parse the jline spelling, whose
+# first line carries prose with commas in it -- can be run against the same capability set. terminfo_check.sh
+# proves the two sets are identical and refuses the build if they are not; it also compares the on-disk caps
+# with the copy inside lib/JLine3.jar, because "the entry we audited" and "the entry that ships" are two facts.
+#
+# The rules that decide what is IN here live in ../TERMINFO.md (and the renderer's own dispositions in
+# ../ANSI_SUPPORTS.md); the short version of why the omissions are as deliberate as the additions:
+#
+#   cbt, hts, tbc          -- no tab-stop state exists yet (ESC H is ignored), so CSI Z has nowhere to back
+#                             up to. Item #70: the table is approved and not built; when it lands these three
+#                             go in and `it#8` stops being the whole story.
+#   smir, rmir, mir        -- IRM has no body in either parser, so CSI @ always inserts regardless.
+#   smam, rmam             -- DECAWM is modelled (#61) but the entry also describes sessions ConEmu's own
+#                             parser reads, where its SetConsoleMode is commented out (Ansi.cpp:3268-3281);
+#                             declaring the pair would be a claim about the OTHER reader (DESIGN I26).
+#   smkx, rmkx             -- DECCKM is an input-side mode and this terminal's input is console records.
+#   blink, invis, nv       -- SGR 5/6/8 hold no state on either leg.
+#   rmp, sgr10/sgr11 arms  -- no alternate-font path.
+#   mc5p                   -- no printer.
+#   flash                  -- ESC g flashes the ConEmu window; a renderer must not, and leaving it out makes
+#                             readers fall back to bel.
+#   initc, ccc             -- OSC 4/10/11 now change the palette (#55), but the entry also describes a session
+#                             parsed by ConEmu, which consumes them and changes nothing (I26 again).
+#   xenl                   -- measured absent on both writer legs; it is the whole reason `am` is declared.
+#   kf13 and up, kLFT/kRIT/kUP/kDN/kHOM/kEND/kPRV/kNXT/kIC/kDC
+#                          -- jline's key leg synthesises the bytes for a modified key itself and never asks
+#                             caps; terminfo can name only the Shift arm, no widget binds a shifted key.
+#   u8, u9                 -- CSI c and CSI >c are BOTH answered, but no code in jline reads user8/user9
+#                             (CursorSupport reads user6 and user7 only), so a value here would be invented.
+#
+# Inedits: kbs=^H stays because jline decodes it through Curses.tputs to 0x08 and binds 0x08 and 0x7f to the
+# same widget, and all three Windows entries in this jline spell it that way. rep is in because CSI b has a
+# body in the parser and a model in the renderer; its parameter must reach tputs as an INT, because
+# toInteger() parses a Character as a String and throws. u6/u7 are in because the answer leg writes the reply
+# back onto CONIN$ as key events in the shape CursorSupport compiles u6 into a regex for.
+#
+windows-conemu|ConEmu ANSI with the native renderer (no xenl: margin wrap is immediate; bce: every erase fills with the live attribute),
+	am, bce, msgr,
+	colors#256, cols#80, it#8, lines#24, pairs#64,
+	bel=^G, bold=\E[1m, clear=\E[H\E[2J,
+	cr=^M, cub=\E[%p1%dD, cub1=\E[D, cud=\E[%p1%dB, cud1=\E[B,
+	cuf=\E[%p1%dC, cuf1=\E[C, cup=\E[%i%p1%d;%p2%dH,
+	cuu=\E[%p1%dA, cuu1=\E[A,
+	civis=\E[?25l, cnorm=\E[?25h, cvvis=\E[?25h,
+	smcup=\E[?1049h, rmcup=\E[?1049l,
+	rc=\E8, sc=\E7,
+	il=\E[%p1%dL, il1=\E[L,
+	dl=\E[%p1%dM, dl1=\E[M,
+	ich=\E[%p1%d@, ich1=\E[@, dch=\E[%p1%dP, dch1=\E[P, ech=\E[%p1%dX, rep=%p1%c\E[%p2%{1}%-%db,
+	el=\E[K, ed=\E[J, el1=\E[1K,
+	home=\E[H, hpa=\E[%i%p1%dG, vpa=\E[%i%p1%dd,
+	ind=^J, indn=\E[%p1%dS, rin=\E[%p1%dT, ri=\EM, nel=\EE, ht=^I,
+	csr=\E[%i%p1%d;%p2%dr,
+	kbs=^H, kcbt=\E[Z,
+	kcub1=\EOD, kcud1=\EOB, kcuf1=\EOC, kcuu1=\EOA,
+	khome=\E[H,
+	op=\E[39;49m,
+	rev=\E[7m,
+	smacs=\E(0, rmacs=\E(B, acsc=``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+	rmso=\E[27m, rmul=\E[24m, smso=\E[7m, smul=\E[4m,
+	setab=\E[48;5;%p1%dm, setaf=\E[38;5;%p1%dm,
+	sgr=\E[0%?%p6%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;m,
+	sgr0=\E(B\E[0m,
+	u6=\E[%i%d;%dR, u7=\E[6n,
+	kdch1=\E[3~, kich1=\E[2~, kend=\E[4~, knp=\E[6~, kpp=\E[5~,
+	kf1=\EOP, kf2=\EOQ, kf3=\EOR, kf4=\EOS, kf5=\E[15~, kf6=\E[17~,
+	kf7=\E[18~, kf8=\E[19~, kf9=\E[20~, kf10=\E[21~, kf11=\E[23~, kf12=\E[24~,

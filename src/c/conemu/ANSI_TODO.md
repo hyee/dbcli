@@ -59,7 +59,7 @@ case 'u': if (g->priv) { ignored(g, RC_UN_MODE); break; } clxy(g, g->saveY, g->s
 
 **jline4 侧的容忍度**（这一条决定应答表可以有多小）：`probeModes` 一次写出 `CSI ?u` + `?2026$p` + `?2027$p` + `?2048$p` + `CSI c`，之后 `parseDecrpm`（AbstractTerminal.java:675-690）**按模式号回查**，不是按位置读 ⇒ 少答一个 id 不会错位后面的答案；查不到的号它直接给 `NOT_SUPPORTED`，与答 `4` 同效。
 
-**应答表**（`mode_status`，Render.cpp:950）——只答模型真持有的状态，只用 1/2 两个数：
+**应答表**（`mode_status`，Render.cpp:1146）——只答模型真持有的状态，只用 1/2 两个数：
 
 | 模式 | 应答 |
 |---|---|
@@ -68,11 +68,11 @@ case 'u': if (g->priv) { ignored(g, RC_UN_MODE); break; } clxy(g, g->saveY, g->s
 | 2026 | `g->sync` → 置位 2，否则 1（jline4 把 1 和 2 都读成 SUPPORTED，:685） |
 | 2027 / 2048 / 其余 | **不应答**，计 `RC_UN_MODE` |
 
-**为什么 3/4 一个都不发**：VT500 的 3 = permanently reset、4 = permanently set，而 jline4 的注释把两者反过来写（:663-667）——同一个字节在两个读者眼里意思相反。于是对“本 build 没有状态可报”的模式发任一永久值，必对其中一方说谎；2048 尤其致命，答“永久置位”等于宣称窗口尺寸变化会进数据流，信了的程序连 `?2048h` 都不发也等不到通知。沉默则两边都不骗：对 jline4 是 `NOT_SUPPORTED`（正确结论），对其他读者是“这台终端没回答”。与 `CSI ? 6 n` 的裁决同形（Render.cpp:1327 起：宁可不答，也不给一个没被问到的答案）。
+**为什么 3/4 一个都不发**：VT500 的 3 = permanently reset、4 = permanently set，而 jline4 的注释把两者反过来写（:663-667）——同一个字节在两个读者眼里意思相反。于是对“本 build 没有状态可报”的模式发任一永久值，必对其中一方说谎；2048 尤其致命，答“永久置位”等于宣称窗口尺寸变化会进数据流，信了的程序连 `?2048h` 都不发也等不到通知。沉默则两边都不骗：对 jline4 是 `NOT_SUPPORTED`（正确结论），对其他读者是“这台终端没回答”。与 `CSI ? 6 n` 的裁决同形（Render.cpp:1565 起：宁可不答，也不给一个没被问到的答案）。
 
 **1048 也不答**：xterm 把 1048 列为 "alternating cursor position"，本 build 的 `?1048h/l` 正是存/取光标——那是**事件**，不是能被报告的状态；真在问光标状态的调用者要的是 25。WORK_ORDER T4 建议的“25/1048 → `cursorVisible`”据此有意偏离。
 
-**门禁**：宿主侧每模式应答文本、快照语义（同一 chunk 内 `?2026h ?2026$p ?2026l` 仍答 2）、队列 FIFO 保序、不应答组的 `RC_UN_MODE` 计数；真终端侧原样重放探测批并断言精确字节流 `\e[?2026;<st>$y` + DA1 fence（Render.java:707）。
+**门禁**：宿主侧每模式应答文本、快照语义（同一 chunk 内 `?2026h ?2026$p ?2026l` 仍答 2）、队列 FIFO 保序、不应答组的 `RC_UN_MODE` 计数；真终端侧原样重放探测批并断言精确字节流 `\e[?2026;<st>$y` + DA1 fence（Render.java:1246）。
 
 ---
 

@@ -271,8 +271,42 @@ void rc_clear_dirty(RcGrid *g)
   memset(g->rowDirty, 0, sizeof(g->rowDirty));
 }
 
+/* I16 as a property of the grid rather than a hope: no cell may claim to be half of a 2-column glyph whose
+ * other half is somewhere else. The two flags are enough to decide it from the cells alone -- a LEADING
+ * wants a TRAILING to its right, a TRAILING wants a LEADING to its left -- and a glyph is at most two
+ * columns, so one pass with no back-tracking is stable: blanking an orphan can only ever act on a cell
+ * whose partner was already wrong, never on a valid pair.
+ * This is the rule ghostty enforces by refusing to start or end an edit inside a glyph (clearCells over
+ * the whole pair at each boundary, Terminal.zig:3322-3342 and :3448-3452, with `assertIntegrity()` rejecting
+ * a spacer tail that does not follow its wide head, page.zig:518-540). It is enforced here after the edit
+ * instead of before it because the erases and the shifts here move cells, not glyphs: repairing the two
+ * boundary cells costs the same as predicting them, and it also covers a shift that dragged a half away
+ * from its own pair. A blanked cell is a blank in the live attribute, exactly like the erase that reached
+ * it. Returns nothing; the damage it marks is its own, so a healed cell can never stay painted. */
+static void heal_pairs(RcGrid *g, int row, int from, int to)
+{
+  if (row < 0 || row >= g->rows) return;
+  if (from < 0) from = 0;
+  if (to > g->cols - 1) to = g->cols - 1;
+  for (int c = from; c <= to; c++)
+  {
+    const uint16_t a = g->cells[row][c].attr;
+    int bad;
+    if (a & RC_LVB_LEADING)
+      bad = (c + 1 >= g->cols) || !(g->cells[row][c + 1].attr & RC_LVB_TRAILING);
+    else if (a & RC_LVB_TRAILING)
+      bad = (c == 0) || !(g->cells[row][c - 1].attr & RC_LVB_LEADING);
+    else continue;
+    if (!bad) continue;
+    g->cells[row][c].ch = ' ';
+    g->cells[row][c].attr = g->attr;
+    mark_dirty(g, row, c, c);
+  }
+}
+
 /* The attribute is written verbatim, not merged with what was there: that is also what destroys a wide
- * glyph's LEADING/TRAILING half under an erase, which is what conhost does to the pair. */
+ * glyph's LEADING/TRAILING half under an erase. What an erase may not do is leave the *other* half
+ * standing, so the heal runs over the two cells flanking the span (I16). */
 static void fill_span(RcGrid *g, int row, int from, int to, uint16_t attr)
 {
   if (row < 0 || row >= g->rows) return;
@@ -287,6 +321,7 @@ static void fill_span(RcGrid *g, int row, int from, int to, uint16_t attr)
      edge any more, whatever was there before. Erases short of the margin leave the claim alone. */
   if (to >= g->cols - 1) g->rowWrap[row] = RC_WRAP_NONE;
   mark_dirty(g, row, from, to);
+  heal_pairs(g, row, from - 1, to + 1);
 }
 
 /* Erases `from` to the end of the model row. A model row is the whole console row -- cols is dwSize.X
@@ -387,10 +422,14 @@ static void shift_region(RcGrid *g, int n, int top, int bot, int down)
     for (int r = bot - n + 1; r <= bot; r++) fill_row(g, r, 0, g->attr);
   }
   /* fill_row clears a row's wrap claim only when the erase reaches the margin, which a narrowed region
-     does not have to: rows below the region still wrap at the buffer's right edge. Drop the claim -- and
-     the semantic mark, which no erase ever clears -- for every row this shift blanked. */
-  if (down) for (int r = top; r < top + n; r++) { g->rowWrap[r] = RC_WRAP_NONE; g->rowMark[r] = RC_PM_NONE; }
-  else      for (int r = bot - n + 1; r <= bot; r++) { g->rowWrap[r] = RC_WRAP_NONE; g->rowMark[r] = RC_PM_NONE; }
+     does not have to: rows below the region still wrap at the buffer's right edge. So every row this shift
+     blanked has its own state dropped -- the claim, the semantic mark, *and* the column that mark was made
+     at, which is the third field of the triple and the one `rc_mark_col()` hands to a consumer that wants
+     to select "this command". ghostty found the same shape in its own recycler and fixed it wholesale:
+     "fully reset row metadata when recycling row storage", with `resetRow` clearing cells *and*
+     `row.reset()` (PageList.zig:5252 -> Page.zig:1307). */
+  if (down) for (int r = top; r < top + n; r++) row_reset_state(g, r);
+  else      for (int r = bot - n + 1; r <= bot; r++) row_reset_state(g, r);
   for (int r = top; r <= bot; r++) mark_row_dirty(g, r);
   g->nScrolls += (unsigned long)n;
 }
@@ -527,6 +566,7 @@ static void blank_cell(RcGrid *g, int row, int col)
   g->cells[row][col].ch = ' ';
   g->cells[row][col].attr = g->attr;
   mark_dirty(g, row, col, col);
+  heal_pairs(g, row, col - 1, col + 1);   /* and take the half it just orphaned with it (I16) */
 }
 
 /* The column a cursor pinned at the right margin rests on, off a wide glyph's back half. `step_back_col`
@@ -568,9 +608,6 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
     line_down(g);
   }
 
-  if (w == 1 && (g->cells[g->cy][g->cx].attr & RC_LVB_LEADING))
-    blank_cell(g, g->cy, g->cx + 1);   /* the pair is a unit (I16): overwrite its front and the back is
-                                          no longer anybody's glyph */
   g->cells[g->cy][g->cx].ch = ch;
   g->cells[g->cy][g->cx].attr = (uint16_t)(g->attr | (w == 2 ? RC_LVB_LEADING : 0));
   if (w == 2)
@@ -579,6 +616,11 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
     g->cells[g->cy][g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
   }
   mark_dirty(g, g->cy, g->cx, g->cx + w - 1);
+  /* The pair is a unit (I16): overwrite its front and the back is no longer anybody's glyph, and overwrite
+     its back and the front has nothing to be the front of. One rule in both directions, checked on the two
+     cells flanking the write -- which is also the only way to catch the case where the cursor got onto a
+     half by CUP or DECRC rather than by a backward move, since those name a column and do not adjust it. */
+  heal_pairs(g, g->cy, g->cx - 1, g->cx + w);
   g->nCells += (unsigned long)w;
   g->cx += w;
 
@@ -621,6 +663,7 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
     g->cells[g->cy][g->cx + 1].ch = lo;
     g->cells[g->cy][g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
     mark_dirty(g, g->cy, g->cx, g->cx + 1);
+    heal_pairs(g, g->cy, g->cx - 1, g->cx + 2);   /* the same unit rule as put_cell, for the same reason */
     g->nCells += 2;
     g->cx += 2;
     if (g->cx >= g->cols)
@@ -651,7 +694,12 @@ static void put_pair(RcGrid *g, uint16_t hi, uint16_t lo, int w)
    recorded rather than argued about (CONEMU_ANSI_DEFECTS.md, REP). */
 static void put_cp(RcGrid *g, uint32_t cp)
 {
-  g->lastUnit = cp;
+  /* A third rule makes this a function rather than a call to put_cell: what REP replays is the last
+     character that *occupied a cell*. A combining mark, a ZWSP or a C1 control claims none -- put_cell drops
+     it with `w <= 0` -- so remembering it would turn `A` + U+0301 + `CSI 3b` into three columns of nothing,
+     which is what ghostty avoids by assigning `previous_char` only in its printable arm, after the
+     width==0 branch has already returned (Terminal.zig:1469 -> :1515). */
+  if (rc_width(cp) > 0) g->lastUnit = cp;
   if (cp > 0xFFFFu)
   {
     const uint32_t v = cp - 0x10000u;
@@ -988,19 +1036,23 @@ static int alt_screen(RcGrid *g, int on)
   return 1;
 }
 
-/* RIS (`ESC c`) and DECSTR (`CSI !p`) are one and the same call upstream -- FullReset (Ansi.cpp:2723-2726
- * and :3644-3649) -- and it is a hard reset rather than an attribute reset: ReSetDisplayParm drops the SGR
- * state, `ScrollScreen(-csbi.dwSize.Y)` is the line commented "easy way to drop all lines", and the cursor
- * goes to the origin. Here that is "leave the alt screen, run the viewport's worth of rows up into
- * history, home". The alt is left first, because a reset must not overwrite the main screen with it
+/* RIS (`ESC c`) -- the reset that owns the screen. Both references separate it from DECSTR by what it may
+ * touch: MSFT's `HardReset` switches buffers and erases (:3042-3062, with `UseMainScreenBuffer` in the
+ * list), while its `SoftReset` (:2984-3020) is a list of state assignments with no cursor move, no erase and
+ * no buffer switch at all. See soft_reset() below for the second half of that line.
+ * The hard part here is "leave the alt screen, run the viewport's worth of rows up into history, home": the
+ * alt is left first, because a reset must not overwrite the main screen with it
  * (adaptDispatch.cpp:3038-3049), and attributes are not saved by 1049, so the reset still lands.
- * Two places this answers VT instead of ConEmu, both because leftover state would do damage on a reset:
- * upstream routes the drop through the region-honouring ScrollScreen overload (:2002-2007), so a program
- * that set `CSI 1;5r` and died would have five rows wiped and the rest of the screen kept; and nothing in
- * FullReset clears gDisplayOpt.ScrollRegion, or the cursor shape, at all. */
+ * Two places this answers VT rather than either reference: upstream routes the drop through the
+ * region-honouring scroll, so a program that set `CSI 1;5r` and died would have five rows wiped and the rest
+ * of the screen kept, and nothing clears the scroll region, the cursor shape or the charset designation.
+ * A reset that leaves a region behind it is a reset whose next line feed scrolls five rows, so the region is
+ * dropped here, and so is the drawing set -- `_termOutput.HardReset()` / `SoftReset()` reset the designations
+ * (adaptDispatch.cpp:3000), which is the `smacs` state a shell inherits after a child died in graphics mode. */
 static void full_reset(RcGrid *g)
 {
   sgr_reset(g, 0);
+  g->charset = 0;
   alt_screen(g, 0);
   g->regSet = 0;
   g->cursorShape = -1;
@@ -1012,6 +1064,32 @@ static void full_reset(RcGrid *g)
   g->sync = 0;
   scroll_up(g, g->winRows);
   clxy(g, gutter(g), 0);
+}
+
+/* DECSTR (`CSI ! p`) -- the reset that does not touch the screen. MSFT's SoftReset is
+ * adaptDispatch.cpp:2984-3020 and reads as a list of assignments: cursor visible, the modes it knows back to
+ * their default, AutoWrap on, the scroll margins put back to the page, the character set designations reset,
+ * the rendition normal, and the *active* buffer's saved cursor state cleared -- and it contains no cursor
+ * positioning, no erase and no buffer switch, because those belong to HardReset (:3042-3062, where
+ * `UseMainScreenBuffer` finally appears at :3047). Clearing only the active saved state is called out as deliberate
+ * xterm parity (GH#19918, :3005-3008).
+ * This model has no "is there a saved cursor" bit, only the two coordinates, so clearing it means writing the
+ * cursor back over them: a later DECRC then restores the position the terminal is already at, which is all
+ * "no saved cursor" is worth to a program.
+ * The cursor shape is deliberately not reset. It is the user's preference as much as the application's -- the
+ * reason -1 exists here is to leave it alone -- and DECSTR's own list has no shape in it.
+ * The synchronized bit is cleared here even though MSFT has no such mode to clear: this model can hold a
+ * frame open with it, and a reset that left it set would strand the paint with nothing left to close it. */
+static void soft_reset(RcGrid *g)
+{
+  sgr_reset(g, 0);
+  g->charset = 0;
+  g->regSet = 0;
+  g->cursorVisible = 1;
+  g->wrapMode = 1;
+  g->sync = 0;
+  g->saveX = g->cx;
+  g->saveY = g->cy;
 }
 
 /* The column a leftward move of `n` cells lands on, adjusted to a glyph boundary. This is conhost's
@@ -1152,17 +1230,23 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
     /* IL pushes the lines at and below the cursor down, n of them, and the gap it opens at the cursor
        is the blank; DL pulls everything below the cursor up. Getting the direction wrong is invisible on
        a single-line test and catastrophic on a table, hence RenderCheck case "IL/DL".
-       Both are region-bounded upstream (LinesInsert :2133-2140, LinesDelete :2190-2201): the shift spans
-       [cursor row .. region bottom], and a cursor outside the region is refused outright -- not clamped to
-       it, which is what the Status bar needs to stay safe while `csr` has the upper rows. (DL's own guard
-       is looser than IL's: `cy + n <= ScrollStart` at :2195 lets a cursor sitting just above the region
-       pull region rows up past its top edge. That one overlap case is declined here, not copied.) The
-       no-region path below is the one every witness before DECSTBM was modelled depends on, and it is kept
-       verbatim.
-       Where upstream and this diverge deliberately: when n exceeds the region, ConEmu fills
-       `dwSize.X * linesCount` cells from the cursor row (:2152-2155), i.e. it writes past the region's
-       bottom and over whatever is under it; shift_region clamps to the span and blanks the region. That
-       is a ConEmu overflow, not a behaviour to copy (CONEMU_ANSI_DEFECTS.md). */
+       Both are region-bounded: the shift spans [cursor row .. region bottom] and a cursor outside the
+       region is refused outright -- not clamped to it, which is what the Status bar needs to stay safe
+       while `csr` has the upper rows. MSFT's guard is the same test on both halves of the same helper
+       (`row >= topMargin && row <= bottomMargin && col >= leftMargin && col <= rightMargin`,
+       adaptDispatch.cpp:2145) and ghostty's is the four-way check at Terminal.zig:2964-2967 and
+       :3138-3141. Without horizontal margins the column term is always true here, so only the row one
+       bites. The no-region path below is the one every witness before DECSTBM was modelled depends on, and
+       it is kept verbatim.
+       When n exceeds the region both references clamp it to what is left rather than writing past the
+       bottom: `adjusted_count = @min(count, rem)` (Terminal.zig:2992) and
+       `std::min(std::abs(delta), scrollRect.height())` (adaptDispatch.cpp:552), which is what shift_region
+       does. And after the shift, both take the cursor to the left margin -- "The IL and DL controls are
+       also expected to move the cursor to the left margin" (:2150-2151, `cursor.SetXPosition(leftMargin)`)
+       and `cursorAbsolute(scrolling_region.left, start_y)` in the `defer` of insertLines and deleteLines
+       (:2977, :3151). The application this costs anything is the one redrawing a table: it walks the cursor
+       in to a column, deletes the row, and writes the replacement from wherever the cursor ended up, so a
+       column kept is a row printed n columns off, once per row. */
     case 'L': case 'M':
     {
       int n = arg(g, 0, 1), top, bot;
@@ -1171,6 +1255,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       {
         if (g->cy > bot || g->cy < top) break;
         shift_region(g, n, g->cy, bot, final == 'L');
+        g->cx = 0;                                      /* IL/DL home the column and keep the row */
         break;
       }
       if (n > g->winRows) n = g->winRows;               /* insert or delete within the viewport only */
@@ -1192,16 +1277,19 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
         }
         for (int r = g->rows - n; r < g->rows; r++) { fill_row(g, r, 0, g->attr); row_reset_state(g, r); }
       }
+      g->cx = 0;                                         /* the same contract, with or without a region */
       rc_mark_all_dirty(g);
       break;
     }
     /* ICH opens n blank columns at the cursor and pushes the row's tail right; DCH pulls the tail back
        and blanks the tail end. Both act on the row alone, from the cursor to the end of the *model* row,
-       which is the buffer width: as in ConEmu (ScrollLine at ExtConsole.cpp:1661-1675) nothing wraps,
-       nothing below moves and text pushed past the last column cannot be pulled back. The cells are moved
-       whole, LEADING/TRAILING halves included, so a wide glyph split by the shift shows its two halves
-       apart -- upstream does exactly the same to the same pair, and this is the one sequence family where
-       copying a ConEmu oddity is cheaper than inventing a third answer. */
+       which is the buffer width: nothing wraps, nothing below moves, and text pushed past the last column
+       cannot be pulled back -- MSFT scrolls the rect `{col, row, rightMargin + 1, row + 1}` (its
+       `_InsertDeleteCharacterHelper`, adaptDispatch.cpp:654-690, which is the cursor row and only that row)
+       and ghostty's insertBlanks/deleteChars work from `rem = right - x + 1` on one row
+       (Terminal.zig:3330, :3406). A glyph whose two cells end up on opposite sides of the shift is healed
+     after the move (I16), which is where this differs in mechanism, not in outcome, from ghostty's
+     boundary clears at :3322-3342 and :3411-3413. */
     case '@': case 'P':
     {
       int n = arg(g, 0, 1);
@@ -1218,33 +1306,30 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
           for (int c = g->cx; c + n < g->cols; c++) g->cells[g->cy][c] = g->cells[g->cy][c + n];
           fill_span(g, g->cy, g->cols - n, g->cols - 1, g->attr);
         }
+        /* A shift by n keeps every pair whose two cells are both inside the moved span and destroys the
+           ones the fill covers; what it cannot be trusted to notice is a half that crossed the boundary, so
+           the row is checked. The fill above healed its own two edges; this catches the far side of a pair
+           that moved out from under its own head. */
+        heal_pairs(g, g->cy, 0, g->cols - 1);
       }
       break;
     }
-    /* ECH (`CSI Ps X`) erases Ps cells at the cursor and -- unlike EL -- it does not stop at the end of the
-       row. ConEmu measures what is left as `X-cx-1 + X*(Y-cy-1)` and clamps to that (Ansi.cpp:3802-3811), so
-       an over-long ECH walks down through the buffer; ghostty (Terminal.zig:3443) and MSFT
-       (adaptDispatch.cpp:713) both clamp it to the row. Followed upstream here, with the two differences
-       that are ours: the clamp is the true count of remaining cells (ConEmu's formula is one short of a row,
-       so its last column survives an over-long ECH -- CONEMU_ANSI_DEFECTS.md), and the walk stops at the
-       viewport bottom, because the rows above it are the user's scrollback and ED already refuses to touch
-       them for that reason. The parameter is read raw, so `CSI 0X` erases nothing exactly as it does
-       upstream; filled with the live attribute, which is what makes `bce` true for this sequence. */
+    /* ECH (`CSI Ps X`) erases Ps cells at the cursor and stops at the end of that row. Both references say
+       so and mean it: "This will only erase characters in the current line, and won't wrap to the next"
+       (adaptDispatch.cpp:706-724, which clamps with `std::min(startCol + numChars, GetLineWidth(row))`), and
+       `remaining = cols - cursor.x; end = @min(remaining, @max(count_req, 1))` (Terminal.zig:3443-3446).
+       The row below the cursor holds text the application did not ask to lose, which is the same reason ED
+       refuses to touch the rows above the viewport. The parameter is read raw, so `CSI 0X` erases nothing
+       (MSFT's arithmetic agrees; ghostty clamps to 1 and is the odd one out). Filled with the live
+       attribute, which is what makes `bce` true for this sequence. */
     case 'X':
     {
       int n = (g->nArgs > 0) ? g->args[0] : 1;
       if (n > 0)
       {
-        int left = (g->cols - g->cx) + g->cols * (g->rows - g->cy - 1);
-        if (n > left) n = left;
-        for (int r = g->cy; n > 0; r++)
-        {
-          int from = (r == g->cy) ? g->cx : 0;
-          int w = g->cols - from;
-          if (w > n) w = n;
-          fill_span(g, r, from, from + w - 1, g->attr);
-          n -= w;
-        }
+        int to = g->cx + n - 1;
+        if (to > g->cols - 1) to = g->cols - 1;
+        fill_span(g, g->cy, g->cx, to, g->attr);        /* also heals a glyph the erase cut in half */
       }
       break;
     }
@@ -1414,7 +1499,11 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          and for `?999$p` the state is not ours to describe. Silence is also what this file already decided
          for `CSI ? 6 n`, whose extended form is declined rather than answered with the plain-form answer
          (:1276-1280), and the rule generalises: answer what you can prove, count what you cannot.
-       DECSTR -- `CSI ! p` with no parameter -- keeps the rest of this case. Upstream gates it on
+       DECSTR -- `CSI ! p` with no parameter -- keeps the rest of this case, and it gets soft_reset() rather
+         than full_reset() because the two sequences are not the same act in either reference: a soft reset
+         puts state back and leaves the screen alone, and MSFT's comment on the one line of it that looks like
+         a cursor action says exactly that (adaptDispatch.cpp:3005-3008). Erasing the screen on a soft reset
+         costs a full-screen application its whole display. Upstream gates it on
          `ArgC == 0 && PvtLen == 1 && Pvt[0] == L'!'` (Ansi.cpp:3645), and '!' (0x21) is an interim byte, not
          a private one -- but both ranges are appended into the *same* Pvt buffer there (:1788), so `? ! p` is
          a two-byte Pvt and upstream refuses it. That is the whole reason the test below reads `!g->priv` as
@@ -1429,7 +1518,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       int st = 0;
       if (interim_is(g, '$') && g->priv == '?' && g->nArgs == 1 && mode_status(g, g->args[0], &st))
         arm_report(g, RC_REP_DECRPM, g->args[0], st, 0);
-      else if (interim_is(g, '!') && !g->priv && !g->nArgs) full_reset(g);
+      else if (interim_is(g, '!') && !g->priv && !g->nArgs) soft_reset(g);
       else if (interim_is(g, '$')) ignored(g, RC_UN_MODE);
       else ignored(g, RC_UN_SUP);
       break;

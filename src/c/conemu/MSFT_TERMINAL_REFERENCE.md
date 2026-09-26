@@ -35,15 +35,15 @@
 | # | 处置 | 落点（当前行号） | 证人 |
 |---|---|---|---|
 | S1 | **做了，但结论与本文的预料相反：改对的是我们，错的是兜底腿** | `Render.cpp:491` `step_back_col`，`case 'D'` :523 与 BS :653 共用 | 栅格证人：S1 之前 4 条 BS 分叉，之后只剩 1 条 —— `native [3042L 3042T 005F]` vs `hk [0020 005F 0061]`，游标 native (3,10) / hk (2,14)。那条是 ConEmuHk 把宽字形按 **1 列**计数 ⇒ BS 少退一格 ⇒ 写进尾格时 conhost 清掉前导格（#852 家族）。所以**不抄回来**，钉成一条"期望不同"的门禁（DESIGN §4.2 第 1 条）。本文 §3 说"我们对着 `g->cx--` 有确定缺陷"——缺陷是真的，但它不是分叉的原因 |
-| S2 | **不做**。本文标"做"，被证人否掉 | 模型保持立即换行，`put_cell`/`put_pair` 一行没动 | §2.2 的四条判别式已建进 `Render.java:430-433`，200 列缓冲区 / 100 列窗口上**四条全部 legs agree**（`full row then CR then Y` / `then BS then Y` / `then EL` / `then CUU then Y`）。⇒ 这一族我们与兜底腿本就一致，改成延迟换行只会**造出**分叉；§2.2 第三行担心的"EL 多擦一行"在我们的负载形状上量不出来（DESIGN §4.2 末段）。§2.3 那个"平价对象是谁"的问题就是靠这个证人回答的：兜底腿站在立即换行这一侧 |
-| S3 | **做了**（含本文建议的 resync） | `unsupported()` :447、置位票 :459（只 `SUP`/`DECSTBM`/`ALTBUF`/`MODE`）；`RenderJni.cpp:516` flush 成功后判断并 `align_grid` | `gm_wrap_suspect` + `Render.java caseSuspectAlign`：`"one adopt per chunk"`（`aligns=1`）、`"two swallowed regions, one adopt"`（`aligns=1` 而非 2）、`"and buys no repaint"`（鼠标 `aligns=0`）。**拒绝腿不自愈**（兜底腿要用同一批字节重放），这条写在 `RenderJni.cpp:516` 上方的注释里 |
+| S2 | **不做**。本文标"做"，被证人否掉 | 模型保持立即换行，`put_cell`/`put_pair` 一行没动 | §2.2 的四条判别式已建进 `Render.java:1577-1580`，200 列缓冲区 / 100 列窗口上**四条全部 legs agree**（`full row then CR then Y` / `then BS then Y` / `then EL` / `then CUU then Y`）。⇒ 这一族我们与兜底腿本就一致，改成延迟换行只会**造出**分叉；§2.2 第三行担心的"EL 多擦一行"在我们的负载形状上量不出来（DESIGN §4.2 末段）。§2.3 那个"平价对象是谁"的问题就是靠这个证人回答的：兜底腿站在立即换行这一侧 |
+| S3 | **做了**（含本文建议的 resync） | `unsupported()` :853、置位票 :830（只 `SUP`/`DECSTBM`/`ALTBUF`/`MODE`）；`RenderJni.cpp:1405` flush 成功后判断并 `align_grid` | `gm_wrap_suspect` + `Render.java caseSuspectAlign`：`"one adopt per chunk"`（`aligns=1`）、`"two swallowed regions, one adopt"`（`aligns=1` 而非 2）、`"and buys no repaint"`（鼠标 `aligns=0`）。**拒绝腿不自愈**（兜底腿要用同一批字节重放），这条写在 `RenderJni.cpp:1405` 上方的注释里 |
 | S4 | **不做，且本文给它的理由站不住** | — | 本文写"做：块画'一个 chunk'那条可能因此可测"——**校验和看不见 chunk**：它是同一帧栅格的有损投影，而 chunk 之争恰恰是"同帧栅格两种写法长得一样"（DESIGN §10），所以任何只对栅格求和的判据都判不了它，要判得抓字节流（AnsiLog `-new_console:L:` 或 writer 记录挂点）。在能判的范围内它又是**降级**：现有 A/B 是逐格比字符 + 属性段（`A[,ax111]`），校验和只能回答"相同/不同"，不同时还要退回逐格 diff 才知道差在哪。⇒ 上游有它是因为远端比对读不回整帧（`adaptDispatch.cpp:1281-1300`），我们没有这个约束。§9 其余做法未动 |
-| S5 | **做了**，但本文低估了工作量："2 处赋值"真数是**四处置位 + 一处清零 + 三处搬运** | `Render.h:131` `rowWrap[]` + `enum RcRowWrap`；`Render.cpp` `put_cell`/`put_pair` 的写前（PAD）与写后（FORCED）两条出口、`fill_span` 触缘清成 NONE、`scroll_up` 平移并给新行 NONE、IL/DL 各自搬运；`rc_forget_wrap` :180 | `gm_wrap_suspect`（约 47 断言：forced/pad 各判其位、擦到右缘清零、差一格擦除不清零、滚动与 IL/DL 带位）。⚠ 这个位**不可能有真控制台门禁**：`ReadConsoleOutputW` 读不回它（§5 的契约），所以它只在模型内生效——正因此收养时必须清空，留旧主张比没主张更坏（`RenderJni.cpp:600`） |
+| S5 | **做了**，但本文低估了工作量："2 处赋值"真数是**四处置位 + 一处清零 + 三处搬运** | `Render.h:281` `rowWrap[]` + `enum RcRowWrap`（`:205`）；`Render.cpp` `put_cell`/`put_pair` 的写前（PAD）与写后（FORCED）两条出口、`fill_span` 触缘清成 NONE、`scroll_up` 平移并给新行 NONE、IL/DL 各自搬运；`rc_forget_wrap` :180 | `gm_wrap_suspect`（约 47 断言：forced/pad 各判其位、擦到右缘清零、差一格擦除不清零、滚动与 IL/DL 带位）。⚠ 这个位**不可能有真控制台门禁**：`ReadConsoleOutputW` 读不回它（§5 的契约），所以它只在模型内生效——正因此收养时必须清空，留旧主张比没主张更坏（`RenderJni.cpp:1294` `build_model`：收养出来的模型没有旧主张） |
 | S6 | **只改文档**（本文的建议原样成立，栅格存原码点是现状） | DESIGN I14 + §8 第 1/3 条判据（出口消毒、尾巴含 C0 时按"没人解释就别发控制码"那档处理） | 不需要证人 |
 | S7 | **确认等价，记档** | `arg()` 的越界返回默认值 = 上游"跳过而不是猜"；参数上限注释在 `Render.h` | 复核过 §5.3：未知子参数不参与着色，与 `stateMachine.cpp:505-533` 同判据。⇒ 再审清单里划掉 |
 | S8 | **记档，且本轮按用户裁决改写了后半句**：我们的宽度神谕 = 上游 **`Wcswidth` 模式 + ambiguous 一律按宽（206 个实测窄码位例外）+ 无 VS16 升级** | `ansi_width` 表（唯一神谕）与 `rc_width` :37；例外表是生成器里的 `AMBIGUOUS_NARROW`，规则与裁决记在 DESIGN I14 与 §7 | `check_widths` 全表比对（20 个钉住的类别，两半裁决各钉一半）；本轮新增的 astral 用例（DESIGN §4.2 第 2 条：native `[D83DL D83DT]` vs hk `[FFFDL FFFDT]`）顺带证实了 §5 那条契约——一个遗留 16 位格装不下 astral 码点，尾格被 conhost 重复成前导 WCHAR。上游那条 `_ambiguousWidth` 开关（§2 末）等价于我们的 `cjkWidth` 证人：xterm 372 开 `-cjk_width` 后与本文表 7,117/7,324 相同，差的 207 个正好是那 206 条例外加软连字符（`ansi_width.md` §6） |
 | §13.2 / B5 | **做了两件事**：colon 单独计一票 + 语气从"缺口"改成"已定性偏离 + 上游行号" | `RC_UN_COLON`（`Render.h`，附理由）；`csi_start` 清、参数分支置 `g->csiColon`、`csi_dispatch` 后那一票；`'m'` 分支改成 `else if (!g->csiColon)`（colon 不再冒充"未知模式"）；`CONEMU_ANSI_DEFECTS.md` §4 新增该行 | `caseSuspectAlign`：`"the colon form has its own counter"`（`colon=1`）+ `"and buys no repaint"`（`aligns=0`，即不置 `modelSuspect`——colon 不改格）+ 模式计数不被 colon 污染 |
-| B1–B7 | **B2 已落地**（用户复述裁决"I7不收窄，继续"之后）；B1/B3/B4/B5 已在上表处置；B6 随 B2 自然成立（区间是数据，行宽仍是 `cols`）；B7 仍**明确不抄** | I22（DESIGN §4）：`Render.cpp` `mark_dirty(row,from,to)` :154 + `dirtyLo/dirtyHi`（`Render.h:132`）、`Paint.h` `RcRun.lo/hi`、`RenderJni.cpp` `build_row`/`write_rect` 按矩形发；**模型行一寸未收**（I7 原样） | host `checks=1984 fails=0`（`geo_damage` 列区间段 + `plan_damage_range` + `check_damage_bounds` 124 语料 × 2 形状）；真控制台 `checks=3733 failures=0` 两档（`caseNarrowRepaint`、`caseWideBuffer`）；三腿活体 A/B 两条绿 + 2000 列缓冲区活体腿 0 行不同。**"约 10 行"是本文的低估**：真实改动面是 5 个文件，见 §13.1 末段 |
+| B1–B7 | **B2 已落地**（用户复述裁决"I7不收窄，继续"之后）；B1/B3/B4/B5 已在上表处置；B6 随 B2 自然成立（区间是数据，行宽仍是 `cols`）；B7 仍**明确不抄** | I22（DESIGN §4）：`Render.cpp` `mark_dirty(row,from,to)` :163 + `dirtyLo/dirtyHi`（`Render.h:276`）、`Paint.h` `RcRun.lo/hi`、`RenderJni.cpp` `build_row`/`write_rect` 按矩形发；**模型行一寸未收**（I7 原样） | host `checks=1984 fails=0`（`geo_damage` 列区间段 + `plan_damage_range` + `check_damage_bounds` 124 语料 × 2 形状）；真控制台 `checks=3733 failures=0` 两档（`caseNarrowRepaint`、`caseWideBuffer`）；三腿活体 A/B 两条绿 + 2000 列缓冲区活体腿 0 行不同。**"约 10 行"是本文的低估**：真实改动面是 5 个文件，见 §13.1 末段 |
 
 ## 2 延迟换行：上游有一整套，且是刚修过的
 
@@ -75,7 +75,7 @@
 
 我们现在是**立即换行**：`put_cell` 写完 `g->cx += w; if (g->cx >= g->cols) { g->cx = 0; line_down(g); }`
 （`Render.cpp:274-279`），`case 0x0D: g->cx = 0;`（`:583`）**无法撤销**那次 `line_down`。
-`geo_wrap`（`RenderCheck.cpp:545-583`）验的是"填满一行后写下一个字符"，那一例**两种模型结果相同**
+`geo_wrap`（`RenderCheck.cpp:1633`）验的是"填满一行后写下一个字符"，那一例**两种模型结果相同**
 （延迟模型会先补换行再写），所以现在没有门禁能区分。⚠ 以下四种能区分，全部未跑：
 
 | 输入（行宽 N） | 立即换行（我们） | 延迟换行（上游/VT） |
@@ -189,7 +189,7 @@ ConEmu #852（游标处是全角时一次删 2 个字符）是**同一个洞的�
   buffer's text would have to handle these marks"）。
 
 对我们的三处影响（都⚠未跑）：
-1. `align()`（`RenderJni.cpp:527/697` 的 `ReadConsoleOutputW`）**收养**屏幕时拿到的尾格 `ch` 是前导码点的副本，
+1. `align()`（`RenderJni.cpp:1719` 的 `ReadConsoleOutputW`）**收养**屏幕时拿到的尾格 `ch` 是前导码点的副本，
    不是原始低代理对 ⇒ 我们栅格里"宽字形的尾格"在收养后与写入后不一致（写入侧我们存 `hi/lo`，`Render.cpp:299-301`）。
    影响 repaint 与 diff，不影响 A/B（两条腿同样读法）。
 2. `Render.h:67` 的 `RcCell.ch` 是 `uint16_t`，一个 CHAR_INFO 一个 WCHAR —— 与上游旧模型同构，
@@ -249,7 +249,7 @@ ConEmu #852（游标处是全角时一次删 2 个字符）是**同一个洞的�
 而 `Terminal::UnknownSequence()`（`cascadia/TerminalCore/Terminal.cpp:1554`）是**空的**：只有"输出还要再交给
 别人解释"的那一侧才需要标脏。**我们正是那一侧**（我们后面跟着 ConEmuHk / conhost）。
 
-对照我们：`unsupported()`（`Render.cpp:411`，I19）只**计数**，不改变任何信任状态。今天靠"每次拒绝都会
+对照我们：`unsupported()`（`Render.cpp:853`，I19）只**计数**，不改变任何信任状态。今天靠"每次拒绝都会
 `resync=true`，下一块先 `resyncNow()`"（R1 的描述）间接恢复；但"我们吞掉了一条会动游标的序列"（DECSTBM + 随后的
 滚动、DECOM、备用屏…）与"我们画错了几何"不是同一件事：**前者不会触发 decline，也就永远不会 resync**。
 **建议**：`unsupported()` 里顺手 `g->modelSuspect = 1`；`flush` 之后（或下一块开头）若 `modelSuspect` 则强制一次
@@ -310,6 +310,32 @@ render.dll 寄生在别人的 JVM 里，没有那份配置，所以 I36 的默�
 另外 WT 的 OSC 52 **解析读取但从不作答**（`OutputStateMachineEngine.cpp:825` 的 `&& !queryClipboard`），
 且**整个忽略选择字段 `Pc`**（`:1097` 注释自陈 "Currently the first parameter `Pc` is ignored"）——
 前者我们与它一致（我们更严：连政策档都不给），后者我们不抄（折叠＝用另一个东西回答被问的那个问题）。
+
+### 7.5 复位有**两个**，只有一个该动屏幕（DECSTR vs RIS）
+
+上游把这两件事写成两个函数，而且差别是**能列出来的**（本轮逐行读 `terminal/adapter/adaptDispatch.cpp`）：
+
+| | `SoftReset` = `CSI ! p` | `HardReset` = `ESC c` (RIS) |
+|---|---|---|
+| 函数起点 | :2984 | :3042 |
+| 光标 | 只置 `SetIsVisible(true)`（:2986），**不动坐标** | 随 `_pages.Reset()` 一起归位 |
+| 屏幕内容 | 不擦、不滚 | 整页重置 |
+| alt screen | **不碰** | `UseMainScreenBuffer` 在这里才出现（:3047），先退出再重置 |
+| 滚动区 | 上下边恢复整页（:2995 附近） | 同 |
+| 左右边距 / 绝对定位 | 恢复默认（:2989 那句注释直说 "Absolute cursor addressing; Disallow left/right margins"） | 同 |
+| 字符集 designate | `_termOutput.SoftReset()`（:3000） | `_termOutput = {}` 整份换掉 |
+| **保存的光标** | **只清活动缓冲区那一份**（:3005-3008，注释点名是刻意对齐 xterm，GH#19918） | 随整页消失 |
+| Sixel / C1 | Sixel 软复位（:3016-3019），C1 不动 | Sixel 置空、`AcceptC1Controls(false)`、`ResetCodePage()` |
+
+⇒ 判据一句话：**"reset" 是一个词族，不是一个动作**。把两个词实现成同一个函数，症状不会以"某个断言变红"的形式出现，
+而是以"程序发了 `CSI !p`，我的屏幕内容被推进滚动历史、alt 界面被退出"的形式出现——用户只会说画面跳了。
+我们这边在 build -25 之前正是合并实现的（DECSTR 直接调 `full_reset()`），现在 `soft_reset()`
+（`Render.cpp:1083`）只复位状态、`full_reset()`（`:1052`）留给 RIS。证人：宿主 `gm_state_reset`，真终端
+`caseSoftReset`（不擦屏、不滚动、不换屏、游标不动、保存光标被清 —— 最后一条配一个"存新位置再取回"的反控，
+否则 DECRC 坏掉也能让它假绿）。
+
+一处**我们和上游不同**且是刻意的：cursor **shape**（`CSI Ps SP q` 存的 DECSCUSR）软复位时不动。上游的清单里
+也没有 shape；我们更有一层理由是 `-1` 这个哨兵存在的意义——那是用户的偏好，不是应用的。
 
 ## 8 输出卫生：控制字符、CRLF、消毒
 
@@ -420,17 +446,17 @@ Writer::Submit()                           // 一次性发出
 | # | 它更好在哪 | 上游证据 | 我们的现状 | 可抄？ |
 |---|---|---|---|---|
 | B1 | 一行 = 文本 / 偏移 / 属性**三份分离**，属性还是 RLE | `Row.hpp:20`、`:285-311`、`:309` | 稠密 4 B/格、属性每格一份（`Render.h:67`、DESIGN §5 的 4 MB/句柄） | 结构不能抄，效果（B2/B6）能 |
-| **B2** | **脏与画的粒度是 run/矩形，不是整行** | `IRenderEngine.hpp:81/:92/:68/:73`、`gdi/invalidate.cpp:29-41` | ~~脏 = 一行，画 = 填满 `paintCols`~~ **已改**：脏 = 一行 + 一个列区间（`Render.h:132` `dirtyLo/dirtyHi`），画 = 发那个矩形（`RenderJni.cpp:160/:170`）；`paintCols` 降级成"几何判断与上界"，不再是每 run 的宽度 | **已抄**（= DESIGN I22，见 §13.1 末段的落地记录） |
-| B3 | 字形边界退格是**具名原语** | `Row.cpp:373-376`（`NavigateToPrevious` → `_adjustBackward`） | BS 内联 `g->cx--`（`Render.cpp:580`） | 抄（= §1 的 S1） |
-| B4 | 软换行是**行上的两个独立位** | `Row.hpp:313-317`（`_wrapForced` / `_doubleBytePadded`） | 只有 `rowDirty`，两条换行出口（`Render.cpp:255`、`:274-279`）事后不可辨 | 抄（= S5，顺手把两个来源分开） |
-| B5 | 参数"缺席"与"0"在**类型层**区分（`optional`），子参数另有区间表 | `stateMachine.cpp:505-545`（`_parameterLimitOverflowed`、`_subParameterRanges`） | `g->digit` 已保住"trailing empty ≠ 0"（`Render.cpp:775`）；`:` 按 ConEmu 口径当 Pvt 整条丢（`Render.cpp:441,761`） | **不抄**，改成定性记档（见下） |
+| **B2** | **脏与画的粒度是 run/矩形，不是整行** | `IRenderEngine.hpp:81/:92/:68/:73`、`gdi/invalidate.cpp:29-41` | ~~脏 = 一行，画 = 填满 `paintCols`~~ **已改**：脏 = 一行 + 一个列区间（`Render.h:276` `dirtyLo/dirtyHi`），画 = 发那个矩形（`RenderJni.cpp:532` `write_rect`、`:1042` 调用）；`paintCols` 降级成"几何判断与上界"，不再是每 run 的宽度 | **已抄**（= DESIGN I22，见 §13.1 末段的落地记录） |
+| B3 | 字形边界退格是**具名原语** | `Row.cpp:373-376`（`NavigateToPrevious` → `_adjustBackward`） | BS 曾内联 `g->cx--`，现在是 `step_back_col`（`Render.cpp:1663`） | 抄（= §1 的 S1） |
+| B4 | 软换行是**行上的两个独立位** | `Row.hpp:313-317`（`_wrapForced` / `_doubleBytePadded`） | 只有 `rowDirty`，两条换行出口（`Render.cpp:606`/`:637`，收窄区时 `:659`/`:672`）事后不可辨 | 抄（= S5，顺手把两个来源分开） |
+| B5 | 参数"缺席"与"0"在**类型层**区分（`optional`），子参数另有区间表 | `stateMachine.cpp:505-545`（`_parameterLimitOverflowed`、`_subParameterRanges`） | `g->digit` 已保住"trailing empty ≠ 0"（`Render.cpp:2589`）；`:` 按 ConEmu 口径当 Pvt 整条丢（`Render.cpp:1177`、置 `g->priv` 在 `:2603`） | **不抄**，改成定性记档（见下） |
 | B6 | 行宽是**数据**（`_columnCount`）不是常量 | `Row.hpp:309` | `cols = bufW - winL`，每行按它算（I7） | B2 落地后代价为 0，先不单独做 |
 | B7 | （反面自查）**两条"看着更好"的**：问字体要宽度、resize 时 reflow | `IRenderEngine.hpp:94`、`TextBuffer::ReflowRows` | 我们画不了字形（抄了就是 #1330 的成因）、没有 scrollback 所有权（只能 `align()` 收养，I4） | **明确不抄**，列出来是防"见好就抄" |
 
 ### 13.1 B2 详述：唯一一条"更便宜 + 打在我们最贵的形状上"
 
 现状链：`mark_dirty(g, row)` 连列号都不接（`Render.cpp:148-151`）→ `rowDirty[RC_MAX_ROWS]` 一个字节一行（`Render.h:114`）
-→ `build_row`（`RenderJni.cpp:151-154`）按 `paintCols` 填满一整行 CHAR_INFO → `write_rect`（`:161-175`，
+→ `build_row`（`RenderJni.cpp:522`）按 `paintCols` 填满一整行 CHAR_INFO → `write_rect`（`:161-175`，
 `size.X = p->paintCols` :166、`rect.Right = winL + paintCols - 1` :171）→ `WriteConsoleOutputW`（`:175`）。
 于是**一行里改一个字符，代价与改满一行相同**。按 §5 自己测出来的 43 ns/格，默认 profile（2000 列缓冲区）上
 一个字符 = 2000×43 ns ≈ **86 µs/行**；§5 那句"30 行 ≈ 2.7 ms"是同一件事的整屏版。上游的对应物是
@@ -441,13 +467,13 @@ Writer::Submit()                           // 一次性发出
 `write_rect` 的矩形从 `[0, paintCols)` 变成 `[lo, hi]`。**四处必须一起改对**（漏一处就是画漏/画错，且只会以
 "偶发残影"的形式出现，很难看）：
 
-1. `scroll_up` 搬内容时也搬区间（`Render.cpp:217-218` 现在只搬 `rowDirty`）；
+1. `scroll_up` 搬内容时也搬区间（`Render.cpp:456` 现在只搬 `rowDirty`）；
 2. 新进视口的那几行是**未知**，区间必须置成整行（`Render.cpp:219-223`，`:221` 那一票）；
-3. `fill_span`（擦除）按擦除区间标脏，不是"整行"（`Render.cpp:179`，它的 `from`/`to` 正是区间）；
-4. `rc_mark_all_dirty`（`Render.cpp:160-165`）与 `rc_clear_dirty`（`:172-175`）保持整行语义。
+3. `fill_span`（擦除）按擦除区间标脏，不是"整行"（`Render.cpp:310`，它的 `from`/`to` 正是区间）；
+4. `rc_mark_all_dirty`（`Render.cpp:193`）与 `rc_clear_dirty`（`:269`）保持整行语义。
 
 另外注意 `Paint.cpp` 的 run 合并合的是**跨行**的竖带（`Paint.cpp:88-93` 把相邻脏行接成 `run[i].top/nrows`，
-`:98-107` 超过 8 条退化成首末之间的一条带；`paintCols` 在 `:53` 定成 `bufW-winL`，`Paint.h:71` 的注释就是这条），
+`:98-107` 超过 8 条退化成首末之间的一条带；`paintCols` 在 `Paint.h:83` 定成 `bufW-winL`，那行注释就是这条），
 与这里的"每行一个列区间"是正交的两件事。所以真要做，得同时处理 `p->cells` 的预算口径（`Paint.cpp:114` 现在按
 `nrows * paintCols` 数格子）和 `RenderJni.cpp:273-276` 那段 scratch 的 stride（现在钉在 `paintCols`）——
 要么一条 run 内取"各行区间的并"当矩形左右界（简单、仍能砍掉大部分空白列），要么退化成每行一矩形（多花调用）。
@@ -489,7 +515,7 @@ Writer::Submit()                           // 一次性发出
 ### 13.2 B5 的处理方式：从"缺口"改成"有意的偏离"
 
 `CSI … : …`（colon 子参数，`SGR 38:2::r:g:b`）我们**整条不吃色**——因为 `:` 落在 ConEmu 的 Pvt 字节范围里，
-按平价规则等于"私有序列 ⇒ 丢弃"（`Render.cpp:441` 的注释已经把这条说明写死，`:761` 置 `g->priv`）。
+按平价规则等于"私有序列 ⇒ 丢弃"（`Render.cpp:1177` 的注释已经把这条说明写死，`:2603` 置 `g->priv`）。
 上游用 `_subParameterRanges` 正经解析它。结论：**不抄**（单解析器 + ConEmu 平价是本项目的立身之本，I10），
 但要做两件事：让 `unsupported()`（I19）把"带 `:` 的 CSI"单独计一票，这样将来真有应用发 colon 形式时我们手里
 有数；并把这条从 `CONEMU_ANSI_DEFECTS.md` 的"缺口"语气改成"已定性偏离 + 上游行号"。
