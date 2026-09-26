@@ -302,6 +302,13 @@ int rc_validate_grid(const RcGrid *g, char *msg, int len)
   if (g->semanticContent < RC_SC_OUTPUT || g->semanticContent > RC_SC_PROMPT)
     RC_BAD("semanticContent=%d outside RC_SC_OUTPUT..RC_SC_PROMPT", g->semanticContent);
 
+  /* The table is a claim per column, so it is only meaningful below the width -- and a stale 1 past the
+     * edge is not a violation, which is why this checks the values and not the reach. */
+  if (g->tabsDefaults != 0 && g->tabsDefaults != 1)
+    RC_BAD("tabsDefaults=%d is neither claimed nor not", g->tabsDefaults);
+  for (c = 0; c < g->cols; c++)
+    if (g->tabStop[c] > 1) RC_BAD("tab stop %d holds %u, not a bit", c, (unsigned) g->tabStop[c]);
+
   for (r = 0; r < g->rows; r++)
   {
     const uint8_t wrap = g->rowState[r].wrap;
@@ -1011,6 +1018,54 @@ static int region_arg(const RcGrid *g, int i, int dflt, int page)
   return n;
 }
 
+/* ------------------------------------------------------------------------------------------ tab stops -- */
+/* Fill the columns from `from` up with the default interval, leaving anything the application claimed alone.
+   MSFT does exactly this to the newly allocated tail of its vector and only while its default flag stands
+   (`_InitTabStopsForWidth`, adaptDispatch.cpp:2799-2817), which is the half of the rule that says a resize is
+   not a reset: stops you set survive one, and columns that appear past the old width get the defaults. */
+static void tabs_default(RcGrid *g, int from)
+{
+  int c;
+  if (!g->tabsDefaults) return;
+  if (from < RC_TAB_INTERVAL) from = RC_TAB_INTERVAL;
+  for (c = from; c < g->cols; c++)
+    if ((c % RC_TAB_INTERVAL) == 0) g->tabStop[c] = 1;
+}
+
+/* The whole table back to the interval, with whatever was claimed thrown away: the answer at init, at RIS,
+   and at DECST8C. ghostty's `reset(TABSTOP_INTERVAL)` (Terminal.zig:4943, Tabstops.zig:165) is this function;
+   MSFT's HardReset has no such call, which is the one place this model follows DEC over MSFT -- a session that
+   cannot get its defaults back has no way to ask, and `ESC c` means "as at power-up". */
+static void tabs_reset(RcGrid *g)
+{
+  memset(g->tabStop, 0, sizeof g->tabStop);
+  g->tabsDefaults = 1;
+  tabs_default(g, 0);
+}
+
+/* The next stop strictly ahead of the cursor, or the last column when there is none left. Stopping rather
+   than wrapping is the ruling in both references (MSFT's loop runs `while (column < maxColumn)` at
+   :2670-2683; ghostty's `nextColumn` agrees), and it is why a tab cannot move the cursor to the next row:
+   the row's end is a wall, and the write that follows is what wraps. Column 0 is never a stop on the way
+   out, so a tab from the margin goes to 8 -- and `RC_TAB_INTERVAL` is where the defaults start, not 0. */
+static int tab_next(const RcGrid *g, int from)
+{
+  int c;
+  for (c = from + 1; c < g->cols; c++)
+    if (g->tabStop[c]) return c;
+  return g->cols - 1;
+}
+
+/* The previous stop strictly behind the cursor, or column 0 (MSFT's `while (column > minColumn)`,
+   :2712-2730). Both walks stay on the row: a back-tab does not climb. */
+static int tab_prev(const RcGrid *g, int from)
+{
+  int c;
+  for (c = from - 1; c > 0; c--)
+    if (g->tabStop[c]) return c;
+  return 0;
+}
+
 /* Arm a reply the painter owes. Nothing here writes: the console input handle belongs to the process, and
  * a parser that could reach it would make every host test of this file a test of a handle. So the query
  * becomes one queue entry carrying the cursor as it stands, and RenderJni.cpp::flush_reports turns the entry
@@ -1160,6 +1215,7 @@ static void full_reset(RcGrid *g)
   g->cursorShape = -1;
   g->cursorVisible = 1;
   g->wrapMode = 1;   /* RIS/DECSTR put every mode back, including the one with no caps entry (I35) */
+  tabs_reset(g);     /* and the tab stops are part of "as at power-up", whatever MSFT's HardReset omits */
   /* RIS ends a synchronized region with everything else it ends. The alternative -- leaving the bit set and
      letting the painter hold the reset's own scroll -- is the one case where a hold could swallow the very
      sequence that would have cleared it. */
@@ -1637,8 +1693,45 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       else ignored(g, RC_UN_SUP);
       break;
     }
-    case 'Z': ignored(g, RC_UN_SUP); break;  /* CBT: no case upstream (:3051-3052), and HTS is ignored
-        * too (:2731-2734), so there is no tab stop for a backtab to find. */
+    /* CBT (`CSI Ps Z`) walks the same table backwards. It used to be refused with the reason "there is no
+       tab stop for a backtab to find" -- which described the implementation, not the terminal: once HTS is
+       real, so is this, and the application that reads `cbt` out of the terminfo entry is asking for exactly
+       it. The count is read as a count: `CSI 0Z` is one back-tab, and the walk stops at column 0. */
+    case 'Z':
+    {
+      const int n = count_arg(g, 0, RC_ARG_MAX);
+      for (int i = 0; i < n; i++) g->cx = tab_prev(g, g->cx);
+      break;
+    }
+
+    /* CHT (`CSI Ps I`) is the same walk forward, with a count. */
+    case 'I':
+    {
+      const int n = count_arg(g, 0, RC_ARG_MAX);
+      for (int i = 0; i < n; i++) g->cx = tab_next(g, g->cx);
+      break;
+    }
+
+    /* TBC (`CSI Ps g`). 0 clears the stop under the cursor; 3 clears every stop *and* the default interval,
+       so a later tab has nowhere to run to but the margin (MSFT: `_ClearAllTabStops` sets
+       `_initDefaultTabStops = false` at :2775; ghostty: `reset(0)`, which its own header reads as "an
+       interval of 0 sets no tabstops", Tabstops.zig:164). 5 is DECST8C -- the name says five columns and
+       both references implement "put the defaults back", which is why MSFT's enum calls the value 5
+       `SetEvery8Columns` (DispatchTypes.hpp:579-582) and ghostty resets to `TABSTOP_INTERVAL`
+       (Terminal.zig:2309). Any other parameter asks for nothing either reference has: counted, not guessed. */
+    case 'g':
+    {
+      const int what = (g->nArgs > 0) ? g->args[0] : 0;   /* `CSI g` is `CSI 0g`, DEC says so */
+      if (what == 0) g->tabStop[g->cx] = 0;
+      else if (what == 3)
+      {
+        memset(g->tabStop, 0, sizeof g->tabStop);
+        g->tabsDefaults = 0;
+      }
+      else if (what == 5) tabs_reset(g);
+      else ignored(g, RC_UN_MODE);
+      break;
+    }
     case 'c':
       /* Device Attributes -- and the one reply in this file that says something about the terminal it is
          *not*. Two facts have to be held at once, so read them in order.
@@ -1744,7 +1837,11 @@ static void esc_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
        Counted as modes, not as unknown finals: the effect is known to be nothing, so the frame stays
        trusted and no adopt is bought. */
     case 'g': ignored(g, RC_UN_MODE); break;
-    case 'H': ignored(g, RC_UN_MODE); break;
+    /* HTS (`ESC H`) claims the column the cursor stands on and leaves the rest alone -- including the
+     * defaults, which is what makes it a table rather than a flag. MSFT materializes the defaults on the
+     * way (`:2648`) and sets the bit; the caps entry can now advertise `cbt`, which is the sequence this
+     * row used to make unspellable. */
+    case 'H': g->tabStop[g->cx] = 1; break;
     case '=': case '>': ignored(g, RC_UN_MODE); break;
     default: unsupported(g, RC_UN_SUP); break;
   }
@@ -1775,7 +1872,7 @@ static void control(RcGrid *g, uint16_t u)
   {
     case 0x07: break;                                       /* BEL: beeps, never occupies a cell */
     case 0x08: if (g->cx > 0) g->cx = step_back_col(g, 1); break;  /* BS: moves, does not erase */
-    case 0x09: { int to = ((g->cx + 8) >> 3) << 3; g->cx = to < g->cols ? to : g->cols - 1; break; }
+    case 0x09: g->cx = tab_next(g, g->cx); break;   /* the table, not the arithmetic it used to be */
     case 0x0A: newline(g); break;
     case 0x0D: g->cx = 0; break;
     default: break;                                         /* other C0, DEL: nothing */
@@ -2873,6 +2970,14 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
 
 /* ------------------------------------------------------------------ setup --------------------- */
 
+/* Carry the table across a rebuild: the caller has already copied the old bytes in, and `from` is the old
+ * width, so this only decides what the columns that did not exist before are. Public because the state is the
+ * model's and the decision to keep it is the seam's (RenderJni.cpp::build_model). */
+void rc_tabs_widen(RcGrid *g, int from)
+{
+  tabs_default(g, from);
+}
+
 int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAttr)
 {
   if (!g || cols <= 0 || winRows <= 0 || histRows < 0) return 0;
@@ -2891,6 +2996,7 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   g->defAttrSeed = defAttr;   /* what OSC 110/111 go back to (I34) */
   g->cursorVisible = 1;
   g->wrapMode = 1;            /* out of reset DECAWM is on, in VT and in both references */
+  tabs_reset(g);              /* the interval is a claim about the terminal, and a fresh one has it */
   g->cursorShape = -1;     /* memset above says 0, which here would mean "a DECSCUSR asked for the thin
                               cursor" -- the two are only told apart by this, and the difference is that a
                               session nobody shaped may not touch the user's console cursor height. */

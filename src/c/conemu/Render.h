@@ -43,6 +43,11 @@
    this one. The OSC side does not saturate: `dec_of` refuses a run longer than nine digits, because an index
    or an exit code that arrived truncated would be a different claim than the one that was made. */
 #define RC_ARG_MAX    65535
+/* The default tab interval, in columns. Both references materialize stops at 8, 16, 24... below the width
+   rather than at multiples that include the last column (MSFT `adaptDispatch.cpp:2811`, ghostty
+   `Tabstops.zig:165` with the loop at `:172` and its own test pinning nine stops on 80 columns at `:278`), and
+   `CSI 5 g` (DECST8C) means "put them back that way", whatever the name suggests. */
+#define RC_TAB_INTERVAL 8
 #define RC_INTERIM_MAX 4   /* CSI intermediate bytes we keep; ConEmu's Pvt holds 16 and stops appending when
                               full (Ansi.cpp:1788) -- four is more than any final in this switch can name. */
 /* How much of an OSC payload is kept. It used to be one buffer of RC_TITLE_MAX units, which was fine while
@@ -418,6 +423,19 @@ typedef struct RcGrid
      the entry describes a session where ConEmu's own parser may be reading the stream, and it ignores `?7`
      (its SetConsoleMode is commented out, Ansi.cpp:3268-3281) -- I26 forbids claiming that half. */
   uint8_t wrapMode;
+  /* The tab stops (#70): a table, not arithmetic. One byte per column of the widest model -- 4 KB against the
+   * megabytes the cells already cost, and a reader gets to say `tabStop[c]` instead of a mask.
+   * `tabsDefaults` is the other half and the reason the table can be empty at all: it says whether the columns
+   * nobody claimed are stops every RC_TAB_INTERVAL. `ESC H` sets one *without* clearing the others, `CSI 3g`
+   * clears both halves (so a later tab has nowhere to run to but the margin), and `CSI 5g` or a full reset
+   * puts the defaults back. MSFT keeps the same two facts -- `_tabStopColumns` and `_initDefaultTabStops` --
+   * and both live on the terminal rather than the page (`adaptDispatch.cpp:2649`, `:2775`, `:2790`), which is
+   * why the alternate screen shares them here too; ghostty's table is on the Terminal for the same reason
+   * (`Terminal.zig:56`). Where the two part: a width change rebuilds ghostty's table (`:4019`, `:4082`) and
+   * only extends MSFT's (`:2805`), and we extend, because our own resize already carries application-set
+   * state across (`RenderJni.cpp`'s build_model keeps the palette and the OSC 9 face for the same reason). */
+  uint8_t tabStop[RC_MAX_COLS];
+  int     tabsDefaults;
   /* Regions opened. This is the denominator for every count below it: `held` alone cannot say whether an
      application paints one screen per region or a thousand, and `timeout` alone cannot say the leak rate. */
   unsigned long nSyncEngages;
@@ -588,6 +606,9 @@ typedef struct RcGrid
    gate-only export, which is what lets a violation be caught in the binary that ships rather than only in the
    source that built it. */
 int rc_validate_grid(const RcGrid *g, char *msg, int len);
+/* Fill the tab-stop table's columns from `from` up with the default interval, if nobody cleared it. Only the
+ * seam needs it: a rebuild is the application's resize, not its reset (RenderJni.cpp::build_model). */
+void rc_tabs_widen(RcGrid *g, int from);
 
 /* How long a synchronized region may hold a flush before the next one paints anyway. MSFT's renderer waits
    100 ms (`constexpr DWORD timeout = 100` in renderer.cpp::_synchronizeWithOutput) and then paints with the

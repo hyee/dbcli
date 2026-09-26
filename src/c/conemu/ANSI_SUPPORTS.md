@@ -1,6 +1,6 @@
 # ANSI_SUPPORTS -- the ANSI escape support matrix of the C side (render.dll)
 
-Snapshot 2026-09-26, build `render-2026-09-26-24`. The source of truth is **the code itself**:
+Snapshot 2026-09-26, build `render-2026-09-26-29`. The source of truth is **the code itself**:
 `Render.cpp` (parsing + the grid model), `Render.h` (state and counters), `Paint.cpp` (turning the model into
 console calls), `RenderJni.cpp` (the JNI pen, the title, the query replies). The upstream comparison is ConEmu's
 `Ansi.cpp` (every rule carries its line number in the comments); OSC 133 was implemented against ghostty and the
@@ -44,7 +44,7 @@ wearing a citation -- and this pass found twelve of them here, all from code add
 |---|---|
 | `BEL 0x07` | takes no cell, rings nothing |
 | `BS 0x08` | moves left without erasing; when it lands on the trailing half of a wide glyph it steps one further (`step_back_col`, Render.cpp:1208 -- upstream's `ROW::_adjustBackward`, and the correct side of the #852 family) |
-| `HT 0x09` | fixed **8-column** tabulation, clamped to the end of the line; tab stops are not configurable (see §3) |
+| `HT 0x09` | walks the **tab-stop table**: the next claimed column strictly ahead of the cursor, or the last column when nothing is left -- it does not wrap to the next row (§2.11) |
 | `LF 0x0A` | moves down **and folds to column 0** (the conhost behaviour, measured WriteConsoleW semantics); `IND`/`RI` keep the column |
 | `CR 0x0D` | to column 0 |
 | other C0 and `DEL 0x7F` | ignored, and **never rendered as a glyph** (the answer to the #1900/#2158 family) |
@@ -61,7 +61,7 @@ wearing a citation -- and this pass found twelve of them here, all from code add
 | `ESC M` | RI | reverse line feed; at the viewport top or the region top it **inserts a blank row** (upstream's LinesInsert semantics); a cursor outside the region only moves |
 | `ESC ( 0` | SCACS | activates the G0 line-drawing substitution (the 31 `G0_DRAWING` entries, remapping `0x60..0x7E` only, width taken from the original letter, so a box border is still one cell per letter); `ESC ( B` and any other designator restore the default |
 | `ESC N` / `ESC O` | SS2/SS3 | swallow the introducer only -- **the next byte prints as ordinary text** (no eaten glyph, no lost column) |
-| `ESC g` / `ESC H` / `ESC =` / `ESC >` | visual bell / HTS / keypad | counted (`RC_UN_MODE`); no cell moves and the input side does not change |
+| `ESC g` / `ESC =` / `ESC >` | visual bell / keypad | counted (`RC_UN_MODE`); no cell moves and the input side does not change. `ESC H` (HTS) left this list at #70: it has state to change now (§2.11) |
 | `ESC ) c`, `ESC % G` | G1 / UTF-8 selection | counted (`RC_UN_SUP`); G1 is unreachable and the UTF-8 flag is never set (the input is UTF-16 already) -- the same as upstream's default arm |
 
 ### 2.3 CSI cursor movement (`csi_dispatch()`, Render.cpp:1263)
@@ -203,6 +203,23 @@ handed back to conhost, and a second reply would be dirty input).
 | Erasing and attributes | an erase **overwrites whole cells** without merging, so a wide glyph's trailing half is destroyed when erased (I13, as conhost does) |
 | The pair is the unit | what an erase, a fill, an ICH/DCH shift or a narrow glyph over a wide one's head may **not** do is leave the other half standing: `heal_pairs()` (Render.cpp:354) blanks a `LEADING` whose next cell is not its `TRAILING` and vice versa, and every writer that can split a pair runs through it (`fill_span`, `blank_cell`, `put_cell`, `put_pair`, ICH/DCH). ghostty's `page.zig:518-540` treats the same state as an integrity violation and clears at each boundary (`Terminal.zig:3322-3342`, `:3411-3413`, `:3448-3452`); MSFT's `Row.cpp:1215` `_adjustBackward` is the same rule on the reading side. Witnessed by `no_orphan()` on the host gate and by `noOrphan()` on the live console |
 
+### 2.11 Tab stops (`#70`)
+
+| Item | Behaviour |
+|---|---|
+| The state | one claim per column (`RcGrid::tabStop[]`) plus one flag (`tabsDefaults`) saying whether the columns nobody claimed are stops every 8. Two facts, because `CSI 3g` and `ESC H` differ in kind: one empties the table *and* the interval, the other adds to it |
+| The defaults | columns 8, 16, 24 ... below the width -- **not** column 0, and not the last column (MSFT `adaptDispatch.cpp:2811`, ghostty `Tabstops.zig:165` with nine stops on 80 columns pinned by its own test at `:278`) |
+| `ESC H` HTS | claims the column the cursor stands on, leaves the rest alone, moves nothing |
+| `CSI 0g` / `CSI 3g` TBC | clear the claimed column / clear everything **and** the interval, so a later `\t` has nowhere to run to but the wall. Both references give the same answer (MSFT's `_ClearAllTabStops` clears the flag at `:2775`; ghostty's `reset(0)` reads "an interval of 0 sets no tabstops") |
+| `CSI 5g` DECST8C | puts the every-8 interval back. The name promises five columns and both references implement "restore the defaults" -- MSFT's enum calls the value 5 `SetEvery8Columns` (`DispatchTypes.hpp:579-582`), ghostty resets to `TABSTOP_INTERVAL` (`Terminal.zig:2309`) -- so this row is a naming divergence we inherit from them, not one we add |
+| `CSI Ps I` CHT, `CSI Ps Z` CBT | the same walk forward and back, `Ps` times (absent or 0 is 1). Neither wraps a row or changes the other's row; a back-tab with nothing left ends at column 0 (MSFT's `minColumn`, `:2712-2730`) |
+| Main and alternate screen | **one table for both**, because it is terminal state rather than screen state: MSFT's lives on the adapter (`:2649`), ghostty's on the Terminal (`Terminal.zig:56`) |
+| A resize | carries the table and fills the interval only in the columns that did not exist, and only if nobody cleared it (MSFT `_InitTabStopsForWidth`, `:2799-2817`; ghostty rebuilds the whole table at `Terminal.zig:4019`/`:4082` and loses custom stops -- we follow MSFT, because our own resize already carries application-set state: the palette, the OSC 9 face, DECAWM) |
+| `ESC c` RIS | restores the interval. **This is where we part with MSFT**, whose `HardReset` says nothing about tabs: DEC's reset means "as at power-up", and a session that cannot ask for its defaults back has no way to ask. ghostty restores (`Terminal.zig:4943`), so the split is one reference each way and the tiebreaker is what a caller can do with it |
+| DECSTR `CSI !p` | does not touch the table -- neither reference does, and a soft reset that silently un-claimed a stop would be a claim about the user's configuration |
+| A stop on a wide glyph | legal, and the cursor may stand on the leading half; the write that follows evicts the trailing one exactly as it does for CUP (I35's rule), and the grid oracle votes after every chunk either way |
+| The caps entry | still advertises no `cbt`/`hts`/`tbc`, so an application that reads its tab behaviour out of terminfo will not find it here. That is deliberate and tracked as **#90**: the entry lives in three byte-identical copies (the mirror, jline's source, `lib/JLine3.jar`), and the jar is another agent's in-flight build -- see `TERMINFO.md` |
+
 ---
 
 ## 3 Not supported (all consumed and counted; see §6)
@@ -221,8 +238,7 @@ handed back to conhost, and a second reply would be dirty input).
 
 | Item | Behaviour | Note |
 |---|---|---|
-| `CSI Z` CBT, `ESC H` HTS | dropped, counted `RC_UN_SUP` | there is **no tab-stop state at all**, so CBT has nowhere to back up to |
-| tab stops | HT's fixed 8 columns only, not configurable | the terminfo entry correspondingly offers no `cbt/hts/tbc` |
+
 | left/right margins (DECLRMM/DECSLRM), origin mode DECOM | counted `RC_UN_MODE` | not modelled |
 
 ### DEC/ANSI modes

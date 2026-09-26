@@ -183,6 +183,7 @@ public class Render {
         caseHealPairs();
         caseSoftReset();
         caseArgClamp();
+        caseTabStops();
         caseRelativeCursor();
         caseSyncOutput();
         caseSyncOverflow();
@@ -1603,6 +1604,57 @@ public class Render {
                 "unrecognised=" + (b[S_UN] - a[S_UN]) + ": IL, DL and a long CUP are all modelled");
         gate("and nothing was declined", b[2] - a[2] == 0, "declines=" + (b[2] - a[2]));
         paint("leave the rows clean", "\u001b[1;1H\u001b[J");
+    }
+
+    /**
+     * The tab table, off the shipping binary. The host gate links `Render.cpp` and can look at the array
+     * directly; what this case adds is that the bytes a caller sends land where the array says, on a real
+     * console, and -- the part no unit test can reach -- that a rebuild carries the table with it. `readopt`
+     * is the recovery a resize takes (RenderJni.cpp's build_model), and the stops are application-set state,
+     * so a resize that lost them would be a resize that answered a sequence nobody sent.
+     */
+    /* One trap this case already fell into: `ESC H` is HTS and takes no bracket, while `ESC [ H` is
+       CUP. The console answers a mistaken bracket with column 0, which is a wrong answer to a
+       different question -- and it is why the tab rules are run against a real console and not only
+       against the struct the host gate links. */
+    private static void caseTabStops() {
+        if (!standardGeometry("the tab-stop leg")) return;
+        paint("a claimed stop at column 3", "\u001b[1;4H\u001bH");
+        long[] v = consoleView();
+        gate("and HTS (no bracket) moves nothing", v[5] == 3 && v[6] == winT,
+                "(" + v[5] + "," + v[6] + ") want (3," + winT + ")");
+        paint("a tab from the margin", "\u001b[1;1H\t");
+        v = consoleView();
+        gate("finds the claimed column, not the eighth", v[5] == 3,
+                "col=" + v[5] + " want 3: `\\t` walked a table, and the arithmetic it replaced would say 8");
+        paint("one more goes on to the default interval", "\t");
+        v = consoleView();
+        gate("the defaults are still under it", v[5] == 8, "col=" + v[5] + " want 8");
+        paint("and a back-tab comes back to the claim", "\u001b[Z");
+        v = consoleView();
+        gate("CBT backs up to the stop the application set", v[5] == 3, "col=" + v[5] + " want 3");
+
+        paint("clear every stop", "\u001b[3g");
+        paint("then tab from column 0", "\u001b[1;1H\t");
+        final long first = consoleView()[5];
+        paint("and again", "\t");
+        final long second = consoleView()[5];
+        gate("with nothing to run to, a tab ends at the wall", first == second && first != 3,
+                "col=" + first + " then " + second + ": it must not sit still *at* the claim, and must not move");
+
+        /* The carry. Claim a stop, rebuild the model the way a resize does, and ask the same question. */
+        paint("claim it again", "\u001b[5g\u001b[1;4H\u001bH");
+        paint("tab there", "\u001b[1;1H\t");
+        gate("setup: the stop is in use", consoleView()[5] == 3, "col=" + consoleView()[5]);
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        paint("tab after the rebuild", "\u001b[1;1H\t");
+        v = consoleView();
+        gate("the stop survived its own resize", v[5] == 3,
+                "col=" + v[5] + " want 3: a resize is not a reset, and the table is a claim");
+        paint("and the interval it did not claim is still there", "\u001b[1;10H\t");
+        v = consoleView();
+        gate("from column 9 a tab reaches 16, which nobody set", v[5] == 16, "col=" + v[5] + " want 16");
+        paint("leave the window where the next case expects it", "\u001b[1;1H");
     }
 
     // ---- both legs, one console ----------------------------------------------------------------

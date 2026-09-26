@@ -2583,6 +2583,183 @@ static void geo_lines()
   eq_text(&g, 0, 1, "1", "and nothing moved underneath it");
 }
 
+/* ------------------------------------ 4''. tab stops: a table, not arithmetic ---------------------- */
+/* Until #70 `\t` was `((cx + 8) >> 3) << 3` -- correct only while every stop sits where the default
+   interval put it, which is what made `ESC H` (set a stop), `CSI Ps g` (clear them), `CSI Ps Z` (back up)
+   and `CSI Ps I` (skip forward) all unspeakable: there was no state for them to talk about. The rulings here
+   are the references', and the one place they disagree is named in the line that depends on it:
+   MSFT keeps one `_tabStopColumns` table on the terminal (`adaptDispatch.cpp:2649`, walked forward at
+   `:2677` and back at `:2720`, extended on resize at `:2805-2815`), ghostty keeps one on the Terminal
+   (`Tabstops.zig`'s bit set, `Terminal.zig:56`, `:2295-2309`), so **both share it between the main and the
+   alternate screen**; both materialize the defaults at columns 8, 16, ... below the width; both stop a
+   forward tab at the last column when no stop is left rather than wrapping (MSFT's `maxColumn`, ghostty's
+   `nextColumn`); and `CSI 5 g` (DECST8C) means "restore every-8" for both (`DispatchTypes.hpp:579-582`
+   names the value 5 `SetEvery8Columns`, ghostty resets to `TABSTOP_INTERVAL` at `Terminal.zig:2309`).
+   Where they split: ghostty rebuilds the table when the column count changes (`:4019`, `:4082` -- custom
+   stops are lost) while MSFT only extends it (`:2805`, so a stop you set survives a widening and a
+   narrowing); we follow MSFT, because our own resize already treats application-set state as carrying over
+   (`RenderJni.cpp`'s build_model keeps the palette and the OSC 9 face for the same reason). */
+static void geo_tabs()
+{
+  static RcGrid g;
+
+  /* The defaults, and the fallback when there is nothing left to run to. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\t");
+  eq_u("a tab from the margin reaches the first default stop", (unsigned)g.cx, 8, "columns 8, 16 (both references)");
+  put(&g, "\t");
+  eq_u("and the next one reaches the next", (unsigned)g.cx, 16, "");
+  put(&g, "\t");
+  eq_u("with no stop left, a tab ends on the last column", (unsigned)g.cx, 19,
+       "MSFT's loop stops at maxColumn; it does not wrap to the next row");
+  put(&g, "\t");
+  eq_u("and a tab from the last column stays there", (unsigned)g.cx, 19,
+       "the cursor is not pushed onto the next row by a tab");
+  put(&g, "\033[1;9H\t");
+  eq_u("a stop the cursor is standing on does not count", (unsigned)g.cx, 16,
+       "the scan starts at cx+1 in both references");
+
+  /* CHT and CBT are the same walk with a count and a direction. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[2I");
+  eq_u("CHT of two lands two stops on", (unsigned)g.cx, 16, "`CSI Ps I`, Ps absent means one");
+  put(&g, "\033[1I");
+  eq_u("and CHT of one runs out and stops at the margin", (unsigned)g.cx, 19, "");
+  put(&g, "\033[1;20H");
+  eq_u("setup: the cursor on the last column", (unsigned)g.cx, 19, "");
+  put(&g, "\033[Z");
+  eq_u("CBT backs up to the stop before", (unsigned)g.cx, 16, "no `?1` needed: it is an ordinary CSI final");
+  put(&g, "\033[Z");
+  eq_u("one more backs up to the next", (unsigned)g.cx, 8, "");
+  put(&g, "\033[2Z");
+  eq_u("two at once walks past it to column 0", (unsigned)g.cx, 0,
+       "the walk has no stop to find below 8, and 0 is where MSFT's minColumn leaves it");
+
+  /* HTS adds a stop without erasing the defaults, and the added stop is the one a tab finds. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[1;6H\033H");
+  eq_u("set tab stop leaves the cursor where it was", (unsigned)g.cx, 5, "`ESC H` does not move");
+  put(&g, "\033[1;1H\t");
+  eq_u("and the next tab finds it", (unsigned)g.cx, 5, "the table, not the arithmetic");
+  put(&g, "\t");
+  eq_u("while the default stop after it is still there", (unsigned)g.cx, 8,
+       "MSFT materializes the defaults rather than replacing them (`_InitTabStopsForWidth`, :2799)");
+
+  /* TBC: 0 clears the column the cursor is on, 3 clears everything and stops re-adding the defaults. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[1;9H\033[0g\t");
+  eq_u("clearing the stop under the cursor makes the next tab skip it", (unsigned)g.cx, 16, "`CSI 0g`");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[3g\t");
+  eq_u("after `CSI 3g` there is nowhere to go but the margin", (unsigned)g.cx, 19,
+       "ghostty's `reset(0)` and MSFT's clear-with-flag-false are the same answer");
+  put(&g, "\033[1;17H\033[Z");
+  eq_u("and a back-tab with no stops goes to column 0", (unsigned)g.cx, 0, "");
+  put(&g, "\033[5g\t");
+  eq_u("DECST8C brings the every-8 defaults back", (unsigned)g.cx, 8,
+       "the parameter value 5 means `SetEvery8Columns` (DispatchTypes.hpp:581)");
+
+  /* A reset restores them; a soft reset does not. `ESC c` is RIS and takes no bracket -- the first version of
+     these two legs fed `ESC [ c`, which is Device Attributes, and the model was right about it. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[3g\033c\t");
+  eq_u("RIS puts the defaults back", (unsigned)g.cx, 8,
+       "ghostty resets the table in its full reset (Terminal.zig:4943); MSFT's HardReset leaves it alone, and "
+       "a session that cannot ask for its defaults back has no way to ask");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[3g\033[!p\t");
+  eq_u("DECSTR does not", (unsigned)g.cx, 19, "neither reference touches tabs on a soft reset (I37's family)");
+
+  /* The widen half: what `build_model` does with the table it carried across a rebuild, tested here because
+     the model owns the rule and the seam only calls it. A rebuild is a fresh grid; the seam's job is to put
+     the old table back and then ask this question, which is `rc_tabs_widen`'s whole contract. */
+  {
+    static uint8_t keep[RC_MAX_COLS];
+    int keepDefaults;
+    rc_reset(&g, 20, 4, 0x07);
+    put(&g, "\033[1;6H\033H");                             /* claim column 5 */
+    memcpy(keep, g.tabStop, sizeof keep);
+    keepDefaults = g.tabsDefaults;
+    rc_reset_hist(&g, 40, 4, 0, 0x07);                     /* the rebuild */
+    memcpy(g.tabStop, keep, sizeof g.tabStop);
+    g.tabsDefaults = keepDefaults;
+    rc_tabs_widen(&g, 20);
+    eq_u("a claimed stop is still claimed past a resize", (unsigned)g.tabStop[5], 1, "the part build_model carries");
+    eq_u("a column that did not exist gets the interval", (unsigned)g.tabStop[24], 1,
+         "MSFT fills only the newly allocated tail (:2805-2815), and so do we");
+    eq_u("while a column that did is not re-decided", (unsigned)g.tabStop[16], 1, "it was a stop and stays one");
+    put(&g, "\033[1;17H\033[0g");                          /* clear 16, then widen again */
+    rc_reset_hist(&g, 60, 4, 0, 0x07);
+    memcpy(g.tabStop, keep, sizeof g.tabStop);
+    g.tabsDefaults = 1;
+    g.tabStop[16] = 0;
+    rc_tabs_widen(&g, 40);
+    eq_u("a cleared stop below the old width is not resurrected", (unsigned)g.tabStop[16], 0,
+         "the widen starts where the old grid ended, which is the whole point of passing `from`");
+    eq_u("and the new tail does get the interval", (unsigned)g.tabStop[48], 1, "");
+    rc_reset_hist(&g, 60, 4, 0, 0x07);
+    memset(g.tabStop, 0, sizeof g.tabStop);
+    g.tabsDefaults = 0;
+    rc_tabs_widen(&g, 20);
+    eq_u("with the flag down, a resize adds nothing", (unsigned)g.tabStop[24], 0,
+         "rc_tabs_widen obeys the flag -- and it is asked about column 24, because a widen starts where the "
+         "old grid ended: the first version of this leg read column 8, which no widen ever fills, so it could "
+         "not have failed for any reason at all");
+    /* And the flag got to 0 by being told to, not by this file writing it. An arm that leaves `CSI 3g`
+       clearing the array but keeping the flag is invisible to every leg above, because an empty table and a
+       live interval look identical until something rebuilds -- which is exactly the shape of #73's green arm,
+       found the same way: by running an arm and watching it not bite. */
+    rc_reset(&g, 20, 4, 0x07);
+    put(&g, "\033[3g");
+    keepDefaults = g.tabsDefaults;
+    memcpy(keep, g.tabStop, sizeof keep);
+    rc_reset_hist(&g, 60, 4, 0, 0x07);
+    memcpy(g.tabStop, keep, sizeof g.tabStop);
+    g.tabsDefaults = keepDefaults;
+    rc_tabs_widen(&g, 20);
+    eq_u("`CSI 3g` is what a resize then respects", (unsigned)g.tabStop[24], 0,
+         "the clear is a claim about the interval, not just about the array -- and the interval's only "
+         "exposure to a resize is the tail, so that is where the question has to be asked");
+    rc_reset(&g, 20, 4, 0x07);
+    put(&g, "\033[3g\033[5g");                           /* clear, then DECST8C */
+    keepDefaults = g.tabsDefaults;
+    memcpy(keep, g.tabStop, sizeof keep);
+    rc_reset_hist(&g, 60, 4, 0, 0x07);
+    memcpy(g.tabStop, keep, sizeof g.tabStop);
+    g.tabsDefaults = keepDefaults;
+    rc_tabs_widen(&g, 20);
+    eq_u("and DECST8C puts it back, resize included", (unsigned)g.tabStop[24], 1,
+         "the same column, the opposite answer, one `CSI 5g` apart");
+  }
+
+  /* One table for both screens: the ruling both references agree on, and the reason it is safe here is that
+     the alternate screen is a different view of the same session rather than a different session. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[1;6H\033H\033[?1049h\033[1;1H");
+  put(&g, "\t");
+  eq_u("the custom stop is still there on the alternate screen", (unsigned)g.cx, 5,
+       "MSFT's table is on the terminal (:2649), ghostty's on the Terminal (Terminal.zig:56)");
+  put(&g, "\033[?1049l");
+  eq_u("and leaving it does not lose the stop either", (unsigned)g.cx, 5, "the same table, both ways");
+
+  /* A stop may sit on the leading half of a wide glyph. What must never happen is the tab *creating* an
+     orphan: the write that follows is the narrow-over-leading case I35 already handles, and the grid oracle
+     votes after every feed, so this leg is here to pin where the cursor lands, not what the pair does. */
+  rc_reset(&g, 20, 4, 0x07);
+  {
+    static const uint16_t cjk = 0x4E00u;
+    put(&g, "\033[1;9H");
+    putu(&g, &cjk, 1);                               /* LEADING at 8, TRAILING at 9 */
+  }
+  eq_u("a wide glyph took two columns", (unsigned)g.cx, 10, "setup");
+  put(&g, "\033[1;17H\033[Z");
+  eq_u("back-tabs stop at 8, the leading half", (unsigned)g.cx, 8, "a stop the cursor can stand on");
+  put(&g, "X");
+  eq_u("writing there evicts its trailing half", (unsigned)g.cells[0][9].ch, ' ',
+       "I35's narrow-over-leading rule: a narrow write on a LEADING clears the TRAILING it orphaned");
+  eq_u("and the cursor moves on by one", (unsigned)g.cx, 9, "the glyph it replaced was two columns wide");
+}
+
 /* DECSTBM and everything that scrolls inside it (I25). The assertions are the oracle's own acceptance
    test, not the VT500 manual's: where ConEmu deviates -- a rejected region clears rather than ignores, a
    zero parameter clamps instead of defaulting, and setting a region homes nothing -- the deviation is what
@@ -2827,9 +3004,11 @@ static void geo_region()
   eq_u("and makes the frame suspect", (unsigned)g.modelSuspect, 1, "S3: the reach is not known");
   rc_clear_model_suspect(&g);
   put(&g, "\033[Z");
-  eq_u("CBT joins the SUP count", g.nUnsupported[RC_UN_SUP], 2, "");
-  eq_u("but CBT cannot make the frame suspect", (unsigned)g.modelSuspect, 0,
-       "ConEmu has no case for it either (:3051) and no tab stop to move to (HTS is ignored at :2731)");
+  eq_u("CBT is modelled now and spends no count", g.nUnsupported[RC_UN_SUP], 1,
+       "#70 gave the back-tab a table to walk; while `ESC H` was ignored there was no stop for it to find, and "
+       "refusing was the truth -- this assertion is the census noticing that the sentence changed");
+  eq_u("and it still cannot make the frame suspect", (unsigned)g.modelSuspect, 0,
+       "a walk over state this model owns is the opposite of an unknown reach");
 }
 
 /* The status bar (I25's consumer). This replays the byte stream the host's status line actually produces
@@ -4690,6 +4869,7 @@ int main(int argc, char **argv)
   geo_cursor();
   geo_alt();
   geo_lines();
+  geo_tabs();
   geo_region();
   status_bar();
   geo_edit();
