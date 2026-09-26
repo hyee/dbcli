@@ -1295,10 +1295,16 @@ static void gm_dropped()
   eq_u("CSI ? drops the SGR", g.attr, 0x07, "Pvt set (Ansi.cpp:3494)");
   eq_text(&g, 0, 1, "X", "still one cell");
 
+  /* Re-baselined by #78. This leg used to pin the drop: ConEmu appends ':' to the same Pvt buffer it puts
+     '?' in (Ansi.cpp:1788) and the SGR arm tests Pvt (:3494), so the whole sequence went away -- and that was
+     recorded here as parity. Parity with a parser this library no longer shares the stream with is not a floor
+     (the #60 and #61 rulings, and I38's tab refusal said the same thing about a different byte), and both
+     reference terminals parse the form. */
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[38:2:1:2:3mX");
-  eq_u("colon subparameters drop the SGR", g.attr, 0x07, "':' is a private byte");
-  eq_text(&g, 0, 1, "X", "and are not repainted either");
+  eq_u("the colon form carries its colour", (unsigned)(g.attr != 0x07), 1,
+       "24-bit, folded by the same path the semicolon form takes");
+  eq_u("and the text it arrived with is still written", RC_CELLS(&g, 0)[0].ch, 'X', "");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[53;31mX");
@@ -1425,7 +1431,9 @@ static void gm_wrap_suspect()
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[38:2:1:2:3mX");
-  eq_u("a colon CSI is counted once", un(&g, RC_UN_COLON), 1, "");
+  eq_u("a colon colour this build can name is no vote at all", un(&g, RC_UN_COLON), 0,
+       "#78 moved the counter's meaning from \"a sequence with a ':' went past\" to \"an arm of it is not "
+       "carried here\"; a count that cannot make that difference says nothing about either");
   eq_u("as colon, not as a mode set", un(&g, RC_UN_MODE), 0, "the two are different decisions");
   eq_u("and paints the text it carried", RC_CELLS(&g, 0)[0].ch, 'X', "only the colour is dropped");
   eq_u("which is not a reason to distrust the frame", (unsigned)rc_model_suspect(&g), 0, "");
@@ -1618,7 +1626,9 @@ static void gm_echo(void)
   echo_eq("cursor addressing and erase stay out", &g, "\033[1;38;5;145m",
           "replaying a CUP or an EL would move the real cursor");
   putraw(&g, "\033[?31m\033[4:3m");
-  echo_eq("a private or colon SGR applies nothing, so it echoes nothing", &g, "", "Ansi.cpp:3494");
+  echo_eq("a private SGR echoes nothing; a colon SGR that carries something does", &g, "\033[4:3m",
+          "Ansi.cpp:3494 drops the '?', and `4:3` really did turn the underscore on -- a fallback leg that "
+          "never saw the sequence would show the two paths disagreeing");
   putraw(&g, "\033c");
   echo_eq("RIS resets the attributes too", &g, "\033c", "");
   putraw(&g, "\0337");
@@ -1981,7 +1991,10 @@ static void geo_census()
   /* The flag is now data, so the behaviour it used to encode needs re-pinning from both sides. */
   rc_reset(&g, 20, 3, 0x07);
   put(&g, "\033[1;2:3m");
-  eq_u("the colon family still counts", (unsigned)un(&g, RC_UN_COLON), 1, "");
+  eq_u("a sub-parameter no arm consumed is one vote", (unsigned)un(&g, RC_UN_COLON), 1,
+       "`2:3`: the `2` took its own parameter, and the 3 belongs to it rather than to the loop");
+  eq_u("and it is not read as a rendition", (unsigned)g.sgr.italic, 0,
+       "SGR 3 would be italic, invented from a number whose owner already said no");
   eq_u("and still does not cost a repaint", (unsigned)rc_model_suspect(&g), 0, "");
   rc_reset(&g, 20, 3, 0x07);
   put(&g, "\033[1\\");
@@ -3213,6 +3226,95 @@ static void geo_irm()
        "it is terminal state, like DECAWM and the tab table (I38's ruling on the other axis)");
   put(&g, "\033[?1049l");
   eq_u("and leaving finds it where it was", (unsigned)g.insertMode, 1, "");
+}
+
+/* #78, I41: the colon sub-parameter family. The legs are paired on purpose -- each spelling that has an
+ * equivalent semicolon form is required to land on the *same* attribute, which is the only way this file can
+ * say it parses the form rather than merely surviving it. */
+static void geo_colon()
+{
+  static RcGrid g;
+
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38;2;10:20:30m");
+  const unsigned int flat = (unsigned)g.attr;
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38:2:10:20:30m");
+  eq_u("`38:2:r:g:b` folds to the same attribute as the semicolon form", (unsigned)g.attr, flat,
+       "one colour model, two spellings");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38:2::10:20:30m");
+  eq_u("and so does the form with the deprecated colour-space slot left empty", (unsigned)g.attr, flat,
+       "MSFT keeps an empty sub-parameter as distinct from 0 for exactly this (`CSI 0:::m` is three sub "
+       "params, stateMachine.cpp:574-576)");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38;2;10;20;30m");
+  eq_u("which is the attribute the semicolon spelling gives", (unsigned)g.attr, flat, "");
+
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38:5:146m");
+  eq_u("`38:5:n` is the indexed form", (unsigned)g.sgr.fgKind, (unsigned)RC_CLR8B, "");
+  eq_u("with the index it named", (unsigned)g.sgr.fg, 146, "");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[48:5:33;38:5:1m");
+  eq_u("two colour arms in one sequence, both colon", (unsigned)g.sgr.bgKind, (unsigned)RC_CLR8B, "");
+  eq_u("background first", (unsigned)g.sgr.bg, 33, "");
+  eq_u("foreground second", (unsigned)g.sgr.fg, 1, "");
+  eq_u("and nothing about a parsed colour is a vote", (unsigned)un(&g, RC_UN_COLON), 0, "");
+
+  /* A colon whose kind is missing or unknown. The count is the point, and the *absence* of a colour is what
+     makes it honest: applying nothing and saying so beats guessing a colour from the wrong field. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[31m");
+  const unsigned int red = (unsigned)g.attr;     /* what `31m` means on its own, to compare against */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38:9:1m\033[31m");
+  eq_u("an unknown kind colours nothing", (unsigned)un(&g, RC_UN_COLON), 1,
+       "9 is neither 2 nor 5, so the arm is not carried");
+  put(&g, "\033[31m");
+  eq_u("and the colour that follows still arrives", (unsigned)g.attr, red,
+       "the refused arm consumes its own sub-parameters instead of leaking them into the loop");
+
+  /* 58, the underline colour: a family with no surface on a console, and a *previous* bug -- before #78 the
+     semicolon form fell through the switch and read its colour index as a rendition, so `58;5;1` set bold. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[58;5;1m");
+  eq_u("`58;5;1` does not set bold", (unsigned)g.sgr.bold, 0,
+       "its parameters belong to 58; the old code read `1` as a rendition");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[58:5::14m");
+  eq_u("and the colon form of the same thing is parsed, counted and inert", (unsigned)un(&g, RC_UN_COLON), 1,
+       "no field exists for an underscore's colour, and inventing one nobody can read is the I26 shape");
+  eq_u("with no attribute moved", (unsigned)g.sgr.bold, 0, "");
+
+  /* 4:n, the underline styles. The console has one underscore, so 2..5 are state with no drawing. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[4:3m");
+  eq_u("`4:3` puts the underscore on", (unsigned)g.sgr.underline, 1, "the half of the request that is drawable");
+  eq_u("and says the rest was not", (unsigned)un(&g, RC_UN_COLON), 1, "curly is not an attribute conhost has");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[4:1m");
+  eq_u("`4:1` is single: on, and no vote", (unsigned)un(&g, RC_UN_COLON), 0, "");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[4:1m\033[4:0m");
+  eq_u("`4:0` turns it off, which is a request fully carried", (unsigned)g.sgr.underline, 0, "");
+  eq_u("and costs nothing", (unsigned)un(&g, RC_UN_COLON), 0,
+       "the sender asked for no underline and got no underline");
+
+  /* Mixed separators and the non-SGR finals. ghostty's own parser refuses every family but 'm' -- "We only
+     allow colon or mixed separators for the 'm' command" (stream.zig:1350-1358) -- so the boundary is not
+     this file's preference, and the count says the sequence arrived. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "abc\033[1;3H");
+  eq_u("CUP still moves", (unsigned)g.cx, 2, "setup");
+  put(&g, "\033[1:2;3H");
+  eq_u("a colon on CUP is counted", (unsigned)un(&g, RC_UN_COLON), 1, "");
+  eq_u("and moves nothing", (unsigned)g.cx, 2,
+       "no reference agrees on what the family means, so guessing would be a claim, not a parse");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033[38:5:1m");
+  eq_u("a colon SGR is not suspected of anything", (unsigned)rc_model_suspect(&g), 0,
+       "it is parsed and applied");
 }
 
 static void geo_edit()
@@ -5010,6 +5112,7 @@ int main(int argc, char **argv)
   geo_region();
   status_bar();
   geo_irm();
+  geo_colon();
   geo_edit();
   geo_jline_stream();
   geo_ftcs();

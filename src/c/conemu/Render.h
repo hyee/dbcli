@@ -496,6 +496,13 @@ typedef struct RcGrid
   int    priv;            /* CSI private byte seen ('?' '>' '<' '=' '!') */
   int    nArgs;
   int    args[RC_CSI_ARGS];
+  /* 1 when the parameter at this index is a *sub-parameter* -- a ':' stood between it and the parameter
+   * before it (#78, I41). The flat list stays one array because that is what every consumer already walks
+   * (`arg(i, dflt)`, `count_arg`, the SGR loop); the flag is the minimum that says "this number belongs to
+   * the one to its left", which is all the arms that care need. An empty sub-parameter (`38:2::1:2:3`, whose
+   * blank field is the deprecated colour-space slot) is stored as -1 rather than as 0, because the colon
+   * forms are exactly where the two differ. */
+  uint8_t argSub[RC_CSI_ARGS];
   int    digit;           /* a parameter is being accumulated */
   int    cur;
   /* The CSI intermediate bytes (0x20..0x2F) of the sequence being read, in arrival order. A set, not a
@@ -511,6 +518,7 @@ typedef struct RcGrid
   int    nInterims;
   int    escInterim;      /* ESC-arm interim/introducer: '(', ')', '%', or a 0x20..0x2F before an ESC final */
   int    csiColon;        /* this CSI carried a ':' subparameter separator; decides RC_UN_COLON */
+  int    csiSub;          /* the parameter being accumulated follows a ':', so it belongs to the one before */
   /* The OSC/DCS payload being read: `nOsc` units of `osc`, and the one sink every family below parses out
    of it. Named for what it holds rather than for the first thing that ever used it -- the title arm clips
    itself to RC_TITLE_MAX, while a palette request, an OSC 9 path and an OSC 52 register all read further. */

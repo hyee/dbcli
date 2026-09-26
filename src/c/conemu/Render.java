@@ -185,6 +185,7 @@ public class Render {
         caseArgClamp();
         caseTabStops();
         caseInsert();
+        caseColon();
         caseRelativeCursor();
         caseSyncOutput();
         caseSyncOverflow();
@@ -332,6 +333,13 @@ public class Render {
     /** one buffer row, read fresh: a repaint of the same row must not be compared against a cache */
     private static long[] row(int bufRow) {
         return readCells(0, bufRow, BUF_W, 1);
+    }
+
+    /** one cell's attribute, for the legs that must compare two spellings against each other rather than
+        against a number this file would have to re-derive from the fold table */
+    private static int cellAttr(int bufRow, int col) {
+        long[] r = row(bufRow);
+        return (r == null || col >= r.length) ? -1 : (int) ((r[col] >>> 16) & 0xFFFF);
     }
 
     private static void cell(String what, int bufRow, int col, char ch, int attr) {
@@ -1673,6 +1681,36 @@ public class Render {
     }
 
     /**
+     * The colon sub-parameters (#78, I41) on a real console. The host gate can compare the two spellings'
+     * folded attributes; only the screen can say the colour the sender was holding actually arrived, and the
+     * fallback leg is the other half of that claim: what ConEmu's parser does with the same bytes.
+     */
+    private static void caseColon() {
+        if (!standardGeometry("the colon-form leg")) return;
+        final long[] a = stats(handle);
+        paint("the semicolon form paints a truecolour foreground", "\u001b[20;1H\u001b[38;2;200;40;10mA");
+        final int semi = cellAttr(winT + 19, 0);
+        gate("and something arrived to be compared", semi != DEF,
+                "attr=0x" + Integer.toHexString(semi));
+        paint("the colon form, same colour", "\u001b[20;1H\u001b[38:2:200:40:10mB");
+        cell("B stands on the same colour the semicolon form put there", winT + 19, 0, 'B', semi);
+        paint("and the form with the deprecated colour-space slot left empty",
+                "\u001b[20;1H\u001b[38:2::200:40:10mC");
+        cell("is the same colour a third time", winT + 19, 0, 'C', semi);
+        paint("an indexed colon colour", "\u001b[20;1H\u001b[38:5:196mD");
+        final int idx = cellAttr(winT + 19, 0);
+        gate("is not the truecolour one", idx != semi, "attr=0x" + Integer.toHexString(idx));
+        paint("4:3 asks for a curly underline", "\u001b[20;1H\u001b[4:3mE");
+        cell("the underscore it can draw arrives", winT + 19, 0, 'E', idx | 0x8000);
+        paint("and 4:0 takes it away", "\u001b[20;1H\u001b[4:0mF");
+        cell("F stands on no underline", winT + 19, 0, 'F', idx);
+        final long[] b = stats(handle);
+        gate("the refused arms are counted, the carried ones not", b[S_COLON] - a[S_COLON] == 1,
+                "colon votes=" + (b[S_COLON] - a[S_COLON]) + " (only the curly style)");
+        paint("clear the band", "\u001b[20;1H\u001b[J\u001b[1;1H");
+    }
+
+    /**
      * IRM (#77, I40) on the screen rather than in the struct. The host gate can already read the model's
      * cells; what only a console can answer is whether the text the model pushed right *arrived* there, and
      * whether the mode survived the rebuild a resize performs -- `readopt` is the path production takes and a
@@ -2387,14 +2425,20 @@ public class Render {
         gate("and spends no counter", b[S_UN + 1] - a[S_UN + 1] == 0, "decstbm=" + (b[S_UN + 1] - a[S_UN + 1]));
 
         a = stats(handle);
-        paint("a colon colour", "\u001b[38:2::1:2:3m");
+        paint("a colon colour the build carries", "\u001b[38:2::1:2:3m");
         b = stats(handle);
-        gate("the colon form has its own counter", b[S_COLON] - a[S_COLON] == 1,
-                "colon=" + (b[S_COLON] - a[S_COLON]));
+        gate("a carried colon arm spends the counter on nothing", b[S_COLON] - a[S_COLON] == 0,
+                "colon=" + (b[S_COLON] - a[S_COLON]) + ": #78 moved this counter from \"a ':' went past\" to"
+                        + " \"an arm of it is not carried\", and a colour it can name is not one of those");
         gate("and buys no repaint", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4])
-                + ": a dropped colour moves no cursor, so it must not cost a window repaint");
-        gate("it was not counted as a mode set", b[S_UN + 4] - a[S_UN + 4] == 0,
-                "mode=" + (b[S_UN + 4] - a[S_UN + 4]));
+                + ": a colour that arrives as a cell write needs no window work of its own");
+        gate("it was not counted as a mode set either", b[S_UN + 4] - a[S_UN + 4] == 0,
+                "mode=" + (b[S_UN + 4] - a[S_UN + 4]) + ": the two are different decisions, and the labels say which");
+        a = stats(handle);
+        paint("an underline colour", "\u001b[58:5::1m");
+        b = stats(handle);
+        gate("the arm that has no surface still has its own counter", b[S_COLON] - a[S_COLON] == 1,
+                "colon=" + (b[S_COLON] - a[S_COLON]) + ": this is what the slot is for now");
 
         a = stats(handle);
         paint("mouse tracking", "\u001b[?1000h\u001b[?1006h");

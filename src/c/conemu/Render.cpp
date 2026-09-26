@@ -865,6 +865,11 @@ static void sgr_default_bg(RcGrid *g)
   g->sgr.brightBack = 0;
 }
 
+/* Defined with the census a little below. The SGR arms need it because #78 moved the colon count from "a
+   sequence with a ':' went past" to "an arm of this sequence is not carried here", and that is a decision the
+   arm makes -- counting it at the sequence's end would put the sentence in one file and its reason in another. */
+static void unsupported(RcGrid *g, enum RcUnsupported which);
+
 /*
  * CEAnsi::WriteAnsiCode_CSI's 'm' arm (Ansi.cpp:3493-3640), parameter by parameter, left to right.
  * Two upstream details worth keeping because they are observable:
@@ -877,9 +882,18 @@ static void sgr_default_bg(RcGrid *g)
 static void sgr_apply(RcGrid *g, const int *a, int n)
 {
   RcSgr *s = &g->sgr;
+  /* Which array this is. The sub-parameter flags live beside `RcGrid::args`, so the two calls that hand in
+     something else (`CSI m` with no parameters at all) have no colon structure to read. */
+  const int subbed = (a == g->args);
+#define IS_SUB(i) (subbed ? g->argSub[i] : 0)
   for (int i = 0; i < n; i++)
   {
     int v = a[i];
+    /* A sub-parameter the arm to its left did not consume is not a rendition. `\e[1;2:3m`'s 3 belongs to the
+       `2`, and reading it as SGR 3 (italic) would invent an attribute from a number whose owner already said
+       no -- the same class of wrong as the truncated colour this switch used to fall through, one stamp ago,
+       when `\e[58;5;1m` set bold. Counted, because it is an arm of a sequence this build does not carry. */
+    if (IS_SUB(i)) { unsupported(g, RC_UN_COLON); continue; }
     if (v < 0) v = 0;
     switch (v)
     {
@@ -888,7 +902,24 @@ static void sgr_apply(RcGrid *g, const int *a, int n)
       case 2: case 22: s->bold = 0; break;
       case 3: s->italic = 1; break;
       case 23: s->italic = 0; break;
-      case 4: s->underline = 1; break;
+      /* `CSI 4`, and since #78 the colon family `CSI 4:n` (the underline styles). The console has one
+         underscore -- `COMMON_LVB_UNDERSCORE`, no shape -- so styles above 1 are **state with no drawing**:
+         the underline is on, which is the observable half that is true, and the arm that cannot be honoured is
+         counted rather than passed off as the one that can. `4:0` is off, which is not a style the sender
+         asked and failed to get; it is a request that is fully satisfied. */
+      case 4:
+      {
+        s->underline = 1;
+        if (i + 1 < n && IS_SUB(i + 1))
+        {
+          const int style = (a[i + 1] < 0) ? 0 : a[i + 1];
+          s->underline = (style != 0) ? 1 : 0;
+          i++;
+          if (style >= 2) unsupported(g, RC_UN_COLON);   /* double / curly / dotted / dashed: not drawable */
+          while (i + 1 < n && IS_SUB(i + 1)) i++;        /* `4:3:4` is malformed; consume, do not reinterpret */
+        }
+        break;
+      }
       case 24: s->underline = 0; break;
       case 5: case 6: case 25: break;              /* blink: no state at all upstream (Ansi.cpp:3530) */
       case 7: s->inverse = 1; break;
@@ -897,27 +928,73 @@ static void sgr_apply(RcGrid *g, const int *a, int n)
       case 29: s->crossed = 0; break;
       case 39: sgr_default_fg(g); break;
       case 49: sgr_default_bg(g); break;
+      /* 38/48 take the foreground and background. 58 is xterm's underline colour: this build gives it no
+         field, because a console underscore has no colour of its own to receive it and a value no consumer can
+         read is the kind of state this file has been refusing all session -- what it does instead is
+         **consume** 58's parameters and count the arm. Consuming is not cosmetic: before #78, `\e[58;5;1m`
+         fell through this switch and read its own colour index as a rendition, so it set **bold**. All three
+         take both the semicolon form (`38;5;1`) and the colon form (`38:5:1`, and `38:2::1:2:3` with the
+         deprecated colour-space slot left empty -- the field MSFT keeps distinct from zero for exactly this
+         reason, stateMachine.cpp:574-576). */
+      case 58:
+      {
+        const int colon = (i + 1 < n && IS_SUB(i + 1));
+        int k = i + 1;
+        if (colon) { while (k < n && IS_SUB(k)) k++; }
+        else if (k < n && a[k] == 5) k += 2;             /* 58;5;index */
+        else if (k < n && a[k] == 2) k += 4;             /* 58;2;r;g;b */
+        else if (k < n && a[k] == 0) k += 1;             /* 58;0: default (xterm's own reset for the family) */
+        i = (k > i + 1 ? k : i + 1) - 1;
+        unsupported(g, RC_UN_COLON);
+        break;
+      }
       case 38: case 48:
       {
         int *slot = (v == 38) ? &s->fg : &s->bg;
         uint8_t *kind = (v == 38) ? &s->fgKind : &s->bgKind;
         uint8_t *bright = (v == 38) ? &s->brightFore : &s->brightBack;
-        if (i + 2 < n && a[i + 1] == 5)
+        const int colon = (i + 1 < n && IS_SUB(i + 1));
+        if (!colon)
         {
-          *slot = a[i + 2] & 0xFF;                 /* masked, not range-checked (Ansi.cpp:3568) */
-          *kind = RC_CLR8B;
-          *bright = 0;
-          i += 2;
+          if (i + 2 < n && a[i + 1] == 5)
+          {
+            *slot = a[i + 2] & 0xFF;                 /* masked, not range-checked (Ansi.cpp:3568) */
+            *kind = RC_CLR8B;
+            *bright = 0;
+            i += 2;
+          }
+          else if (i + 4 < n && a[i + 1] == 2)
+          {
+            int r = a[i + 2] & 0xFF, gg = a[i + 3] & 0xFF, b = a[i + 4] & 0xFF;
+            *slot = (b << 16) | (gg << 8) | r;       /* 0x00BBGGRR, the COLORREF order */
+            *kind = RC_CLR24B;
+            *bright = 0;
+            i += 4;
+          }
+          /* anything else: nothing happens and the leftover args fall through to the switch */
+          break;
         }
-        else if (i + 4 < n && a[i + 1] == 2)
+
+        /* The colon form: one kind, then the values that kind names. */
+        const int kindv = (a[i + 1] < 0) ? -1 : a[i + 1];
+        int k = i + 2;
+        if (kindv == 2 && k < n && a[k] < 0) k++;        /* the empty colour-space field of `38:2::r:g:b` */
+        int got = 0;
+        while (k + got < n && IS_SUB(k + got) && a[k + got] >= 0) got++;
+        if (kindv == 5 && got >= 1)
         {
-          int r = a[i + 2] & 0xFF, gg = a[i + 3] & 0xFF, b = a[i + 4] & 0xFF;
-          *slot = (b << 16) | (gg << 8) | r;       /* 0x00BBGGRR, the COLORREF order */
-          *kind = RC_CLR24B;
-          *bright = 0;
-          i += 4;
+          *slot = a[k] & 0xFF; *kind = RC_CLR8B; *bright = 0;
+          k += 1;
         }
-        /* anything else: nothing happens and the leftover args fall through to the switch */
+        else if (kindv == 2 && got >= 3)
+        {
+          *slot = ((a[k + 2] & 0xFF) << 16) | ((a[k + 1] & 0xFF) << 8) | (a[k] & 0xFF);
+          *kind = RC_CLR24B; *bright = 0;
+          k += 3;
+        }
+        else unsupported(g, RC_UN_COLON);                /* a colour the form cannot name: counted, not applied */
+        while (k < n && IS_SUB(k)) k++;                  /* anything left over belongs to this arm */
+        i = k - 1;
         break;
       }
       default:
@@ -929,6 +1006,7 @@ static void sgr_apply(RcGrid *g, const int *a, int n)
         break;
     }
   }
+#undef IS_SUB
   g->attr = rc_attr(g, s);
 }
 
@@ -962,7 +1040,9 @@ static const struct RcCensus rc_census[RC_UN_MAX] =
   { "other osc", "an OSC neither acted on nor answered, including one that never terminated", 0 },
   { "dcs", "a DCS payload, read to its terminator and discarded", 0 },
   { "report", "a query this build will not answer -- `CSI ? 6 n`, a DA with a parameter, `CSI t`", 0 },
-  { "colon", "a CSI carrying a ':' subparameter, dropped whole for ConEmu parity (I10, I19)", 0 },
+  { "colon", "a ':' subparameter whose arm this build does not carry: the SGR colours are parsed and applied "
+             "since #78, what this counts is `4:` styles the console cannot draw, `58:` (underline colour, no "
+             "surface for it), a colour whose kind the form cannot name, and a colon on any final but `m`", 0 },
   { "osc clip", "OSC 52 asked for the clipboard and this build did not give it: policy off, a selection this platform has no place for, a payload that failed the strict decode, a request over the cap, or a read", 0 },
 };
 
@@ -1933,9 +2013,9 @@ static void control(RcGrid *g, uint16_t u)
 
 /* --------------------------------------------------------------- the parser -------------------- */
 
-static void push_arg(RcGrid *g, int v)
+static void push_arg(RcGrid *g, int v, int sub)
 {
-  if (g->nArgs < RC_CSI_ARGS) { g->args[g->nArgs++] = v; return; }
+  if (g->nArgs < RC_CSI_ARGS) { g->args[g->nArgs] = v; g->argSub[g->nArgs] = (uint8_t)(sub ? 1 : 0); g->nArgs++; return; }
   /* The list is full. The sequence still acts on the sixteen it kept, which is what ConEmu's ArgV does
    * (Ansi.h:174) and what RenderCheck's "16th argument kept" pins; what it did *not* do until #74 was leave
    * any trace of the seventeenth. A clamp that bites silently is indistinguishable from a parameter list that
@@ -1949,6 +2029,7 @@ static void csi_start(RcGrid *g)
   g->mode = RC_CSI;
   g->priv = 0;
   g->csiColon = 0;
+  g->csiSub = 0;          /* the next parameter pushed is a top-level one (#78) */
   g->nInterims = 0;
   g->nArgs = 0;
   g->digit = 0;
@@ -2858,8 +2939,22 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
           if (u == ';')
           {
             /* ';' always pushes, even with no digits: \e[;31m is [0,31] (Ansi.cpp:1764) */
-            push_arg(g, g->digit ? g->cur : 0);
-            g->digit = 0; g->cur = 0;
+            push_arg(g, g->digit ? g->cur : 0, g->csiSub);
+            g->digit = 0; g->cur = 0; g->csiSub = 0;
+          }
+          else if (u == ':')
+          {
+            /* The colon form is parsed, not dropped (#78, I41). Upstream reads 0x3A into the same Pvt buffer
+               as '?' and then discards the whole sequence (Ansi.cpp:1788, :3494), which is the I10 parity this
+               file had been keeping -- and the reason `\e[38:5:1m` lost its colour. Parity with a parser that
+               is not ours any more is not a floor: the byte is a parameter separator, and the model now says
+               so. An empty sub-parameter keeps -1 rather than 0, because `\e[38:2::1:2:3]`'s blank field is
+               the deprecated colour-space id and xterm's grammar reads the three that follow as the RGB; 0
+               would be a value the sender never wrote. `;`-empty stays 0, which is upstream's rule and the
+               one a real `\e[;31m` depends on. */
+            push_arg(g, g->digit ? g->cur : -1, g->csiSub);
+            g->digit = 0; g->cur = 0; g->csiSub = 1;
+            g->csiColon = 1;
           }
           else if (u >= '0' && u <= '9')
           {
@@ -2867,13 +2962,7 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
             g->cur = (g->cur > RC_ARG_MAX / 10) ? RC_ARG_MAX : g->cur * 10 + (u - '0');
           }
           else
-          {
-            /* ':' is 0x3A, so ConEmu reads it as a Pvt byte and drops the whole sequence: the colon form
-               of SGR 38 loses its colour here too (I10 parity, \u00a713.2). Remembered separately so the
-               count says "a colon sequence went past" rather than hiding it among the mode sets. */
-            if (u == ':') g->csiColon = 1;
-            g->priv = u;                             /* '?' '>' '<' '=' '/' ':' -- Pvt in ConEmu */
-          }
+            g->priv = u;                             /* '?' '>' '<' '=' '/' -- Pvt in ConEmu */
           i++;
           continue;
         }
@@ -2886,14 +2975,22 @@ void rc_feed(RcGrid *g, const uint16_t *units, int n)
         }
         if (u >= 0x40 && u <= 0x7E)                  /* final */
         {
-          if (g->digit) push_arg(g, g->cur);         /* a trailing empty parameter is NOT a zero */
+          if (g->digit) push_arg(g, g->cur, g->csiSub);   /* a trailing empty parameter is NOT a zero */
           g->mode = RC_GROUND;
           cap_push(g, u);
-          if (echoes(g, (uint8_t)u)) sgr_captured(g);
-          csi_dispatch(g, (uint8_t)u);
-          /* One票 per sequence for the colon form, whichever final it carried: this is the number that
-             says whether the ConEmu-parity decision in \u00a713.2 ever costs a real application anything. */
-          if (g->csiColon) unsupported(g, RC_UN_COLON);
+          /* The colon form has a body only in SGR, and that boundary is not this file's invention: ghostty's
+             parser drops every *other* final that carried a separator -- "We only allow colon or mixed
+             separators for the 'm' command" (stream.zig:1350-1358) -- while MSFT hands the ranges to each
+             family and lets the handler decide (`_ActionSubParam`, stateMachine.cpp:557-590, capped at six per
+             parameter, stateMachine.hpp:35). ConEmu is the outlier that drops the sequence whole (':' lands in
+             Pvt at Ansi.cpp:1788 and the SGR arm tests Pvt at :3494), and it is the only reason this library
+             ever refused the form: two of the three references parse it. The count is the number that says
+             whether what we still refuse -- a colon on any other final, and the SGR arms listed in
+             `sgr_apply` -- ever arrives at all. */
+          const int colon = g->csiColon, isSgr = ((uint8_t)u == 'm');
+          if (colon && !isSgr) unsupported(g, RC_UN_COLON);
+          else if (echoes(g, (uint8_t)u)) sgr_captured(g);
+          if (!colon || isSgr) csi_dispatch(g, (uint8_t)u);
           i++;
           continue;
         }
