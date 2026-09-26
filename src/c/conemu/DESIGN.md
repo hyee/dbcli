@@ -896,7 +896,14 @@ a generator change.
   sentence "the entry that ships is the entry that was audited" is therefore true of the tree the user runs and
   false of the tree that versions it, and only `unzip -p` on each jar says which is which.
 
-## 10 Task ledger: the seventy-seven tracked tasks
+## 10 Task ledger: rows up to #76 (the numbering has holes, and they are deliberate)
+
+Rows 1-72 and 76 are here. **#73, #74 and #75 are not rows yet** -- they are the architecture-pass tickets
+the user approved in order (row-state packing, parameter clamping, row-pointer rotation), and they will be
+written as rows when they ship, with the numbers reserved so a later reader can join them to `ANSI_TODO.md`
+section 10, where **#77-#88** (the re-argued refusals) are listed with feasibility and gates. Reserving the
+numbers here is what keeps "where is #74?" from becoming a hunt through the wrong document.
+
 
 This section exists so a later reader can re-walk the work without re-deriving it from the transcript. It is a
 map, not a narrative: one row per tracker task, and each row says **where the behaviour lives**, **what proves
