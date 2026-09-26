@@ -257,7 +257,10 @@ handed back to conhost, and a second reply would be dirty input).
 
 | Item | Behaviour | Note |
 |---|---|---|
-| `CSI t` window operations (including the pixel report `14t` and the character sizes `18t/19t`) | counted `RC_UN_REPORT`, not answered | a pixel size needs a window rectangle this library does not own; `18/19` could be answered but there is no consumer yet (the rule: model what a real writer sends) |
+| `CSI 18 t` | **answered since #79** (build -33, I42): `CSI 8 ; rows ; cols t`, from the model's own viewport -- `winRows`, not the model's `rows`, and the buffer-width `cols` (MSFT's `function - 10` arithmetic, `adaptDispatch.cpp:3490`; ghostty requires the same lone parameter, `stream.zig:2398-2402`) | the reply bytes are the seam's, so the live leg reads them back byte for byte |
+| `CSI 19 t` | **silence, by the user's ruling of 2026-09-26**, counted `RC_UN_REPORT` | xterm's 19t reports the *screen* as a geometry distinct from the text area; a console library has one such number, so answering with 18t's values under a `9` prefix would assert a distinction this build cannot show. Neither reference implements it. Silence is the answer that cannot be wrong, and the count keeps the ask visible |
+| `CSI 14 t` / `CSI 16 t` (pixels) | silence, counted | the only pixel figure reachable here is `GetConsoleFontSize` times a cell count, and MSFT's own 14t is not a measurement either -- it reports `Size() * SixelParser::CellSizeForLevel()`, a nominal cell chosen for Sixel emulation (`adaptDispatch.cpp:3512-3517`). Quoting a nominal constant we did not choose would be a fabricated measurement of the user's window |
+| `CSI 22 t` / `CSI 23 t` (title stack) | **push and pop since #79**, sub-codes 0/1/2 (the console has one title string, so xterm's icon/title/both all name it); 3..6 are counted | depth two, newest last, a third push evicts the oldest; a pop restores through the same sink an OSC 0 uses. With nothing saved it restores **nothing** and votes: the console's pre-session title is a value this library never observed, and the parser is console-free by construction |
 | DA with parameters (`CSI > 0 ; 1 c` and friends) | counted `RC_UN_REPORT` | upstream has no such reply spelling |
 | OSC 8 (hyperlinks) | counted `RC_UN_OSC_OTHER` | **not supported** (#56, ruled out by the user on 2026-09-26): a link is a **range**, not a cell, so it would have to live beside `rowWrap[]` and inherit I20's never-readable-back debt; the sequence alone buys the user nothing visible. OSC 52 landed as I36 (§2.8) and does not belong to this row, and neither does the palette family 4/10/11/104/110/111, landed as I34 |
 | the **dangerous half** of ConEmu's private OSC `9` (`9;1` sleep / `9;2` MessageBox / `9;3` set-environment / `9;6` GuiMacro / `9;7` **DoProcess**) | counted `RC_UN_OSC_PRIV`, **never executed** | #687's RCE: the only floor under executing the semantics is not implementing them. The safe half -- `9;4`/`9;9`/`9;12` -- is in §2.8: stored to be read is not the same as executed |
@@ -350,8 +353,8 @@ Slot numbers are a **positional contract** with the JNI side and are never renum
 | `RC_UN_OSC_PRIV` | ConEmu's private OSC 9 (including unterminated) | no |
 | `RC_UN_OSC_OTHER` | any other OSC code, an unterminated title, a refused or unterminated 133 | no |
 | `RC_UN_DCS` | DCS/SOS/PM/APC | no |
-| `RC_UN_REPORT` | queries that are not answered (`CSI t`, DA with parameters, `?6n`, DSR other than 5/6) | no |
-| `RC_UN_COLON` | a CSI that carried `:` (one vote per sequence) | no |
+| `RC_UN_REPORT` | queries that are not answered (`19t`/`14t`/`16t`, a window op with a parameter list that is not a query, a `23t` with nothing to restore, DA with parameters, `?6n`, DSR other than 5/6) | no |
+| `RC_UN_COLON` | **an arm of a parsed colon sequence that this build does not carry** (`4:` styles above single, `58:`, a colour whose kind is unknown, a leftover sub-parameter, a colon on any final but `m`) -- #78 changed the meaning; a carried colon arm votes nothing | no |
 | `RC_UN_OSC_CLIP` | one of OSC 52's refusals: policy off, a selection this platform has no place for, a payload that failed the strict decode, a request over the cap -- or a **read** | no |
 
 What goes with them: once `modelSuspect` is set the painter **re-adopts the console once** and clears the bit

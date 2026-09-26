@@ -1039,7 +1039,9 @@ static const struct RcCensus rc_census[RC_UN_MAX] =
   { "osc9", "a ConEmu-private OSC 9 outside the safe subset -- sleep, MessageBox, GuiMacro, DoProcess", 0 },
   { "other osc", "an OSC neither acted on nor answered, including one that never terminated", 0 },
   { "dcs", "a DCS payload, read to its terminator and discarded", 0 },
-  { "report", "a query this build will not answer -- `CSI ? 6 n`, a DA with a parameter, `CSI t`", 0 },
+  { "report", "a query this build will not answer: `CSI ? 6 n`, a DA with a parameter, `CSI 19t`/`14t`/"
+              "`16t` (no second geometry, no honest pixels), a window-op parameter list that is not a "
+              "query, and a title pop with nothing to restore", 0 },
   { "colon", "a ':' subparameter whose arm this build does not carry: the SGR colours are parsed and applied "
              "since #78, what this counts is `4:` styles the console cannot draw, `58:` (underline colour, no "
              "surface for it), a colour whose kind the form cannot name, and a colon on any final but `m`", 0 },
@@ -1920,7 +1922,82 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
        `18t`/`19t` are what a program asks when it wants the screen it already has; nothing in JLine or Nano
        asks, so the leg stays out until something that runs here does. This is the same rule that decided
        `rep`: modelled because a real writer emits it, not because the registry lists it. */
-    case 't': unsupported(g, RC_UN_REPORT); break;
+    /* Window operations, `CSI Ps t` (#79, I42). Three of the family have an answer or an effect that this
+       model really owns, and the rest are counted rather than guessed:
+
+       `18t` asks for the text area in characters. MSFT answers `CSI <fn-10> ; height ; width t` from the
+       visible page (`adaptDispatch.cpp:3489-3511`, whose enum carries 18 and nothing above it); ghostty
+       handles the same one at `stream.zig:2398-2402`. Both numbers are the model's own -- `winRows` and
+       `cols` -- so the answer is a measurement and not an estimate.
+
+       `19t` is **left silent on purpose**, by the user's ruling of 2026-09-26 and for a reason that is not
+       "nobody consumes it": xterm's 19t reports the *screen* as distinct from the text area, and on a
+       console library there is no second geometry to report. Answering `9;rows;cols` with the same two
+       numbers 18t gives would assert a distinction this build cannot show, and the two references that could
+       settle it do not implement 19t at all. Silence is the answer that cannot be wrong; the sequence still
+       votes `RC_UN_REPORT`, so "an application asked" stays visible in the census.
+
+       `14t`/`16t` want pixels. They stay silent for the same class of reason with a sharper edge: the only
+       pixel figure available here is `GetConsoleFontSize` times a cell count, and even MSFT's 14t is not a
+       measurement -- it reports `Size() * SixelParser::CellSizeForLevel()`, a nominal cell chosen for Sixel
+       emulation (`:3512-3517`). Quoting a nominal constant we did not choose would be a fabricated
+       measurement of the user's window.
+
+       `22t`/`23t` push and pop the window title. The console has **one** title string, so xterm's
+       sub-codes 0 (icon), 1 (title) and 2 (both) name the same object here and are all accepted -- refusing
+       0 and 2 because they mention an icon would be inventing a second slot to be missing about. 3..6 are
+       the xterm-format variants with no console equivalent and are counted. ghostty accepts 0 and 2 only
+       (`stream.zig:2412-2425`); that difference is a boundary chosen, not inherited. */
+    case 't':
+    {
+      const int fn = arg(g, 0, 0);
+      if (fn == 18 && g->nArgs <= 1)
+        arm_report(g, RC_REP_WINOP, g->winRows, g->cols, 0);
+      else if ((fn == 22 || fn == 23) && g->nArgs >= 2 && g->nArgs <= 3)
+      {
+        const int which = arg(g, 1, 0);
+        if (which > 2) { unsupported(g, RC_UN_REPORT); break; }
+        if (fn == 22)
+        {
+          /* Save what this parser last applied. A slot of -1 says "nothing was ever applied", which a pop
+             must not turn into a blank title bar. */
+          int at;
+          if (g->nTStack < RC_TITLE_STACK) at = g->nTStack++;
+          else
+          {
+            at = RC_TITLE_STACK - 1;                      /* full: the oldest goes, so the stack is a ring */
+            for (int k = 0; k + 1 < RC_TITLE_STACK; k++)
+            {
+              g->tstackLen[k] = g->tstackLen[k + 1];
+              for (int c = 0; c < g->tstackLen[k]; c++) g->tstack[k][c] = g->tstack[k + 1][c];
+            }
+          }
+          g->tstackLen[at] = g->nTitle;
+          for (int c = 0; c < g->nTitle; c++) g->tstack[at][c] = g->title[c];
+        }
+        else if (g->nTStack > 0)
+        {
+          const int at = --g->nTStack;
+          const int len = g->tstackLen[at];
+          g->tstackLen[at] = -1;
+          if (len < 0)                                 /* nothing was known when that was pushed either, so
+                                                        * there is no string to hand the painter -- and a
+                                                        * request that cannot be met is the same vote as an
+                                                        * empty stack's, whichever half noticed. (I42) */
+          { unsupported(g, RC_UN_REPORT); break; }
+          for (int c = 0; c < len; c++) g->osc[c] = g->tstack[at][c];
+          g->nOsc = len;
+          g->titlePending = 1;                       /* the painter applies it exactly like an OSC 0/1/2 */
+          for (int c = 0; c < len; c++) g->title[c] = g->tstack[at][c];
+          g->nTitle = len;
+        }
+        /* `23t` with an empty stack: nothing to give back, and the console's own title is not this
+           library's to invent (see the field comment in Render.h). Counted, so the ask is on record. */
+        else unsupported(g, RC_UN_REPORT);
+      }
+      else unsupported(g, RC_UN_REPORT);
+      break;
+    }
     default: unsupported(g, RC_UN_SUP); break;
   }
 }
@@ -2578,6 +2655,11 @@ static void osc_title(RcGrid *g, int code, int sep, int terminated)
   for (int i = 0; i < len; i++) g->osc[i] = g->osc[from + i];
   g->nOsc = len;
   g->titlePending = 1;                 /* the painter applies it; a later title in the chunk replaces it */
+  /* And remember it: `CSI 22 t` saves *this* string, and the painter has already taken the pending one by
+     the time that sequence is read. Same buffer the sink just wrote, so the two cannot disagree -- the copy
+     is bounded by the same clip that produced `len`. (I42) */
+  for (int i = 0; i < len; i++) g->title[i] = g->osc[i];
+  g->nTitle = len;
   g->nTitleSet++;
   if (clipped) g->nTitleTrunc++;
 }
@@ -3160,6 +3242,11 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
      repeat gets spaces here too -- a 0 would make `CSI b` print nothing and read as "no glyph to repeat".
      `lastExit` is 0 for "the command succeeded", which is a claim, not an absence: -1 until a 133;D says so. */
   g->lastUnit = ' ';
+  /* Two more slots where 0 would be a claim. A title of length 0 means "an empty title was applied" -- a
+     real thing an OSC 0 does -- so "nothing has been applied yet" has to be -1, and a `22t` that saves that
+     and a `23t` that restores it must leave the console's own title alone (I42). */
+  g->nTitle = -1;
+  for (int k = 0; k < RC_TITLE_STACK; k++) g->tstackLen[k] = -1;
   g->lastExit = -1;
   /* The fold table starts at upstream's own colours (I34): an OSC 4 that never arrives must not change a
      single pixel, and the console's live ColorTable is deliberately not consulted here -- on Win10/11 it is

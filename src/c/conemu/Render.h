@@ -56,6 +56,9 @@
    -- how long an *applied title* is -- and the truncation it counts is measured against that, not against the
    sink. A payload past RC_OSC_MAX is still consumed and still counted (I21: an OSC is never silent). */
 #define RC_TITLE_MAX  256  /* an applied title is clipped here, "0;" included, and the clipping is counted */
+/* How many titles `CSI 22 t` remembers (I42). Two: a shell pushes once and pops once, and a third push
+   evicts the oldest rather than the model growing a queue nobody sized. */
+#define RC_TITLE_STACK 2
 #define RC_OSC_MAX    32768 /* the sink: units of OSC/DCS payload kept, which is what a title, a palette
                                 request and an OSC 52 clipboard register all share. 64 KB of the grid's 4 MB. */
 #define RC_SGR_ECHO_MAX 1024 /* UTF-16 units of SGR text kept for one chunk, see rc_sgr_take */
@@ -194,7 +197,11 @@ int rc_b64_decode(const uint16_t *src, int n, uint8_t *dst, int cap);
  * which probes the background colour at startup to decide `background=dark|light`, and MSFT answers the same
  * three forms (I34). */
 enum RcReport { RC_REP_NONE = -1, RC_REP_DSR = 0, RC_REP_CPR = 1, RC_REP_DA = 2, RC_REP_DA2 = 3,
-                RC_REP_DECRPM = 4, RC_REP_OSC = 5 };
+                RC_REP_DECRPM = 4, RC_REP_OSC = 5,
+                /* `CSI 18 t`'s answer, `CSI 8 ; rows ; cols t` (#79). Appended, because the numbers of this
+                   enum reach the reply switch in RenderJni.cpp and a renumber would be an ABI change dressed
+                   as a tidy-up (I19's rule, the one the stats array follows). */
+                RC_REP_WINOP = 6 };
 
 /* Queries in one chunk are rare but legal (`vim` probes more than once at startup), and a reply the queue
  * had to refuse is a program left waiting, which must be a number and not a rumour. */
@@ -555,6 +562,31 @@ typedef struct RcGrid
    * answer slides with it, which is the only answer that can still be true. */
   RcReportItem report[RC_REPORT_MAX];
   int reportHead, reportLen;
+
+  /* The window-title stack `CSI 22 t` pushes and `CSI 23 t` pops (#79, I42).
+   *
+   * `title`/`nTitle` is the title *this parser* last applied -- the thing a push has to save, since the
+   * painter takes the pending title and forgets it. `tstack` holds the saved ones, newest at index
+   * `nTStack - 1`, and the depth is two: enough for the shell that pushes at startup and pops at exit, and
+   * small enough that 512 bytes-per-level x 2 is not a decision about memory. Pushing a third time evicts
+   * the oldest, which is what a ring is for; xterm's unbounded stack is unbounded because it also owns the
+   * window and can be asked.
+   *
+   * What is deliberately *not* here: the console's title from before this session. `23t` with an empty stack
+   * restores nothing, because the only value it could restore is one this library never observed -- inventing
+   * it would answer a question with a claim about the user's window that no code here ever read. The seam
+   * could `GetConsoleTitleW` at open, but the parser is console-free by construction (that is why both gates
+   * can run it at all), and a stored-at-open copy would go stale the moment the user renamed the tab.
+   *
+   * `nTitle` and `tstackLen[]` therefore start at -1 = "no title has ever been applied", which is not the
+   * same fact as "an empty title was applied" (length 0). Nothing can reach that second state today -- an OSC
+   * 0 with an empty payload is not a title in this build at all, which `geo_windowops` pins -- and the
+   * encoding stays -1 so the day one is, the pair of legs splits instead of collapsing. */
+  uint16_t title[RC_TITLE_MAX];
+  int      nTitle;
+  uint16_t tstack[RC_TITLE_STACK][RC_TITLE_MAX];
+  int      tstackLen[RC_TITLE_STACK];
+  int      nTStack;
 
   unsigned long nUnsupported[RC_UN_MAX];
   unsigned long nCells, nScrolls, nAstral;

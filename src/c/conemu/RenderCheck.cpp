@@ -3125,6 +3125,123 @@ static void status_bar()
    may: ICH, DCH, and the DECSCUSR parameter the painter turns into a cursor height. */
 /* IRM (#77, I40): insert mode is a write-side claim on the same primitive an ICH performs, so its legs are
    the write path -- which is the path that had never been asked to shift anything before. */
+/* `CSI Ps t` (#79, I42): the window operations whose answer or effect this model really owns, and the ones
+   it refuses out of a principle rather than a gap. The reply *bytes* are the seam's work and are witnessed
+   live (Render.java's caseWindowOps); what the host gate can pin is which questions arm an answer at all, and
+   what the title stack does to the string the painter is about to apply. */
+static void geo_windowops()
+{
+  static RcGrid g;
+  uint16_t out[RC_TITLE_MAX];
+
+  /* 18t: the two numbers are the model's own viewport, so this is a measurement and not an estimate. The
+     grid has to be built with a gutter for the rows half of that to be a witness at all -- with `rc_reset`
+     the model's `rows` IS `winRows`, and an arm that answers with the wrong one of the two comes back green
+     (it did, first time). Same lesson as #70's resize arm and #77's alt-gutter arm: build the case where the
+     two designs differ, or the leg proves nothing. */
+  rc_reset_hist(&g, 132, 37, 13, 0x07);
+  put(&g, "\033[18t");
+  eq_u("18t arms exactly one answer", (unsigned)rc_report_pending(&g), 1, "");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("and it is the window-op kind", (unsigned)it.kind, (unsigned)RC_REP_WINOP, "");
+    eq_u("rows first, the viewport's own", (unsigned)it.mode, 37,
+         "the model is 50 rows here and the gutter is not text area: 37 is the answer that can be checked");
+    eq_u("columns second, the model row's width", (unsigned)it.status, 132,
+         "I7: a model row IS the buffer row, so the answer is the width an application draws into");
+  }
+  eq_u("with nothing voted", (unsigned)un(&g, RC_UN_REPORT), 0, "it was answered, not skipped");
+  put(&g, "\033[18;5t");
+  eq_u("a parameter behind the function is not a query", (unsigned)rc_report_pending(&g), 0,
+       "ghostty requires `params.len == 1` here for the same reason (stream.zig:2398-2402)");
+  eq_u("and that goes on the record", (unsigned)un(&g, RC_UN_REPORT), 1, "");
+  put(&g, "\033[1;18t");
+  eq_u("a parameter in front of the function is not the function either", (unsigned)rc_report_pending(&g), 0,
+       "`CSI 1;18t` is a resize request's shape; the function is args[0]");
+  eq_u("and that counts too", (unsigned)un(&g, RC_UN_REPORT), 2, "");
+
+  /* The pixel and screen families: silence, chosen and counted. */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[19t\033[14t\033[16t");
+  eq_u("none of the three answers", (unsigned)rc_report_pending(&g), 0,
+       "19t would report the same two numbers as 18t under a prefix that promises a second geometry, and "
+       "14t/16t have no pixel source here that is not a nominal constant");
+  eq_u("and all three are counted", (unsigned)un(&g, RC_UN_REPORT), 3,
+       "the count is how a rollout learns whether an application asked");
+
+  /* The title stack. A push saves what this parser last applied, so the pair has to be run against the
+     string the painter is holding, not against a field. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]0;first\007");
+  eq_u("the title is pending", (unsigned)rc_title_pending(&g), 1, "setup");
+  eq_u("and it is five units", (unsigned)rc_title_take(&g, out, RC_TITLE_MAX), 5, "");
+  put(&g, "\033[22;0t");
+  eq_u("a push of a title this parser applied spends no refusal", (unsigned)un(&g, RC_UN_REPORT), 0, "");
+  put(&g, "\033]0;second\007");
+  eq_u("the second title is pending too", (unsigned)rc_title_pending(&g), 1, "setup");
+  rc_title_take(&g, out, RC_TITLE_MAX);
+  put(&g, "\033[23;0t");
+  eq_u("and the pop hands the first one back to the painter", (unsigned)rc_title_pending(&g), 1,
+       "restoring a title is the same act as setting one -- one sink, no second path to drift");
+  eq_u("five units, as pushed", (unsigned)rc_title_take(&g, out, RC_TITLE_MAX), 5, "");
+  eq_u("and they spell the pushed title", out[0], 'f', "");
+
+  /* The two cases where a pop has nothing honest to give back. Both must leave the console's own title
+     alone, which for the model means: no pending title at all. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033[23;2t");
+  eq_u("a pop with an empty stack arms nothing", (unsigned)rc_title_pending(&g), 0,
+       "the only value it could restore is one this library never observed");
+  eq_u("and says so", (unsigned)un(&g, RC_UN_REPORT), 1, "");
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033[22;2t\033[23;2t");
+  eq_u("a push before any title was ever applied restores nothing either",
+       (unsigned)rc_title_pending(&g), 0, "length -1 is not the same fact as an empty title (RC_TITLE_MAX)");
+  eq_u("and that pair is the one honest answer", (unsigned)un(&g, RC_UN_REPORT), 1,
+       "the pop found no saved string");
+
+  /* And what "nothing known" is *not*: an OSC 0 whose payload is empty never becomes a title in this build at
+     all (`pending=0, nTitleSet=0` -- the OSC family requires a field), so the state the pop above refused is
+     the same one an empty OSC 0 leaves behind. The -1 in `nTitle` is still the right encoding, because the
+     day an empty title does apply it lands at length 0 and this pair of legs splits. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]0;\007\033[22;1t\033[23;1t");
+  eq_u("an empty OSC 0 is no title, so there is nothing to restore",
+       (unsigned)rc_title_pending(&g), 0, "");
+  eq_u("and the pop of what it saved refuses once", (unsigned)un(&g, RC_UN_REPORT), 1, "");
+
+  /* Depth two, and the eviction order. Pushing a third saves CCC and drops AAA, so the first pop returns the
+     newest (CCC), the second returns BBB -- and AAA is gone, which is what a bounded ring *means*. The live
+     leg cannot see this distinction, because the console keeps no history either. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033]0;AAA\007\033[22;0t");
+  put(&g, "\033]0;BBB\007\033[22;0t");
+  put(&g, "\033]0;CCC\007\033[22;0t");        /* third push: the oldest goes */
+  rc_title_take(&g, out, RC_TITLE_MAX);
+  put(&g, "\033[23;0t");
+  eq_u("a pop is pending", (unsigned)rc_title_pending(&g), 1, "setup");
+  eq_u("three deep restores the newest", (unsigned)rc_title_take(&g, out, RC_TITLE_MAX), 3, "");
+  eq_u("which is CCC", out[0], 'C', "LIFO, as xterm's stack is");
+  put(&g, "\033[23;0t");
+  eq_u("and the next is BBB", (unsigned)rc_title_pending(&g), 1, "");
+  rc_title_take(&g, out, RC_TITLE_MAX);
+  eq_u("restored as BBB", out[0], 'B', "the depth held");
+  put(&g, "\033[23;0t");
+  eq_u("the third pop finds the stack empty and says so", (unsigned)un(&g, RC_UN_REPORT), 1,
+       "AAA was evicted, not forgotten-then-restored: a bounded ring is a decision, and this leg is where"
+       " it is written down");
+  eq_u("with nothing pending", (unsigned)rc_title_pending(&g), 0, "");
+
+  /* The sub-codes that name an icon xterm-format this console does not have. */
+  rc_reset(&g, 20, 3, 0x07);
+  put(&g, "\033[22;3t");
+  eq_u("`22;3t` is xterm-format, and is not swallowed silently", (unsigned)un(&g, RC_UN_REPORT), 1, "");
+  put(&g, "\033[22;1t");
+  eq_u("while 1 (title) is accepted, because the console's one string IS the title",
+       (unsigned)un(&g, RC_UN_REPORT), 1, "no new vote from the accepted form");
+}
+
 static void geo_irm()
 {
   static RcGrid g;
@@ -5111,6 +5228,7 @@ int main(int argc, char **argv)
   geo_tabs();
   geo_region();
   status_bar();
+  geo_windowops();
   geo_irm();
   geo_colon();
   geo_edit();

@@ -186,6 +186,7 @@ public class Render {
         caseTabStops();
         caseInsert();
         caseColon();
+        caseWindowOps();
         caseRelativeCursor();
         caseSyncOutput();
         caseSyncOverflow();
@@ -1708,6 +1709,52 @@ public class Render {
         gate("the refused arms are counted, the carried ones not", b[S_COLON] - a[S_COLON] == 1,
                 "colon votes=" + (b[S_COLON] - a[S_COLON]) + " (only the curly style)");
         paint("clear the band", "\u001b[20;1H\u001b[J\u001b[1;1H");
+    }
+
+    /**
+     * The window operations (#79, I42) where the witness has to be the console: the reply <em>bytes</em> are
+     * built in the seam (<i>reply_text</i> in RenderJni.cpp), which a host test links but cannot reach, and the
+     * title a pop restores is a window property rather than a cell. Both are the kind of claim that goes quiet
+     * if nobody reads the input queue and the title bar back.
+     */
+    private static void caseWindowOps() {
+        if (!standardGeometry("the window-op leg")) return;
+        final long[] a = stats(handle);
+
+        readInput(0);                                   /* the reply below is the only thing in this queue */
+        paint("18t asks for the text area", "\u001b[18t");
+        final String rep = input(64);
+        final String want = "\u001b[8;" + WIN_H + ";" + BUF_W + "t";
+        gate("the answer is the viewport in characters, prefixed 8 as MSFT's function-10 does",
+                rep.contains(want), "got=" + vis(rep) + " want " + vis(want)
+                        + ": rows are the window's own and columns are the model row's width (I7)");
+
+        readInput(0);
+        paint("19t asks for a second geometry", "\u001b[19t");
+        paint("14t and 16t ask for pixels", "\u001b[14t\u001b[16t");
+        final String none = input(64);
+        gate("and all three are left unanswered", none.isEmpty() || "<unreadable>".equals(none),
+                "read back " + vis(none) + " -- silence is the answer that cannot be wrong (DESIGN I42)");
+        final long[] b = stats(handle);
+        gate("with every one of them counted", b[S_UN + 9] - a[S_UN + 9] == 3,
+                "report=" + (b[S_UN + 9] - a[S_UN + 9]) + ": the census is how a rollout learns anyone asked");
+
+        /* The title stack, on the real window title. */
+        paint("a title", "\u001b]0;native-A\u0007");
+        gate("the console took it", "native-A".equals(title()), "read back " + title());
+        paint("push it, then take a second title", "\u001b[22;0t\u001b]0;native-B\u0007");
+        gate("B is the window's title now", "native-B".equals(title()), "read back " + title());
+        paint("and pop", "\u001b[23;0t");
+        gate("A comes back through the same SetConsoleTitleW an OSC 0 uses",
+                "native-A".equals(title()), "read back " + title());
+        final long[] c = stats(handle);
+        gate("which is two more title calls, not a side channel",
+                c[S_TITLES + 2] - b[S_TITLES + 2] >= 2,
+                "titleCalls=" + (c[S_TITLES + 2] - b[S_TITLES + 2])
+                        + ": the restore goes through the same sink an OSC 0 does, so the two paths cannot drift");
+        paint("a pop with nothing saved", "\u001b[23;0t");
+        gate("leaves the title alone", "native-A".equals(title()),
+                "read back " + title() + ": the console's own earlier title is not this library's to invent");
     }
 
     /**

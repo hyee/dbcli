@@ -229,7 +229,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-32"
+#define RENDER_BUILD "render-2026-09-26-33"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -691,6 +691,18 @@ static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *
       w_lit(out, &n, cap, ";");
       w_dec(out, &n, cap, it->status);
       w_lit(out, &n, cap, "$y");
+      break;
+    case RC_REP_WINOP:
+      /* `CSI 8 ; rows ; cols t`. The prefix is the queried function less ten, which is MSFT's own arithmetic
+         (`reportType = function - 10`, adaptDispatch.cpp:3490) and lands 18t on 8, the number xterm answers
+         with. `mode` and `status` carry the two dimensions because those are the fields the queue item has;
+         both are the model's own viewport, so unlike the pixel families this reply is a measurement. The
+         reason 19t/14t/16t answer nothing is in Render.cpp's `case 't'` comment (#79, I42). */
+      w_lit(out, &n, cap, "\x1b[8;");
+      w_dec(out, &n, cap, (int)it->mode);
+      w_lit(out, &n, cap, ";");
+      w_dec(out, &n, cap, (int)it->status);
+      w_lit(out, &n, cap, "t");
       break;
     case RC_REP_OSC:
     {
@@ -1328,6 +1340,12 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
   int keepCols = 0, keepTabsDefaults = 1;
   uint8_t keepTab[RC_MAX_COLS];
   uint16_t keepCwdBuf[RC_TITLE_MAX];
+  /* The title and its stack (I42) are the same kind of state as the tab table: claimed by the application,
+   * not by the window's shape. A resize that dropped them would answer the next `23t` with a title nobody
+   * pushed, and the pushed-but-unapplied half of a `22t`/`23t` pair is exactly the state a terminal that
+   * *does* own its window keeps across a resize. */
+  uint16_t keepTitle[RC_TITLE_MAX], keepStack[RC_TITLE_STACK][RC_TITLE_MAX];
+  int keepTitleLen = -1, keepStackLen[RC_TITLE_STACK], keepNStack = 0;
   const int haveKeep = h->g != NULL;
   if (haveKeep)
   {
@@ -1346,6 +1364,15 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     keepTabsDefaults = h->g->tabsDefaults;
     keepCols = h->g->cols;
     keepCwd = h->g->nCwd;
+    keepTitleLen = h->g->nTitle;
+    keepNStack = h->g->nTStack;
+    for (int k = 0; k < RC_TITLE_STACK; k++)
+    {
+      keepStackLen[k] = h->g->tstackLen[k];
+      if (keepStackLen[k] > 0)
+        memcpy(keepStack[k], h->g->tstack[k], (size_t)keepStackLen[k] * sizeof keepStack[k][0]);
+    }
+    if (keepTitleLen > 0) memcpy(keepTitle, h->g->title, (size_t)keepTitleLen * sizeof keepTitle[0]);
     if (keepCwd > 0) memcpy(keepCwdBuf, h->g->cwd, (size_t)keepCwd * sizeof keepCwdBuf[0]);
   }
   drop_model(h);
@@ -1366,6 +1393,15 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     rc_tabs_widen(fresh, keepCols);   /* a resize is not a reset: only the tail it revealed gets the interval */
     if (keepCwd > 0) { memcpy(fresh->cwd, keepCwdBuf, (size_t)keepCwd * sizeof fresh->cwd[0]); }
     fresh->nCwd = keepCwd;
+    fresh->nTitle = keepTitleLen;
+    if (keepTitleLen > 0) memcpy(fresh->title, keepTitle, (size_t)keepTitleLen * sizeof fresh->title[0]);
+    for (int k = 0; k < RC_TITLE_STACK; k++)
+    {
+      fresh->tstackLen[k] = keepStackLen[k];
+      if (keepStackLen[k] > 0)
+        memcpy(fresh->tstack[k], keepStack[k], (size_t)keepStackLen[k] * sizeof fresh->tstack[0][0]);
+    }
+    fresh->nTStack = keepNStack;
   }
   h->g->onFlush = flush_now;                      /* fires inside rc_feed when the gutter is full */
   h->g->flushCtx = h;
