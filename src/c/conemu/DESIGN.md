@@ -1045,7 +1045,12 @@ and only the rebuild plus a re-run settles the second one. -28 is real code agai
 read, a counter on the parameter cap, and a 31st export (`Java_Render_argTrunc`, gate-only) -- and it grew 593
 and 588 bytes over -27, which is the direction new code goes (the two -28 builds are the same size as each
 other, which is what the byte counts can honestly say). `lib/dbcli.jar` did **not** move: the truncation
-count deliberately stopped short of a `stats()` slot, and #74's row says what that slot would cost. The pair -28
+count deliberately stopped short of a `stats()` slot, and #74's row says what that slot would cost. **The
+repository's own `lib/` copy is caught up by this commit**: the archive in `D:\Green\github\dbcli` was still
+holding the -24 pair, because -25 through -27 recorded their md5s here without re-copying the binaries. The
+census in this section describes `D:\dbcli\lib` -- the tree that actually ships, the one the gates were run
+against; the repo copy is an archive, and an archive that lags four stamps is how a later reader ends up
+diffing the wrong bytes. The pair -28
 replaced is `lib/{x86,x64}/render.dll.20260926-170011.bak` -- the -27 pair, read back off the backups themselves
 as `a46ae4e5688c10db1202a928a8a7608e` (159873) and `2e25a82778e427aec8086e8573cd95c0` (155654) -- with the first
 -28 build sitting between them and this one at `*.20260926-173202.bak` (160466 / 156242, the same sizes, since
