@@ -2,7 +2,7 @@
 # about windows-conemu.ti, which is derived from windows-conemu.caps -- the entry jline loads at run
 # time. The capability set is asserted equal to that file's on every run of this script.
 # ncurses 6.3.20211021
-#	Reconstructed via infocmp from file: /tmp/tmp.8EMnUyl8jU/tc/w/windows-conemu
+#	Reconstructed via infocmp from file: /tmp/tmp.ueOpeOb4f0/tc/w/windows-conemu
 windows-conemu|ConEmu ANSI with the native renderer (no xenl: margin wrap is immediate; bce: every erase fills with the live attribute),
 	am,
 	bce,
@@ -13,6 +13,7 @@ windows-conemu|ConEmu ANSI with the native renderer (no xenl: margin wrap is imm
 	colors#0x100,
 	pairs#64,
 	acsc=``aaffggiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz{{||}}~~,
+	cbt=\E[Z,
 	bel=^G,
 	cr=\r,
 	csr=\E[%i%p1%d;%p2%dr,

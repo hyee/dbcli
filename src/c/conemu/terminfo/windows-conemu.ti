@@ -10,9 +10,15 @@
 # The rules that decide what is IN here live in ../TERMINFO.md (and the renderer's own dispositions in
 # ../ANSI_SUPPORTS.md); the short version of why the omissions are as deliberate as the additions:
 #
-#   cbt, hts, tbc          -- no tab-stop state exists yet (ESC H is ignored), so CSI Z has nowhere to back
-#                             up to. Item #70: the table is approved and not built; when it lands these three
-#                             go in and `it#8` stops being the whole story.
+#   hts, tbc               -- no code in this jline reads either one (Capability.set_tab and
+#                             clear_all_tabs occur only in the enum), and CEAnsi drops ESC H and CSI 3g, so
+#                             writing them would promise a tab stop that evaporates (DESIGN I26). cbt DID go in
+#                             when #70 landed the table, and it is the exception rather than the same case
+#                             three times: a reader binds it (LineReaderImpl.java:6420 uses the value as the
+#                             name of the Shift-Tab key, and an absent capability unbinds that key in silence),
+#                             and nothing in this stack ever writes it, so it makes no promise to CEAnsi.
+#                             it#8 is the DEFAULT interval now, overridable by CSI 3g / CSI 5g, not the whole
+#                             tab story.
 #   smir, rmir, mir        -- IRM has no body in either parser, so CSI @ always inserts regardless.
 #   smam, rmam             -- DECAWM is modelled (#61) but the entry also describes sessions ConEmu's own
 #                             parser reads, where its SetConsoleMode is commented out (Ansi.cpp:3268-3281);
@@ -41,7 +47,7 @@
 windows-conemu|ConEmu ANSI with the native renderer (no xenl: margin wrap is immediate; bce: every erase fills with the live attribute),
 	am, bce, msgr,
 	colors#256, cols#80, it#8, lines#24, pairs#64,
-	bel=^G, bold=\E[1m, clear=\E[H\E[2J,
+	bel=^G, bold=\E[1m, cbt=\E[Z, clear=\E[H\E[2J,
 	cr=^M, cub=\E[%p1%dD, cub1=\E[D, cud=\E[%p1%dB, cud1=\E[B,
 	cuf=\E[%p1%dC, cuf1=\E[C, cup=\E[%i%p1%d;%p2%dH,
 	cuu=\E[%p1%dA, cuu1=\E[A,

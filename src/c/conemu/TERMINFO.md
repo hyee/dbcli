@@ -17,7 +17,7 @@ harness in `cache/`.
 
 `tic` cannot read the `.caps` file. Terminfo's first line is a `|`-separated names field, and everything after
 the first newline is capability fields separated by commas — so the prose this project wrote into that first
-line ("Kept out and why: cbt and hts/tbc — there is no tab-stop state anywhere…") is parsed as capabilities and
+line ("Kept out and why: hts and tbc — no code in this jline reads either one…") is parsed as capabilities and
 rejected, field by field:
 
 ```
@@ -78,14 +78,23 @@ TERMINFO CHECK: ok
 ## Who checks the bytes
 
 `terminfo_check.sh` proves the **set**. The **meaning** of each string — what `cup(5,10)` or `csr(0,0)` turns
-into on the wire after `%i` and the parameter packing — is asserted by the caps harness, currently
-`src/c/conemu/CapsDump.java`, driven by `src/c/conemu/caps_check.ps1` (81 assertions), twice: against the tree's file and against the copy
-inside the jar, byte-compared. It is the leg that caught `rep`'s parameter having to reach `Curses.tputs` as an
-**int** (`toInteger()` parses a `Character` as a String and throws) and the leg that named
-`change_scroll_region`'s `%i` as the reason `Status.reset()` arrives as `CSI 1;1r` rather than as a reset —
+into on the wire after `%i` and the parameter packing — is asserted by the caps harness,
+`src/c/conemu/CapsDump.java`, driven by `src/c/conemu/caps_check.ps1` (87 assertions), twice: against the tree's
+file and against the copy inside the jar, byte-compared. It is the leg that caught `rep`'s parameter having to
+reach `Curses.tputs` as an **int** (`toInteger()` parses a `Character` as a String and throws) and the leg that
+named `change_scroll_region`'s `%i` as the reason `Status.reset()` arrives as `CSI 1;1r` rather than as a reset —
 which is a capability fact with a behaviour attached, and the only reason the entry's `csr` is tolerable at all.
-Promoting that harness into this directory is worth doing and has not been done; until then this table is the
-pointer, and "the docs say cache/" is the honest answer to "where is the byte check".
+
+The harness has a third section, added for #90, and it is a different kind of check: it builds jline's headless
+`LineDisciplineTerminal` with terminal type `windows-conemu`, which loads the entry **off the classpath** exactly
+as a real session does (`AbstractTerminal.parseInfoCmp` → `InfoCmp.getInfoCmp`, and on Windows that call never
+shells out to `infocmp` — `:604` — but falls through to the bundled resource), then asks the reader's own `menu`
+keymap what Shift-Tab binds to. Everything else in the file reads a text file; this asks the shipped jar whether
+a capability reaches a widget. Run it against the pre-#90 jar and it answers `no cbt to look up`; run it against
+the shipped one and it answers `reverse-menu-complete`. Two notes for whoever edits it next: the keymap is
+registered under `LineReader.MENU`, whose value is the lowercase `"menu"`, and `InfoCmp.getLoadedInfoCmp` is
+**null** on this road (only the `infocmp` subprocess writes that cache), so the text to print is
+`getDefaultInfoCmp`.
 
 ## What the renderer does with each group
 
@@ -95,7 +104,7 @@ are `DESIGN.md` §3. Nothing here restates a rule that lives there.
 | Group | Caps | render.dll |
 |---|---|---|
 | Booleans | `am` `bce` `msgr` | `am` is measured, not assumed: margin wrap is immediate, which is also why `xenl` is **absent** (§2.10, DESIGN I8/I35). `bce` is real: every erase fills with the **live** attribute (`fill_span`, §2.4), and `ech` inherits it. `msgr` is honoured by keeping moves and writes independent |
-| Numbers | `colors#256` `cols#80` `it#8` `lines#24` `pairs#64` | 256-colour and 24-bit are supported **through the console's own fold** (§2.7); `it#8` is the whole tab story until #70 lands a tab-stop table; `cols`/`lines` are geometry the painter reads from the console rather than from here (I7) |
+| Numbers | `colors#256` `cols#80` `it#8` `lines#24` `pairs#64` | 256-colour and 24-bit are supported **through the console's own fold** (§2.7); `it#8` is the **default** interval since #70, not the whole tab story: the table behind it is state, and `CSI 3g` clears it with the interval and `CSI 5g` puts both back (I38); `cols`/`lines` are geometry the painter reads from the console rather than from here (I7) |
 | Cursor | `cup` `hpa` `vpa` `cuu``+1` `cud``+1` `cuf``+1` `cub``+1` `home` `sc` `rc` | §2.3. `%i`'s one-based spelling is why `hpa(0)` is `CSI 1G`; `sc`/`rc` are the model's two saved coordinates (§2.2), and DECSTR clears them (#67) |
 | Erase | `clear` `el` `el1` `ed` `ech` | `clear` is `\E[H\E[2J` — ED **stops at the viewport**, so scrollback survives (§2.4). `ech` erases on its own row and nowhere else (#65). EL erases the whole *buffer* row, because a model row is a buffer row (I7) |
 | Insert / delete / scroll | `ich` `ich1` `dch` `dch1` `il` `il1` `dl` `dl1` `ind` `indn` `rin` `ri` `nel` `csr` | §2.4. `il`/`dl` home the column afterwards (#64). `ich`/`dch` move a wide glyph as one unit and heal a pair the shift split (#66). `ind`/`ri`/`nel` agree about which rows scroll, where ConEmu's `ForwardLF` did not (§4 item 6). `csr` is the region (§2.4's long row) |
@@ -106,18 +115,19 @@ are `DESIGN.md` §3. Nothing here restates a rule that lives there.
 | Queries | `u6` `u7` | the only place this library writes back into the input stream (§2.9). `u6` is a **pattern** the reader compiles, not a string the host sends, and the private `CSI ? 6 n` stays refused on purpose |
 | Input keys | `kbs` `kcbt` `kcuu1` `kcub1` `kcud1` `kcuf1` `khome` `kend` `kpp` `knp` `kdch1` `kich1` `kf1`–`kf12` | **not this library's surface**: keys arrive as console records, not as caps lookups. They are declared for jline's input leg, and every judgement about them (why `kbs=^H` stays, why `kf13`+ stay out) is in `DESIGN.md` §4 |
 
-## The eight the upstream entry has and this one does not
+## The seven the upstream entry has and this one does not
 
 `D:\Green\Github\jline4` ships a *different* `windows-conemu.caps`: 80 capabilities, of which this entry
-declares 72, plus 18 this one adds and 8 spelled with different values. Someone reading the two side by side
-will ask whether the eight are a gap, so the answer is per-capability and it names the consumer, because
+declares 73, plus 18 this one adds and 8 spelled with different values. Someone reading the two side by side
+will ask whether the seven are a gap, so the answer is per-capability and it names the consumer, because
 "nobody in this tree reads it" is exactly the sentence that goes stale.
 
 | Cap | jline4's reader | Verdict |
 |---|---|---|
 | `kmous` (`key_mouse`) | `MouseSupport.java:85` — `getStringCapability(key_mouse) != null` **is** the answer to "does this terminal do mouse events"; `AbstractTerminal.java:421/426` read reports through it | **Correctly absent, at a real price.** The mouse modes are counted and not implemented (`?9`, `?1000`–`?1006`, `ANSI_SUPPORTS.md` §3), so no X10 report will ever arrive in a session this library paints; declaring the key would claim reports the terminal will not send (I26). `supportsMouseEvents()` returning false here is the truth. Reopening it means implementing the modes, not adding a line |
-| `cbt` (`back_tab`) | `LineReaderImpl.java:6992` binds `REVERSE_MENU_COMPLETE` to `key(Capability.back_tab)` | **A real cost, and half the old reason for it was wrong.** `cbt` is an *output* capability and, until #70, we did not model `CSI Z` — that half of the argument held, and #70 retired it: the table, `ESC H`, `CSI Ps g`, `CSI Ps I` and `CSI Ps Z` all exist now (DESIGN I38). But jline also uses the value as the **name of the Shift-Tab key**, so dropping it silently removes a reader binding. dbcli does not lose that key (its own `Console.java:295` binds `^[Z` to `undo` explicitly, without asking caps); a jline4 menu does. What is left is a line in this file and two in the entry, and it is **#90**: declaring them means editing all three copies at once (mirror, jline's source, the compiled copy in `lib/JLine3.jar`), and leg 4 exists to catch exactly the case where one moves alone. The jar is another agent's in-flight build, so the declaration waits for a batch where it can move with it |
 | `mir`, `ncv`, `blink`, `invis`, `rmpch`, `mc5i` | none — zero `Capability.<name>` readers anywhere in the jline4 tree; they survive only in `InfoCmp.java`'s name table | **Correctly absent.** `mir` would claim an insert mode that neither parser gives a body to; `blink`/`invis` claim SGR arms that hold no state on either leg (and `sgr` here deliberately drops those arms, unlike upstream's ten-parameter spelling); `ncv#3` is a claim about which attributes cannot coexist with colour, and the console's answer is carried by the fold in `rc_attr()` instead; `rmpch` is the PC alternate-font path this entry does not take (`rmacs=\E(B`, not `\E[10m`); `mc5i` is a printer |
+
+The one that moved is worth more than the seven that did not, so it is stated at full length rather than as a row. **declared since #90**, and the reason the other seven are not: this one has a reader. `LineReaderImpl.java:6420` (in *this* tree — `:6992` is jline4's line, and the row that cited it here was citing the other tree) binds `REVERSE_MENU_COMPLETE` to `key(Capability.back_tab)`; `KeyMap.key` is `Curses.tputs` of `getStringCapability` (`:342`), and `KeyMap.bind` (`:589`) drops a null key sequence without a word. So the omission was never a refusal to claim something ConEmu's parser cannot honour — the value is read as the **name of the Shift-Tab key**, never written, and the bytes were already arriving from `kcbt` through `AbstractWindowsTerminal.java:368`, decoded at `:441`. Omitting it silently unbound a working key. The one sentence in this file that is now known to have been false: dbcli was said not to lose the key because `Console.java:295` binds `^[Z`; jline's key syntax reads `^[` as one ESC, so that binding is ESC+Z — two bytes, a different chord, and no cover for `ESC [ Z`. Witness: the harness's reader leg (§ "Who checks the bytes") reads `reverse-menu-complete` against the shipped jar and `no cbt to look up` against the pre-#90 one |
 
 The 18 this entry adds are the renderer's own surface, and each has a section that owes it an explanation:
 `bce` (erases fill with the live attribute), `csr` (the region, and the `%i` trap that makes `Status.reset()`
@@ -130,8 +140,10 @@ support, `sgr`/`sgr0` shed the arms that hold no state and take the charset exit
 ## The omissions, and the rule behind them
 
 The `.caps` first line lists what is *not* declared; that list is the record and this is the shape of it:
-capabilities fall into three kinds of absence. **No state to point at** — `cbt`/`hts`/`tbc` had no tab-stop table
-until #70), `smir`/`rmir`/`mir` (IRM has no body, so `CSI @` always inserts). **A claim about the *other*
+capabilities fall into three kinds of absence. **No reader anywhere** — `hts`/`tbc` (the tab-stop table exists
+since #70 and `cbt` is declared, but these two names occur nowhere outside `InfoCmp.java`'s own table),
+`u8`/`u9` (`CursorSupport` reads `user6`/`user7` and nothing reads `user8`/`user9`, so a value would be invented),
+`smir`/`rmir`/`mir` (IRM has no body, so `CSI @` always inserts). **A claim about the *other*
 parser** — `smam`/`rmam` (DECAWM is modelled here, `#61`, and ConEmu's own `?7` arm leaves `SetConsoleMode`
 commented out), `initc`/`ccc` (OSC 4/10/11 now change the palette, `#55`, under this library and not under
 ConEmu's parser). This is DESIGN I26 and it is the reason "we implement it now" is not by itself a reason to

@@ -120,9 +120,26 @@ public class CapsDump
     expect( "ncv NOT advertised", ints.get( Capability.no_color_video ), null );
     expect( "max_colors", ints.get( Capability.max_colors ), 256 );
     expect( "init_tabs", ints.get( Capability.init_tabs ), 8 );
-    expect( "cbt NOT advertised (no tab stops exist)", raw( strs, Capability.back_tab ), null );
-    expect( "hts NOT advertised", raw( strs, Capability.set_tab ), null );
-    expect( "tbc NOT advertised", raw( strs, Capability.clear_all_tabs ), null );
+    /* cbt is in, and it took #70 and a reader hunt to see why the old line was half wrong. The half that was
+       right: until the tab table existed, `CSI Z` had no body, so advertising it was a claim about a sequence
+       this terminal could not honour. The half that was wrong: jline does not use `cbt` as a string to WRITE,
+       it uses the value as the NAME of the Shift-Tab key -- LineReaderImpl.java:6420 binds
+       REVERSE_MENU_COMPLETE to key(Capability.back_tab), KeyMap.key is Curses.tputs(getStringCapability(..))
+       (:342), an absent capability gives null, and KeyMap.bind (:589) drops a null key sequence without a
+       word. So leaving `cbt` out silently removed a binding rather than refusing a claim. The bytes it has to
+       match are already real without this line: the Windows key leg synthesises them from `kcbt`
+       (AbstractWindowsTerminal.java:368) and decodes the file spelling before pushing the chars (:441), so
+       Shift-Tab delivers ESC [ Z either way. What the line buys is the widget that reads them. */
+    expect( "cbt advertised (the Shift-Tab name a reader binds)", raw( strs, Capability.back_tab ), "\\E[Z" );
+    /* hts and tbc stay out, and the reason is no longer the one this entry's first line carried -- tab stops
+       are state now (Render.cpp:2053 sets one, :1856 clears them). They are out because no code in this stack
+       asks about them: across the whole jline tree Capability.set_tab and Capability.clear_all_tabs occur only
+       in the enum itself (InfoCmp.java:462 and :148), so a value here would be invented, which is the same
+       test u8 and u9 failed. And unlike cbt these two WOULD be written, which makes them a claim about the
+       other reader: CEAnsi ignores `ESC H` and `CSI 3g`, so in a session ConEmu parses the entry would promise
+       a tab stop that evaporates (DESIGN I26). cbt carries neither problem. */
+    expect( "hts NOT advertised (no reader; CEAnsi drops ESC H)", raw( strs, Capability.set_tab ), null );
+    expect( "tbc NOT advertised (no reader; CEAnsi drops CSI 3g)", raw( strs, Capability.clear_all_tabs ), null );
     expect( "smacs", raw( strs, Capability.enter_alt_charset_mode ), "\\E(0" );
     expect( "rmacs", raw( strs, Capability.exit_alt_charset_mode ), "\\E(B" );
     expect( "acsc pairs (xterm's identity map)", raw( strs, Capability.acs_chars ).length() / 2, 26 );
@@ -196,6 +213,14 @@ public class CapsDump
     expect( "cr bytes", Curses.tputs( raw( strs, Capability.carriage_return ) ), "\r" );
     expect( "ht bytes", Curses.tputs( raw( strs, Capability.tab ) ), "\t" );
     expect( "kbs bytes", Curses.tputs( raw( strs, Capability.key_backspace ) ), "\b" );
+    /* The reader's path spelled the way KeyMap.key spells it, with no parameters: this is the exact string
+       LineReaderImpl matches the incoming Shift-Tab bytes against, so the line above is worth nothing unless
+       tputs turns the file spelling into the same three bytes AbstractWindowsTerminal puts on the wire from
+       `kcbt`. Both halves of the pair are asserted, because the bug this entry is fixing was a mismatch
+       between them that no single-file read could show. */
+    expect( "cbt bytes are the bytes the key leg sends", Curses.tputs( raw( strs, Capability.back_tab ) ),
+            E + "[Z" );
+    expect( "kcbt bytes are the same three bytes", Curses.tputs( raw( strs, Capability.key_btab ) ), E + "[Z" );
     /* The one arm of `%c` and of the `%{1}%-` arithmetic in this file, and the only place either is checked:
        doTputs accepts a conversion only out of "cdoxXs" (Curses.java:425), so `rep` is the sole capability
        here that reaches it. A `rep` that expands to `x\E[3b` is also the proof that the two legs agree on
@@ -222,6 +247,56 @@ public class CapsDump
                                                                     0, 1, 1, 0, 0, 1, 0, 0, 0 ) ) );
     System.out.println( "sgr(nothing)      -> " + show( Curses.tputs( raw( strs, Capability.set_attributes ),
                                                                     0, 0, 0, 0, 0, 0, 0, 0, 0 ) ) );
+
+    /* Everything above reads a FILE this program was handed. This section asks the jline that is on the
+       classpath, and that is a different road: AbstractTerminal.parseInfoCmp (:237) calls
+       InfoCmp.getInfoCmp(type), which on Windows never shells out to infocmp (:604) and falls through to
+       getDefaultInfoCmp -- the bundled windows-conemu RESOURCE -- after which LineReaderImpl builds the Menu
+       keymap from it (:6420, through the bind(KeyMap,String,CharSequence...) overload at :6466, which wraps
+       the widget name in a Reference). So this is the only leg in the file able to say "the entry that ships
+       binds the key", and it is why caps_check.ps1 runs this program twice against two jars: pass -Jar
+       <the other one> and the answer changes, which is what makes the leg a witness and not a restatement.
+       The terminal is the headless one jline's own tests use; no console is opened and nothing it does
+       reaches stdout. */
+    System.out.println( "--- what the reader on this classpath binds ---" );
+    try {
+      org.jline.terminal.Terminal t = new org.jline.terminal.impl.LineDisciplineTerminal(
+          "capsdump", "windows-conemu", new java.io.ByteArrayOutputStream(), StandardCharsets.UTF_8 );
+      /* Both caches are printed, because only one of them is what jline read: getInfoCmp stores into
+         CAPS_LOADED when it gets text from the infocmp subprocess, and on Windows it never does (:604 skips
+         the spawn), so getLoadedInfoCmp is null here and the text came from getDefaultInfoCmp -- the bundled
+         resource. Printing the null rather than hiding it is the point: a reader who assumed the loaded cache
+         would conclude this JVM read nothing at all. */
+      String loaded = InfoCmp.getLoadedInfoCmp( "windows-conemu" );
+      String resource = InfoCmp.getDefaultInfoCmp( "windows-conemu" );
+      System.out.println( "     the text this JVM read: loaded=" + ( loaded == null ? "null" : "" + loaded.length() )
+                          + " bytes, bundled resource="
+                          + ( resource == null ? "null" : "" + resource.length() )
+                          + " bytes, terminal type " + t.getType() );
+      String cbt = org.jline.keymap.KeyMap.key( t, Capability.back_tab );
+      expect( "the shipped entry gives back_tab a value", cbt, E + "[Z" );
+      /* The name is lowercase -- `LineReader.MENU` is "menu", and a maps.get("Menu") returns null, which is
+         how this leg first failed. Hence the three-way message: an absent map, a null key and an unbound key
+         are three different findings, and printing them as one "unbound (null)" would have hidden the bug
+         behind the very evidence this section exists to produce. */
+      org.jline.keymap.KeyMap<org.jline.reader.Binding> menu =
+          new org.jline.reader.impl.LineReaderImpl( t ).getKeyMaps().get( org.jline.reader.LineReader.MENU );
+      String got;
+      if ( menu == null )
+        got = "no menu keymap at all";
+      else if ( cbt == null )
+        got = "no cbt to look up";
+      else
+        {
+          org.jline.reader.Binding b = menu.getBound( cbt );
+          got = b instanceof org.jline.reader.Reference ? ( (org.jline.reader.Reference) b ).name()
+                                                       : ( "bound to " + b + ", not a widget reference" );
+        }
+      expect( "menu binds Shift-Tab to reverse-menu-complete", got,
+              org.jline.reader.LineReader.REVERSE_MENU_COMPLETE );
+    } catch ( Exception e ) {
+      expect( "the reader leg ran without an exception", e.getClass().getName(), "none" );
+    }
 
     System.out.println( fails == 0 ? "CAPS CHECK: ok" : ( "CAPS CHECK: " + fails + " FAILED" ) );
     if ( fails != 0 )
