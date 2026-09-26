@@ -42,7 +42,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc \
 # add --refresh after changing the entry, to rewrite infocmp-windows-conemu.txt
 ```
 
-Four legs, and each was seen to fail on a deliberate mistake rather than assumed to work:
+Four legs. Three were seen to fail on a deliberate mistake when they were written; the fourth had only been *assumed* able to, and had in fact been comparing nothing -- see leg 4.
 
 1. `tic -x` compiles the `.ti` with **no complaint at all** — a note counts, because ncurses' notes are how an
    unrecognised capability announces itself. (Red arm: an extra `kguom` line.)
@@ -52,8 +52,19 @@ Four legs, and each was seen to fail on a deliberate mistake rather than assumed
    compiled — while a capability that `tic` dropped or folded would show here. (Red arm: an `extended names`
    line that `tic` refuses.)
 4. Three copies of the running entry agree **byte for byte**: the mirror, jline's source tree, and the copy
-   inside `lib/JLine3.jar`. A green audit of a stale jar copy is DESIGN.md §6 rule 10 in another costume. (Red arm:
-   flip one byte in a copy of the jar.)
+   inside `lib/JLine3.jar`. A green audit of a stale jar copy is DESIGN.md §6 rule 10 in another costume.
+
+   **This leg compared nothing from the day it was written until 2026-09-26,** and the sentence above (and the
+   claim under this heading that every leg was seen red) was inherited from the round that added it, never
+   re-run. `JAR` was assigned in the shell and never `export`ed, so the python block that reads the jar saw an
+   empty environment, printed `note JAR unset or missing` -- a note, not a failure -- and the script said
+   `TERMINFO CHECK: ok` with one file compared against itself. It now exports `JAR` and `JLINE_CAPS` (with the
+   source copy discovered from known candidates rather than guessed), prints `arm 3 compared N copies of the
+   entry`, and **fails** when the shipped copy was not compared unless `--allow-no-jar` is passed explicitly.
+   Two arms seen red the same day: editing the mirror's line 0 in a scratch tree turns both comparisons red
+   (`89dea0736281 vs 4a3374c6838b`), and `JAR=/nonexistent` refuses with the reason rather than a note. The
+   general rule is DESIGN §6's, and this is its fourth instance: **a comparing gate must assert that it
+   compared**, because the failure mode of a comparison is not a wrong answer, it is no work at all.
 
 ```
 ok   tic -x compiles windows-conemu.ti with no complaint

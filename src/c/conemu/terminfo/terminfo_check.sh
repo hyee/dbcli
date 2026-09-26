@@ -29,6 +29,18 @@ if [ -z "$ROOT" ]; then
 fi
 T="$ROOT/src/c/conemu/terminfo"
 JAR="${JAR:-$ROOT/lib/JLine3.jar}"
+# The caps entry jline's *source tree* carries, when there is one to find. Two known homes, and the refusal
+# names them rather than guessing a third: the authority tree and its build output.
+JLINE_CAPS="${JLINE_CAPS:-}"
+if [ -z "$JLINE_CAPS" ]; then
+  for c in /mnt/d/JavaProjects/jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps            "$ROOT/../jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps"; do
+    [ -f "$c" ] && JLINE_CAPS="$c" && break
+  done
+fi
+export JLINE_CAPS
+# `JAR` has to be exported or the python block below never sees it -- and the arm silently compared nothing
+# for its whole life because of exactly that. See the "compared N copies" line this script now prints.
+export JAR
 [ -f "$T/windows-conemu.ti" ] || { echo "no $T/windows-conemu.ti (set DBCLI_ROOT)"; exit 1; }
 for f in windows-conemu.caps; do [ -f "$T/$f" ] || { echo "no $T/$f"; exit 1; }; done
 
@@ -48,10 +60,11 @@ if [ ! -s "$WORK/dump.txt" ]; then
   echo "FAIL infocmp could not read back what tic wrote:"; cat "$WORK/dump.err"; rc=1
 fi
 
-python3 - "$T" "$ROOT" "$WORK/dump.txt" <<'PY' || rc=1
+python3 - "$T" "$ROOT" "$WORK/dump.txt" "$@" <<'PY' || rc=1
 import io, os, sys
 
 T, ROOT, dump = sys.argv[1], sys.argv[2], sys.argv[3]
+extra = sys.argv[4:]   # the flags this script was given; arm 3 honours --allow-no-jar
 
 def caps_from_source(path):
     """The capability fields of a terminfo source file: everything after the names line, comma-separated.
@@ -119,20 +132,30 @@ def md5(b):
     return hashlib.md5(b).hexdigest()
 
 
+CAPS_NAME = "org/jline/utils/windows-conemu.caps"
 copies = [("mirror", open(os.path.join(T, "windows-conemu.caps"), "rb").read())]
 jsrc = os.environ.get("JLINE_CAPS", "")
 if jsrc and os.path.exists(jsrc):
     copies.append(("jline", open(jsrc, "rb").read()))
 else:
-    print("note JLINE_CAPS unset or missing, so jline's source copy was not compared")
+    print("note jline's source copy was not found (JLINE_CAPS unset), so it is not compared")
 jar = os.environ.get("JAR", "")
 if jar and os.path.exists(jar):
     z = zipfile.ZipFile(jar)
-    n = "org/jline/utils/windows-conemu.caps"
-    copies.append(("jar", z.read(n) if n in z.namelist() else None))
+    copies.append(("jar", z.read(CAPS_NAME) if CAPS_NAME in z.namelist() else None))
+    print("     the shipped entry compared: %s" % jar)
 else:
-    print("note JAR unset or missing, so the shipped copy was not compared")
+    # A comparison that ran nothing has to be a failure, not a note: this script printed
+    # `TERMINFO CHECK: ok` for its whole life while both copies above were skipped, because JAR was set in
+    # the shell and never exported into the python that reads it. The rule is the one DESIGN section 6
+    # states for the both-leg A/B -- a comparing gate must assert that it compared.
+    print("FAIL the shipped copy was not compared, so arm 3 would be three files checked against one of")
+    print("     them: pass JAR=<path to JLine3.jar>, or --allow-no-jar on a tree without one")
+    if "--allow-no-jar" not in extra:
+        bad = 1
+n = CAPS_NAME
 base = copies[0][1]
+print("     arm 3 compared %d copies of the entry" % len(copies))
 for tag, blob in copies[1:]:
     if blob is None:
         print("FAIL the %s copy has no %s" % (tag, n))
