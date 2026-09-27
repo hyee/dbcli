@@ -1,0 +1,42 @@
+/* The oracle needs teeth. Every other use of rc_validate_grid asks "is this grid clean?" and votes when the
+   answer is no; nothing ever asked the oracle whether it CAN answer no. A build that hard-wired the answer to
+   "clean" therefore passed both gates (measured 2026-09-27: blind the oracle and the host gate prints ok,
+   cache/audit90/red-arms.txt M4). These arms are the difference between a witness and a counter: the first
+   pins that a legal grid is NOT reported, the next two pin that two specific illegalities come back NAMED --
+   a violation string nobody is required to read is one assertion away from not existing. */
+static void geo_oracle_teeth(void)
+{
+  static RcGrid g;
+  static RcGrid saved;
+  char msg[256];
+  int clean;
+
+  rc_reset_hist(&g, 6, 20, 4, 0x07);
+  saved = g;
+  clean = rc_validate_grid(&g, msg, (int) sizeof msg);
+  g_checks++;
+  if (clean) { g_fails++; printf("  FAIL oracle: a fresh, legal grid was reported dirty: %s\n", msg); }
+
+  /* One defect at a time, so a complaint names the defect that is actually there. */
+  g.cx = g.cols;                       /* one past the last column: no write path may leave it here */
+  clean = rc_validate_grid(&g, msg, (int) sizeof msg);
+  g_checks++;
+  if (!clean) { g_fails++; printf("  FAIL oracle is silent on a cursor at column == cols (cx=%d cols=%d)\n",
+                                  g.cx, g.cols); }
+  else
+  {
+    g_checks++;
+    if (!strstr(msg, "cursor column")) { g_fails++; printf("  FAIL oracle named something else: %s\n", msg); }
+  }
+
+  g = saved;
+  g.winRows = g.rows + 1;              /* a window taller than the buffer holding it */
+  clean = rc_validate_grid(&g, msg, (int) sizeof msg);
+  g_checks++;
+  if (!clean) { g_fails++; printf("  FAIL oracle is silent on winRows(%d) above rows(%d)\n", g.winRows, g.rows); }
+  else
+  {
+    g_checks++;
+    if (!strstr(msg, "winRows")) { g_fails++; printf("  FAIL oracle mis-named the tall window: %s\n", msg); }
+  }
+}
