@@ -110,7 +110,7 @@ fi
 
 FLAGS="-std=c++17 -O2 -D_WIN32_WINNT=0x0601 -DWINVER=0x0601 -Wall -Wextra -Wno-unused-parameter"
 STATIC="-static -static-libgcc -static-libstdc++"
-NEWAPI='(Set|Get)ThreadDescription|WaitOnAddress|WakeByAddress[A-Za-z]*|GetSystemTimePreciseAsFileTime|CreateSymbolicLinkW|GetTickCount64|CompareObjectHandles|GetFileInformationByHandleEx|SetFileInformationByHandle'
+NEWAPI='(Set|Get)ThreadDescription|WaitOnAddress|WakeByAddress[A-Za-z]*|GetSystemTimePreciseAsFileTime|CreateSymbolicLinkW|GetTickCount64|CompareObjectHandles|GetFileInformationByHandleEx|SetFileInformationByHandle|SetConsoleCursorShape'
 
 FAILED=""
 
@@ -135,6 +135,18 @@ gate_dll() {  # $1 plat  $2 objdump  $3 dll  $4 "space separated expected export
   [ -n "$junk" ] \
       && { printf '%s:%s ! extra DLL imports: %s (not copy-and-go)\n' "$plat" "$tag" "$junk" >&2; FAILED="$FAILED $plat:$tag-imports"; } \
       || printf '%s:%s DLL imports are system-only OK\n' "$plat" "$tag"
+  # #111: the OSC 9 capability floor. ConEmu's own docs page gives that family a sleep (9;1), a GUI
+  # MessageBox (9;2), a wait-for-key plus env write (9;5), a GuiMacro (9;6) and "run some process with
+  # arguments" (9;7). None of those is expressible without linking the API that performs it, so the import
+  # table -- not a code review -- is what can promise they never happen. LoadLibrary*/GetProcAddress/Sleep
+  # do appear here (the #88 and #104 runtime probes, and the static CRT) and are deliberately NOT in this
+  # list: they are unreachable from osc9_action, which is the behavioural legs' claim, not this one's.
+  local noexec
+  noexec=$($OD -p "$dll" | tr -d '\r' | grep -Eo \
+      'CreateProcess[A-Za-z]*|WinExec|ShellExecute[A-Za-z]*|_?ws?ystem|MessageBox[A-Za-z]*|DialogBox[A-Za-z]*|SetEnvironmentVariable[A-Za-z]*|CoCreateInstance|OleInitialize|WriteProcessMemory|VirtualAllocEx' | sort -u | tr '\n' ' ')
+  [ -n "${noexec// /}" ] \
+      && { printf '%s:%s ! an OSC 9 action API is linked: %s\n' "$plat" "$tag" "$noexec" >&2; FAILED="$FAILED $plat:$tag-noexec"; } \
+      || printf '%s:%s no process/dialog/env-write entrypoint imported (OSC 9 floor holds) OK\n' "$plat" "$tag"
   bad=$($OD -p "$dll" | tr -d '\r' | grep -Eo "$NEWAPI" | sort -u | tr '\n' ' ')
   [ -n "$bad" ] && { printf '%s:%s ! Win8+ entrypoints: %s\n' "$plat" "$tag" "$bad" >&2; FAILED="$FAILED $plat:$tag-win8api"; } \
                  || printf '%s:%s no Win8+ entrypoints OK (Win7 floor)\n' "$plat" "$tag"
@@ -276,6 +288,21 @@ if [ "$DO_COLORCHECK" = 1 ]; then
     # inside ReSetDisplayParm's tables: re-derive it from Ansi.cpp and compare.
     [ -f "$SRC_DIR/gen_rgbmap.sh" ] \
         && { bash "$SRC_DIR/gen_rgbmap.sh" --check "$CONEMU_SRC" || FAILED="$FAILED host:rgbmap-stale"; }
+
+    # vendor/X11ColorNames.h (#84) is generated from four local reads of X11's rgb.txt -- ghostty's and
+    # wezterm's vendored copies, the cached OS copy, and msfterm's re-derivation -- and the leg that matters
+    # is the cross-check, not the cmp: a hand edit to one of the 676 rows would compile, pass every parser
+    # test, and quietly answer the wrong colour for one name. 2 means a source tree is not on this machine,
+    # which is a warning; 1 means the shipped header is no longer what its own sources say, which is a failure.
+    if [ -f "$SRC_DIR/gen_x11colors.sh" ]; then
+        bash "$SRC_DIR/gen_x11colors.sh" --check
+        x11rc=$?
+        case $x11rc in
+          0) : ;;
+          2) printf 'X11ColorNames.h: check skipped (a source tree is missing, rc=2)\n' >&2 ;;
+          *) FAILED="$FAILED host:x11colors-stale" ;;
+        esac
+    fi
 
     # The oracle has to be ConEmu's OWN table. ColorCheck's replica formula (xterm cube plus greyscale
     # ramp) disagrees with RgbMap on 15 entries, so a replica dump would quietly bless those 15.

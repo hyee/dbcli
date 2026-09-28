@@ -51,10 +51,28 @@ public class Render {
     static native int readopt(long h);
     /** The last flush's own geometry: [0] seq [1] reason [2] baseSet [3] baseRow [4] winT read [5] anchor
      *  [6] slide [7] slideTo [8] bufScroll [9] row0 [10] winTop left behind [11] rows [12] winRows
-     *  [13] bufH [14] pendingScrolls spent [15] runs [16] declined [17] a move call that failed.
+     *  [13] bufH [14] pendingScrolls spent [15] runs [16] declined [17] a move call that failed
+     *  [18] cells the plan named.
      *  Where the model believes its rows are is not readable off the console, and every case below that is
-     *  about a row written at a claim turns on it. */
+     *  about a row written at a claim turns on it. [18] is the one number that separates a repaired row from a
+     *  whole-viewport re-emission: both are a single run. */
     static native long[] plan(long h);
+    /** #95: {current CONIN$ mode, the base this handle borrowed, saved?, armed?, mouseModes, and #108's five
+     *  report counters in rc_report_counts' order}. Gate-only, and the only way this process can say what the
+     *  console was told rather than what the model remembers. */
+    static native long[] inputMode(long h);
+    /** #108, gate-only: hand one console mouse record to the library's encoder and get the bytes back --
+     *  `x`/`y` are viewport cells (0-based, the report says them 1-based), `px`/`py` the sub-cell pixel
+     *  position or -1 when the observer cannot know it, `buttonState`/`eventFlags`/`ctrlKeyState` the wincon
+     *  values verbatim. `inject` = 1 also writes them into CONIN$, which is what {@link #readInput} reads
+     *  back. Null means the buffer could not hold the report, which is not the same answer as no report. */
+    static native char[] mouseReport(long h, int x, int y, int px, int py,
+                                    int buttonState, int eventFlags, int ctrlKeyState, int inject);
+    /** #108, gate-only: the focus in/out report `?1004` asks for. Same `inject` rule. */
+    static native char[] focusReport(long h, int focused, int inject);
+    /** #104: {live CONOUT$ mode, the base this handle borrowed, saved?, claim held?}. Pass 0 after close() --
+     *  the reading opens its own CONOUT$, which is the only way to ask what the console was left with. */
+    static native long[] outputMode(long h);
     /** Arm a one-shot write_rect fault on run `run` of the next plan this handle flushes (`run < 0` disarms)
      *  and return what is now armed. Gate-only: the #44 defect needs a console call to fail *mid-plan*, and
      *  no console state can be coaxed into that. See RcHandle::faultRun. */
@@ -83,6 +101,11 @@ public class Render {
     static final int WIDE_BUF_W = 2000, WIDE_BUF_H = 300, WIDE_WIN_W = 120;
 
     private static long handle;
+    /** #88: whether the PRESENT arm of the cursor-shape legs ran in this process. Only a kernel32 that
+     *  exports SetConsoleCursorShape can take it, and the box the gates run on does not, so the tally at
+          *  the end of the run has to say which world the green belongs to -- a SKIP line in the scrollback
+     *  is not a verdict, and checks=0-failures is exactly what an unwitnessed branch looks like. */
+    private static boolean shapePresentArmRan;
     private static int checks, failures;
     private static int winT;                       /* buffer row of the viewport's top row */
 
@@ -103,30 +126,49 @@ public class Render {
        eleven slots, and `RenderJni.cpp` moves them by itself because it writes `STAT_UNSUPPORTED +
        RC_UN_MAX`. That is the whole I19 contract in one line: a slot is appended, never moved, and
        everything after it shifts together on both sides of the seam. */
-    private static final int S_UN = 17, S_COLON = S_UN + 10, S_TITLES = S_UN + 11 + 1,
-            S_TITLES_TRUNC = S_UN + 12 + 1, S_TITLES_APPLIED = S_UN + 13 + 1, S_ALT = S_UN + 14 + 1,
-            S_ALT_FAIL = S_UN + 15 + 1, S_PROMPTS = S_UN + 16 + 1, S_EXIT = S_UN + 17 + 1,
-            S_REPLIED = S_UN + 18 + 1, S_REPLY_FAIL = S_UN + 19 + 1, S_REPLY_FULL = S_UN + 20 + 1,
-            S_SNAP = S_UN + 21 + 1,
+    /* ⚠ #85 appended a 13th census slot (`charset`), which moved **every family after the census** by one.
+       The `+ 1` tails below are that shift and nothing else: the literal is what the table read before #85,
+       the `+ 1` is RC_UN_MAX 12 -> 13. NativeRenderer's SLOT_* constants carry the same +1 in their own
+       literals, and the length assertion at the bottom of this table is the third one: get any of the three
+       wrong and the gate says so by name instead of printing somebody else's counters. */
+    private static final int S_UN = 17, S_COLON = S_UN + 10, S_TITLES = S_UN + 11 + 2,
+            S_TITLES_TRUNC = S_UN + 12 + 2, S_TITLES_APPLIED = S_UN + 13 + 2, S_ALT = S_UN + 14 + 2,
+            S_ALT_FAIL = S_UN + 15 + 2, S_PROMPTS = S_UN + 16 + 2, S_EXIT = S_UN + 17 + 2,
+            S_REPLIED = S_UN + 18 + 2, S_REPLY_FAIL = S_UN + 19 + 2, S_REPLY_FULL = S_UN + 20 + 2,
+            S_SNAP = S_UN + 21 + 2,
             /* DECSET 2026, appended in the same order as STAT_SYNC in RenderJni.cpp: the regions that opened,
                the nested BSUs, the flushes held, and the three ways a region ended without its ESU. Last is the
                bit itself -- the only slot in this table that is a state rather than a count, and the reason the
                family cannot be read from the counts before it. The engages count is the denominator the other
                four need: held=400 says nothing until you know whether that was 400 regions or four. */
-            S_SYNC = S_UN + 23, S_SYNC_ENGAGES = S_UN + 23, S_SYNC_NESTED = S_UN + 24,
-            S_SYNC_HELD = S_UN + 25, S_SYNC_TIMEOUT = S_UN + 26, S_SYNC_OVERFLOW = S_UN + 27,
-            S_SYNC_DECLINED = S_UN + 28, S_SYNC_ON = S_UN + 29,
+            S_SYNC = S_UN + 24, S_SYNC_ENGAGES = S_UN + 24, S_SYNC_NESTED = S_UN + 25,
+            S_SYNC_HELD = S_UN + 26, S_SYNC_TIMEOUT = S_UN + 27, S_SYNC_OVERFLOW = S_UN + 28,
+            S_SYNC_DECLINED = S_UN + 29, S_SYNC_ON = S_UN + 30,
             /* OSC 52, in RenderJni.cpp's STAT_CLIP order: armed by the parser, then the three reasons a
                request was refused, then what the clipboard API answered, then the policy bit. The family's
                census slot is the last name in the label list below, which the gate compares against the
                dll's own table. */
-            S_CLIP_ARMED = S_UN + 30, S_CLIP_DECODE = S_UN + 31, S_CLIP_SELECTION = S_UN + 32,
-            S_CLIP_READ = S_UN + 33, S_CLIP_WRITES = S_UN + 34, S_CLIP_FAILS = S_UN + 35,
-            S_CLIP_POLICY = S_UN + 36,
+            S_CLIP_ARMED = S_UN + 31, S_CLIP_DECODE = S_UN + 32, S_CLIP_SELECTION = S_UN + 33,
+            S_CLIP_READ = S_UN + 34, S_CLIP_WRITES = S_UN + 35, S_CLIP_FAILS = S_UN + 36,
+            S_CLIP_POLICY = S_UN + 37,
             /* #74's counter, and the reason #89 exists: render.dll has written this slot since build -28, and
                both Java tables declared their last slot one before it. Nothing noticed, because the length
                check below was a floor and a floor cannot see an array that outgrew the table. */
-            S_ARGTRUNC = S_UN + 37, S_LEN = S_UN + 38;
+            S_ARGTRUNC = S_UN + 38,
+            /* #83 lives here: DECSET 2004 as agreed at the close of the run. Appended after the
+               truncation counter, which is the rule every slot on this seam follows. */
+            S_BP = S_UN + 39,
+            /* #88's shape axis: -1 never, 1 block, 2 vertical bar -- what this handle last got kernel32 to
+               accept, which is not the same sentence as "the cursor looks like that now". See the comment on
+               STAT_SHAPE in RenderJni.cpp for why this gate must not collapse the two. */
+            S_SHAPE = S_UN + 40, S_LEN = S_UN + 41;
+            /* #108's five report counters are deliberately NOT census slots. This array is read positionally by
+               three tables at once -- RenderJni.cpp's STAT_*, this file's S_*, and NativeRenderer's SLOT_*
+               block inside dbcli.jar -- and the third is a compiled fact in another tree that this round cannot
+               edit. `reportSlotAgrees("SLOT_LAST", S_LEN)` below is the gate that keeps the two Java tables from
+               drifting, and it is right that a slot appended in C without a name in the shipped report goes red
+               rather than printing somebody else's number. The five ride on inputMode() instead, which is
+               gate-only and has no second table: see caseInputReports(). */
 
     public static void main(String[] args) {
         System.out.println("render build: " + NativeRenderer.build());
@@ -171,6 +213,8 @@ public class Render {
         caseManyScreens();
         caseRealign();
         caseSuspectAlign();
+        caseWinchPrompt();
+        caseAdoptReadOnly();
         caseNoScrollback();
         caseHookDecline();
         caseWideBuffer();
@@ -187,10 +231,22 @@ public class Render {
         caseHealPairs();
         caseSoftReset();
         caseArgClamp();
+        caseMargins();
+        caseBracketedPaste();
+        caseMouseModes();
+        caseCursorKeys();
+        caseDeccolm();
+        caseOsc9Family();
+        caseMouseArm();
+        caseInputReports();
+        caseVtp();
+        caseCharset();
+        caseCursorShape();
         caseTabStops();
         caseInsert();
         caseColon();
         caseWindowOps();
+        caseInbandResize();
         caseRelativeCursor();
         caseSyncOutput();
         caseSyncOverflow();
@@ -233,7 +289,7 @@ public class Render {
            *words* those indices are printed with, which is the failure where a rollout log says "mouse=4"
            about a counter that moved. Read them from the dll and check them one by one. */
         final String[] LABELS = { "unrecognised", "decstbm", "altbuf", "mouse", "mode", "bracketed paste",
-                "osc9", "other osc", "dcs", "report", "colon", "osc clip" };
+                "osc9", "other osc", "dcs", "report", "colon", "osc clip", "charset" };
         final String[] cn = censusNames();
         gate("render.dll names every census slot", cn != null && cn.length == LABELS.length,
                 cn == null ? "null" : "the table has " + cn.length + " rows against " + LABELS.length
@@ -254,6 +310,8 @@ public class Render {
         reportSlotAgrees("SLOT_SYNC_ON", S_SYNC_ON);
         reportSlotAgrees("SLOT_LAST", S_LEN);
         reportSlotAgrees("SLOT_ARGTRUNC", S_ARGTRUNC);
+        reportSlotAgrees("SLOT_BP", S_BP);
+        reportSlotAgrees("SLOT_SHAPE", S_SHAPE);
         if (s.length >= S_LEN) {
             System.out.println("  not modelled: unrecognised=" + s[S_UN] + " decstbm=" + s[S_UN + 1]
                     + " altbuf=" + s[S_UN + 2] + " mouse=" + s[S_UN + 3] + " mode=" + s[S_UN + 4]
@@ -266,13 +324,16 @@ public class Render {
                     + "; replies written=" + s[S_REPLIED] + " (" + s[S_REPLY_FAIL] + " failed, "
                     + s[S_REPLY_FULL] + " refused for a full queue)"
                     + "; views snapped back on input=" + s[S_SNAP]
+                    + "; cursor-shape PRESENT arm: "
+                    + (shapePresentArmRan ? "RAN" : "NOT WITNESSED (this kernel32 does not export SetConsoleCursorShape)")
                     + "; sync updates=" + s[S_SYNC_ENGAGES] + " (" + s[S_SYNC_NESTED] + " nested, "
                     + s[S_SYNC_HELD] + " flushes held, ended early by " + s[S_SYNC_TIMEOUT] + " timeout / "
                     + s[S_SYNC_OVERFLOW] + " gutter / " + s[S_SYNC_DECLINED] + " decline)"
                     /* The slot #89 added, printed here so the gate's own output is the witness: a rollout line
                        that names the counter is the difference between "this build never hit the list limit"
                        and "nobody looked at it". */
-                    + "; parameters dropped=" + s[S_ARGTRUNC]);
+                    + "; parameters dropped=" + s[S_ARGTRUNC]
+                    + "; bracketed paste=" + (s[S_BP] != 0 ? "agreed" : "not agreed"));
         }
         close(handle);
         /* The other half of I34's promise: the console keeps the palette its user chose. This is read after
@@ -283,6 +344,19 @@ public class Render {
             gate("close() handed the console back the palette it found",
                     after != null && paletteDiff(after, paletteBefore, -1) == null,
                     after == null ? "unreadable" : String.valueOf(paletteDiff(after, paletteBefore, -1)));
+        }
+        /* #104's other half, and it can only be asked here: what the console is left holding. `vtpBase` is
+           the mode as the first open() of this process found it, so this is the borrow-and-return claim in
+           full -- the renderer may hold the host's parser off while it paints, and must not leave it off
+           after it stops. Read through handle 0, because the handle that knew the base is closed. */
+        if (vtpBase >= 0) {
+            final long[] left = outputMode(0);
+            gate("close() handed the console back its own escape parser", left[0] == vtpBase,
+                    "left=0x" + Long.toHexString(left[0]) + " base=0x" + Long.toHexString(vtpBase)
+                            + ": a renderer that quit and left the host's parser switched off would make"
+                            + " every later program in this console print escape sequences as text");
+        } else {
+            gate("the VTP leg recorded a base to return to", false, "vtpBase=" + vtpBase);
         }
         System.out.println("checks=" + checks + " failures=" + failures);
         if (failures > 0) { System.out.println("RENDERGATE: FAILED"); System.exit(1); }
@@ -650,6 +724,24 @@ public class Render {
                 "dcs=" + (b[S_UN + 8] - a[S_UN + 8]));
         gate("and it set no title", b[S_TITLES] - a[S_TITLES] == 0, "titles=" + (b[S_TITLES] - a[S_TITLES]));
         gate("no console call failed on any of it", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+
+        /* #107: the DCS this build's own DA1 advertises. `;4` in that reply is Sixel Graphics -- Microsoft's
+           list at adaptDispatch.cpp:1441, with a real SixelParser behind it in the same clone -- and the
+           answer is copied from conhost verbatim, so the payload it invites needs a fate measured on the
+           console rather than asserted in a comment. Two markers with a realistic sixel body between them:
+           if the framing leaked, the body's own newlines and letters would land in the grid. */
+        gotoRow(8);
+        a = stats(handle);
+        paint("two markers around a sixel body",
+                "AB\u001bPq#0;2;0;0;0;0;1Y\n#1;1;0;100;100;100;1,0,0;#1;2;0;100;100;0!0,0;"
+                        + "#2;1;50;50;50$3\\#0;0;0;0;0;0E\u001b\\CD");
+        b = stats(handle);
+        gate("the sixel body is counted once, in the dcs bucket", b[S_UN + 8] - a[S_UN + 8] == 1,
+                "dcs=" + (b[S_UN + 8] - a[S_UN + 8]));
+        text("the two markers meet with nothing of the body between them", winT + 8, 0, "ABCD", DEF);
+        tail("and the rest of that row is still blank", winT + 8, 4, DEF);
+        gate("no title survived it", b[S_TITLES] - a[S_TITLES] == 0, "titles=" + (b[S_TITLES] - a[S_TITLES]));
+        gate("and no console call failed", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
     }
 
     /** The console's own title, or a marker when the read failed -- so a failure line says which. */
@@ -1210,6 +1302,31 @@ public class Render {
         eqInput("a query answers in xterm's 16-bit form",
                 "\u001b]4;1;rgb:ffff/0000/0000\u001b\\");
 
+        /* #84 on the console's side. The host leg pins a name and a spec to the same COLORREF byte for byte;
+           this cannot, because what reaches a real console is an *index* — 16 entries own the slots, and the
+           fold to the nearest one already has its witness there. So the claim this leg owns is the weaker but
+           real one: the name is not merely parsed into the model, it is the entry the console is asked to
+           write. `orange` is 255/165/0, which no 2-digit sharp spelling in this run has written, so entry 5 is
+           its own slot and nothing else can explain it. */
+        paint("an OSC 4 spelled as a name", "\u001b]4;5;orange\u0007");
+        p = palette();
+        gate("the name reached the console as its colour", p != null && p[5] == 0x0000A5FF,
+                p == null ? "unreadable" : "got=0x" + Long.toHexString(p[5]));
+        paint("the same colour spelled in hex", "\u001b]4;6;#ffa500\u0007");
+        p = palette();
+        gate("and the two spellings ask the console for one entry",
+                p != null && p[5] == p[6] && p[6] == 0x0000A5FF,
+                p == null ? "unreadable" : "5=0x" + Long.toHexString(p[5]) + " 6=0x" + Long.toHexString(p[6]));
+        paint("a name this build does not have", "\u001b]4;7;nosuchcolourname\u0007");
+        p = palette();
+        /* Deliberately *before* the two writes above, not a literal: entry 7 belongs to whatever console this
+           gate runs on -- the number this leg first asserted, 0x808080, is the RgbMap standard grey and the box
+           answered 0xcccccc, which is a user's entry, not a bug. A refusal's witness is that the console ends
+           as it began, and nothing more. */
+        gate("writes nothing, rather than writing a guess", p != null && p[7] == paletteBefore[7],
+                p == null ? "unreadable" : "got=0x" + Long.toHexString(p[7])
+                        + " want the " + Long.toHexString(paletteBefore[7]) + " this console had");
+
         /* The default is model-side on this console (I34), so the witness is what a default *does*: an SGR
            reset puts it in the pen, the erase paints the screen with the pen. 0x00000080 is the standard
            table's entry 4, so a correct round trip lands the viewport on attribute 4. */
@@ -1289,29 +1406,93 @@ public class Render {
                 "written=" + (b[S_REPLIED] - a[S_REPLIED]));
         eqInput("the queue is empty", "");
 
-        /* The queue's limit, which is a refusal rather than an eviction: dropping an older reply hangs a
-         * program already blocked on its first read, and both outcomes leave a number. */
+        /* The queue's depth, measured on the console rather than read out of the header.
+         * ⚠ This arm used to read "eight answered, the ninth refused" and it was <b>right</b> -- against
+         *   `RC_REPORT_MAX 8`, a depth nothing had challenged since build -1. #81 gave the parser a nine-member
+         *   family to answer (9/1000/1002/1003/1004/1005/1006/1015/1016), the family became the largest legal
+         *   ask, and eight stopped being a limit and started being a truncation. The depth moved to 64
+         *   (ghostty's mailbox, termio/mailbox.zig:15) and the constant stayed in C, where it belongs -- so the
+         *   live half cannot name it and must not guess it. What it can do is walk up to it and check the bytes
+         *   at every step, which is the only way to find out that the number is real on this machine.
+         *   Every character goes in as a key-down <b>and</b> a key-up (this file's own reader filters on
+         *   bKeyDown), so a 4-char reply is 8 records and the 64-deep top of this sweep is 512 of them. */
+        final int[] SIZES = { 8, 16, 24, 32, 48, 64 };
+        for (int si = 0; si < SIZES.length; si++) {
+            final int ask = SIZES[si];
+            readInput(0);
+            final long[] p = stats(handle);
+            StringBuilder q = new StringBuilder();
+            for (int i = 0; i < ask; i++) q.append("\u001b[5n");
+            paint("queue depth " + ask, q.toString());
+            final long[] r = stats(handle);
+            gate("asked " + ask + ", answered " + ask, (int) (r[S_REPLIED] - p[S_REPLIED]) == ask
+                    && (int) (r[S_REPLY_FULL] - p[S_REPLY_FULL]) == 0,
+                    "wrote=" + (r[S_REPLIED] - p[S_REPLIED]) + " refused=" + (r[S_REPLY_FULL] - p[S_REPLY_FULL])
+                            + " want " + ask + " and 0");
+            StringBuilder want = new StringBuilder();
+            for (int i = 0; i < ask; i++) want.append("\u001b[0n");
+            StringBuilder gotBytes = new StringBuilder();
+            StringBuilder batches = new StringBuilder();
+            for (int round = 0; round < 40; round++) {
+                final String s = input(256);
+                batches.append(s.length()).append(' ');
+                if (s.isEmpty()) break;
+                gotBytes.append(s);
+            }
+            gate("and all " + ask + " arrive, once each, oldest first", gotBytes.toString().equals(want.toString()),
+                    "got " + gotBytes.length() + " chars want " + want.length() + " in batches[" + batches
+                            + "]: a count the bytes cannot match is a reply the program is still waiting for");
+        }
+
+        /* Past the depth: a refusal, not an eviction. Dropping an older reply hangs a program already blocked
+           on its first read; refusing a newer one hangs only a program that asked more than the queue can
+           remember -- and both leave a number, which is the difference between a limit and a leak. 72 is one
+           payload above the deepest arm above, whatever that arm says the depth is. */
+        readInput(0);
         a = stats(handle);
+        final int ASK = 72;
         StringBuilder many = new StringBuilder();
-        for (int i = 0; i < 9; i++) many.append("\u001b[5n");
-        paint("nine questions, one eight-deep queue", many.toString());
+        for (int i = 0; i < ASK; i++) many.append("\u001b[5n");
+        paint("seventy-two questions, one bounded queue", many.toString());
         b = stats(handle);
-        gate("eight answered", b[S_REPLIED] - a[S_REPLIED] == 8, "written=" + (b[S_REPLIED] - a[S_REPLIED]));
-        gate("and the ninth refused for a full queue", b[S_REPLY_FULL] - a[S_REPLY_FULL] == 1,
-                "full=" + (b[S_REPLY_FULL] - a[S_REPLY_FULL]));
-        StringBuilder eight = new StringBuilder();
-        for (int i = 0; i < 8; i++) eight.append("\u001b[0n");
-        eqInput("none lost, none duplicated", eight.toString());
+        final int wrote = (int) (b[S_REPLIED] - a[S_REPLIED]);
+        final int full = (int) (b[S_REPLY_FULL] - a[S_REPLY_FULL]);
+        gate("a queue that small refuses", full >= 1, "refused=" + full + " of " + ASK
+                + ": if this ever reads 0 the depth passed 72 and this arm's premise, not its expectation, is stale");
+        gate("asked equals answered plus refused", wrote + full == ASK,
+                "wrote=" + wrote + " refused=" + full + " asked=" + ASK + ": the gap between these is where a"
+                        + " dropped-on-the-floor reply would hide -- a limit leaves a number, a leak does not");
+        gate("and at least one whole family fits", wrote >= 9, "answered=" + wrote
+                + ": #81 made nine the largest thing a stream can ask in one write, so a queue that answers"
+                        + " fewer truncates a feature rather than an abuse");
+        StringBuilder over = new StringBuilder();
+        for (int i = 0; i < wrote; i++) over.append("\u001b[0n");
+        StringBuilder gotOver = new StringBuilder();
+        StringBuilder overBatches = new StringBuilder();
+        for (int round = 0; round < 40; round++) {
+            final String s = input(256);
+            overBatches.append(s.length()).append(' ');
+            if (s.isEmpty()) break;
+            gotOver.append(s);
+        }
+        gate("the ones that were answered are the ones that arrive", gotOver.toString().equals(over.toString()),
+                "got " + gotOver.length() + " chars for " + wrote + " replies want " + over.length()
+                        + " in batches[" + overBatches + "]");
+        final String spilled = input(8);
+        gate("and nothing spilled past them", spilled.isEmpty(), "spilled=" + vis(spilled)
+                + ": a queue that answered " + wrote + " must have written " + wrote + ", not more");
 
         /* jline4's capability probe batch, byte for byte (AbstractTerminal.probeModes): kitty's keyboard
            query, the three DECRQM asks, and DA1 as the fence. `CSI ?u` used to follow ConEmu's unconditional
            restore (Ansi.cpp:4194) and teleport the cursor to the last DECSC, and a probe is exactly the
            thing that must never move a cursor -- so this leg saves a position, walks away from it, replays
            the batch and demands the console cursor still stand where it walked to. Of the three DECRQM ids,
-           only 2026 is answered: this build has no state for 2027 (grapheme reflow) or 2048 (in-band resize),
-           and jline4 reads a missing reply as NOT_SUPPORTED -- the honest verdict -- while any permanent
-           status number would be read two opposite ways (AbstractTerminal.java:663-667). So the exact bytes
-           below are the contract: one DECRPM for the mode that is modelled, then the fence, nothing else. */
+           2026 and 2048 answer and 2027 does not: this build holds no state for grapheme reflow, while 2048
+           has had a stored bit -- and a notice that can actually arrive -- behind it since #82. It answers 1
+           here because the probe asks before anything enabled it, which is the default and the honest answer.
+           jline4 reads a missing reply as NOT_SUPPORTED, and any permanent status number would be read two
+           opposite ways (AbstractTerminal.java:663-667). So the exact bytes below are the contract: two
+           DECRPMs in the order they were asked, then the fence, nothing else. */
         readInput(0);
         a = stats(handle);
         paint("a saved position the probe must not reach", "\u001b[3;5H\u001b[s\u001b[8;12H");
@@ -1322,10 +1503,12 @@ public class Render {
         gate("the probe left the cursor where it stood",
                 afterProbe[5] == walked[5] && afterProbe[6] == walked[6],
                 "(" + walked[5] + "," + walked[6] + ") -> (" + afterProbe[5] + "," + afterProbe[6] + ")");
-        gate("and three ids in it voted as refused modes", b[S_UN + 4] - a[S_UN + 4] == 3,
-                "mode=" + (b[S_UN + 4] - a[S_UN + 4]) + " -- `?u`, then 2027 and 2048 unanswered");
-        eqInput("the probe's one DECRPM, for 2026, and then the fence",
-                "\u001b[?2026;" + (b[S_SYNC_ON] == 1 ? 2 : 1) + "$y"
+        gate("and one id in it voted as a refused mode", b[S_UN + 4] - a[S_UN + 4] == 1,
+                "mode=" + (b[S_UN + 4] - a[S_UN + 4]) + " -- `?u`, then 2027; 2048 answers since #82 so it votes nothing");
+        eqInput("the probe's three DECRPMs -- 2026, then 2027 answered 0, then 2048 off -- and the fence",
+                "\u001b[?2026;" + (b[S_SYNC_ON] == 1 ? 1 : 2) + "$y"
+                                        + "\u001b[?2027;0$y"
+                        + "\u001b[?2048;2$y"
                         + "\u001b[?61;4;6;7;14;21;22;23;24;28;32;42c");
         paint("the DECRC that save belongs to", "\u001b[u");
         afterProbe = consoleView();
@@ -1605,6 +1788,806 @@ public class Render {
      * clamped to the window's height instead of the rows below the cursor, and with a cursor two rows into the
      * window `CSI 9999M` erased the rows *above* it and left its own row standing.
      */
+    /**
+     * DECOM and the margins on a real console (#80). The host gate owns the arithmetic; what only a console
+     * can say is where the cursor and the glyphs actually ended up, and that the pair survives the seam a
+     * resize goes through (`build_model`), which the host gate cannot reach at all.
+     */
+    private static void caseMargins() {
+        if (!standardGeometry("the margin leg")) return;
+
+        paint("DECLRMM on, then margins at columns 5..20", "\u001b[?69h\u001b[5;20s");
+        long[] v = consoleView();
+        gate("a valid pair homes the cursor onto the left margin", v[5] == 4 && v[6] == winT,
+                "(" + v[5] + "," + v[6] + ") want (4," + winT + ")");
+
+        paint("twenty-four letters, which the band cannot hold", "ABCDEFGHIJKLMNOPQRSTUVWX");
+        text("the first sixteen fill the band", winT, 4, "ABCDEFGHIJKLMNOP", DEF);
+        text("and the rest continue at the margin, not at column 0", winT + 1, 4, "QRSTUVWX", DEF);
+        tail("the row below is clear past the word", winT + 1, 12, DEF);
+
+        paint("a CUP that names column 1, inside the band", "\u001b[1;1H#");
+        text("the glyph landed on the margin, not at the page edge", winT, 4, "#", DEF);
+        v = consoleView();
+        /* Read after the write, so the cursor stands one past the clamped cell: the fact this leg owns is
+           which column the glyph went into. The clamp is the margins whatever the origin does -- MSFT :366
+           tests `clampInMargins || Origin`, and #80 follows it. */
+        gate("and the cursor sits one past the margin cell", v[5] == 5,
+                "x=" + v[5] + " want 5 (the write advanced from the clamped column 4)");
+
+        paint("a region and origin mode together", "\u001b[2;5r\u001b[?6h");
+        v = consoleView();
+        gate("setting DECOM homes the cursor to the region's top-left", v[5] == 4 && v[6] == winT + 1,
+                "(" + v[5] + "," + v[6] + ") want (4," + (winT + 1) + ")");
+        paint("addressing now counts from that corner", "\u001b[2;3HZ");
+        text("row 2, column 3 of the region", winT + 2, 6, "Z", DEF);
+
+        paint("save, drop the mode, walk away, restore",
+              "\u001b[3;8H\u001b7\u001b[?6l\u001b[1;1H\u001b8");
+        v = consoleView();
+        gate("SCOSR brings the coordinate space back with the position", v[5] == 11 && v[6] == winT + 3,
+                "(" + v[5] + "," + v[6] + ") want (11," + (winT + 3) + "): ESC 7/8 carry origin (MSFT :481/:497)");
+
+        paint("RIS clears the whole family", "\u001bc");
+        v = consoleView();
+        paint("column 1 is reachable again", "\u001b[1;1H@");
+        text("the page edge is the page again", winT, 0, "@", DEF);
+
+        /* The seam only a live run can cross: `build_model` carries the modes and re-clamps the pair, and the
+           host gate links Render.cpp directly, so it never sees it. `readopt` is the rebuild a resize takes
+           (the same primitive #77's carry leg used), and what it proves is the narrower claim: the pair and
+           both bits survived the model being thrown away and rebuilt -- a field missing from the keep-list is
+           lost here and is invisible to every other gate. The re-clamp that a *width* change would add is
+           owned by the host gate's arithmetic, not by this leg. */
+        paint("claim the band, a region, and origin",
+              "\u001b[2;5r\u001b[?69h\u001b[5;20s\u001b[?6h\u001b[1;1HX");
+        v = consoleView();
+        gate("setup: the glyph stands on the left margin of the region's top row",
+                v[5] == 5 && v[6] == winT + 1,
+                "(" + v[5] + "," + v[6] + ") want (5," + (winT + 1) + ")");
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        /* What a rebuild does and does not carry, said plainly. The DECSTBM region is deliberately NOT
+           carried -- `Render.h`'s DECSTBM note says `rc_reset_hist` zeroes the pair, and this run confirmed it
+           (a wild row after the rebuild clamps to the viewport's bottom, 59 here, not the region's). That has
+           a consequence for DECOM the first version of this leg got wrong: with no region, origin's base IS
+           the viewport top and its column clamp is the margins, so **the bit has no observable effect after a
+           rebuild at all** -- `build_model` keeps it so that `?6$p` answers truthfully, and nothing on a screen
+           can tell that it happened. So this leg witnesses the one carry that is visible, the band, and the
+           comment is where the unwitnessed half is recorded rather than in a gate that could not fail. */
+        paint("address row 1 again after the rebuild", "\u001b[1;1HY");
+        v = consoleView();
+        gate("the left margin came through the seam", v[5] == 5,
+                "x=" + v[5] + " want 5: the write landed on the carried column 4, not at 0");
+        gate("and the viewport top is the row, as it is with no region carried", v[6] == winT,
+                "y=" + v[6] + " want " + winT);
+        text("the earlier glyph is still where origin put it", winT + 1, 4, "X", DEF);
+        text("and the glyph written after the rebuild is on the viewport's top row", winT, 4, "Y", DEF);
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /**
+     * DECSET 2004 on a real console (#83): the bit stores, `?2004$p` answers it, both resets clear it, and
+     * `stats()` carries the state so a rollout can tell "nobody asked" from "it asked and the paste bytes are
+     * the host's". The markers themselves are deliberately not synthesised -- that is the half with no
+     * surface, and the reason this leg asserts the *absence* of a claim rather than pretending one.
+     */
+    private static void caseBracketedPaste() {
+        if (!standardGeometry("the bracketed-paste leg")) return;
+        long[] a = stats(handle);
+        /* The leg needs its slot before it can ask anything about it. Without this guard a render.dll from
+           before #83 does fail the run -- by throwing `ArrayIndexOutOfBoundsException: 55` out of main, which
+           took the remaining cases with it and printed no verdict. That is what happened the first time this
+           leg was pointed at -34 bytes, and it is the reason the length check is the leg's first statement:
+           an old binary is a finding with a name, not a stack trace. (The same `has()` discipline
+           NativeRenderer's report line has used all along, in the gate that owns no such helper.) */
+        if (a.length <= S_BP) {
+            gate("stats carries the bracketed-paste slot", false,
+                    "length=" + a.length + " want at least " + (S_BP + 1)
+                            + ": render.dll predates #83, so this leg has nothing to read");
+            return;
+        }
+        gate("a fresh grid has agreed nothing", a[S_BP] == 0, "slot=" + a[S_BP]);
+        paint("the application asks for bracketed paste", "\u001b[?2004h");
+        long[] b = stats(handle);
+        gate("and the shipped stats() says so", b[S_BP] != 0, "slot=" + b[S_BP] + " want non-zero");
+        gate("the census did not gain a refusal for it", b[S_UN + 5] == a[S_UN + 5],
+                "bracketed paste=" + (b[S_UN + 5] - a[S_UN + 5]) + ": a stored mode is not an unmodelled one");
+        paint("and it is turned off again", "\u001b[?2004l");
+        long[] c = stats(handle);
+        gate("the reset is a store too", c[S_BP] == 0, "slot=" + c[S_BP]);
+        /* Two doors again: the census bucket must still fire for the OSC spelling, which asks for something
+           this library cannot do, while the CSI spelling above stayed clean. One counter, two meanings, and
+           the leg that cannot tell them apart would pass on either. */
+        paint("the OSC form asks for an executed paste", "\u001b]2004;1\u0007");
+        long[] e = stats(handle);
+        gate("the OSC request is counted where the CSI one was not", e[S_UN + 5] - c[S_UN + 5] == 1,
+                "bracketed paste=" + (e[S_UN + 5] - c[S_UN + 5]) + " want 1");
+        gate("and it still set no state", e[S_BP] == 0, "slot=" + e[S_BP]);
+        /* The carry, which is the leg #83 shipped without. #77's IRM and #80's DECOM both put the same
+           question to a rebuild; nobody asked it of this bit, and the answer was wrong: `readopt` dropped
+           it, so a session holding a `;2$y` got a `;1$y` the moment the user dragged the window, and the
+           report line flipped to "not agreed" without any application asking for that. */
+        paint("DECSET 2004 again, for the carry leg", "\u001b[?2004h");
+        long[] armed = stats(handle);
+        gate("and the bit stands again", armed[S_BP] != 0, "slot=" + armed[S_BP]);
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H - 4, DEF) == 0) {
+            gate("the carry leg gets a shorter window", false, "setGeometry");
+        } else {
+            gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+            long[] across = stats(handle);
+            gate("a resize is not an un-agreement: the bit rode across the rebuild", across[S_BP] != 0,
+                    "slot=" + across[S_BP] + " want non-zero -- DECRQM answers 1 (not set) for a mode the app set");
+            paint("and `?2004$p` still says set", "\u001b[?2004$p");
+            eqInput("the reply carries status 1 after the rebuild", "\u001b[?2004;1$y");
+            setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF);
+            readopt(handle);
+        }
+        paint("RIS clears the family", "\u001bc");
+        long[] f = stats(handle);
+        gate("the bit is off after RIS", f[S_BP] == 0, "slot=" + f[S_BP]);
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /**
+     * #88's live half, and it is a smaller claim than the host leg above it in the run. DECSCUSR 5/6 opened a
+     * second door to the cursor -- {@code SetConsoleCursorShape} instead of {@code CONSOLE_CURSOR_INFO.dwSize}
+     * -- reachable only when the seam resolved that export at open(). conhost offers no getter for the shape
+     * ({@code GetConsoleCursorInfo} reports the height axis), so <b>no leg in either gate can see a bar on the
+     * screen</b>. What this leg can witness is the three things that are not guesses: that the shipped handle
+     * reports its own last accepted word and nothing else, that the new call path costs no API error on this
+     * box's kernel32, and that walking the parameter back re-opens the height door rather than leaving the bar
+     * standing. The safety of "a kernel32 without the export behaves exactly as -37 did" is witnessed by the
+     * control arm in {@code RenderCheck.cpp::plan_cursor_shape}, not here -- this process cannot un-resolve an
+     * export it already found, and a leg that only ever runs on a console that has the API proves nothing about
+     * the ones that do not.
+     */
+    /**
+     * #85's live half. The host gate can see `charset[4]` and `gshift` directly; this one cannot -- the only
+     * window onto them is whether the console ends up showing line-drawing glyphs -- and its distinctive job
+     * is the <b>carry</b>: a rebuild drops the grid and rebuilds it from the console, and a G-set or a shift
+     * left behind there turns a box-drawing program into ASCII garbage on the next window drag. That is the
+     * same obligation #83 and #82 had, and it is invisible to the host gate by construction: deleting
+     * `fresh->gshift = keepGl` in the seam leaves `checks=6672 fails=0` there (proved, not assumed --
+     * `cache/audit90/t3-mut-carry.txt`). So this leg is that arm's only witness.
+     */
+    /**
+     * #81's live half, and it is deliberately narrow. The host leg (`geo_mousemodes`) already pins the bits,
+     * the per-number DECRQM answers in both polarities, independence, and the RIS/DECSTR split. What only a
+     * real console can say is the two things a model-side test cannot reach: that the replies <b>leave the
+     * process</b> in the exact bytes a reader will parse, and that asking for nine mouse modes costs neither
+     * a repaint nor a failed console call.
+     * ⚠ What this leg does NOT witness, and never will: a mouse report. This library generates no input --
+     * writing `ESC [ M ...` at an application that did not ask for it is I26 in the one stream where it is
+     * hardest to undo -- so there is no report to spell-check, and an assertion that "no report appears" is
+     * the honest arm, not a placeholder for one that does.
+     */
+    /**
+     * #114: DECCKM across the seam. The host gate pins the bit, the two resets and the answer; what only a
+     * live run can show is the fifth obligation -- that a rebuild for the console's shape (which is what a
+     * window drag forces) carries the mode rather than silently un-arming it. #83 is the precedent: the
+     * bracketed-paste bit survived the store and died at the rebuild, and the only symptom was `?2004$p`
+     * answering differently before and after a resize, to a program that had asked once.
+     *
+     * <p>The reply is read off CONIN$, so this is the console-side witness that the number the model answers
+     * with is the number a reader receives -- not merely that a field in the struct is non-zero.
+     */
+    private static void caseCursorKeys() {
+        if (!standardGeometry("the DECCKM leg")) return;
+        final long[] a = stats(handle);
+
+        readInput(0);
+        paint("ask before anyone armed it", "\u001b[?1$p");
+        String r = input(64);
+        gate("?1 answers reset (2) on a fresh model", r.contains("\u001b[?1;2$y"), "read back " + vis(r));
+
+        paint("DECCKM on", "\u001b[?1h");
+        readInput(0);
+        paint("and ask", "\u001b[?1$p");
+        r = input(64);
+        gate("?1h is answered as set (1), DEC's vocabulary", r.contains("\u001b[?1;1$y"),
+                "read back " + vis(r) + " -- a 2 here is #93's inversion or a bit the store lost");
+
+        /* The rebuild. Nothing else in this run re-arms the mode, so a reply that fell back to 2 here can
+           only mean the carry in build_model dropped it. */
+        final int back = readopt(handle);
+        readInput(0);
+        paint("and ask after the rebuild", "\u001b[?1$p");
+        r = input(64);
+        gate("a rebuild for the console's shape carries DECCKM", back == 1 && r.contains("\u001b[?1;1$y"),
+                "readopt=" + back + " read back " + vis(r)
+                        + ": a terminal that says 'set' before a drag and 'reset' after one is answering two"
+                        + " different questions with one number (I26, and the same lie #83 fixed for 2004)");
+
+        paint("DECCKM off", "\u001b[?1l");
+        readInput(0);
+        paint("and ask once more", "\u001b[?1$p");
+        r = input(64);
+        gate("and ?1l walks it back to reset", r.contains("\u001b[?1;2$y"), "read back " + vis(r));
+
+        /* The number in the table that answers from a fact about the build instead of from a bit. It was
+           silent until -52, on a policy the same build broke for `?3` (#109); what has to stay true is that
+           no DECSET can move it. */
+        readInput(0);
+        final long[] c = stats(handle);
+        paint("DECANM asked", "\u001b[?2$p");
+        r = input(64);
+        gate("?2 answers 3 = permanently set", r.contains("\u001b[?2;3$y"), "read back " + vis(r)
+                + ": this parser has no VT52 table to switch into, and MSFT answers the same question from"
+                + " its state machine's parser mode (adaptDispatch.cpp:1957-1958)");
+        paint("DECANM asked to change", "\u001b[?2h");
+        readInput(0);
+        paint("and asked again", "\u001b[?2$p");
+        r = input(64);
+        gate("and ?2h cannot move it", r.contains("\u001b[?2;3$y"), "read back " + vis(r));
+        final long[] d = stats(handle);
+        gate("the set is still counted as refused, the asks are not", d[S_UN + 4] - c[S_UN + 4] == 1,
+                "mode=" + (d[S_UN + 4] - c[S_UN + 4]) + ": ?2h votes, ?2$p now answers and must not");
+
+        final long[] b = stats(handle);
+        gate("and the only align in this leg is the rebuild we asked for", b[4] - a[4] == 1,
+                "aligns=" + (b[4] - a[4]) + ": a mode the screen cannot show must not buy window work, and the"
+                        + " one here is the readopt the carry arm deliberately takes");
+        gate("and no console call failed", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /**
+     * #109: DECCOLM (`CSI ?3 $p` / `h` / `l`), 132 vs 80 columns. What the host gate cannot see is the reply
+     * as bytes, and `4 = permanently reset` is a claim about the wire, not about the model: it is what a
+     * caller acts on. The measurement behind the number is `cache/w109/` (three APIs, classic and WT); the
+     * arms here are that the number reaches the queue, that nothing can talk it to 1, and that refusing
+     * costs no window work.
+     */
+    private static void caseDeccolm() {
+        if (!standardGeometry("the DECCOLM leg")) return;
+        final long[] a = stats(handle);
+
+        readInput(0);
+        paint("ask about 132 columns", "\u001b[?3$p");
+        String r = input(64);
+        gate("?3 answers 4 = permanently reset", r.contains("\u001b[?3;4$y"), "read back " + vis(r));
+
+        /* Either direction of the set must leave the answer where the measurement put it. A 1 appearing here
+           would mean some path started storing a bit the painter cannot honour -- which is the exact defect
+           #109 measured away, not a hypothetical. */
+        paint("ask for 132 columns", "\u001b[?3h");
+        readInput(0);
+        paint("and ask again", "\u001b[?3$p");
+        r = input(64);
+        gate("?3h does not move the answer", r.contains("\u001b[?3;4$y"), "read back " + vis(r));
+        paint("ask for 80 columns", "\u001b[?3l");
+        readInput(0);
+        paint("and ask a third time", "\u001b[?3$p");
+        r = input(64);
+        gate("?3l leaves it at 4 as well", r.contains("\u001b[?3;4$y"), "read back " + vis(r));
+
+        /* The refusals still have to be visible in the census (#87's slot), and a refusal that bought window
+           work would be the resize this ticket measured and rejected. Two h/l votes plus the two the asks
+           used to make is not the shape here: `$p` on a number the table answers votes nothing, so the whole
+           leg owes exactly the two set votes. */
+        final long[] b = stats(handle);
+        gate("the two set sequences are counted as refused", b[S_UN + 4] - a[S_UN + 4] == 2,
+                "mode=" + (b[S_UN + 4] - a[S_UN + 4]) + ": ?3h and ?3l vote, ?3$p now answers and must not");
+        gate("and refusing bought no window work", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4]));
+        gate("and no console call failed", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    private static void caseMouseModes() {
+        if (!standardGeometry("the mouse-mode leg")) return;
+        long[] a = stats(handle);
+        final int MOUSE = S_UN + 3;              /* RC_UN_MOUSE: 3rd slot after unrecognised/decstbm/altbuf */
+
+        /* Every number answers, before any of them is set: 1 = "no state", which is the answer a mode the
+           model holds but nobody armed deserves. ⚠ Nine in one write is <b>this leg's</b> payload, not a
+           reader's: jline4's whole mode probe is five replies -- the Kitty query, DECRQM for 2026/2027/2048,
+           and a DA1 fence (AbstractTerminal.java:620-627) -- and it then looks each number up inside the
+           concatenated response (parseDecrpm at :675, called with m.mode() at :651). That five-is-under-eight
+           arithmetic is why a queue of eight survived twenty-eight tickets unfalsified; #81 made the largest
+           askable family nine, and the first run of this leg came back with eight replies. The cap moved to
+           64 (Render.h's RC_REPORT_MAX), and this arm is the console-side witness that it moved. */
+        readInput(0);
+        paint("the nine mouse queries", "\u001b[?9$p\u001b[?1000$p\u001b[?1002$p\u001b[?1003$p\u001b[?1004$p"
+                + "\u001b[?1005$p\u001b[?1006$p\u001b[?1015$p\u001b[?1016$p");
+        final String all = input(512);
+        gate("all nine answer, each under its own number",
+                all.contains("\u001b[?9;2$y") && all.contains("\u001b[?1000;2$y")
+                        && all.contains("\u001b[?1002;2$y") && all.contains("\u001b[?1003;2$y")
+                        && all.contains("\u001b[?1004;2$y") && all.contains("\u001b[?1005;2$y")
+                        && all.contains("\u001b[?1006;2$y") && all.contains("\u001b[?1015;2$y")
+                        && all.contains("\u001b[?1016;2$y"),
+                "read back " + vis(all));
+
+        /* Set three of them, and the answers must move independently. */
+        paint("three modes on", "\u001b[?1000h\u001b[?1002h\u001b[?1006h");
+        readInput(0);
+        paint("and ask again", "\u001b[?1000$p\u001b[?1002$p\u001b[?1006$p\u001b[?1003$p");
+        final String set = input(256);
+        gate("the three set ones answer 2, and the untouched one still answers 1",
+                set.contains("\u001b[?1000;1$y") && set.contains("\u001b[?1002;1$y")
+                        && set.contains("\u001b[?1006;1$y") && set.contains("\u001b[?1003;2$y"),
+                "read back " + vis(set) + " -- a single 'current protocol' field could not produce this four-way split");
+
+        long[] b = stats(handle);
+        gate("nine queries and three sets cost no refusal", b[MOUSE] - a[MOUSE] == 0,
+                "mouse=" + (b[MOUSE] - a[MOUSE]) + ": #81 turned this family from a refusal into a store");
+        gate("and no repaint", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4])
+                + ": a mode the screen cannot show must not cost the user a window flash");
+        gate("and no console call failed", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+        gate("and nothing was injected into the input stream beyond the replies",
+                b[S_UN + 9] - a[S_UN + 9] == 0, "report=" + (b[S_UN + 9] - a[S_UN + 9])
+                        + ": the only bytes that left are the nine answers we just read back");
+
+        /* The carry. A rebuild that dropped mouseModes would make `?1000$p` answer 1 mid-session, which is
+           exactly the #83 failure one stamp later and the same lie #82's in-band bit would have told. */
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H - 4, DEF) == 0) {
+            gate("the carry leg gets a shorter window", false, "setGeometry");
+        } else {
+            gate("the rebuild is accepted", readopt(handle) == 1, "readopt said no");
+            winT = (int) consoleView()[0];
+            readInput(0);
+            paint("and ask after the rebuild", "\u001b[?1000$p\u001b[?1002$p\u001b[?1006$p");
+            final String after = input(256);
+            gate("all three rode across the rebuild",
+                    after.contains("\u001b[?1000;1$y") && after.contains("\u001b[?1002;1$y")
+                            && after.contains("\u001b[?1006;1$y"),
+                    "read back " + vis(after));
+            setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF);
+            readopt(handle);
+        }
+
+        /* And the refusal that stays: 1001 is recognised by neither reference and must still be counted. */
+        long[] c = stats(handle);
+        paint("?1001, which nobody implements", "\u001b[?1001h");
+        long[] d = stats(handle);
+        gate("it votes the mouse bucket", d[MOUSE] - c[MOUSE] == 1,
+                "mouse=" + (d[MOUSE] - c[MOUSE]) + " want 1: the census must keep saying 'an application asked "
+                        + "about the mouse and got nothing' for the numbers we really do not hold");
+        readInput(0);
+        paint("and it is not answerable", "\u001b[?1001$p");
+        final String none = input(64);
+        gate("so its query answers the not-recognized digit", none.contains("\u001b[?1001;0$y"),
+                "read back " + vis(none) + " -- GAP G11: 0 claims only that no such mode is held, which is what the "
+                        + "DECSET above just proved. The silence this arm used to demand left the asker to infer it; "
+                        + "MSFT answers DECRPM_Unsupported for every id its switch does not name "
+                        + "(adaptDispatch.cpp:1939), ghostty .not_recognized (modes.zig:80-102)");
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /**
+     * #95: the console side of the mouse family. The bits, the answers and the carry are #81's and are
+     * pinned by `caseMouseModes`; this case is about the one thing that can only be seen on a real
+     * console -- that asking for the mouse actually changed the console.
+     *
+     * ⚠ What this case deliberately does NOT claim: that a mouse event will reach anybody. This library
+     * never reads the input queue, because in this stack the reader is jline's own pump
+     * (`AbstractWindowsTerminal` parses the records at :751 and filters them by tracking level at
+     * :839-841). Arming without stealing is the whole of the obligation, and the byte-level report and
+     * `kmous` stay open in `ANSI_TODO.md` #95 for that reason.
+     */
+    /**
+     * #111: the whole refused OSC 9 family, sent at a real console in one chunk. The host gate can prove the
+     * model records a vote; only a leg standing on a live CONOUT$ can prove the stream kept moving, that no
+     * dialog or wait took the terminal away, and that nothing was written back into the input queue.
+     * Timing is the witness for `9;1` (sleep) and `9;5` (wait for a key) -- both are defined by the delay
+     * they cause, so "this chunk came back in milliseconds" is the assertion, with a bound far below the
+     * 5000 ms the payload asks for.
+     */
+    private static void caseOsc9Family() {
+        if (!standardGeometry("the OSC 9 family leg")) return;
+        final char[] title0 = consoleTitle();
+        final long[] a = stats(handle);
+        readInput(0);
+        paint("a marker to compare against", "Z");
+
+        final long t0 = System.nanoTime();
+        paint("the refused family in one chunk",
+                "\u001b]9;1;5000\u0007\u001b]9;2;boom\u0007\u001b]9;3;Tab\u0007\u001b]9;5\u0007"
+                        + "\u001b]9;6;GuiMacro(\"x\")\u0007\u001b]9;7;calc.exe\u0007\u001b]9;8;PATH\u0007"
+                        + "\u001b]9;10\u0007\u001b]9;10;2\u0007\u001b]9;11;just a note\u0007");
+        final long ms = (System.nanoTime() - t0) / 1000000L;
+        final long[] b = stats(handle);
+
+        gate("9;1;5000 did not sleep the stream", ms < 2000,
+                "elapsed=" + ms + "ms for a chunk asking to sleep 5000ms (and 9;5 asks to wait for a key)");
+        gate("all ten refused ids voted, no more and no less", b[S_UN + 6] - a[S_UN + 6] == 10,
+                "osc9=" + (b[S_UN + 6] - a[S_UN + 6]) + ": a family member absorbed without a record is the"
+                        + " failure this leg exists for");
+        String r = input(64);
+        gate("9;8 leaked no environment value into the input stream", r.isEmpty(), "read back " + vis(r));
+        final char[] title1 = consoleTitle();
+        gate("and no id renamed the window", java.util.Arrays.equals(title0, title1),
+                "before=[" + new String(title0) + "] after=[" + new String(title1) + "]");
+        text("the marker is where it was and nothing else arrived", winT, 0, "Z", DEF);
+        gate("no console call failed on any of it", b[3] - a[3] == 0, "apiErrors=" + (b[3] - a[3]));
+
+        /* The two ids this build DOES act on, kept in the same leg so the split is one measurement: 9;4
+           stores the taskbar pair and 9;12 claims the prompt end. Neither may vote, and neither may paint --
+           the field-by-field equivalence of `9;12` with `133;B` is pinned in the host gate (`geo_osc9`
+           compares every field one of them can move), and this leg deliberately does NOT assert a prompt
+           mark: 133;B starts input, it does not mark a row, which the OSC 133 leg above already pins. */
+        final long[] c = stats(handle);
+        paint("the two acting ids", "\u001b]9;4;1;50\u0007\u001b]9;12\u0007");
+        final long[] d = stats(handle);
+        gate("9;4 and 9;12 vote nothing", d[S_UN + 6] - c[S_UN + 6] == 0,
+                "osc9=" + (d[S_UN + 6] - c[S_UN + 6]));
+        gate("and they bought no cell, no mark and no reply",
+                d[5] - c[5] == 0 && d[S_PROMPTS] - c[S_PROMPTS] == 0,
+                "cells=" + (d[5] - c[5]) + " marks=" + (d[S_PROMPTS] - c[S_PROMPTS])
+                        + ": a mark is a claim about the stream, not a drawing");
+    }
+
+    private static void caseMouseArm() {
+        if (!standardGeometry("the mouse-arm leg")) return;
+        final int MOUSE = 0x0010, QUICK_EDIT = 0x0040, EXTENDED = 0x0080;
+
+        long[] m0 = inputMode(handle);
+        gate("nothing is armed before the stream asks", m0[3] == 0 && m0[2] == 0,
+                "armed=" + m0[3] + " saved=" + m0[2] + ": a handle that borrowed the mode at open() would be"
+                        + " reporting a base it read before anybody asked for anything");
+        final long base = m0[0];
+        gate("and the console has a mode to borrow", base != 0, "GetConsoleMode read " + base);
+
+        paint("one mouse mode", "\u001b[?1000h");
+        m0 = inputMode(handle);
+        gate("the console is armed", (m0[0] & MOUSE) != 0 && m0[3] == 1,
+                "mode=0x" + Long.toHexString(m0[0]) + " armed=" + m0[3]);
+        gate("quick-edit is off, which is what makes the console report the mouse instead of selecting with it",
+                (m0[0] & QUICK_EDIT) == 0, "mode=0x" + Long.toHexString(m0[0])
+                        + ": measured on this box -- with quick-edit on, a click yields no MOUSE_EVENT record"
+                        + " at all; with it off, one drag yielded 34 (cache/audit90/t5/mouse-report.txt)");
+        gate("the base is the mode as we found it, not as we left it", m0[1] == base && m0[2] == 1,
+                "base=0x" + Long.toHexString(m0[1]) + " now=0x" + Long.toHexString(m0[0])
+                        + ": restoring has to be able to name what it is restoring TO");
+
+        paint("a second mouse mode on top", "\u001b[?1002h\u001b[?1006h");
+        long[] m1 = inputMode(handle);
+        gate("a second ask does not ratchet the mode", m1[0] == m0[0],
+                "0x" + Long.toHexString(m0[0]) + " -> 0x" + Long.toHexString(m1[0])
+                        + ": the mode is computed from the base every time, so N arms cannot drift it");
+        gate("while the model does keep all three", m1[4] == (2 | 4 | 64), "mouseModes=0x" + Long.toHexString(m1[4]));
+
+        paint("and the soft reset", "\u001b[!p");
+        long[] m2 = inputMode(handle);
+        gate("DECSTR leaves the console armed, because it leaves the bits set", m2[3] == 1 && m2[4] != 0,
+                "armed=" + m2[3] + " modes=0x" + Long.toHexString(m2[4]) + ": the reset and the arming answer"
+                        + " to the same owner -- if the bits survived, the console must still be delivering");
+
+        paint("clear the last one", "\u001b[?1000l\u001b[?1002l\u001b[?1006l");
+        long[] m3 = inputMode(handle);
+        gate("the mode goes back to the base verbatim", m3[0] == base && m3[3] == 0,
+                "back=0x" + Long.toHexString(m3[0]) + " base=0x" + Long.toHexString(base) + " armed=" + m3[3]
+                        + ": quick-edit included -- leaving the user's console without text selection after the"
+                        + " program that asked for the mouse has gone is the vandalism this borrow/return is for");
+
+        paint("arm again, then hard-reset", "\u001b[?1004h\u001bc");
+        long[] m4 = inputMode(handle);
+        gate("RIS takes the console back too", m4[4] == 0 && m4[3] == 0 && m4[0] == base,
+                "modes=0x" + Long.toHexString(m4[4]) + " armed=" + m4[3] + " mode=0x"
+                        + Long.toHexString(m4[0]) + ": a power-up reset that left the mouse armed would be a"
+                        + " reset with a side effect nobody asked for");
+
+        gate("and the session ends owing the console nothing", m4[0] == base,
+                "the first reading and the last are the same word");
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /**
+     * #108, on a live console: the two doors the host gate cannot open. The byte shapes are pinned there
+     * against the same encoder, so they are not repeated here; what only a console can witness is (a) that text
+     * this library produced really lands in CONIN$ where a reader will find it, and (b) that a model rebuild
+     * carries the *protocol* the stream chose and the button state the observer last reported -- not merely the
+     * bits that `?1006$p` answers from. (b) is #83's defect wearing a new number: a mode that survives a
+     * resize in the bookkeeping and not in the behaviour, and the reason a press before the rebuild and its
+     * release after it is one leg rather than two.
+     */
+    private static void caseInputReports() {
+        if (!standardGeometry("the input-report leg")) return;
+        final int Q_UI = 5, Q_UF = 6, Q_QUIET = 7, Q_INJ = 8, Q_INJF = 9;   /* inputMode()'s report block */
+
+        /* Nothing armed. An observer that hands records over anyway gets silence, and the census has to be
+           able to say which of the two silences this is.
+           ⚠ These two records are a *press and its release*, not a pair of no-ops. #108's own red arm proved
+           why: a record with nothing transitioning about it returns 0 bytes through `RC_MACT_NONE` before the
+           level is ever consulted, so handing one over proves only that the encoder does not invent an event --
+           it stays green when the "no level, no report" gate is deleted. The state has to come back *up* again
+           before the leg below, or its press is not a transition either (the same trap the first draft fell
+           into, recorded in HANDOFF_0928B §2-B). */
+        long[] m0 = inputMode(handle);
+        gate("no mouse mode at the start", m0[4] == 0, "mouseModes=0x" + Long.toHexString(m0[4]));
+        final char[] qPress = mouseReport(handle, 9, 4, -1, -1, 1, 0, 0, 1);
+        gate("a press before any mode encodes nothing", qPress != null && qPress.length == 0,
+                qPress == null ? "null, which means the buffer was refused -- not the same answer"
+                        : "len=" + qPress.length + " [" + show(qPress) + "]");
+        final char[] qRelease = mouseReport(handle, 9, 4, -1, -1, 0, 0, 0, 1);
+        gate("and so does its release", qRelease != null && qRelease.length == 0,
+                qRelease == null ? "null" : "len=" + qRelease.length + " [" + show(qRelease) + "]");
+        gate("both counted as records seen, neither as a report said",
+                inputMode(handle)[Q_QUIET] == 2 && inputMode(handle)[Q_UI] == 0,
+                "quiet=" + inputMode(handle)[Q_QUIET] + " mouse=" + inputMode(handle)[Q_UI]
+                        + ": #108 was closed once on 'nobody can encode this', and the two zeros look alike");
+        gate("with nothing in the input stream to match them", readInput(32).length == 0, "");
+
+        /* SGR, asked for and delivered. */
+        paint("the mouse family", "\u001b[?1000h\u001b[?1006h");
+        final String sgrPress = "\u001b[<0;10;5M", sgrRelease = "\u001b[<0;10;5m";
+        final char[] press = mouseReport(handle, 9, 4, -1, -1, 1, 0, 0, 1);
+        gate("the press is SGR", press != null && sgrPress.equals(new String(press)),
+                press == null ? "null" : "[" + show(press) + "]");
+        final char[] back = readInput(32);
+        gate("and it reached CONIN$, where a reader of the console finds it",
+                back != null && sgrPress.equals(new String(back)),
+                back == null ? "null" : "[" + show(back) + "] bytes=" + (back == null ? -1 : back.length)
+                        + ": the host gate can prove the bytes, only a console can prove the delivery");
+        long[] m1 = inputMode(handle);
+        gate("the encoder counted one report and the console took it",
+                m1[Q_UI] == 1 && m1[Q_INJ] == 1 && m1[Q_INJF] == 0,
+                "mouse=" + m1[Q_UI] + " injected=" + m1[Q_INJ] + " refused=" + m1[Q_INJF]);
+
+        /* A release carries its own suffix, and the non-injecting door is the one an observer that wants to
+           route the bytes itself uses. */
+        final char[] release = mouseReport(handle, 9, 4, -1, -1, 0, 0, 0, 0);
+        gate("the release says so in lower case", release != null && sgrRelease.equals(new String(release)),
+                release == null ? "null" : "[" + show(release) + "]");
+        gate("and an inject flag of 0 left the stream alone", readInput(32).length == 0,
+                "the same encoder answers both questions, so the leg has to be able to ask them separately");
+
+        /* The rebuild. A press, then a model rebuilt for the console's shape, then its release: if the
+           protocol were carried only as a DECRQM answer, or the button state were dropped, the second report
+           would be missing or in the older shape. */
+        mouseReport(handle, 9, 4, -1, -1, 1, 0, 0, 0);
+        long[] pre = inputMode(handle);
+        gate("the tally before the rebuild is the whole session so far",
+                pre[Q_UI] == 3 && pre[Q_QUIET] == 2 && pre[Q_INJ] == 1,
+                "mouse=" + pre[Q_UI] + " quiet=" + pre[Q_QUIET] + " injected=" + pre[Q_INJ]);
+        gate("the model rebuilds", readopt(handle) == 1, "readopt returned 0: the leg below would prove nothing");
+        final char[] afterRebuild = mouseReport(handle, 9, 4, -1, -1, 0, 0, 0, 0);
+        gate("and the release after it is still SGR, from a button the new model was told about",
+                afterRebuild != null && sgrRelease.equals(new String(afterRebuild)),
+                afterRebuild == null ? "null" : "[" + show(afterRebuild) + "]"
+                        + " modes=0x" + Long.toHexString(inputMode(handle)[4])
+                        + ": #83's shape of loss -- the bits carried, the behaviour did not");
+
+        /* RIS promises power-up, so the next program's `?1000h` must not inherit the last one's protocol. */
+        paint("a hard reset, then the plain ask", "\u001bc\u001b[?1000h");
+        final char[] x10 = mouseReport(handle, 9, 4, -1, -1, 1, 0, 0, 0);
+        gate("and the report takes the X10 shape",
+                x10 != null && x10.length == 6 && x10[0] == 27 && x10[1] == '[' && x10[2] == 'M'
+                        && x10[3] == 32 && x10[4] == 42 && x10[5] == 37,
+                x10 == null ? "null" : "[" + show(x10) + "]");
+
+        /* Focus. The mode decides everything, in both directions. */
+        paint("focus reporting", "\u001b[?1004h");
+        final char[] fin = focusReport(handle, 1, 1);
+        gate("?1004h reports gaining focus as ESC [ I",
+                fin != null && "\u001b[I".equals(new String(fin)), fin == null ? "null" : "[" + show(fin) + "]");
+        gate("and the stream got it", "\u001b[I".equals(new String(readInput(32))), "");
+        final char[] fout = focusReport(handle, 0, 0);
+        gate("losing it is ESC [ O", fout != null && "\u001b[O".equals(new String(fout)),
+                fout == null ? "null" : "[" + show(fout) + "]");
+        paint("and the mode off", "\u001b[?1004l");
+        final char[] off = focusReport(handle, 1, 1);
+        gate("after ?1004l the same event says nothing", off != null && off.length == 0,
+                off == null ? "null" : "[" + show(off) + "]");
+        gate("and nothing was written for it", readInput(32).length == 0 && inputMode(handle)[Q_INJF] == 0,
+                "an unsolicited report is I26; a failed write is a finding, and there was none");
+        long[] mEnd = inputMode(handle);
+        /* The mouse tally: the injected press, the release that was only encoded, the press before the
+           rebuild and its release after, and the X10 press once RIS had cleared the family. The first two
+           records are not in this number -- both arrived with no mode and are counted as `quiet` instead,
+           which is exactly the distinction the leg opened with, and the pair of them is what makes the mode
+           gate itself (rather than the no-event gate) the thing being witnessed. */
+        gate("the rebuilt grid counts only what it was told, and kept the protocol it was told about",
+                mEnd[Q_UI] == 2 && mEnd[Q_UF] == 2 && mEnd[Q_INJ] == 1,
+                "mouse=" + mEnd[Q_UI] + " focus=" + mEnd[Q_UF] + " injected=" + mEnd[Q_INJ]
+                        + " quiet=" + mEnd[Q_QUIET] + ", against " + pre[Q_UI] + "/" + pre[Q_QUIET] + "/"
+                        + pre[Q_INJ] + " before the rebuild: #108's counters are the model's and a rebuild "
+                        + "starts a fresh series (Render.h's rc_report_counts says so), which is the honest "
+                        + "shape -- folding the old grid's tally would claim injections this model never "
+                        + "produced. What the rebuild DOES carry is the protocol and the button state, and the "
+                        + "release above is the witness that both survived.");
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /** A char[] as decimal code points, because a report leg that prints `ESC` as a raw byte is unreadable
+     *  in a log and unreadable in a diff. */
+    private static String show(char[] c) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < c.length; i++) { if (i > 0) b.append(' '); b.append((int) c[i]); }
+        return b.toString();
+    }
+
+    /**
+     * #104: the borrow on the output side. The base is kept in a field because the assertion that needs it
+     * most -- the console gets its parser back -- can only be made after {@code close(handle)}, which is
+     * where main() checks it, for the same reason the palette claim sits there.
+     */
+    private static long vtpBase = -1;
+
+    private static void caseVtp() {
+        if (!standardGeometry("the VTP leg")) return;
+        final int VTP = 0x0004;
+
+        long[] v = outputMode(handle);
+        gate("the renderer holds this console's own escape parser off", v[2] == 1 && v[3] == 1,
+                "saved=" + v[2] + " claimed=" + v[3] + ": the claim is taken at open(), not at the first"
+                        + " flush -- bytes that reach the console before the first paint would otherwise be"
+                        + " parsed by conhost on 1809+ and by nobody on Windows 7, which is the divergence"
+                        + " the owner ruled out on 2026-09-27");
+        gate("the live mode is the base with that bit cleared, nothing else touched",
+                v[0] == (v[1] & ~VTP),
+                "live=0x" + Long.toHexString(v[0]) + " base=0x" + Long.toHexString(v[1])
+                        + ": a borrow may subtract one bit from what it found; a mode the library invented"
+                        + " would pass the previous assertion and still be a lie about this console");
+        vtpBase = v[1];
+        /* Which of the two arms this run is. On a console that never had the bit, every assertion above is
+           satisfied by a library that did nothing, and saying so is the only honest way to keep a green
+           from being read as a witness -- the same shape as #88's "probe found nothing" control arm. */
+        if ((v[1] & VTP) != 0) {
+            gate("and on this console the borrow really took something away", v[0] != v[1],
+                    "base=0x" + Long.toHexString(v[1]) + " live=0x" + Long.toHexString(v[0])
+                            + ": the host had a parser and the console no longer does");
+        } else {
+            gate("SKIP: this console had no host parser to borrow -- the assertions above hold of a"
+                    + " renderer that changed nothing, so the WT leg is the witness here", true, null);
+        }
+
+        /* The rebuild is where a careless borrow leaks. A resize drops the model and installs a fresh one,
+           and if that path gave the mode back the host's parser would return for the rest of the session one
+           resize in -- while the renderer kept painting, which is exactly the two-parsers state this
+           borrow exists to prevent. */
+        final int back = readopt(handle);
+        flushQuietly();
+        long[] r = outputMode(handle);
+        gate("a rebuild for the console's shape keeps the claim", back == 1 && r[3] == 1 && r[0] == v[0],
+                "readopt=" + back + " claimed=" + r[3] + " live=0x" + Long.toHexString(r[0])
+                        + " expected=0x" + Long.toHexString(v[0])
+                        + ": drop_model is called by the rebuild too, so 'give it back when the model goes'"
+                        + " would be wrong here -- it is 'give it back when nothing is painting'");
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    private static void caseCharset() {
+        if (!standardGeometry("the charset leg")) return;
+        /* ⚠ Two things the first two drafts of this leg got wrong, both of them about **where** the byte lands
+           rather than what it becomes:
+             - `\u001b[H\u001b[J` is erase **down**, which from home sweeps the buffer and slides the viewport, so
+               `winT` went stale and every read came back blank.
+             - `standardGeometry()` re-opens the model and moves the *model's* cursor; the **console's** cursor is
+               wherever the previous case left it (it had just painted a 5-cell report). So a CUP must be part of
+               every probe, exactly as it is in `caseMargins` (`"\u001b[1;1H#"`) and `caseBracketedPaste`.
+           Probes therefore each begin with an explicit `CSI r ; 1 H`, and each writes an ASCII anchor first so a
+           wrong column is visible as a wrong column rather than as a missing box. */
+        gotoRow(1);
+        paint("plain G0, anchored", "\u001b(Bq");
+        cell("plain G0 draws the letter", winT + 1, 0, 'q', DEF);
+
+        gotoRow(2);
+        paint("smacs: G0 becomes the drawing set", "\u001b(0q");
+        cell("the drawing set draws a line", winT + 2, 0, '─', DEF);
+
+        /* G1, and the shift. Nothing about `ESC ) 0` may change the screen until SO says so -- and G0 is put
+           back to plain first, because the interesting answer here is "a plain byte under a plain G0", which a
+           still-loaded G0 would drown out. */
+        gotoRow(3);
+        paint("G0 plain again, G1 designated, anchored", "\u001b(B\u001b)0q");
+        cell("designating G1 alone draws a letter", winT + 3, 0, 'q', DEF);
+        paint("SO brings G1 into GL", "\u000eq");
+        cell("and after SO the same byte is a line", winT + 3, 1, '─', DEF);
+        paint("SI puts G0 back", "\u000fq");
+        cell("SI returns to a letter", winT + 3, 2, 'q', DEF);
+
+        /* The carry, which is the whole point of the live half: deleting `fresh->gshift = keepGl` in the seam
+           leaves the host gate at `checks=6672 fails=0` (proved -- `cache/audit90/t3-mut-carry.txt`), so this
+           row is that arm's only witness. G0 is re-loaded with the drawing set first, so a build that loses the
+           shift answers with a **letter** and cannot be explained away by a lost designation. */
+        gotoRow(4);
+        paint("G0 plain, G1 drawing, GL onto G1", "\u001b(B\u001b)0\u000e");
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H - 4, DEF) == 0) {
+            gate("the carry leg gets a shorter window", false, "setGeometry");
+        } else {
+            gate("the rebuild is accepted", readopt(handle) == 1, "readopt said no");
+            winT = (int) consoleView()[0];     /* the house rule after any rebuild or scroll: the viewport's top
+                                                  row is data the console owns, and a stale winT reads the wrong
+                                                  buffer row -- which is how this row first failed */
+            /* And re-address, do not assume: `readopt` adopts the console's own geometry, so wherever the cursor
+               was before the rebuild is a fact about the old model.
+               ⚠ The anchor is `#`, not a letter, and that is not cosmetics: 0x60..0x7E is exactly the range the
+               drawing set remaps, so the first draft's `r` came back as U+208B (`r` is DEC's subscript-zero) and
+               read as a broken re-address when it was in fact the leg's own proof. Asking whether "the shift
+               survived" must not be spelled with bytes whose meaning the shift is supposed to change. */
+            /* ⚠ The arm's shape matters more than it looks. The first version loaded **both** G0 and G1 with the
+               drawing set, and then this leg ran green against a dll whose seam really does drop the shift
+               (`cache/audit90/t3-live-carryred.txt`, `6142 failures=0` with `fresh->gshift` deleted): falling
+               back onto a G0 that draws the same glyphs is indistinguishable from carrying the shift. So G0 is
+               left **plain** here and only G1 gets the drawing set -- now a lost shift answers with `q` and
+               cannot hide behind the designation it also carried. */
+            gotoRow(4);
+            paint("anchor, then one byte, after the rebuild", "#q");
+            cell("  the anchor reached row 4, un-remapped", winT + 4, 0, '#', DEF);
+            cell("the shift rode across the rebuild: G1's line, not G0's letter", winT + 4, 1, '─', DEF);
+            setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF);
+            readopt(handle);
+        }
+        /* #24's rule on the shipped bytes: `ESC ( B` un-designates G0 and must not un-shift GL. G1 is loaded
+           plain here, so the two answers are different glyphs and the row cannot pass by accident. */
+        gotoRow(5);
+        paint("G0 drawing, G1 plain, GL on G1", "\u001b(0\u001b)B\u000e");
+        paint("rmacs then a byte", "\u001b(Bq");
+        cell("rmacs unloaded G0 but not GL: the plain G1's letter", winT + 5, 0, 'q', DEF);
+        /* ⚠ #85's correction (-45), on the screen and not just in the model: DECSTR puts the character sets
+           back. MSFT's SoftReset restores a fresh TerminalOutput -- four ASCII designations and GL at G0
+           (terminalOutput.cpp:34-49, :16-24; terminalOutput.hpp:59) -- and the bug this reopens was a shipped
+           one: a program that died between its `smacs` and its `rmacs` left the drawing set loaded for the
+           rest of the session, so the next program's `q` drew U+2500.
+           Both G-sets are loaded and GL is shifted here, because that is the state where "the reset did
+           nothing" and "the reset did half of it" draw different bytes: the row below is what makes the row
+           after it a witness rather than a restatement. */
+        gotoRow(6);
+        paint("both G-sets drawing, GL shifted", "\u001b(0\u001b)0\u000e");
+        paint("so a letter is a line", "q");
+        cell("the armed state really is armed", winT + 6, 0, '─', DEF);
+        gotoRow(7);
+        paint("then the soft reset", "\u001b[!p");
+        paint("and the same byte", "q");
+        cell("DECSTR un-designated and un-shifted: a letter again", winT + 7, 0, 'q', DEF);
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    private static void caseCursorShape() {
+        if (!standardGeometry("the cursor-shape leg")) return;
+        long[] a = stats(handle);
+        /* First statement, as every leg after #83 learns the hard way: reading a slot by index on an older
+           binary throws, and the throw takes the rest of the run's cases with it and prints no verdict. */
+        if (a.length <= S_SHAPE) {
+            gate("stats carries the cursor-shape slot", false,
+                    "length=" + a.length + " want at least " + (S_SHAPE + 1)
+                            + ": render.dll predates #88, so this leg has nothing to read");
+            return;
+        }
+        /* standardGeometry() opened a fresh handle, and a fresh handle does not know what this console's cursor
+           looks like. -1 is "never", and it is not the same sentence as 1 (block). */
+        gate("a fresh handle has said no shape", a[S_SHAPE] == -1, "slot=" + a[S_SHAPE] + " want -1");
+        final long errorsBefore = a[3];
+
+        if (a[S_SHAPE] == -1 && errorsBefore == 0) {
+            paint("DECSCUSR 5 asks for a vertical bar", "\u001b[5 q");
+            long[] b = stats(handle);
+            /* Either the call landed -- the only word this handle can honestly report is the one kernel32
+               accepted -- or this box has no export and the slot must still read -1. A value of 1 here would
+               mean the planner opened the shape door and the seam filled in a block it was never asked for. */
+            gate("the bar is said, or the export is absent", b[S_SHAPE] == 2 || b[S_SHAPE] == -1,
+                    "slot=" + b[S_SHAPE] + " want 2 (accepted) or -1 (no such export)");
+            gate("asking for a shape cost no API error", b[3] == errorsBefore,
+                    "apiErrors=" + (b[3] - errorsBefore) + " added by the bar request");
+            gate("and the census gained no refusal for a modelled CSI", b[S_UN] == a[S_UN],
+                    "unrecognised=" + (b[S_UN] - a[S_UN])
+                            + ": `5 q` has its own dispatch case, so no census slot may move");
+            if (b[S_SHAPE] == 2) {
+                shapePresentArmRan = true;
+                paint("DECSCUSR 1 walks it back to a block", "\u001b[1 q");
+                long[] c = stats(handle);
+                gate("the block is said again rather than the bar left standing", c[S_SHAPE] == 1,
+                        "slot=" + c[S_SHAPE] + " want 1: lastShapeStyle is the only record the bar was ever there");
+                long[] v = consoleView();
+                gate("and the height door still answers the model", v.length > 0, "consoleView empty");
+                paint("RIS drops the shape", "\u001bc");
+                long[] d = stats(handle);
+                gate("a reset shape is nobody's shape", d[S_SHAPE] == 1 || d[S_SHAPE] == -1,
+                        "slot=" + d[S_SHAPE] + " want 1 (RIS re-asks the block) or -1 (never said again)");
+                gate("and the whole walk still cost no API error", d[3] == errorsBefore,
+                        "apiErrors=" + d[3] + " against " + errorsBefore);
+            } else {
+                System.out.println("SKIP this kernel32 has no SetConsoleCursorShape -- the shape arms cannot run");
+                shapePresentArmRan = false;
+            }
+        } else {
+            gate("the leg starts from an untouched handle", false,
+                    "shape=" + a[S_SHAPE] + " apiErrors=" + errorsBefore + ": an earlier case left state");
+        }
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
     private static void caseArgClamp() {
         if (!standardGeometry("the parameter-bound leg")) return;
         final long[] a = stats(handle);
@@ -1781,6 +2764,82 @@ public class Render {
         paint("a pop with nothing saved", "\u001b[23;0t");
         gate("leaves the title alone", "native-A".equals(title()),
                 "read back " + title() + ": the console's own earlier title is not this library's to invent");
+    }
+
+    /**
+     * DECSET 2048 on a real console (#82). The bit and its answer the host gate can reach; what lives here is
+     * the half that needs a console at all -- the unsolicited notice, which is armed in
+     * <i>RenderJni.cpp</i>'s flush_reports and lands in CONIN$ rather than in a struct. The geometry change is
+     * made the only way this process can make it honestly: shape the console, then take the same rebuild a
+     * user's drag forces, so the report is about a change the renderer observed rather than about a call it
+     * made itself. What it must say is exactly what 18t says (I42: one geometry, one name), and it must say it
+     * once, only while asked, and not at all for the shape the session started in.
+     */
+    private static void caseInbandResize() {
+        if (!standardGeometry("the in-band size leg")) return;
+        final long[] a = stats(handle);
+        /* Before anything else: an old binary is a finding with a name, not an index out of range. This leg
+           adds no slot, so a matching length is also the statement that the dll and this table still agree. */
+        if (a.length != S_LEN) {
+            gate("stats() is this gate's slot table before the leg reads it", false,
+                    "length=" + a.length + " want " + S_LEN + ": render.dll is not the build this leg was cut for");
+            return;
+        }
+        readInput(0);                                   /* everything in the queue below is this leg's */
+
+        /* Arming is a store, not a greeting: a program that asks for reports must not be handed the geometry
+           it is already sitting in, and the mode must leave the refused-mode census -- that vote is the whole
+           reason #82 exists. */
+        final long[] armed = stats(handle);
+        paint("the application asks for in-band size reports", "\u001b[?2048h");
+        long[] b = stats(handle);
+        gate("it costs no refused-mode vote", b[S_UN + 4] - armed[S_UN + 4] == 0,
+                "mode=" + (b[S_UN + 4] - armed[S_UN + 4]) + ": a stored promise is not an unmodelled one");
+        gate("and no reply was owed, so none was written", b[S_REPLIED] - armed[S_REPLIED] == 0,
+                "written=" + (b[S_REPLIED] - armed[S_REPLIED]));
+        eqInput("nothing for the shape the session is already in", "");
+        paint("and asks whether it is on", "\u001b[?2048$p");
+        eqInput("1 = set, which is what the stored bit now earns", "\u001b[?2048;1$y");
+
+        /* The notice. Make the window five rows shorter, take the rebuild a resize takes, and let the next
+           chunk find the new shape: the report has to ride the flush that lands it. */
+        final int newRows = WIN_H - 5;
+        gate("the console takes the shorter window", setGeometry(BUF_W, BUF_H, WIN_W, newRows, DEF) != 0,
+                "setGeometry " + newRows);
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        /* Read here, not two gates earlier: the DECRPM above wrote a reply of its own, and a delta counted
+           across it says "one reply" for a report that never arrived -- which is exactly how M1's mutation
+           slipped past this line the first time. */
+        final long[] before = stats(handle);
+        paint("the next chunk", "\u001b[1;1HIB");
+        eqInput("arrives with one unsolicited report, spelled like 18t and carrying the new viewport",
+                "\u001b[8;" + newRows + ";" + BUF_W + "t");
+        final long[] c = stats(handle);
+        gate("it is counted as a reply written, not as a refusal", c[S_REPLIED] - before[S_REPLIED] == 1,
+                "written=" + (c[S_REPLIED] - before[S_REPLIED]) + " full-queue refusals="
+                        + (c[S_REPLY_FULL] - before[S_REPLY_FULL]));
+        gate("and no console call failed on the way", c[3] - before[3] == 0, "apiErrors=" + c[3]);
+        paint("a chunk that moves nothing", "\u001b[2;1HCD");
+        eqInput("says nothing again: one geometry, one report", "");
+        /* The carry, from the other side. The report above could only happen if the bit rode across that
+           rebuild; this says so in words the reader of the log can check without believing the byte count. */
+        paint("and asks, after the rebuild", "\u001b[?2048$p");
+        eqInput("the mode is still the application's", "\u001b[?2048;1$y");
+
+        /* Off is a store too, and it is the one that matters: a report the program took back would be bytes
+           injected into an input stream nobody asked to have filled. */
+        paint("the application takes it back", "\u001b[?2048l");
+        paint("and asks, to prove the store worked", "\u001b[?2048$p");
+        eqInput("2 = reset, and nothing else", "\u001b[?2048;2$y");
+        gate("the window goes back to its height", setGeometry(BUF_W, BUF_H, WIN_W, WIN_H, DEF) != 0,
+                "setGeometry " + WIN_H);
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        paint("the next chunk after a second real change", "\u001b[1;1HEF");
+        eqInput("stays silent while the mode is off", "");
+        final long[] d = stats(handle);
+        gate("and the silence costs nothing in the census", d[S_REPLY_FULL] - c[S_REPLY_FULL] == 0,
+                "full=" + (d[S_REPLY_FULL] - c[S_REPLY_FULL]));
+        standardGeometry("leaving the viewport as the next case expects it");
     }
 
     /**
@@ -2513,26 +3572,50 @@ public class Render {
         gate("the arm that has no surface still has its own counter", b[S_COLON] - a[S_COLON] == 1,
                 "colon=" + (b[S_COLON] - a[S_COLON]) + ": this is what the slot is for now");
 
+        /* ⚠ #81 re-baselined this arm. It used to read "mouse modes are counted == 2", which was true of a
+           build that refused `?1000h` and `?1006h` outright; the family is stored now, so the honest claim is
+           the opposite -- the bucket stays <b>empty</b> for a set that was acted on. Both halves are pinned
+           because the slot is positional and a census row that no test ever votes for is not a row, it is a
+           rumour: `?1001` is still refused (neither reference recognises it) and must still land there. */
         a = stats(handle);
         paint("mouse tracking", "\u001b[?1000h\u001b[?1006h");
         b = stats(handle);
-        gate("mouse modes are counted", b[S_UN + 3] - a[S_UN + 3] == 2, "mouse=" + (b[S_UN + 3] - a[S_UN + 3]));
-        gate("and change nothing the model has to trust", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4]));
+        gate("a stored mouse mode votes nothing", b[S_UN + 3] - a[S_UN + 3] == 0,
+                "mouse=" + (b[S_UN + 3] - a[S_UN + 3]) + ": #81 turned this family from a refusal into a store,"
+                        + " and the census has to say so or it is charging a program for a mode it got");
+        gate("and still change nothing the model has to trust", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4]));
+        a = b;
+        paint("the one mouse number left refused", "\u001b[?1001h");
+        b = stats(handle);
+        gate("the mouse bucket still has a live witness", b[S_UN + 3] - a[S_UN + 3] == 1,
+                "mouse=" + (b[S_UN + 3] - a[S_UN + 3]) + " want 1: a slot nothing votes for cannot be checked,"
+                        + " and `1001` is the member this build does not hold");
+        gate("and a refusal is inert, not suspected", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4])
+                + ": reading a byte and deciding to do nothing is not a reason to repaint the window");
 
         /* The two families that reached a final and left no number at all until build -7: `CSI p` in every
-           spelling but the one DECSTR gates on, and a charset designator other than `ESC ( 0`. The host gate
-           proves the model counts them, but it links Render.cpp directly; this is the leg that says the
-           deployed DLL, through a real conhost, does too. It also pins the *kind* of count -- inert, not
-           suspected -- because the difference is what the row below would otherwise have cost: a full-window
-           repaint per frame that carried one. */
+           spelling but the one DECSTR gates on, and a charset designator. ⚠ #85 split the second half: `ESC ) 0`
+           is now **modelled** (it loads G1) and votes nothing, while `ESC ) U` is a set this build cannot
+           render and votes the new `charset` slot instead of `unrecognised`. Both halves are pinned here, on
+           the deployed dll, because the host gate links Render.cpp directly and cannot see either. It also pins
+           the *kind* of count -- inert, not suspected -- because the difference is what the row below would
+           otherwise have cost: a full-window repaint per frame that carried one. */
         gotoRow(6);
         paint("clear for the census leg", "\u001b[0m\u001b[K");
         a = stats(handle);
         paint("the -7 arms", "\u001b[p\u001b[61p\u001b)0q");
         b = stats(handle);
-        gate("the CSI p family and ESC ) c are counted", b[S_UN] - a[S_UN] == 3,
-                "unrecognised=" + (b[S_UN] - a[S_UN]));
-        gate("and none of the three buys a repaint", b[4] - a[4] == 0, "aligns=" + (b[4] - a[4])
+        gate("the CSI p family is still counted", b[S_UN] - a[S_UN] == 2,
+                "unrecognised=" + (b[S_UN] - a[S_UN]) + " want 2: `ESC ) 0` left this slot when #85 modelled G1");
+        gate("and a modelled designator votes nothing anywhere", b[S_UN + 12] - a[S_UN + 12] == 0,
+                "charset=" + (b[S_UN + 12] - a[S_UN + 12]) + ": `)0` is acted on, not refused");
+        paint("a set this build cannot render", "\u001b)Uq");
+        long[] c = stats(handle);
+        gate("lands in the charset slot, not in unrecognised",
+                c[S_UN + 12] - b[S_UN + 12] == 1 && c[S_UN] - b[S_UN] == 0,
+                "charset=" + (c[S_UN + 12] - b[S_UN + 12]) + " unrecognised=" + (c[S_UN] - b[S_UN])
+                        + ": the census must not keep calling a read arm 'no case for' (I26's near relation)");
+        gate("and none of it buys a repaint", c[4] - a[4] == 0, "aligns=" + (c[4] - a[4])
                 + ": a charset with no model moves no cursor, so it must not cost a window repaint");
         text("while the byte after them reached the screen", winT + 6, 0, "q", DEF);
 
@@ -2636,6 +3719,168 @@ public class Render {
 
         close(handle);
         handle = outer;
+    }
+
+    /**
+     * #101(a): the bytes jline's WINCH handler writes when the window is dragged, and where they end up.
+     *
+     * <p>Measured outside this gate on 2026-09-28 (buffer scan, `cache/adopt49/bufscan.py`): in a classic
+     * console after a resize there is no bare `SQL>` row anywhere in the 9001-row buffer, while the cursor
+     * sits five columns in -- and with the renderer switched off the very same row holds
+     * {@code ESC [ ? 2004 h ESC [ 38;5;3 m SQL> } as literal cells. So the application did send the
+     * redisplay, and this library is where it goes. This case exists to reproduce that inside a gate, where
+     * the counters can be read, instead of by photographing a window.
+     *
+     * <p>It is written as the handler writes it: carriage return, erase-down, a CUP to the reader's row, and
+     * the prompt, in one chunk. The scan below reports where the prompt actually landed, because "not on the
+     * addressed row" and "nowhere at all" are different bugs and the first run has to say which one this is.
+     */
+    private static void caseWinchPrompt() {
+        if (!standardGeometry("the WINCH redisplay leg")) return;
+        final int rows = WIN_H - 4;                       /* the shorter window, as a drag would leave it */
+        StringBuilder sb = new StringBuilder();
+        for (int r = 1; r <= WIN_H; r++)
+            sb.append("\u001b[").append(r).append(";1HROW ").append(r).append("\u001b[K");
+        /* The listing goes out through render(), not paint(): a session's previous chunk always leaves
+           `adopt` at RC_ADOPTED, and that is the state the drag catches out. Fed through the gate's
+           feed()+flush() pair, adopt stays RC_ALIGN, the next render() re-adopts before parsing, and the
+           decline this case exists to reproduce never happens -- the first run of this leg proved exactly
+           that by passing for the wrong reason (declines=0). */
+        gate("the listing was painted through the production path", renderChunk(handle, sb.toString().toCharArray()) == 1,
+                null);
+        drainSgr();
+        if (setGeometry(BUF_W, BUF_H, WIN_W, rows, DEF) == 0) {
+            gate("a shorter window", false, "setGeometry");
+            return;
+        }
+        final long[] before = stats(handle);
+        final int promptRow = rows - 2;                   /* 1-based, viewport-relative: where the reader sits */
+        final String winch = "\r\u001b[J\u001b[" + promptRow + ";1HSQL> ";
+        final int rc = renderChunk(handle, winch.toCharArray());
+        drainSgr();
+        winT = (int) consoleView()[0];
+        final long[] s = stats(handle);
+        gate("the WINCH chunk was PAINTED, not handed back raw", rc == 1,
+                "render=" + rc + " (0 = RAW: the caller would WriteConsoleW these bytes, and that call"
+                        + " parses no escapes)");
+        gate("at most the one decline the repair has to remember", s[2] - before[2] <= 1,
+                "declines=" + (s[2] - before[2]));
+        gate("and no console call failed", s[3] == before[3], "apiErrors=" + (s[3] - before[3]));
+
+        final long[] shape = consoleView();
+        final int top = (int) shape[0];
+        final int winRows = (int) shape[8] - (int) shape[0] + 1;   /* winB - winT + 1 */
+        final StringBuilder found = new StringBuilder();
+        int escRows = 0;
+        for (int i = 0; i < winRows; i++) {
+            final long[] row = row(top + i);
+            if (row == null) continue;
+            final StringBuilder t = new StringBuilder();
+            for (int k = 0; k < 8 && k < row.length; k++) t.append((char) (int) (row[k] & 0xFFFF));
+            if (t.toString().startsWith("SQL>")) found.append(" win-row ").append(i);
+            for (int k = 0; k < row.length; k++)
+                if ((int) (row[k] & 0xFFFF) == 0x1B) { escRows++; break; }
+        }
+        gate("the prompt is on the row the handler addressed", found.length() > 0,
+                "found at:" + (found.length() > 0 ? found.toString() : " NOWHERE in the window")
+                        + " (addressed viewport row " + promptRow + ", window is " + winRows + " rows)");
+        gate("and no row on screen holds a literal ESC -- the raw fallback's signature", escRows == 0,
+                "rows with U+001B = " + escRows);
+        text("the erase took the stale listing off that row", top + promptRow - 1, 4, " ", DEF);
+        standardGeometry("leaving the viewport as the next case expects it");
+    }
+
+    /**
+     * Drive the production chunk policy rather than the gate's feed()+flush() pair: adopt, decline, retry
+     * and give-up live inside {@code render()}, and that is exactly where #101(a)'s lost prompt went.
+     * Reflection is used because the method is private by design -- its only front door is
+     * {@code NativeRenderer.write()} -- and a gate-only public binding would put a second door on the
+     * shipped class for the sake of a test.
+     */
+    private static int renderChunk(long h, char[] c) {
+        try {
+            final java.lang.reflect.Method m = NativeRenderer.class.getDeclaredMethod(
+                    "render", long.class, char[].class, int.class, int.class);
+            m.setAccessible(true);
+            return ((Integer) m.invoke(null, new Object[] { Long.valueOf(h), c,
+                    Integer.valueOf(0), Integer.valueOf(c.length) })).intValue();
+        } catch (Throwable e) {
+            gate("render() was reachable", false, String.valueOf(e));
+            return -99;
+        }
+    }
+
+    /**
+     * #103: an adopt reads the console, so it owes the console no write.
+     *
+     * <p>What this is a witness against: {@code align_grid} used to end with {@code rc_mark_all_dirty}, on the
+     * reasoning that a model which cannot name its previous chunk should repaint the window. On a console the
+     * renderer owns that is merely a full-viewport write -- here 200 columns of 30 rows, 6000 cells per adopt
+     * -- but under a pseudo-console conhost re-serialises every cell it is handed and diffs attributes only,
+     * never content (see the cited {@code VtIo.cpp::WriteInfos} in ANSI_TODO #103). So the rows an adopt had
+     * merely *read* arrived in the user's terminal as new output, and #99 is exactly what put a renderer in a
+     * position to have to pay that: this leg is the other half of #99's price.
+     *
+     * <p>The cell count is the whole leg. A repaired row and a re-emitted viewport are both one run, so
+     * {@code runs} cannot tell them apart and a leg written against it would stay green either way.
+     *
+     * <p>Its vacuity guard is the first gate: an adopt of a *blank* window also writes nothing, which would
+     * prove nothing about text the renderer never painted.
+     */
+    private static void caseAdoptReadOnly() {
+        if (!standardGeometry("the adopt-reads-only leg")) return;
+        final int window = BUF_W * WIN_H;                 /* what a re-emitted viewport costs at this shape */
+
+        StringBuilder sb = new StringBuilder();
+        for (int r = 1; r <= WIN_H; r++) sb.append("\u001b[").append(r).append(";1HROW ").append(r).append("\u001b[K");
+        paint("a window full of text", sb.toString());
+        long[] p = plan(handle);
+        gate("the setup filled the window, so there is a repaint here to withhold",
+                p[18] >= window / 2, "cells=" + p[18] + " of a " + window + "-cell window");
+        text("the setup is on screen", winT + 6, 0, "ROW 7", DEF);
+        final long paints0 = stats(handle)[1];
+
+        /* The adopt on a console nothing has touched since the last paint: read it, and ask what came out.
+           Note what is NOT assertable here: flush()'s FLUSH_NOTHING. `paint_and_check` seeds `landed` from
+           `h->landedChunk`, and only feed() and render() clear that flag -- a bare flush() after a painted
+           chunk therefore says PAINTED whatever it wrote. The witnesses below are the two numbers that cannot
+           inherit a previous chunk's answer. */
+        gate("align() adopts the window again", align(handle) == 1, null);
+        flushQuietly();
+        p = plan(handle);
+        gate("an adopt of rows it just read names no cells", p[18] == 0,
+                "cells=" + p[18] + ": the old answer marked the viewport dirty at the adopt and this shape"
+                        + " re-emits " + window + " cells of text the renderer only read");
+        gate("and no rectangle reached the console", stats(handle)[1] == paints0,
+                "paints=" + (stats(handle)[1] - paints0) + " expected 0");
+        text("the adopt left the picture alone", winT + 6, 0, "ROW 7", DEF);
+        long[] s = stats(handle);
+        gate("no console call failed on the way", s[3] == 0, "apiErrors=" + s[3]);
+
+        /* The case the owner saw: help fills the window, the window is resized, the renderer rebuilds and
+           adopts. The rows it adopts are the rows the user is already looking at, and a rebuild of the model
+           is not a change to the screen. */
+        if (setGeometry(BUF_W, BUF_H, WIN_W, WIN_H - 6, DEF) == 0) {
+            gate("a shorter window", false, "setGeometry");
+            return;
+        }
+        gate("a rebuild for the new shape", readopt(handle) == 1, null);
+        flushQuietly();
+        p = plan(handle);
+        gate("a rebuild emits nothing until the application writes", p[18] == 0,
+                "cells=" + p[18] + " after readopt()+flush(): resize used to cost a viewport re-emission"
+                        + " on every frame that followed a shape change");
+        gate("and the shorter window still shows the rows it adopted", stats(handle)[1] == paints0,
+                "paints=" + (stats(handle)[1] - paints0) + " expected 0");
+
+        /* The diff is not "paint nothing". One glyph after all of that must still reach the console, and it
+           must cost one glyph rather than the viewport. */
+        paint("one glyph after a rebuild", "\u001b[3;1Hx");
+        p = plan(handle);
+        gate("a real change still gets its rectangle", p[18] >= 1 && p[18] < window / 10,
+                "cells=" + p[18] + " against a " + window + "-cell window");
+        text("and it is the glyph that was asked for", (int) consoleView()[0] + 2, 0, "x", DEF);
+        standardGeometry("leaving the viewport as the next case expects it");
     }
 
     /**

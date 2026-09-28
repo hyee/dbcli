@@ -65,7 +65,12 @@ foreach ($a in @($Arch -eq 'both' ? @('x86', 'x64') : @($Arch))) {
 
     # The renderer gate: paints through render.dll and reads the cells back out of conhost.
     if (-not (Test-Path "$Scratch\$a\render.dll")) { Write-Host "no $Scratch\$a\render.dll - run build.sh first"; $rc = 1; continue }
-    & "$($jdk[$a])\bin\javac.exe" -nowarn -encoding UTF-8 -implicit:class -sourcepath "$JavaSrc" `
+    # -g -source 8 -target 8 are build.sh's flags, repeated here deliberately. The JAR CHECK below compares the
+    # NativeRenderer.class this command pulls in off -sourcepath against the one lib/dbcli.jar ships, and a
+    # class file's debug tables are part of those bytes: compiling without -g produced a different hash from
+    # the same source and the check reported DRIFT on a jar that was up to date. Two flag sets that disagree
+    # make the check measure the flags, so the gate now compiles the way production does.
+    & "$($jdk[$a])\bin\javac.exe" -nowarn -g -source 8 -target 8 -encoding UTF-8 -implicit:class -sourcepath "$JavaSrc" `
         -d "$Scratch\out\$a" "$src\Render.java"
     if ($LASTEXITCODE -ne 0) { Write-Host "javac Render.java failed for $a"; $rc = 1; continue }
     & "$($jdk[$a])\bin\java.exe" "-Djava.library.path=$Scratch\$a" "-Dhk=$hk" -cp "$Scratch\out\$a" Render

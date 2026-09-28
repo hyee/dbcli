@@ -116,8 +116,14 @@ public final class Console {
                 && !mode.equals("conemu")) {
             mode = "default";
         }
+        // `OSUtils.IS_CONEMU` used to be in the skip list below, and that is why a real ConEmu window never
+        // reached render.dll: with ConEmuPID set, this skipped dbcli's own createTerminal and the generic
+        // builder handed the session jline's built-in ConEmu writer instead of org.dbcli.ConEmuWriter -- a
+        // second, different ANSI path, chosen by a variable the user never set. `mode` already says what the
+        // user asked for (ANSICON_DEF=conemu), so the flag is dropped and the choice is made once, in
+        // WinSysTerminal's branch order. Cygwin/MSYS stay out: there is no console to adopt there.
         if (OSUtils.IS_WINDOWS
-                && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM || OSUtils.IS_CONEMU)
+                && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)
                 && !"jna".equals(mode)
                 && !"ffm".equals(mode)) {
             try {
@@ -130,6 +136,12 @@ public final class Console {
             } catch (IOException e) {
                 //No console attached (redirected stdio / harness / background): fall through to the generic
                 //builder, which yields a dumb terminal instead of aborting before anything can be printed.
+                //Saying so is not optional: this builder does not install ConEmuWriter, so a session that
+                //falls here never touches render.dll, and every "the renderer makes no difference" reading
+                //of such a session is a measurement of something else. Same once-per-process discipline as
+                //ConEmuWriter.report.
+                System.err.println("dbcli: no Windows console for this process (" + e.getMessage()
+                        + "); using the generic terminal -- the native renderer is NOT in this session's write path.");
                 this.terminal = null;
             }
         }
@@ -234,7 +246,11 @@ public final class Console {
         };
         Interrupter.listen(this, callback);
         display = new Display(terminal, false);
-        prevSize = new Size(getBufferWidth(), getScreenHeight());   //Size is (columns, rows); see :401
+        // Seed with the same quantity handleResize() gates on. This held getBufferWidth()/getScreenHeight()
+        // -- buffer columns and window-minus-the-titles rows, neither of which a window resize moves -- so the
+        // first WINCH always fell through the gate and the sizes it compared were not the ones on screen.
+        Size start = terminal.getSize();
+        prevSize = new Size(start.getColumns(), start.getRows());   //Size is (columns, rows); see :421
         terminal.handle(Terminal.Signal.WINCH, this::handleResize);
     }
 
@@ -304,7 +320,6 @@ public final class Console {
         if (status != null) {
             status.close();
             status.suspend();
-            clearScrollRegion();
         }
         display.setNoWrap(true);
         prevDisplay = null;
@@ -342,13 +357,40 @@ public final class Console {
             return;
         }
         display.clear();
-        display.resize(getScreenHeight(), width);
+        int height = getScreenHeight();
+        display.resize(height, width);
         Attributes attrs = terminal.enterRawMode();
-        display.update(Arrays.stream(args)
+        List<AttributedString> lines = Arrays.stream(args)
                 .map(s -> AttributedString.fromAnsi(s + (s.endsWith("\n") ? "" : "\n"))
-                        .columnSubSequence(0, width)).collect(Collectors.toList()), -1);
+                        .columnSubSequence(0, width)).collect(Collectors.toList());
+        //Pad to the height the model claims, which is what screenBlock() already does on the way to the
+        //renderer. A frame shorter than that leaves the rows below it owned by nobody: Display.update writes
+        //min(rows, max(oldLines, newLines)) rows, and a row that was in neither list is a row it believes is
+        //already empty, so it sends nothing there. With the status bar on that gap is not empty -- closing
+        //the bar leaves behind the line the bar had scrolled up when it drew itself, and that line then
+        //survives every frame of the dashboard.
+        //
+        //The padding has to be spaces, and not the AttributedString.NEWLINE Display itself uses for a row
+        //beyond its lists: on the first frame such a row diffs empty against empty, Display emits nothing for
+        //it, and the stale text stays. Only a write reaches the screen.
+        for (int i = lines.size(); i < height; i++) {
+            lines.add(blankRowOf(width));
+        }
+        display.update(lines, -1);
         terminal.setAttributes(attrs);
         prevDisplay = args;
+    }
+
+    //One row of the screen, blank across every column it has. Built once per width; a dashboard frame is
+    //padded with it on every tick.
+    private static final Map<Integer, AttributedString> blankRows = new HashMap<>();
+
+    static AttributedString blankRowOf(int columns) {
+        return blankRows.computeIfAbsent(columns, n -> {
+            char[] spaces = new char[n];
+            java.util.Arrays.fill(spaces, ' ');
+            return new AttributedString(new String(spaces));
+        });
     }
 
     /**
@@ -392,7 +434,12 @@ public final class Console {
     }
 
     public void handleResize(Terminal.Signal signal) {
-        Size size = terminal.getBufferSize();
+        // The window, not the buffer. Dragging a classic console's edge does not touch its buffer, which on
+        // this user's terminals is 2000x9001, so gating on getBufferSize() compared the last size against a
+        // quantity that never changes: the first resize ran the body, stored 2000x9001, and every resize after
+        // it returned here and did nothing -- leaving the status bar painted at the bottom of the window as it
+        // was *then*, somewhere above the new bottom edge, with the rows between it and that edge untouched.
+        Size size = terminal.getSize();
         if (prevSize != null && size.getRows() > 1
                 && prevSize.getColumns() == size.getColumns()
                 && prevSize.getRows() == size.getRows()) {
@@ -402,25 +449,48 @@ public final class Console {
         if (prevSize == null) prevSize = new Size(size.getColumns(), size.getRows());   //a WINCH before the ctor
         else prevSize.copy(size);
 
-        if (status != null && !status.isHided() && !status.isSuspended()) {
-            status.close();
-            status.resize();
-            clearScrollRegion();
-            terminal.puts(InfoCmp.Capability.carriage_return);
-            terminal.puts(InfoCmp.Capability.clr_eos);
-        }
-
+        // A dashboard frame owns everything above the bar and is re-painted from the saved rows, so it goes
+        // first: display() derives its height from the live window, and the wipe it does on the way in
+        // (visual cursor to the end of the screen) reaches the rows the bar lives on. The bar is an overlay,
+        // so it is the last thing drawn, never the first.
         if (prevDisplay != null) {
             display.moveVisualCursorTo(0);
             terminal.puts(InfoCmp.Capability.clr_eos);
             display.empty();
             display(prevDisplay);
         }
+
+        // Status.resize() moves a showing bar to the new bottom edge itself -- it erases the rows the bar drew
+        // at the old geometry and draws it again at the new one -- and leaves a bar that is down alone. Closing
+        // it here instead, which is what this did until 2026-09-25, left the bar down until something called
+        // setStatus() again, and a session sitting at a prompt does not: a resize lost the bar outright
+        // (measured in Windows Terminal, where the gate above does fire, and the bar was still gone after an
+        // Enter). Note that this handler is not the one that runs while the line editor owns the terminal --
+        // LineReaderImpl installs its own for the duration of readLine(); see handleSignal there.
+        if (status != null) {
+            status.resize();
+        }
     }
 
     public void enableMouse(String val) {
-        if ("off".equals(val)) reader.unsetOpt(LineReader.Option.MOUSE);
-        else reader.setOpt(LineReader.Option.MOUSE);
+        if ("off".equals(val)) {
+            reader.unsetOpt(LineReader.Option.MOUSE);
+            return;
+        }
+        // The click handler resolves a release into an edit by asking the terminal where its cursor is
+        // (LineReaderImpl.mouse(): getCursorPosition(...), then cursor.getY() with no null check). On
+        // Windows only WinSysTerminal answers that locally; every terminal the generic builder can pick --
+        // which is what a ConEmu, cygwin or msys session gets -- answers null, so switching the mouse on
+        // there schedules a NullPointerException for the user's first click. Advertising u6/u7 does not
+        // change that: the query is CursorSupport's, and none of those terminal classes implements it, so
+        // probing getCursorPosition() here would return the same null, only later. So the type decides, and
+        // the refusal is said now rather than thrown later.
+        if (!isJNIConsole) {
+            System.out.println("mouse is not available on this terminal: it cannot report the cursor"
+                    + " position, which a click needs (terminal=" + terminal.getType() + ")");
+            return;
+        }
+        reader.setOpt(LineReader.Option.MOUSE);
     }
 
     public void enableBracketedPaste(String val) {
@@ -440,21 +510,6 @@ public final class Console {
         completer.reset();
         parserCallback = null;
     }
-
-    public String ulen(String s, final int maxLength) {
-
-        //WCWidth.java: (ucs >= 0x8140 && ucs <= 0xfefe && ucs%0x0100 !=0x7f) ||
-        if (s == null) return "0:0";
-        AttributedString buff = AttributedString.fromAnsi(s);
-        int size = buff.columnLength();
-        if (maxLength > 0 && maxLength < size) {
-            buff = buff.columnSubSequence(0, maxLength);
-            s = buff.toAnsi(terminal);
-            size = maxLength;
-        }
-        return s.getBytes().length + ":" + size + ":" + (maxLength > 0 ? s : "");
-    }
-
 
     public void setKeywords(AbstractTableMap<String, ?> keywords) {
         HashMap<String, ?> map = (HashMap) keywords.toJavaObject();
@@ -499,43 +554,38 @@ public final class Console {
     private volatile String prevTime = "";
     private volatile String prevColor = "";
 
-    /**
-     * Take the scroll region back from the status bar.
-     *
-     * <p>jline's {@code Status.reset()} clears the region it reserved with
-     * {@code puts(change_scroll_region, 0, 0)}. {@code csr} is {@code \E[%i%p1%d;%p2%dr}, so that call
-     * compiles to {@code \E[1;1r} -- a region one row tall, which is the opposite of an undo: every line
-     * the session prints afterwards rotates inside the viewport's first row. The fork's Status.reset() now
-     * writes the parameterless {@code \E[r}, which is the reset; this call is what makes a session correct
-     * while the jar still carries the old byte, and because {@code \E[r} is idempotent a rebuilt jar pays
-     * nothing for it.
-     *
-     * <p>Call it after anything that hides or closes the bar, never before: the bar's own teardown is what
-     * leaves the region behind.
-     */
-    private void clearScrollRegion() {
-        terminal.writer().write("\033[r");
-        terminal.flush();
-    }
-
     public boolean setStatus(String title, String color) {
         try {
             final int width = getScreenWidth() - 1;
+            // How many rows the bar holds *before* this call. Anything that changes that number invalidates
+            // the geometry the line editor cached when readLine() started, and only a WINCH makes it re-derive
+            // it (LineReaderImpl installs the handler at :684 and resizes at :1274). Without this, turning the
+            // bar on or off -- or a pager that takes the rows back -- leaves the editor laying its prompt out
+            // against a screen that no longer exists, which is the "cursor moved up one row" symptom, and it is
+            // the same symptom whether the rows went away through `more`, through `set status off` or through
+            // `set status on`.
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
                 return false;
             if (title == null || title.equals("")) {
                 this.status.close();
                 this.status.suspend();
-                clearScrollRegion();
                 this.status = null;
                 return false;
             }
             if (terminal.paused()) return false;
-            //must be width -1 to avoid cursor position issue, don't know why
-            final String chars = new String(new char[width]);
+            // The off branch suspends, and Status.update() returns while suspended -- so a real title, which
+            // is all "set status on" delivers, reached an update() that drew nothing. The bar came back only
+            // when some other path happened to call restore() (pause/resume, ttop), and by then the prompt had
+            // already been laid out for a screen without the bar, which is the stray empty prompt line left
+            // one row above the command.
+            this.status.restore();
             String time = timer.getTime();
             this.status.resize();
+            /* `titles` must hold no geometry: the flush path hands the cached rows straight back to the bar
+               without remeasuring, and Status.update() pads each row to the current width with spaces, so a
+               row built from an old width repaints stale and looks right. That is why the rule below is a
+               border template rather than a string cut here. */
             if ("flush".equals(title) && prevTime.equals(time)) {
                 this.status.update(titles);
             } else {
@@ -548,8 +598,10 @@ public final class Console {
                 if (color != null && !color.equals("") && !color.equals(prevColor)) {
                     prevColor = color;
                 }
+                // overflow -1 is the "must be width -1 to avoid cursor position issue, don't know why" the
+                // row used to carry: the library retiles the rule to width-1 from the live geometry.
+                this.status.setBorder(AttributedString.fromAnsi(prevColor + "-"), -1);
                 titles.clear();
-                titles.add(AttributedString.fromAnsi(prevColor + chars.replace('\0', '-') + '\n'));
                 AttributedStringBuilder asb = new AttributedStringBuilder();
                 asb.append(time).ansiAppend(title);
                 titles.add(asb.toAttributedString());
@@ -589,8 +641,25 @@ public final class Console {
         return terminal.getWidth();
     }
 
+    /**
+     * The rows a statement may use -- the window minus whatever the bar is holding right now.
+     *
+     * <p>It used to subtract {@code titles.size()}, which is the number of lines last handed to the bar, not
+     * the number of lines the bar is drawing. Those two part company in both directions: after
+     * {@code set status off} nothing is drawn and yet {@code titles} keeps its two entries, so the session
+     * laid itself out two rows short of the screen it had; and a bar that adds a border draws a row more
+     * than it was handed.
+     */
     public int getScreenHeight() {
-        return terminal.getHeight() - titles.size();
+        return terminal.getHeight() - barRows();
+    }
+
+    private int barRows() {
+        Status bar = terminal.getStatus(false);
+        if (bar == null || bar.isClosed() || bar.isHided() || bar.isSuspended()) {
+            return 0;
+        }
+        return bar.size();
     }
 
 
@@ -712,7 +781,6 @@ public final class Console {
                     if (status != null) {
                         this.status.close();
                         this.status.suspend();
-                        clearScrollRegion();   //the console outlives this process; a 1-row region would not
                     }
                     return null;
                 } else {
@@ -767,7 +835,6 @@ public final class Console {
             if (status != null) {
                 status.hide();
                 status.suspend();
-                clearScrollRegion();
             }
             terminal.pause();
             //Save the current console mode before restoring to original mode for native child
@@ -818,8 +885,16 @@ public final class Console {
 
     public String getKeyMap(String[] options) throws Exception {
         ByteArrayOutputStream stream = new ByteArrayOutputStream();
-        Commands.keymap(reader, new PrintStream(stream), System.err, options);
-        return stream.toString();
+        // Both ends pinned to UTF-8 rather than to the platform default. The pair used to agree, so
+        // it round-tripped anything the code page could represent and replaced the rest with '?': an
+        // action name of U+20000 came back as 3F on JDK 8/17/21 and survives intact now. Key
+        // sequences were never at risk -- KeyMap.display escapes every character >= 128 as
+        // backslash-u-hex -- so this covers action names only. The flush is by the book, not a bug
+        // seen: new PrintStream(bos) pushed every byte through before flush on all three JDKs.
+        PrintStream out = new PrintStream(stream, true, "UTF-8");
+        Commands.keymap(reader, out, System.err, options);
+        out.flush();
+        return stream.toString("UTF-8");
     }
 
     public String setKeyCode(String keyEvent, String keyCode) throws IOException {

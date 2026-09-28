@@ -160,10 +160,14 @@
  * upstream compares its Pvt buffer (Ansi.cpp:1788, :3645, :3657), which retires two spellings that used to pass
  * here as legal: `CSI ! SP q` set a cursor shape, and `CSI ? ! p` ran a hard reset. And `CSI ? <mode> $ p`
  * answers now, for the three bits this model holds (25, the alternate-screen family, 2026) and using only
- * statuses 1 and 2. The permanent pair is never sent: DEC and xterm read 4 as "permanently set" while jline4's
- * doc reads 4 as "permanently reset", so a number those two readers invert lies to one of them -- for 2048 it
- * would promise window sizes arriving in the data stream -- and the asker looks replies up by mode number, so
- * an unanswered id costs it nothing (`parseDecrpm`, AbstractTerminal.java:675-690). No stats slot moved: the
+ * statuses 1 and 2 -- though until -46 those two were **swapped**, and the permanent pair was refused on a
+ * false premise (DEC/xterm and jline4 do NOT read 3/4 oppositely; MSFT `DispatchTypes.hpp:555-558` matches
+ * jline4's javadoc digit for digit). The real reasons are in `Render.cpp::mode_status`'s note and #93: a 3
+ * would claim a permanence nothing here has, and a 4 buys nothing -- for 2048 it
+ * would promise window sizes arriving in the data stream (which is what it did until #82 built the promise and
+ * gave the mode a state to answer from; the permanent pair is still never sent) -- and the asker looks replies
+ * up by mode number, so an unanswered id costs it nothing (`parseDecrpm`, AbstractTerminal.java:675-690). No
+ * stats slot moved: the
  * queue entry carries the mode and the status, and written replies were already counted.
  * -21 is the OSC 9 safe subset (T7). 9;4 stores a taskbar state and progress, 9;9 stores a working
  * directory as text, and 9;12 is routed into the FTCS 133;B path rather than reimplemented; both stored facts
@@ -206,9 +210,10 @@
  * -23 is the census table (T6). One static row per RcUnsupported slot -- label, sentence, and whether
  * counting it makes the frame suspect -- so `unsupported()` reads a column where it used to compare against
  * one enum member, and the labels stop being a third thing written down (the enum's comments, this file's
- * stats layout, and two Java report tables said the same eleven names four ways). Nothing moved by a byte:
+ * stats layout, and two Java report tables said the same names four ways -- eleven of them then, thirteen
+ * since #85's `charset` slot). Nothing moved by a byte:
  * the slot order is the ABI, `stats()` still hands back numbers, and the equality proof is the host gate
- * pinning the whole normalised label list plus a live leg that now compares all eleven names with the dll
+ * pinning the whole normalised label list plus a live leg that now compares **every** name with the dll
  * instead of four indices. `Java_Render_censusNames` is gate-only, like `consolePalette`.
  * -24 is OSC 52 (I36), and the refactor that made room for it. The if-chain that decided what an OSC means
  * is now a table of families -- one row per code set, with the name the report prints and the handler the
@@ -229,7 +234,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-26-33"
+#define RENDER_BUILD "render-2026-09-28-54"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -325,13 +330,39 @@ enum
    moves. `Render.java` asserts its own table against this length and against the jar's, so a slot added here
    and forgotten there is a red gate, not a silent zero. */
 #define STAT_ARGTRUNC    (STAT_CLIP + 7)
-#define STAT_LAST        (STAT_ARGTRUNC + 1)
+/* DECSET 2004 as the grid stands at the end of the run: 1 agreed, 0 not. It is a state, not a count, like
+   the sync family's live bit -- a rollout reading "no bracketed-paste OSC was counted" has to be able to tell
+   "no application asked" from "it asked, and the paste bytes belong to the host's input leg" (#83). */
+#define STAT_BP          (STAT_ARGTRUNC + 1)
+/* #88's shape axis, appended after the bracketed-paste slot for the one rule this table has -- an index that
+   ships never moves. It is -1, 1 or 2: what this *handle* last got kernel32 to accept, not what the cursor
+   currently looks like, which is the same kind of claim `lastShapeStyle` makes in Paint.cpp's comment above
+   (conhost has no getter for the shape; `GetConsoleCursorInfo` reports `dwSize`, a different axis). A reader
+   that cannot tell those two apart will read "2" as "there is a bar on the screen", and on a console where
+   SetConsoleCursorShape was refused it would be reading a lie. */
+#define STAT_SHAPE       (STAT_BP + 1)
+/* #108's five input-report counters are NOT census slots. The array `stats()` returns is read positionally by
+ * three tables at once -- this file, Render.java's S_* block, and NativeRenderer's SLOT_* block -- and the
+ * third is the one that ships inside dbcli.jar, where `SLOT_SHAPE = 57, SLOT_LAST = 58` is a compiled fact
+ * this round cannot edit. Render.java's own leg (`reportSlotAgrees("SLOT_LAST", ...)`) is the gate that
+ * catches a table that grew on one side only, and it is right to: a slot appended here without a name in the
+ * shipped report is a number a rollout reads as whatever its last column happened to be.
+ * So the five ride on `inputMode()`, which is gate-only and has no second table to fall out of step with. */
+#define STAT_LAST        (STAT_SHAPE + 1)
 
 #ifdef __MINGW32__
 #define CH_UNICODE(ci) ((ci).Char.UnicodeChar)
 #else
 #define CH_UNICODE(ci) ((ci).Char.Unicode)
 #endif
+
+/* #88: the real signature of the export this build reaches for by name. Declared by hand rather than taken
+ * from a header because the whole ship builds against _WIN32_WINNT 0x0601 -- the Win7 floor -- and that SDK
+ * level does not declare the function at all. That is also why build.sh's "no Win8+ entrypoints" leg stays
+ * green with this in the tree: a pointer resolved out of GetProcAddress adds no import directory entry, so
+ * the loader never asks for anything a Win7 kernel32 cannot answer. WINAPI is load-bearing on x86: the
+ * export is __stdcall, and calling it through a cdecl pointer would unbalance the stack on 32-bit. */
+typedef BOOL(WINAPI *RcSetCursorShape)(HANDLE hConsoleOutput, DWORD ulCursorShape);
 
 typedef struct RcHandle
 {
@@ -354,6 +385,18 @@ typedef struct RcHandle
   uint32_t palOrig[16];
   int    palSaved;
   uint16_t defAttr;
+  /* #95: CONIN$'s mode as this handle first found it, and whether it is currently holding the mouse on.
+     Same discipline as the eight lines above: the console's input mode is user state that outlives the
+     process on a shared buffer, so a session that armed the mouse and left without handing the mode back
+     would leave the user's console without text selection (`ENABLE_QUICK_EDIT_MODE` is what has to come
+     off for the console to report the mouse instead of selecting with it). `inSaved` is set once, by the
+     first touch, so a second arm in the same session still restores the *original*, not the first arm's. */
+  DWORD  inBase;
+  int    inSaved, inArmed;
+  /* #104: CONOUT$'s mode as this handle first found it, and whether the host's parser is currently held off.
+     Same borrow-and-return discipline as the two lines above, on the output side. */
+  DWORD  outBase;
+  int    outSaved, outClaimed;
   /* Content from this chunk has reached the console, so a later decline in the same chunk must not send
      the caller back to a raw write with the same bytes: that is how text gets painted twice. */
   int landedChunk;
@@ -369,6 +412,25 @@ typedef struct RcHandle
      that tells a slide the painter made from a scroll the user made. Zeroed when the slot goes back to the
      pool, so a reused handle starts with nothing but the window to go on. */
   int prevSet, prevBase, prevRows, prevWinB;
+  /* The geometry the `?2048` report last told the stream about (#82), and the reason it lives here rather
+     than in the grid: this is a claim about the *reader's* knowledge, and a rebuild throws the grid away
+     while the program is still sitting there holding what it was last told. `open()` seeds both from the
+     model it builds, so a session never sees a report for the shape it started in; `build_model` deliberately
+     does *not* touch them, because the rebuild a resize forces is exactly the event the report is about.
+     A `flush_reports` that found the queue full leaves both alone, so the notice is retried rather than
+     written off. */
+  int repRows, repCols;
+  /* #88: `SetConsoleCursorShape` resolved for this handle, or NULL on a kernel32 that has no such export
+     (Win7 and Server 2008 R2 are the floor this build still supports; the export arrived with Windows 10
+     18297). It is cached *here* and not in a file-scope static because this struct is the thing that owns a
+     console: a handle that was opened before the export existed and one opened after must not inherit each
+     other's answer, and a process is free to load a different kernel32 than the one another handle probed.
+     `lastShapeStyle` is the style word the console was last handed through it, or -1 for "never". There is
+     no getter -- `GetConsoleCursorInfo` reports `dwSize`, which is a different axis -- so this store is the
+     only record of what was said, and it exists so that walking a bar back to a block is an action rather
+     than a hope. */
+  RcSetCursorShape setShapeFn;
+  int lastShapeStyle;
   /* What the last plan asked the console for, named rather than inferred. Everything the gate can read off
      the screen -- the buffer, the window, the cursor -- says where the console is; none of it says where the
      painter *believed* its rows were, and the defect this records is exactly the difference between the two.
@@ -376,6 +438,10 @@ typedef struct RcHandle
      in the cell census. Java_Render_plan reads these back; painting them costs a store per flush. */
   int trSeq, trReason, trBaseSet, trBaseRow, trWinT, trBase, trSlide, trSlideTo, trBufScroll, trRow0,
       trWinTop, trRows, trWinRows, trBufH, trPend, trRuns, trDeclined, trMoveFail;
+  /* #103: the same record's cost column. `runs` says how many rectangles the plan named, which cannot tell a
+     one-row repair from a whole-viewport re-emission -- both are one run. The cell count can, and "an adopt
+     that only read the console must write zero cells" is not checkable any other way from Java. */
+  unsigned long trCells;
   unsigned long nFlush, nPaints, nDeclines, nApiErrors, nAligns, nSnaps;
   /* Gate-only fault injection: fail the *i*-th run of the next plan instead of calling the console, once.
      The defect it witnesses (#44) lives on an error path no console state can be coaxed into -- a
@@ -653,9 +719,12 @@ static void w_hex4(wchar_t *b, int *n, int cap, unsigned v)
  * DECRPM is the one reply whose text is decided before the queue is walked, because it is about a point in
  * the stream rather than about the screen at the end of it: `it->mode` is the number that was asked and
  * `it->status` is what that mode was when the request was read. ConEmu has no such reply, so there is no
- * upstream string to copy -- the shape is the VT500 one, `CSI ? <mode> ; <status> $ y`, and only the two
- * statuses this model can prove ever appear; Render.cpp's `mode_status` says why the permanent pair are left
- * unasked and unanswered. */
+ * upstream string to copy -- the shape is the VT500 one, `CSI ? <mode> ; <status> $ y`. Statuses 1 and 2 are
+ * what a stored bit reports; the two permanent digits appear once each, both earned by a fact about the
+ * build rather than by a bit: **4** for `?3` (DECCOLM can never be honoured here -- #109 measured the three
+ * ways to widen a console) and **3** for `?2` (DECANM: there is no VT52 dispatch this parser can be switched
+ * into). Render.cpp's `mode_status` carries the evidence for each. No other number may join them without the
+ * same kind of fact behind it: a permanent digit is a claim about every future session, not about this one. */
 static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *p,
                       const struct RcReportItem *it, wchar_t *out, int cap)
 {
@@ -725,6 +794,30 @@ static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *
       w_lit(out, &n, cap, "\x1b\\");
       break;
     }
+    case RC_REP_TITLE:
+      /* `CSI 21 t`'s answer, in the bytes the two references that act on it use: `ESC ] l <title> ESC \`,
+         with no `;` between the letter and the text (ghostty stream_terminal.zig:1468-1471, wezterm
+         terminalstate/mod.rs:2175-2183). The string is the title *this parser* last applied -- `g->title`,
+         the same field the painter pushes at the console and the stack arms save -- because that is the only
+         title this library can name a claim about (I42; the console's own title from before this session was
+         never read, and inventing it would answer a question with somebody else's word). */
+    {
+      if (g->nTitle <= 0) return 0;                  /* nothing was ever applied: say nothing, counted below */
+      const int keep = cap - 4;
+      int c = g->nTitle < keep ? g->nTitle : keep;   /* clipped, and a clip is a truncation the caller can see */
+      w_lit(out, &n, cap, "\x1b]l");
+      for (int i = 0; i < c; i++) if (n < cap - 3) out[n++] = (wchar_t)g->title[i];
+      w_lit(out, &n, cap, "\x1b\\");
+      break;
+    }
+    case RC_REP_XTVER:
+      /* XTVERSION's reply, `ESC P > | <name> ESC \` (ghostty stream_terminal.zig:1442-1447, wezterm
+         terminalstate/mod.rs:1440-1447). The name is this build's stamp -- the string `build()` returns and
+         the live gate reads off the loaded dll -- because the thing answering is the thing parsing. */
+      w_lit(out, &n, cap, "\x1bP>|");
+      w_lit(out, &n, cap, RENDER_BUILD);
+      w_lit(out, &n, cap, "\x1b\\");
+      break;
     case RC_REP_DA:
       w_lit(out, &n, cap, "\x1b[?61;4;6;7;14;21;22;23;24;28;32;42c");
       break;
@@ -737,6 +830,37 @@ static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *
   (void)v;
   out[n] = 0;
   return n;
+}
+
+/* Put `n` units at the head of the console's input stream, one key press (down and up) per unit -- the same
+ * act conhost performs for a reply: "this will generate two key presses (one down, one up) for every character
+ * in the string and place them into the head of the console's input stream" (outputStream.cpp:43-45), built by
+ * SynthesizeKeyEvent(down, 1, vk 0, scan 0, ch, ctrlState 0) (inputBuffer.cpp:799-816). #108 shares it with the
+ * mouse and focus reports: a reply answers a question the stream asked, a report answers an event the user
+ * made, and the wire is the same one.
+ *
+ * Returns 1 when the console took every record. The caller counts the outcome and owns the error text, because
+ * only it knows whether the entry was a queued reply (dropped either way) or a report an observer waits on. */
+static int write_input_units(RcHandle *h, const wchar_t *txt, int n)
+{
+  INPUT_RECORD rec[160];
+  int nrec = 0;
+  const int room = (int)(sizeof rec / sizeof rec[0]);
+  for (int i = 0; i < n && nrec + 2 <= room; i++)
+  {
+    rec[nrec].EventType = KEY_EVENT;
+    rec[nrec].Event.KeyEvent.bKeyDown = TRUE;
+    rec[nrec].Event.KeyEvent.wRepeatCount = 1;
+    rec[nrec].Event.KeyEvent.wVirtualKeyCode = 0;
+    rec[nrec].Event.KeyEvent.wVirtualScanCode = 0;
+    rec[nrec].Event.KeyEvent.uChar.UnicodeChar = txt[i];
+    rec[nrec].Event.KeyEvent.dwControlKeyState = 0;
+    rec[nrec + 1] = rec[nrec];
+    rec[nrec + 1].Event.KeyEvent.bKeyDown = FALSE;
+    nrec += 2;
+  }
+  DWORD written = 0;
+  return WriteConsoleInputW(h->in, rec, (DWORD)nrec, &written) && written == (DWORD)nrec;
 }
 
 /* Hand every armed query its answer, as key events on the console's input stream -- which is how conhost
@@ -753,11 +877,28 @@ static int reply_text(int kind, const RcGrid *g, const RcView *v, const RcPlan *
 static void flush_reports(RcHandle *h, const RcView *v, const RcPlan *p)
 {
   RcGrid *g = h->g;
+  /* #82: the in-band size notice, armed here and not in the parser and not in `build_model`.
+   * The parser cannot know it: nothing in the byte stream says the window moved. `build_model` is the wrong
+   * place too -- it runs `rc_reset_hist` on a *fresh* grid, and that reset zeroes the report queue along with
+   * everything else, so anything armed there is erased before the flush that would have delivered it (measured
+   * the way in ANSI_TODO §11's (a)). Here, the model already carries the new shape, the promise has already
+   * been carried across the rebuild, and the queue is about to be drained into CONIN$ in this same call.
+   * The comparison is against what this handle last *told* the stream, not against what the grid used to hold,
+   * which is what makes a resize nobody in this process asked for -- a user dragging the window, another
+   * program's `mode con:` -- arrive on the same path as one the caller made itself.
+   * `repRows`/`repCols` move only when the queue actually took the entry: a notice refused because the queue
+   * was already full (`RC_REPORT_MAX`, and #81 is why that is 64 rather than 8) is retried on the next flush
+   * rather than silently dropped. */
+  if (g->inbandResize && (g->winRows != h->repRows || g->cols != h->repCols) && rc_notify_geometry(g))
+  {
+    h->repRows = g->winRows;
+    h->repCols = g->cols;
+  }
   while (rc_report_pending(g) > 0)
   {
     struct RcReportItem it;
     const int kind = rc_report_take(g, &it);
-    wchar_t txt[64];
+    wchar_t txt[RC_TITLE_MAX + 32];   /* a title report carries a whole title; every other reply fits in a line */
     const int n = reply_text(kind, g, v, p, &it, txt, (int)(sizeof txt / sizeof txt[0]));
     if (n <= 0) { rc_report_result(g, 0); continue; }   /* a kind with no reply: counted, never silent */
     if (h->in == INVALID_HANDLE_VALUE)
@@ -774,26 +915,9 @@ static void flush_reports(RcHandle *h, const RcView *v, const RcPlan *p)
       while (rc_report_pending(g) > 0) { rc_report_take(g, NULL); rc_report_result(g, 0); }
       return;
     }
-    INPUT_RECORD rec[160];
-    int nrec = 0;
-    const int room = (int)(sizeof rec / sizeof rec[0]);
-    for (int i = 0; i < n && nrec + 2 <= room; i++)
-    {
-      rec[nrec].EventType = KEY_EVENT;
-      rec[nrec].Event.KeyEvent.bKeyDown = TRUE;
-      rec[nrec].Event.KeyEvent.wRepeatCount = 1;
-      rec[nrec].Event.KeyEvent.wVirtualKeyCode = 0;
-      rec[nrec].Event.KeyEvent.wVirtualScanCode = 0;
-      rec[nrec].Event.KeyEvent.uChar.UnicodeChar = txt[i];
-      rec[nrec].Event.KeyEvent.dwControlKeyState = 0;
-      rec[nrec + 1] = rec[nrec];
-      rec[nrec + 1].Event.KeyEvent.bKeyDown = FALSE;
-      nrec += 2;
-    }
-    DWORD written = 0;
-    const BOOL ok = WriteConsoleInputW(h->in, rec, (DWORD)nrec, &written);
-    rc_report_result(g, (ok && written == (DWORD)nrec) ? 1 : 0);
-    if (!ok || written != (DWORD)nrec)
+    const int ok = write_input_units(h, txt, n);
+    rc_report_result(g, ok);
+    if (!ok)
     {
       snprintf(h->lastError, sizeof h->lastError, "reply=%lu", (unsigned long)GetLastError());
       h->nApiErrors++;
@@ -865,6 +989,106 @@ static int apply_palette(RcHandle *h, const uint32_t *src, uint16_t mask,
 
 /* ------------------------------------------------------------------ one paint ------------------ */
 
+/* #95's bit map, spelled here rather than pulled from a header: these are the wincon values, and the
+   only ones this file is allowed to touch on somebody else's input handle. */
+#define RC_IN_MOUSE        0x0010     /* ENABLE_MOUSE_INPUT */
+#define RC_IN_QUICK_EDIT   0x0040     /* ENABLE_QUICK_EDIT_MODE */
+#define RC_IN_EXTENDED     0x0080     /* ENABLE_EXTENDED_FLAGS: without it, the quick-edit bit is ignored */
+#define RC_OUT_VTP         0x0004     /* ENABLE_VIRTUAL_TERMINAL_PROCESSING -- the host's own parser */
+
+/* Ask the console for the mouse, or take the request back.
+ *
+ * `on` comes from the model: any of the nine DECSET numbers the stream armed (RcGrid::mouseModes) is enough,
+ * and clearing the last one takes it back. The mode is always computed from `inBase`, never from what is
+ * there now, so two arms in a row cannot ratchet, and the disarm path writes the base verbatim -- including
+ * quick-edit, which is the part the user notices if we get it wrong.
+ *
+ * Returns 0 when the console refused. The caller does not retry: a session whose console will not take the
+ * mode keeps its *model* (the bits the stream set, the DECRQM answers, the carry across a rebuild) and loses
+ * only the arming, which is the same split #81 already ships for the reports this library never sends. */
+static int sync_mouse(RcHandle *h, int on)
+{
+  /* Nothing to change, so nothing is read, opened or claimed. This line is first for a reason: the version
+     that opened CONIN$ and saved the base before asking this question armed nothing, but it still reported
+     `inSaved = 1` from the first chunk of the session onwards, and the live leg's "nothing is borrowed
+     before the stream asks" assertion caught it on both architectures. A borrow that happens whether or not
+     anybody asked is not a borrow. */
+  if (on == h->inArmed) return 1;
+  if (h->in == INVALID_HANDLE_VALUE)
+    h->in = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+  if (h->in == INVALID_HANDLE_VALUE)
+  {
+    snprintf(h->lastError, sizeof h->lastError, "mouse: no CONIN$ (%lu)", (unsigned long)GetLastError());
+    h->nApiErrors++;
+    return 0;
+  }
+  if (!h->inSaved)
+  {
+    if (!GetConsoleMode(h->in, &h->inBase))
+    {
+      snprintf(h->lastError, sizeof h->lastError, "mouse: mode? (%lu)", (unsigned long)GetLastError());
+      h->nApiErrors++;
+      return 0;
+    }
+    h->inSaved = 1;
+  }
+  if (on == h->inArmed) return 1;
+  const DWORD want = on ? ((h->inBase | RC_IN_MOUSE | RC_IN_EXTENDED) & ~(DWORD)RC_IN_QUICK_EDIT)
+                        : h->inBase;
+  if (!SetConsoleMode(h->in, want))
+  {
+    snprintf(h->lastError, sizeof h->lastError, "mouse: set 0x%lx (%lu)", (unsigned long)want,
+             (unsigned long)GetLastError());
+    h->nApiErrors++;
+    return 0;
+  }
+  h->inArmed = on;
+  return 1;
+}
+
+/* One painter per byte stream, and the library is the one that says so.
+ *
+ * While this model is painting cells, the host's own escape parser must be off. Two parsers over one stream
+ * is the defect class this library exists to end (the `[33m` literal, fg==bg), and here the second parser is
+ * not even a second implementation -- it is the console's, present on 1809+ and absent on Windows 7. With it
+ * left on, the *same* session produces different screens on the two: a chunk the renderer declines is drawn
+ * as colour by conhost on one and written as literal text on the other, and a repaint of cells the console
+ * has already serialised to a pseudo-console's terminal arrives as new output a second time. The owner's
+ * ruling on 2026-09-27 is the plain form of this: when render is asked for, Win7 and Win10 must output the
+ * same thing, which means the Win10-only renderer has to be the thing that is switched off.
+ *
+ * It is a borrow, so it is given back: `give_up` hands it over the moment nothing is painting any more (the
+ * caller writes raw from there on, and raw bytes need that parser), and `release_all` covers the close. A
+ * grid rebuild is NOT such a moment -- `rebuild` drops the model and immediately installs a fresh one, and
+ * restoring here would hand the host's parser back for the rest of the session one resize in.
+ */
+static int claim_output(RcHandle *h, int on)
+{
+  if (h->con == INVALID_HANDLE_VALUE) return 0;
+  if (!h->outSaved)
+  {
+    if (!GetConsoleMode(h->con, &h->outBase))
+    {
+      snprintf(h->lastError, sizeof h->lastError, "vtp: mode? (%lu)", (unsigned long)GetLastError());
+      h->nApiErrors++;
+      return 0;
+    }
+    h->outSaved = 1;
+  }
+  if (on == h->outClaimed) return 1;
+  const DWORD want = on ? (h->outBase & ~(DWORD)RC_OUT_VTP) : h->outBase;
+  if (!SetConsoleMode(h->con, want))
+  {
+    snprintf(h->lastError, sizeof h->lastError, "vtp: set 0x%lx (%lu)", (unsigned long)want,
+             (unsigned long)GetLastError());
+    h->nApiErrors++;
+    return 0;
+  }
+  h->outClaimed = on;
+  return 1;
+}
+
 /* Execute the pending plan. Needs no JNIEnv, because rc_feed() can ask for it in the middle of a
  * chunk: see the onFlush hook in Render.h. Returns one of the FLUSH_* codes. */
 static int paint_flush(RcHandle *h)
@@ -919,6 +1143,7 @@ static int paint_flush(RcHandle *h)
   h->trBufH = v.bufH;
   h->trPend = g->pendingScrolls;
   h->trRuns = p.nRuns;
+  h->trCells = p.cells;
   h->trDeclined = (p.reason == RC_PLAN_NOGEOM) ? 1 : 0;
   h->trMoveFail = 0;
 
@@ -1100,6 +1325,31 @@ static int paint_flush(RcHandle *h)
       }
     }
   }
+  /* #88: the shape axis, and only the shape axis. Two rules make this safe to add to a shipped cursor path:
+     the call happens *instead of* a height (Paint.cpp clears setShape whenever setStyle is set, so 5/6 never
+     writes a 15-cell underline through the other door), and it is guarded by the handle's own pointer, so a
+     kernel32 without the export takes this branch not at all and the cursor is exactly what -37 made it.
+     `lastShapeStyle` is why the store exists: the console will not say what shape its cursor is
+     (GetConsoleCursorInfo reports `dwSize`, a different axis), so the only record of a bar being on screen
+     is the one this handle kept. Without it, walking 5 back to 1 or `ESC c` would change the height and
+     leave the bar standing -- which is a worse answer than the one #87 gave. */
+  if (h->setShapeFn)
+  {
+    const int want = p.setStyle ? p.shapeStyle
+                     : (h->lastShapeStyle >= 0 ? RC_CURSOR_STYLE_BLOCK : -1);
+    if (want >= 0 && want != h->lastShapeStyle)
+    {
+      if (h->setShapeFn(h->con, (DWORD)want)) h->lastShapeStyle = want;
+      else
+      {
+        /* Refused: counted, and `lastShapeStyle` stays put, so the next flush tries again rather than
+           believing a call that did not land. A console that rejects every shape word is a console where
+           DECSCUSR 5/6 keeps folding to a height -- the pre-#88 outcome, arrived at by evidence. */
+        snprintf(h->lastError, sizeof h->lastError, "cursorshape=%lu", (unsigned long)GetLastError());
+        h->nApiErrors++;
+      }
+    }
+  }
   if (h->g && h->g->palTouched)
   {
     /* OSC 4 wrote some of the first sixteen entries (I34). The write and the geometry repair it
@@ -1275,6 +1525,14 @@ static void release_all(RcHandle *h)
       apply_palette(h, h->palOrig, 0xFFFF, &keep);
     h->palSaved = 0;
   }
+  /* #95: the input mode goes back before the handle it was read through closes, and it goes back to the
+     base even if this session armed and disarmed several times -- `inBase` was taken once. */
+  if (h->inArmed) sync_mouse(h, 0);
+  h->inSaved = 0; h->inBase = 0;
+  /* #104: same rule on the output side. `give_up` has already handed it back when the model was abandoned
+     mid-session; this is the case where a still-working renderer is simply closed. */
+  if (h->outClaimed) claim_output(h, 0);
+  h->outSaved = 0; h->outBase = 0;
   drop_model(h);
   free(h->cells);
   h->cells = NULL;
@@ -1282,6 +1540,8 @@ static void release_all(RcHandle *h)
   /* The claim goes with the slot: a reused handle must start as knowing nothing but the window, or a
      previous session's rows would anchor the next one's first paint. */
   h->prevSet = h->prevBase = h->prevRows = h->prevWinB = 0;
+  h->repRows = h->repCols = 0;            /* #82: and so does what the last session was told about them */
+  h->lastShapeStyle = -1;                 /* #88: same kind of claim -- what this handle said, not what is */
   if (h->con != INVALID_HANDLE_VALUE && h->ownsCon) CloseHandle(h->con);
   h->con = INVALID_HANDLE_VALUE;
   h->ownsCon = 0;
@@ -1336,8 +1596,16 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
   uint16_t keepAttr = (uint16_t)defAttr;
   /* The OSC 9 face (T7) is application-set state too: a resize is not a re-open, and a shell that told the
      terminal where it is does not repeat itself because the window changed height. */
-  int keepTb[3] = { 0, 0, 0 }, keepCwd = 0, keepWrap = 1, keepIrm = 0;
+  int keepTb[3] = { 0, 0, 0 }, keepCwd = 0, keepWrap = 1, keepIrm = 0, keepBp = 0, keepInband = 0;
+  int keepCkm = 0;              /* #114: DECCKM, carried by the same rule as keepBp below */
   int keepCols = 0, keepTabsDefaults = 1;
+  /* #80's four facts, carried by the same rule that carries the pen and the tab table: a resize is not a
+     request to change mode, and it is not a reset either. */
+  int keepOrigin = 0, keepDeclrmm = 0, keepMarginSet = 0, keepLeft = 0, keepRight = 0, keepSaveOrigin = 0;
+  /* #85. `keepGl = 0` and an all-zero `keepCs` are the "no previous model" answers, which happen to be the
+     power-up answers too: GL is G0 and every slot is plain. Unlike `keepWrap`, which must be 1 because DECAWM
+     ships on, nothing here needs a non-zero default to be correct. */
+  int keepCs[4] = { 0, 0, 0, 0 }, keepGl = 0, keepMouse = 0, keepFormat = 0, keepBtn = 0;
   uint8_t keepTab[RC_MAX_COLS];
   uint16_t keepCwdBuf[RC_TITLE_MAX];
   /* The title and its stack (I42) are the same kind of state as the tab table: claimed by the application,
@@ -1356,6 +1624,32 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     keepTb[0] = h->g->taskbarState; keepTb[1] = h->g->taskbarProgress; keepTb[2] = h->g->taskbarSeen;
     keepWrap = h->g->wrapMode;
     keepIrm = h->g->insertMode;
+    keepBp = h->g->bracketedPaste;
+    keepCkm = h->g->cursorKeys;       /* #114: `?1$p` must not answer "reset" because the window moved */
+    keepInband = h->g->inbandResize;
+    keepOrigin = h->g->originMode;
+    keepDeclrmm = h->g->declrmm;
+    keepSaveOrigin = h->g->saveOrigin;
+    keepMarginSet = h->g->marginSet;
+    /* #85: the G-sets and which of them GL holds. A resize revokes neither -- an application that drew a box
+       with `ESC ) 0` + `SO` would have its lines turn into `x`/`q`/`m` on the next window drag, which is
+       mojibake produced by the renderer rather than by a bad byte, and the same family of loss as #83's
+       `bracketedPaste` (a claim the stream already made, silently unmade by a rebuild). */
+    keepCs[0] = h->g->charset[0]; keepCs[1] = h->g->charset[1];
+    keepCs[2] = h->g->charset[2]; keepCs[3] = h->g->charset[3];
+    keepGl = h->g->gshift;
+    keepMouse = h->g->mouseModes;   /* #81: same rule as the two above -- `?1000$p` must not answer "not set"
+                                       after the user drags the window. */
+    keepFormat = h->g->mouseFormat; /* #108: and neither may the *shape*. The bits and the format are two
+                                       claims about one agreement, and carrying only the bits would rebuild a
+                                       session that answers `?1006$p` with "set" while its next report goes out
+                                       in X10 -- #83's defect in a new costume, and the reason this field was
+                                       not left to `memset`. */
+    keepBtn = (int)h->g->lastBtn;   /* #108: which buttons the observer last said were down. This is not
+                                       geometry -- the user was holding something through the resize, and a
+                                       model that forgot it reports the next release as nothing at all. */
+    keepLeft = h->g->leftMargin;
+    keepRight = h->g->rightMargin;
     /* The tab table is the same kind of fact as the palette: something the application claimed, which a
      * resize did not revoke. Beyond the old width the defaults reappear if nobody cleared them
      * (`rc_tabs_widen`), which is MSFT's `_InitTabStopsForWidth` (:2799-2817) and the half of the rule that
@@ -1388,6 +1682,56 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     fresh->taskbarSeen = keepTb[2];
     fresh->wrapMode = (uint8_t)keepWrap;   /* a resize is not a request to start wrapping again */
     fresh->insertMode = (uint8_t)keepIrm;  /* and not one to stop inserting, either (I40) */
+    /* #83's bit rides with the two above, and for the same reason: the application already holds a `;2$y`
+       from us, and a terminal that answers "set" before a resize and "not set" after one is lying to the
+       same reader (I26). Nothing re-arms `?2004h` for a window that merely changed height. */
+    fresh->bracketedPaste = (uint8_t)keepBp;
+    fresh->cursorKeys = (uint8_t)keepCkm;   /* #114: same rule, same lie avoided -- a terminal that said
+                                               "set" before a drag and "reset" after one is answering two
+                                               different questions with one number. */
+    /* #82's bit rides the same rule, and losing it would lose more than an answer: a program holding
+       `?2048h` would stop being told about the resizes it armed the report for, while `?2048$p` kept
+       saying 2 -- a mode that replies "set" and then never speaks is the exact lie #83 fixed for 2004.
+       The notice itself is armed by flush_reports against `repRows`/`repCols`, which a rebuild does *not*
+       reseed: this bit is carried and the geometry change is still seen, in the same flush. */
+    fresh->inbandResize = (uint8_t)keepInband;
+    fresh->originMode = (uint8_t)keepOrigin;   /* the page changed size; the space CUP counts in did not */
+    fresh->declrmm = (uint8_t)keepDeclrmm;     /* and the gate on `CSI Pl;Pr s` stays where the caller left it */
+    /* #85 rides the same rule as the two above, and its loss is the loudest: a carried `gshift` with dropped
+       slots (or the reverse) turns a drawn box into ASCII garbage from the next resize onward. Both halves
+       move together or neither is honest. */
+    fresh->charset[0] = (uint8_t)keepCs[0]; fresh->charset[1] = (uint8_t)keepCs[1];
+    fresh->charset[2] = (uint8_t)keepCs[2]; fresh->charset[3] = (uint8_t)keepCs[3];
+    fresh->gshift = (uint8_t)keepGl;
+    fresh->mouseModes = (uint16_t)keepMouse;   /* #81, and it rides with the bits above for the same reason */
+    fresh->mouseFormat = (uint8_t)keepFormat;  /* #108: the protocol the stream chose, not just its bits.
+                                                   A rebuild that kept `?1006$p` answering "set" while
+                                                   the next report went out in X10 would be #83's defect
+                                                   with a new number. */
+    fresh->lastBtn = (uint32_t)keepBtn;         /* #108: which buttons the observer last said were down
+                                                   is not geometry -- the user was still holding one
+                                                   through the resize, and a model that forgot it turns
+                                                   the next release into nothing at all. The motion dedup
+                                                   is deliberately NOT carried: the cell it names
+                                                   belonged to a window that no longer exists, and
+                                                   keeping it would silence one legitimate report. */
+    fresh->moveSeen = 0;
+    fresh->saveOrigin = (uint8_t)keepSaveOrigin;
+    /* A margin is column state and the columns just changed, so the pair is re-clamped rather than copied:
+       a right edge past the new width becomes the new width, and a pair that no longer narrows anything is
+       dropped -- the same normalization `set_margins` applies on the way in, and MSFT's own answer to a width
+       change, which clears both pairs instead of stretching them (adaptDispatch.cpp:1725-1730). */
+    fresh->marginSet = 0;
+    fresh->leftMargin = 0;
+    fresh->rightMargin = fresh->cols - 1;
+    if (keepMarginSet)
+    {
+      int l = keepLeft < 0 ? 0 : keepLeft;
+      int r = keepRight >= fresh->cols ? fresh->cols - 1 : keepRight;
+      if (l < r && !(l == 0 && r == fresh->cols - 1)) { fresh->marginSet = 1; fresh->leftMargin = l; fresh->rightMargin = r; }
+    }
+    if (fresh->cx < fresh->leftMargin) fresh->cx = fresh->leftMargin;
+    if (fresh->cx > fresh->rightMargin) fresh->cx = fresh->rightMargin;
     memcpy(fresh->tabStop, keepTab, sizeof keepTab);
     fresh->tabsDefaults = keepTabsDefaults;
     rc_tabs_widen(fresh, keepCols);   /* a resize is not a reset: only the tail it revealed gets the interval */
@@ -1438,6 +1782,10 @@ static int give_up(RcHandle *h, const char *why)
 {
   if (!h->stopped[0]) snprintf(h->stopped, sizeof h->stopped, "%s", why);
   drop_model(h);
+  /* #104: the caller writes raw from here on, and raw bytes need the host's parser. Keeping the claim after
+     the model is gone would turn a mid-session give-up into a screen full of escape sequences on every
+     Windows, which is the opposite of the sameness the claim is for. */
+  claim_output(h, 0);
   h->adopt = RC_ALIGN;
   h->declines = 0;
   return RENDER_GIVEUP;
@@ -1516,6 +1864,8 @@ extern "C" JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_render
     return give_up(h, msg);
   }
   rc_feed(h->g, units + off, len);
+  sync_mouse(h, h->g->mouseModes != 0);      /* #95: the same request the gate's feed() gets, on the path
+                                                the shipped library is actually on */
   env->ReleasePrimitiveArrayCritical(text, (jchar *)units, 0);
   /* The SGR text this chunk consumed is dropped rather than handed over: this renderer is the only thing
      in the process that reads the stream, so there is no attribute state of anyone else's to keep in step.
@@ -1529,6 +1879,47 @@ extern "C" JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_render
     h->declines = 0;
     if (r == FLUSH_RESYNC) h->adopt = RC_ALIGN;         /* painted, but the shape is no longer the model's */
     return RENDER_PAINTED;
+  }
+  /* #101(a): a window dragged to a new size is an event nobody reports. `adopt` still said RC_ADOPTED --
+     only a decline or a resync changes that -- so the first chunk after the drag is parsed against the
+     geometry the console no longer has, and its paint is refused with FLUSH_NOGEOM. The answer until now
+     was to hand those bytes to the caller and recover on the *next* chunk, and that answer is wrong twice
+     over: the caller's fallback is `Kernel32.WriteConsoleW`, which parses no escapes at all, so the
+     reader's WINCH redisplay (carriage return, erase-down, CUP, prompt) arrives as literal ESC glyphs; and
+     the row it was addressed to is a row this console does not have, so not even the glyphs land where the
+     cursor is. Measured 2026-09-28 in a classic console: after a resize there is no bare prompt row
+     anywhere in the 9001-row buffer while the cursor sits five columns in
+     (`cache/adopt49/bufscan.py`), and the same chunk reproduced inside this gate comes back FLUSH_NOGEOM
+     with the prompt nowhere (`Render.java::caseWinchPrompt`).
+     FLUSH_NOGEOM is only ever returned when *nothing* of the chunk landed -- `paint_and_check` answers
+     FLUSH_RESYNC when it did, see the DECLINE macro -- so the bytes are whole, and the honest repair is to
+     rebuild for the shape the console has now and apply this same chunk, once. The cost is confined to the
+     event: no per-chunk console call is added, which is what the alternative (asking the console's shape
+     before parsing) would have bought at ~78 us a chunk. */
+  if (r == FLUSH_NOGEOM && !h->landedChunk)
+  {
+    int status = OPEN_OK;
+    if (readopt(h, &status))
+    {
+      h->adopt = RC_ADOPTED;                            /* readopt() aligned as it rebuilt */
+      uint16_t *again = NULL;
+      if (!copyChars(env, text, off, len, &again))
+      {
+        rc_feed(h->g, again + off, len);
+        sync_mouse(h, h->g->mouseModes != 0);           /* the same pair the first pass applies */
+        rc_sgr_clear(h->g);
+        env->ReleasePrimitiveArrayCritical(text, (jchar *)again, 0);
+        if (paint_and_check(h) >= 0)
+        {
+          /* `nDeclines` keeps the +1 the first pass earned: a chunk was refused and then repaired, and a
+             census that rounded that to zero would say the resize never happened. `declines` -- the
+             consecutive counter that feeds the give-up ladder -- is what must not remember it. */
+          h->declines = 0;
+          return RENDER_PAINTED;
+        }
+        h->adopt = RC_REBUILD;                          /* still refused: fall through to the caller */
+      }
+    }
   }
   char msg[192];
   if (++h->declines >= RENDER_MAX_DECLINES)
@@ -1634,6 +2025,13 @@ JNIEXPORT jlong JNICALL Java_com_hyee_ansirender_NativeRenderer_open(JNIEnv *env
   slot->con = con;
   slot->ownsCon = (console == 0) ? 1 : 0;
   slot->in = INVALID_HANDLE_VALUE;                /* CONIN$ is opened by the first query that needs it */
+  /* #104: this handle is now the only parser of this stream. Claimed at open rather than at the first
+     flush, because the bytes between those two points would otherwise be parsed by conhost on a 1809+
+     console and land in the model as text. A console with no mode to read (a redirected handle) simply
+     fails the claim and stays as it was -- which is the same answer the caller already gets for a console
+     this library cannot take at all. */
+  slot->outBase = 0; slot->outSaved = 0; slot->outClaimed = 0;
+  claim_output(slot, 1);
   slot->prevSet = slot->prevBase = slot->prevRows = slot->prevWinB = 0;
   slot->trSeq = 0;                              /* a new session has no last plan to report */
   slot->adopt = RC_ALIGN;                         /* a new session: the window is all it knows */
@@ -1659,6 +2057,24 @@ JNIEXPORT jlong JNICALL Java_com_hyee_ansirender_NativeRenderer_open(JNIEnv *env
     return 0;
   }
   g_openStatus = OPEN_OK;
+  /* #88: reach for the shape export by name, once per handle. GetModuleHandleW on a module the process
+     already has loaded cannot fail and loads nothing, and GetProcAddress returning NULL is the ordinary
+     Win7 answer rather than an error -- so this branch is the whole floor rule: no import directory entry
+     (build.sh's `$plat:render-win8api` leg names SetConsoleCursorShape precisely to catch the day someone
+     makes it one), no GetLastError, no counted apiError. The flag handed to Paint.cpp is derived from the
+     same answer, which is what makes "探测不到时行为与今天完全一致" a structural property rather than a
+     hope: with a NULL pointer here the planner never sets setStyle, and every plan is the plan #87 shipped. */
+  if (!slot->setShapeFn)
+  {
+    const HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
+    if (k32) slot->setShapeFn = (RcSetCursorShape)(void *)GetProcAddress(k32, "SetConsoleCursorShape");
+  }
+  slot->lastShapeStyle = -1;          /* a fresh handle does not know what this console's cursor looks like */
+  if (slot->setShapeFn) rc_cursor_shape_api(1);
+  /* #82: the shape it starts in is the shape the session already knows, so it is not a report. Seeding both
+     here -- and nowhere in build_model -- is what makes the first notice a *change* rather than a greeting. */
+  slot->repRows = slot->g->winRows;
+  slot->repCols = slot->g->cols;
   return (jlong)(void *)slot;
 }
 
@@ -1696,6 +2112,7 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_feed(JNIEnv *env,
     return 0;
   }
   rc_feed(h->g, units + off, len);
+  sync_mouse(h, h->g->mouseModes != 0);      /* #95: as soon as the stream said it, the console is asked */
   env->ReleasePrimitiveArrayCritical(text, (jchar *)units, 0);
   return 1;
 }
@@ -1814,7 +2231,14 @@ static int align_grid(RcHandle *h, int reshaped)
      model was distrusted is now moot -- the grid is the screen's again. */
   rc_forget_row_state(g);
   rc_clear_model_suspect(g);
-  rc_mark_all_dirty(g);            /* we do not know what the previous chunk was, so repaint the window */
+  /* #103: read-only in the output sense as well as the input sense. The loop above put the console's own
+     cells onto the model's viewport rows, so the viewport is the one region of the model that is *known* to
+     need nothing, and the damage an earlier chunk armed for those rows describes text this read replaced.
+     Repainting it used to be the answer to "we do not know what the previous chunk was", but the read is
+     exactly how we come to know, and on a pseudo-console the repaint is conhost re-serialising the user's
+     own history back to them (#101's screenshot: two status bars, a help listing in two columns, two
+     prompts). The gutter above the viewport keeps whatever damage it had -- it was not read. */
+  rc_adopt_clean(g);
   return 1;
 }
 
@@ -1922,7 +2346,7 @@ JNIEXPORT jboolean JNICALL Java_com_hyee_ansirender_NativeRenderer_isPseudoConso
  *  enum's order, one slot per row of `rc_census` in Render.cpp -- which is where their names, their
  *  sentences and the one that sets `modelSuspect` now live. They are deliberately not restated here: this
  *  array is positional across three files (I19) and a second copy of the labels is a third thing to forget
- *  to update. `Render.java` reads the table through `censusNames()` and compares all eleven at run time.
+ *  to update. `Render.java` reads the table through `censusNames()` and compares every label at run time.
  *  [27] is the last of the family, a CSI that carried ':' (see STAT_TITLES, which the family's length moves)
  *  [STAT_TITLES..] titles accepted by the parser, of those truncated at RC_TITLE_MAX, and titles the
  *  console took.
@@ -2037,6 +2461,11 @@ JNIEXPORT jlongArray JNICALL Java_com_hyee_ansirender_NativeRenderer_stats(JNIEn
     out[STAT_REPORT + 1] = (jlong)(g_totRepFail + (g ? g->nReportFail : 0));
     out[STAT_REPORT + 2] = (jlong)(g_totRepFull + (g ? g->nReportFull : 0));
     out[STAT_ARGTRUNC] = (jlong)(g_totArgTrunc + (g ? g->nArgTrunc : 0));
+    out[STAT_BP] = g ? g->bracketedPaste : 0;
+    /* Read from the handle, not from `g`, and unconditionally: the bar is the console's state and the handle
+       is what said it, so a handle that render() gave up on still has to answer "did this stream ever put a
+       bar on screen". Dropping the model drops the grid, not the claim about the cursor. */
+      out[STAT_SHAPE] = (jlong)h->lastShapeStyle;
     out[STAT_SYNC] = (jlong)(g_totSyncEngages + (g ? g->nSyncEngages : 0));
     out[STAT_SYNC + 1] = (jlong)(g_totSyncNested + (g ? g->nSyncNested : 0));
     out[STAT_SYNC + 2] = (jlong)(g_totSyncHeld + (g ? g->nSyncHeld : 0));
@@ -2084,6 +2513,80 @@ JNIEXPORT void JNICALL Java_com_hyee_ansirender_NativeRenderer_close(JNIEnv *env
 
 /* ---- gate-only scaffolding: the same console preparation and cell reader Probe.cpp uses, so
  *      Render.java can run in one process against one DLL. Production never calls these. ---- */
+
+/** #95's readback, gate-only: {current CONIN$ mode, the base this handle borrowed, saved?, armed?,
+ * the model's mouseModes, then #108's five report counters (see `rc_report_counts`). The mode is the whole
+ * claim for the first five -- the model's bits are readable elsewhere -- and nothing but a live console can
+ * say whether SetConsoleMode took them. The five after them are the ones a host gate cannot witness at all,
+ * because writing into CONIN$ is a console call. */
+JNIEXPORT jlongArray JNICALL Java_Render_inputMode(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)cls;
+  RcHandle *h = handle(ph);
+  jlong out[10] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+  if (h)
+  {
+    out[1] = (jlong)h->inBase;
+    out[2] = h->inSaved;
+    out[3] = h->inArmed;
+    out[4] = h->g ? (jlong)h->g->mouseModes : 0;
+    /* #108: the five report counters of `rc_report_counts`, in that order. They are read here rather than only
+       in `stats()` because the live leg asks between two calls -- "did that injection reach the stream, and
+       did the model count it the same way" -- and a counter that could only be read at close would answer the
+       first question with the second one's number. */
+    unsigned long rc[5];
+    rc_report_counts(h->g, rc);
+    for (int i = 0; i < 5; i++) out[5 + i] = (jlong)rc[i];
+    /* Read the live mode even before the handle exists: the leg's first assertion is about the mode as the
+       console had it when nobody had asked for anything, and a readback that answered 0 there would be
+       indistinguishable from a console that really has no mode. Opened here for the reading only, and
+       closed again -- h->in stays the borrowed handle the arming path owns. */
+    HANDLE q = h->in;
+    if (q == INVALID_HANDLE_VALUE)
+      q = CreateFileW(L"CONIN$", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (q != INVALID_HANDLE_VALUE)
+    {
+      DWORD m = 0;
+      if (GetConsoleMode(q, &m)) out[0] = (jlong)m;
+      if (h->in == INVALID_HANDLE_VALUE) CloseHandle(q);
+    }
+  }
+  jlongArray arr = env->NewLongArray(10);
+  if (arr) env->SetLongArrayRegion(arr, 0, 10, out);
+  return arr;
+}
+
+/* #104, gate-only: the output console's mode as it stands, and the claim this handle holds on it.
+ * {live, outBase, outSaved, outClaimed}. The live value is read rather than computed from the base because
+ * the leg's whole question is "is the host's parser off right now, on this console" -- a number derived from
+ * our own bookkeeping would answer it the same way whether or not SetConsoleMode took. */
+JNIEXPORT jlongArray JNICALL Java_Render_outputMode(JNIEnv *env, jclass cls, jlong ph)
+{
+  (void)cls;
+  RcHandle *h = handle(ph);
+  jlong out[4] = { 0, 0, 0, 0 };
+  /* The live mode is read even with no handle, and from a CONOUT$ opened for the reading only: the claim's
+     other half is "the mode came back after close()", and a reader that needed a handle could not ask it.
+     Same trick Java_Render_inputMode uses for CONIN$. */
+  HANDLE con = (h && h->con != INVALID_HANDLE_VALUE) ? h->con
+               : CreateFileW(L"CONOUT$", GENERIC_READ | GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+  if (con != INVALID_HANDLE_VALUE)
+  {
+    DWORD m = 0;
+    if (GetConsoleMode(con, &m)) out[0] = (jlong)m;
+    if (!h || h->con == INVALID_HANDLE_VALUE) CloseHandle(con);
+  }
+  if (h)
+  {
+    out[1] = (jlong)h->outBase;
+    out[2] = h->outSaved;
+    out[3] = h->outClaimed;
+  }
+  jlongArray arr = env->NewLongArray(4);
+  if (arr) env->SetLongArrayRegion(arr, 0, 4, out);
+  return arr;
+}
 
 JNIEXPORT jint JNICALL Java_Render_prepareConsole(JNIEnv *env, jclass cls)
 {
@@ -2247,6 +2750,81 @@ JNIEXPORT jcharArray JNICALL Java_Render_readInput(JNIEnv *env, jclass cls, jint
 }
 
 /**
+ * #108, gate-only: the two input-report encoders, on a live console.
+ *
+ * `rc_mouse_report`/`rc_focus_report` are pure and the host gate witnesses their bytes; what only a live
+ * console can witness is the delivery -- that the text this library produced is really readable back off
+ * CONIN$ by the reader that asked for the mode, in the same shape a reply already takes. So both take an
+ * `inject` flag: 1 encodes *and* writes, 0 only encodes, and the gate reads either back with
+ * Java_Render_readInput below. `x`/`y` are viewport cells, 0-based, exactly as the report will say them;
+ * converting from the console's buffer-originated `dwMousePosition` belongs to the observer, because only
+ * the observer knows which window it looked through.
+ *
+ * They are exported for the gate alone, like `inputMode` and `readInput`: production hands these records to
+ * whoever reads the console, and that caller is not in this DLL.
+ */
+static jcharArray report_result(JNIEnv *env, RcHandle *h, const uint16_t *txt, int n, int inject)
+{
+  if (inject && n > 0)
+  {
+    if (h->in == INVALID_HANDLE_VALUE)
+      h->in = CreateFileW(L"CONIN$", GENERIC_READ | GENERIC_WRITE,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    int took = 0;
+    if (h->in != INVALID_HANDLE_VALUE)
+    {
+      wchar_t w[48];
+      int i;
+      for (i = 0; i < n && i < (int)(sizeof w / sizeof w[0]); i++) w[i] = (wchar_t)txt[i];
+      took = write_input_units(h, w, i);
+    }
+    if (took) h->g->nInjectOk++;
+    else
+    {
+      h->g->nInjectFail++;
+      snprintf(h->lastError, sizeof h->lastError, "inject=%lu", (unsigned long)GetLastError());
+      h->nApiErrors++;
+    }
+  }
+  jcharArray a = env->NewCharArray(n);
+  if (!a) return NULL;
+  if (n > 0)
+  {
+    jchar *p = (jchar *)env->GetPrimitiveArrayCritical(a, NULL);
+    if (p) { for (int i = 0; i < n; i++) p[i] = (jchar)txt[i]; env->ReleasePrimitiveArrayCritical(a, p, 0); }
+  }
+  return a;
+}
+
+JNIEXPORT jcharArray JNICALL Java_Render_mouseReport(JNIEnv *env, jclass cls, jlong ph, jint x, jint y,
+                                                     jint px, jint py, jint buttonState, jint eventFlags,
+                                                     jint ctrlKeyState, jint inject)
+{
+  (void)cls;
+  RcHandle *h = handle(ph);
+  if (!h || !h->g) return NULL;
+  struct RcMouseRec m;
+  m.x = (int16_t)x; m.y = (int16_t)y; m.px = (int16_t)px; m.py = (int16_t)py;
+  m.buttonState = (uint32_t)buttonState; m.eventFlags = (uint32_t)eventFlags;
+  m.ctrlKeyState = (uint16_t)ctrlKeyState;
+  uint16_t txt[48];
+  const int n = rc_mouse_report(h->g, &m, txt, (int)(sizeof txt / sizeof txt[0]));
+  if (n < 0) return NULL;                  /* refused for room: the model did not move, and nothing went out */
+  return report_result(env, h, txt, n, inject);
+}
+
+JNIEXPORT jcharArray JNICALL Java_Render_focusReport(JNIEnv *env, jclass cls, jlong ph, jint focused, jint inject)
+{
+  (void)cls;
+  RcHandle *h = handle(ph);
+  if (!h || !h->g) return NULL;
+  uint16_t txt[8];
+  const int n = rc_focus_report(h->g, focused, txt, (int)(sizeof txt / sizeof txt[0]));
+  if (n < 0) return NULL;
+  return report_result(env, h, txt, n, inject);
+}
+
+/**
  * Rebuild this handle's model for the console's shape *now* and adopt what it shows: `readopt()`, the same
  * call render() makes on the chunk after a geometry decline. It is exported for the gate alone because that
  * is the only difference between the two -- production reaches it through render()'s own state machine, and
@@ -2274,6 +2852,8 @@ JNIEXPORT jint JNICALL Java_Render_readopt(JNIEnv *env, jclass cls, jlong ph)
  * [7] slideTo (the row it parked the cursor on, -1 for none) [8] bufScroll [9] row0 -- the buffer row it
  * then addressed model row 0 at [10] winTop it left the window on [11] rows [12] winRows [13] bufH
  * [14] pendingScrolls it spent [15] runs [16] declined on geometry [17] a move call that failed
+ * [18] cells the plan named (appended for #103: a whole-viewport re-emission and a one-row repair are both
+ * one run, and only this number tells them apart)
  *
  * Everything the gate can see otherwise is where the console is; none of it is where the painter believed its
  * rows were, and the class of defect these fields exist for is the difference between the two -- a row written
@@ -2286,7 +2866,7 @@ JNIEXPORT jlongArray JNICALL Java_Render_plan(JNIEnv *env, jclass cls, jlong ph)
 {
   (void)cls;
   RcHandle *h = slot_of(ph);
-  jlong out[18];
+  jlong out[19];
   memset(out, 0, sizeof out);
   if (h)
   {
@@ -2294,10 +2874,10 @@ JNIEXPORT jlongArray JNICALL Java_Render_plan(JNIEnv *env, jclass cls, jlong ph)
     out[4] = h->trWinT; out[5] = h->trBase; out[6] = h->trSlide; out[7] = h->trSlideTo;
     out[8] = h->trBufScroll; out[9] = h->trRow0; out[10] = h->trWinTop; out[11] = h->trRows;
     out[12] = h->trWinRows; out[13] = h->trBufH; out[14] = h->trPend; out[15] = h->trRuns;
-    out[16] = h->trDeclined; out[17] = h->trMoveFail;
+    out[16] = h->trDeclined; out[17] = h->trMoveFail; out[18] = (jlong)h->trCells;
   }
-  jlongArray arr = env->NewLongArray(18);
-  if (arr) env->SetLongArrayRegion(arr, 0, 18, out);
+  jlongArray arr = env->NewLongArray(19);
+  if (arr) env->SetLongArrayRegion(arr, 0, 19, out);
   return arr;
 }
 
@@ -2398,7 +2978,7 @@ JNIEXPORT jint JNICALL Java_Render_consolePalette(JNIEnv *env, jclass cls, jlong
 /** The census table, as a gate can read it: one "name|suspect" per RcUnsupported slot, in the enum's order.
  *  Gate-only, because the production census is numbers and the words already live in the Java report. What
  *  this buys is the half of I19's positional contract that nothing checked: `Render.java` compares its own
- *  eleven labels against these, item by item, so a slot renamed on one side of the seam fails a gate instead
+ *  labels against these, item by item, so a slot renamed on one side of the seam fails a gate instead
  *  of printing a confident wrong number into a rollout log. */
 JNIEXPORT jobjectArray JNICALL Java_Render_censusNames(JNIEnv *env, jclass cls)
 {

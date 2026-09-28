@@ -42,6 +42,7 @@
 #include "../luauf8/ansi_width_tables.h"
 #include "Paint.h"
 #include "vendor/ConEmuRgbMap.h"
+#include "vendor/X11ColorNames.h"   /* #84: the leg pins a name to the same number the table carries */
 
 static int g_checks, g_fails;
 
@@ -161,7 +162,7 @@ static void no_orphan(const RcGrid *g, int row, const char *ctx)
  * the same shape as a zero-evidence `else`: sections 5 and 6 would go on printing their verdicts over a
  * smaller corpus than the file feeds them. So an overflow is a failure, and the size is what the whole file
  * currently registers plus room for the next witness. */
-static char g_corpus[512][128];
+static char g_corpus[768][128];
 static int g_ncorpus;
 
 static void corpus_add(const char *s)
@@ -552,6 +553,47 @@ static void gm_osc_family()
   eq_u("DCS family counted", g.nUnsupported[RC_UN_DCS], 4, "ESC P, X, ^ and _");
   eq_title(&g, NULL, "and none of them set a title");
 
+  /* #107: the one DCS the DA1 reply advertises. `;4` means Sixel Graphics (MSFT's own list,
+     adaptDispatch.cpp:1441, backed by a real SixelParser in the same clone), and this build answers that
+     string verbatim, so the payload it invites has to have a witnessed fate. Framing was covered above;
+     what was not is the *body* -- sixel carries raw newlines, `$` panel repeats, `,` parameters and a
+     `\\`-escaped colour spec, every one of which is a live sequence in any other context. A parser that
+     lost the DCS classification would scroll the page and paint letters, and only a leg that puts the body
+     between two visible markers can see that. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "AB");
+  put(&g, "\033Pq#0;2;0;0;0;0;1Y\n#1;1;0;100;100;100;1,0,0;#1;2;0;100;100;0!0,0;#2;1;50;50;50$3\\#0;0;0;0;0;0E\033\\");
+  put(&g, "CD");
+  eq_text(&g, 0, 20, "ABCD                ", "the whole sixel body paints no cell, and the markers meet");
+  eq_u("one vote, in the DCS bucket", g.nUnsupported[RC_UN_DCS], 1u,
+       "and not in the OSC ones -- a payload read as an OSC could reach the title applier");
+  eq_u("the titles stayed untouched", g.nTitleSet, 0u, "");
+  eq_u("no cursor motion survived the body's newlines", (unsigned)g.cy, 0u,
+       "a sixel `Y\\n` that reached move_row would push the page and scroll the window");
+  eq_u("and no cell was damaged at all beyond the four markers", (unsigned)g.nCells, 4u, "");
+  /* An abandoned sixel (no ST) is the same case with the terminator missing: the framing must still eat the
+     body to the end of the chunk, because half a sixel stream is worse than none. */
+  /* Abandonment, the way the parser actually defines it: a CAN is what closes the payload early, not the end
+     of a chunk -- the neighbouring legs two lines below are the authority for that split (an OSC left open at
+     a chunk boundary *resumes*, which is what deviation #2 exists for), and a sixel body is exactly the
+     payload most likely to be split across chunks in real life. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "XY\033Pq#1;1;0;10;10;10;1,0,0;\030Z");
+  eq_text(&g, 0, 20, "XYZ                 ", "a CAN abandons the body, and the text after it is text");
+  eq_u("and it is the DCS bucket that moves", g.nUnsupported[RC_UN_DCS], 1u, "");
+
+  /* The split case: half a sixel in one chunk, the terminator in the next. No vote may be taken while the
+     payload is merely unfinished, and exactly one once it closes -- otherwise a program that writes its
+     graphics in pieces would look like a program that sent garbage. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "AB\033Pq#0;2;0;0;0;0;1Y\n#1;1;0;100;100;100;1,0,0;");
+  eq_u("an unfinished sixel across a chunk boundary votes nothing", g.nUnsupported[RC_UN_DCS], 0u,
+       "it is resumable state, not an error");
+  eq_text(&g, 0, 20, "AB                  ", "and none of its body has been painted");
+  put(&g, "#2;1;50;50;50\033\\CD");
+  eq_u("the terminator closes it with exactly one vote", g.nUnsupported[RC_UN_DCS], 1u, "");
+  eq_text(&g, 0, 20, "ABCD                ", "the two halves still leave the markers meeting");
+
   /* An OSC abandoned mid-payload is counted and its title dropped. Upstream would have kept eating past
      the ESC and applied neither (deviation #1); we apply the colour -- the better half -- and the counter
      says the title was abandoned rather than absent. */
@@ -723,12 +765,141 @@ static void gm_charset()
   eq_u("and neither designator is counted", g.nUnsupported[RC_UN_SUP], 0,
        "the smacs/rmacs path is modelled; a count here would make the census unreadable as a ratio");
 
+  /* ⚠ Overturned by #85. This block used to assert "an `ESC )` designator has no effect" and counted one
+     `RC_UN_SUP` as the proof -- so the *absence* of G1 was the witness, and the moment G1 was implemented the
+     leg would have gone green on a broken build. It is rewritten to say what is now true and to keep the
+     distinction that made it worth writing: **designating G1 changes nothing on screen, shifting to it does.** */
   rc_reset(&g, 20, 4, 0x07);
-  put(&g, "\033)0q");                                 /* G1 is unreachable upstream, and so here */
-  eq_text(&g, 0, 1, "q", "an ESC ) designator has no effect on G0");
-  eq_u("but ESC ) 0 leaves a count", g.nUnsupported[RC_UN_SUP], 1,
-       "it has no case upstream either (Ansi.cpp:2769-2770 falls to DumpUnknownEscape)");
+  put(&g, "\033)0q");
+  eq_text(&g, 0, 1, "q", "an ESC ) designator alone still does not touch G0/GL");
+  eq_u("but the slot is loaded now", (unsigned)g.charset[1], 1, "#85: `)0` designates G1, it is no longer unreachable");
+  eq_u("and a acted-on designator votes nothing", g.nUnsupported[RC_UN_CHARSET], 0,
+       "`0` is a set this build renders; counting it would make the census mean 'failed' where it means 'done'");
+  put(&g, "\016q");                              /* SO */
+  eq_u("SO brings G1 into GL and the same byte draws a line", RC_CELLS(&g, 0)[1].ch, 0x2500,
+       "this is the whole point of the ticket: the byte did not change, the slot did");
+  put(&g, "\017q");                              /* SI */
+  eq_u("SI puts G0 back and the byte is a letter again", RC_CELLS(&g, 0)[2].ch, 'q', "");
+  eq_u("neither shift cost a refusal", g.nUnsupported[RC_UN_SUP], 0,
+       "SO/SI were `default: break` before and are modelled now");
   eq_u("counted inert, not suspected", (unsigned)g.modelSuspect, 0, "the arm is read, not assumed");
+  /* A set we cannot render is still designated -- the slot goes plain -- but it must not be silent. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033)Uq");                             /* Latin-1 into G1, then SO, then a byte */
+  eq_u("Latin-1 into G1 loads nothing", (unsigned)g.charset[1], 0, "one bit per slot: only DEC graphics is drawable");
+  eq_u("and names itself in the census", g.nUnsupported[RC_UN_CHARSET], 1,
+       "`U` is a set this build cannot render; the old claim was `no case for it`, which #85 made false");
+  put(&g, "\016q");
+  eq_u("SO to a plain G1 draws the letter", RC_CELLS(&g, 0)[0].ch, 'q', "");
+  /* The neighbours SO/SI live next to. ⚠ The ticket's gate said "`ENQ` and `ESC . c` still count" -- **both
+     halves of that are false, and they are false in different ways**, so this is written against the machine
+     rather than against the sentence:
+       - `ESC . c` (LS2R): 0x2E *is* an intermediate here, so it never reaches `esc_charset`'s designator arm;
+         it reaches `esc_dispatch`, which discards the intermediate and dispatches on the final -- and `c` is
+         **RIS**. So it does not "count", it resets. That is inherited from the existing `ESC c` ruling (and
+         from ConEmu/ANSI.SYS, which has no LS2R either), and the honest leg is to pin it so a later reader
+         cannot mistake the reset for an oversight.
+       - `ENQ` (0x05) is eaten by `control()`'s `default:`, and the ISO 2022 locking shifts LS2/LS3
+         (0x12/0x14/0x19) join it: no vote, no cell. Pinning "still counted" would have asserted something the
+         code does not do, which is a false leg, not a weak one. What *is* worth pinning is the other half --
+         they paint nothing and shift nothing. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033(0\016\033.cq");
+  eq_u("LS2R's `ESC .` is an intermediate that reaches the final dispatch", (unsigned)g.mode, RC_GROUND, "");
+  eq_u("  ...and the `c` behind it is RIS, so G0 is unloaded", (unsigned)g.charset[0], 0, "");
+  eq_u("  ...GL un-shifted with it", (unsigned)g.gshift, 0, "");
+  eq_text(&g, 0, 1, "q", "  ...and the byte after it draws a letter, which is what proves the reset landed");
+  eq_u("  and none of that cost a vote", g.nUnsupported[RC_UN_SUP] + g.nUnsupported[RC_UN_CHARSET], 0,
+       "the ticket expected a count here; the truth is a reset, so a count would be the lie");
+  rc_reset(&g, 20, 4, 0x07);
+  /* ⚠ My own first version of this block used 0x12/0x14/0x19 as "IND/CRI/LS2" and asserted they move the
+     cursor. All three are wrong at the *byte* level: those are DC1/DC4/EM, and IND/CSI/OSC are their **C1**
+     counterparts (0x90/0x92/0x9B), which this 7-bit input path never produces -- byte 0x92 arrives as a UTF-16
+     code unit and is *text*. So "LS2 is eaten" is not a claim this parser can even be tested on: the only
+     reachable way to ask for a locking shift is the 8-bit form nobody sends. The honest version tests the
+     7-bit-spelled motions, which are real and are handled. */
+  put(&g, "\033(0q\033Dq");                         /* draw, IND (as ESC D), draw again */
+  /* ⚠ Two things this row's first draft got wrong, both worth naming because they read as a G1 bug and were
+     not one: `\033` takes the **longest** octal run, so "\033(0q" is ESC, `(`, `0`, `q` -- the designator is
+     complete inside the literal and G0 *is* loaded before the first `q`; and splitting `ESC (` and `0` across
+     two `put()` calls leaves the parser mid-designator between them, which is a different feed and answered
+     different cells. So the expectations below are the ones the machine gave, each naming what it proves. */
+  rc_reset(&g, 20, 4, 0x07);
+  /* #24's ruling, now that the shift exists and can actually be broken by it: `sgr0`/`rmacs` spell `\E(B`,
+     which designates G0 and must **not** reach into GL. The arm is built so the two answers differ by glyph:
+     G0 holds the drawing set, GL sits on a **plain** G1, and then `ESC ( B` arrives. Keeping the shift prints a
+     letter; clearing it falls back onto G0 and prints a box. A leg whose two branches agree is not a leg -- the
+     first draft of this one was exactly that, and a `sgr0clear` mutation passed the whole gate on it
+     (`t3-mut-sgr0clear.txt`, `6638/0`), the same shape as #82's four host-green arms. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033(0");                               /* smacs: G0 = drawing */
+  put(&g, "\033)B\016");                           /* G1 = plain, and SO moves GL onto it */
+  eq_u("G0 loaded, G1 loaded plain, GL on G1", (unsigned)g.gshift, 1u, "");
+  put(&g, "\033(Bq");                              /* rmacs: designate G0 plain. GL must not move. */
+  eq_u("`ESC ( B` unloaded G0", (unsigned)g.charset[0], 0u, "the rmacs path, exactly as #24 ruled");
+  eq_u("  and left GL on G1", (unsigned)g.gshift, 1u,
+       "clearing the shift here would rewrite #24: a status line drawn in GL is not the capability's to move");
+  eq_text(&g, 0, 1, "q", "  the glyph is a letter because **GL is on the plain G1**, not because anything was unloaded");
+  const int row = g.cy, col = g.cx;              /* read the cursor back rather than re-deriving it: the third
+                                                    draft of this block guessed a row and was wrong twice */
+  put(&g, "\033(0");                             /* reload G0 with drawing; GL is still G1 */
+  eq_u("  cursor did not move for a designation", g.cy, (unsigned)row, "");
+  put(&g, "q");
+  eq_u("...and still a letter: G0 was reloaded under a GL that is not looking at it",
+       RC_CELLS(&g, row)[col].ch, 'q', "the cell the designation did not move the cursor away from");
+  put(&g, "\017");                               /* SI: now G0's turn */
+  put(&g, "q");
+  eq_u("SI finally reveals the loaded G0", RC_CELLS(&g, row)[col + 1].ch, 0x2500,
+       "the one place in this feed where a box can appear, and it appears only because the shift moved,"
+       " not because a designation was cleared");
+  rc_reset(&g, 20, 4, 0x07);
+  /* ⚠ Two drafting errors this block is written around, both of which read as a G1 bug and were neither one:
+       - `\033` takes the **longest** octal run, so "\033(0q" is ESC, `(`, `0`, `q`: the designator is complete
+         inside the literal and G0 *is* loaded before the first `q`.
+       - `\u2500` is **not** a box in this file's strings: the host compiler takes the literal bytes here, so
+         `eq_text` reads the UTF-8 lead 0xE2 as one cell. Every box assertion in this file compares `ch`
+         against the number, and this one follows that rule rather than inventing a third spelling.
+     Each feed below starts from its own rc_reset so no row number depends on where the last one left the
+     cursor -- the mistake that cost the first two drafts of these rows. */
+  put(&g, "\033(0q\033Dq");                         /* G0 loaded, draw, IND (ESC D), draw */
+  eq_u("row 0 draws out of G0, which is what `ESC ( 0` just designated", RC_CELLS(&g, 0)[0].ch, 0x2500, "");
+  eq_u("ESC D moved down a row and kept **the column** (that is what separates it from NEL)",
+       RC_CELLS(&g, 1)[1].ch, 0x2500, "row 1, column 1: the first glyph left the cursor at col 1 and IND held it");
+  eq_u("  and row 1 column 0 stayed empty", RC_CELLS(&g, 1)[0].ch, ' ', "an IND that homed would put a box here");
+  eq_u("  GL is still G0 after the motion", (unsigned)g.gshift, 0u, "a cursor control is not a shift control");
+  eq_u("  and neither byte cost a vote", g.nUnsupported[RC_UN_SUP] + g.nUnsupported[RC_UN_CHARSET], 0,
+       "ESC D is modelled; the census must not call performed motion 'unrecognised'");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033(0q\033Eq");                         /* draw, NEL (ESC E), draw */
+  eq_u("NEL lands the next glyph one row down at the **left edge**", RC_CELLS(&g, 1)[0].ch, 0x2500,
+       "row 1, column 0: ESC E is IND plus a return to the margin, and the pair with the row above is what"
+       " separates the two controls");
+  eq_u("  cursor row is 1 after it", (unsigned)g.cy, 1u, "the second glyph was the one that moved to column 1");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\022\024\031Z");                          /* DC1, DC4, EM -- eaten, not printed */
+  eq_text(&g, 0, 1, "Z", "the C0 informational bytes paint nothing and do not displace the byte behind them;"
+       " `control()` answers BEL/BS/HT/LF/CR/SO/SI and every other C0 falls to `default:`");
+  put(&g, "\005Y");                                 /* ENQ, then a byte */
+  eq_text(&g, 0, 2, "ZY", "ENQ neither paints nor displaces");
+  /* G2/G3 are designated but **unreachable**: no GR and no locking shift to them. Pinned so "four slots" is
+     never read as "four rendered slots" -- the deviation the ticket asked to be written down out loud. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033*0q");
+  eq_u("ESC * 0 loads G2", (unsigned)g.charset[2], 1, "");
+  eq_text(&g, 0, 1, "q", "  and it changes nothing on screen: GL cannot be moved there");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033~0q");
+  eq_u("ESC ~ 0 loads G3", (unsigned)g.charset[3], 1, "");
+  eq_text(&g, 0, 1, "q", "  ditto for G3");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033*0");
+  eq_u("`ESC * 0` before the alias", (unsigned)g.charset[2], 1, "");
+  put(&g, "\033+3q");
+  eq_u("ESC + 3 aliases **G2**, so it overwrites what `*` put there", (unsigned)g.charset[2], 0u,
+       "ISO 2022's `+` designates G2, not G3, and `3` is UK -- a leg asking only 'did + do something'"
+       " would pass either way");
+  eq_u("G3 is untouched by the alias", (unsigned)g.charset[3], 0u, "");
+  eq_text(&g, 0, 1, "q", "and the byte after it is still plain, because GL never moved");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033%Gq");
@@ -741,7 +912,7 @@ static void gm_charset()
   put1(&g, "\033(");
   eq_u("mid-designator", (unsigned)g.mode, RC_ESC_INTERIM, "waiting for the set byte");
   put1(&g, "0");
-  eq_u("charset state after a split designator", (unsigned)g.charset, 1, "resumed");
+  eq_u("charset state after a split designator", (unsigned)g.charset[0], 1, "resumed");
   putu(&g, &q, 1);
   eq_u("split designator took effect", RC_CELLS(&g, 0)[0].ch, 0x2500, "");
 }
@@ -788,17 +959,56 @@ static void gm_palette()
   put(&g, "\033]4;5;rgb:f/ff/0f0\007");
   eq_u("the rgb: form allows unequal widths", g.pal16[5], 0x000FFFFF, "f->0xFF, ff->0xFF, 0f0->0x0F");
 
+  /* #84: the same wire field, spelled as an X11 name. The point of pinning these through the *parser* rather
+     than against `X11ColorTable` directly is that the parser is where a folded key can go wrong: msfterm's
+     fold (`colorTable.cpp:296-334`) drops every byte <= space and lowercases ASCII, and rgb.txt spells each
+     multi-word name twice -- once spaced, once camel -- so an off-by-one in the fold would answer a
+     different colour, not fail. `mediumspringgreen` is 0/250/154, so the green byte alone separates "folded
+     correctly" from "looked something up". */
+  put(&g, "\033]4;6;red\007");
+  eq_u("a known name resolves", g.pal16[6], 0x000000FFu, "COLORREF of 255/0/0");
+  eq_u("the name costs a refusal for nothing", g.nUnsupported[RC_UN_OSC_OTHER], 0,
+       "it is dispatched now; a counted name here would make the census say 'could not act' about an act");
+  put(&g, "\033]4;8;#ff0000\007");
+  eq_u("and lands on the very bytes the sharp form gives", g.pal16[8], g.pal16[6],
+       "one colour, two spellings, one answer -- the reason the table stores r/g/b and not strings");
+  put(&g, "\033]4;9;MediumSpringGreen\007");
+  const uint32_t camel = g.pal16[9];
+  put(&g, "\033]4;10;medium spring green\007");
+  eq_u("the spaced spelling is the same colour", g.pal16[10], camel, "0/250/154");
+  eq_u("the camel spelling is the table's own number", camel, 0x009AFA00u,
+       "rgb.txt spells medium spring green 0 250 154; the generator pins all four readings of that row, "
+       "so this leg pins only what the parser must hand back");
+  put(&g, "\033]4;11;ORANGE\007");
+  eq_u("folding is case-insensitive", g.pal16[11], 0x0000A5FFu, "orange is 255/165/0");
+  put(&g, "\033]4;12;grey50\007");
+  eq_u("a greyscale ramp name resolves", g.pal16[12], 0x007F7F7Fu, "127/127/127 -- X11's number, not MSFT's 128");
+
   /* What is not a colour, and what a refusal costs. */
-  put(&g, "\033]4;6;orange\007");
-  eq_u("a name is counted", g.nUnsupported[RC_UN_OSC_OTHER], 1, "I34 says why this build does not resolve names");
-  eq_u("and stores nothing", g.palTouched, (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5),
-       "bits 1..5, and not 6");
-  put(&g, "\033]4;300;#ffffff\007");
-  eq_u("an index past the table is counted too", g.nUnsupported[RC_UN_OSC_OTHER], 2, "");
-  put(&g, "\033]4;7;#12\007");
-  eq_u("a sharp form with a bad width is counted", g.nUnsupported[RC_UN_OSC_OTHER], 3, "");
+  put(&g, "\033]4;13;nosuchcolourname\007");
+  eq_u("an unknown name is counted", g.nUnsupported[RC_UN_OSC_OTHER], 1,
+       "I34's census survives the name arm: a name we do not have is still something the stream asked for");
+  eq_u("and stores nothing", g.palTouched,
+       (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4) | (1u << 5) |
+       (1u << 6) | (1u << 8) | (1u << 9) | (1u << 10) | (1u << 11) | (1u << 12),
+       "bits 1..6 and 8..12, and not 13");
+  put(&g, "\033]4;14;redwhite\007");
+  eq_u("a prefix of a name is not the name", g.nUnsupported[RC_UN_OSC_OTHER], 2,
+       "the search is exact; 'red' plus three bytes must not answer red");
+  /* ⚠ The order decision, and this is the only leg that can say it. Both of these strings are shorter or
+     malformed AS a sharp/rgb form AND members of the name alphabet, so without the guard below `#red` would
+     reach `x11_color_fold`, which drops bytes <= space and lowercases -- and a near-miss of one known shape
+     would answer a colour through a different shape. `rgb:1/2` is 7 units: too short for its own form, and
+     no rgb.txt row is named `rgb:1/2` (a ':' refuses the fold), so both must be counted. */
+  put(&g, "\033]4;7;#red\007");
+  eq_u("a sharp form is never a name", g.nUnsupported[RC_UN_OSC_OTHER], 3,
+       "one spelling, one shape: a near-miss of #RRGGBB must not fall back");
   put(&g, "\033]4;7;rgb:1/2\007");
   eq_u("a truncated rgb: form is counted", g.nUnsupported[RC_UN_OSC_OTHER], 4, "");
+  put(&g, "\033]4;300;#ffffff\007");
+  eq_u("an index past the table is counted too", g.nUnsupported[RC_UN_OSC_OTHER], 5, "");
+  put(&g, "\033]4;7;#12\007");
+  eq_u("a sharp form with a bad width is counted", g.nUnsupported[RC_UN_OSC_OTHER], 6, "");
 
   /* Two ranges, two tables. */
   rc_reset(&g, 20, 4, 0x07);
@@ -850,9 +1060,30 @@ static void gm_palette()
     eq_u("and answers with the colour of the index chosen", it.status, g.pal16[10],
          "the effective colour, not the RGB that was asked for (I34)");
   }
+  /* The same two resources with names on the wire (#84), and the walk-forward claim that used to live on the
+     refusal count. Before #84 both fields failed, so "two refusals" was itself the evidence that one field is
+     read per resource -- an assertion this ticket had to overturn rather than delete. It is rebuilt without
+     a guessed number: each name's nibble is compared against the index that the *sharp* spelling of the same
+     colour was shown to produce a few lines above, so the leg says "a name and a spec are one colour" and
+     "the loop advanced", and never asserts which index the fold happens to pick. */
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]10;red\007");
+  const unsigned fgByName = g.defAttr & 0xF;
+  eq_u("one field moved the foreground nibble and no more", (g.defAttr >> 4) & 0xF, 0u,
+       "a single-field OSC 10 owns the foreground alone");
+  rc_reset(&g, 20, 4, 0x07);
+  put(&g, "\033]11;green\007");
+  const unsigned bgByName = (g.defAttr >> 4) & 0xF;
+  eq_u("one field moved the background nibble and no more", g.defAttr & 0xF, 7u, "the default pen is untouched");
+  eq_u("and the name landed where that colour's RGB form lands", bgByName, 10u,
+       "`green` and rgb:00/ff/00 are one colour, so they must be one index");
+  rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033]10;red;green\007");
-  eq_u("MSFT walks resources forward one per field, and names fail on the way",
-       g.nUnsupported[RC_UN_OSC_OTHER], 2, "");
+  eq_u("names resolve on the OSC 10/11 path, so the walk costs no refusal",
+       g.nUnsupported[RC_UN_OSC_OTHER], 0u, "one resource per field, and both fields are names this build has");
+  eq_u("the first field took the foreground", g.defAttr & 0xF, fgByName, "");
+  eq_u("the second walked on to the background", (g.defAttr >> 4) & 0xF, bgByName,
+       "a loop that read both fields as foreground cannot produce this pair");
 
   /* Resets. */
   rc_reset(&g, 20, 4, 0x07);
@@ -966,7 +1197,53 @@ static void gm_osc9()
   put(&g, "\033]9;4;1;60");
   eq_u("an unterminated 9;4 has applied nothing yet", (unsigned)g.taskbarProgress, 0,
        "the payload is still open, so there is nothing to count either");
-  eq_u("and has not counted yet", g.nUnsupported[RC_UN_OSC_PRIV], 7, "");
+  eq_u("and has not counted yet", g.nUnsupported[RC_UN_OSC_PRIV], 7,
+       "#107's rule in the other direction: unfinished is resumable, not refused (the 7 is the running "
+       "total of the refusals above, which is why this arm cannot be moved to a fresh grid)");
+
+  /* #111: the four documented members the arms above never named. ConEmu's own table
+     (`cache/p111/conemu-ansi.html`, "ConEmu specific OSC") lists 1..12; the existing legs covered 1, 2, 3,
+     6, 7 and the two shapes. Missing were 5 (wait for a key, then *write an env var*), 8 (**read** an env
+     var and send its value back into the stream), 10 (turn xterm keyboard/output emulation on or off -- a
+     parsing request, which is why it is checked against #109's `?2` claim below) and 11 (a comment, which
+     must be dropped rather than mistaken for a title). */  static RcGrid f;                       /* its OWN grid: the arms below this block read a running total
+                                            off `g`, and resetting that to satisfy this sweep would silently
+                                            un-witness them -- the same class of mistake as a shared fixture */
+  rc_reset(&f, 20, 4, 0x07);
+  put(&f, "\033]9;5\007\033]9;8;PATH\007\033]9;10\007\033]9;10;2\007\033]9;11;just a note\007");
+  eq_u("9;5, 9;8, 9;10, 9;10;2 and 9;11 each vote once", f.nUnsupported[RC_UN_OSC_PRIV], 5,
+       "five refused ids and five votes -- a family member swallowed without a record is the failure mode");
+  eq_u("and none of them put anything in the reply queue", (unsigned)rc_report_pending(&f), 0u,
+       "9;8 is the shape that matters here: ConEmu sends the *value of an environment variable* back to the "
+       "application. An information-disclosure face cannot be witnessed by a grid diff, only by the queue");
+  eq_u("no title came out of the comment form", f.nTitleSet, 0, "9;11 is a comment, not a window title");
+  eq_u("no environment or directory state moved", (unsigned)f.nCwd, 0, "");
+  eq_u("9;10 did not change how the next byte parses", (unsigned)f.attr, 0x07,
+       "xterm emulation requests are refused, and #109's `?2 = permanently set` answer depends on that");
+  put(&f, "Z");
+  eq_text(&f, 0, 20, "Z                   ", "the parser is still the same parser afterwards");
+
+  /* The completeness sweep, which is the leg a table in a document cannot replace: walk every id a program
+     could reasonably send and demand that the ONLY ids that do not vote are the three this build acts on.
+     A new id is refused by construction (`default: unsupported`), so what this really pins is that nobody
+     added a fourth acting id in secret -- and if they do, this leg names the id that stopped voting. */
+  {
+    int firstBad = 0;
+    for (int sub = 0; sub <= 31; sub++)
+    {
+      char seq[40];
+      sprintf(seq, "\033]9;%d\007", sub);
+      rc_reset(&f, 20, 4, 0x07);
+      put(&f, seq);
+      const int acts = (sub == 4 || sub == 12);           /* 9;9 bare is a refusal: no path field */
+      const unsigned votes = f.nUnsupported[RC_UN_OSC_PRIV];
+      if (votes != (acts ? 0u : 1u)) { firstBad = sub; break; }
+      if (!acts && (f.nCwd || f.taskbarSeen || f.nTitleSet || rc_report_pending(&f) || f.semanticContent))
+      { firstBad = 1000 + sub; break; }                    /* voted AND moved state: the worst shape */
+    }
+    eq_u("ids 0..31: only 9;4 and 9;12 act, and a refusal never moves state either", (unsigned)firstBad, 0u,
+         "the number is the id that broke the rule (1000+n = it voted but also changed state)");
+  }
   put(&g, "\033[\007");                          /* abandon and restart: the OSC closes as unterminated */
   eq_u("the abandoned 9;4 counts once", g.nUnsupported[RC_UN_OSC_PRIV], 8,
        "same rule as titles and 133: a half-read command is not a claim, but it is a record");
@@ -1188,22 +1465,62 @@ static void gm_reports()
     eq_u("its kind is DECRPM", (unsigned)rc_report_take(&g, &it), (unsigned)RC_REP_DECRPM, "");
     eq_u("the reply names the mode that was asked", (unsigned)it.mode, 2026,
          "jline4 reads the number back out of the reply, so a reply about the wrong id is worse than none");
-    eq_u("and the state it had when the request was read", (unsigned)it.status, 2,
+    eq_u("and the state it had when the request was read", (unsigned)it.status, 1,
          "the `?2026l` that followed is a later fact, exactly as a cursor move after a CPR is");
   }
   eq_u("answering a query votes in no census", g.nUnsupported[RC_UN_MODE], 0, "");
 
-  /* The two ids of jline4's probe batch that this build holds no state for. They are the ones a permanent
-     number was written for, and they are the reason no number is sent at all: DEC and xterm read DECRPM 4 as
-     "permanently set" while jline4 documents 4 as "permanently reset" (AbstractTerminal.java:663-667), so
-     either spelling lies to one of the two -- and `parseDecrpm` already reaches NOT_SUPPORTED for a mode it
-     finds no reply for (:677-689), which is the verdict both of them should be given. */
+  /* The id of jline4's probe batch this build still holds no state for. It is the one a permanent number was
+     written for, and the reason no number is sent at all: DEC and xterm read DECRPM 4 as "permanently set"
+     while jline4 documents 4 as "permanently reset" (AbstractTerminal.java:663-667), so either spelling lies
+     to one of the two -- and `parseDecrpm` already reaches NOT_SUPPORTED for a mode it finds no reply for
+     (:677-689), which is the verdict it should be given. */
   rc_reset(&g, 20, 6, 0x07);
-  put(&g, "\033[?2027$p\033[?2048$p");
-  eq_u("reflow and in-band resize answer nothing", (unsigned)rc_report_pending(&g), 0,
-       "2048 is the resize notification, not the paste mode: this build wraps at cells and reports size out of band");
-  eq_u("and each votes for the mode it asked about", g.nUnsupported[RC_UN_MODE], 2,
-       "the count its DECSET already costs, so `h` and `$p` cannot disagree about who owns a mode");
+  put(&g, "\033[?2027$p");
+  eq_u("reflow answers, and says it has no such state", (unsigned)rc_report_pending(&g), 1,
+       "GAP G11: 2027 is grapheme-cluster reflow and this build wraps at cells with no cluster state to "
+       "report -- which is exactly what status 0 = not recognized says. The silence this arm used to pin was "
+       "the odd answer: MSFT initialises its reply to DECRPM_Unsupported and returns it for every id it does "
+       "not name (adaptDispatch.cpp:1939), ghostty answers .not_recognized (modes.zig:80-102), wezterm sends "
+       "0 for an Unspecified code (terminalstate/mod.rs:1520-1526).");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("under the number that was asked", (unsigned)it.mode, 2027u, "the reply is indexed by id");
+    eq_u("and with the not-recognized digit", (unsigned)it.status, 0u,
+         "not 1, not 2: the model holds no bit for this number, and 0 is the only status that says so");
+  }
+  eq_u("an answered query votes nothing, even about a mode we lack", g.nUnsupported[RC_UN_MODE], 0,
+       "the vote belongs to the DECSET that could not be stored; #87's pairing rule stays, its silence half "
+       "does not");
+
+  /* 2048 used to sit in that sentence beside 2027. #82 moved it out by giving it the only thing that makes a
+     1-or-2 reply honest -- a stored bit and a behaviour behind it -- so the two doors now open differently on
+     purpose: the id answers in both directions and costs no vote, while a DECSET for it votes nothing because
+     the mode is owned. The legs below are the *pairing* rule (#87's), not the notification, which is
+     geo_inband's. */
+  put(&g, "\033[?2048$p");
+  {
+    struct RcReportItem it;
+    eq_u("in-band size reports answer, because there is a state to answer with",
+         (unsigned)rc_report_pending(&g), 1, "");
+    rc_report_take(&g, &it);
+    eq_u("the reply names the id that was asked", (unsigned)it.mode, 2048, "");
+    eq_u("and says not-set, which is the default", (unsigned)it.status, 2,
+         "on by request only: an unsolicited report is bytes the program did not write");
+    eq_u("answering it votes nothing", g.nUnsupported[RC_UN_MODE], 0,
+         "and since GAP G11 the 2027 query above answers rather than voting, so this grid's mode census is "
+         "empty -- which is the point of the pair: a reply and a refusal are two different records");
+    put(&g, "\033[?2048h\033[?2048$p");
+    eq_u("a DECSET is a store, not a refusal", (unsigned)rc_report_pending(&g), 1, "");
+    rc_report_take(&g, &it);
+    eq_u("and the answer after it is set", (unsigned)it.status, 1, "");
+    eq_u("with no vote for either the h or the $p", g.nUnsupported[RC_UN_MODE], 0,
+         "2048 is owned end to end (#82), and since G11 the query answers instead of voting");
+    put(&g, "\033[?2048l\033[?2048$p");
+    rc_report_take(&g, &it);
+    eq_u("and off again is a store too", (unsigned)it.status, 2, "");
+  }
 
   /* The order the answered ids leave in. jline4 writes its batch as one string and looks each reply up by
      number, so the one failure this queue must not have is a reply about the wrong id. */
@@ -1218,7 +1535,7 @@ static void gm_reports()
     eq_u("first out is first in", (unsigned)first.mode, 25, "");
     eq_u("the middle keeps its own answer", (unsigned)second.mode, 2026, "");
     eq_u("and so does the tail", (unsigned)third.mode, 1049, "");
-    eq_u("a region nobody opened is reported as reset", (unsigned)second.status, 1,
+    eq_u("a region nobody opened is reported as reset", (unsigned)second.status, 2,
          "1, not a permanent number: the mode is understood and currently off, and jline4 reads both 1 and 2 as SUPPORTED (:685)");
   }
 
@@ -1228,21 +1545,21 @@ static void gm_reports()
   {
     struct RcReportItem it;
     rc_report_take(&g, &it);
-    eq_u("a fresh grid reports the cursor visible", (unsigned)it.status, 2, "");
+    eq_u("a fresh grid reports the cursor visible", (unsigned)it.status, 1, "");
   }
   put(&g, "\033[?25l\033[?25$p");
   {
     struct RcReportItem it;
     rc_report_take(&g, &it);
-    eq_u("and `?25l` is a fact the reply carries", (unsigned)it.status, 1, "");
+    eq_u("and `?25l` is a fact the reply carries", (unsigned)it.status, 2, "");
   }
   put(&g, "\033[?1049h\033[?1049$p\033[?47$p");
   {
     struct RcReportItem alt, legacy;
     rc_report_take(&g, &alt);
     rc_report_take(&g, &legacy);
-    eq_u("1049 on the alternate screen answers set", (unsigned)alt.status, 2, "");
-    eq_u("and 47 is the same slot, so it cannot disagree", (unsigned)legacy.status, 2,
+    eq_u("1049 on the alternate screen answers set", (unsigned)alt.status, 1, "");
+    eq_u("and 47 is the same slot, so it cannot disagree", (unsigned)legacy.status, 1,
          "three spellings, one bit (I14): a reply that contradicted the DECSET that moved it would be the lie");
   }
 
@@ -1250,21 +1567,34 @@ static void gm_reports()
      rather than a reply it cannot be held to. */
   rc_reset(&g, 20, 6, 0x07);
   put(&g, "\033[?999$p");
-  eq_u("a mode neither leg models answers nothing", (unsigned)rc_report_pending(&g), 0,
-       "and that is a decision, not a gap: see the `?6n` ruling this one follows");
-  eq_u("counted as the mode it asked about", g.nUnsupported[RC_UN_MODE], 1, "not SUP: the `$` says what it was");
+  eq_u("a number neither leg models is answered, with the digit that says so",
+       (unsigned)rc_report_pending(&g), 1, "GAP G11: MSFT DECRPM_Unsupported (adaptDispatch.cpp:1939), "
+       "ghostty .not_recognized (modes.zig:80-102), wezterm recognized=false (mod.rs:1523-1526)");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("under the id that was asked", (unsigned)it.mode, 999u, "");
+    eq_u("and not with a set or a reset", (unsigned)it.status, 0u,
+         "the model holds no bit for 999, so 0 is the only digit that is not an invention");
+  }
+  eq_u("and the answered query voted nothing", g.nUnsupported[RC_UN_MODE], 0,
+       "the vote is the record of a DECSET that could not be stored, not of a question");
   put(&g, "\033[2026$p");
-  eq_u("the non-private request is counted too", g.nUnsupported[RC_UN_MODE], 2,
-       "ANSI 2026 does not exist; the probe always carries the `?`");
+  eq_u("the non-private request is counted, because that spelling owns no mode",
+       g.nUnsupported[RC_UN_MODE], 1,
+       "ANSI 2026 does not exist; the probe always carries the `?`. This is the one case where answering "
+       "would be an invention about a sequence the references do not recognise either");
   eq_u("and armed nothing", (unsigned)rc_report_pending(&g), 0, "");
   put(&g, "\033[?1;2$p");
-  eq_u("a request with two parameters is not one", g.nUnsupported[RC_UN_MODE], 3, "");
+  eq_u("a request with two parameters is not one", g.nUnsupported[RC_UN_MODE], 2,
+       "DECRQM takes one number; the MSFT/ghostty arms both require it (`g->nArgs == 1` here, "
+       "interim_is(g,'$') with PvtLen 1 there)");
   put(&g, "\033[?$p");
-  eq_u("and one with no parameter is not either", g.nUnsupported[RC_UN_MODE], 4, "");
+  eq_u("and one with no parameter is not either", g.nUnsupported[RC_UN_MODE], 3, "");
   put(&g, "\033[?2026!p");
   eq_u("a different interim with the same final still votes SUP", g.nUnsupported[RC_UN_SUP], 1,
        "`!` is DECSTR's byte, and with a parameter it is nothing at all");
-  eq_u("while the census of modes did not move", g.nUnsupported[RC_UN_MODE], 4, "");
+  eq_u("while the census of modes did not move", g.nUnsupported[RC_UN_MODE], 3, "");
 
   /* The limit, and the direction it refuses in. */
   rc_reset(&g, 20, 6, 0x07);
@@ -1285,6 +1615,387 @@ static void gm_reports()
   eq_u("armed before the reset", (unsigned)rc_report_pending(&g), 1, "");
   rc_reset(&g, 20, 6, 0x07);
   eq_u("gone after it", (unsigned)rc_report_pending(&g), 0, "");
+}
+
+/* ------------------------------------------------------------------ #108: the input reports
+ *
+ * The bytes themselves, and the one thing a live console cannot say better than a grid can: which protocol a
+ * given DECSET combination produces. Every expectation below is written from the reference that owns the rule
+ * (ghostty `src/input/mouse_encode.zig`, MSFT `src/terminal/input/mouseInput.cpp`,
+ * wezterm `term/src/terminalstate/mouse.rs`) and as literal numbers, so that a change of shape here fails
+ * instead of diffing quietly. Coordinates are the protocol's own: legacy bytes are 32+value, 1-based cells.
+ */
+static void eq_b(const char *what, const uint16_t *got, int n, const uint16_t *want, int wn, const char *ctx)
+{
+  int same = (n == wn);
+  for (int i = 0; same && i < wn; i++) if (got[i] != want[i]) same = 0;
+  char buf[200];
+  int p = snprintf(buf, sizeof buf, "%s  want", ctx && ctx[0] ? ctx : "");
+  for (int i = 0; i < wn && p < 110; i++) p += snprintf(buf + p, sizeof buf - p, " %u", (unsigned)want[i]);
+  p += snprintf(buf + p, sizeof buf - p, "  got");
+  for (int i = 0; i < n && p < 180; i++) p += snprintf(buf + p, sizeof buf - p, " %u", (unsigned)got[i]);
+  eq_u(what, (unsigned)(same ? 0 : 1), 0, buf);
+}
+
+/* One record, handed over the way an observer hands it: state, flags, modifiers, cell. */
+#define REC(state_, flags_, mods_, x_, y_) (m.buttonState = (state_), m.eventFlags = (flags_), \
+    m.ctrlKeyState = (mods_), m.x = (x_), m.y = (y_), m.px = -1, m.py = -1, rc_mouse_report(&g, &m, t, 48))
+#define RECP(state_, flags_, mods_, x_, y_, px_, py_) (m.buttonState = (state_), m.eventFlags = (flags_), \
+    m.ctrlKeyState = (mods_), m.x = (x_), m.y = (y_), m.px = (px_), m.py = (py_), rc_mouse_report(&g, &m, t, 48))
+
+static void gm_inputreports()
+{
+  static RcGrid g;
+  uint16_t t[48];
+  struct RcMouseRec m;
+  unsigned long c5[5];
+  int n;
+
+  /* Silence first: every leg below only means something because a mode is what makes the difference. A record
+     that arrives with no level set encodes nothing and votes `quiet` -- the counter that separates "the
+     observer never handed a record over" from "this library cannot encode one", which is the question #108 was
+     once closed on the wrong side of. */
+  rc_reset(&g, 80, 24, 0x07);
+  memset(&m, 0, sizeof m);
+  n = REC(1, 0, 0, 9, 4);
+  eq_u("no mode, no report", (unsigned)n, 0, "");
+  rc_report_counts(&g, c5);
+  eq_u("and the quiet record is counted", c5[2], 1, "so a zero report count elsewhere is not this zero");
+  eq_u("focus is silent without ?1004", (unsigned)rc_focus_report(&g, 1, t, 48), 0, "");
+  rc_report_counts(&g, c5);
+  eq_u("and that silence is not a report said", c5[1], 0, "");
+
+  /* X10 under `?1000h`: ESC [ M, then 32+code, 32+x+1, 32+y+1 (ghostty :128-131, MSFT :413). */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h");
+  const uint16_t kPress[]  = {27, 91, 77, 32, 42, 37};
+  const uint16_t kRelease[] = {27, 91, 77, 35, 42, 37};
+  const uint16_t kMods[]   = {27, 91, 77, 52, 42, 37};
+  n = REC(1, 0, 0, 9, 4);
+  eq_b("a press reports six units, in the X10 shape", t, n, kPress, 6, "code 0, cell (9,4) -> 10,5");
+  n = REC(1, 0, 0, 9, 4);
+  eq_u("and the same state again is not an event", (unsigned)n, 0,
+       "a Windows record names which buttons are down, so nothing moved here");
+  n = REC(0, 0, 0, 9, 4);
+  eq_b("the release collapses to button 3", t, n, kRelease, 6, "ghostty :207-213, MSFT :152-156");
+  n = REC(1, 0, RC_MS_SHIFT | RC_MS_CTRL, 9, 4);
+  eq_b("shift and ctrl ride the same digit (4 and 16)", t, n, kMods, 6, "MSFT :181-183, ghostty :229-234");
+
+  /* Motion: `?1000h` alone is clicks, not drags -- wezterm says it out loud (mouse.rs:259, "self.mouse_tracking
+     on its own is for clicks, not drags!") and ghostty's shouldReport agrees. */
+  n = REC(1, RC_MS_MOVED, 0, 12, 4);
+  eq_u("?1000h does not report a drag", (unsigned)n, 0, "");
+  put(&g, "\033[?1002h");
+  const uint16_t kDrag[] = {27, 91, 77, 64, 45, 37};
+  n = REC(1, RC_MS_MOVED, 0, 12, 4);
+  eq_b("?1002h reports it, with the 32 motion bit set", t, n, kDrag, 6, "code 0+32 -> 64");
+  n = REC(1, RC_MS_MOVED, 0, 12, 4);
+  eq_u("the same cell and button again is not a second report", (unsigned)n, 0,
+       "MSFT's sameCoord (mouseInput.cpp:336-338) and ghostty's last_cell (:108-117)");
+  put(&g, "\033[?1003h");
+  const uint16_t kAny[] = {27, 91, 77, 67, 46, 37};
+  n = REC(0, RC_MS_MOVED, 0, 13, 4);
+  eq_b("?1003h reports motion with no button at all, as 3+32", t, n, kAny, 6, "code 35 -> 67");
+
+  /* The wheel: a console record carries the delta in the high word of dwButtonState, already rounded by
+     conhost, so no accumulation happens here (MSFT accumulates because *its* source is WM_MOUSEWHEEL). */
+  const uint16_t kWUp[] = {27, 91, 77, 96, 46, 37};
+  const uint16_t kWDown[] = {27, 91, 77, 97, 46, 37};
+  const uint16_t kHRight[] = {27, 91, 77, 99, 46, 37};
+  n = REC(1u << 16, RC_MS_WHEELED, 0, 13, 4);
+  eq_b("one notch up is code 64", t, n, kWUp, 6, "MSFT :166-169");
+  n = REC((uint32_t)(uint16_t)(-120) << 16, RC_MS_WHEELED, 0, 13, 4);
+  eq_b("a negative delta is 65", t, n, kWDown, 6, "");
+  n = REC(1u << 16, RC_MS_HWHEELED, 0, 13, 4);
+  eq_b("horizontal right is 67, not 64", t, n, kHRight, 6, "");
+
+  /* Mode 9: presses of left/middle/right only, and no modifiers at all (ghostty :229-234). */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?9h");
+  const uint16_t k9[] = {27, 91, 77, 32, 38, 38};
+  n = REC(1, 0, RC_MS_ALT, 5, 5);
+  eq_b("?9h reports the press without the alt bit", t, n, k9, 6, "the legacy shape has no room for modifiers");
+  n = REC(1, RC_MS_MOVED, 0, 6, 5);
+  eq_u("and ?9h is not a motion mode", (unsigned)n, 0, "ghostty's x10 arm");
+  n = REC(0, 0, 0, 6, 5);
+  eq_u("nor does it report a release", (unsigned)n, 0, "X10 mode 9 has no release at all");
+
+  /* The four formats, each from a fresh grid so no transition is missed. */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h\033[?1005h");
+  const uint16_t kUtf[] = {27, 91, 77, 32, 112, 56};
+  n = REC(1, 0, 0, 79, 23);
+  eq_b("utf8 sends the code points, not the bytes", t, n, kUtf, 6, "33+79=112, 33+23=56 (ghostty :134-148)");
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h\033[?1006h");
+  const uint16_t kSgr[] = {27, 91, 60, 48, 59, 56, 48, 59, 50, 52, 77};
+  const uint16_t kSgrUp[] = {27, 91, 60, 48, 59, 56, 48, 59, 50, 52, 109};
+  n = REC(1, 0, 0, 79, 23);
+  eq_b("SGR is `<code;x;yM`", t, n, kSgr, 11, "MSFT mouseInput.cpp:476");
+  n = REC(0, 0, 0, 79, 23);
+  eq_b("and keeps the release as a button, saying so in lower case", t, n, kSgrUp, 11,
+       "the one thing X10 could not express");
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h\033[?1015h");
+  const uint16_t kUrx[] = {27, 91, 51, 50, 59, 56, 48, 59, 50, 52, 77};
+  n = REC(1, 0, 0, 79, 23);
+  eq_b("urxvt has no < and no release of its own", t, n, kUrx, 11, "ghostty :158-162");
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h\033[?1016h");
+  n = REC(1, 0, 0, 79, 23);
+  eq_u("sgr-pixels with no pixel to say reports nothing", (unsigned)n, 0,
+       "a Windows mouse record names a cell; this is the one honest refusal in the family");
+  n = RECP(0, 0, 0, 79, 23, 640, 300);
+  const uint16_t kPixRel[] = {27, 91, 60, 48, 59, 54, 52, 48, 59, 51, 48, 48, 109};
+  eq_b("and once the observer supplies pixels it reports them, release and all", t, n, kPixRel, 13,
+       "ghostty :164-172; the button state moved even on the record it could not report");
+
+  /* The bit and the format are two different claims, and both have to be true. */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1005h\033[?1006h\033[?1005l");
+  {
+    struct RcReportItem it;
+    put(&g, "\033[?1005$p");
+    rc_report_take(&g, &it);
+    eq_u("?1005$p answers reset, because the stream turned it off", (unsigned)it.status, 2, "");
+    put(&g, "\033[?1006$p");
+    rc_report_take(&g, &it);
+    eq_u("and ?1006$p answers set, which is the format the next report takes", (unsigned)it.status, 1, "");
+  }
+  put(&g, "\033[?1005h");
+  {
+    struct RcReportItem it;
+    put(&g, "\033[?1006$p");
+    rc_report_take(&g, &it);
+    eq_u("turning 1005 on leaves 1006's bit set -- nobody turned it off", (unsigned)it.status, 1,
+         "ghostty keeps the same split between `modes` (what was asked) and `flags.mouse_format` (what is used)");
+  }
+  /* The only place the utf8 extension is observable in a stream of wide chars: past cell 223 the plain X10
+     shape has no digit left and drops the report, while utf8 keeps going as a code point -- and MSFT writes
+     that same code point into a wchar for the same reason (mouseInput.cpp:453, one format string for both). */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "[?1000h[?1006h[?1005h");
+  const uint16_t kWide[] = {27, 91, 77, 32, 283, 36};
+  n = REC(1, 0, 0, 250, 3);
+  eq_b("the last enable wins, and utf8 reaches past cell 223", t, n, kWide, 6,
+       "33+250=283; MSFT picks utf8 too, from a bit test (mouseInput.cpp:364-368), but this is the last-wins "
+       "field ghostty (stream_terminal.zig:1700-1703) and wezterm keep");
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "[?1000h");
+  n = REC(1, 0, 0, 250, 3);
+  eq_u("while the plain X10 shape drops it rather than clamp it", (unsigned)n, 0,
+       "ghostty mouse_encode.zig:120-124; MSFT's s_MaxDefaultCoordinate=94 clamps instead (mouseInput.cpp:11), "
+       "which prints a position the pointer was not at -- this build declines to say one");
+
+  /* Focus: three references, one spelling each, and the gate is the mode. */
+  rc_reset(&g, 80, 24, 0x07);
+  const uint16_t kIn[] = {27, 91, 73}, kOut[] = {27, 91, 79};
+  put(&g, "\033[?1004h");
+  n = rc_focus_report(&g, 1, t, 48);
+  eq_b("?1004h in is ESC [ I", t, n, kIn, 3, "MSFT terminalInput.cpp:447, ghostty focus.zig:22, wezterm mod.rs:907");
+  n = rc_focus_report(&g, 0, t, 48);
+  eq_b("and out is ESC [ O", t, n, kOut, 3, "");
+  put(&g, "\033[?1004l");
+  eq_u("after the reset the same event says nothing", (unsigned)rc_focus_report(&g, 1, t, 48), 0,
+       "an unsolicited byte is I26");
+  rc_report_counts(&g, c5);
+  eq_u("the two that were due are the two that are counted", c5[1], 2, "");
+
+  /* RIS is the reset that promises power-up, so it takes the *format* with the bits: a session that asked for
+     SGR and was reset must not hand the next program SGR bytes for a plain `?1000h`. */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h\033[?1006h");
+  n = REC(1, 0, 0, 3, 3);
+  eq_u("before the reset, SGR", (unsigned)n, 9, "");
+  put(&g, "\033c");
+  n = REC(0, 0, 0, 3, 3);
+  eq_u("RIS drops the level, so the release is silent", (unsigned)n, 0, "");
+  put(&g, "\033[?1000h");
+  const uint16_t kX10b[] = {27, 91, 77, 32, 36, 36};
+  n = REC(1, 0, 0, 3, 3);
+  eq_b("and a fresh request speaks the default protocol", t, n, kX10b, 6,
+       "the format went back to X10 with the bits, not only the bits");
+
+  /* DECSTR does not clear the mouse family (#81's split with MSFT's SoftReset), and the format has to follow
+     that decision rather than drift from it. */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h\033[?1006h");
+  n = REC(1, 0, 0, 3, 3);
+  eq_u("armed before the soft reset", (unsigned)n, 9, "");
+  n = REC(0, 0, 0, 3, 3);
+  eq_u("released", (unsigned)n, 9, "");
+  put(&g, "\033[!p");
+  n = REC(1, 0, 0, 3, 3);
+  const uint16_t kSgrSm[] = {27, 91, 60, 48, 59, 52, 59, 52, 77};
+  eq_b("DECSTR leaves both the level and the protocol it chose", t, n, kSgrSm, 9,
+       "the bits and the format are one agreement; a reset that cleared one of them would answer `?1006$p` "
+       "with one shape and report in another");
+
+  /* A buffer too small refuses the record without consuming it: the derived state must not advance, or the
+     retry would look like a repeat and the report would be lost. */
+  rc_reset(&g, 80, 24, 0x07);
+  put(&g, "\033[?1000h");
+  m.buttonState = 1; m.eventFlags = 0; m.ctrlKeyState = 0; m.x = 3; m.y = 3; m.px = m.py = -1;
+  eq_u("a two-unit buffer refuses", (unsigned)rc_mouse_report(&g, &m, t, 2), (unsigned)(int)-1, "");
+  rc_report_counts(&g, c5);
+  eq_u("and the refusal counted nothing", c5[0], 0, "no report was produced");
+  n = rc_mouse_report(&g, &m, t, 48);
+  const uint16_t kRetry[] = {27, 91, 77, 32, 36, 36};
+  eq_b("the same record in a real buffer still reports", t, n, kRetry, 6,
+       "the press was not spent on the refusal");
+  rc_report_counts(&g, c5);
+  eq_u("once", c5[0], 1, "");
+
+  /* And the press that arrived while nothing was armed is still remembered: the observer said the buttons
+     moved, and a release of a press this library had forgotten would report nothing at all. */
+  rc_reset(&g, 80, 24, 0x07);
+  n = REC(1, 0, 0, 7, 7);
+  eq_u("the press with no level is silent", (unsigned)n, 0, "");
+  put(&g, "\033[?1000h");
+  const uint16_t kLateRel[] = {27, 91, 77, 35, 40, 40};
+  n = REC(0, 0, 0, 7, 7);
+  eq_b("and the release after the mode is armed still reports", t, n, kLateRel, 6,
+       "the state is what the console said, not what the modes wanted");
+#undef REC
+#undef RECP
+}
+
+/* ------------------------------------------------------------------ GAP G1/G10/G6/G5/G2, 2026-09-28
+ *
+ * The five refusals §6 could not defend, in one leg because they are one kind of finding: a sequence that
+ * reaches a final byte and does something other than what its name says. Each block pins the act, the answer
+ * (where there is one), and the reset that has to undo it -- #83's five obligations, minus the ones a given
+ * sequence does not have.
+ */
+static void geo_gaps(void)
+{
+  static RcGrid g;
+  int i, c;
+
+  /* ---- G1: `ESC # 8` is DECALN, and until today it was DECRC.
+   * The defect was that esc_dispatch took the intermediate byte and threw it away, so the final `8` reached
+   * the restore-cursor arm. A grid with a saved cursor is therefore the only witness that separates the two:
+   * every other DECALN effect could be produced by a stray move, but a *restore* cannot produce 'E's. */
+  rc_reset_hist(&g, 20, 5, 3, 0x07);            /* a 3-row gutter, so "the viewport" is a real question */
+  put(&g, "ZZZZZZZZZZZZZZZZZZZZ");              /* row 0: the gutter, above the window */
+  for (i = 0; i < 6; i++) put(&g, "abcdefghij\r\n");
+  put(&g, "\033[?6h");                          /* origin on, so a restore has something to disagree about */
+  put(&g, "\033[7");                            /* ESC 7 saves the cursor where the writes left it */
+  put(&g, "\033[3;18H");                        /* and then moves it: DECRC would bring it back to row 2 */
+  put(&g, "\033[2;4r\033[3;17s");               /* both margin pairs set */
+  put(&g, "\033[?4h");                          /* IRM: a mode DECALN does not own, as the control */
+  const int savedY = g.cy, savedX = g.cx;
+  put(&g, "\033#8");
+  eq_u("the cursor is at the window's top row, not at the saved place", (unsigned)g.cy,
+       (unsigned)(g.rows - g.winRows), "MSFT adaptDispatch.cpp:3161 puts it at 1,1 of the page");
+  eq_u("and at column 0", (unsigned)g.cx, 0u, "");
+  eq_u("the save is still the save (DECALN does not write it)", (unsigned)g.saveY, (unsigned)savedY, "");
+  eq_u("every viewport row is 'E'", (unsigned)RC_CELLS(&g, g.rows - g.winRows)[0].ch, (unsigned)'E', "");
+  eq_u("across the whole width", (unsigned)RC_CELLS(&g, g.rows - 1)[19].ch, (unsigned)'E', "");
+  int allE = 1;
+  for (i = g.rows - g.winRows; i < g.rows; i++)
+    for (c = 0; c < g.cols; c++) if (RC_CELLS(&g, i)[c].ch != 'E') allE = 0;
+  eq_u("and nothing in the viewport is not 'E'", (unsigned)allE, 1u,
+       "wezterm performer.rs:652-673 and ghostty Terminal.zig:3753-3760 both memset the row");
+  eq_u("the scrollback above the window keeps what it held", (unsigned)RC_CELLS(&g, 0)[0].ch, (unsigned)'Z',
+       "MSFT's own test asserts exactly this asymmetry (ScreenBufferTests.cpp:7352-7354): the fill is the "
+       "viewport, not the buffer");
+  eq_u("origin mode is off", (unsigned)g.originMode, 0u, "adaptDispatch.cpp:3156");
+  eq_u("the saved origin went with it, so a later DECRC cannot walk into a band that is gone",
+       (unsigned)g.saveOrigin, 0u, "");
+  eq_u("the vertical margins are gone", (unsigned)g.regSet, 0u, ":3157");
+  eq_u("the horizontal pair is gone", (unsigned)g.marginSet, 0u, ":3158-3159");
+  eq_u("and the right margin is the page edge again", (unsigned)g.rightMargin, (unsigned)(g.cols - 1), "");
+  put(&g, "x");
+  eq_u("a write after the fill lands at the top-left", (unsigned)RC_CELLS(&g, g.rows - g.winRows)[0].ch,
+       (unsigned)'x', "the cursor is where DECALN left it, and the row was not re-filled");
+  put(&g, "\033[?4$p");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("a mode DECALN does not name survives it", (unsigned)it.status, 1u,
+         "MSFT's list of what the alignment test touches is short; inventing a wider reset would be a claim "
+         "about sequences the application never sent");
+  }
+  /* The pen keeps its colours and loses its rendition (SetStandardErase). */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[1;4;31m");
+  put(&g, "\033#8");
+  eq_u("bold is gone", (unsigned)g.sgr.bold, 0u, "textAttribute.cpp:397-402 sets _attrs to Normal");
+  eq_u("underline is gone", (unsigned)g.sgr.underline, 0u, "");
+  eq_u("the colour stays", (unsigned)g.sgr.fg, 1u, ":31 foreground index, reserved by SetStandardErase");
+  /* `#3`/`#4`/`#5`/`#6` must stop falling through. They are counted, not drawn: conhost keeps a line's
+     rendition per row of its own buffer (Row.hpp:311) and CHAR_INFO has no such attribute (conattrs.hpp:9). */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[3;7H");
+  const int beforeY = g.cy, beforeX = g.cx;
+  put(&g, "\033#3");
+  eq_u("DECSCA's double-high top moves nothing", (unsigned)g.cy, (unsigned)beforeY, "");
+  eq_u("and does not touch the cursor column either", (unsigned)g.cx, (unsigned)beforeX,
+       "the fall-through this replaces restored a saved cursor from here");
+  eq_u("it is counted as an unsupported ask", g.nUnsupported[RC_UN_SUP], 1, "");
+  put(&g, "\033#5");
+  eq_u("single-width is a no-op that is still recorded", g.nUnsupported[RC_UN_SUP], 2, "");
+
+  /* ---- G10: DECST8C puts the tab stops back. */
+  rc_reset(&g, 40, 6, 0x07);
+  put(&g, "\033[2;1H\033H");                    /* home, then ESC H at column 0 */
+  put(&g, "\033[3C\033H");                      /* and one at column 3 */
+  eq_u("a stop the application set is there", (unsigned)g.tabStop[3], 1u, "#70's HTS");
+  put(&g, "\033[?5W");
+  eq_u("DECST8C takes it away", (unsigned)g.tabStop[3], 0u,
+       "MSFT adaptDispatch.cpp:2784-2792 clears _tabStopColumns and re-arms the default interval");
+  eq_u("and the every-8 default is back", (unsigned)g.tabStop[8], 1u, "MSFT's SetEvery8Columns, 8 not 5");
+  put(&g, "\033[1;1H\033[?9W");
+  eq_u("a parameter neither reference claims is refused", (unsigned)g.tabStop[8], 1u,
+       "the defaults stay where DECST8C put them; 9 is not a spelling anyone has");
+  eq_u("and the ask is in the census", g.nUnsupported[RC_UN_MODE], 1, "");
+
+  /* ---- G6 and G5: two queries whose answers the model really holds. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033]0;sales report\007\033[21t");
+  eq_u("`21t` arms one reply", (unsigned)rc_report_pending(&g), 1,
+       "wezterm terminalstate/mod.rs:2175-2183 and ghostty stream_terminal.zig:1468-1471 both answer it; "
+       "MSFT's WindowManipulation enum stops at 18, so silence there is an absent family, not a refusal");
+  eq_u("and its kind is the title", (unsigned)rc_report_take(&g, NULL), (unsigned)RC_REP_TITLE, "");
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[21t");
+  eq_u("a session that never set a title arms one reply too", (unsigned)rc_report_pending(&g), 1,
+       "and the painter answers nothing for it -- nTitle 0 is a fact, not a string to send");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("under the same kind", (unsigned)it.kind, (unsigned)RC_REP_TITLE, "");
+  }
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[>q\033[>0q");
+  eq_u("XTVERSION, in both spellings, arms two replies", (unsigned)rc_report_pending(&g), 2,
+       "ghostty stream_terminal.zig:1442-1447 and wezterm csi.rs:2224-2233 accept `>q` and `>0q`");
+  eq_u("and the kind is the DCS", (unsigned)rc_report_take(&g, NULL), (unsigned)RC_REP_XTVER, "");
+  rc_report_take(&g, NULL);
+  put(&g, "\033[>1q");
+  eq_u("a non-zero parameter is not the request", g.nUnsupported[RC_UN_SUP], 1, "");
+  put(&g, "\033[q");
+  eq_u("and the bare `q` is still XTSSZ, counted as before", g.nUnsupported[RC_UN_SUP], 2,
+       "DECSCUSR needs its space interim (#88)");
+
+  /* ---- G2: OSC 7 is the other spelling of a field this library already owns. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033]7;/var/log/app.log\007");
+  eq_u("a bare path is stored", (unsigned)g.nCwd, 16u, "the same field OSC 9;9 writes (Render.h's cwd)");
+  eq_u("starting with the slash it named", (unsigned)g.cwd[0], (unsigned)'/', "");
+  put(&g, "\033]7;file://dbhost/tmp/deploy\007");
+  eq_u("the file:// authority is cut, not stored", (unsigned)g.cwd[0], (unsigned)'/',
+       "MSFT PathCreateFromUrlWlands on the same rule (adaptDispatch.cpp:2621-2637); ghostty keeps the raw "
+       "payload and says the embedder decodes it (stream_terminal.zig:1527-1545) -- the cut is the smaller "
+       "of the two, and it is the one that leaves the field meaning the same thing either way it arrived");
+  eq_u("and the path survives the cut", (unsigned)g.nCwd, 11u, "/tmp/deploy");
+  put(&g, "\033]7;file://dbhost\007");
+  eq_u("an authority with no path is refused", (unsigned)g.nCwd, 11u,
+       "the previous value stays: overwriting a directory with the root would be an act nobody sent");
+  put(&g, "\033]7;\007");
+  eq_u("and so is an empty payload", (unsigned)g.nCwd, 11u, "path_is_legal's own rule, shared with 9;9");
+  grid_ok(&g, "geo_gaps");
 }
 
 static void gm_dropped()
@@ -1426,7 +2137,11 @@ static void gm_wrap_suspect()
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[?1000h");
-  eq_u("mouse tracking is counted", un(&g, RC_UN_MOUSE), 1, "");
+  eq_u("mouse tracking is no longer a refusal", un(&g, RC_UN_MOUSE), 0,
+       "#81: the family went from `ignored(RC_UN_MOUSE)` to a stored bit, so this is the same re-baseline "
+       "#83 and #82 made for 2004 and 2048 -- and the old assertion is exactly as wrong as theirs would be");
+  eq_u("because it is stored", (unsigned)(g.mouseModes & (1u << 1)), (unsigned)(1u << 1),
+       "bit 1 is 1000; the mapping is mouseBit() and `?1000$p` reads the same bit");
   eq_u("and moves nothing", (unsigned)rc_model_suspect(&g), 0, "no repaint for a mode the screen never sees");
 
   rc_reset(&g, 20, 4, 0x07);
@@ -1460,6 +2175,8 @@ static void gm_state_reset()
   put(&g, "\033[31mRED");
   put(&g, "\033[1;3r\033[2;7H");
   put(&g, "\033[5 q");                                 /* a shape the reset is not allowed to touch */
+  put(&g, "\033(0");                             /* a loaded drawing set, which DECSTR does revoke (#85) */
+  put(&g, "\033)0\016");                         /* G1 designated and GL shifted to it, likewise */
   const unsigned scrolled = g.nScrolls;
   put(&g, "\033[!p");
   eq_u("DECSTR leaves the screen it was asked on", (unsigned)g.alt, 1, "");
@@ -1467,10 +2184,27 @@ static void gm_state_reset()
   eq_u("its cursor does not move", (unsigned)g.cy, 1, "");
   eq_u("nor its column", (unsigned)g.cx, 6, "");
   eq_u("nothing was pushed into history", (unsigned)(g.nScrolls == scrolled), 1, "");
+  /* ⚠ These three reversed once already. #85 shipped them asserting that a soft reset leaves the G-sets and
+     the GL shift alone, and the assertion was written from a comment that had mis-read MSFT -- see the
+     corrected note at `Render.cpp::soft_reset`. MSFT's DECSTR goes through `TerminalOutput::SoftReset`
+     (terminalOutput.cpp:34-40), which restores a *fresh* TerminalOutput: four ASCII designations
+     (terminalOutput.cpp:16-24) and `_glSetNumber = 0` (terminalOutput.hpp:59).
+     The reason this is worth a reversal rather than a footnote is the screen: a dead `smacs` used to leave the
+     drawing set loaded for the rest of the session, so the next program's `q` drew U+2500. A leg that demanded
+     "leaves G0 loaded" was holding that in place. */
+  eq_u("DECSTR drops G0", (unsigned)g.charset[0], 0, "a program that died in graphics mode leaves nothing behind");
+  eq_u("and G1", (unsigned)g.charset[1], 0,
+       "named on its own because a leg that only checked what GL points at could pass with G1 still loaded");
+  eq_u("and un-shifts GL back to G0", (unsigned)g.gshift, 0,
+       "SI is the default. The three arms above and this one are independent on purpose: in the state set up "
+       "here both G0 and G1 are loaded, so clearing either one alone would already make the next `q` a letter, "
+       "and only the fields spelled separately pin what a soft reset actually put back");
+  put(&g, "q");
+  eq_u("so an ordinary letter is an ordinary letter again", RC_CELLS(&g, 1)[6].ch, 'q',
+       "the consequence the whole correction is about: this is U+2500 on the screen for the rest of the "
+       "session when any of the four facts above is wrong");
   eq_u("the rendition is back to normal", (unsigned)(g.attr & 0x0F), 7, "");
   eq_u("the region is put back to the page", (unsigned)g.regSet, 0, "");
-  eq_u("the drawing set is unloaded", (unsigned)g.charset, 0,
-       "MSFT resets the designations on both resets (:3000), which is the smacs state a shell inherits");
   eq_u("the cursor shape is left alone", (unsigned)g.cursorShape, 5,
        "DECSTR's list has no shape in it, and the application that asked for one is still on this screen");
   put(&g, "\033[8");                                   /* DECRC */
@@ -1484,9 +2218,13 @@ static void gm_state_reset()
   eq_u("and homes the cursor", (unsigned)g.cy, 0, "");
   eq_u("having run a viewport of rows up into history", (unsigned)(g.nScrolls > scrolled), 1, "");
   put(&g, "\033(B\033(0");
-  eq_u("the charset is loaded by ESC ( 0", (unsigned)g.charset, 1, "");
+  eq_u("the charset is loaded by ESC ( 0", (unsigned)g.charset[0], 1, "");
+  put(&g, "\033)0\016");                          /* G1 loaded, GL sitting on it */
   put(&g, "\033c");
-  eq_u("and RIS drops it", (unsigned)g.charset, 0, "a program that died in graphics mode leaves nothing behind");
+  eq_u("and RIS drops it", (unsigned)g.charset[0], 0, "a program that died in graphics mode leaves nothing behind");
+  eq_u("RIS drops G1 with it", (unsigned)g.charset[1], 0, "#85: all four slots, not just the one ESC ( could reach");
+  eq_u("and un-shifts GL", (unsigned)g.gshift, 0,
+       "leaving SO standing over a cleared slot would be a half-reset: the shift and its slots are one claim");
 
   /* A row that a region shift blanked arrives with no memory of the row it replaced. All three of the row's
      own facts have to go: the wrap claim, the semantic mark, and the *column* the mark was made at, which is
@@ -1844,23 +2582,23 @@ static void geo_decawm()
   eq_u("one request, one reply", (unsigned)rc_report_pending(&g), 1, "");
   eq_u("its kind", (unsigned)rc_report_take(&g, &it), (unsigned)RC_REP_DECRPM, "");
   eq_u("the mode that was asked about", (unsigned)it.mode, 7, "");
-  eq_u("set, out of reset", (unsigned)it.status, 2, "DECAWM is on after a reset in VT and in both references");
+  eq_u("set, out of reset", (unsigned)it.status, 1, "DECAWM is on after a reset in VT and in both references");
   put(&g, "\033[?7l\033[?7$p");
   eq_u("the set spelled here is the one that answers", (unsigned)rc_report_pending(&g), 1,
        "`?7l` itself is silent");
   rc_report_take(&g, &it);
-  eq_u("and says reset", (unsigned)it.status, 1, "");
+  eq_u("and says reset", (unsigned)it.status, 2, "");
   eq_u("none of this voted in the census", (unsigned)g.nUnsupported[RC_UN_MODE], 0,
        "an answered query is not an unmodelled request");
 
   /* RIS and DECSTR both put the mode back with everything else they reset. */
   put(&g, "\033[?7l\033[!p\033[?7$p");
   rc_report_take(&g, &it);
-  eq_u("DECSTR restores it", (unsigned)it.status, 2,
+  eq_u("DECSTR restores it", (unsigned)it.status, 1,
        "a mode with no terminfo entry is still a mode a reset owns");
   put(&g, "\033[?7l\033c\033[?7$p");
   rc_report_take(&g, &it);
-  eq_u("RIS restores it", (unsigned)it.status, 2, "");
+  eq_u("RIS restores it", (unsigned)it.status, 1, "");
 
   /* `CSI 7 h/l` without the `?` is GATM, not DECAWM, and stays unmodelled. */
   rc_reset(&g, 10, 3, 0x07);
@@ -1953,9 +2691,13 @@ static void geo_surrogates()
 
 /* T6, and the reason a table replaced a test: `stats()` is positional across three files (I19), the labels
  * that turn those numbers into a sentence are written in two of them, and until now four indices had a check
- * and eleven names had none. This pins the table itself -- one row per slot, no two slots sharing a label,
+ * and the names had none. This pins the table itself -- one row per slot, no two slots sharing a label,
  * exactly one of them doubting the frame, and the label list spelled out so a rename has to be a decision
- * made in three places with the gate naming the one that was forgotten. */
+ * made in three places with the gate naming the one that was forgotten.
+ * ⚠ "four" and "eleven" were counts of that moment and rotted on the spot: `RC_UN_MAX` is thirteen now
+ * (#84 added no slot, #85 added one after OSC 52's twelve). The literal list below is the live authority --
+ * it is the thing that fails when a slot is added in one file and not the other, which is the entire reason
+ * this leg exists and the reason the stale number beside it cannot be allowed to be load-bearing. */
 static void geo_census()
 {
   static RcGrid g;
@@ -1983,7 +2725,7 @@ static void geo_census()
        "which is the day `ignored()` was split out of `unsupported()` and why the two still exist");
   eq_u("the labels, in this order, unchanged",
        (unsigned)(strcmp(dump, "unrecognised, decstbm, altbuf, mouse, mode, bracketed paste, osc9, "
-                               "other osc, dcs, report, colon, osc clip") == 0), 1,
+                               "other osc, dcs, report, colon, osc clip, charset") == 0), 1,
        "this is the text a rollout reads; renaming one here has to rename it in Render.java's report and in "
        "NativeRenderer's UNMODELLED, and the live gate now checks the first of those at run time");
   eq_u("an out-of-range slot names nothing", (rc_census_name(RC_UN_MAX) == NULL) ? 1u : 0u, 1u, "");
@@ -2067,6 +2809,7 @@ static void geo_osc_families()
     {    1, NULL,            "\033]1;gate icon\007"   },
     {    2, NULL,            "\033]2;gate title\007"  },
     {    4, NULL,            "\033]4;1;rgb:ff/00/00\007" },
+    {    7, NULL,            "\033]7;/gate/cwd\007"     },
     {    9, NULL,            "\033]9;12\007"           },
     {   10, NULL,            "\033]10;rgb:ff/ff/ff\007" },
     {   11, NULL,            "\033]11;rgb:ff/00/00\007" },
@@ -2381,8 +3124,18 @@ static void geo_cursor()
   put(&g, "\033[?47h\033[?1049l\033[?1000h\033[?2004h\033[1;2r\033[c");
   eq_u("alt switches taken", g.nAltSwitch, 2, "47 in and 1049 out -- one behaviour for the family");
   eq_u("nothing counted as an unmodelled alt buffer", g.nUnsupported[RC_UN_ALTBUF], 0, "");
-  eq_u("mouse counted", g.nUnsupported[RC_UN_MOUSE], 1, "");
-  eq_u("bracketed paste counted", g.nUnsupported[RC_UN_DECBP], 1, "");
+  eq_u("mouse is no longer counted", g.nUnsupported[RC_UN_MOUSE], 0,
+       "#81: `?1000h` in the sequence above is a store now, and the bucket keeps only what is refused (1001)");
+  eq_u("and the store survived a DA1", (unsigned)g.mouseModes, (unsigned)(1u << 1),
+       "⚠ the feed ends in `CSI c`, which is DA1, NOT RIS (`ESC c`) -- it clears nothing, and a bit that "
+       "answered 2 here would have meant the mouse mode rode through an unrelated query. The RIS arm of "
+       "this claim is pinned in geo_mousemodes, where the sequence is spelled correctly");
+  eq_u("bracketed paste is no longer counted", g.nUnsupported[RC_UN_DECBP], 0,
+       "#83 turned this refusal into a store: `?2004 h/l` is a mode now, and the bucket is left to the "
+       "OSC form, which asks for an executed paste and still has no surface here");
+  eq_u("and the same sequence did set the bit", (unsigned)g.bracketedPaste, 1,
+       "a leg that only checks a count falling would also pass on a store that never happened");
+
   eq_u("DECSTBM counted", g.nUnsupported[RC_UN_DECSTBM], 0, "CSI r sets a region now; the slot is census padding");
   eq_u("DA answered instead of counted", g.nUnsupported[RC_UN_REPORT], 0, "a bare `CSI c` arms a reply now");
   eq_u("and armed exactly one reply", (unsigned)rc_report_pending(&g), 1, "two would leave bytes for the next reader");
@@ -3021,12 +3774,39 @@ static void geo_region()
      this switch nor ConEmu has a case for is neither. */
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "\033[?12h\033[?7l\033[?1h\033[?2004h\033[?1000h\033[?1005l\033[?7h");
-  eq_u("?12 and ?1 are counted as modes", g.nUnsupported[RC_UN_MODE], 2,
-       "?7 left this list when DECAWM became a modelled mode (I35); it is still in the stream above, which"
-       " is the proof -- the count fell by exactly its two spellings");
+  eq_u("?12 is still counted as a mode", g.nUnsupported[RC_UN_MODE], 1,
+       "?7 left this list when DECAWM became a modelled mode (I35), and ?1 left it when #114 stored DECCKM;"
+       " both are still in the stream above, which is the proof -- the count fell by one for each of them");
+  eq_u("and ?1h really stored the bit rather than being dropped", (unsigned)g.cursorKeys, 1u,
+       "the census going quiet is only honest if the mode was acted on; a silent drop would look identical here");
   eq_u("and the mode is back on", (unsigned)g.wrapMode, 1, "the trailing `?7h` is part of the stream, not a fix-up");
-  eq_u("bracketed paste has its own bucket", g.nUnsupported[RC_UN_DECBP], 1, "");
-  eq_u("the mouse family has its own, and ?1005 is in it", g.nUnsupported[RC_UN_MOUSE], 2, "");
+  eq_u("bracketed paste is stored and not bucketed", g.nUnsupported[RC_UN_DECBP], 0,
+       "the bucket means the OSC `]2004;` request to execute a paste (#83); this stream has no OSC in it");
+  eq_u("with the bit set by the `?2004h` above", (unsigned)g.bracketedPaste, 1, "");
+  /* And it answers, both ways, because a stored mode that cannot be asked about is half a mode. The
+     snapshot rule #77 established applies: the reply carries the state at the moment the request was
+     read, so the `?2004l` that follows belongs to a later question. */
+  put(&g, "\033[?2004$p");
+  {
+    struct RcReportItem it;
+    eq_u("one DECRPM armed", (unsigned)rc_report_take(&g, &it), (unsigned)RC_REP_DECRPM, "");
+    eq_u("about 2004", (unsigned)it.mode, 2004, "jline4 looks the number up out of the reply");
+    eq_u("and it is set", (unsigned)it.status, 1, "");
+  }
+  put(&g, "\033[?2004l\033[?2004$p");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("turning it off is a store too", (unsigned)g.bracketedPaste, 0, "");
+    eq_u("and the answer follows", (unsigned)it.status, 2, "2 = not set, 1 = set: DEC's pair, and the only one this build sends");
+  }
+
+  eq_u("the mouse family is stored, not refused", g.nUnsupported[RC_UN_MOUSE], 0,
+       "#81 rewrote this leg: the feed above sends `?1000h` and `?1005l`, and both are bits now");
+  eq_u("?1000h set bit 1", (unsigned)(g.mouseModes & (1u << 1)), (unsigned)(1u << 1), "");
+  eq_u("and ?1005l left bit 5 clear", (unsigned)(g.mouseModes & (1u << 5)), 0u,
+       "one bit per number (ghostty's ModePacked shape): setting 1000 must not answer for 1005, "
+       "and clearing 1005 must not disturb 1000");
   eq_u("none of them doubts the frame", (unsigned)g.modelSuspect, 0,
        "this is the full repaint that used to be paid for a cnorm");
   put(&g, "\033[1\\");
@@ -3129,6 +3909,707 @@ static void status_bar()
    it refuses out of a principle rather than a gap. The reply *bytes* are the seam's work and are witnessed
    live (Render.java's caseWindowOps); what the host gate can pin is which questions arm an answer at all, and
    what the title stack does to the string the painter is about to apply. */
+/* #87: the SILENCE SET, pinned. DECRQM is answered for every number this build holds state for
+ * (4 IRM, 6 DECOM, 7 DECAWM, 25 cursor, 47/1047/1049 alt, 69 DECLRMM, 2004 paste, 2026 sync, and 2048 since
+ * #82 stored the promise and built the notice), and every other number is refused *without* a reply. That
+ * asymmetry is the whole contract of the sequence -- jline4 looks replies up by mode number (`parseDecrpm`,
+ * AbstractTerminal.java:675-690), so a stray answer is a claim, and a missing one is merely "not supported".
+ * The leg below exists so nobody adds a reply for a number there is no state behind: it enumerates the refused
+ * set and insists each costs exactly one vote and zero bytes. 2048 came *out* of this list on 2026-09-27, and
+ * the leg is the reason the removal had to be a decision: leaving it here while `mode_status` answered it would
+ * have been two tables disagreeing about one number. */
+/* The oracle needs teeth. Every other use of rc_validate_grid asks "is this grid clean?" and votes when the
+   answer is no; nothing ever asked the oracle whether it CAN answer no. A build that hard-wired the answer to
+   "clean" therefore passed both gates (measured 2026-09-27: blind the oracle and the host gate prints ok,
+   cache/audit90/red-arms.txt M4). These arms are the difference between a witness and a counter: the first
+   pins that a legal grid is NOT reported, the next two pin that two specific illegalities come back NAMED --
+   a violation string nobody is required to read is one assertion away from not existing.
+
+   Two things the first draft of this leg got wrong and that are now load-bearing, both of them the kind that
+   silently un-witness the row they sit in:
+   (a) `RcGrid` is about 4 MB, so *both* grids below are `static`. As locals the leg blew the stack and the
+       gate printed nothing at all -- not a verdict, not a failure, just a truncated log that reads like a
+       green run that stopped early.
+   (b) `rc_reset_hist` clamps what it is handed (winRows to the buffer, the margins to the page), so the two
+       defects are written as *relative* assignments off the grid that came back -- `cx = cols`,
+       `winRows = rows + 1`. Hard-coding those numbers would bake in today's clamping rules and turn the leg
+       into a second copy of them.
+   The variable `viol` is rc_validate_grid's return, where 1 means "a violation was found and named"; the
+   function's own `RC_BAD` is what makes that the convention (Render.cpp:279-284). */
+static void geo_oracle_teeth()
+{
+  static RcGrid g;
+  static RcGrid saved;
+  char msg[256];
+  int viol;
+
+  rc_reset_hist(&g, 6, 20, 4, 0x07);
+  saved = g;
+  viol = rc_validate_grid(&g, msg, (int) sizeof msg);
+  g_checks++;
+  if (viol) { g_fails++; printf("  FAIL oracle: a fresh, legal grid was reported dirty: %s\n", msg); }
+
+  /* One defect at a time, so a complaint names the defect that is actually there. */
+  g.cx = g.cols;                       /* one past the last column: no write path may leave it here */
+  viol = rc_validate_grid(&g, msg, (int) sizeof msg);
+  g_checks++;
+  if (!viol) { g_fails++; printf("  FAIL oracle is silent on a cursor at column == cols (cx=%d cols=%d)\n",
+                                 g.cx, g.cols); }
+  else
+  {
+    g_checks++;
+    if (!strstr(msg, "cursor column")) { g_fails++; printf("  FAIL oracle named something else: %s\n", msg); }
+  }
+
+  g = saved;
+  g.winRows = g.rows + 1;              /* a window taller than the buffer holding it */
+  viol = rc_validate_grid(&g, msg, (int) sizeof msg);
+  g_checks++;
+  if (!viol) { g_fails++; printf("  FAIL oracle is silent on winRows(%d) above rows(%d)\n", g.winRows, g.rows); }
+  else
+  {
+    g_checks++;
+    if (!strstr(msg, "winRows")) { g_fails++; printf("  FAIL oracle mis-named the tall window: %s\n", msg); }
+  }
+}
+
+/*
+ * #81's host leg: the mouse family is nine DECSET numbers, each with its own bit, each answering its own
+ * `DECRQM`. The reference for the *set* is ghostty's mode table (`src/terminal/modes.zig:347`, `:360-368` --
+ * 9/1000/1002/1003/1005/1006/1015/1016, stored as packed bools and answered `set`/`reset` at `:98-101`);
+ * wezterm keeps the same shape as separate bools whose set/clear/`decqrm_response` sit in one block
+ * (`term/src/terminalstate/mod.rs:1879-1911`). 1004 is stored and answered like the rest but sends nothing --
+ * xterm defines it as focus in/out and this library generates no input of any kind -- the same division #82
+ * made for `?2048` (bit + answer + a real notice) minus the notice.
+ * ⚠ What no leg in either gate can witness: whether a mouse report would be spelled right, because this
+ * build emits none. That is the design (I26: a byte the program never asked for, injected into the input
+ * stream), not a gap to paper over with an assertion that cannot fail.
+ */
+static void geo_mousemodes()
+{
+  static RcGrid g;
+  static const int ID[]  = { 9, 1000, 1002, 1003, 1004, 1005, 1006, 1015, 1016 };
+  static const int BIT[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+  const int n = (int)(sizeof ID / sizeof ID[0]);
+  char seq[24];
+  int i;
+
+  /* ---- one: each number owns its own bit, and no number is a refusal any more ---- */
+  for (i = 0; i < n; i++)
+  {
+    rc_reset(&g, 20, 6, 0x07);
+    sprintf(seq, "\033[?%dh", ID[i]);
+    put(&g, seq);
+    eq_u(S("?%dh sets its own bit", ID[i]), (unsigned)g.mouseModes, (unsigned)(1u << BIT[i]),
+         S("got 0x%x want 0x%x -- one bit per number, per ghostty's ModePacked",
+           (unsigned)g.mouseModes, (unsigned)(1u << BIT[i])));
+    eq_u(S("?%dh costs no refusal", ID[i]), g.nUnsupported[RC_UN_MOUSE], 0u,
+         "the bucket is for numbers this build does not hold (1001); a stored mode voting there is #85's "
+         "'recognised but called unrecognised' error in a new costume");
+    eq_u(S("?%dh moves no cell", ID[i]), (unsigned)rc_model_suspect(&g), 0u,
+         "no repaint for a mode the screen cannot show; the census is where an ask stays visible");
+  }
+
+  /* ---- two: DECRQM answers each number from its own bit, in both polarities ---- */
+  rc_reset(&g, 20, 6, 0x07);
+  for (i = 0; i < n; i++)
+  {
+    struct RcReportItem it;
+    sprintf(seq, "\033[?%d$p", ID[i]);
+    put(&g, seq);
+    eq_u(S("?%d$p arms a reply before it was ever set", ID[i]), (unsigned)rc_report_pending(&g), 1u,
+         "the model holds the bit (at 0), which is what makes the number answerable at all (#93: the status is DEC's, 2 for a bit that is clear)");
+    rc_report_take(&g, &it);
+    eq_u(S("  ...a DECRPM about %d", ID[i]), (unsigned)it.mode, (unsigned)ID[i],
+         "jline4 looks the number up out of the reply (parseDecrpm at AbstractTerminal.java:675, reached with "
+         "m.mode() from :651), so a reply filed "
+         "under another id is worse than silence");
+    eq_u(S("  ...answered 2 = not set", ID[i]), (unsigned)it.status, 2u, "");
+    sprintf(seq, "\033[?%dh", ID[i]);
+    put(&g, seq);
+    sprintf(seq, "\033[?%d$p", ID[i]);
+    put(&g, seq);
+    rc_report_take(&g, &it);
+    eq_u(S("  ...and 1 = set after `?%dh`", ID[i]), (unsigned)it.status, 1u, "");
+    sprintf(seq, "\033[?%dl", ID[i]);
+    put(&g, seq);
+    sprintf(seq, "\033[?%d$p", ID[i]);
+    put(&g, seq);
+    rc_report_take(&g, &it);
+    eq_u(S("  ...and back to 2 after `?%dl`", ID[i]), (unsigned)it.status, 2u,
+         "the reset arm: a bit that could only be set would answer 2 forever and lie on the next prompt");
+  }
+
+  /* ---- three: independence, the property a single "current protocol" field cannot have ---- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?1000h\033[?1002h\033[?1006h");
+  eq_u("three modes at once", (unsigned)g.mouseModes,
+       (unsigned)((1u << 1) | (1u << 2) | (1u << 6)),
+       "1000 + 1002 + 1006: ghostty stores three bools and so do we, because `?1000$p` must still say 2 after "
+       "1002 arrives -- a last-wins field would answer 1 and claim a mode nobody turned off");
+  put(&g, "\033[?1002l");
+  eq_u("clearing the middle leaves the other two", (unsigned)g.mouseModes,
+       (unsigned)((1u << 1) | (1u << 6)), "the whole reason for bit-per-number");
+
+  /* ---- four: RIS clears the family; DECSTR does not ---- */
+  put(&g, "\033c");
+  eq_u("RIS drops every mouse bit", (unsigned)g.mouseModes, 0u,
+       "power-up state, the same reasoning as bracketedPaste and inbandResize");
+  put(&g, "\033[?1003h\033[!p");
+  eq_u("DECSTR leaves it set", (unsigned)g.mouseModes, (unsigned)(1u << 3),
+       "MSFT's SoftReset names InsertReplace/Origin/AllowDECSLRM and no mouse mode (adaptDispatch.cpp:2989)");
+
+  /* ---- five: 1001 stays a refusal, and stays in the mouse bucket ---- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?1001h");
+  eq_u("?1001 is still refused", g.nUnsupported[RC_UN_MOUSE], 1u,
+       "neither reference recognises it (ghostty's table has no 1001; wezterm parses it into an empty arm, "
+       "mod.rs:1892-1897), and this build reports no events for it to modify");
+  eq_u("and it sets no bit", (unsigned)g.mouseModes, 0u, "");
+  eq_u("it votes the mouse bucket, not the mode one", g.nUnsupported[RC_UN_MODE], 0u,
+       "a reader scanning the census for 'asked about the mouse' has to find it there");
+
+  /* ---- six: the whole family asked at once, which is what made the queue's depth a #81 decision ----
+   * Six replies in one payload was already the largest batch this file ever sent, and it fitted in eight with
+   * room to spare (`geo_decrpm_silence`, and jline4's own probe is five). #81 raised the ceiling to nine by
+   * *counting the family*, so the ninth answer fell off the end and the leg that asked for all nine failed --
+   * on the live gate, on the real console, on the second architecture, in exactly the way that says the model
+   * is wrong and not the reader. This arm is the missing witness: it asks the payload, and it refuses to let
+   * the answer be "eight, plus a number". `RC_REPORT_MAX` moved to 64 (ghostty's mailbox depth, mailbox.zig:15)
+   * and this is the leg that has to stay green for as long as a family can be larger than the queue. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?9$p\033[?1000$p\033[?1002$p\033[?1003$p\033[?1004$p"
+          "\033[?1005$p\033[?1006$p\033[?1015$p\033[?1016$p");
+  eq_u("all nine answers survive one payload", (unsigned)rc_report_pending(&g), (unsigned)n,
+       "a program that wants to know which mouse protocol to speak asks every number in one write; the queue "
+       "is bounded so it cannot leak, not so that a family can be truncated");
+  eq_u("and none of them was refused", g.nReportFull, 0u,
+       "a refusal here is a reader blocked on a reply that exists and was thrown away");
+  {
+    struct RcReportItem it;
+    const char *seen = "";
+    int order_ok = 1;
+    for (i = 0; i < n; i++)
+    {
+      if (!rc_report_take(&g, &it)) { order_ok = 0; break; }
+      if ((int)it.mode != ID[i]) { order_ok = 0; seen = "wrong id"; break; }
+    }
+    eq_u("in the order they were asked, each under its own number", (unsigned)order_ok, 1u,
+         S("FIFO is the whole claim: %s. A reply that arrives shuffled is read as an answer about the wrong "
+           "mode, which jline4 would then cache -- parseDecrpm(response, m.mode()) at "
+           "AbstractTerminal.java:651 -> :675 looks each id up in the concatenated response.", seen));
+    eq_u("and the queue is empty afterwards", (unsigned)rc_report_pending(&g), 0u,
+         "a tenth reply left over would be spoken at the next reader's expense");
+  }
+  grid_ok(&g, "geo_mousemodes");
+}
+
+static void geo_decrpm_unmodelled()
+{
+  static RcGrid g;
+  /* ⚠ 9 left this list when #81 stored the mouse family: a bit the model holds is a reportable mode, and
+     leaving it here would have made the two tables contradict each other (`mode_status` answering while this
+     leg demands silence). The set half of the family is pinned in geo_mousemodes below.
+     ⚠ 1 left too, when #114 stored DECCKM -- same rule.
+     ⚠ 2 left on -53; the sentence this cell used to carry for it ("the only true answer 3 is the number this
+     library declines to send") was a *policy*, not a fact, and #109's `?3` retired that policy. See two
+     comments down. */
+  /* ⚠ 3 left on 2026-09-28 (#109), and it is the first id in this table that answers with a *permanent*
+     number: the width question was measured (three APIs, two hosts), the answer is "never here", and 4 is
+     the only status that says that truthfully. Its legs are `geo_deccolm` below. */
+  /* ⚠ 2 left one build after 3 did (#109's fallout, build -53): DECANM's only true answer is
+     3 = permanently set, and this build has no VT52 dispatch to be switched into -- `ESC D` is IND, `ESC E`
+     is NEL, and MSFT itself answers the question from its state machine's parser mode
+     (`adaptDispatch.cpp:1957-1958`). Silence here used to be justified by "we never send a permanent digit",
+     which the same build now contradicts; the leg that pins the new answer is `geo_ckm`'s last block.
+     The rest of this set is silent for the reason in the note above `mode_status`: 12 has no blink state,
+     1048 is a save/restore event, 2027 has no cluster state to report, and 1034/2000/2031 have neither a
+     bit nor a fact. */
+  static const int UNMODELLED[] = { 12, 1034, 1048, 2000, 2027, 2031 };
+  const int n = (int)(sizeof UNMODELLED / sizeof UNMODELLED[0]);
+
+  /* GAP G11, 2026-09-28: this set answered nothing until today. The reason was "a reply the model cannot
+     support would be I26 in a new costume", and that is right about 1 and 2 -- a set/reset digit claims a
+     state that is not there. It is wrong about 0, which claims nothing except that the terminal has no such
+     mode, and 0 is what all three references send: MSFT's `RequestModeStatus` starts at
+     `DECRPM_Unsupported` and answers with it for every id its switch does not name (adaptDispatch.cpp:1939
+     with the enum at DispatchTypes.hpp:552-559), ghostty's `getReport` falls through to `.not_recognized`
+     (modes.zig:80-102), and wezterm's `decqrm_response` flags `recognized = false` for an
+     `DecPrivateMode::Unspecified` and sends the reply regardless (terminalstate/mod.rs:1520-1526).
+     The vote moves too: `h` and `$p` may not disagree about who owns a mode, and now neither of them votes
+     for an id that got its answer. */
+  rc_reset(&g, 20, 6, 0x07);
+  for (int i = 0; i < n; i++)
+  {
+    char seq[40];
+    sprintf(seq, "\033[?%d$p", UNMODELLED[i]);
+    const unsigned long before = g.nUnsupported[RC_UN_MODE];
+    put(&g, seq);
+    eq_u("every id gets an answer", (unsigned)rc_report_pending(&g), 1, seq);
+    struct RcReportItem it;
+    const int kind = rc_report_take(&g, &it);
+    eq_u("and it is a DECRPM", (unsigned)kind, (unsigned)RC_REP_DECRPM, seq);
+    eq_u("for the number that was asked", (unsigned)it.mode, (unsigned)UNMODELLED[i], seq);
+    eq_u("with the digit that says so", (unsigned)it.status, 0u,
+         "0 = not recognized; 1 or 2 here would be the lie the old silence was avoiding");
+    eq_u("and no mode vote, because the question was answered", g.nUnsupported[RC_UN_MODE] - before, 0u, seq);
+  }
+  /* A DECSET for the same id still votes: that request was not stored, and the census is how a rollout tells
+     "asked for a mode this terminal does not have" from "never asked". The pair is why 0 answers and
+     `h` counts, rather than one of the two being silent about the other. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2027h");
+  eq_u("the set still votes", g.nUnsupported[RC_UN_MODE], 1, "2027 is not stored, and that is the ask on record");
+  put(&g, "\033[?2027$p");
+  {
+    struct RcReportItem it;
+    rc_report_take(&g, &it);
+    eq_u("and the query still answers 0, one vote later", (unsigned)it.status, 0u,
+         "the two facts are about different sequences, and neither is allowed to swallow the other");
+    eq_u("while answering added no vote of its own", g.nUnsupported[RC_UN_MODE], 1, "");
+  }
+
+  /* And the answered set, so the two halves cannot drift apart silently. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?1h\033[?4h\033[?6h\033[?69h\033[?2004h\033[?2026h\033[?2048h\033[?1$p\033[?4$p\033[?6$p\033[?69$p"
+          "\033[?2004$p\033[?2026$p\033[?2048$p");
+  eq_u("every state-holding id answers", (unsigned)rc_report_pending(&g), 7,
+       "if one of these drops, the caller reads NOT_SUPPORTED for a mode we do hold."
+       " ?3 is deliberately NOT in this seven: it answers from a permanent 4, never from a bit, and its"
+       " legs are geo_deccolm");
+  eq_u("and answering them votes nothing", g.nUnsupported[RC_UN_MODE], 0, "");
+  /* The answered half, unchanged by G11: #93's inversion witness still applies to every id that answers 1/2.
+  /* #93: counting seven replies is not the same as knowing what seven replies said. The payload above SETS all
+     seven and then asks, so under DEC's vocabulary the seven answers are all **1 = set** -- and a 2 here is either
+     the old inversion or a bit the asking somehow lost. ⚠ This arm was written one time already expecting 2,
+     on the belief that the six were in their default state; they are not, the payload sets them, and the red
+     it produced is the reason the wording now says which direction it witnesses. The other direction --
+     "off answers 2" -- is `geo_mousemodes`' 2 -> 1 -> 2 walk (clear, set, clear again), the same walk
+     `geo_ckm` now runs for DECCKM, and the live split in `caseMouseModes`, where three set ids answer 1 while
+     the untouched one answers 2 in one batch. A pair of numbers is only pinned by a leg that sees both of them. */
+  {
+    struct RcReportItem it;
+    int bad = 0;
+    for (int q = 0; q < 7; q++)
+    {
+      if (!rc_report_take(&g, &it) || it.status != 1) bad = q + 1;
+    }
+    eq_u("and all seven answer set, DEC's way", (unsigned)bad, 0u,
+         "the value IS the slot that went wrong (1-based): 0 = every one of the seven answered 1 = set, which is"
+         " what the payload earned by setting them. A 2 here is the pre-#93 inversion (this build used to send"
+         " 2 for set) or a bit lost between the DECSET and the query");
+    eq_u("the queue gave up all seven", (unsigned)rc_report_pending(&g), 0u, "");
+  }
+  grid_ok(&g, "geo_decrpm_silence");
+}
+
+/* #114: DECCKM (`CSI ?1 h/l`) as a state this model holds. The five obligations of §4's rule 3, minus the one
+ * that is not ours (the key bytes belong to whoever reads CONIN$). Shaped like `geo_mousemodes` on purpose:
+ * a number that only ever answers "set" cannot tell an inversion from a lost bit, so this walks
+ * reset -> set -> reset and names the reply at every step, and every take is checked because a take off an
+ * empty queue hands back a stale struct -- which is a green for the wrong reason. */
+static void geo_ckm()
+{
+  static RcGrid g;
+  struct RcReportItem it;
+
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?1$p");
+  eq_u("a fresh grid answers DECCKM at all", (unsigned)rc_report_pending(&g), 1u,
+       "the bit exists, so the answer exists -- silence here is the pre-#114 build");
+  eq_u("and the reply is taken", (unsigned)(rc_report_take(&g, &it) ? 1 : 0), 1u, "");
+  eq_u("a fresh grid is reset, DEC's way (2)", (unsigned)it.status, 2u,
+       "VT's power-up state for the cursor keys");
+  eq_u("the id in the reply is the id asked", (unsigned)it.mode, 1u, "");
+
+  put(&g, "\033[?1h\033[?1$p");
+  eq_u("?1h answers set (1)", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 1u,
+       "1 = set is #93's correction; a 2 here is the old inversion");
+  put(&g, "\033[?1l\033[?1$p");
+  eq_u("and ?1l answers reset again", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 2u,
+       "a mode that only ever says 1 is a constant, not a state");
+
+  /* Storing it draws nothing and votes nothing: the census slot's meaning narrowed the same way #81
+     re-baselined the mouse bucket. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?1h");
+  eq_u("the mode costs no cell", (unsigned)g.nCells, 0u, "DECCKM has no screen face in this model");
+  eq_u("and no census vote, because it was acted on", g.nUnsupported[RC_UN_MODE], 0u,
+       "a stored mode still voting MODE would tell the reader the terminal refused it");
+
+  /* The two resets. MSFT's SoftReset names `Mode::CursorKey` on its own line (adaptDispatch.cpp:2990), so
+     DECSTR clears it; the mouse family is not on that list, which is the split #85 recorded. */
+  put(&g, "\033[?1h\033[!p\033[?1$p");
+  eq_u("DECSTR leaves exactly one reply", (unsigned)rc_report_pending(&g), 1u, "");
+  eq_u("DECSTR puts DECCKM back to reset", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 2u,
+       "MSFT names CursorKey in SoftReset; a 1 here means the bit survived a reset that should have cleared it");
+  put(&g, "\033[?1h\033c\033[?1$p");
+  eq_u("RIS clears it too", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 2u, "as at power-up");
+
+  /* `?2` (DECANM) is in the table but NOT in the stored family: it answers from a fact about the build, not
+     from a bit. `-53` is the day it started answering; before that it was silent on a policy ("we never send
+     a permanent digit") that the same build broke for `?3`. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2$p");
+  eq_u("DECANM answers now", (unsigned)rc_report_pending(&g), 1u,
+       "silence would claim the terminal has no idea what parsing mode it is in");
+  eq_u("the reply is taken", (unsigned)(rc_report_take(&g, &it) ? 1 : 0), 1u, "");
+  eq_u("the id in the reply is the id asked", (unsigned)it.mode, 2u, "");
+  eq_u("and 3 = permanently set is the only true digit for it", (unsigned)it.status, 3u,
+       "this parser has no VT52 table to switch into (ESC D is IND, ESC E is NEL); MSFT answers the same"
+       " question from its state machine's parser mode, adaptDispatch.cpp:1957-1958");
+  put(&g, "\033[?2h\033[?2$p");
+  eq_u("?2h leaves it at 3", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 3u,
+       "a permanent answer that a DECSET could move would be the lie this whole row exists to avoid");
+  put(&g, "\033[?2l\033[?2$p");
+  eq_u("and ?2l leaves it at 3", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 3u, "");
+  eq_u("the two sets vote and the three asks vote nothing", g.nUnsupported[RC_UN_MODE], 2u,
+       "the refusal to change parsing is still a refusal; answering the question is not");
+  grid_ok(&g, "geo_ckm");
+}
+
+/* #109: DECCOLM (`CSI ?3 h/l`, 132 vs 80 columns). This is the one reply in the table that is a *permanent*
+ * number, and it exists because the refusal is now a measurement rather than a guess: the three ways to get
+ * 132 visible columns were tried in a real console and in WT, and the numbers are in the note above
+ * `mode_status`. What this leg pins is the half a reader acts on -- the answer says "never", and nothing can
+ * talk it out of that. */
+static void geo_deccolm()
+{
+  static RcGrid g;
+  struct RcReportItem it;
+
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?3$p");
+  eq_u("a fresh grid answers DECCOLM at all", (unsigned)rc_report_pending(&g), 1u,
+       "silence was the pre-#109 build, and a caller cannot tell it from a dead terminal");
+  eq_u("the reply is taken", (unsigned)(rc_report_take(&g, &it) ? 1 : 0), 1u, "");
+  eq_u("the id in the reply is the id asked", (unsigned)it.mode, 3u, "");
+  eq_u("and the status is 4 = permanently reset", (unsigned)it.status, 4u,
+       "1 would claim 132 columns are active; 2 would claim a mode this terminal will let you set."
+       " Both are I26, and jline4 reads 4 (and only 4, of 1/2/3/4) as NOT_SUPPORTED");
+
+  /* The set must not be able to move the answer, in either direction -- that is the difference between
+     reporting a permanent state and reporting a lost bit. */
+  put(&g, "\033[?3h\033[?3$p");
+  eq_u("?3h leaves the answer at 4", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 4u,
+       "if this ever reads 1, something started storing a bit the painter cannot honour");
+  put(&g, "\033[?3l\033[?3$p");
+  eq_u("and ?3l leaves it at 4", (unsigned)(rc_report_take(&g, &it) ? it.status : -1), 4u, "");
+
+  /* Refusing is not doing: no cell, no column count, and the vote stays. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?3h");
+  eq_u("DECCOLM writes no cell", (unsigned)g.nCells, 0u, "a mode that resized the grid would resize the window");
+  eq_u("the grid is still 20 columns wide", (unsigned)g.cols, 20u,
+       "the measurement says the only API that changes this also moves the user's window");
+  eq_u("and the set still votes the mode bucket", g.nUnsupported[RC_UN_MODE], 1u,
+       "the refusal stays counted; the reply is what makes it legible to the app");
+  put(&g, "\033[?3l");
+  eq_u("the reset votes too", g.nUnsupported[RC_UN_MODE], 2u, "");
+  grid_ok(&g, "geo_deccolm");
+}
+
+/* #82: `?2048` as a *behaviour*, which is the half `geo_decrpm_silence` cannot see. The bit and its answer are
+ * one obligation; the notice behind the answer is the other, and the seam (RenderJni.cpp's flush_reports) is
+ * where the decision to speak is made -- the parser never arms this. What the host gate can pin is the entry
+ * the seam gets to queue: one per call, the kind `18t` already answers with, and the *viewport's* two numbers
+ * in that order. The bytes those turn into are the live leg's (`Render.java`'s caseInbandResize), because
+ * `reply_text` lives in the seam and the host gate never links it. */
+static void geo_inband()
+{
+  static RcGrid g, h2;
+  struct RcReportItem it;
+
+  /* Arming is not free for the parser: nothing in a byte stream says the window moved, so a chunk that turns
+     the mode on must produce no report at all until the geometry actually changes. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2048h");
+  eq_u("storing the promise queues nothing", (unsigned)rc_report_pending(&g), 0,
+       "the notice is about a change, not about the mode being asked for");
+  eq_u("and no cell moved either", (unsigned)g.nCells, 0, "");
+
+  /* The entry itself, on a grid with a gutter so `rows` and `winRows` are different numbers: reporting the
+     model's height would answer a question nobody asks with a figure the window does not show (I7's gutter is
+     scrollback). 24 rows for a 6-row viewport is the wrong answer this pins. */
+  rc_reset_hist(&h2, 20, 6, 18, 0x07);
+  eq_u("the notice is taken", rc_notify_geometry(&h2), 1, "a queue with room says so");
+  eq_u("exactly one entry", (unsigned)rc_report_pending(&h2), 1,
+       "one geometry is one report; a second flush must not repeat it (the seam gates on what it last told)");
+  {
+    const int kind = rc_report_take(&h2, &it);
+    eq_u("the kind is the one 18t answers with", (unsigned)kind, (unsigned)RC_REP_WINOP,
+         "no new report kind: one geometry gets one name (I42)");
+    eq_u("mode carries the viewport's rows", (unsigned)it.mode, 6,
+         "not the model's 24 rows -- a program sizing itself to the gutter would paint off screen");
+    eq_u("status carries the model's columns", (unsigned)it.status, 20, "the same pair, the same order");
+    eq_u("and the queue is empty again", (unsigned)rc_report_pending(&h2), 0, "");
+  }
+
+  /* The seam's retry rule, which is the difference between a dropped notice and a deferred one: the queue has
+     a stated depth and a full queue refuses rather than evicts, so the caller must be told it refused. The
+     fill is written against `RC_REPORT_MAX` and not against a number, because #81 moved that constant from 8
+     to 64 and a leg that hardcoded the old depth would have gone red for the wrong reason -- it is the
+     *refusal* that is the contract, not where the boundary sits. */
+  rc_reset(&g, 20, 6, 0x07);
+  for (int q = 0; q < RC_REPORT_MAX; q++) put(&g, "\033[?2026$p");
+  eq_u("a queue full by its own stated depth", (unsigned)rc_report_pending(&g), (unsigned)RC_REPORT_MAX, "");
+  eq_u("one more refuses, and the refusal is a return value", rc_notify_geometry(&g), 0,
+       "the caller has to be able to tell 'told' from 'no room', or it would write off the notice");
+  eq_u("the queue did not evict anything", (unsigned)rc_report_pending(&g), (unsigned)RC_REPORT_MAX, "");
+  eq_u("and the refusal left a number", (unsigned)g.nReportFull, 1, "a full queue is a limit, not a leak");
+  while (rc_report_pending(&g) > 0) rc_report_take(&g, NULL);
+  eq_u("once there is room the same call succeeds", rc_notify_geometry(&g), 1, "");
+  eq_u("and nothing was lost by the wait", (unsigned)rc_report_pending(&g), 1, "");
+  eq_u("a grid that is not there is refused, not crashed", rc_notify_geometry(NULL), 0, "");
+
+  /* The two resets, because the bit is a mode like the others and `geo_decrpm_silence`'s answered set only
+     asks in the steady state. A reset that left it on would keep pushing geometry at a program whose request
+     went away with the screen. Every read below is a fresh take: an assertion against a status a previous
+     line happened to leave in the local is the kind of green that cannot fail. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?2048h\033[!p\033[?2048$p");              /* DECSTR, then ask */
+  eq_u("DECSTR leaves exactly one answer", (unsigned)rc_report_pending(&g), 1,
+       "the reset itself speaks in no census");
+  rc_report_take(&g, &it);
+  eq_u("and it is not-set: DECSTR clears 2048 with the family", (unsigned)it.status, 2, "");
+  put(&g, "\033[?2048h\033c\033[?2048$p");
+  rc_report_take(&g, &it);
+  eq_u("RIS clears it too", (unsigned)it.status, 2, "as at power-up, and power-up sends no reports");
+  /* And the private-only rule #87 states for every other id: 2048 is DEC's number, so the non-private
+     spelling carries no registered meaning. Landing a mode is one thing; answering a spelling that mode never
+     had is the I26 mistake, and the reason `geo_inband` re-asserts it for the new id instead of trusting the
+     silence table above to cover it. */
+  put(&g, "\033[2048$p");
+  eq_u("the unadorned spelling answers nothing", (unsigned)rc_report_pending(&g), 0,
+       "only ANSI 4 has a non-private licence, and 2048 is not it");
+  eq_u("and it votes as a refused mode", un(&g, RC_UN_MODE), 1, "");
+  grid_ok(&g, "geo_inband");
+}
+
+
+/* #80: DECOM and the left/right margins. The legs below are the four obligations I40 states for any mode --
+ * it acts, it answers, both resets clear it, and a resize carries it -- plus the two distinctions that make
+ * the feature more than a stored bit: the base CUP counts from moves with `?6`, while the band the cursor is
+ * clamped into moves with the margins and NOT with the mode (MSFT's default clamp, adaptDispatch.cpp:366),
+ * and `CSI Pl;Pr s` is a different sequence depending on `?69` (:2369-2379). Every leg names which of those
+ * two it is checking, because a leg that only says "the cursor moved" cannot tell them apart. */
+static void geo_margins()
+{
+  static RcGrid g;
+  struct RcReportItem it;
+
+  /* --- the pair is real state, and setting it homes the cursor ------------------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?69h\033[5;16s");
+  eq_u("DECLRMM on, then DECSLRM: the pair is stored", (unsigned)g.marginSet, 1, "");
+  eq_u("the left margin is column 4 (0-based)", (unsigned)g.leftMargin, 4, "");
+  eq_u("the right margin is column 15", (unsigned)g.rightMargin, 15, "");
+  eq_u("and a valid pair homes the cursor to the left margin", (unsigned)g.cx, 4,
+       "DEC's VT420 rule; MSFT passes homeCursor=true from the `CSI s` arm");
+  eq_u("on the first row", (unsigned)g.cy, 0, "");
+  eq_u("and nothing in this cost a census vote", g.nUnsupported[RC_UN_MODE], 0,
+       "a mode and a sequence that both have bodies must not read as refusals");
+
+  /* --- it answers, in both directions ---------------------------------------------------------------- */
+  put(&g, "\033[?69$p");
+  eq_u("one request, one reply", (unsigned)rc_report_pending(&g), 1, "");
+  rc_report_take(&g, &it);
+  eq_u("the reply names 69", (unsigned)it.mode, 69, "");
+  eq_u("and says it is set", (unsigned)it.status, 1, "");
+  put(&g, "\033[?6h");
+  eq_u("DECOM is on", (unsigned)g.originMode, 1, "");
+  eq_u("and setting it homes the cursor again", (unsigned)g.cx, 4, "MSFT :1794's sentence, in our own words");
+  put(&g, "\033[?6$p");
+  rc_report_take(&g, &it);
+  eq_u("6 answers as a mode the model holds", (unsigned)it.status, 1, "");
+  put(&g, "\033[?6l\033[?69l\033[?6$p\033[?69$p");
+  eq_u("two requests, two replies", (unsigned)rc_report_pending(&g), 2, "");
+  rc_report_take(&g, &it);
+  eq_u("6 now answers reset", (unsigned)it.status, 2, "1 and 2 both reach jline4 as SUPPORTED");
+  rc_report_take(&g, &it);
+  eq_u("and 69 too", (unsigned)it.status, 2, "");
+
+  /* --- `?69` gates WHICH SEQUENCE `CSI s` is, not whether a margin is remembered --------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[5;16s");                                  /* DECLRMM off: this is ANSISYS save-cursor */
+  eq_u("with the mode off, `CSI 5;16s` sets no margin", (unsigned)g.marginSet, 0,
+       "MSFT :2369-2379: `CSI s` is ANSISYSSC when DECSLRM is not allowed");
+  eq_u("and a save is not a move", (unsigned)g.cx, 0, "");
+  put(&g, "\033[3;9H");
+  eq_u("the cursor does go where the next request says", (unsigned)g.cx, 8,
+       "without this line the restore below would pass on a grid that never moved");
+  eq_u("and to the row it says", (unsigned)g.cy, 2, "");
+  put(&g, "\033[u");
+  eq_u("and the save-cursor that mode 69 leaves behind is the one that walks back", (unsigned)g.cx, 0, "");
+  eq_u("row and all", (unsigned)g.cy, 0, "");
+
+  /* --- the clamp is the margins and the base is the mode --------------------------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?69h\033[5;16s");                      /* margins 4..15, origin off */
+  put(&g, "\033[1;1H");
+  eq_u("without origin, row 1 is still the viewport's top", (unsigned)g.cy, 0, "");
+  eq_u("and column 1 is clamped INTO the margins, not offset by them", (unsigned)g.cx, 4,
+       "MSFT clamps in margins whatever the mode (`:366`); the base is the only thing `?6` moves");
+  put(&g, "\033[1;20H");
+  eq_u("and a column past the right margin is clamped to it", (unsigned)g.cx, 15, "");
+  put(&g, "\033[?6h");                                 /* homes to (0,4) */
+  put(&g, "\033[2;3H");
+  eq_u("under origin, row 2 is the second row", (unsigned)g.cy, 1, "");
+  eq_u("and column 3 counts from the left margin", (unsigned)g.cx, 6, "4 + 3 - 1");
+  put(&g, "\033[99;99H");
+  eq_u("a wild row is clamped to the last row", (unsigned)g.cy, 5, "");
+  eq_u("and a wild column to the right margin", (unsigned)g.cx, 15, "");
+
+  /* --- origin with a live region: both bases at once -------------------------------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[2;5r\033[?69h\033[5;16s\033[?6h");
+  put(&g, "\033[1;1H");
+  eq_u("region 2..5 plus origin: row 1 is the region's top", (unsigned)g.cy, 1, "");
+  eq_u("and column 1 is the left margin", (unsigned)g.cx, 4, "");
+  put(&g, "\033[9;9H");
+  eq_u("a row past the region stops at its bottom", (unsigned)g.cy, 4,
+       "this is the band that differs from the viewport's, and the reason `?6` needs margins to be a witness");
+
+  /* --- refusals that change nothing ------------------------------------------------------------------- */
+  put(&g, "\033[1;2H");                                   /* region top, one column off the left margin */
+  eq_u("the cursor is where the base says it is", (unsigned)g.cx, 5, "");
+  eq_u("on the region's top row", (unsigned)g.cy, 1, "");
+  put(&g, "\033[?69h\033[16;5s");
+  eq_u("an inverted pair is refused", (unsigned)g.marginSet, 1, "the live pair stays");
+  eq_u("its left edge is untouched", (unsigned)g.leftMargin, 4, "");
+  eq_u("and a refused request teleports no cursor", (unsigned)g.cx, 5, "silent and still, like DECSTBM's arm");
+  eq_u("the refusal costs no census vote", g.nUnsupported[RC_UN_MODE], 0,
+       "DECSTBM's inverted arm behaves the same way and for the same reason");
+  put(&g, "\033[1;20s");
+  eq_u("a pair covering the whole page is cleared, not stored", (unsigned)g.marginSet, 0,
+       "MSFT: \"Client requests setting margins to the entire screen - clear them instead of setting them\"");
+
+  /* --- the margins act on the writer: EL stops at the right edge, and text does not pass it ----------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[1;1HABCDEFGHIJKLMNOPQRST");            /* a full row, written while the page is wide */
+  put(&g, "\033[?69h\033[5;16s");
+  put(&g, "\033[1;7H\033[0K");
+  eq_u("EL erases to the right margin", RC_CELLS(&g, 0)[15].ch, ' ', "");
+  eq_u("and no further: column 16 keeps its glyph", RC_CELLS(&g, 0)[16].ch, 'Q', "");
+  eq_u("the cells left of the cursor survive", RC_CELLS(&g, 0)[5].ch, 'F', "");
+  eq_u("and the untouched head of the row is still text", RC_CELLS(&g, 0)[0].ch, 'A',
+       "a left margin is not a request to erase what it hides");
+
+  put(&g, "\033[?7l\033[1;15Hxyz");
+  eq_u("with wrap off the cursor is pinned at the right margin", (unsigned)g.cx, 15, "");
+  eq_u("the last glyph stands on the margin", RC_CELLS(&g, 0)[15].ch, 'z', "");
+  eq_u("and nothing was written past it", RC_CELLS(&g, 0)[16].ch, 'Q', "still the original Q");
+  /* The fits test and the post-write pin are two different branches, and a leg that only reaches one of them
+     lets the other be broken in total silence: reverting `col_right(g) + 1` to the page width came back GREEN
+     against the legs above, because with wrap off the cursor is caught by the test that runs *after* the
+     write. What reaches the branch before it is a two-column glyph with one column left -- so that is the
+     witness, and it is also the leg that found the second homing site #80 had missed. */
+  put(&g, "\033[?7l\033[1;16H");
+  {
+    const uint16_t wide = 0x4E00;                          /* U+4E00, EAW W: two columns, one available.
+                                                 1-based 16 IS the margin (0-based 15), and that is where a
+                                                 glyph that cannot fit has to be asked for: one column
+                                                 earlier lands it inside the band and tests nothing -- which
+                                                 is exactly how this pair of legs first came back green
+                                                 while still asserting the wrong cells. */
+    putu(&g, &wide, 1);
+    eq_u("with wrap off a wide glyph that does not fit is declined", (unsigned)g.cx, 15, "");
+    eq_u("and the margin cell it could not fit is blanked, not left stale", RC_CELLS(&g, 0)[15].ch, ' ',
+         "MSFT Row.cpp:474-481 clears the cell it could not fit; the glyph is gone, so the row must not keep"
+         " a character the application never sent");
+  }
+  put(&g, "\033[?7h\033[1;16H");
+  {
+    const uint16_t wide = 0x4E00;
+    putu(&g, &wide, 1);
+    eq_u("with wrap on the same glyph takes the next row", (unsigned)g.cy, 1, "");
+    eq_u("and stands inside the band, not at column 0", (unsigned)g.cx, 6, "columns 4..5, cursor past them");
+    eq_u("whole, with its trailing half where the band says", RC_CELLS(&g, 1)[5].attr & RC_LVB_TRAILING,
+         (unsigned)RC_LVB_TRAILING, "");
+    eq_u("and the glyph itself landed on the left margin", RC_CELLS(&g, 1)[4].ch, 0x4E00, "");
+    eq_u("the narrowed row claims a pad, not a forced wrap", (unsigned)RC_ST(&g, 0).wrap,
+         (unsigned)RC_WRAP_PAD, "nothing reached the margin and ran off: the row was declined a glyph");
+  }
+
+  put(&g, "\033[?7h");
+  put(&g, "\033[1;16Hab");
+  eq_u("with wrap on, the row breaks at the margin", (unsigned)g.cy, 1, "the second character opened the next row");
+  eq_u("inside the band, not at the page edge", (unsigned)g.cx, 5,
+       "'a' hit the margin and claimed the wrap, 'b' was written at column 4 and advanced one");
+  eq_u("and the narrow row claims its wrap", (unsigned)RC_ST(&g, 0).wrap, (unsigned)RC_WRAP_FORCED, "");
+
+  /* The order that a margin can arrive late: the glyph is already on the screen when a program narrows the
+     band underneath it. DEC does not erase what the margins hide, so the model must keep the pair whole and
+     the cursor must not be allowed onto the trailing half that now sits outside the band -- and if the pair
+     is cut in half by the narrowing, that is an orphan of the #66 class, which the oracle votes on below. */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[1;10H");                      /* 0-based column 9 */
+  {
+    const uint16_t wide = 0x4E00;
+    putu(&g, &wide, 1);                          /* occupies 9 and 10 */
+  }
+  eq_u("setup: the glyph's head is at 9", RC_CELLS(&g, 0)[9].ch, 0x4E00, "");
+  eq_u("and its trailing half is at 10", RC_CELLS(&g, 0)[10].attr & RC_LVB_TRAILING,
+       (unsigned)RC_LVB_TRAILING, "");
+  put(&g, "\033[?69h\033[5;10s");            /* band 4..9: the trailing half is now outside it */
+  eq_u("the narrowing did not eat the glyph outside the band", RC_CELLS(&g, 0)[10].ch, 0x4E00,
+       "margins do not erase what they hide -- if this reads blank, DECSLRM grew an erase it was never given");
+  eq_u("the head stays a head", RC_CELLS(&g, 0)[9].attr & RC_LVB_LEADING, (unsigned)RC_LVB_LEADING, "");
+  eq_u("and DECSLRM homes the cursor onto the band's left edge", (unsigned)g.cx, 4,
+       "the first reading of this leg called 4 a bug and the design was right: `CSI s` homes (MSFT's "
+       "homeCursor), so a glyph left outside the band is left there by the narrowing, not by a move");
+  put(&g, "\033[1;10HX");                     /* write the last column of the band */
+  eq_u("the write lands on the band's last column", RC_CELLS(&g, 0)[9].ch, 'X', "");
+  eq_u("and the orphan it created is healed", RC_CELLS(&g, 0)[10].attr & RC_LVB_TRAILING, 0u,
+       "overwriting a pair's head must blank its tail (#66's rule, now seen from outside the margin)");
+  grid_ok(&g, "a margin narrowed under a wide glyph");
+
+  /* --- IL/DL home to the margin (#64's other half) ---------------------------------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?69h\033[5;16s\033[3;9H\033[2L");
+  eq_u("IL leaves the row where it was", (unsigned)g.cy, 2, "");
+  eq_u("and homes the column to the left margin, not to 0", (unsigned)g.cx, 4, "#64 said `g->cx = 0` until #80");
+  put(&g, "\033[2M");
+  eq_u("DL agrees with IL about where home is", (unsigned)g.cx, 4, "");
+
+  /* --- the saved cursor carries the coordinate space --------------------------------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  /* `ESC 7`, not `CSI s`: once `?69` is on, `CSI s` is DECSLRM (with defaults it clears the pair), so the
+     save that survives the mode is SCOSC -- which is also the sequence MSFT attaches the origin bit to. */
+  put(&g, "\033[?69h\033[5;16s\033[?6h\033[3;8H\0337");   /* (row 2, column 4+7) saved under origin */
+  eq_u("the saved position is the addressed one", (unsigned)g.cx, 11, "");
+  put(&g, "\033[?6l\033[1;1H");
+  eq_u("leaving origin walks the cursor to the page's own corner", (unsigned)g.cy, 0, "");
+  put(&g, "\0338");
+  eq_u("and the restore brings the mode back with it", (unsigned)g.originMode, 1,
+       "MSFT stores IsOriginModeRelative with the position (:481) and restores it (:497)");
+  eq_u("so the cursor lands where it was saved, not where the new base would put it", (unsigned)g.cx, 11,
+       "with origin left off, the same column would be an address into the page instead");
+
+  /* --- both resets clear all of it --------------------------------------------------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?69h\033[?6h\033[5;16s");
+  put(&g, "\033c");                                    /* RIS is ESC c -- with a `[` it is DA1 instead */
+  eq_u("RIS clears the pair", (unsigned)g.marginSet, 0, "");
+  eq_u("and DECOM", (unsigned)g.originMode, 0, "");
+  eq_u("and DECLRMM", (unsigned)g.declrmm, 0, "");
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?69h\033[?6h\033[5;16s\033[!p");
+  eq_u("DECSTR clears the pair", (unsigned)g.marginSet, 0,
+       "MSFT's SoftReset resets InsertReplace, Origin and AllowDECSLRM in one statement");
+  eq_u("and DECOM", (unsigned)g.originMode, 0, "");
+  eq_u("and DECLRMM", (unsigned)g.declrmm, 0, "");
+
+  /* --- plain `CSI 6 h` is a different mode, and must not borrow DECOM's body -------------------------- */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[6h");
+  eq_u("the standard spelling sets no origin", (unsigned)g.originMode, 0,
+       "`CSI 6 h` is DECSCRM in both references; `?6` is DECOM");
+
+  /* The grid oracle votes on every one of the above, including the pinned wrap and the clamped CUP. */
+  grid_ok(&g, "geo_margins");
+}
+
 static void geo_windowops()
 {
   static RcGrid g;
@@ -3311,13 +4792,13 @@ static void geo_irm()
     struct RcReportItem it;
     put(&g, "\033[?4$p");
     rc_report_take(&g, &it);
-    eq_u("a fresh grid is in replace mode", (unsigned)it.status, 1, "off is a state, not an absence");
+    eq_u("a fresh grid is in replace mode", (unsigned)it.status, 2, "off is a state, not an absence");
     put(&g, "\033[?4h\033[?4$p");
     rc_report_take(&g, &it);
-    eq_u("`?4h` is the difference the reply carries", (unsigned)it.status, 2, "");
+    eq_u("`?4h` is the difference the reply carries", (unsigned)it.status, 1, "");
     put(&g, "\033[4$p");
     rc_report_take(&g, &it);
-    eq_u("and the ANSI spelling answers the same question", (unsigned)it.status, 2,
+    eq_u("and the ANSI spelling answers the same question", (unsigned)it.status, 1,
          "the mode was set by that spelling, so a probe using it must not be told the number is unknown");
     eq_u("with nothing left counted", (unsigned)un(&g, RC_UN_MODE), 0,
          "IRM is modelled, so neither `4h` nor `4$p` is a mode this build cannot name");
@@ -4013,6 +5494,44 @@ static void geo_damage()
   rc_clear_dirty(&g);
   put(&g, "\033[3;1H\033[2M");
   for (int r = 0; r < 6; r++) eq_full(&g, r, "DL likewise");
+
+  /* #103: what an adopt owes the *output* side. The grid is built with a gutter on purpose -- with
+     `rc_reset` the model's rows ARE its viewport, and "clear the rows the read covered" and "clear everything"
+     are then the same number, so a leg written that way cannot tell the two designs apart. `geo_windowops`
+     names the identical trap for `18t`, and the old all-dirty-at-the-adopt is what this one replaces.
+     An adopt reads the window and nothing above it, so it may drop the damage of the rows it read and must
+     leave the scrollback above them exactly as it found it: that text is owed a paint, and forgetting so is
+     how #35 lost lines the application had already written. */
+  rc_reset_hist(&g, 20, 6, 4, 0x07);            /* model rows 0..3 are the gutter, 4..9 the viewport */
+  put(&g, "\033[1;1HTOP");                      /* CUP counts from the window, so row 1 is model row 4 */
+  eq_u("the setup damaged the viewport's top row", (unsigned)rc_row_dirty(&g, 4), 1u, "TOP painted");
+  put(&g, "\033[6;1H\n");                       /* a line feed on the viewport's last row: it scrolls up */
+  eq_u("the scroll carried that damage into the gutter", (unsigned)rc_row_dirty(&g, 3), 1u,
+       "without a damaged gutter row this leg cannot see the half that must survive");
+  eq_u("and the row scrolled in blank is damage", (unsigned)rc_row_dirty(&g, 9), 1u,
+       "I22: a change that cannot name its columns says the whole row");
+  unsigned dty[10], gutterMask = 0;
+  for (int r = 0; r < 10; r++) dty[r] = (unsigned)rc_row_dirty(&g, r);
+  for (int r = 0; r < 4; r++) gutterMask |= dty[r] << r;
+  rc_adopt_clean(&g);
+  for (int r = 4; r < 10; r++) eq_u("an adopt clears a viewport row it read", (unsigned)rc_row_dirty(&g, r), 0u,
+       "the read just put the console's own cells there: writing them back is a re-emission, not a repair");
+  {
+    unsigned after = 0;
+    for (int r = 0; r < 4; r++) after |= (unsigned)rc_row_dirty(&g, r) << r;
+    eq_u("and leaves every gutter row's damage alone", after, gutterMask,
+         "align_grid reads [winT, winT+winRows) and never the scrollback above it");
+  }
+
+  /* The reason the whole ticket exists, stated as a count: after an adopt the *next* chunk damages its own
+     row and nothing else. Under the old answer every flush after a resize re-marked the window first, and on
+     a pseudo-console conhost serialises that into new output for the user's terminal -- measured as a second
+     status bar and a second prompt (#101's screenshot). */
+  put(&g, "\033[4;1Hn");                         /* viewport row 4 = model row 7 */
+  unsigned now = 0;
+  for (int r = 0; r < 10; r++) now |= (unsigned)rc_row_dirty(&g, r) << r;
+  eq_u("a fresh chunk after an adopt damages its own row only", now, (1u << 3) | (1u << 7),
+       "row 7 is the new text; row 3 is the gutter damage the adopt was told not to touch");
 }
 
 /*
@@ -4089,7 +5608,10 @@ static int grid_equal(const RcGrid *a, const RcGrid *b, char *why, size_t n)
     return 0;
   }
   if (a->attr != b->attr) { snprintf(why, n, "attr 0x%04X vs 0x%04X", a->attr, b->attr); return 0; }
-  if (a->charset != b->charset) { snprintf(why, n, "charset %d vs %d", a->charset, b->charset); return 0; }
+  for (int gs = 0; gs < 4; gs++)   /* #85: four slots now; a resume that lost one is not "the same grid" */
+    if (a->charset[gs] != b->charset[gs])
+    { snprintf(why, n, "charset[%d] %d vs %d", gs, (int)a->charset[gs], (int)b->charset[gs]); return 0; }
+  if (a->gshift != b->gshift) { snprintf(why, n, "gshift %d vs %d", (int)a->gshift, (int)b->gshift); return 0; }
   if (a->mode != b->mode) { snprintf(why, n, "mode %d vs %d", a->mode, b->mode); return 0; }
   if (a->nCells != b->nCells) { snprintf(why, n, "nCells %lu vs %lu", a->nCells, b->nCells); return 0; }
   if (a->nAstral != b->nAstral) { snprintf(why, n, "nAstral %lu vs %lu", a->nAstral, b->nAstral); return 0; }
@@ -5121,6 +6643,143 @@ static void plan_snap(void)
   eq_u("snap: and no scroll debt was spent on it", (unsigned)g.pendingScrolls, 0, "");
 }
 
+/*
+ * #88's two doors. DECSCUSR always had one: `cursor_height()` (Paint.cpp:60) -> `dwSize` through
+ * SetConsoleCursorInfo. #88 opened a second one for parameters 5 and 6, reachable only when the seam
+ * resolved SetConsoleCursorShape at open(), and the entire safety of that addition is a claim about a
+ * *default*: while `rc_cursor_shape_api()` has never been called -- every build before #88, and every
+ * kernel32 from Win7 up that has no such export -- no plan may differ by one field from the plan -37
+ * shipped, for any parameter. Paint.h:131-137 says the same thing about `rc_cursor_style_for` ("it takes
+ * the answer as an argument precisely so the host gate can drive both arms of it"); this is that leg.
+ * The mutation that proves it has teeth is in Paint.cpp, not here: delete `if (!haveShapeApi) return -1;`
+ * and the control arm below goes red for 5 and 6 while the rest of the gate stays green.
+ *
+ * ⚠ What neither gate can witness: conhost has no getter for the shape (`GetConsoleCursorInfo` reports
+ * `dwSize`, a different axis), so nothing here or in Render.java can see a bar on the screen. The live leg
+ * (`Render.java::caseCursorShape`) adds exactly three things and no more -- that the shipped handle reports
+ * its own last accepted word, that the new call path costs no apiError on this box's kernel32, and that
+ * walking 5 back to 1 re-opens the height door instead of leaving the bar standing. It cannot run the absent
+ * arm: this process cannot un-resolve an export it already found, which is why the safety of "a kernel32
+ * without the export behaves as -37 did" rests on the control arm above and on nothing in the live gate.
+ * The two shape words are pinned to the SDK's values by the unit legs, and Paint.cpp:71-76 states out loud
+ * how little that is: no header on this box declares the API.
+ */
+static void plan_cursor_shape(void)
+{
+  static RcGrid g; RcPlan p; RcView v;
+  /* every parameter the model can hold, plus the -1 sentinel the parser uses for "nobody asked" */
+  static const int styles[] = { -1, 0, 1, 2, 3, 4, 5, 6 };
+  static const char *const names[] =
+  {
+    "nothing asked", "the default", "steady block(1)", "steady block(2)",
+    "blinking block", "steady underline", "steady bar(5)", "blinking bar(6)"
+  };
+  /* what cursor_height() says for the same parameter, written out instead of called: this leg is about
+     which door a plan opens, so the height side has to be an independent statement of the -37 story. */
+  static const int heights[] = { 0, 15, 100, 100, 15, 15, 15, 15 };
+  char seq[16];
+  const int nstyles = (int)(sizeof styles / sizeof styles[0]);
+  int was, back, k, st, bar;
+
+  was = rc_cursor_shape_api(0);
+  eq_u("#88 default: the planner starts out without the shape API", (unsigned)was, 0u,
+       "a non-zero default would ask every Win7 console, and every leg written before #88, the new question");
+
+  /* ---- control arm: the export was not resolved. This is the pre-#88 build, field by field. ---- */
+  for (k = 0; k < nstyles; k++)
+  {
+    st = styles[k];
+    rc_reset(&g, 120, 36, 0x07);
+    putraw(&g, "hello");
+    if (st >= 0) { snprintf(seq, sizeof seq, "\033[%d q", st); putraw(&g, seq); }
+    view36(&v, 0);
+    v.curHeight = 100;                    /* a console that did read its cursor: a 100-row block */
+    rc_plan_paint(&g, &v, &p);
+    eq_u(S("absent: %s opens no shape door", names[k]), (unsigned)p.setStyle, 0u,
+         S("setStyle=%d, and 0 is the only answer this build gave before #88", p.setStyle));
+    eq_u(S("absent: %s names no shape word", names[k]), (unsigned)p.shapeStyle, (unsigned)-1,
+         S("shapeStyle=%d: -1 means nobody chose a door", p.shapeStyle));
+    eq_u(S("absent: %s still folds to the height it always had", names[k]), (unsigned)p.shapeHeight,
+         (unsigned)heights[k], S("want %d, cursor_height()'s untouched table", heights[k]));
+    eq_u(S("absent: %s goes out the height door", names[k]), (unsigned)p.setShape,
+         (unsigned)((st >= 0 && heights[k] > 0 && heights[k] != 100) ? 1 : 0),
+         S("the console reads 100, the parameter wants %d", heights[k]));
+  }
+
+  /* ---- the seam's own bookkeeping: the flag is readable and put-back-able, both directions. ---- */
+  back = rc_cursor_shape_api(1);
+  eq_u("#88 flip: the seam hands back the answer it replaced", (unsigned)back, (unsigned)was,
+       "Paint.cpp:91 returns the previous value precisely so a leg (or a re-open) can restore it");
+
+  /* ---- present arm: 5/6 change door, and nothing else moves. ---- */
+  for (k = 0; k < nstyles; k++)
+  {
+    st = styles[k];
+    bar = (st == 5 || st == 6);
+    rc_reset(&g, 120, 36, 0x07);
+    putraw(&g, "hello");
+    if (st >= 0) { snprintf(seq, sizeof seq, "\033[%d q", st); putraw(&g, seq); }
+    view36(&v, 0);
+    v.curHeight = 100;
+    rc_plan_paint(&g, &v, &p);
+    eq_u(S("present: %s goes out the shape door", names[k]), (unsigned)p.setStyle, bar ? 1u : 0u,
+         S("setStyle=%d", p.setStyle));
+    eq_u(S("present: %s carries one shape word, no modifier bits", names[k]), (unsigned)p.shapeStyle,
+         (unsigned)(bar ? RC_CURSOR_STYLE_VERTICAL_BAR : -1),
+         S("shapeStyle=%d; 2 is wincon.h's CONSOLE_CURSOR_STYLE_VERTICAL_BAR", p.shapeStyle));
+    eq_u(S("present: %s never opens both doors at once", names[k]), (unsigned)p.setShape,
+         (unsigned)(bar ? 0 : ((st >= 0 && heights[k] > 0 && heights[k] != 100) ? 1 : 0)),
+         S("setShape=%d against setStyle=%d -- one cursor, one owner", p.setShape, p.setStyle));
+  }
+
+  /* The first paint of a handle that has not measured the cursor yet: the height door is shut for every
+     parameter, which is exactly where the bar is the *only* thing that can reach the console. */
+  rc_reset(&g, 120, 36, 0x07);
+  putraw(&g, "hello");
+  putraw(&g, "\033[5 q");
+  view36(&v, 0);                                        /* curHeight 0, the shape view() hands back */
+  rc_plan_paint(&g, &v, &p);
+  eq_u("present, nothing measured: 5 is said with the bar anyway", (unsigned)p.setStyle, 1u,
+       "the second door exists so a bar does not wait on a height nobody read");
+  eq_u("present, nothing measured: and the height door stays shut", (unsigned)p.setShape, 0u,
+       "no SetConsoleCursorInfo call is owed when the console's height is unknown");
+  rc_reset(&g, 120, 36, 0x07);
+  putraw(&g, "hello");
+  putraw(&g, "\033[2 q");
+  view36(&v, 0);
+  rc_plan_paint(&g, &v, &p);
+  eq_u("present, nothing measured: a block asks for neither door", (unsigned)p.setStyle, 0u,
+       "0..4 keep the story #87 shipped, including this one");
+
+  /* ---- the pure mapping, driven directly. The plan legs above reach it through rc_plan_paint; these
+     name it, because it is the one function that decides, and it is the one a mutation edits. ---- */
+  eq_u("unit: 5 asks for nothing where the API is absent", (unsigned)rc_cursor_style_for(5, 0), (unsigned)-1, "");
+  eq_u("unit: 6 asks for nothing where the API is absent", (unsigned)rc_cursor_style_for(6, 0), (unsigned)-1, "");
+  for (k = 0; k < nstyles; k++)
+  {
+    st = styles[k];
+    bar = (st == 5 || st == 6);
+    eq_u(S("unit: %s means the vertical bar where the API is present", names[k]),
+         (unsigned)rc_cursor_style_for(st, 1), (unsigned)(bar ? RC_CURSOR_STYLE_VERTICAL_BAR : -1),
+         "the whole decision, in one row per parameter");
+  }
+
+  /* Put the flag back the way the seam would, and show the control arm is a property of the flag rather
+     than of this leg's position in the run. */
+  back = rc_cursor_shape_api(was);
+  eq_u("#88 restore: the flag goes back to the answer it had", (unsigned)back, 1u,
+       "if this reads 0 the flip above never landed, and the present arm proved nothing");
+  rc_reset(&g, 120, 36, 0x07);
+  putraw(&g, "hello");
+  putraw(&g, "\033[5 q");
+  view36(&v, 0);
+  v.curHeight = 100;
+  rc_plan_paint(&g, &v, &p);
+  eq_u("#88 restore: and 5 folds to a height again", (unsigned)p.setStyle, 0u,
+       S("setShape=%d after the restore, which is the -37 answer", p.setShape));
+  eq_u("#88 restore: the height door reopens for it", (unsigned)p.setShape, 1u, "15 into a console at 100");
+}
+
 /* ================================================================== main ====================== */
 
 /*
@@ -5209,6 +6868,8 @@ int main(int argc, char **argv)
   gm_osc9();
   gm_clipboard();
   gm_reports();
+  gm_inputreports();
+  geo_gaps();
   gm_dropped();
   gm_wrap_suspect();
   gm_state_reset();
@@ -5228,6 +6889,13 @@ int main(int argc, char **argv)
   geo_tabs();
   geo_region();
   status_bar();
+  geo_decrpm_unmodelled();
+  geo_mousemodes();     /* #81: nine mouse modes, one bit each, one answer each */
+  geo_ckm();            /* #114: DECCKM -- stored, answered, cleared by both resets, and 2 is NOT in the family */
+  geo_deccolm();        /* #109: DECCOLM -- the one permanent answer, 4, and nothing can move it */
+  geo_oracle_teeth();   /* #72's teeth: the oracle must be able to answer no, and say *which* no (see its comment) */
+  geo_inband();
+  geo_margins();
   geo_windowops();
   geo_irm();
   geo_colon();
@@ -5250,6 +6918,7 @@ int main(int argc, char **argv)
   plan_anchor();
   plan_scroll_band();
   plan_snap();
+  plan_cursor_shape();
   adopt_anchor();
   plan_gutter_hook();
   plan_runs();

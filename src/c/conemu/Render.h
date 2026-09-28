@@ -132,7 +132,14 @@ enum RcUnsupported
      over the cap or held a NUL, or the request was a read (`52;c;?`) -- refused whatever the policy says,
      because the reply would put what the user had copied into the console's *input* stream. Appended, never
      inserted: the census is positional across three files (I19). */
-  RC_UN_OSC_CLIP, RC_UN_MAX
+  RC_UN_OSC_CLIP,
+  /* An ISO 2022 designator that named a set this build cannot render, so the byte was read, acted on as far
+   * as it can be, and produced no glyph change (#85): `ESC ) U` (Latin-1), `ESC * A`, and every other name
+   * besides `0`. Counted here rather than in `unrecognised` because the arm is *not* unknown any more --
+   * G1..G3 are slots now, and a census that kept calling them "no case for" after they had one would be the
+   * same class of lie as answering `;1$y` for a mode that is set (I26). `ESC ( 0` and `ESC ) 0` do NOT land
+   * here: they are acted on. Not suspect, for the same reason `ESC % G` is not: the reach is known. */
+  RC_UN_CHARSET, RC_UN_MAX
 };
 
 /* The census table's accessors (Render.cpp). Names and the suspect flag are read by the gates only: the
@@ -201,11 +208,31 @@ enum RcReport { RC_REP_NONE = -1, RC_REP_DSR = 0, RC_REP_CPR = 1, RC_REP_DA = 2,
                 /* `CSI 18 t`'s answer, `CSI 8 ; rows ; cols t` (#79). Appended, because the numbers of this
                    enum reach the reply switch in RenderJni.cpp and a renumber would be an ABI change dressed
                    as a tidy-up (I19's rule, the one the stats array follows). */
-                RC_REP_WINOP = 6 };
+                RC_REP_WINOP = 6,
+                /* GAP G6/G5, appended for the same rule as WINOP: a number that ships is never renumbered.
+                   RC_REP_TITLE is `CSI 21 t`'s answer -- the title this parser last applied, in the spelling
+                   the two references that act on it use (ghostty `stream_terminal.zig:1468-1471`
+                   `"\e]l{title}\e\\"`, wezterm `terminalstate/mod.rs:2175-2183` the same bytes).
+                   RC_REP_XTVER is XTVERSION's DCS reply (`CSI > q` -> `ESC P > | name ESC \`, ghostty
+                   `stream_terminal.zig:1442-1447`, wezterm `mod.rs:1440-1447`). */
+                RC_REP_TITLE = 7, RC_REP_XTVER = 8 };
 
 /* Queries in one chunk are rare but legal (`vim` probes more than once at startup), and a reply the queue
- * had to refuse is a program left waiting, which must be a number and not a rumour. */
-#define RC_REPORT_MAX 8
+ * had to refuse is a program left waiting, which must be a number and not a rumour.
+ * The depth is 64 because #81 made the queue's own arithmetic wrong: the largest thing a stream can ask in
+ * one write is a *family*, and the mouse family has nine members (9/1000/1002/1003/1004/1005/1006/1015/1016),
+ * so a cap of eight refused the last one -- not a hypothetical, but the exact payload a program that wants to
+ * know which mouse protocol to speak sends. Nothing upstream was ever bitten by it: jline4's whole mode probe
+ * is five replies (Kitty + 2026 + 2027 + 2048 + the DA1 fence, AbstractTerminal.java:620-627), which is why
+ * eight looked generous for twenty-eight tickets.
+ * 64 is not invented here -- it is ghostty's mailbox depth, `BlockingQueue(termio.Message, 64)`
+ * (termio/mailbox.zig:15), and each of its entries is one reply of ours. The two references that do not
+ * bound the count at all answer the same way: MSFT appends into an unbounded `std::wstring` and flushes
+ * (ControlCore.cpp:109-111), wezterm writes straight to the pty with no queue (term/src/terminalstate/mod.rs:1516).
+ * So this number is a *leak guard for a fixed array*, the same reasoning as the title stack's depth of two
+ * (Render.h's `tstack`), and it is deliberately above every batch a real reader is known to send. The refusal
+ * arm stays witnessed: `gm_reports` asks for MAX+3 and expects the last three counted (RenderCheck.cpp:1486). */
+#define RC_REPORT_MAX 64
 
 /* One queued query, with the cursor as it stood when the sequence was read: a CPR answers where the cursor
  * *was*, so the painter has to know that position and not the one the chunk ends on. Named at file scope
@@ -218,6 +245,59 @@ enum RcReport { RC_REP_NONE = -1, RC_REP_DSR = 0, RC_REP_CPR = 1, RC_REP_DA = 2,
  * number the reply opens with, `status` the COLORREF that answers it, and `y` the table index -- which is why
  * the pair is 32-bit wide: a colour does not fit in 16. */
 struct RcReportItem { uint8_t kind; uint16_t y, x; uint32_t mode, status; };
+
+/* ------------------------------------------------------------------ input reports (#108, reopened) --
+ * The byte an application asks for when it sets one of the mouse family or `?1004`, produced here because
+ * the *state that decides the shape* is held here and nowhere else: `?1006h` reaches this library and never
+ * reaches conhost's own parser (#104 takes the host's parser off the stream), so if the encoding is not done
+ * on this side, nothing encodes it. All three references put the encoder in the component that owns the mode
+ * state and give it the event as data -- ghostty `src/input/mouse_encode.zig:81 encode(writer, event, opts)`
+ * reads `t.flags.mouse_event`/`mouse_format` and touches no I/O (`src/termio/Termio.zig:652-669` is its only
+ * caller), wezterm keeps it as methods of `TerminalState` (`term/src/terminalstate/mouse.rs`), and MSFT keeps
+ * it as `TerminalInput`, which `InputBuffer` calls at event time (`src/host/inputBuffer.cpp:585-600`,
+ * `src/terminal/input/mouseInput.cpp:330-380`).
+ *   These functions are the same split: pure, console-free, and able to say "nothing is due for this event".
+ * The *trigger* is handed in by whoever reads the console's input records, because there is exactly one
+ * reader of CONIN$ in a session and it is not this library (#83's floor: a second reader steals keystrokes).
+ * That is a division of labour about who *observes*, never a reason to skip the encoding: the observer that
+ * knows a Windows mouse record cannot carry a sub-cell pixel position is also the one that can say so.
+ *
+ * A mouse event in the shape the console delivers it, flattened so this file names no Win32 type -- the
+ * values below are the wincon ones, read out of the very header this build compiles against
+ * (`/usr/i686-w64-mingw32/include/wincon.h:44-48,69-79`), and the seam copies the record without decoding it.
+ * `px`/`py` are the sub-cell pixel position where the observer happens to know one (a ConPTY-side event, a
+ * GUI hook); -1 is the honest "the console record only names a cell" answer, and it is the only case in which
+ * `?1016` has nothing to report. */
+#define RC_MS_MOVED   0x0001u     /* MOUSE_MOVED */
+#define RC_MS_WHEELED 0x0004u     /* MOUSE_WHEELED: the delta is the high word of buttonState */
+#define RC_MS_HWHEELED 0x0008u    /* MOUSE_HWHEELED */
+#define RC_MS_LEFT    0x0001u     /* FROM_LEFT_1ST_BUTTON_PRESSED */
+#define RC_MS_RIGHT   0x0002u     /* RIGHTMOST_BUTTON_PRESSED */
+#define RC_MS_MIDDLE  0x0004u     /* FROM_LEFT_2ND_BUTTON_PRESSED */
+#define RC_MS_SHIFT   0x0010u     /* SHIFT_PRESSED */
+#define RC_MS_ALT     (0x0001u | 0x0002u)   /* RIGHT_ALT_PRESSED | LEFT_ALT_PRESSED */
+#define RC_MS_CTRL    (0x0004u | 0x0008u)   /* RIGHT_CTRL_PRESSED | LEFT_CTRL_PRESSED */
+
+struct RcMouseRec { int16_t x, y;         /* cell, 0-based -- the console's own unit */
+                    int16_t px, py;       /* pixel, 0-based, or -1 when the observer cannot know it */
+                    uint32_t buttonState;
+                    uint32_t eventFlags;
+                    uint16_t ctrlKeyState; };
+
+/* The encoding one of `?1005`/`?1006`/`?1015`/`?1016` selects, and the number `mouseFormat` holds. Four
+ * references, three shapes: ghostty and wezterm keep ONE field for the format and the last enable wins
+ * (`stream_terminal.zig:1700-1703`, `terminalstate/mod.rs` maps all of 1005/1006/1016 onto `mouse_encoding`),
+ * MSFT keeps two bits and tests utf8 before sgr (`mouseInput.cpp:364-378`). The bits in `mouseModes` stay what
+ * they are -- the record of what the stream asked, which is what `?1005$p` answers from (#81's rule: a mode
+ * nobody turned off must not be reported as off) -- and `mouseFormat` is the *effective* encoding the report
+ * uses, ghostty's exact pairing of `modes` bits with `flags.mouse_format`. */
+enum RcMouseFormat { RC_MF_X10 = 0, RC_MF_UTF8 = 1, RC_MF_SGR = 2, RC_MF_URXVT = 3, RC_MF_SGR_PX = 4 };
+
+/* The event level, derived from the bits in the priority the references use (wezterm checks any, then button,
+ * then normal -- `mouse.rs:259` "self.mouse_tracking on its own is for clicks, not drags!"; ghostty collapses
+ * its four DECSETs into one `MouseEvent` enum). Derived, never stored: two copies of one decision is how a
+ * mode ends up set in one place and reported from another (#85). */
+enum RcMouseEvent { RC_ME_NONE = 0, RC_ME_X10 = 1, RC_ME_NORMAL = 2, RC_ME_BUTTON = 3, RC_ME_ANY = 4 };
 
 /* What ended a row's line: the two reasons are distinct upstream (`_wrapForced` and
  * `_doubleBytePadded`, Row.hpp:313-317) and a consumer that joins rows for copy or export has to tell
@@ -326,6 +406,7 @@ typedef struct RcGrid
   int winRows;
   int cx, cy;             /* cursor, a model row: always inside the viewport, i.e. cy >= rows-winRows */
   int saveX, saveY;       /* DECSC / CSI s */
+  uint8_t saveOrigin;     /* the coordinate space the saved position was written in (MSFT `:481`/`:497`) */
   uint8_t rowDirty[RC_MAX_ROWS];
   /* The columns a dirty row has to repaint, inclusive, and only meaningful while rowDirty says 1: the
      rectangle conhost gets is as wide as the damage, not as wide as the row. This is a paint-cost rule,
@@ -383,6 +464,35 @@ typedef struct RcGrid
   uint8_t regSet;
   int regTop, regBot;
 
+  /* DECLRMM + DECSLRM (#80): the column twin of the pair above, and the same two facts. `marginSet` says
+     whether the left/right pair is a real narrowing or just the page -- MSFT clears rather than stores margins
+     that cover the whole page (`_DoSetLeftRightScrollingMargins`, adaptDispatch.cpp:2384-2391: "Client
+     requests setting margins to the entire screen - clear them instead of setting them"), which is why this
+     reads as a flag plus a pair and not as two numbers. Inclusive 0-based columns, clamped when set, never
+     re-clamped afterwards -- `rc_reset_hist` is the only other thing that moves them.
+     `declrmm` is `CSI ?69 h/l`, and it is a *gate on a sequence*, not on behaviour: while it is off,
+     `CSI Pl;Pr s` is ANSISYS's save-cursor instead, which is MSFT's own branch (`SetLeftRightScrollingMargins`
+     :2369-2379, "When DECSLRM isn't allowed, `CSI s` is interpreted as ANSISYSSC") and xterm's. So a session
+     that never touches `?69` keeps the save-cursor it has always had, and the census can tell the two apart.
+     DEC's VT500 and xterm both require two parameters and left < right with a two-column minimum inside the
+     page; an inverted pair leaves the live margins alone (the same refusal DECSTBM makes above). */
+  uint8_t marginSet;
+  int leftMargin, rightMargin;
+  uint8_t declrmm;
+
+  /* DECOM (`CSI ?6 h/l`): which coordinate space CUP, HVP and a reply about the cursor speak in. It is a
+     base, not a clip: with it on, row 1 is the region's top and column 1 is the left margin; with it off, the
+     page's top and column 0 -- MSFT spells exactly that pair of bases (`adaptDispatch.cpp:346`/`:354`,
+     `row = Origin ? topMargin : page.Top()`, `col = Origin ? leftMargin : 0`). Changing it homes the cursor,
+     per DEC's VT500 sequence (the cursor is positioned relative to the new origin) and MSFT's `?6` arm
+     (:1794). It is carried by a saved cursor: MSFT stores `IsOriginModeRelative` in `CursorState`
+     (`:481`, restored at `:497`), so a program that saves at one origin and restores at the other gets the
+     addressing it saved, not the addressing it happens to be in. ConEmu has no case for `?6` at all
+     (every unhandled mode goes to `DumpUnknownEscape`, Ansi.cpp:3427) and no margin state anywhere, so
+     `?69`'s and `?6`'s presence here is a third-party addition (I26's rule keeps them out of the terminfo
+     entry, which still describes a session ConEmu's parser may be reading). */
+  uint8_t originMode;
+
   RcSgr   sgr;
   uint16_t attr;          /* rc_attr() of the current state: what SetConsoleTextAttribute would get */
   uint16_t defAttr;       /* frozen console default (Ansi.cpp:691-709) -- frozen until OSC 10/11 moves it (I34) */
@@ -402,7 +512,20 @@ typedef struct RcGrid
      to the console. OSC 4 with an index below 16 moves one entry of this table; at or above 16, one of that. */
   uint32_t pal16[16];
   uint16_t palTouched;              /* bit i: console entry i changed and the painter has not written it */
-  int    charset;         /* 0 = VTCS_DEFAULT, 1 = VTCS_DRAWING (only ESC ( touches it, Ansi.cpp:2751) */
+  /* #85: the four G-sets, each holding only what this build can actually draw (0 = default, 1 = drawing).
+     One field per slot rather than a table of names, because the only remap this tree owns is the DEC special
+     graphics one -- `charset[n]` says what slot *n* was designated to, not how to translate it.
+     ghostty keeps exactly this shape and nothing more (`Screen.zig:209-221`: `charsets` g0..g3 plus `gl`/`gr`),
+     and msfterm's `TerminalOutput` is the same four slots with `_glSetNumber`/`_grSetNumber`
+     (`terminalOutput.hpp:57-60`). We take GL only: see `gshift` and the two deliberate deviations recorded at
+     `esc_charset`. Indexed by the designator (G0..G3 = 0..3), so `ESC ) 0` touches `charset[1]` alone. */
+  uint8_t charset[4];
+  /* Which slot 7-bit printable characters come from: GL, changed only by SI (0x0F -> G0) and SO (0x0E -> G1).
+     Default G0, which is ghostty's `gl: charsets.Slots = .G0` and msfterm's `_glSetNumber = 0`. Deliberately
+     **not** reset by `sgr0`'s `\E(B`: that sequence designates G0, and a #24-era ruling says a capability that
+     unloads the drawing set must not also move the shift, or a status line drawn in GL could be repainted by
+     an unrelated `tput` (ledger: #24 wins over #85). */
+  uint8_t gshift;
   /* The last code point written to the grid, for REP (`CSI b`, "repeat the previous glyph"). ConEmu keeps
    * the same thing -- CEAnsi::m_LastWrittenChar (Ansi.h:197) -- and two of its quirks are load-bearing here:
    * it is seeded to L' ' and survives a FullReset (:3070-3087 reads it, never clears it), and it stores the
@@ -456,6 +579,47 @@ typedef struct RcGrid
    * `smir`/`rmir`/`mir` -- the entry describes a session where that parser may be reading the bytes, and I26
    * forbids claiming the other half's behaviour (the same reason `smam`/`rmam` stay out). */
   uint8_t insertMode;
+  /* DECSET 2004 -- bracketed paste (#83). Stored, answered, and **not executed**: the paste bytes reach the
+   * reader through conhost's input leg, which this library does not own, so the one thing that cannot be
+   * promised is the `CSI 200~`/`CSI 201~` wrapping around them. That is a missing surface, not a missing
+   * feature -- reading CONIN$ to catch the paste would steal keystrokes from the host's own reader. What the
+   * bit is good for is the honest answer: a program that asks `?2004$p` is told what the terminal has agreed
+   * to, and the host that owns the input leg can read the same bit back through `stats()`. */
+  uint8_t bracketedPaste;
+  /* DECSET 1 -- DECCKM, the cursor-key mode (#114). Same shape as `bracketedPaste` immediately above: the
+   * state is the terminal's to hold and the *bytes* are not ours to change. DECCKM decides whether an arrow
+   * key reaches the program as `CSI A` or `SS3 A`, and who turns the console's key record into those bytes
+   * here is jline's reader, not this parser -- so the one thing this library can do honestly is remember
+   * what the stream asked for and answer `?1$p` with it. MSFT stores it as an input mode and clears it on
+   * both resets (`DispatchTypes.hpp:522` DECCKM_CursorKeysMode; `adaptDispatch.cpp:2989-2991` SoftReset
+   * names `Mode::CursorKey`), ghostty lists it as `cursor_keys` (`modes.zig:340`), wezterm parses
+   * `ApplicationCursorKeys` and acts on it for its own key encoder
+   * (`terminalstate/mod.rs:1824-1834`). `?2` (DECANM) is **not** in this family and is answered with a
+   * constant instead: DECANM selects VT52 vs ANSI *parsing*, and this build has no VT52 table to select --
+   * `ESC D` is IND and `ESC E` is NEL, and no mode picks a second dispatch. So a 1-or-2 reply would describe
+   * a state the model cannot hold, while 3 = permanently set is a fact about the build (`case 2` in
+   * `mode_status`). MSFT spells the same reasoning by answering `?2$p` from the state machine's own parser
+   * mode (`adaptDispatch.cpp:1957-1958`), and neither ghostty nor wezterm carries a VT52 emulation at all
+   * (ghostty's only `vt52` hits are the `vt520`/`vt525` conformance levels in `device_attributes.zig:152-170`;
+   * wezterm: no match). This is the second permanent digit in the table, and #109's `?3` is the reason the
+   * old "we never send 3/4" policy is gone: keeping it would have made the refusal, not the answer, the lie. */
+  uint8_t cursorKeys;
+  /* DECSET 2048 -- the in-band window-size report (#82). One bit, and it is a *promise about the input
+   * stream*, which is why it defaults off: `?2048h` asks the terminal to push geometry at the program
+   * unasked, and a library that did that without being told would be injecting bytes nobody read. ghostty
+   * names the same bit in_band_size_reports (`src/terminal/modes.zig:381`) and states the default in its own
+   * test (`src/terminal/c/terminal.zig:5996` -- "in_band_size_reports is off by default"); ConEmu has no case
+   * for the number and MSFT's tree carries no such mode, so ghostty is the only reference here.
+   * What this build sends while the bit is on is the *same* spelling `18t` already answers with --
+   * `ESC [ 8 ; winRows ; cols t` -- rather than ghostty's `CSI 48 ; rows ; cols ; heightPx ; widthPx t`
+   * (`src/terminal/size_report.zig:47-53`), and the divergence has the same shape as ghostty's own guard: it
+   * declines to send a 2048 report when it lacks cell pixel geometry (`stream_terminal.zig:288-290`), and
+   * this library never has trustworthy pixels to give -- that is why 14t/16t answer nothing (I42). The two
+   * numbers it does have are the ones 18t reports, and I42 says a fact gets one name. See RenderJni.cpp's
+   * flush_reports for when it speaks and rc_notify_geometry below for who arms it. Nothing polls the console
+   * to notice a change: the report rides the rebuild a resize already forces, so a drag the seam cannot see
+   * becomes the same path as a geometry call it can. */
+  uint8_t inbandResize;
   /* The tab stops (#70): a table, not arithmetic. One byte per column of the widest model -- 4 KB against the
    * megabytes the cells already cost, and a reader gets to say `tabStop[c]` instead of a mask.
    * `tabsDefaults` is the other half and the reason the table can be empty at all: it says whether the columns
@@ -467,6 +631,41 @@ typedef struct RcGrid
    * (`Terminal.zig:56`). Where the two part: a width change rebuilds ghostty's table (`:4019`, `:4082`) and
    * only extends MSFT's (`:2805`), and we extend, because our own resize already carries application-set
    * state across (`RenderJni.cpp`'s build_model keeps the palette and the OSC 9 face for the same reason). */
+  /* #81: the mouse-family DECSET numbers this stream asked for, one bit each. A **bit per number**, not one
+   * field holding "the current protocol", because that is what both references do and the choice is visible
+   * in what `?1000$p` answers afterwards: ghostty keeps a packed bool per mode (`src/terminal/modes.zig:347`,
+   * `:360-368` name 9/1000/1002/1003/1005/1006/1015/1016, and `getReport` at `:98-101` answers
+   * `self.get(mode) ? set : reset`), and wezterm keeps separate bools with the set/clear/`decqrm_response`
+   * triple in one block per mode (`term/src/terminalstate/mod.rs:1879-1911`). A last-wins field would make
+   * `?1000h` then `?1002h` answer `?1000$p` as "not set", which is a claim about a mode nobody turned off.
+   * The derived facts (does this report motion, which encoding) are computed from these bits, never stored
+   * a second time -- two copies of one decision is how #85's shift and its slots could have drifted.
+   *   bit 0=9(x10) 1=1000 2=1002 3=1003 4=1004 5=1005 6=1006 7=1015, and bit 8=1016(sgr-pixels).
+   * ⚠ Storing a bit is **not** reporting an event: this library generates no mouse input at all, so every
+   * one of these is a mode remembered and answered, and `?1004` (focus in/out) is the case where even the
+   * action is absent by design. Injecting bytes nobody asked for is I26, and the input stream is the worst
+   * place to do it. `?1001` (highlight tracking) is recognised by neither reference and votes RC_UN_MOUSE. */
+  uint16_t mouseModes;
+  /* #108, reopened on the owner's ruling of 2026-09-28: the encoding the mouse family is currently speaking
+   * (`enum RcMouseFormat`), the last button state this library saw, and the last motion it reported.
+   *   `mouseFormat` exists because four DECSET numbers cannot share one bitfield and still say which bytes a
+   * report will take: ghostty pairs its per-mode bits with `flags.mouse_format` (`stream_terminal.zig:1700-1703`,
+   * last enable wins, any reset goes back to `.x10`) and wezterm maps 1005/1006/1016 onto one `mouse_encoding`
+   * field (`terminalstate/mod.rs:66-71`). The bits above stay authoritative for `?1005$p` and friends -- that
+   * is #81's rule and ghostty keeps it the same way -- and this is the field that decides the *shape*, so a
+   * session that asked for SGR cannot be answered "set" for urxvt and then reported in urxvt.
+   *   `lastBtn` is what turns a Windows record (which says which buttons are *down*, never press vs release)
+   * into the event the encoder needs; MSFT does not need it because its observer is the GUI message loop
+   * (`WM_LBUTTONUP` is its own answer), and wezterm keeps the same kind of field for the same reason
+   * (`terminalstate/mod.rs:326-335` `current_mouse_buttons`, `last_mouse_move`).
+   *   The motion pair is the `sameCoord` test MSFT applies at `mouseInput.cpp:336-338` and ghostty at
+   * `mouse_encode.zig:108-117`: a drag across one cell is one report, not a dozen, and `?1002` means
+   * "changed coordinate" in both references. */
+  uint8_t  mouseFormat;
+  uint32_t lastBtn;
+  int16_t  lastMoveX, lastMoveY;
+  uint8_t  lastMoveBtn;
+  int      moveSeen;
   uint8_t tabStop[RC_MAX_COLS];
   int     tabsDefaults;
   /* Regions opened. This is the denominator for every count below it: `held` alone cannot say whether an
@@ -493,9 +692,12 @@ typedef struct RcGrid
   /* DECSCUSR (`CSI Ps SP q`), kept as the parameter rather than as a console value: -1 = nothing has asked
      (so the painter must not touch the console's cursor height at all), 0 = ConEmu's "default", 1/2 =
      block, 3-6 = the thin shape. Upstream can only give a console a block or a 15-row cursor through the
-     same Get/SetConsoleCursorInfo pair (Ansi.cpp:3670-3679), so those are the two things the painter can
-     emit here too -- and a Win7-safe writer has no third option (a variable-height cursor needs
-     SetConsoleCursorShape, which is Windows 10 18297 and later). Paint.cpp::cursor_height maps it. */
+     same Get/SetConsoleCursorInfo pair (Ansi.cpp:3670-3679), and Paint.cpp::cursor_height still maps it
+     that way -- but #88 ended the claim that those are the *only* two things this build can emit: on a
+     kernel32 that has SetConsoleCursorShape (Windows 10 18297+; a Win7-safe writer still has no third
+     option, and that is the point of reaching for it by name) parameters 5 and 6 are said as a vertical
+     bar through the shape API instead of being folded to a height. Which of the two paths a plan takes is
+     decided in Paint.cpp::rc_cursor_style_for, never here: this is the parameter, not the console. */
   int    cursorShape;
 
   /* resumable parser state */
@@ -612,6 +814,19 @@ typedef struct RcGrid
    * with the model and counted on the handle, not here: rc_reset zeroes this struct, so nothing that wants
    * to outlive a resize belongs in it. */
   unsigned long nReportOk, nReportFail, nReportFull;
+  /* #108: reports the encoders produced, and the events they looked at and owed nothing. Two because they are
+   * two different questions a reader of the census asks: "does this terminal encode the mouse at all" (a zero
+   * here with `mouseModes` non-zero means the observer never handed a record, which is not the same finding as
+   * "the library cannot encode"), and "did records arrive while no mode was set" (the number that says the
+   * console *is* producing mouse input for this session -- the fact #106 measured for focus and #95 for the
+   * mode bits). A report refused for a short buffer is neither: it is counted nowhere and retried by the
+   * caller, because a dropped byte cannot be told from one that was never due. */
+  unsigned long nMouseRep, nFocusRep, nMouseQuiet;
+  /* #108: reports written into CONIN$ by the observer's call, and the writes that did not take the records.
+   * Kept apart from `nReportOk`/`nReportFail` above on purpose: those count the *answers* a chunk asked for,
+   * and a rollout has to be able to read "this session answered every query" and "this session injected
+   * events nobody asked for" as two different findings. */
+  unsigned long nInjectOk, nInjectFail;
 
   /* Parameters dropped because the list already held `RC_CSI_ARGS`. Upstream loses them the same way --
    * ConEmu's ArgV holds 16 and never looks at the 17th (Ansi.h:174) -- and the difference between that and a
@@ -734,6 +949,10 @@ int rc_width(uint32_t cp);
 int  rc_row_dirty(const RcGrid *g, int row);
 void rc_clear_dirty(RcGrid *g);
 void rc_mark_all_dirty(RcGrid *g);
+/* Forgetting the damage an adopt read away, for the rows it read (#103). `rc_mark_all_dirty` is for a change
+ * whose columns cannot be named; an adopt is not a change -- it made the model a copy of the console -- so
+ * what it leaves behind is not a repaint but a re-emission. See the note at its definition. */
+void rc_adopt_clean(RcGrid *g);
 
 /* Claiming where the model's rows are (see RcGrid::baseRow). rc_set_base is what a flush owes once the
    operations it planned actually landed; rc_drop_base is the other half of the promise: the console did
@@ -809,10 +1028,47 @@ int  rc_report_pending(const RcGrid *g);
  * to rc_report_result, not here, because only the caller knows whether the console took it. */
 int  rc_report_take(RcGrid *g, struct RcReportItem *out);
 
+/* Queue the unsolicited geometry notice for `?2048` (#82): one `RC_REP_WINOP` carrying this grid's own
+ * `winRows` and `cols` -- the same two numbers, in the same order, that `18t` answers with, which is the
+ * whole reason there is no new report kind. Returns 1 when the entry went on the queue and 0 when the queue
+ * was full, so the caller can decide whether to remember that it told the stream (a refused notice has to be
+ * tried again on the next flush, not written off). Whether to *ask* is the caller's test -- this is armed
+ * only while `inbandResize` is set, and only when the geometry moved. */
+int  rc_notify_geometry(RcGrid *g);
+
 /* Say what became of the query the take above this call returned: 1 = the console took every record, 0 = the
    write failed or fell short. One call per take, in that order; the model keeps no per-entry history, only
    the two counts. They are here rather than open fields so the model stays the only thing that owns them. */
 void rc_report_result(RcGrid *g, int written);
+
+/* Encode one mouse record as the bytes the modes in `g` currently ask for. Returns the number of UTF-16
+ * units written, or 0 when this event is due no report (no level is set, the level does not report this kind
+ * of event, the position repeats the last motion, or `?1016` was asked and the observer gave no pixels);
+ * negative when `out` is too small -- and a refusal for room must not be double-counted, so the record the
+ * function holds (`lastBtn`, the motion dedup) is advanced only on a call that produced a verdict. All three
+ * references put this encoder in the component that owns the mode state and hand it the event as data:
+ * ghostty `src/input/mouse_encode.zig:81`, wezterm `term/src/terminalstate/mouse.rs`, MSFT
+ * `src/terminal/input/mouseInput.cpp:330-380` called from `inputBuffer.cpp:607`.
+ * Who calls it: whoever reads the console's input records. There is one reader of CONIN$ per session and it is
+ * not this library (#83), and the one route that would make the library its own observer -- turning on
+ * `ENABLE_VIRTUAL_TERMINAL_INPUT` so conhost encodes for you -- rewrites the *keyboard* stream on the same
+ * switch (`inputBuffer.cpp:706-715`, where `terminalInput.cpp:417 _formatFallback` emits text for a plain
+ * printable key and `inputBuffer.cpp:814` synthesizes it with `wVirtualKeyCode` gone). That is the only kind of
+ * reason this project accepts for not doing something: a named collision with numbered features -- #83's paste
+ * markers, #39/#45's snap and the owner's list of behaviours that must keep working -- with its cost stated. */
+int rc_mouse_report(RcGrid *g, const struct RcMouseRec *m, uint16_t *out, int cap);
+
+/* Encode the focus in/out report `?1004` asks for: `\E[I` when `focused`, `\E[O` when not, and nothing at all
+ * while the bit is clear. The bytes are the same in all three references (`terminalInput.cpp:447-448`,
+ * ghostty `src/terminal/focus.zig:22-27`, wezterm `terminalstate/mod.rs:907-909`), and MSFT's gate is the same
+ * one: emit only while the mode is set (`terminalInput.cpp:424`). */
+int rc_focus_report(RcGrid *g, int focused, uint16_t *out, int cap);
+
+/* The five counters of #108 in one call, in this order: mouse reports encoded, focus reports encoded,
+ * records that arrived while no level was set, reports written into CONIN$, reports the write refused. Shared
+ * because the two Java readers of it -- `stats()`' census and `inputMode()`' live readback -- must not be able
+ * to disagree about the order (#95's inputMode grew past four slots in exactly that way once). */
+void rc_report_counts(const RcGrid *g, unsigned long *out);
 
 #ifdef __cplusplus
 }
