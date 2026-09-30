@@ -462,6 +462,20 @@ typedef struct RcGrid
      gDisplayOpt -- and this model keeps it region-aware anyway, because an LF that obeys the region and an
      IND that does not would give one screen two answers to the same request. */
   uint8_t regSet;
+  /* Set by the seam for a pseudo-console (RenderJni.cpp::build_model), read by the scroll paths: the
+     gutter-full trigger that batches payments on a classic console must fire on EVERY scroll here,
+     because under a pseudo-console the host's scrollback is the only history and a line that rotates
+     into the model's gutter before a payment never reaches it (measured 2026-09-29: the first 22 rows
+     of a help table vanished from the replayed history). With the trigger at one, every rotation pays
+     its line feed immediately and the arriving row is painted by the ordinary damage travel. */
+  uint8_t streamScrolls;
+  /* Bumped by every CSI r that actually changes the region (set, reset, or the full-viewport
+     normalisation -- not the inverted-pair refusal). The pseudo-console seam reads it after each
+     chunk and forwards the final region to the host terminal, which pins whatever rows live below
+     the bottom margin: conhost itself honours a DECSTBM it parsed while the bytes pass through
+     (measured 2026-09-29, cache/ppty/probe3.py: the bar rows never moved and the pushes were the
+     region's top rows). */
+  uint32_t regionSerial;
   int regTop, regBot;
 
   /* DECLRMM + DECSLRM (#80): the column twin of the pair above, and the same two facts. `marginSet` says

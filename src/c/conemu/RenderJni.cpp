@@ -234,7 +234,7 @@
  * was rebuilt twice without bumping it, so the deployed lib/render.dll and the staged #44 build carried the
  * same string while being different bytes. A version string identifies intent, not content -- ship census
  * is md5 plus size, and the stamp is bumped as part of the edit, never as a closing decoration. */
-#define RENDER_BUILD "render-2026-09-28-54"
+#define RENDER_BUILD "render-2026-09-29-66"
 #define READ_MAX_CELLS 4096        /* the gate-only cell reader, same bound as Probe.cpp */
 
 /* flush() results. Zero or positive means the chunk is consumed -- the caller must not replay it;
@@ -406,6 +406,22 @@ typedef struct RcHandle
      ever reads back. */
   int adopt, declines;
   char stopped[128];
+  /* setPainting(): 1 (the default) is the whole product -- parse and paint. 0 is the pseudo-console half:
+     the handle still parses, answers and counts, and paints nothing, because the terminal above owns the
+     only screen and the only scrollback. Owned by the caller, not the library: ConEmuWriter decides it from
+     pseudoConsole() at construction, so a library-only gate run would silently stop painting and the whole
+     live gate would measure nothing. Switching it off hands the host's escape parser back (claim_output),
+     because from then on the caller writes the same bytes raw and they must be parsed exactly once, by the
+     terminal. */
+  int painting;
+  /* Set once at open() from the console's window class (the same fact isPseudoConsole exports): under a
+     pseudo-console the buffer is the viewport, the host terminal owns the only scrollback, and the scroll
+     API destroys content in the serialized stream -- so the executor pays scroll debts with real line
+     feeds and never slides. Measured bases: cache/ppty/{probe.py,probe2.py}, 2026-09-29. */
+  int ptyMode;
+  /* The region the host terminal was last told about (g->regionSerial at the time), so a change is
+     forwarded once per chunk rather than once per byte. Only read while ptyMode. */
+  uint32_t regionFwd;
   /* The rows this handle's model last claimed, kept here rather than only in the grid because a resize
      rebuilds the grid and must not lose the claim with it: rc_anchor_adopt carries it across. `prevWinB` is
      the window's bottom as the last plan left it, which is the half the grid has no room for -- and the half
@@ -467,6 +483,29 @@ typedef struct RcHandle
   int lastReason;
   char lastError[128];
 } RcHandle;
+
+/* The window-class fact isPseudoConsole exports, as a function this file's own open() can ask: conhost
+   itself says whether somebody above is re-serializing the buffer (getset.cpp:1262-1275 -- the console's
+   window is PseudoConsoleWindow iff VtIo mode is on). The comparison is done by hand rather than with
+   _wcsicmp/lstrcmpiW, because which wide comparator a given CRT exposes is a dialect question; a console
+   with no window answers false, the library's own safe side. */
+static int console_window_is_pty(void)
+{
+  static const wchar_t PSEUDO[] = L"PseudoConsoleWindow";
+  HWND w = GetConsoleWindow();
+  if (!w) return 0;
+  wchar_t name[32];
+  const int n = GetClassNameW(w, name, (int)(sizeof name / sizeof name[0]));
+  if (n != (int)(sizeof PSEUDO / sizeof PSEUDO[0]) - 1) return 0;
+  for (int i = 0; i < n; i++)
+  {
+    wchar_t a = name[i], b = PSEUDO[i];
+    if (a >= L'A' && a <= L'Z') a = (wchar_t)(a - L'A' + L'a');
+    if (b >= L'A' && b <= L'Z') b = (wchar_t)(b - L'A' + L'a');
+    if (a != b) return 0;
+  }
+  return 1;
+}
 
 static RcHandle g_h[4];
 static int g_openStatus;           /* the last open() failure, for the caller's diagnostics */
@@ -1147,6 +1186,27 @@ static int paint_flush(RcHandle *h)
   h->trDeclined = (p.reason == RC_PLAN_NOGEOM) ? 1 : 0;
   h->trMoveFail = 0;
 
+  /* setPainting(0) -- the no-paint half of the seam. The handle still owns the parse (modes, replies, the
+     census, the width oracle) and owns no pixel: under a pseudo-console the terminal above is the only thing
+     with both a screen and a scrollback, and a cell written into the conhost buffer arrives there as
+     viewport addressing that can never grow the host's history (measured 2026-09-29: a full two-help session
+     with the painter on pushed ZERO rows into the replayed terminal's scrollback -- every screenful was
+     overwritten in the viewport, which is the owner's original symptom). So this flush delivers what a
+     flush still owes the *reader* -- the replies -- and pays nothing to the console: the scroll debt and the
+     damage are dropped rather than executed, because the caller is about to put these same bytes in front
+     of the console raw (render() answers RENDER_RAW), and those bytes carry the line feeds that feed the
+     host's scrollback. The host's own parser has been handed back by setPainting itself (claim_output 0),
+     so the raw escapes are parsed exactly once, by the terminal that owns the pixels.
+     The DECSET-2026 hold is bypassed rather than honoured: a hold exists to make a *frame* atomic, and with
+     no painter there are no frames -- the bytes are already in the terminal's hands as they arrived. */
+  if (!h->painting)
+  {
+    flush_reports(h, &v, &p);
+    rc_paint_done(g);
+    h->syncHolding = 0;
+    return FLUSH_NOTHING;
+  }
+
   if (p.reason == RC_PLAN_NOGEOM) DECLINE(FLUSH_NOGEOM);
 
   /* DECSET 2026, and the whole of what the mode does from here: the plan this chunk produced is thrown away
@@ -1218,7 +1278,7 @@ static int paint_flush(RcHandle *h)
      `movedAsPlanned` is why the two are watched at all: the model's anchor may only move with rows the
      console really moved, or every later rectangle would be addressed to a row nothing owns. */
   int movedAsPlanned = 1;
-  if (p.slideTo >= 0)
+  if (p.slideTo >= 0 && !h->ptyMode)   /* a pseudo-console's buffer is the viewport: nothing to slide */
   {
     LONG e = park_cursor(h->con, v.winL, p.slideTo);
     if (e) { snprintf(h->lastError, sizeof h->lastError, "slide=%ld", e); h->nApiErrors++; h->trMoveFail = 1; movedAsPlanned = 0; }
@@ -1226,16 +1286,67 @@ static int paint_flush(RcHandle *h)
   }
   if (p.bufScroll > 0)
   {
-    LONG e = scroll_region(h->con, &v, &p, g->rows, p.bufScroll, p.scrollAttr);
-    if (e)
+    /* Under a pseudo-console the scroll API is not a scroll: measured 2026-09-29 (cache/ppty/probe.py,
+       phase B), ScrollConsoleScreenBufferW is re-serialized by conhost's VtIo as a full-viewport blanking
+       repaint -- the content the model believes it moved is LOST from the byte stream, the host's screen
+       goes blank and its scrollback gains nothing. The only primitive that grows the host's history is the
+       one every text program already uses: a real line feed at the bottom row, which conhost processes
+       (scrolling its own buffer, keeping the model's mapping true) and forwards, so the host scrolls and
+       takes its top row -- the row this model painted and rotated into the gutter -- into the scrollback it
+       owns. Measured in the same probe's clean shape (probe2.py): the pushed rows were exactly the painted
+       PX-A-R00..R08, the screen shifted without duplication. The payment happens BEFORE this flush's cell
+       runs, which is also the model's own order: the rows the newlines push are the pre-rotation top, and
+       the cells this flush paints are the post-rotation ones.
+       The console's cursor must sit on its bottom row first -- the text pipeline scrolls from wherever the
+       cursor is, and a newline one row up merely moves it. The rows this shifts (the whole viewport,
+       including any band a DECSTBM region wanted held static) are repainted by this same flush's dirty
+       runs, which the rotation already marked. */
+    if (h->ptyMode)
     {
-      snprintf(h->lastError, sizeof h->lastError, "scroll=%ld", e);
-      h->nApiErrors++;
-      h->trMoveFail = 1;
-      movedAsPlanned = 0;
-      if (!landed) DECLINE(FLUSH_API);
+      int left = p.bufScroll;
+      int paid = 0;
+      while (left > 0)
+      {
+        const int n = left > 32 ? 32 : left;
+        wchar_t crlf[64];
+        for (int i = 0; i < n; i++) { crlf[2 * i] = L'\r'; crlf[2 * i + 1] = L'\n'; }
+        COORD bot;
+        bot.X = (SHORT)v.winL;
+        /* With a region forwarded, the newline must leave the region's bottom row -- the shape
+           probe3 measured -- or it would scroll rows the bar owns. Without one, the buffer's last row. */
+        {
+          const int gut = g->rows - g->winRows;
+          bot.Y = (SHORT)(g->regSet ? (g->regBot - gut) : (v.bufH - 1));
+        }
+        DWORD wr = 0;
+        if (!SetConsoleCursorPosition(h->con, bot) ||
+            !WriteConsoleW(h->con, crlf, (DWORD)(2 * n), &wr, NULL) || wr != (DWORD)(2 * n))
+        {
+          snprintf(h->lastError, sizeof h->lastError, "lf-scroll: %lu", (unsigned long)GetLastError());
+          h->nApiErrors++;
+          h->trMoveFail = 1;
+          movedAsPlanned = 0;
+          break;
+        }
+        paid += n;
+        left -= n;
+      }
+      if (paid > 0) { landed = 1; h->landedChunk = 1; }
+      else if (!landed) DECLINE(FLUSH_API);
     }
-    else { landed = 1; h->landedChunk = 1; }
+    else
+    {
+      LONG e = scroll_region(h->con, &v, &p, g->rows, p.bufScroll, p.scrollAttr);
+      if (e)
+      {
+        snprintf(h->lastError, sizeof h->lastError, "scroll=%ld", e);
+        h->nApiErrors++;
+        h->trMoveFail = 1;
+        movedAsPlanned = 0;
+        if (!landed) DECLINE(FLUSH_API);
+      }
+      else { landed = 1; h->landedChunk = 1; }
+    }
   }
   /* The model owns these buffer rows from here on -- including when nothing moved, which is the case that
      matters: claiming the anchor at the first paint is what stops a later flush from re-deriving it from a
@@ -1588,6 +1699,9 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     *status = OPEN_BIG;
     return 0;
   }
+  /* The console's fact, not the application's state: a rebuild keeps the streaming trigger where the
+     handle's console put it. */
+  fresh->streamScrolls = (uint8_t)(h->ptyMode ? 1 : 0);
   /* Colours and the default attribute are application-set state, and a rebuild is the application's
      resize, not its reset: dropping them here would hand a session back the colours it asked to leave
      behind. `defAttr` is frozen against the *console* (I12), never against an OSC 10/11 that moved it. */
@@ -1818,6 +1932,41 @@ static const char *decline_name(int r)
   return "the painter kept declining";
 }
 
+/* Tell the host terminal which rows scroll. The model consumed the DECSTBM bytes -- it is the session's
+ * only parser -- but under a pseudo-console the *terminal* is the thing that owns the bottom rows a status
+ * bar lives on, and the line feeds that pay our scroll debts are processed by conhost's text pipeline,
+ * which honours a region it parsed. So the region is forwarded: a momentary hand-back of the borrowed
+ * parser (claim_output 0), one raw write of the CSI r form -- conhost parses it AND passes it through,
+ * measured 2026-09-29 in cache/ppty/probe3.py: the bar rows below the margin never moved while five real
+ * line feeds at the region's bottom pushed the region's top rows into the scrollback -- and the borrow
+ * taken again. Called after every feed, and quiet unless the serial moved: a rebuilt grid starts a new
+ * serial, so a resize that loses the region also tells the host to stop pinning rows it no longer means.
+ */
+static void sync_region_host(RcHandle *h)
+{
+  if (!h->ptyMode || !h->g) return;
+  if (h->g->regionSerial == h->regionFwd) return;
+  h->regionFwd = h->g->regionSerial;
+  wchar_t b[32];
+  int m;
+  const int gut = h->g->rows - h->g->winRows;
+  if (h->g->regSet)
+    m = swprintf(b, (int)(sizeof b / sizeof b[0]), L"\x1b[%d;%dr",
+                 h->g->regTop - gut + 1, h->g->regBot - gut + 1);
+  else
+    m = swprintf(b, (int)(sizeof b / sizeof b[0]), L"\x1b[r");
+  if (m <= 0) return;
+  const int wasClaimed = h->outClaimed;
+  if (wasClaimed) claim_output(h, 0);
+  DWORD wr = 0;
+  if (!WriteConsoleW(h->con, b, (DWORD)m, &wr, NULL) || wr != (DWORD)m)
+  {
+    snprintf(h->lastError, sizeof h->lastError, "region-fwd: %lu", (unsigned long)GetLastError());
+    h->nApiErrors++;
+  }
+  if (wasClaimed) claim_output(h, 1);
+}
+
 /**
  * Parse and paint one chunk, owning every decision that used to live in the Java binding: adopt the console
  * on the first chunk, re-adopt it once anything has moved it behind our back, and stop
@@ -1872,6 +2021,20 @@ extern "C" JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_render
      It still has to be cleared, or a chunk's worth would ride along into the next one and the capture
      would overflow, which would make the parser's own nSgrDrop counter lie. */
   rc_sgr_clear(h->g);
+  sync_region_host(h);            /* before any payment: the terminal pins what the region says, not what we mean */
+
+  /* No-paint handles stop here: the flush below this comment is where a *screen* would be updated, and this
+     one owns none. paint_flush delivers the replies and drops the scroll debt/damage (the caller's raw write
+     of these same bytes is what feeds the terminal's scrollback), and RENDER_RAW is the honest answer -- it
+     says "put these bytes on the console yourself", which under a pseudo-console means "in front of the
+     terminal that will parse them", not "I failed". Declines are not counted because nothing was declined:
+     this is the configured mode, not a refusal ladder step. */
+  if (!h->painting)
+  {
+    paint_flush(h);
+    h->declines = 0;
+    return RENDER_RAW;
+  }
 
   const int r = paint_and_check(h);
   if (r >= 0)
@@ -1908,6 +2071,7 @@ extern "C" JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_render
         rc_feed(h->g, again + off, len);
         sync_mouse(h, h->g->mouseModes != 0);           /* the same pair the first pass applies */
         rc_sgr_clear(h->g);
+        sync_region_host(h);            /* the rebuilt grid lost the region: this re-tells the host, or unpins it */
         env->ReleasePrimitiveArrayCritical(text, (jchar *)again, 0);
         if (paint_and_check(h) >= 0)
         {
@@ -2036,6 +2200,8 @@ JNIEXPORT jlong JNICALL Java_com_hyee_ansirender_NativeRenderer_open(JNIEnv *env
   slot->trSeq = 0;                              /* a new session has no last plan to report */
   slot->adopt = RC_ALIGN;                         /* a new session: the window is all it knows */
   slot->declines = 0;
+  slot->painting = 1;                             /* the default is the whole product: parse and paint */
+  slot->ptyMode = console_window_is_pty();        /* the executor's fact, read once, from conhost itself */
   slot->stopped[0] = 0;
   slot->cells = NULL;
   slot->ncells = 0;
@@ -2057,6 +2223,7 @@ JNIEXPORT jlong JNICALL Java_com_hyee_ansirender_NativeRenderer_open(JNIEnv *env
     return 0;
   }
   g_openStatus = OPEN_OK;
+  slot->regionFwd = slot->g->regionSerial;   /* a fresh grid's region is already the host's: nothing to tell */
   /* #88: reach for the shape export by name, once per handle. GetModuleHandleW on a module the process
      already has loaded cannot fail and loads nothing, and GetProcAddress returning NULL is the ordinary
      Win7 answer rather than an error -- so this branch is the whole floor rule: no import directory entry
@@ -2271,6 +2438,10 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_snap(JNIEnv *env,
   (void)env; (void)cls;
   RcHandle *h = handle(ph);
   if (!h) return RC_SNAP_NOGEOM;
+  /* A no-paint handle does not own the screen, and neither does one under a pseudo-console: there the
+     buffer is the viewport, the host terminal owns the scrollback and snaps for its own output, and
+     parking a window that cannot move would only fight a console this model does not address. */
+  if (!h->painting || h->ptyMode) return RC_SNAP_NOCHANGE;
   RcView v;
   CONSOLE_SCREEN_BUFFER_INFO csbi;
   if (h->con == INVALID_HANDLE_VALUE || !view_of(h->con, &v, &csbi))
@@ -2321,20 +2492,7 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_snap(JNIEnv *env,
 JNIEXPORT jboolean JNICALL Java_com_hyee_ansirender_NativeRenderer_isPseudoConsole(JNIEnv *env, jclass cls)
 {
   (void)env; (void)cls;
-  static const wchar_t PSEUDO[] = L"PseudoConsoleWindow";
-  HWND w = GetConsoleWindow();
-  if (!w) return JNI_FALSE;
-  wchar_t name[32];
-  const int n = GetClassNameW(w, name, (int)(sizeof name / sizeof name[0]));
-  if (n != (int)(sizeof PSEUDO / sizeof PSEUDO[0]) - 1) return JNI_FALSE;
-  for (int i = 0; i < n; i++)
-  {
-    wchar_t a = name[i], b = PSEUDO[i];
-    if (a >= L'A' && a <= L'Z') a = (wchar_t)(a - L'A' + L'a');
-    if (b >= L'A' && b <= L'Z') b = (wchar_t)(b - L'A' + L'a');
-    if (a != b) return JNI_FALSE;
-  }
-  return JNI_TRUE;
+  return console_window_is_pty() ? JNI_TRUE : JNI_FALSE;
 }
 
 /** [0] flushes [1] rectangle writes [2] declines [3] api errors [4] aligns [5] cells painted
@@ -2509,6 +2667,28 @@ JNIEXPORT void JNICALL Java_com_hyee_ansirender_NativeRenderer_close(JNIEnv *env
   (void)env; (void)cls;
   RcHandle *h = slot_of(ph);
   if (h) release_all(h);
+}
+
+/**
+ * setPainting(h, on): the seam a pseudo-console session reaches the renderer through. On, the handle is
+ * the whole product -- parse and paint. Off, it still parses, answers queries and keeps the census, and
+ * paints nothing: the terminal above owns the only screen and the only scrollback, and render() then
+ * answers RENDER_RAW so the caller writes the same bytes in front of the console, whose escape parser this
+ * call hands back (the #104 borrow returned) so the bytes are parsed exactly once, by that terminal.
+ *
+ * The policy is the caller's, never the library's own: a library-side decision would make every gate run
+ * silently measure nothing, which is the exact failure mode the live gate exists to prevent. Idempotent,
+ * and switching back on re-borrows the parser for whoever wants to paint again.
+ */
+JNIEXPORT void JNICALL Java_com_hyee_ansirender_NativeRenderer_setPainting(JNIEnv *env, jclass cls, jlong ph, jboolean on)
+{
+  (void)env; (void)cls;
+  RcHandle *h = handle(ph);
+  if (!h) return;
+  const int want = on ? 1 : 0;
+  if (want == h->painting) return;
+  h->painting = want;
+  claim_output(h, want);
 }
 
 /* ---- gate-only scaffolding: the same console preparation and cell reader Probe.cpp uses, so

@@ -51,11 +51,48 @@
  * cursor shapes at all — block and a short underline — and SetConsoleCursorShape, which would give the
  * bar, is Windows 10 18297. Parameter 0 is ConEmu's "default" and lands on the thin side there too, which
  * is why this maps 0 like 3..6; the "nobody asked" case is -1 and has no height at all, so a session that
- * never sent `CSI q` leaves the user's own cursor height alone. */
+ * never sent `CSI q` leaves the user's own cursor height alone.
+ * #88 changed only the last clause of that story: the bar is now reachable at runtime, through the probe
+ * below, on the consoles that have it. What did NOT change is this function -- 0..4 still fold to a height,
+ * because a height is the one part of the cursor this build can read back (`GetConsoleCursorInfo` reports
+ * `dwSize`) and a shape cannot be. The bar is therefore the only parameter that goes to the other API, and
+ * it goes there *instead of* a height, never as well. */
 static int cursor_height(int style)
 {
   if (style < 0) return 0;
   return (style == 1 || style == 2) ? 100 : 15;
+}
+
+/* #88: DECSCUSR 5 and 6 ask for a vertical bar, which `CONSOLE_CURSOR_INFO` has no way to say. When
+ * `SetConsoleCursorShape` was resolved at open() this returns the shape word to hand it; otherwise -1, and
+ * the caller folds the parameter to a height exactly as it did before #88 existed.
+ * The word is the shape alone, with no modifier bits: 0 in that field is `CONSOLE_CURSOR_STYLE_NO_CHANGE`,
+ * and nothing in this file, this build, or ConEmu upstream has ever owned the cursor's blink or alpha, so
+ * expressing 5 and 6 differently on blink would be inventing a duty in order to discharge it.
+ * Both numbers are Windows SDK `wincon.h`'s `CONSOLE_CURSOR_STYLE` -- BLOCK 1, VERTICAL_BAR 2. ⚠ Read the
+ * row in DESIGN.md §10 (#88) before trusting them: this box has no SDK, WSL's mingw-w64 and all three
+ * reference trees have no declaration of this API, and conhost exposes no getter, so the only witness these
+ * constants have is that kernel32 accepts them. */
+int rc_cursor_style_for(int style, int haveShapeApi)
+{
+  if (!haveShapeApi) return -1;            /* the pre-#88 answer, for every parameter */
+  if (style == 5 || style == 6) return RC_CURSOR_STYLE_VERTICAL_BAR;
+  return -1;                               /* 0..4 stay a height; -1 means nobody asked */
+}
+
+/* Whether the seam found `SetConsoleCursorShape`. 0 is the default and 0 is what every leg in both gates
+ * ran before #88 ran against, which is the point: the control arm is not one new assertion, it is the whole
+ * existing gate continuing to see the old answer. Set once per handle at open() from the resolved pointer;
+ * process-wide because kernel32 is one image and every handle in this process resolves the same export --
+ * the *pointer* itself is per-handle (`RenderJni.cpp`'s slot), so what a handle calls is never this flag's
+ * guess. Returns the previous value so a leg that flips it can put it back. */
+static int rcHaveShapeApi;
+
+int rc_cursor_shape_api(int available)
+{
+  const int was = rcHaveShapeApi;
+  rcHaveShapeApi = available ? 1 : 0;
+  return was;
 }
 
 void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p)
@@ -66,7 +103,13 @@ void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p)
   p->attr = g->attr;
   p->cursorVisible = g->cursorVisible;
   p->shapeHeight = cursor_height(g->cursorShape);
-  p->setShape = (g->cursorShape >= 0 && p->shapeHeight > 0 && v && v->curHeight > 0 &&
+  /* #88: when the shape API is reachable, 5/6 is said with it and *not* with a height -- a 15-cell
+     underline is what the old fold produced, and writing both would leave two owners for one cursor. With
+     rcHaveShapeApi at its default the call below returns -1 for every parameter, so both new fields are 0
+     and this is the same plan #87 shipped. */
+  p->shapeStyle = rc_cursor_style_for(g->cursorShape, rcHaveShapeApi);
+  p->setStyle = (g->cursorShape >= 0 && p->shapeStyle >= 0) ? 1 : 0;
+  p->setShape = (g->cursorShape >= 0 && p->shapeHeight > 0 && !p->setStyle && v && v->curHeight > 0 &&
                  v->curHeight != p->shapeHeight) ? 1 : 0;
   p->curX = g->cx;
   p->curY = g->cy;

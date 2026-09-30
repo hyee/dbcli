@@ -20,7 +20,7 @@
 | S1 | 退格/左移必须落在**字形边界**上，上游有现成原语 | `Render.cpp:580` 的 `g->cx--` | `Row.cpp:375`+`:1215`、`_stream.cpp:293` | 约 6 行 + 3 条门禁 | **做**（真缺陷） |
 | S2 | 把"到右缘"做成**显式 pending wrap**，并被任何光标移动清除 | I7/I8、`geo_wrap` | `adaptDispatch.cpp:125/168/191`、`cursor.cpp:98-100`、`14993db1` | 中：改 4 处 + 4 条门禁 | **做**，但先按 §2.3 定平价方向 |
 | S3 | 吞掉不认识的序列 ⇒ 立刻把模型标成"游标可疑"，别等下一帧几何对不上 | I19 `unsupported()` | `outputStream.cpp:27-39`（含 PowerShell 那段吐槽） | 1 个标志位 + resync 复用 | **做**，并把 `view_of` 的省法建立在它上面 |
-| S4 | 行级**校验和**当 A/B 判据（含颜色），替代逐行文本 diff | §6 证人教义、§10 未收口 | `adaptDispatch.cpp:1281-1300`（DECRQCRA）、`Terminal.cpp:270` 默认关 | harness 侧，无产品码 | **做**：块画"一个 chunk"那条可能因此可测 |
+| S4 | 行级**校验和**当 A/B 判据（含颜色），替代逐行文本 diff | DESIGN.md §6 证人教义、`ANSI_TODO.md` §3 未收口 | `adaptDispatch.cpp:1281-1300`（DECRQCRA）、`Terminal.cpp:270` 默认关 | harness 侧，无产品码 | **做**：块画"一个 chunk"那条可能因此可测 |
 | S5 | 每行一个 `wrapped` 位（软换行标记），复制/分页/导出才分得清硬换行 | 新能力（§4.1、ConEmu #317） | `Row.cpp:177`、`textBuffer.cpp:2401`、`_stream.cpp:176/323` | 256 B 数组 + 2 处赋值 | **做**（便宜，且是别的东西的前置） |
 | S6 | 控制字符只在**出口**消毒，栅格里保留原码点 | §3 I13/I14 | `VtIo.cpp:399-424`、`_stream.cpp:237` | 我们栅格本来就存原码点 | **不改代码，改文档**：把这条写进 I14 |
 | S7 | 未知 SGR 子参数"跳过而不是猜"，并把 16/32 的上限写明理由 | I19、`Render.h:38` | `stateMachine.cpp:505-533`、`stateMachine.hpp:27-38` | 无 | **已等价**，记档别再审（详见 §5.3） |
@@ -536,3 +536,66 @@ grep -n "DelayEOLWrap" -r src | head
 上游匿名 API 可用（`export CURL_CA_BUNDLE=/mingw64/ssl/certs/ca-bundle.crt`，限额 60/时）；
 `gh` 未安装。仓库 130 MB（含 `.git` 与 blob）。**它是只读参照，不是依赖**：不要把它链进 `build.sh`，
 也不要往 `src/c/conemu` 里 include 它的头。
+
+## 15 三神谕对照：重叠字与 resize（2026-09-27 三路并行审查，行号已逐条实地核对）
+
+用户把**中文等文字的重叠字**与 **resize** 定为最高优先级。本节记三家的处置与我们的取舍。
+我方一次搜错目录（`set_cell_impl` 在 `wezterm-surface/` 不在 `wezterm-cell/`）——**代理是对的，我第一遍 grep 无效**，
+这是"引用参照行号前必须自己打开文件核实"的现行案例。
+
+### 15.1 配对义务放在哪一层（三家同向，我们反向）
+
+| 树 | 机制 | 出处 |
+|---|---|---|
+| msfterm | dirty 区间进入/退出各**扩一次**：`_adjustBackward(colBeg)` / `_adjustForward(colEnd)`；尾格不是独立存储，是 `_charOffsets` 的 bit15 `CharOffsetsTrailer` | `Row.hpp:88/241/257/259`、`Row.cpp:552-565/863-906` |
+| wezterm | 唯一写入口 `set_cell_impl` 落笔**前**调 `invalidate_grapheme_at_or_before(idx)`，把"新格会压到的整对"先抹掉 | `wezterm-surface/src/line/line.rs:809/857/888`（`erase_cell` 等同源：`:934/950/965`） |
+| ghostty | 公共函数 `splitCellBoundary(x)`——切开 `[a,b)` 之前调 `a` 与 `b` | `Screen.zig:1892`，调用点仅 5 处：`Terminal.zig:3411/3412/**3413**`（DCH）、`:3463/3464`（ECH） |
+
+⇒ **判定：三家都把配对义务沉进"写/擦的原语"，序列层只报区间。** 我们的 `heal_pairs`（`Render.cpp:393`）是事后扫全栅，
+且 `put_cell` 那一处（`:781`）在 host 突变下**全绿**（`cache/audit90/red-arms.txt` M3）——同一个病我们也有，且更早暴露。
+两个可立刻补的缺口：**① nerf 前置**（落在列 `g` 的写，若 `g-1` 是宽字头就先清 `g-1..g+1`；wezterm 注释说"回看一格就够"，
+因为图簇宽 ≤2，于是整行扫描降到 O(1)）；**② 补右边界那一刀**——ghostty 第 3 次调用是 `scrolling_region.right + 1`
+（`Terminal.zig:3413`），即"被 `col_right(g)`/DECSLRM 切断的那一对"，我们现在没有这一刀，是重叠字的一条真来源。
+
+### 15.2 宽字形放不进行尾最后一格（我们 fits 分支翻车处）
+
+msfterm：console 路径写**空格** + `SetDoubleBytePadded(true)` + **不推进迭代器**（`Row.cpp:473-487`）；
+ANSI 路径 `_WriteToBuffer` 把 `lineWidth` 收成 `min(GetLineWidth(row), rightMargin + 1)`（**仅当游标行落在上下边距内**，
+`adaptDispatch.cpp:111-115`），返回 `columnEnd = colLimit` ⇒ 游标**停在最后一列**并 `DelayEOLWrap()`（`:168-186`），
+**下一个可打印字符才重试该字形**；死锁保险 `columnBegin == 0 || !wrapAtEOL` 时丢弃字形（`:176-180`）；
+padding 不计列：`GetReadableColumnCount() = _columnCount - _doubleBytePadded`（`Row.cpp:211`）。
+wezterm 是**照写并允许越界一格**、光标停在 leader（`performer.rs:203-231`、`terminalstate/mod.rs:1129-1134`）
+——**别抄**：它成立的前提是自己持有 `Vec`；我们写宿主 `CHAR_INFO`，行尾外那一格写不下也不该写。
+
+### 15.3 resize 保留 / 丢弃（一致处远多于分歧）
+
+| 状态 | msfterm | ghostty | wezterm | 我们（`-37`） |
+|---|---|---|---|---|
+| 是否 reflow | 仅 `GetWrapText() && !_IsAltBuffer()`（`screenInfo.cpp:1349-1378`）；alt 不 reflow | 默认 reflow，**alt `reflow=false`**（`Terminal.zig:4097/4112`） | primary rewrap（`screen.rs:101-191`），alt 纯裁剪（`:234-247`） | **不能 reflow** |
+| DECSTBM | 携带但**惰性 clamp**：`_GetVerticalMargins:276-295` top 越界则整对清零 | **丢**，且注释把"scroll region is **always** reset"写成契约（`Terminal.zig:4018-4020`） | **丢**：`top_and_bottom_margins = 0..rows`（`terminalstate/mod.rs:1003`） | **丢** ⇒ 与三家同侧（结论①） |
+| 左右边距 | `_GetHorizontalMargins:304-318` 惰性夹；DECCOLM/`?40` 整对清零（`adaptDispatch.cpp:1725-1729`、`:1833-1840`） | **丢**（4189-4194） | **丢**（`:1004`），模式位本身留 | 重钳（`RenderJni.cpp` keep + re-clamp） |
+| DECOM | 只有 RIS/DECCOLM 复位，resize 不动 | **留** | **留**（边距重置后退化为全屏原点） | 携带（#80） |
+| DECSC/DECRC | 存 **page 相对**坐标 + `IsOriginModeRelative`（`CursorSaveState:458-483`） | 留**且按新几何改写坐标**（`Screen.zig:2037-2046/2153-2175`） | 留**且重映射** + 强置 `wrap_next=false`（`mod.rs:1016-1032`） | 携带位；坐标空间待照此清单核 |
+| tab stops | 懒生长 `_tabStopColumns`，变窄不清 | **cols 一变整表重建为默认 8**（`Terminal.zig:4079-4086`） | `tabs.resize(cols)` **只增不减**（`TabStop::resize:108-115`） | 携带 + `rc_tabs_widen` |
+| alt screen | 切屏前存状态；alt 期间 conhost **推迟** resize（`ProcessResizeWindow:758-765` + `_handleDeferredResize:1845`） | 不 reflow；失败换空白 alt，注释自认 "lose the prior data"（`:4116-4163`） | 两屏各自 resize | `?1049` 快照 |
+| charset / 换档 | — | **留**，alt 重建显式搬 `charset`（`:4157`） | **留**（RIS 才清） | 只有 G0（#85 待做） |
+| 视口 / 锚点 | 只有从左上边拖且 backlog 够才动 origin（`_InternalSetViewportSize:984-1052`），reflow 后按"游标在视口内的相对行高"平移 | 锚点是**内容 pin 不是行号** | **没有"保住用户在看的那行"的逻辑**（resize 全程不碰 `state.viewport`） | `rc_anchor_adopt` straddle |
+
+⇒ **两条结论**：**①** `readopt` 不携带 DECSTBM 现在有三家背书（ghostty 是写进注释的契约），不再是"我方做不到"的辩护；
+但 msfterm 的"带得住"其实是**惰性 clamp**、不是携带——将来若要改成携带，必须连一致的惰性 clamp 一起补，别只搬一半。
+**②** `rc_anchor_adopt` **没有神谕**（wezterm 干脆没这层；conhost 保的是相对行高，`ResizeTraditional:1050-1053` 反而牺牲 scrollback），
+它只能由我们自己的窗口腿与栅格证人守着——任务 #29 的六族映射里，这是 resize 一族唯一无上游对照的一项。
+
+### 15.4 三家自己承认的坑（对我们的旁证）
+
+- **wezterm 专门有 ConPTY 怀疑开关**：`resize_preserves_scrollback = is_conpty`（`screen.rs:288`），注释直说 Windows PTY 与
+  "可变 scrollback"打架（"frequently moving the cursor up too high and erasing portions of the screen"），另有
+  `enable_conpty_quirks`（`terminalstate/mod.rs:384/601`）抑制假 `wrapped` 标记（`performer.rs:171-192`）。
+  ⇒ 与我们同侧：**宁可补空行、保持历史区不可变**，也不要在 resize 里重排。
+- **wezterm 的边距受限滚动是它自己的破口**：`screen.rs:565-629` 用无校验 `cells_mut()` 按列裸拷贝，
+  `line.rs:904-926 insert_cell` 不 nerf 还先 `cells.remove(right_margin-1)` ⇒ ICH/带边距滚动可切对。
+  补齐 15.1 第②条后我们**比它强**，不要反向"对齐"它。
+- **ghostty 在 1 列时销毁宽字形**（`PageList.zig:2183-2196`），并靠 `trimTrailingBlankRows` + 推进 scrollback 保尾部
+  （`:2865-2881`）⇒ 中文场景**别抄**：我们没有可推的真 scrollback，只能在"平移"与"清空"之间选。
+- **本克隆 `2048`/`InBandResize` 0 命中**（本轮实测）⇒ #82 的拼写在 msfterm 侧**无本地证人**，只有
+  ghostty `modes.zig:381 in_band_size_reports = 2048` 为真。记在这里，免得后人以为引错。

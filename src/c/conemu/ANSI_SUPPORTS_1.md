@@ -64,6 +64,7 @@ are **not** reasons on this page.
 | `ESC H` | HTS | claims the cursor's column as a tab stop (§2.11) |
 | `ESC N` / `ESC O` | SS2 / SS3 | the introducer is consumed and the next byte prints as ordinary text — nothing is eaten, no column is lost |
 | `ESC g`, `ESC =`, `ESC >` | visual bell, keypad | counted, nothing happens: this library owns no window to flash and no input encoding to switch |
+| `ESC # 8` | DECALN, the screen-alignment test | the viewport is filled with `E` at the *default* attribute, and the scroll region, the margins and the origin mode are cleared with it, because a test pattern and a half-set geometry cannot both be true. Rows above the viewport are not touched. An earlier build read these three bytes as restore-cursor and moved the pointer on a sequence that asked for nothing |
 | `ESC ) c`, `ESC % G` | G1 designation with a foreign set, UTF-8 selection | counted. The input is already UTF-16, so there is no encoding to select |
 
 ### 2.3 Cursor movement
@@ -105,11 +106,13 @@ Only the first parameter of a `h`/`l` list acts, matching the baseline parser.
 | `?1048` | save / restore the cursor |
 | `?7` | DECAWM, autowrap: on wraps at the right margin; off, the last cell is overwritten in place, the row takes no wrap claim, no row below is started, and a glyph that cannot fit is dropped whole rather than split |
 | `?4` and `4` | IRM, insert mode: an ordinary written glyph opens room for itself. One bit, both spellings, reportable either way; where the glyph would not fit strictly inside the row it overwrites instead |
+| `?1` | DECCKM, application cursor keys: stored, answered by number, cleared by `ESC c` and by a soft reset, and carried across a rebuild (#114). It changes no key bytes here — the encoding belongs to the input leg (§3.7) — so this is state the model really holds, not a promise about what a keystroke will produce |
 | `?6`, `?69` | origin mode and the margin gate — see §2.4 |
 | `?2026` | synchronised output: while open, nothing is written to the console and damage accumulates; the closing reset paints one union frame. Three ways out — the end sequence, a 100 ms timeout that also clears the mode, and a full scrollback gutter (that frame must land, but the region stays open). Query replies are **not** held: a program that asked a question and waits for the answer must not be deadlocked by its own unfinished frame |
-| `?2004` | bracketed paste is stored and reported; the execution is not (see §5.7) |
+| `?2004` | bracketed paste is stored and reported; the execution is not (see §3.7) |
 | `?2048` | in-band window-size reports: while on, a window resize whose shape differs from the last one this handle reported emits `CSI 8 ; rows ; cols t` through the same reply channel as a cursor-position report |
-| `?9`, `?1000`, `?1002`–`?1006`, `?1015`, `?1016` | mouse tracking modes: stored one bit each, reported individually, cleared by `ESC c` but not by a soft reset, carried across a rebuild, and since #95 the console's own mouse bit is genuinely armed (with the host's quick-edit mode cleared) — **but this renderer never generates a mouse report** (§5.7) |
+| `?9`, `?1000`, `?1002`, `?1003`, `?1005`, `?1006`, `?1015`, `?1016` | mouse tracking and encoding: one bit each, answered number by number, cleared by `ESC c` but not by a soft reset, carried across a rebuild, and the console's own mouse bit is genuinely armed (with quick-edit cleared). **The report encoding lives here**: five spellings (legacy X10, UTF-8 coordinates, SGR, urxvt, SGR-with-pixels) with the release, motion and no-press rules each one has, and the modifier byte that mode 9 does not take. What a running session still lacks is the caller (see §3.7 and §6's first row) |
+| `?1004` | focus tracking: stored, answered, carried, and the encoder for `CSI I`/`CSI O` is here with the same injection channel; the same caller gap applies |
 | `?1001` | recognised and refused, with its own counter |
 
 ### 2.6 Attributes
@@ -145,6 +148,7 @@ Only the first parameter of a `h`/`l` list acts, matching the baseline parser.
 | `4`, `10`, `11`, `104`, `110`, `111` | the palette: set and query index colours and the default foreground/background. Accepts `#RGB`/`#RRGB`/`#RRGGBB`/`#RRRRGGGGBBBB`, `rgb:r/g/b`, and **676 X11 colour names**; indices 0–15 change the console's own attribute colours, 16–255 the fold's targets; `?` queries answer with the *effective* colour |
 | `9;4`, `9;9`, `9;12` | the safe part of the private family is **stored, never obeyed**: taskbar state and progress, a working directory, and `9;12` handled as a prompt-start mark. Both stored values are readable by the application; nothing is executed |
 | `52` | clipboard write, **off by default** and switchable only by the host program, never by the byte stream; strict base64 (whole payload or nothing, no whitespace, no hidden bits in the padding, no embedded NUL), one clipboard so only the `c`/empty selection is honoured, and an **empty payload means clear**. A read (`52;c;?`) is refused outright |
+| `7` | the working directory: stored as text, readable by the application, **never obeyed** — this library owns no window and never changes the process's directory from an output stream. It writes the same field the private family's path report writes, so one value cannot disagree with itself |
 | `133` | semantic prompts: `A N P L B I C D`, with the exit code on `D` and `k=v` options recognising a continuation; a line feed or a wrap promotes an output row to a continuation. The marks are model-private and travel with vertical movement |
 | anything else | counted in the "other OSC" family; ConEmu's private `9` subcommands with side effects (`1` sleep, `2` message box, `3` environment, `6` macro, `7` process) are counted and **never executed** |
 
@@ -161,8 +165,11 @@ for them).
 | `CSI 6 n` | `CSI row ; col R`, one-based, measured from the window top, reporting the cursor **as it stood when the question was read** |
 | `CSI c`, `CSI 0 c` | the console host's own primary identification, minus the clipboard bit — one session must not present two identities |
 | `CSI > c`, `CSI > 0 c` | the console host's secondary identification |
+| `CSI 18 t` | `CSI 8 ; rows ; cols t` — the text area, from the model's own viewport, in the columns it really paints |
+| `CSI 21 t` | the window title this parser last applied, in the operating-system-command spelling the references use. A session that never set a title gets nothing, because the host's pre-session title is a value this library never observed |
+| `CSI > q`, `CSI > 0 q` | XTVERSION: this library's own name and build stamp, sent as a device control string. The stamp is the same string a caller reads back out of the loaded library, so the answer cannot name a build that is not the one running |
 | `OSC 4;i;?`, `OSC 10;?`, `OSC 11;?` | the effective colour, as `rgb:RRRR/GGGG/BBBB` |
-| `CSI ? N $ p` (DECRPM) | `CSI ? N ; status $ p` with DEC's own pair — 1 set, 2 reset — and **only** for state the model actually holds: cursor visibility, the three screen modes, autowrap, insert, origin, margins, bracketed paste, synchronised output, in-band size, and each of the nine mouse numbers. Nothing is ever answered "permanently set" or "permanently reset" |
+| `CSI ? N $ p` (DECRQM) | `CSI ? N ; status $ p`, in DEC's vocabulary. **1** set / **2** reset for state the model holds (cursor visibility, application cursor keys, autowrap, insert, origin, margins, the three screen modes, bracketed paste, synchronised output, in-band size, and each of the nine mouse numbers). **3** permanently set / **4** permanently reset only where a fact about this build earns it — `?2` because there is no way to change that shape, `?3` because a visible width this library cannot set belongs to the user's console. **0** not recognised for any number the state table does not name, which is what all three references answer and what this build used to leave silent |
 
 ### 2.10 Text: width, glyphs, wrapping
 
@@ -173,13 +180,13 @@ for them).
 | Wide glyphs | two cells, a leading and a trailing half carrying the same code point; a pair that does not fit wraps whole and is never split |
 | Supplementary planes | surrogate pairs are reassembled before measuring and written back unchanged; a high surrogate at a chunk boundary is completed on the next write; a lone low surrogate becomes one replacement cell |
 | Pair integrity | no operation — erase, fill, insert, delete, or an ordinary glyph over a wide glyph's head — may leave one half standing; the orphan is blanked, and a validator plus a per-chunk grid oracle watch it |
-| Wrapping | immediate, with one bit per row recording a soft break so copy and export can join rows; no deferred-wrap state exists (§5.8) |
+| Wrapping | immediate, with one bit per row recording a soft break so copy and export can join rows; no deferred-wrap state exists (§3.8) |
 
 ### 2.11 Tabs
 
 One claim per column plus one flag for "nobody has set stops, use the interval". Defaults are every eighth column —
 not column 0, not the last column. `ESC H` claims the cursor's column; `CSI 0g` clears that column, `CSI 3g`
-clears the table **and** the interval; `CSI 5g` restores the interval; `CSI Ps I`/`CSI Ps Z` walk forward and back
+clears the table **and** the interval; `CSI 5g` restores the interval and so does the DECST8C spelling `CSI ? 5 W` (a bare `W`, or any other parameter, is refused: a control that wipes state needs a spelling with a reason); `CSI Ps I`/`CSI Ps Z` walk forward and back
 without ever changing rows. One table serves the main and alternate screens; a rebuild fills the interval only in
 columns that did not exist before, so an application's own stops survive. `RIS` restores the interval, `DECSTR`
 does not touch the table.
@@ -213,13 +220,13 @@ carries it.
 
 | Item | Here | msfterm | wezterm | ghostty | Reason |
 |---|---|---|---|---|---|
-| `?1` application cursor keys, `?12`, `?8`, keypad and meta-key modes | refused | yes | yes | yes | **no carrier** + **conflicts with #95** — these change how keys are produced, and this renderer owns no input encoding; the input queue belongs to the reader already using it |
-| `?3` 132 columns, `?40` | refused | yes (only with `?40`) | yes | yes | **floor** — it means resizing the user's window |
-| `?5` reverse video | refused | yes | yes | yes | **GAP** (§6) — a palette path exists here; which inversion is the truth has to be decided |
+| `?12` cursor blink, `?8` column mode, the keypad and meta-key modes | refused, and answered **0** as not recognised | partly | partly | partly | **no carrier** — `?12` wants a blink bit the attribute word does not have and `?8` a second column mode, while keypad and meta modes change how keys are *produced*, which §3.7 leaves with the input leg. (`?1` sat in this row; it became real state in #114 and moved to §2.5) |
+| `?3` 132 columns, `?40` | refused, and the query for them answers **4** (permanently reset) | yes (only with `?40`) | yes | yes | **floor** — it means resizing the user's window, and this was measured rather than argued: a wider buffer changes no visible column, while widening the visible width moves the user's own window, so there is no third thing the reply could honestly say |
+| `?5` reverse video (`DECSCNM`) | refused | yes | yes | yes | **conflicts with #103, #99 and #101** — the folded attribute is stored *in the cell* and the host's attributes are re-imported on an adopt, so a screen-wide inversion has to move the fold into the paint seam and re-mark the whole viewport on every toggle — which is exactly the differential those three items exist to protect, on the surface a user notices colour on. The references do not agree with each other about what the mode does to explicitly-coloured cells either, so there is no free side to take. This row was listed as a GAP, and the carrier it pointed at does not exist: an index-to-colour table cannot swap the two nibble roles |
 | `?45` reverse wraparound | refused | no | yes | yes | **conflicts with the wrap model** (§3.8) |
-| `?1007` alternate scroll | refused | yes | no | yes (on by default) | **no carrier** / **conflicts with #95** — it rewrites wheel events |
+| `?1007` alternate scroll | refused, answered 0 | yes | no | yes (on by default) | **owner decision #116** — it rewrites wheel events into line feeds, and the queue those events arrive on belongs to whoever reads the console records |
 | `?2005` background-colour erase | refused | no | no | no | **conflicts with the advertised `bce`**: this session's erases fill with the live attribute, which is the opposite contract |
-| `?2027` grapheme-cluster mode | refused and unanswered | empty case, but answered "permanent" | answered "permanent" | the real text engine | **no carrier** (width is a table lookup) + **would lie** (answering permanent would claim a capability the grid does not have) |
+| `?2027` grapheme-cluster mode | refused, and the query answers **0** (not recognised) | empty case, answered | answered | the real text engine | **no carrier** (width is a table lookup) + **would lie** — answering 1/2/3/4 would claim a capability the grid does not have; 0 claims only that this build does not know the number, which is true |
 | `?2031`, `?2033`, `?5522`, `?7727`, `?2094`, `?8005`, `?8452` | refused | partly | `9001`, `8452` | `2031`, `2033`, `5522` | **no carrier** / **floor** — these report a window theme, a graphics plane or a paste pipeline this library does not own |
 | save/restore a mode (`?Ns`/`?Nr`) | refused | no | warns | yes (one deep) | **GAP** (§6) — every mode it would save is real state now |
 | the remaining private and ANSI modes, and GATM/LNM | refused, counted | — | — | — | derived by reading the baseline parser, and re-argued since: LNM is print *echo* (**no carrier**, no input handle), and IRM was once refused with an implementation-shaped sentence and has since been built (#77) |
@@ -231,7 +238,6 @@ carries it.
 | selective erase (`?J`/`?K`) with protection bits | the private byte is ignored: both spellings erase everything | yes, with per-row protection | no (its own code says so) | yes, with DECSCA | **no carrier** while no sequence can protect a cell — and stated with its expiry: if protection ever lands, the selective forms must land with it |
 | `CSI 3J` (erase scrollback) | behaves as `2J` | yes | yes | yes (and its own `22J`) | **floor** — the history is the console's; the user's scrollback is not this library's to delete |
 | rectangular operations (copy/fill/erase/select-area, insert/delete columns, character-attribute changes, the rectangle checksum) | refused | the full family | the checksum | no | **GAP** (§6) — real work on a grid with a gutter, a viewport, wrap claims and wide pairs; effort, not impossibility |
-| the `W` tab-control family | refused (the `5g` spelling works) | registers DECST8C as `?W` | parses `5g`, ignores it | acts on `?5 W`, no `5g` | **GAP** (§6) — the references disagree with each other, so the choice has to be made on its own terms |
 | resize the page from the stream (`DECSLPP`) | refused | partly | partly | partly | **floor** — an output library must not resize a user's window from a byte stream |
 
 ### 3.5 Reports this build does not answer
@@ -240,10 +246,10 @@ carries it.
 |---|---|---|---|---|---|
 | `CSI ? 6 n` (extended cursor report) | **refused on purpose** | answers | no | no | **would lie**: answering the plain question with the extended spelling reports a position nobody asked for, and the two forms are not interchangeable |
 | `14t` / `16t` (pixels), `19t` (screen cells) | silence, counted | answers 14/16/18 — and its own 14t is a *nominal* cell chosen for graphics emulation, not a measurement | answers 14/16/18 | answers 14/16/18 | **floor** + **would lie**: the only reachable pixel figure is a font metric times a cell count, and one geometry has one name here |
-| `20t` (icon), `21t` (report the title) | refused | no | answers behind a config flag | answers behind a config flag | **GAP**, small (§6) — the title string is held, so 21t could be answered honestly today |
+| `20t` (report the icon name) | refused | no | refused | refused | **no carrier** — there is no icon, and answering with the title would invent a second identity for one string. (`21t` landed since; see §2.9) |
 | device-status reports beyond 5/6, terminal-parameter request, answer-back | refused | answers most of them | 5/6 only | answers its own two private requests | **would lie** — each states a fact about a device this library is not |
-| termcap query, set-terminal-mode query, terminal-version query | refused | version/mode: partly, kitty family yes | termcap and set-mode query yes | termcap, set-mode query and version query yes | termcap: **would lie** (the capability table this session really has is the terminfo entry — see `terminfo/TERMINFO.md`; two sources for one table is how they drift). Set-mode query and version query: **GAP** (§6) |
-| a mode number the model does not hold | silence | **always answers**, status 0 for unknown | answers 0 for unknown | full 0–4 vocabulary | **would lie** — this is a deliberate split from all three: an answer of 0 is a claim about the asker's list, and jline's own reader scores 1, 2 and 3 alike, so a wrong convention here is invisible to the one reader in the house |
+| termcap query | refused | partly, kitty family yes | yes | yes | **would lie** — the capability table this session really has is the terminfo entry (see `terminfo/TERMINFO.md`), and two sources for one table is how they drift. The set-mode query and the version query both answer now (§2.9) |
+| a mode number the model does not hold | answered **0** = not recognised | always answers, status 0 for unknown | answers 0 for unknown | full 0-4 vocabulary | the four now agree. The silence this row used to keep was the deviation, and it was invisible to the one reader in the house, because that reader scores 1, 2 and 3 alike |
 | window-size report contents (`?2048`) | sends rows and columns only; never answers "permanently set"; does not reply at the moment of enabling | no such mode | no such mode | sends rows, columns and pixel sizes, and replies once on enable | **floor** — pixels cannot be proven here, and a report is bytes the program did not write |
 
 ### 3.6 Graphics and the payload protocols
@@ -259,17 +265,17 @@ carries it.
 
 | Item | Here | msfterm | wezterm | ghostty | Reason |
 |---|---|---|---|---|---|
-| mouse **reports** from the tracking modes | modes stored, answered, carried, and the console's mouse bit genuinely armed; **no report byte is ever generated** | X10, UTF-8, SGR, focus events | X10, SGR, pixel-SGR, focus | X10, SGR, urxvt-style, focus; encodings mutually exclusive | **conflicts with #95**: the reports would enter the same console input queue the application's own reader pumps, and a second reader starves the first. Answering `?1000$p` = set is a claim about a bit the model holds — it is **not** a claim that events will arrive, and the row says so because the two were once conflated |
-| bracketed paste `?2004` | stored and reported, **not** executed | executes | executes | executes | **no carrier** + **conflicts with #95** — the markers are bytes injected into the input stream |
-| a modified-key protocol (progressive enhancement, kitty keyboard flags) | refused | set/query family yes | yes, behind a switch that defaults off | yes | **no carrier** + **conflicts with #95** — the key bytes are produced by the input leg, and this library must not read that queue |
-| the terminfo capability for the mouse key | deliberately **not** advertised | — | — | — | see `terminfo/TERMINFO.md`: the reader-side test is a capability lookup, but the Windows input leg arms the console directly and the mouse byte prefix is bound either way, so declaring it would name bytes whose sender is somebody else |
+| mouse and focus **reports** from the tracking modes | the bits, the per-number answers, the carry across a rebuild, the armed console bit and **the encoder** are all here — five mouse formats plus the two focus forms, witnessed by writing them into a real console input stream and reading the bytes back. What a running session does not do is call it: the leg that pumps the console records still builds the legacy X10 bytes itself | X10, UTF-8, SGR, focus events | X10, SGR, pixel-SGR, focus | X10, SGR, urxvt-style, focus, with the encodings mutually exclusive | **gap A1** — not an argument: a program that selects SGR or UTF-8 is told "set" and receives X10. Listed in §6 |
+| bracketed paste `?2004` | stored, answered, cleared by both resets, **not** executed | executes | executes | executes | **owner decision #116** — the markers are bytes injected into the input stream, and #108 fixed who owns that queue: the layer that reads the console records. The carrier and the injection channel have landed, so what is left is a caller that knows a paste happened |
+| a modified-key protocol (progressive enhancement, kitty keyboard flags) | refused, and the flags query is answered as an unknown number | set/query family yes | yes, behind a switch defaulting off | yes | **owner decision #116** — the key bytes are produced by the input leg, and nothing here stores a pushed flag set, so a query answer would be an invention. Push, pop and their query land together or not at all |
+| the terminfo capability for the mouse key (`kmous`) | **not advertised**, and the maintainer documents disagree about whether that is settled: one calls it permanently out because the reports have an owner elsewhere, the other leaves it to be decided | — | — | — | see `terminfo/TERMINFO.md` for the machinery. The open question is which spelling would be true of the session a program actually gets — §6's A2 |
 
 ### 3.8 The wrap model
 
 | Item | Here | msfterm | wezterm | ghostty | Reason |
 |---|---|---|---|---|---|
 | deferred (pending) wrap | not implemented — the cursor leaves the last cell the moment it is filled | yes | yes (it drives reflow) | yes (an erase form exists precisely to ask "not pending?") | **conflicts with the wrap claim**: moving to pending wrap changes what a row's soft-break bit means, and every line-ownership and copy/export rule reads that bit. And the measurement this rests on was taken **against the replaced baseline's two write paths, not against the three references** — that limitation is part of the row, not a footnote |
-| double-width / double-height lines, screen alignment test | refused (and see §6: one spelling of this family currently does something else) | yes | yes | yes | **conflicts with §6's geometry floor**: a doubled row changes what the viewport is |
+| double-width / double-height lines (`ESC # 3`/`# 4`, `# 5`/`# 6`) | refused | yes | yes | yes | **conflicts with the geometry contract** — a doubled row changes what the viewport is, and that number is what every scroll, resize and report rule in this file is written against. The other member of that family, the screen-alignment test, is not a geometry claim and has landed (§2.2) |
 
 ---
 
@@ -312,34 +318,37 @@ Recorded so nobody "fixes" it back. Each has its own argument in the ledger.
 
 ## 6 GAP list — missing work, not arguments
 
-These are the refusals from §3 that cannot name one of the four allowed reasons. Ordered by what a program can
-actually trip over.
+Six rows. Each one says what is missing, what carries it, and which leg has to go red before the work could be
+called done. A refusal with one of the four reasons on its row lives in §3, not here; the reason this list is
+short is that §3's rows were re-argued, and what could not be argued either shipped (the end of this section) or
+acquired a named conflict (§3.3, §3.7, §3.8).
 
-| # | Missing | Who has it | What it would take | Landed? |
-|---|---|---|---|---|
-| G1 | **`ESC # 8` is executed as "restore cursor" instead of the screen-alignment test.** A discarded intermediate byte, not a missing feature — the byte sequence the application sent produces an act it did not ask for | all three act on the family | give the `#`-prefixed forms their own arms and count the rest. This is a defect, listed first | ✅ **-54**. `esc_dispatch`'s `#` arm no longer discards the intermediate: `screen_alignment` (`Render.cpp:2421`) fills the viewport with `E` at the *default* attribute and clears region/margins/origin, following MSFT `adaptDispatch.cpp:3143-3162`, wezterm `performer.rs:652-673`, ghostty `Terminal.zig:3714-3782`. Red arm `decaln` → host `fails=3` |
-| G2 | **`OSC 7` (working directory)** is refused while the private family's equivalent **is** stored | all three | one more owner of a field that already exists and is already readable | ✅ **-54**. `osc_cwd7`/`osc_is_cwd7` write the *same* `cwd` field `9;9` owns (family-table row; the field index is **0**, not 1). MSFT `adaptDispatch.cpp:2621-2637`, wezterm `performer.rs:940-944`, ghostty `stream_terminal.zig:1527-1545` |
-| G3 | **push/pop the rendition** — spelled `CSI # {` / `CSI # }` (**not** `ESC # {`, which an earlier draft of this table said) | microsoft/terminal only | a stack of stored attributes, plus the rebuild-carry obligation, plus what a reset does to a non-empty stack | 🔲 open. Spec now pinned from source: MSFT `src/types/inc/sgrStack.hpp:51` ring of 10 (`c_MaxStoredSgrPushes`), overflow drops the *oldest* (`sgrStack.cpp:48-54`), pop-on-empty returns the **current** attributes not the defaults (`:86`), entry = `TextAttribute` + a `ValidParts` bitset (`:60-64`), options enum `DispatchTypes.hpp:479-493` (`All=0 … SaveBackgroundColor=31`), aliases `CSI # p`/`CSI # q` (`OutputStateMachineEngine.hpp:148-151`), **neither RIS nor DECSTR clears it** (`SoftReset` at `adaptDispatch.cpp:2984-3020` and `HardReset` at `:3042-3096` contain no `_sgrStack` — the member name appears in exactly three places tree-wide: `adaptDispatch.hpp:337`, `adaptDispatchGraphics.cpp:467`, `:479`), and it hangs off the *adapter* (`adaptDispatch.hpp:337`) so a renderer rebuild cannot lose it. ghostty and wezterm: **0 hits** with named controls. No query obligation — there is no DECRQM number for it |
-| G4 | **save/restore a mode** | ghostty only (wezterm parses then warns; msfterm has no `?s`/`?r` key at all) | a mode-bit store whose later query answer follows the restored bit | 🔲 open. Spec pinned: **one bool cell per mode, not a stack** — `modes.zig:17-25` "We only allow saving each mode once … we need to be aware of a DoS vector"; restore **re-enters `setMode`** so side effects fire (`stream_handler.zig:281-287`); `?` is an *intermediate* so `CSI ? s` and `CSI s` are different productions (`stream.zig:2332-2336`); multiple numbers per message are legal (`:2334` loop); **restore of a never-saved mode writes `false`, not the default** (`modes.zig:299` default is false for every entry); RIS clears the saved cells (`Terminal.zig:4933` → `modes.zig:33-36`), and DECRQM reads `values`, never `saved` (`:98-101`) |
-| G5 | **set-mode query and terminal-version query** (a question about this model's own state) | ghostty, wezterm | the reply channel already exists; these answers are facts, not inventions | ◐ **-54** for the version query: XTVERSION `CSI > q` answers `RENDER_BUILD` (`RC_REP_XTVER`; ghostty `stream_terminal.zig:1442-1447`, wezterm `mod.rs:1440-1447` + `csi.rs:2224-2233`). The *set-mode* half is G11's answer-0 rule, landed the same build |
-| G6 | **report the window title** | wezterm, ghostty (both gated) | the string is held, so the answer would be true | ✅ **-54**. `21t` → `RC_REP_TITLE`, answered `\E]l<title>\E\\` (ghostty `stream_terminal.zig:1468-1471`, wezterm `mod.rs:2175-2183`; msfterm has no `Ps t` family) |
-| G7 | **reverse video as a mode** | all three | ~~a carrier exists — the palette path~~ **that sentence was wrong and is retracted** | 🔲 open, and now more expensive than it looked. The palette path maps *index → RGB*; reverse video swaps *roles* (low nibble drawn as fg, high as bg), and no permutation of `pal16` moves a nibble between roles — so the carrier this row pointed at does not exist. All three fold at **readout**, never in storage: MSFT `RenderSettings.cpp:193` `attr.IsReverseVideo() ^ GetRenderMode(Mode::ScreenReversed)` then `std::swap(fg,bg)` on resolved COLORREFs, with `TriggerRedrawAll()` on toggle (`adaptDispatch.cpp:1787-1793`); wezterm `screen_line.rs:218-222` same XOR shape with the flag carried in the quad-cache key (`render/pane.rs:426-443`); ghostty swaps only the **defaults** (`render.zig:450-456`) so explicitly-coloured cells are exempt — the three do *not* agree about 256/RGB cells. This library stores the folded `CHAR_INFO` attribute in the cell itself (`Render.cpp:1367`, copied verbatim at `RenderJni.cpp:599`) and re-imports the host's attributes on adopt (`:2207`), so a parse-time XOR is wrong twice over. Doing it honestly means moving the fold to the seam **and** re-marking the viewport on toggle (`rc_mark_all_dirty`, `Render.cpp:196`, is the existing analogue of `TriggerRedrawAll`) — which collides head-on with #103's differential and #99/#101's adopt path, on the owner's named high-priority surface (colour). Cost stated, therefore not free |
-| G8 | **the rectangular-edit family**, and the two single-line shift controls that go with it | microsoft/terminal mostly | effort: each shape has to re-derive pair healing and line ownership over a rectangle | 🔲 open — work, not impossibility |
-| G9 | **selective erase's other half** — the protection bits | msfterm, ghostty | must arrive *with* G8's selective forms, or the equivalence claimed in §3.4 stops holding | 🔲 open. DECSCA is a **cell bit** in conhost (`adaptDispatchGraphics.cpp:440-456 attr.SetProtected`) and `CHAR_INFO` has no such bit (`conattrs.hpp:9`, read exhaustively this round), so it needs a shadow array beside the grid or it becomes a lie |
-| G10 | **the tab-control family** | microsoft/terminal (`?W`), ghostty (`?5 W`) | pick a spelling with a reason; the references disagree | ✅ **-54** for DECST8C: `CSI ? 5 W` → `tabs_reset` (`case 'W'`). MSFT `OutputStateMachineEngine.hpp:116 → adaptDispatch.cpp:2784-2792`, ghostty `stream.zig:1811-1816 → Terminal.zig:2308-2310`; wezterm 0 hits |
-| G11 | **the device-status and capability probes this library could answer truthfully** | microsoft/terminal widely, ghostty partly | answer only what the model holds; the rest stays §3.5's "would lie" | ✅ **-54**. A number the state table names no value for answers **0 = not recognised** instead of staying silent (`Render.cpp:2197`; MSFT `adaptDispatch.cpp:1939` + `DispatchTypes.hpp:552-559`, ghostty `modes.zig:80-102`, wezterm `mod.rs:1520-1526`). This moved `?1048`/`?12`/`?2027` off the silence list |
+| # | Missing | Who has it | What it would take |
+|---|---|---|---|
+| A1 | **The mouse and focus encoding is not wired into a running session.** The bits are stored, every number is answered, the console's mouse bit is armed, and the encoder for five mouse formats plus the two focus forms is written and tested against a real input stream — but the leg that reads console records still emits the legacy X10 bytes itself. A program that asks for SGR reporting is told "set" and receives X10 | all three produce reports in the format their modes select | one call site: hand the record to this library's encoder and let it inject — or delete one of the two encoders so the product has a single spelling. The leg that decides it: a live session drives a click and asserts the **bytes** the reader gets, per format; model-side legs cannot see the wire. Nothing conflicts; this is the unfinished half of the input-report work |
+| A2 | **`kmous` is not in the terminfo entry, and the two maintainer documents disagree about whether that was decided.** One calls it permanently out, one leaves it pending | the capability a mouse-aware reader asks for before it arms anything | decide first. If it goes in: the five terminfo steps (entry, mirror, source resource, jar, gate) and a leg asserting that the declared string equals the bytes actually sent — which is exactly what A1 would make true. If it stays out, both documents have to say so in the same words |
+| G3 | **Push and pop the rendition** — `CSI # {` and `CSI # }` | microsoft/terminal; the other two have neither sequence | a stack of stored attributes hung off the model, so a rebuild cannot lose it, plus the three rules that decide whether it is honest: depth and what overflow drops, what a pop on an empty stack returns, and whether either reset clears it. No query obligation — there is no DECRQM number for it. Legs: one per rule, plus the rebuild-carry |
+| G4 | **Save and restore a mode** — `CSI ? N s` and `CSI ? N r` | ghostty implements it; wezterm parses and warns; microsoft/terminal has no key for it | a saved cell per mode, and a restore that re-runs the mode's *act* rather than rewriting its bit, so an application that saved cursor visibility gets a cursor it can see. Two decisions the references already made, taken deliberately: one save per mode rather than a stack (a stack is a memory-exhaustion surface), and restoring a mode nobody saved means *off*. Careful with `CSI s` — without `?69` it is save-cursor and with it DECSLRM, so the private spelling is a third production, not a variant of either |
+| G8 | **The rectangular operations family** — copy, fill, erase and select-area over a rectangle, with the rectangle's own insert and delete of columns | microsoft/terminal has the family, wezterm the checksum, ghostty none | each shape has to re-derive two rules the row model already owns: pair healing at a rectangle's left and right edge, and which row owns a wrapped line. A rectangle is a second geometry over the grid, so it needs its own damage rule and its own bounds leg. Effort, not impossibility |
+| G9 | **Selective erase's other half — the protection bits** (`DECSCA`, and the `?J`/`?K` forms that read them) | microsoft/terminal, ghostty | a per-cell bit. The console's own cell type has no such bit, so it lives in a shadow array beside the grid — the same place the soft-wrap claim already lives, and it inherits that one's debt: it cannot be read back off the console, so nothing outside this library can check it. Must arrive with G8's selective forms, or the equivalence §3.4 states stops holding |
 
-**Not gaps.** Images and sixel (no pixel plane in front of a buffer we do not own); hyperlinks (an owner decision:
-a link is a range, not a cell, and the sequence alone buys a user nothing); the side-effecting private commands
-(safety: the only floor under executing stream-supplied semantics is not executing them); pixel geometry reports
-(quantifying a window this library does not own would be a fabricated measurement); the termcap query (two sources
-for one capability table); background-colour erase and reverse wraparound (each conflicts with a contract this
-session already advertises); **bracketed-paste execution and key-encoding behaviour** (both wait on who owns the
-input queue). ⚠ **Mouse reports left this list on 2026-09-28** — the third owner ruling struck "wait on #95's
-ownership decision" as an invalid reason, and the encoder plus the shared injection line shipped in -54 (§3.7 and
-`ANSI_TODO.md` §5's mouse row). What still sits outside this library is only *who hands a record to it*.
+**Closed in build -54, so no longer gaps** — and where each one now lives: the screen-alignment test `ESC # 8`
+(§2.2; it had been *executed as* restore-cursor, which was a defect rather than a missing feature); `OSC 7`
+(§2.8); the title report `CSI 21 t` and XTVERSION `CSI > q` (§2.9); the DECST8C spelling `CSI ? 5 W` (§2.11);
+answering a mode number the model does not hold with status 0 instead of silence (§2.9, §3.5); and the mouse and
+focus encoders, which closed their own row and left A1 in its place.
 
----
+**Not gaps.** Images and sixel (no pixel plane in front of a buffer this library does not own); hyperlinks (an
+owner decision: a link is a range, not a cell, and the sequence alone buys a user nothing); the side-effecting
+private commands (safety: the only floor under executing stream-supplied semantics is not executing them); pixel
+geometry reports and the screen-geometry report (the answer would be a fabricated measurement, or a distinction
+this build cannot show); reverse video as a screen-wide mode (§3.3, a named collision with the adopt and
+differential work, cost on the row); double-width and double-height lines (§3.8, changes what the viewport is);
+deferred wrap (§3.8, four discriminators run on both legs agreed); bracketed-paste execution and key encoding
+(§3.7, owner decision #116 — with the carrier and the injection channel already landed); the termcap query (two
+sources for one capability table); background-colour erase and reverse wraparound (each contradicts a contract
+this file already advertises). **None of those closes a question.** Each row above is a claim with a date on it,
+and anyone who builds the case where it comes out differently is expected to re-open it.
 
 ## 7 What the three references disagree about, and what this build chose
 
@@ -348,7 +357,7 @@ ownership decision" as an invalid reason, and the encoder plus the shared inject
 | Mode query for an unknown number | answers, status 0 | answers, status 0 | answers with the full permanent/unknown vocabulary | **answers, status 0** (since -54; this cell used to read "silent", which was the deviation — see §6 G11) |
 | Scroll region: one-parameter form | fills the missing edge | fills it | fills it | fills it (the baseline it replaced cleared the region — a divergence from all four) |
 | Inverted region pair | ignored | ignored | ignored | ignored (same) |
-| Tab interval reset spelling | `?W` | parses `5g`, ignores it | `?5 W` | `5g` |
+| Tab interval reset spelling | registers it as `?W` | parses `5g`, ignores it | acts on `?5 W`, no `5g` | both `5g` and `?5 W`; a bare `W` and any other parameter are refused |
 | Character-set: which set GL holds by default | G0 | G0 | G0 | G0, and the shift is the only visible half of a designation |
 | Repeat-last-grapheme stores what | the last printable | the last printable | the last printable | the last unit **with width**, so an accent after a letter cannot erase the thing worth repeating |
 | Cursor position report with a region or origin mode set | reports the cursor | reports the cursor | reports relative to origin mode when it is set | reports the viewport cursor, as a snapshot taken when the question was read |
@@ -367,7 +376,7 @@ the refusals in §3 are reviewable at all.
 |---|---|---|
 | unrecognised | a CSI or ESC final with no case at all | yes |
 | alternate buffer | the alternate-screen snapshot could not allocate | no |
-| mouse | a tracking mode is asked for and stored (§3.7) | no |
+| mouse | a mouse-tracking number this build stores and answers for, or an encoding request the report leg cannot satisfy (§3.7) | no |
 | mode | a mode this model holds no state for, a private prefix on an SGR, `ESC g`/`=`/`>` | no |
 | bracketed paste | an OSC request to *execute* a paste | no |
 | private OSC | the side-effecting private family | no |

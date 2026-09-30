@@ -1,11 +1,15 @@
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 import org.jline.utils.Curses;
 import org.jline.utils.InfoCmp;
@@ -27,6 +31,48 @@ public class CapsDump
   static final String E = "\u001b";
 
   static int fails;
+
+  /**
+   * Every expectation records its own label here so the census at the end can say what this harness checked
+   * and, more usefully, what it did not. A checking gate that cannot name its own silence is the same failure
+   * as a comparing gate that never compared -- the rule DESIGN section 6 states for the latter.
+   */
+  static final List<String> LABELS = new ArrayList<>();
+
+  /** The capability names exactly as the file spells them, gathered by the unresolved-key loop. */
+  static final Set<String> DECLARED = new TreeSet<>();
+
+  static final String INPUT_LEG =
+      "input leg: those bytes come from a console record matched against a KeyMap prefix, never from a caps "
+      + "lookup (DESIGN section 4 rules the whole family not this library's surface)";
+  static final String NO_STRING =
+      "number or boolean: there is no string for tputs to decode, and the value is asserted where it is used";
+  static final String SIBLING =
+      "single-arm string this leg only ever reaches inside a sibling expectation (sgr, or the cursor family), "
+      + "so its bytes are pinned indirectly and not by name";
+
+  /**
+   * Why a declared capability is allowed to carry no expectation of its own. Keyed by the file spelling on
+   * purpose: a name in here that the entry no longer declares fails the census, which is what keeps this table
+   * a record somebody has to edit on the day the entry changes, rather than a list somebody remembers.
+   */
+  static final Map<String, String> NO_EXPECTATION = new LinkedHashMap<>();
+
+  /** Add a family of names under one reason. */
+  static void silent( String reason, String... names )
+  {
+    for ( String n : names )
+      NO_EXPECTATION.put( n, reason );
+  }
+
+  static
+  {
+    silent( NO_STRING, "colors", "cols", "it", "lines", "msgr" );
+    silent( INPUT_LEG, "kcub1", "kcud1", "kcuf1", "kcuu1", "kdch1", "kich1", "kend", "khome", "knp", "kpp",
+            "kf1", "kf2", "kf3", "kf4", "kf5", "kf6", "kf7", "kf8", "kf9", "kf10", "kf11", "kf12" );
+    silent( SIBLING, "bold", "rev", "smso", "smul", "cvvis", "home",
+            "cub", "cub1", "cud", "cuf", "cuf1", "cuu", "cuu1", "il1", "dl1" );
+  }
 
   /** Make every control byte visible, or the console eats the evidence. */
   static String show( String s )
@@ -57,6 +103,7 @@ public class CapsDump
 
   static void expect( String what, Object got, Object want )
   {
+    LABELS.add( what );
     boolean ok = want == null ? got == null : want.equals( got );
     if ( !ok )
       fails++;
@@ -98,6 +145,7 @@ public class CapsDump
           k = k.substring( 0, h ).trim();
         if ( !k.matches( "[a-z_0-9]+" ) )
           continue;
+        DECLARED.add( k );
         if ( !byName.containsKey( k ) )
           System.out.println( "  UNRESOLVED: " + k );
       }
@@ -297,6 +345,62 @@ public class CapsDump
     } catch ( Exception e ) {
       expect( "the reader leg ran without an exception", e.getClass().getName(), "none" );
     }
+
+    /* ---- coverage census ------------------------------------------------------------------------
+       87 expectations is not 91 capabilities. The honest way to say which ones this harness leaves alone is to
+       compute it from the labels it actually used, rather than to keep a number in a comment somewhere: a name
+       counts as asserted when its own spelling occurs as a word in an expectation label. What is not asserted
+       has to appear in NO_EXPECTATION with a reason, or the run goes red -- and the failure that rule exists for
+       is the obvious one, a capability added to the entry with neither an expectation nor a sentence saying why
+       nobody wrote one. That is DESIGN section 6's rule for a comparing gate, turned around: a checking gate has
+       to name its own silence. The rule is generous in one direction worth knowing: a name that occurs only in
+       an *omission* label -- "flash NOT advertised" -- counts as touched, so declaring such a capability would
+       not be caught here first. It was tested both ways on 2026-09-28: declaring `flash` turned the run red on
+       the omission assertion itself, while declaring `u8`, which no label mentions either way, reached only this
+       census ("NOT ASSERTED AND NOT EXPLAINED: u8"), and dropping `msgr`, which the table still explains,
+       reached the other arm ("THE SILENCE TABLE CARRIES A NAME THE ENTRY NO LONGER DECLARES"). */
+    System.out.println( "--- coverage census ---" );
+    Set<String> asserted = new TreeSet<>();
+    for ( String name : DECLARED )
+    {
+      Pattern p = Pattern.compile( "\\b" + name + "\\b" );
+      for ( String label : LABELS )
+        if ( p.matcher( label ).find() )
+        {
+          asserted.add( name );
+          break;
+        }
+    }
+    Set<String> quiet = new TreeSet<>( DECLARED );
+    quiet.removeAll( asserted );
+    int unexplained = 0;
+    for ( String n : quiet )
+      if ( !NO_EXPECTATION.containsKey( n ) )
+      {
+        System.out.println( "  NOT ASSERTED AND NOT EXPLAINED: " + n );
+        unexplained++;
+      }
+    for ( String n : NO_EXPECTATION.keySet() )
+      if ( !DECLARED.contains( n ) )
+      {
+        System.out.println( "  THE SILENCE TABLE CARRIES A NAME THE ENTRY NO LONGER DECLARES: " + n );
+        unexplained++;
+      }
+    Map<String, List<String>> byReason = new LinkedHashMap<>();
+    for ( Map.Entry<String, String> e : NO_EXPECTATION.entrySet() )
+      if ( quiet.contains( e.getKey() ) )
+      {
+        List<String> group = byReason.get( e.getValue() );
+        if ( group == null )
+          byReason.put( e.getValue(), group = new ArrayList<>() );
+        group.add( e.getKey() );
+      }
+    for ( Map.Entry<String, List<String>> e : byReason.entrySet() )
+      System.out.println( "  " + e.getValue() + "  <<  " + e.getKey() );
+    System.out.printf( "census expectations=%d declared=%d asserted=%d unasserted=%d unexplained=%d%n",
+                       LABELS.size(), DECLARED.size(), asserted.size(), quiet.size(), unexplained );
+    if ( unexplained != 0 )
+      fails++;
 
     System.out.println( fails == 0 ? "CAPS CHECK: ok" : ( "CAPS CHECK: " + fails + " FAILED" ) );
     if ( fails != 0 )

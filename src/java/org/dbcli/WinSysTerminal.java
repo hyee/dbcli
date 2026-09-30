@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.IntConsumer;
 
+import com.hyee.ansirender.NativeRenderer;
 import org.jline.keymap.KeyMap;
 import org.jline.nativ.Kernel32;
 import org.jline.nativ.Kernel32.CONSOLE_SCREEN_BUFFER_INFO;
@@ -84,11 +85,60 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         // Create writer
         Writer writer;
 
-        if (("conemu").equals(System.getenv("ANSICON_DEF"))) {
+        /* A ConPTY console is not a grid to be painted, whatever ANSICON_DEF says. The terminal above it
+           parses the escapes itself, and the headless conhost in between turns this process's cell writes
+           back into VT for that terminal -- VtIo.cpp:771-830 -- so a paint is applied twice, once by a model
+           and once by a serializer that knows nothing about it. What an adopt repaints makes that concrete:
+           it writes back cells it merely read, cmd's own listing among them, and re-emitting text the
+           terminal has already shown puts it in a scrollback that is not ours to write. Full-width glyphs are
+           where the round trip loses: a run that begins or ends between the two cells of one glyph is
+           replaced by a space on the way out (VtIo.cpp:786-806).
+           The test is read off the console's window, not from WT_SESSION. That variable is inherited by a
+           plain conhost window started from inside a WT session -- a window that parses nothing, and the one
+           the variable gets wrong -- whereas the window class is VtIo mode as conhost itself reports it
+           (getset.cpp:1262-1275). Where the library cannot answer, the old weaker test stands in, and it is
+           only ever reached on a session that has no painter to begin with. */
+        /* #99: an explicit ANSICON_DEF=conemu now outranks the pseudo-console test, by the owner's
+           decision on 2026-09-27. Before this, a Windows Terminal session with ANSICON_DEF=conemu in its
+           environment took the ConPTY branch at the line below and never reached the ConEmuWriter branch,
+           so the painter was skipped for the whole session and nothing said so -- ConEmuWriter is the
+           only caller that reports unavailableReason().
+         
+           WARNING, current as of build -48: two costs were measured on this branch and one has been paid.
+           PAID (#104): the host's own escape parser is now switched off by render.dll for as long as it is
+           painting, so a chunk the renderer declines looks the same on Windows 7 and on 1809+ -- that was the
+           owner's actual requirement, and it is enforced in the library, not here.
+           STILL OWED (#103, reproduced on screen 2026-09-27): under a pseudo-console a write of cells is
+           turned back into escape sequences by a serializer that knows nothing about this model, so the rows
+           an adopt merely re-read reach the terminal as NEW OUTPUT and land in a scrollback that is not ours.
+           A screenshot of `help` followed by a resize showed it plainly -- two status bars, the listing
+           interleaved in two columns, two prompts. Clearing ENABLE_VIRTUAL_TERMINAL_PROCESSING does not help
+           with that one: headless conhost serialises buffer changes to the pty whatever this buffer's mode
+           says. The fix is in align_grid's `rc_mark_all_dirty` (ANSI_TODO #103 has the line).
+           ANSI_RENDER=off remains the way out of both: ConEmuWriter then holds no renderer and every write
+           goes out raw, which is always correct and only slower.
+           See DESIGN.md rows #37, #38 and #99, ANSI_TODO #103/#104, and JLINE_CHANGES.md. */
+        final boolean conemuClaimed = ("conemu").equals(System.getenv("ANSICON_DEF"));
+        Boolean pty = NativeRenderer.pseudoConsole();
+        /* 2026-09-29, owner's ruling: the claim wins. ANSICON_DEF=conemu is the owner saying "this session
+           renders through the native renderer", and a pseudo-console test may not silently override it --
+           the 2026-09-28 ordering (pty first, claim ignored with a startup warning) routed every ConPTY-hosted
+           session to the plain writer instead, which the owner called the bypass itself: the session prints
+           escapes to the terminal above and render.dll never runs. So conemuClaimed is tested first again
+           (the #99 order of 2026-09-27), with no warning: the claim is honoured, not apologised for.
+           What painting under a pseudo-console has to get right is then render.dll's business -- the
+           re-serialization hazard is real (MSFT VtIo.cpp:771-830 turns a cell write back into escapes) and
+           is tracked as ANSI_TODO #103/#104; it is a defect to fix in the renderer, not a licence to skip
+           the renderer. */
+        if (conemuClaimed) {
             type = TYPE_WINDOWS_CONEMU;
             writer = new ConEmuWriter(console);
-        } else if (System.getenv("WT_PROFILE_ID") != null && System.getenv("WT_SESSION") != null) {
-            type = type != null ? type : "xterm-256color";
+        } else if (pty != null ? pty.booleanValue()
+                : System.getenv("WT_SESSION") != null && enableVtp(console, outMode[0])) {
+            /* No enableVtp call here: a ConPTY console already has it on -- measured 2026-09-25 in Windows
+               Terminal, mode 0x7 with the VTP bit both set and settable -- and this branch is taken on the
+               fact that the *terminal* parses, which does not depend on this buffer's mode. */
+            type = type != null ? type : TYPE_WINDOWS_VTP;
             writer = newConsoleWriter(console);
         } else if (ansiPassThrough) {
             if (("ansicon").equals(System.getenv("ANSICON_DEF"))) {
@@ -197,9 +247,16 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
             status.suspend();
             status = null;
         }
+        /* Held because the input pump is the only thing in the process that learns a key was pressed, and a
+           console rendering its own escapes -- or nobody rendering them -- has nothing to be told. Taken from
+           the constructor's argument rather than from getOutput(): whatever the base terminal does to the
+           writer afterwards, this is the object that owns the renderer. */
+        this.consoleWriter = writer instanceof ConEmuWriter ? (ConEmuWriter) writer : null;
         t.setDaemon(true);
         t.start();
     }
+
+    private ConEmuWriter consoleWriter;
 
     @Override
     public Status getStatus(boolean create) {
@@ -423,6 +480,9 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
             if (event.eventType == INPUT_RECORD.KEY_EVENT) {
                 KEY_EVENT_RECORD keyEvent = event.keyEvent;
                 processKeyEvent(keyEvent.keyDown, keyEvent.keyCode, keyEvent.uchar, keyEvent.controlKeyState);
+                if (keyEvent.keyDown && isInputKey(keyEvent.keyCode)) {
+                    snapOnInput();
+                }
                 flush = true;
             } else if (event.eventType == INPUT_RECORD.WINDOW_BUFFER_SIZE_EVENT) {
                 raise(Signal.WINCH);
@@ -435,6 +495,32 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         }
 
         return flush;
+    }
+
+    /**
+     * The keys a user presses *at* a screen, as opposed to the modifiers they hold on the way to one of them
+     * -- conhost's own list ({@code IsInputKey}, screenInfo.cpp:1668-1680), taken whole because the defect it
+     * prevents is a real one: pressing Shift to type a capital letter must not yank a view the user moved
+     * deliberately, and only the key they meant says "I am typing where I cannot see".
+     */
+    private static boolean isInputKey(int vkey) {
+        switch (vkey) {
+            case 0x11: case 0xA2: case 0xA3:      /* CONTROL, LCONTROL, RCONTROL */
+            case 0x12: case 0xA4: case 0xA5:      /* MENU, LMENU, RMENU */
+            case 0x10: case 0xA0: case 0xA1:      /* SHIFT, LSHIFT, RSHIFT */
+            case 0x5B: case 0x5C:                 /* LWIN, RWIN */
+            case 0x2C:                            /* SNAPSHOT */
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    /** Asks the renderer, if this terminal has one, to put the prompt back where the user is about to type. */
+    private void snapOnInput() {
+        if (consoleWriter != null) {
+            consoleWriter.snapOnInput();
+        }
     }
 
     private final char[] focus = new char[]{'\033', '[', ' '};

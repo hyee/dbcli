@@ -45,30 +45,46 @@ public final class NativeRenderer {
        joined the census: every constant below is therefore one higher than it was for eleven slots, on both
        sides of the seam at once. RenderJni.cpp derives its own from the enum, which is why a new census slot
        moves these by itself and why an unreconciled table here shows up as a whole report of zeroes. */
-    private static final int SLOT_UNSUPPORTED = 17, SLOT_TITLES = 29, SLOT_TITLES_TRUNC = 30,
-            SLOT_TITLES_APPLIED = 31, SLOT_ALT = 32, SLOT_ALT_REFUSED = 33, SLOT_PROMPT_MARKS = 34,
-            SLOT_LAST_EXIT = 35, SLOT_SNAP = 39,
+    /* ⚠ #85 appended a 13th census slot (`charset`), so every family after the census moved by one. These are
+       literal numbers, which is the whole hazard of this seam: the arithmetic lives in RenderJni.cpp
+       (`STAT_UNSUPPORTED + RC_UN_MAX`) and nothing here recomputes it. A missed +1 shows up exactly the way it
+       did for #89 -- a run where the census prints a field of zeroes -- so `Render.java`'s equality length gate
+       and the live gate's `reportSlotAgrees` are the two things keeping this table honest. */
+    private static final int SLOT_UNSUPPORTED = 17, SLOT_TITLES = 30, SLOT_TITLES_TRUNC = 31,
+            SLOT_TITLES_APPLIED = 32, SLOT_ALT = 33, SLOT_ALT_REFUSED = 34, SLOT_PROMPT_MARKS = 35,
+            SLOT_LAST_EXIT = 36, SLOT_SNAP = 40,
             /* DECSET 2026's family, in the order RenderJni.cpp's STAT_SYNC gives them: regions opened, nested
                BSUs, flushes deferred, and the ways a region ended before its ESU. SLOT_SYNC_ON is the mode as
                it stands at teardown, not a count, and it is the one worth reading: a session that ended inside a
                synchronized region is a session where an application sent a BSU and never sent the ESU, and the
                counts next to it say whether that ever cost a frame. */
-            SLOT_SYNC_ENGAGES = 40, SLOT_SYNC_NESTED = 41, SLOT_SYNC_HELD = 42,
-            SLOT_SYNC_TIMEOUT = 43, SLOT_SYNC_OVERFLOW = 44, SLOT_SYNC_DECLINED = 45,
-            SLOT_SYNC_ON = 46,
+            SLOT_SYNC_ENGAGES = 41, SLOT_SYNC_NESTED = 42, SLOT_SYNC_HELD = 43,
+            SLOT_SYNC_TIMEOUT = 44, SLOT_SYNC_OVERFLOW = 45, SLOT_SYNC_DECLINED = 46,
+            SLOT_SYNC_ON = 47,
             /* OSC 52, in RenderJni.cpp's STAT_CLIP order: armed by the parser, then the three reasons a
                request was refused, then what the clipboard API answered, then the policy bit. The census
                slot for the family is the last of UNMODELLED, and the gate's own label list is compared
                against the dll's table at run time. */
-            SLOT_CLIP_ARMED = 47, SLOT_CLIP_DECODE = 48, SLOT_CLIP_SELECTION = 49, SLOT_CLIP_READ = 50,
-            SLOT_CLIP_WRITES = 51, SLOT_CLIP_FAILS = 52, SLOT_CLIP_POLICY = 53,
+            SLOT_CLIP_ARMED = 48, SLOT_CLIP_DECODE = 49, SLOT_CLIP_SELECTION = 50, SLOT_CLIP_READ = 51,
+            SLOT_CLIP_WRITES = 52, SLOT_CLIP_FAILS = 53, SLOT_CLIP_POLICY = 54,
             /* The parser's one limit that a caller cannot otherwise see: a `CSI` whose parameter list is
                longer than RC_CSI_ARGS keeps the first sixteen and the surplus is gone, exactly as ConEmu's
                ArgV does. #74 counted it and RenderJni.cpp has written the slot ever since -- and this file
                declared SLOT_LAST one short of it, which is the shape of miss the length gate in the live
                harness was written to catch and did not: `s.length >= S_LEN` only ever notices a dll that is
                too *short*, so an array that outgrew the table read as a clean run with an unread slot. */
-            SLOT_ARGTRUNC = 54, SLOT_LAST = 55;
+            SLOT_ARGTRUNC = 55,
+            /* DECSET 2004 as the grid stands at the close of the run -- a state, not a count, like the
+               sync family's live bit (#83). It exists because the census next to it cannot answer the
+               question a rollout asks: "no bracketed-paste OSC was counted" means either that no
+               application asked, or that it asked and the paste bytes belong to the host's input leg. */
+            SLOT_BP = 56,
+            /* DECSCUSR 5/6 on a kernel32 that has {@code SetConsoleCursorShape}: the shape word this handle last
+             * got accepted, where -1 is "never", 1 is block and 2 is the vertical bar (#88). It is a state like
+             * the bracketed-paste slot, and it carries the same warning: conhost has no getter for the shape, so
+             * this says what the handle <em>said</em>, not what the cursor is. A rollout that reads "2" as "there
+             * is a bar on the screen" is reading past what the dll can witness. */
+            SLOT_SHAPE = 57, SLOT_LAST = 58;
 
     /** The two answers Render.h gives a 133;D whose exit code was absent or was not a number. */
     private static final long EXIT_UNKNOWN = -1, EXIT_UNPARSABLE = 0x7FFFFFFFL;
@@ -76,7 +92,7 @@ public final class NativeRenderer {
     /** What each unsupported-sequence counter is, for the one line at teardown. */
     private static final String[] UNMODELLED = {"escape", "scroll region", "alt buffer", "mouse tracking",
             "mode", "bracketed paste", "private OSC 9", "other OSC", "DCS", "report request",
-            "colon subparameter", "clipboard refused"};
+            "colon subparameter", "clipboard refused", "charset named but not drawable"};
 
     /**
      * ANSI_RENDER=off|0|false|no switches the renderer off; anything else -- including nothing at all --
@@ -90,15 +106,6 @@ public final class NativeRenderer {
                         || v.equalsIgnoreCase("off")
                         || v.equalsIgnoreCase("false")
                         || v.equalsIgnoreCase("no"));
-    }
-
-    /**
-     * ANSI_RENDER_LIB is a directory holding {@code render.dll}, loaded from it by absolute path. Only a
-     * fallback: the normal case is that the launcher already has the install's own directory on PATH.
-     * Nothing here guesses an install location.
-     */
-    private static String libDir() {
-        return System.getenv("ANSI_RENDER_LIB");
     }
 
     /** The DLL is registered process-wide, so it is loaded once and never unloaded. */
@@ -411,6 +418,18 @@ public final class NativeRenderer {
     /** The open() refusal as a code, for a gate that asserts which refusal it got. */
     public static native int openStatus();
 
+    /**
+     * The pseudo-console seam. With painting on (the default) the handle is the whole product: it parses
+     * the stream and paints the cells. With painting off it still parses -- modes, query replies, the
+     * census -- and paints nothing, because the terminal above a pseudo-console owns the only screen and
+     * the only scrollback, and a cell written into the console buffer arrives there as viewport addressing
+     * that can never grow that scrollback. {@link #write} then returns false for every chunk so the caller
+     * writes the same bytes raw, and those bytes' own line feeds are what feed the terminal's history.
+     * Switching painting off hands the console's escape parser back, so the raw bytes are parsed exactly
+     * once, by the terminal. The policy belongs to the caller, never to the library itself.
+     */
+    public static native void setPainting(long h, boolean on);
+
     /* ------------------------------------------------------------------- state --------------------- */
 
     private final long console;
@@ -435,6 +454,13 @@ public final class NativeRenderer {
             close(h);
             h = 0;
             stopped = "native renderer could not adopt the console";
+        }
+    }
+
+    /** paints-nothing mode for a pseudo-console session; see {@link #setPainting(long, boolean)}. */
+    public void setPainting(boolean on) {
+        if (h != 0) {
+            setPainting(h, on);
         }
     }
 
@@ -510,6 +536,20 @@ public final class NativeRenderer {
             b.append("; ").append(s[SLOT_ARGTRUNC])
                     .append(" parameter(s) dropped by a CSI list longer than the parser holds");
         }
+        /* Last because it is the only sentence on this line that is a state rather than a count, and the
+           only one whose absence would otherwise be read as a fact about the applications. */
+        if (has(s, SLOT_BP) && s[SLOT_BP] != 0) {
+            b.append("; bracketed paste agreed (CSI ?2004h) -- the markers themselves are the host's input leg");
+        }
+        /* A state again, and the reason this line says "asked kernel32 for" rather than "shows". Only a handle
+         * that resolved the export can reach a non-zero here, so an empty sentence is not evidence that
+         * DECSCUSR 5/6 went unasked -- it may be a kernel32 without the export, which is the pre-#88 outcome
+         * and the one every leg before this build saw. */
+        if (has(s, SLOT_SHAPE) && s[SLOT_SHAPE] > 0) {
+            b.append("; this handle asked kernel32 for ")
+                    .append(s[SLOT_SHAPE] == 2 ? "a vertical bar" : "the block shape again")
+                    .append(" (DECSCUSR 5/6) -- the console offers no getter to confirm it");
+        }
         return b.toString();
     }
 
@@ -575,20 +615,13 @@ public final class NativeRenderer {
                 System.loadLibrary("render");
                 loaded = true;
                 return true;
-            } catch (Throwable pathFailure) {
-                String dir = libDir();
-                if (dir == null || dir.isEmpty()) {
-                    loadError = "render.dll not found (ANSI_RENDER_LIB is unset): " + pathFailure;
-                    return false;
-                }
-                try {
-                    System.load(new java.io.File(dir, "render.dll").getAbsolutePath());
-                    loaded = true;
-                    return true;
-                } catch (Throwable e) {
-                    loadError = "render.dll failed to load: " + e;
-                    return false;
-                }
+            } catch (Throwable e) {
+                /* One channel, named honestly. System.loadLibrary looks in java.library.path and then in the
+                   OS search path, which is what the launcher's own directory is on -- and UnsatisfiedLinkError
+                   is what both "not there" and "there but the wrong architecture" throw, so the message has
+                   to cover both and must not claim the file is missing when it is merely unloadable. */
+                loadError = "render.dll could not be loaded from java.library.path or PATH: " + e;
+                return false;
             }
         }
     }

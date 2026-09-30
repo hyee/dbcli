@@ -7,11 +7,18 @@ import org.jline.terminal.impl.AbstractWindowsConsoleWriter;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * The writer for a console that cannot render escape sequences itself -- no
- * ENABLE_VIRTUAL_TERMINAL_PROCESSING, which is every Windows 7 console and any console where it was turned
- * off deliberately. It speaks ConEmu's escape protocol; the rendering is done by {@link NativeRenderer},
- * which parses the sequences and paints the cells through render.dll. A console that renders the escapes
- * itself gets {@link WinConsoleWriter}.
+ * The writer for a console whose escapes <b>this</b> process renders. It speaks ConEmu's escape protocol;
+ * the rendering is done by {@link NativeRenderer}, which parses the sequences and paints the cells through
+ * render.dll. A console that renders the escapes itself gets {@link WinConsoleWriter}.
+ *
+ * <p>Which of the two is chosen is decided by {@link WinSysTerminal#createTerminal}, and since #99 a session
+ * may ask for this one explicitly ({@code ANSICON_DEF=conemu}) even on a host whose console could parse. The
+ * writer with one painter, not two, is then {@link NativeRenderer}'s job, not this class's: the library that
+ * paints the cells takes ENABLE_VIRTUAL_TERMINAL_PROCESSING off the console it opened and gives it back when
+ * it closes, because "one parser per byte stream" is a property of the painter and every caller of the
+ * library has to get it, not only the one whose package happens to be {@code org.dbcli}. The Win7-vs-Win10
+ * divergence this removes is worse than either half of it: a chunk the renderer declines would otherwise be
+ * drawn as colour on a 1809 console and as literal text on Windows 7.
  *
  * <p>Until 2026-09-24 this class also loaded ConEmuHk(64).dll and handed it every chunk the renderer
  * declined, through that DLL's exported {@code WriteProcessed3} -- ConEmu's in-process ANSI processor. That
@@ -41,6 +48,11 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
             report(r.unavailableReason());
             r = null;
         }
+        /* A pseudo-console session paints like any other: render.dll owns the parse and the cells, and its
+           executor pays every scroll debt with real line feeds so the host terminal's scrollback grows with
+           the painted rows (the scroll API would be re-serialised as a blanking repaint -- measured
+           2026-09-29, cache/ppty). Nothing here switches the painter off; the setPainting seam stays a
+           library capability, not a production policy. */
         this.nativeRenderer = r;
     }
 
@@ -59,6 +71,17 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
             reportStopped();
         }
         writeRaw(text, 0, len);
+    }
+
+    /**
+     * The user pressed a key, and this writer is the one holding the renderer that knows where their prompt
+     * is. See {@link NativeRenderer#snapOnInput()}: on a console without VTP nobody else brings the view back
+     * after they scroll up to read history, so the input pump asks here. No renderer, nothing to say.
+     */
+    public void snapOnInput() {
+        if (nativeRenderer != null) {
+            nativeRenderer.snapOnInput();
+        }
     }
 
     /** Keeps the output when the renderer cannot take it, instead of dropping it silently. */
@@ -98,7 +121,6 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
     @Override
     public void close() {
         if (nativeRenderer != null) {
-            nativeRenderer.report();       // before close(): the counters live in the native handle
             nativeRenderer.close();
         }
         super.close();

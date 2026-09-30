@@ -3851,14 +3851,29 @@ static void status_bar()
   eq_u("and asked the console for no scroll", (unsigned)g.pendingScrolls, 0,
        "row 4 is outside the region, so writing it cannot move the window");
 
-  /* Ordinary output while the bar is up: the rows above rotate, the bar does not. */
+  /* Ordinary output while the bar is up: the rows above rotate, the bar does not.
+     The clear is what makes the band assertion below a witness: `STATUS` was written a moment ago and
+     would still be claiming damage on its own, so without this the "owes a repaint" check passes with
+     the band loop deleted (the `band` arm in cache/p122 proved that the first time). */
+  rc_paint_done(&g);
   put(&g, "\033[1;1HA\033[2;1HB\033[3;1HC\033[4;1HD\n");
   eq_text(&g, 0, 1, "B", "the region scrolled under the cursor at its bottom edge");
   eq_text(&g, 2, 1, "D", "");
   eq_text(&g, 3, 1, " ", "the LF blanked the row the cursor left");
   eq_text(&g, 4, 6, "STATUS", "the bar survived the scroll -- this is the whole point of the region");
   eq_u("one region scroll", (unsigned)g.nScrolls, 1, "");
-  eq_u("no window scroll", (unsigned)g.pendingScrolls, 0, "");
+  /* The old reading demanded the region cover the viewport's last row before a line feed could move the
+     window, and that one extra condition cost a status-bar session its entire scrollback: with
+     `CSI 1;4r` held here (and `CSI 1;29r` in a 30-row dbcli window), pendingScrolls never grew,
+     Paint.cpp rule 3 never got a slide to spend, and the window sat on buffer row 0 forever. All three
+     references decide by the TOP margin alone: MSFT confines only when `topMargin > page.Top()` and pans
+     otherwise (adaptDispatch.cpp:2454, :2461-2467), ghostty creates scrollback whenever the region top is
+     screen row 0 with the full row span (Terminal.zig:2392-2411), wezterm scrolls within the margins and
+     keeps what leaves the top in its line list (terminalstate/mod.rs:1228-1239). */
+  eq_u("the window advances", (unsigned)g.pendingScrolls, 1,
+       "a top-of-page region scroll is a page scroll, and the evicted line is history, not garbage");
+  eq_u("and the bar's row owes a repaint", (unsigned)rc_row_dirty(&g, 4), 1,
+       "it keeps its content but not its buffer row -- MSFT's static-band copy at :2476");
 
   /* Taking the bar away. Both spellings appear in the wild, and they are not the same write. */
   put(&g, "\033" "7\033[1;1r\033" "8");

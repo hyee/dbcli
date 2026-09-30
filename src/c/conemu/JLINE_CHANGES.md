@@ -50,7 +50,7 @@ Against the fork commit (`a1f0ffc1`, not stock upstream) this work stream change
 
 | File | Differing lines | Ours, or the fork's? |
 |---|---|---|
-| `terminal/src/main/java/org/jline/utils/Status.java` | 177 | ours (#23, #33, #41, #43, #46's callee, #47, #48) |
+| `terminal/src/main/java/org/jline/utils/Status.java` | 225 | ours (#23, #33, #41, #43, #46's callee, #47, #48, and the `ba06511f` cursor trace). Re-measured 2026-09-29 against the `a1f0ffc1` blob with `diff --strip-trailing-cr \| grep -c '^[<>]'`: **225**, which is the 177 this row used to carry plus the 48 lines `ba06511f` added and nothing else -- the Green HEAD blob and `D:\JavaProjects\jline3.29`'s working copy are byte-identical, so no drift is hiding in that delta. |
 | `terminal/src/main/resources/org/jline/utils/windows-conemu.caps` | 33 | ours (#10, #12, #19, #29, #90, plus the 2026-09-28 prose-only pass below -- re-diffed against `a1f0ffc1` the same day and still 33 differing lines, 17 added / 16 removed) |
 | `reader/src/main/java/org/jline/reader/impl/LineReaderImpl.java` | 39 | ours (#41) |
 | `reader/src/main/java/org/jline/keymap/KeyMap.java` | 4 (:624, :634) | ours — the 2026-09-13 terminal-input round: `unbind` compared `c > map.mapping.length` and threw AIOOBE at the exact boundary; both sites are `>=` now. The rest of KeyMap's divergence between the checkouts (+238/-3) is the 2025 fork commit, not ours — the paragraph below used to wave the whole file away as "not this work stream's", which was wrong about the 4 lines. |
@@ -85,6 +85,83 @@ in the jar too). Not ours either, but the repo must be able to rebuild the artif
 **Repo sync, 2026-09-28 (local only, never pushed).** `D:\Green\github\jline3.29` commits: `1310cb95` =
 the four rows above (Status/caps/LineReaderImpl/StatusTest); `a8373a53` = the KeyMap 4-line fix plus the
 two fork-era jar-carrying files. `Display.java` was deliberately left unstaged in Green.
+
+**A fifth commit landed after that paragraph was written: `ba06511f`, 2026-09-28 14:14:52, one file,
+`Status.java` +48/-0** -- an opt-in cursor trace, recorded in its own section below because it is the last
+commit in that repository and the merge table above pre-dates it. Push state re-read 2026-09-29: `master` is
+`[origin/master: ahead 4, behind 1]`, so none of these four commits has left the machine, and `origin/master`
+carries one commit this checkout does not (`5fbbdc39 "fixed by AI"`). "Never pushed" still holds; "and the
+remote is behind" does not.
+
+## `terminal/src/main/java/org/jline/utils/Status.java` -- MovingCursorDisplay moves by CUP only (2026-09-29)
+
+**The defect.** Every `Status.update()` repaint fed the terminal a burst of bare line feeds. The chain:
+`MovingCursorDisplay.update` calls `super.update`; `Display.update`'s "top mode" tail (Display.java:397-400,
+a *fork-added* block -- absent from stock c5a8bf12, present in both this tree and the jline4 merge at :830)
+parks the cursor on its own last row via `moveVisualCursorTo((rows-1)*columns1)`; the non-fullscreen
+down-move of stock jline (`Display.moveVisualCursorTo`, :541-544) spells that as `carriage_return` plus N
+bare `'
+'`. The bar repaints on the rows its own DECSTBM reserved -- top at the screen top -- so each LF
+at the bar's last row scrolled one viewport row into the terminal's scrollback. Measured on the production
+pseudo-console leg (`conpty_probe run`, dbcli, two `help`s): **451 history pushes of which 271 blank**, in
+blocks of exactly 27 (30-row window, 2-row bar), one block per status repaint. The same emitter on the
+render.dll leg was #122's "x9 idle resend": one source, two symptoms.
+
+**The fix.** `MovingCursorDisplay` already owns the local-to-physical frame (`firstLine`); it now overrides
+`moveVisualCursorTo(int)` to address every move absolutely (`cursor_address(firstLine + row, col)`) instead
+of walking relatively. A bar repaint now emits zero line feeds. CUP clamps out-of-range rows to the screen
+edge on every terminal in scope, which is how the park's local row (rows-1) maps to a physical row beyond
+the screen without scrolling anything to get there. `Display.java` itself is untouched: its LF down-move is
+correct for the reader's Display, where moving past the bottom is output growing the screen.
+
+Four questions: (1) render.dll cannot absorb it -- the defect fires on the vtp path where render.dll is not
+in the write path, and on the conemu path the bytes are jline's output either way; (2) the fix generalises --
+an overlay repaint that scrolls the screen is wrong for every consumer of Status, on any terminal (Linux
+xterm included); (3) the quantity (cursor moves during a bar repaint) is Status's own; (4) red witness:
+`StatusTest.barRepaintMustNotFeedLineScrolls` failed on the pre-fix bytes (emitted tail `\E[22A\E[79C \E8`
+matching the live capture `ESC[28A ESC[119C ' '`), 7/7 green after; end-to-end on deployed bytes: blank
+scrollback pushes **271 -> 0**, `Available comands` exactly x2, banner x1, both help tables pushed once each
+(`cache/p123x/h2pty2.bin`).
+
+Deployed: `lib/Jline3.jar` `8b735dd2...` -> `1509863f...` via `jar uf` of the two `Status*` class entries
+only (entry set unchanged, audit `cache/status47-48-20260925/crc-Jline3.jar-{before,after}.txt`);
+`lib/dbcli.jar` untouched at `bf34aa95...` -- the deploy script's second `ship` also swapped in a tree-built
+`Console.class` of unverified provenance and was rolled back from the timestamped backup immediately.
+
+## `terminal/src/main/java/org/jline/utils/Status.java` -- the `ba06511f` cursor trace, and what it settled
+
+The commit adds one private method and four call sites inside `resize(Size)`: `trace("before", null)` right
+after the opening `save_cursor`, then `grow-after-csr` / `grow-end` on the give-rows-back branch and
+`shrink-end` on the take-rows branch. It writes only when `DBCLI_STATUS_TRACE` names a file, reads the cursor
+back through `terminal.getCursorPosition(i -> { })` rather than inferring it, and swallows every throwable --
+a diagnostic that can break the bar is worse than no diagnostic.
+
+**What it bought, in the commit's own words and now on this page:** four competing readings of `resize()`
+were settled on one Windows Terminal run (rows=65, 2-row bar). The shrink branch does **not** lose the cursor
+(`cursor_was == cursor_now`, twice); the grow branch compensates exactly by the scroll delta; therefore the
+asymmetry that looked like the fault is not one. The stray empty prompt line is the **application's**:
+`Console.setStatus`'s off branch called `suspend()` and its on branch never called `restore()`, so a real
+title reached an `update()` that drew nothing. That half is already fixed and shipped -- `Console.java:582`
+carries the `restore()` with the diagnosis in the comment above it, and the deployed `lib/dbcli.jar` shows
+`Status.close`/`suspend`/**`restore`**/`resize` in `setStatus`'s bytecode, so this is a closed item, not a
+todo. Also reverted in that session and never committed: sizing `LineReaderImpl`'s prompt from
+`visibleDisplayRows()` and folding it into the WINCH gate -- "the arithmetic already agreed at 63 and the
+symptom did not move". Do not re-derive it from the tree; it is not in the tree.
+
+**Not merged into jline4, and that is a decision, not an oversight.** `DBCLI_STATUS_TRACE` is 0 hits across
+`D:\JavaProjects\jline4` and 0 hits across `D:\Green\github\jline4`, 0 hits in the `Status.class` inside the
+shipped `cache/jline4-build/out/JLine4.jar` (`javap -p` there shows no trace or cursor member), and 1 hit in
+the `Status.class` inside the production `lib/JLine3.jar` -- so the instrument exists only on the side that
+wrote it. The port is mechanical if it is ever wanted: all four anchors already exist at the same shape in
+jline4's `resize(Size)` (`:305` save_cursor, `:312`/`:327` the two branches, `:319`/`:328` the two
+`change_scroll_region` puts), and the one API the trace leans on is present (`Terminal.getCursorPosition(IntConsumer)`;
+jline4's `Cursor` is a class rather than 3.29's interface, which the trace cannot tell because it only reads
+`getX()`/`getY()`). Two things to decide before porting it, both already argued elsewhere on this page: the
+env name says `DBCLI_` on a library file (port it under that name and record the deviation, or rename and
+break the muscle memory of the 3.29 legs), and a diagnostic with no question attached is dead weight --
+the question it answers on the jline4 side would be the #98 family ("the prompt lands inside the bar's rows"),
+which is still open there.
+
 
 ---
 
@@ -160,7 +237,7 @@ painting path at all. It is on this page because the owner asked and because it 
 
 | What changed | Why | Why render.dll could not absorb it |
 |---|---|---|
-| `conemuClaimed` (:114) is computed before the branch, and the ConPTY branch is now guarded by `!conemuClaimed` (:116). An explicit `ANSICON_DEF=conemu` therefore outranks `NativeRenderer.pseudoConsole()`. | Under Windows Terminal `pseudoConsole()` is `true`, so the old chain short-circuited into `newConsoleWriter` and never reached the `ConEmuWriter` branch below it. The whole session painted without the renderer, and **nothing said so** — `ConEmuWriter` is the only caller in the tree that reports `unavailableReason()`, and it was never constructed. `Console.java:108-126` accepts `conemu` as a mode, so both ends of the stack looked like "the renderer will run"; the swallowed branch was in between. | The renderer is given bytes by a writer. If the writer is a different class, no amount of parser work can be reached — there is no call to make robust. This is the "the bytes never reached us" case, one level further out than any of #47/#48. |
+| `conemuClaimed` (:114 then, :121 as re-measured 2026-09-28) is computed before the branch, and the ConPTY branch is now guarded by `!conemuClaimed` (:116 then, :123 now; the `else if (conemuClaimed)` arm is :131). The block moved down 7 lines when #103 added its WARNING comment ahead of the declaration -- cite the symbols, not the numbers. An explicit `ANSICON_DEF=conemu` therefore outranks `NativeRenderer.pseudoConsole()`. | Under Windows Terminal `pseudoConsole()` is `true`, so the old chain short-circuited into `newConsoleWriter` and never reached the `ConEmuWriter` branch below it. The whole session painted without the renderer, and **nothing said so** — `ConEmuWriter` is the only caller in the tree that reports `unavailableReason()`, and it was never constructed. `Console.java:108-126` accepts `conemu` as a mode, so both ends of the stack looked like "the renderer will run"; the swallowed branch was in between. | The renderer is given bytes by a writer. If the writer is a different class, no amount of parser work can be reached — there is no call to make robust. This is the "the bytes never reached us" case, one level further out than any of #47/#48. |
 | `ANSI_RENDER_LIB` deleted in the same batch (#100): `libDir()` and both fallback arms in `loadLibrary()` are gone; the failure sentence now names the two channels actually tried. | The owner's words: "没有这种问题，不需要这个变量". The variable was read only after `System.loadLibrary("render")` threw, and the launcher has `lib\x64` on `PATH` — none of the five arms below set it, and all four renderer arms came up `ENGAGED`. One more environment variable is one more thing a user must know. | Nothing: the renderer's absence was never the fallback's job. Recorded here because it is the same deploy and the same owner decision, and because it removes a switch that `ANSI_TODO.md` and `DESIGN.md` both used to name. |
 
 **The four questions, for #99.**
@@ -376,6 +453,7 @@ into `D:\JavaProjects\jline4`:
 | `KeyMap.java` | **nothing to port** -- jline4's `unbind` already compares `>=` at both sites (`:636`, `:646` in the 4.4.6 file); a sweep of both trees for the buggy `> mapping.length` shape (without `=`) returns zero remaining hits. The 2026-09-13 fix was a backport of what upstream had already gotten right. |
 | `Display.java` (8c700c49, 51+/16−) | **nothing to port** -- item by item against the 4.4.6 file: the one semantic fix (`key_backspace` on the output path -> `cursor_left`/`parm_left_cursor`) is already there (jline4 `:641`/`:819` use `puts(cursor_left)`; `key_backspace` is 0 hits in its Display); the `empty()` builder-blanking and `hasColumnAddress` ctor cache are already there verbatim; and the rest was *rejected with reasons*: the `rawPrint(char,int)` batch-write would bypass `byteBuilder` in byte mode (jline4's `rawPrint(int)` is mode-aware at `:1153-1159` -- writer-before-builder breaks frame ordering) for zero gain since builder appends cost no console calls; the `dumbDisplay`/`hasCapability` caches trade a possibly-false "caps never change" premise (jline4 updates caps through probing -- the same batch that made #93) for ns-per-frame lookups, invisible against the 78us-per-console-call cost law; the no-`clear_screen` fallback has no red witness anywhere in this stack (every caps entry in scope defines `clear=`) and jline4's reset branch already does the stronger thing (clear + home + seed `oldLines` with blank rows). |
 | `windows-conemu.caps` | byte-for-byte copy of the 3.29 file | nothing to keep; the packed jar's copy was verified identical to the tree |
+| `Status.java` again, from `ba06511f` (the commit that post-dates this table) | **nothing ported** -- the 48-line cursor trace is 0 hits in both jline4 trees and 0 hits in the shipped `JLine4.jar`, while the production `JLine3.jar` carries it | porting is mechanical (all four anchors and `getCursorPosition(IntConsumer)` exist in jline4) but needs a decision on the `DBCLI_`-prefixed env name and a live question to point it at; see the trace's own section above |
 | `StatusTest.java` | the 6 byte-witness cases appended to jline4's grid suite (constants renamed `B_COLS`/`B_ROWS` to coexist) | the whole grid suite, 13 cases |
 
 **One assertion the merge nearly broke the wrong way.** `resizeWithVisibleStatusMustReReserveScrollRegion`
@@ -391,10 +469,54 @@ reconstructed pre-merge `Status` (base `a1f0ffc1` + drift patch, `borderTemplate
 border-template cases have no control arm here for the same reason as on the 3.29 row: the pre-merge class
 has no `setBorder(AttributedString,int)` to link against.
 
-**Not yet re-taken on the jline4 side.** The `LineReaderImpl` fix still has no automated coverage (same gap
-as its 3.29 row): its five-arm live matrix was taken against the 3.29 deployment, and a jline4 live leg is
-owed before dbcli switches runtime. CapsDump's 87-assertion `tputs`/keymap sections ran against
-`lib/JLine3.jar`; only the byte comparison of the jline4 jar's caps copy was re-taken this pass.
+**Re-taken on the jline4 side, 2026-09-28/29 -- both owed legs are now witnessed.** Evidence dir:
+`cache/jline4-live-20260928/` (and `cache/jline4-caps-20260928/` for the caps leg).
+
+- *CapsDump against the jline4 jar*: `caps_check.ps1 -Caps <jline4 tree> -Jar cache/jline4-build/out/JLine4.jar`
+  -> `170 ok / 0 fail`, `CAPS CHECK: ok` on both runs, jar copy and tree byte-identical at
+  `9454E34C5E6724163C447AC7949C1015`, `unexplained=0`. Its red arm is the 2026-09-24 pre-merge `JLine4.jar`:
+  **2 FAILED, and the two are exactly the `cbt` assertions** (`got=null`, `no cbt to look up`) -- the leg can
+  go red, and it goes red for the right reason.
+- *The five-arm live matrix, three roots*: production, a mirror whose `lib` is a byte copy of production, and
+  the same mirror with `JLine3.jar` replaced by `JLine4.jar`. **15/15 arms put the bar on the last row**
+  (WT grow, two-step, one-row, classic shrink, no-resize control). `D:\dbcli\lib` was not written at any point;
+  the jline4 session runs from a mirror install because `bootstrap.lua` scans `lib` relative to the CWD and
+  `OTHER_LIB` can only *append*, so an extra jar there is shadowed by `JLine3.jar`.
+- *Why a mirror instead of a deploy*: this is also the first time dbcli's own `WinSysTerminal` has been loaded
+  under jline4 at all. The 2026-09-24 swap only ever ran headless, which resolves to `DumbTerminal`. Before
+  the legs, a compile probe put `JLine4.jar` first on the classpath and rebuilt the whole `org.dbcli` tree:
+  **57 sources -> 112 classes, `javac` rc=0, 0 errors**, so the switch is not blocked at link time.
+- *Why the matrix is reported twice*: every arm above ran at 02:05-02:29 on 2026-09-28 against
+  `dbcli.jar faf86eec` + `JLine3.jar 67bcfd7a`, and `lib` moved by two deploys later the same day --
+  `JLine3.jar 8b735dd2` (14:02) and `dbcli.jar bf34aa95` (21:17), the latter carrying the #99 reversal
+  (`WinSysTerminal.java:130` now tests `Boolean.TRUE.equals(pty)` first). The re-take on the shipping batch
+  (`cache/jline4-live-20260928/b329` and `/b4`, both `dbcli.jar bf34aa95`) is **6/6 green**: diag, classic
+  shrink and WT grow on each side. It is a different exercise than the first matrix, and that is the point --
+  both arms now self-report `WinSysTerminal[name='dbcli', type='windows-vtp']` and print
+  `ANSICON_DEF=conemu ignored: this console is a pseudo-console`, so the caps entry under test is
+  `windows-vtp.caps` (which does declare `csr`) rather than `windows-conemu.caps`. Read together the two
+  passes say the merged jline4 `Status`/`LineReaderImpl` keep the bar on the last row under **both** terminal
+  classes dbcli can land on in Windows Terminal.
+- *The red arm for the live matrix, and its shape*: with the pre-merge `JLine4.jar` in the same mirror, all
+  three arms come back `BAR ABSENT` and the screen carries
+  `java.lang.NoSuchMethodError: org.jline.utils.Status.setBorder(Lorg/jline/utils/AttributedString;I)V`.
+  So the live leg goes red for the *linkage* reason, not for a geometry reason -- the same limitation the
+  "What is not witnessed" list already records for the border unit cases, now on a real screen. Read it as
+  the `lib/dbcli.jar` + `lib/Jline3.jar` same-batch rule demonstrated, not as a resize witness.
+- **The trap that made the first four jline4 legs meaningless, and it was not jline's doing.** Those legs
+  reported `BAR ABSENT` and `NativeWinSysTerminal[name='dbcli', type='', ...]`. `--env MSYSTEM=` on a
+  `window` leg sets MSYSTEM to the **empty string**; it does not delete it. jline 3.29 defines
+  `IS_MSYSTEM = IS_WINDOWS && MSYSTEM != null && (startsWith("MINGW") || equals("MSYS"))`, so "" is false;
+  jline4 defines `IS_MSYSTEM = IS_WINDOWS && MSYSTEM != null`, so "" is **true**. Under jline4 that one
+  character makes `Console.java:125` skip dbcli's own `createTerminal`, the generic builder then yields a
+  terminal whose type is "", `InfoCmp.getInfoCmp("")` throws, `AbstractTerminal.parseInfoCmp` catches it and
+  falls back to `getDefaultInfoCmp("ansi")` -- and `ansi.caps` declares no `csr`, so `Status` is
+  `!supported` and no bar is ever drawn. The fix belongs to the harness, not to either library: the `.cmd`
+  must `set MSYSTEM=` (cmd's delete form), after which the jline4 leg self-reports
+  `WinSysTerminal[name='dbcli', type='windows-conemu']` and passes. Agents.md's "clear the two inherited
+  variables" rule is therefore **not satisfiable with `--env NAME=`** on a window leg.
+- Still uncovered after this pass, unchanged: `LineReaderImpl` has no automated test -- the matrix above is
+  its only witness, on either tree.
 
 **Nothing deployed.** `lib/` untouched; the merge lives in the jline4 source tree and
 `cache/jline4-build/out/JLine4.jar` only. The 3.29 tree and its shipped `Jline3.jar` remain the production

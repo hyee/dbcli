@@ -104,6 +104,11 @@ typedef struct RcPlan
   int  cursorVisible, setVisible;
   int  shapeHeight, setShape; /* DECSCUSR: the cursor height to hand SetConsoleCursorInfo, and whether the
                                  console's differs. One call serves both this and setVisible. */
+  int  shapeStyle, setStyle;  /* #88: DECSCUSR 5/6 on a console that has SetConsoleCursorShape -- the shape
+                                 word and the flag saying to use it. When setStyle is 1, setShape is 0: the
+                                 parameter is said with one API, never with both. Both are 0 whenever the
+                                 seam did not resolve the export, which is every console this build had to
+                                 work on before #88 and every console from Win7 up that still lacks it. */
   unsigned long cells;        /* cells the runs will move: the cost the rollout gate compares, and since
                                  B2 it is the rectangles' real area rather than rows x the buffer row */
 } RcPlan;
@@ -111,6 +116,26 @@ typedef struct RcPlan
 /* Fills `p` from the model and the console's current shape. Does not mutate the grid: clearing the
  * dirty flags and consuming pendingScrolls is the caller's, once the operations actually landed. */
 void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p);
+
+/* #88, the two shape words this build ever sends to SetConsoleCursorShape. Defined here, in the one header
+ * both halves of #88 can see, because the number has to be identical in the function that chooses it
+ * (Paint.cpp::rc_cursor_style_for) and the seam that sends it (RenderJni.cpp) -- two definitions of one
+ * constant is how #87's two tables came to disagree about 2048. They are wincon.h's CONSOLE_CURSOR_STYLE
+ * BLOCK and VERTICAL_BAR, and Paint.cpp's comment on rc_cursor_style_for says plainly how much trust they
+ * deserve: nothing on this box declares that API, so the witness is "kernel32 accepted it", not "the shape
+ * is right". */
+#define RC_CURSOR_STYLE_BLOCK 1
+#define RC_CURSOR_STYLE_VERTICAL_BAR 2
+
+/* #88, the two halves of "does this console have SetConsoleCursorShape".
+ * `rc_cursor_style_for` is pure: it says what a DECSCUSR parameter means for that API given the answer, or
+ * -1 when it means nothing there. It takes the answer as an argument precisely so the host gate can drive
+ * both arms of it, and it is the leg's whole job that `haveShapeApi == 0` reproduces the pre-#88 answer for
+ * all seven parameters (Paint.cpp defines the two shape numbers and why only one of them is ever sent).
+ * `rc_cursor_shape_api` is the answer the planner reads: process-wide, default 0, set by the seam from the
+ * pointer it resolved for this handle. It returns the previous value so a leg can restore what it found. */
+int rc_cursor_style_for(int style, int haveShapeApi);
+int rc_cursor_shape_api(int available);
 
 /* The caller finished with this plan: consume g->pendingScrolls and clear the damage. */
 void rc_paint_done(RcGrid *g);

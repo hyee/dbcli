@@ -691,7 +691,48 @@ static void scroll_up(RcGrid *g, int n)
   }
   /* The grid is consistent at this point and the input is not: ask for a paint now rather than let the
      next line's text fall off the top of the gutter, where nothing can recover it. */
-  const int room = rc_scroll_room(g);
+  const int room = g->streamScrolls ? 1 : rc_scroll_room(g);
+  if (g->onFlush && room > 0 && g->pendingScrolls >= room) g->onFlush(g->flushCtx);
+}
+
+/* The page-advance form of a line feed at the bottom margin of a region whose top is the viewport top:
+   the evicted line becomes history, not garbage. All three references make this call by the TOP margin
+   alone, and none of them requires the region to reach the viewport's last row -- the reading this
+   replaces did, and a status bar (`CSI 1;29r` in a 30-row window) is exactly the shape it misjudged:
+   every feed stayed a confined region shift, pendingScrolls never grew, Paint.cpp rule 3 never got a
+   slide to spend, and the window sat on buffer row 0 for the whole session, so `help` twice left the
+   first screenful overwritten and the second one amputated. Read 2026-09-29, each in its own tree:
+   MSFT guards the pan branch with `topMargin > page.Top()` and pans at :2461-2467
+   (adaptDispatch.cpp:2454-2467); ghostty creates scrollback whenever the region top is screen row 0
+   with the full row span, bottom margin or not (Terminal.zig:2392-2411, `cursorScrollAbove`); wezterm
+   scrolls within the margins and lets its line-list keep what leaves the viewport top
+   (terminalstate/mod.rs:1228-1239, c1_index). What the bottom margin decides is the *other* question,
+   MSFT :2474-2477: the rows below it keep their content but lose the buffer row they were painted on,
+   so they must be repainted where the window now sits -- our slide moves no cells, and the same facts
+   reach the screen through damage rather than through a copy.
+   *
+   No slide-room gate: the model stays console-free, and when the window has no room left to travel the
+   debt is paid the same way the no-region path has always paid it at the buffer's last row, one
+   ScrollConsoleScreenBuffer per flush. The painter cannot be engaged under a pseudo-console
+   (WinSysTerminal.java's pseudoConsole() test precedes every writer choice), so the pty
+   re-serialisation cost that argues for a guard has no production leg. */
+static void line_down_page_scroll(RcGrid *g, int bot)
+{
+  /* Rows [0..bot] ride up one model index while the base slides one buffer row down, so each of them keeps
+     the buffer row it was painted on -- which is why none of them is dirty. The content still moves up one
+     *screen* row, because the window moved down under it. The ring loses its oldest line at the wrap,
+     exactly as scroll_up's whole-model rotation does. */
+  rotate_span(g, 0, bot + 1, 1, 0);
+  fill_row(g, bot, 0, g->attr);
+  row_reset_state(g, bot);
+  mark_row_dirty(g, bot);
+  /* The band below the bottom margin keeps its content and loses its buffer row, exactly the rows MSFT
+     copies down at :2476 to hold them static. Unpainted, the bar's own row would land one screen row high
+     and the last screen row would show whatever the console had there. */
+  for (int r = bot + 1; r < g->rows; r++) mark_row_dirty(g, r);
+  g->nScrolls += 1;
+  g->pendingScrolls += 1;
+  const int room = g->streamScrolls ? 1 : rc_scroll_room(g);
   if (g->onFlush && room > 0 && g->pendingScrolls >= room) g->onFlush(g->flushCtx);
 }
 
@@ -717,10 +758,14 @@ static void line_down(RcGrid *g)
   else
   /* A region that is the viewport is not a region at all: the whole-model shift below is what carries
      unpainted history out of the gutter and asks for the console scroll (pendingScrolls, rc_scroll_room),
-     and a chunk longer than the window still has to run through it. Only a region narrower than the
-     viewport is scrolled on its own, and then the rows outside it hold what they hold. */
-  if (top == gutter(g) && bot == g->rows - 1) scroll_up(g, 1);
-  else shift_region(g, 1, top, bot, 0);
+     and a chunk longer than the window still has to run through it. A region that starts inside the page
+     (top below the viewport top, or a narrowed row) is scrolled on its own -- MSFT confines exactly there
+     (adaptDispatch.cpp:2454) and ghostty takes its in-place cursorScrollRegionUp for the same shape
+     (Terminal.zig:2436). Everything else with its top at the viewport top advances the page; the
+     bottom margin alone never confines. */
+  if (top > gutter(g) || g->marginSet) shift_region(g, 1, top, bot, 0);
+  else if (bot == g->rows - 1) scroll_up(g, 1);
+  else line_down_page_scroll(g, bot);
   ftcs_line_ended(g);
 }
 
@@ -1988,7 +2033,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
     {
       const int top = gutter(g);
       const int page = g->rows - top;              /* the 1-based rows the parameters may name */
-      if (!g->nArgs) { g->regSet = 0; break; }     /* `CSI r` is the reset form */
+      if (!g->nArgs) { g->regSet = 0; g->regionSerial++; break; }   /* `CSI r` is the reset form */
       int t = region_arg(g, 0, 1, page), b = region_arg(g, 1, page, page);
       if (t > b) break;                            /* inverted: leave whatever region is live */
       const int rt = top + t - 1, rb = top + b - 1;
@@ -1997,6 +2042,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          the console scroll in mind branch on exactly that, and a region that happens to cover everything
          must not cost them. MSFT normalises the same way for `apt` (:2262-2270). */
       if (!(rt == top && rb == g->rows - 1)) { g->regSet = 1; g->regTop = rt; g->regBot = rb; }
+      g->regionSerial++;                 /* the bare form and the normalisation are resets: forward those too */
       break;
     }
     case 'h': case 'l':
