@@ -675,6 +675,7 @@ static void scroll_up(RcGrid *g, int n)
   rotate_span(g, 0, g->rows, n, 0);
   g->nScrolls += (unsigned long)n;
   g->pendingScrolls += n;
+  g->unpushed = 1;                /* content left the viewport on its own: the next takeover may bank it */
   /* The n rows that arrive at the bottom are pool rows that left the top, so they need everything: cells
      blank in the live attribute, the wrap claim and the semantic mark dropped (a row that scrolls in from
      the gutter arrived blank, whatever it held before), and a damage claim, because a row coming into the
@@ -732,6 +733,7 @@ static void line_down_page_scroll(RcGrid *g, int bot)
   for (int r = bot + 1; r < g->rows; r++) mark_row_dirty(g, r);
   g->nScrolls += 1;
   g->pendingScrolls += 1;
+  g->unpushed = 1;                /* content left the viewport on its own: the next takeover may bank it */
   const int room = g->streamScrolls ? 1 : rc_scroll_room(g);
   if (g->onFlush && room > 0 && g->pendingScrolls >= room) g->onFlush(g->flushCtx);
 }
@@ -1526,6 +1528,9 @@ static void full_reset(RcGrid *g)
      sequence that would have cleared it. */
   g->sync = 0;
   scroll_up(g, g->winRows);
+  /* RIS discards the screen: its own scroll must not arm the takeover, or the next `\E[H` would bank a
+     viewport of blanks. Cleared after the scroll for exactly that reason. */
+  g->unpushed = 0;
   clxy(g, gutter(g), 0);
 }
 
@@ -1792,7 +1797,27 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          under `?6` and on the viewport without it (MSFT's two bases, adaptDispatch.cpp:346/:354). */
       int r0, c0;
       origin_base(g, &r0, &c0);
-      clxy(g, r0 + arg(g, 0, 1) - 1, c0 + arg(g, 1, 1) - 1);
+      const int tr = r0 + arg(g, 0, 1) - 1;
+      /* The full-screen takeover: a BARE `\E[H` that jumps to the viewport's top row while content the
+         session scrolled by itself is still on the screen (`unpushed`). That is the first byte of every
+         dashboard frame the product sends -- Console.screenBlock's exact spelling -- and answering it as an
+         in-place move is what let `top` overwrite the help listing still standing in the viewport: the rows
+         were destroyed without ever reaching the scrollback, on every host. The owner's contract is
+         push-then-paint, so the takeover banks the live viewport first: scroll_up moves those rows into the
+         gutter and charges pendingScrolls, which the executor pays in the host's own currency (real line
+         feeds under a pseudo-console, a buffer scroll on a classic console). What the flag buys is that the
+         dashboard's SECOND home is still just a move: frames do not scroll, `unpushed` stays down for the
+         dashboard's whole life, and every later `\E[H` repaints in place. The parameterless spelling is the
+         contract's voice on purpose: an explicit `CSI 1;1 H` is addressing, and a harness or an application
+         that parks on the top row by number (`gotoRow(0)` here) means exactly the row it named -- the
+         references agree, every one of them moves the cursor and nothing else. An alt screen (whose rows
+         have no scrollback to gain) and a session that has scrolled nothing are not takeovers either. */
+      if (!g->alt && g->nArgs == 0 && g->unpushed && tr == gutter(g) && g->cy > tr)
+      {
+        scroll_up(g, g->cy - tr + 1);
+        g->unpushed = 0;
+      }
+      clxy(g, tr, c0 + arg(g, 1, 1) - 1);
       break;
     }
     case 'd': clxy(g, gutter(g) + arg(g, 0, 1) - 1, g->cx); break;

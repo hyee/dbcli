@@ -3916,6 +3916,46 @@ static void status_bar()
   eq_text(&g2, 5, 11, "========== ", "the bar's last row survived its own trailing newline");
 }
 
+/* The dashboard contract (`top`, per the owner): a CUP that jumps to the viewport's top while content the
+   session scrolled by itself is still standing there is a takeover -- the viewport is banked into the
+   gutter (pendingScrolls charged, so the executor pays it in the host's currency) and the frame paints on
+   the rows the push emptied. Never a clear, never an overwrite. The flag that arms it is what keeps every
+   later home of the same dashboard a plain repaint, and what stops a home from banking a screen that
+   never scrolled. */
+static void geo_takeover()
+{
+  static RcGrid g;
+  rc_reset_hist(&g, 20, 6, 14, 0x07);        /* 20 rows, 6-row window, 14 rows of gutter above */
+  put(&g, "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8"); /* two feeds scrolled: the viewport holds L3..L8 */
+  eq_u("natural scrolling armed the takeover", (unsigned)g.pendingScrolls, 2, "");
+  eq_text(&g, 14, 2, "L3", "the viewport's top row before the takeover");
+  eq_u("the cursor is where the output stopped", (unsigned)g.cy, 19, "");
+
+  put(&g, "\033[H");                          /* `\E[H`, the first byte of every dashboard frame */
+  eq_u("the takeover banked the live viewport", (unsigned)g.pendingScrolls, 2 + 6,
+       "rows 14..19 held content and the cursor sat below the top: six rows pushed");
+  eq_text(&g, 13, 2, "L8", "the last painted row rode the push into the gutter");
+  eq_text(&g, 14, 2, "  ", "the viewport is the blanks the push scrolled in");
+  eq_text(&g, 19, 2, "  ", "");
+  eq_u("and disarmed itself", (unsigned)g.unpushed, 0, "");
+  eq_u("the cursor homed", (unsigned)g.cy, 14, "");
+
+  rc_paint_done(&g);
+  put(&g, "\033[H");                          /* the dashboard's next frame */
+  eq_u("a second home is a repaint, not a second push", (unsigned)g.pendingScrolls, 0, "");
+  put(&g, "\033[20;1H");                      /* down to the viewport's bottom... */
+  eq_u("parked on the bottom row", (unsigned)g.cy, 19, "");
+  put(&g, "\033[1;1H");                       /* ...the explicit spelling of the same home */
+  eq_u("an addressed 1;1 is not a takeover", (unsigned)g.pendingScrolls, 0,
+       "the contract's voice is the parameterless \\E[H; explicit addressing means the row it names");
+  eq_u("and it still moves the cursor", (unsigned)g.cy, 14, "");
+  put(&g, "\033[20;1H");                      /* back down... */
+  put(&g, "\033[4;1H");                       /* ...then up to viewport row 4 (model row 17): NOT the top */
+  eq_u("an upward mid-screen jump charges nothing either", (unsigned)g.pendingScrolls, 0,
+       "only the bare jump to the viewport's top is a takeover");
+  eq_u("and it still moves the cursor", (unsigned)g.cy, 17, "");
+}
+
 /* The character-editing family, which the shipped output never sends but an application on this terminal
    may: ICH, DCH, and the DECSCUSR parameter the painter turns into a cursor height. */
 /* IRM (#77, I40): insert mode is a write-side claim on the same primitive an ICH performs, so its legs are
@@ -6904,6 +6944,7 @@ int main(int argc, char **argv)
   geo_tabs();
   geo_region();
   status_bar();
+  geo_takeover();       /* the dashboard contract: `\E[H` banks the scrolled viewport once, then repaints */
   geo_decrpm_unmodelled();
   geo_mousemodes();     /* #81: nine mouse modes, one bit each, one answer each */
   geo_ckm();            /* #114: DECCKM -- stored, answered, cleared by both resets, and 2 is NOT in the family */

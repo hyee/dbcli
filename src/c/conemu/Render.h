@@ -469,6 +469,17 @@ typedef struct RcGrid
      of a help table vanished from the replayed history). With the trigger at one, every rotation pays
      its line feed immediately and the arriving row is painted by the ordinary damage travel. */
   uint8_t streamScrolls;
+  /* Set whenever content leaves the viewport upward on its own (a line feed scroll, a page feed), and
+     cleared by the one sequence that may then bank what is on the screen: a full-screen takeover. The
+     takeover is a CUP whose target row is the viewport's top while the cursor sits below it -- the first
+     byte of every dashboard repaint (`\E[H`, then the rows) -- and the model answers it by scrolling the
+     viewport's live content into the gutter (charging pendingScrolls, so the executor pays it in the
+     host's own currency) before the frame lands on the rows the scroll emptied. That is the owner's
+     contract for `top`: push the history up, then output -- never clear, never overwrite what the user
+     was reading. The flag is what keeps a dashboard's SECOND `\E[H` a repaint rather than a second push:
+     frames do not scroll, so the flag stays down for the dashboard's whole life and every later home is
+     in-place. */
+  uint8_t unpushed;
   /* Bumped by every CSI r that actually changes the region (set, reset, or the full-viewport
      normalisation -- not the inverted-pair refusal). The pseudo-console seam reads it after each
      chunk and forwards the final region to the host terminal, which pins whatever rows live below
