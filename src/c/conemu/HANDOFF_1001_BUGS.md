@@ -1,5 +1,15 @@
 # Handoff — the 2026-09/10 render.dll feature batch: open defects, ranked
 
+**STATUS 2026-10-01, later the same day: fixed in `render-2026-10-01-68`.** P1-1 (takeover stands
+down while `regSet` is live, flag stays armed), P1-2 (alt guard in `line_down`), P2-1
+(`sync_region_host` moved to the top of `paint_flush`), P2-2 (`unpushed` carried across
+`build_model`) are fixed with red-then-green host legs; P3-1 and P3-2 are witnessed by the replay
+legs in `cache/p123x/p3legs` (`Rprobe2.java`: setPainting flips RAW/PAINTED with the census alive;
+alt under the pty executor pushes zero rows and restores the viewport). Still open: **P2-3 / gap A1**
+(the owner reserved the decision of who reads `CONIN$`) and **P2-2's automated leg** (the carry is
+JNI-level; the resize-races-the-first-frame shape needs a live leg, recorded as owed). Everything
+below is the original analysis, kept for the anchors and repro sketches.
+
 Scope: everything this batch shipped — the DECSTBM page feed (#123, -62), the
 pseudo-console executor (`ptyMode`: real-LF scroll payment, -64), region
 forwarding (`sync_region_host`, -65), the streaming scroll trigger

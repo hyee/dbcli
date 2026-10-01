@@ -3925,6 +3925,30 @@ static void status_bar()
 static void geo_takeover()
 {
   static RcGrid g;
+  /* P1-2 first, while the model is fresh: a page feed inside an alternate screen must not touch the main
+     screen's gutter rows and must not charge a scroll, whatever region the alt program set. The shape: a
+     TUI that protects its own status line sets `CSI 1;Nr` on the alt screen -- top at the viewport top is
+     exactly line_down's page-feed arm. Geometry: 7 lines + trailing feed push twice, so the viewport at
+     alt entry holds third..seventh and the gutter holds main,second at rows 12,13. */
+  rc_reset_hist(&g, 20, 6, 14, 0x07);
+  put(&g, "main\r\nsecond\r\nthird\r\nfourth\r\nfifth\r\nsixth\r\nseventh\r\n");
+  rc_clear_dirty(&g);
+  put(&g, "\033[?1049h");                     /* the TUI takes the alt screen */
+  put(&g, "\033[1;5r");                       /* region rows 1..5: its content, row 6 is its status line */
+  put(&g, "\033[6;1HSTAT");                   /* something to prove the row below the region holds */
+  put(&g, "\033[1;1HA1\r\nA2\r\nA3\r\nA4\r\nA5\n");  /* five lines, the last feed is at the region bottom */
+  eq_text(&g, 12, 1, "main", "P1-2: the main screen's gutter rows are the snapshot to restore, not history to rotate");
+  eq_text(&g, 13, 1, "second", "");
+  eq_u("P1-2: an alt page feed charges no scroll", (unsigned)g.pendingScrolls, 0,
+       "entering the alt zeroes the debt (no scrollback to pay into) and a region feed inside it adds nothing");
+  eq_text(&g, 14, 1, "A2", "the alt's own region rotated internally");
+  eq_text(&g, 17, 1, "A5", "");
+  eq_text(&g, 18, 1, "  ", "the rotation's incoming blank");
+  eq_text(&g, 19, 1, "STAT", "the TUI's status row below the region holds what it held");
+  put(&g, "\033[?1049l");
+  eq_text(&g, 14, 1, "third", "leaving the alt restores the main screen row for row");
+  eq_text(&g, 13, 1, "second", "");
+
   rc_reset_hist(&g, 20, 6, 14, 0x07);        /* 20 rows, 6-row window, 14 rows of gutter above */
   put(&g, "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8"); /* two feeds scrolled: the viewport holds L3..L8 */
   eq_u("natural scrolling armed the takeover", (unsigned)g.pendingScrolls, 2, "");
@@ -3954,6 +3978,26 @@ static void geo_takeover()
   eq_u("an upward mid-screen jump charges nothing either", (unsigned)g.pendingScrolls, 0,
        "only the bare jump to the viewport's top is a takeover");
   eq_u("and it still moves the cursor", (unsigned)g.cy, 17, "");
+
+  /* P1-1: a takeover while a DECSTBM region is live must not bank. The bank is a whole-model rotation
+     while the executor pays at the region's bottom (the host honours the forwarded region), so the two
+     would desync on every row below the margin. The in-place move -- the pre-takeover behaviour -- is the
+     honest answer until a region-aware bank exists. */
+  rc_paint_done(&g);
+  put(&g, "\033[1;4r");                       /* a bar holds viewport rows 5..6 */
+  put(&g, "\033[4;1HL9\r\nL10\r\nL11");       /* feeds at the region's bottom arm the flag, debt += 3 */
+  const unsigned debtWithRegion = g.pendingScrolls;
+  eq_u("armed inside the region", (unsigned)g.unpushed, 1, "");
+  put(&g, "\033[H");
+  eq_u("P1-1: a region is live, so the takeover stands down", (unsigned)g.pendingScrolls, debtWithRegion,
+       "the bank is whole-model; paying it at the region's bottom would desync host and model");
+  eq_u("and the flag stays armed for a later bar-less home", (unsigned)g.unpushed, 1, "");
+  eq_u("the cursor still homed", (unsigned)g.cy, 14, "");
+  put(&g, "\033[r");                          /* drop the region: the takeover is back on */
+  put(&g, "\033[5;1Hx");                      /* park on viewport row 5, strictly below the top */
+  put(&g, "\033[H");
+  eq_u("with the region gone the home banks again", (unsigned)g.pendingScrolls, debtWithRegion + 5,
+       "the cursor sat on model row 18, so the bank is the five rows below the top");
 }
 
 /* The character-editing family, which the shipped output never sends but an application on this terminal

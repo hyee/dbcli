@@ -764,8 +764,14 @@ static void line_down(RcGrid *g)
      (top below the viewport top, or a narrowed row) is scrolled on its own -- MSFT confines exactly there
      (adaptDispatch.cpp:2454) and ghostty takes its in-place cursorScrollRegionUp for the same shape
      (Terminal.zig:2436). Everything else with its top at the viewport top advances the page; the
-     bottom margin alone never confines. */
-  if (top > gutter(g) || g->marginSet) shift_region(g, 1, top, bot, 0);
+     bottom margin alone never confines.
+     The alt screen is the exception, both arms of it: its rows are the viewport and its scrollback does not
+     exist ("nothing above the viewport moves", scroll_up's own alt branch), so a page feed there has no
+     history to carry and no currency to pay one in -- charging pendingScrolls would make the executor
+     scroll the *host* while it is showing alt content, and rotating from model row 0 would drag the main
+     screen's snapshotted gutter rows into the rotation. Confined, always, exactly as MSFT's alt buffer
+     scrolls within its own bounds (screenInfo.cpp's alt has no scrollback path at all). */
+  if (g->alt || top > gutter(g) || g->marginSet) shift_region(g, 1, top, bot, 0);
   else if (bot == g->rows - 1) scroll_up(g, 1);
   else line_down_page_scroll(g, bot);
   ftcs_line_ended(g);
@@ -1807,12 +1813,16 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          gutter and charges pendingScrolls, which the executor pays in the host's own currency (real line
          feeds under a pseudo-console, a buffer scroll on a classic console). What the flag buys is that the
          dashboard's SECOND home is still just a move: frames do not scroll, `unpushed` stays down for the
-         dashboard's whole life, and every later `\E[H` repaints in place. The parameterless spelling is the
+         dashboard's whole life, and every later `\E[H` repaints in place. A live DECSTBM region stands the
+         takeover down (the flag stays armed for a bar-less later home): the bank is a whole-model rotation
+         while the executor pays at the region's bottom -- the host honours the forwarded region -- so the
+         two would desync on every row below the margin; a region-aware bank is the upgrade, and until it
+         exists the in-place move is the honest answer. The parameterless spelling is the contract's voice on purpose: an explicit contract's voice on purpose: an explicit
          contract's voice on purpose: an explicit `CSI 1;1 H` is addressing, and a harness or an application
          that parks on the top row by number (`gotoRow(0)` here) means exactly the row it named -- the
          references agree, every one of them moves the cursor and nothing else. An alt screen (whose rows
          have no scrollback to gain) and a session that has scrolled nothing are not takeovers either. */
-      if (!g->alt && g->nArgs == 0 && g->unpushed && tr == gutter(g) && g->cy > tr)
+      if (!g->alt && !g->regSet && g->nArgs == 0 && g->unpushed && tr == gutter(g) && g->cy > tr)
       {
         scroll_up(g, g->cy - tr + 1);
         g->unpushed = 0;
