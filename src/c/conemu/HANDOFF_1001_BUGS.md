@@ -27,6 +27,35 @@ self-heals only by luck; P3 = debt/gap that will bite whoever inherits it.
 
 ---
 
+## P1-0  NEW (2026-10-01, owner report + reproduced): at `exit`, the paint lands on stale rows -- deleted lines and prompt residue
+
+Owner: on the render.dll path (classic console window), after `exit` some lines are deleted and the cmd
+prompt carries residue; the MSFT (vtp) path is clean. Reproduced on a classic-window leg
+(`cache/p123x/drive-exit.ps1`, wrapper keeps cmd alive after dbcli exits):
+
+- buffer 120x30: `Exited.` lands ONE ROW BELOW cmd's own continuation echo; the `SQL> exit` row is
+  overwritten by that echo; the console cursor is left where cmd printed.
+- buffer 2000x9001, `-StepLine`: 1.5 s after typing `exit`, `SQL> exit` and `Exited.` are NOT on the
+  screen at all, and **the console cursor is parked at (0, 83) -- the start of the help table's tail
+  row -- while the real content reaches row 86**. The park lands ~3 rows above the model's own front.
+
+Mechanism (narrowed, fix not yet written): the exit chunks advance the MODEL (its grid holds the new
+lines) but the executor's cursor park addresses a STALE row -- the plan's `row0`-based `curTY` lags the
+rows just painted. cmd then prints at the parked (old) cursor and overwrites the real content: the
+deleted lines and the residue are cmd's output landing on top of freshly painted rows, plus the model's
+park dragging the view. NOT exit-specific in the code path sense (any tail-end output after a long
+result would do); `xyz` stays consistent because its output sits inside the already-claimed band.
+
+Next agent's plan: on a classic leg, read the model's census across the exit sequence (`stats()` gives
+pendingScrolls; the gate-only plan trace gives trBase/trRow0) at the moment `Exited.` is printed, and
+compare `row0 + cy` against the console's true cursor row. Prime suspects, in order: (1) rows painted
+BELOW the anchor's claimed band do not advance the claim (the claim update runs only on slide/bufScroll
+-- `RenderJni.cpp` paint_flush's "The model owns these buffer rows from here on"), so the park computes
+`curTY` from a band that ends above the new rows; (2) the submit line feed of the accepted command
+(jline's post-accept newline) is consumed by the model without a matching console advance on the
+classic executor. The witness is the drive-exit leg above plus a red assertion: after the exit chunk,
+`park cursor == console cursor == last painted row + 1`.
+
 ## P1-1  Takeover with a live DECSTBM region: model and host desync
 
 `Render.cpp:1815` — the takeover condition checks `!g->alt && nArgs==0 &&
