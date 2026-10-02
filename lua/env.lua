@@ -1349,6 +1349,13 @@ function env.onload(...)
 end
 
 function env.unload()
+    --Suspend FIRST, before the unload callbacks. A callback that touches the title (the disconnect
+    --notice, for one) re-opens the status bar that env.set_title(nil,'__EXIT__') just closed, and
+    --that redraw re-claims the bottom rows and walks the cursor up over the session's final lines --
+    --after "exit" the next process then prints where the cursor was parked, which reads as deleted
+    --lines plus residue at the prompt. Once the console is paused every setStatus is a no-op, so
+    --the last thing on screen stays the last text that was printed.
+    console:suspend(true)
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
     local e,msg=pcall(env.init.unload,env.init.module_list,env)
     if not e then print(msg) end
@@ -1358,7 +1365,6 @@ function env.unload()
         if not e then print(msg) end
     end
     setmetatable(_G,nil)
-    console:suspend(true)
 end
 
 function env.reload()
