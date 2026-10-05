@@ -233,6 +233,9 @@ public class Render {
         caseArgClamp();
         caseMargins();
         caseBracketedPaste();
+        caseSgrStack();
+        caseXtModes();
+        caseRectFamily();
         caseMouseModes();
         caseCursorKeys();
         caseDeccolm();
@@ -1961,6 +1964,95 @@ public class Render {
      * hardest to undo -- so there is no report to spell-check, and an assertion that "no report appears" is
      * the honest arm, not a placeholder for one that does.
      */
+    /**
+     * Gap G3, the half the host gate cannot reach: XTPUSHSGR/XTPOPSGR (`CSI # {` / `CSI # }`) across a
+     * rebuild. The rules (ring of ten, empty pop ignored, resets keep the stack, parts) are the host
+     * gate's `plan_sgr_stack`; what only a live run can show is that `build_model` -- the throw-away
+     * and rebuild a resize takes, reached here through `readopt` exactly as #77's carry leg did --
+     * keeps the pushed rendition. A keep-list field missing here turns the next `CSI # }` into the
+     * empty-stack no-op, and the program's saved colour is gone to a window drag.
+     */
+    private static void caseSgrStack() {
+        if (!standardGeometry("the SGR-stack leg")) return;
+        gotoRow(2);
+        paint("push red, drop it, write green", "\u001b[31m\u001b[#{\u001b[m\u001b[32mG");
+        text("the live pen is green", winT + 2, 0, "G", 0x02);
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        paint("pop after the rebuild, then write", "\u001b[#}R");
+        text("the pop restored the pushed red across the seam", winT + 2, 1, "R", 0x04);
+        /* The part form across the same seam: only the fore colour was saved (`30` in xterm's push
+           grammar), so the rendition set after the push must survive the pop -- the combine rule,
+           witnessed live. Bold would fold into a brightness this leg would then be asserting by
+           accident; a colour part folds to exactly the pen it names. */
+        paint("red on, save the fore colour alone, then reset and go blue",
+              "\u001b[31m\u001b[30#{\u001b[m\u001b[34mB");
+        gate("the second rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        paint("pop the fore colour back", "\u001b[#}!");
+        text("the blue pen the pop is about to replace", winT + 2, 2, "B", 0x01);
+        text("the saved colour returned across the seam", winT + 2, 3, "!", 0x04);
+        standardGeometry("leaving the pen as the next case expects it");
+    }
+
+    /**
+     * Gap G4 across the seam: XTSAVE/XTRESTORE (`CSI ? N s` / `CSI ? N r`). The rules are the host
+     * gate's `plan_xt_modes`; what only a live run can show is the pair ghostty's design leans on --
+     * that the saved table survives a rebuild (so the restore after a window drag is not ghostty's
+     * "never saved = off" in disguise), and that the restore's act reaches the mode DECRQM answers
+     * from. Witnessed through the reply, the console-side read a program actually gets.
+     */
+    private static void caseXtModes() {
+        if (!standardGeometry("the XTSAVE leg")) return;
+        readInput(0);
+        paint("arm, save, close", "\u001b[?1000h\u001b[?1000s\u001b[?1000l");
+        paint("ask what the model holds now", "\u001b[?1000$p");
+        String r = input(64);
+        gate("the closed bit answers reset", r.contains("\u001b[?1000;2$y"), "read back " + vis(r));
+        gate("the rebuild is accepted", readopt(handle) == 1, "readopt refused");
+        paint("restore across the seam, then ask again", "\u001b[?1000r\u001b[?1000$p");
+        r = input(64);
+        gate("the save survived build_model and the restore re-ran the act",
+                r.contains("\u001b[?1000;1$y"),
+                "read back " + vis(r) + " -- a 2 here is a lost save, not an unanswered ask");
+        /* Never-saved means OFF, the same rule read live: an armed mode closed by a restore nobody
+           preceded with a save. */
+        paint("arm bracketed paste, then restore it unsaved", "\u001b[?2004h\u001b[?2004r\u001b[?2004$p");
+        r = input(64);
+        gate("a restore without a save closes the mode", r.contains("\u001b[?2004;2$y"),
+                "read back " + vis(r));
+        standardGeometry("leaving the modes as the next case expects them");
+    }
+
+    /**
+     * Gap G8+G9, the visible half: the rectangular family on a real console. The rules are the host
+     * gate's `plan_rect_family`; what only a live run can show is that a rect reaches the screen as
+     * cells and damage -- DECFRA's fill paints, DECSED leaves a DECSCA-protected glyph standing while
+     * the row around it goes, and DECIC's column shift lands where the row was. The protection bit
+     * itself has no carrier outside this library (the console's cell type has no such bit), so the
+     * glyph that survives the erase is the only witness the wire can ever have.
+     */
+    private static void caseRectFamily() {
+        if (!standardGeometry("the rect leg")) return;
+        gotoRow(1);
+        paint("fill a rect with # in a red pen", "\u001b[31m\u001b[2;5;4;20;35$x");
+        text("fra: the rect is # and red", winT + 1, 4, "#####", 0x04);
+        text("fra: above the rect is untouched", winT, 4, "     ", DEF);
+        standardGeometry("cleaning the pen");
+
+        gotoRow(2);
+        paint("protect a glyph, then selective-erase the screen",
+              "\u001b[1\"qP\u001b[2\"qQ\u001b[?2J");
+        text("sed: the protected glyph stood", winT + 2, 0, "P", DEF);
+        text("sed: the unprotected one went", winT + 2, 1, " ", DEF);
+
+        gotoRow(3);
+        paint("insert two columns mid-row", "abcdef\u001b[1;3H\u001b[2}");
+        text("decic: two blanks opened at the cursor", winT + 3, 0, "ab  cdef", DEF);
+
+        paint("and the plain erase still clears protection", "\u001b[4;1;4;4$z");
+        text("era: the non-selective rect has no respect for the bit", winT + 3, 0, "  ", DEF);
+        standardGeometry("leaving the screen as the next case expects it");
+    }
+
     /**
      * #114: DECCKM across the seam. The host gate pins the bit, the two resets and the answer; what only a
      * live run can show is the fifth obligation -- that a rebuild for the console's shape (which is what a

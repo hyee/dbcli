@@ -261,6 +261,8 @@ for plat in x86 x64; do
        Java_com_hyee_ansirender_NativeRenderer_stopReason Java_com_hyee_ansirender_NativeRenderer_close \
        Java_com_hyee_ansirender_NativeRenderer_snap \
        Java_com_hyee_ansirender_NativeRenderer_isPseudoConsole \
+       Java_com_hyee_ansirender_NativeRenderer_encodeMouse0 \
+       Java_com_hyee_ansirender_NativeRenderer_encodeFocus0 \
        Java_com_hyee_ansirender_NativeRenderer_taskbar0 \
        Java_com_hyee_ansirender_NativeRenderer_workingDirectory0 \
        Java_Render_prepareConsole Java_Render_setGeometry Java_Render_readCells \

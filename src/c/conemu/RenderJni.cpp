@@ -1729,6 +1729,13 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
      power-up answers too: GL is G0 and every slot is plain. Unlike `keepWrap`, which must be 1 because DECAWM
      ships on, nothing here needs a non-zero default to be correct. */
   int keepCs[4] = { 0, 0, 0, 0 }, keepGl = 0, keepMouse = 0, keepFormat = 0, keepBtn = 0;
+  /* G3: the SGR push/pop stack. Same class of fact as the tab table and the title stack -- a claim the
+     stream made that no geometry change revokes; a rebuild that dropped it would turn the next
+     `CSI # }` into the empty-stack no-op and silently strand the application's rendition. */
+  RcSgr keepSgrStack[RC_SGR_STACK];
+  uint8_t keepSgrParts[RC_SGR_STACK];
+  int keepSgrTop = 0, keepSgrDepth = 0;
+  int keepXtOn = 0, keepXtHave = 0, keepPenProt = 0;
   uint8_t keepTab[RC_MAX_COLS];
   uint16_t keepCwdBuf[RC_TITLE_MAX];
   /* The title and its stack (I42) are the same kind of state as the tab table: claimed by the application,
@@ -1772,6 +1779,16 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     keepBtn = (int)h->g->lastBtn;   /* #108: which buttons the observer last said were down. This is not
                                        geometry -- the user was holding something through the resize, and a
                                        model that forgot it reports the next release as nothing at all. */
+    memcpy(keepSgrStack, h->g->sgrStack, sizeof keepSgrStack);
+    memcpy(keepSgrParts, h->g->sgrParts, sizeof keepSgrParts);
+    keepSgrTop = h->g->sgrTop;
+    keepSgrDepth = h->g->sgrDepth;
+    keepXtOn = h->g->xtOn;         /* G4: a saved mode is a claim like any other; a rebuild that */
+    keepXtHave = h->g->xtHave;     /* dropped it would answer the next `? N r` with ghostty's "off" */
+    keepPenProt = h->g->penProt;   /* G9: the protection pen is application state, like bracketedPaste.
+                                      The per-cell bits are deliberately NOT carried: a rebuild re-reads
+                                      the cells off the console, and bits describing the old content
+                                      would misdescribe the new -- the debt Render.h's cellProt names. */
     keepLeft = h->g->leftMargin;
     keepRight = h->g->rightMargin;
     /* The tab table is the same kind of fact as the palette: something the application claimed, which a
@@ -1807,6 +1824,13 @@ static int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status
     fresh->wrapMode = (uint8_t)keepWrap;   /* a resize is not a request to start wrapping again */
     fresh->unpushed = (uint8_t)keepUnpushed;   /* ditto the takeover's arm: session state, not geometry */
     fresh->insertMode = (uint8_t)keepIrm;  /* and not one to stop inserting, either (I40) */
+    memcpy(fresh->sgrStack, keepSgrStack, sizeof keepSgrStack);   /* G3: and not one to forget what the */
+    memcpy(fresh->sgrParts, keepSgrParts, sizeof keepSgrParts);   /* stream pushed, either */
+    fresh->sgrTop = (uint8_t)keepSgrTop;
+    fresh->sgrDepth = (uint8_t)keepSgrDepth;
+    fresh->xtOn = (uint16_t)keepXtOn;      /* G4: ditto the saved modes */
+    fresh->xtHave = (uint16_t)keepXtHave;
+    fresh->penProt = (uint8_t)keepPenProt; /* G9: ditto the protection pen */
     /* #83's bit rides with the two above, and for the same reason: the application already holds a `;2$y`
        from us, and a terminal that answers "set" before a resize and "not set" after one is lying to the
        same reader (I26). Nothing re-arms `?2004h` for a window that merely changed height. */
@@ -2504,6 +2528,62 @@ JNIEXPORT jboolean JNICALL Java_com_hyee_ansirender_NativeRenderer_isPseudoConso
 {
   (void)env; (void)cls;
   return console_window_is_pty() ? JNI_TRUE : JNI_FALSE;
+}
+
+/* ---------------------------------------------------------------- A1: the input-report injection seam --
+ *
+ * rc_mouse_report()/rc_focus_report() have been the product's whole answer to "which bytes does a click
+ * become" since #108 -- parsed, ruled and unit-legged -- but nothing called them: the one reader of
+ * CONIN$ is jline's pump, and it encoded the legacy X10 shape itself, whatever mode the stream had asked
+ * for. These two exports are the missing call site. The pump hands the record over in wincon's own
+ * values (the seam Render.h documents for RcMouseRec -- eventFlags, buttonState and ctrlKeyState pass
+ * through undecoded), the model -- the only thing that parsed the DECSET stream, #104 took the host's
+ * parser off it -- answers with the report the armed modes ask for, and the caller writes those UTF-16
+ * units into the reader's input pipe. That closes gap A1's "told set, receives X10".
+ *
+ * The return follows rc_mouse_report: 0 is "nothing is due for this event" (the level, the format or the
+ * one-report-per-cell rule said so -- still a verdict, and the caller must NOT fall back to X10 for it),
+ * a positive count is units written to `out`, -1 is "no room" (impossible for the 40-unit buffer every
+ * shape fits in, but the contract keeps it honest). A dead or missing handle returns 0 through the same
+ * door: a renderer that never parsed the stream has no modes to answer from, and silence is what the
+ * terminal without a renderer has always produced for an unarmed console. */
+
+JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_encodeMouse0(
+    JNIEnv *env, jclass cls, jlong ph,
+    jint x, jint y, jint px, jint py,
+    jint buttonState, jint eventFlags, jint ctrlKeyState, jcharArray out)
+{
+  (void)cls;
+  RcHandle *h = handle(ph);
+  if (!h || !h->g) return 0;
+  struct RcMouseRec m;
+  m.x = (int16_t)x;  m.y = (int16_t)y;
+  m.px = (int16_t)px; m.py = (int16_t)py;
+  m.buttonState = (uint32_t)buttonState;
+  m.eventFlags = (uint32_t)eventFlags;
+  m.ctrlKeyState = (uint16_t)ctrlKeyState;
+  uint16_t buf[40];
+  const int n = rc_mouse_report(h->g, &m, buf, (int)(sizeof buf / sizeof buf[0]));
+  if (n <= 0 || !out) return n;
+  if (env->GetArrayLength(out) < n) return -1;
+  env->SetCharArrayRegion(out, 0, n, (const jchar *)buf);
+  return n;
+}
+
+/* Focus has no derivation: the record says focused or not, the mode says report or not, and the answer
+   is the two-letter form the references spell (`\E[I` / `\E[O`). Same return convention, three units. */
+JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_encodeFocus0(
+    JNIEnv *env, jclass cls, jlong ph, jint focused, jcharArray out)
+{
+  (void)cls;
+  RcHandle *h = handle(ph);
+  if (!h || !h->g) return 0;
+  uint16_t buf[3];
+  const int n = rc_focus_report(h->g, focused != 0, buf, 3);
+  if (n <= 0 || !out) return n;
+  if (env->GetArrayLength(out) < n) return -1;
+  env->SetCharArrayRegion(out, 0, n, (const jchar *)buf);
+  return n;
 }
 
 /** [0] flushes [1] rectangle writes [2] declines [3] api errors [4] aligns [5] cells painted

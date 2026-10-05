@@ -4,31 +4,65 @@
 # is actually READ at run time (terminal/src/main/resources in the source tree, and inside lib/JLine3.jar in
 # the install). This one exists so that `tic`/`infocmp` -- tools that will not parse the jline spelling, whose
 # first line carries prose with commas in it -- can be run against the same capability set. terminfo_check.sh
-# proves the two sets are identical and refuses the build if they are not; it also compares the on-disk caps
-# with the copy inside lib/JLine3.jar, because "the entry we audited" and "the entry that ships" are two facts.
+# proves the two sets are identical and refuses the CHECK if they are not (it is a hand-run gate, in the same
+# list as build.sh and run.ps1; nothing invokes it automatically, so a change to the entry that skips it shows
+# up as a stale .ti rather than as a red build); it also compares the on-disk caps with the copy inside
+# lib/JLine3.jar and with jline's source copy, because "the entry we audited" and "the entry that ships" are
+# two facts. Only the capability FIELDS below are load-bearing: line 0 of the .caps is never parsed by anyone,
+# which is why the entry's own long rationale lives there and why editing that prose still means moving all
+# three shipped copies.
 #
 # The rules that decide what is IN here live in ../TERMINFO.md (and the renderer's own dispositions in
 # ../ANSI_SUPPORTS.md); the short version of why the omissions are as deliberate as the additions:
 #
-#   hts, tbc               -- no code in this jline reads either one (Capability.set_tab and
-#                             clear_all_tabs occur only in the enum), and CEAnsi drops ESC H and CSI 3g, so
-#                             writing them would promise a tab stop that evaporates (DESIGN I26). cbt DID go in
-#                             when #70 landed the table, and it is the exception rather than the same case
-#                             three times: a reader binds it (LineReaderImpl.java:6420 uses the value as the
-#                             name of the Shift-Tab key, and an absent capability unbinds that key in silence),
-#                             and nothing in this stack ever writes it, so it makes no promise to CEAnsi.
-#                             it#8 is the DEFAULT interval now, overridable by CSI 3g / CSI 5g, not the whole
-#                             tab story.
-#   smir, rmir, mir        -- IRM has no body in either parser, so CSI @ always inserts regardless.
+#   hts, tbc               -- **the boundary here is which parser receives this name, not whether a reader
+#                             exists** (#113 rewrote it on 2026-09-28; the sentence this slot used to lead
+#                             with -- "no code in this jline reads either one" -- is retired by the owner's
+#                             ruling of 2026-09-28 and was never the reason that could stand). Measured that
+#                             day in a real ConEmu window with cache/p113/tabprobe.py: CEAnsi does NOT honour
+#                             ESC H (a stop set at column 5 loses to the default interval; tab lands on 9) and
+#                             its CSI Z / CSI I do not walk a stop table at all, while the same probe against
+#                             a classic conhost with VTP on shows ESC H, CSI 0g, CSI 3g, CSI Z and CSI I all
+#                             behaving. The entry is named after the parser that drops them, so writing them
+#                             would promise a tab stop that evaporates (DESIGN I26). That CEAnsi files ESC H as
+#                             de_Ignored (Ansi.cpp:2732) and has no CSI g arm is the source-side statement of
+#                             the same fact; the probe is what lets this file say it without a citation nobody
+#                             can re-run. This library models all five and proves it: esc_dispatch sets a stop
+#                             on ESC H, tab_prev walks the table back, CSI 3g clears it and CSI 5g restores the
+#                             interval -- witnessed by geo_tabs, which is #113's acceptance for "implemented and
+#                             somebody can see it". Saying so truthfully needs its OWN entry: #117.
+#                             cbt DID go in when #70 landed the table, and it is the exception rather than the
+#                             same case three times: a reader binds it (LineReaderImpl.java:6420 uses the value
+#                             as the name of the Shift-Tab key, and an absent capability unbinds that key in
+#                             silence), and nothing in this stack ever writes it, so it makes no promise to
+#                             CEAnsi. it#8 is the DEFAULT interval now, overridable by CSI 3g / CSI 5g, not the
+#                             whole tab story.
+#   smir, rmir, mir        -- IRM is modelled here since #77 (I40: one bit, both spellings, reportable, and
+#                             both resets clear it), so this is no longer a "no body" case: the pair stays out
+#                             because the entry also describes sessions ConEmu's parser reads, and there
+#                             `CSI 4 h/l` is filed as de_Ignored (Ansi.cpp:3323-3329) -- a claim about the
+#                             OTHER reader, which I26 forbids. Same shape as smam/rmam below.
 #   smam, rmam             -- DECAWM is modelled (#61) but the entry also describes sessions ConEmu's own
 #                             parser reads, where its SetConsoleMode is commented out (Ansi.cpp:3268-3281);
 #                             declaring the pair would be a claim about the OTHER reader (DESIGN I26).
 #   smkx, rmkx             -- DECCKM is an input-side mode and this terminal's input is console records.
-#   blink, invis, nv       -- SGR 5/6/8 hold no state on either leg.
-#   rmp, sgr10/sgr11 arms  -- no alternate-font path.
-#   mc5p                   -- no printer.
-#   flash                  -- ESC g flashes the ConEmu window; a renderer must not, and leaving it out makes
-#                             readers fall back to bel.
+#   kmous                  -- DECLARED \E[M since gap A1 landed the encoder seam (2026-10-04): the layer
+#                             that reads the console records (dbcli's WinSysTerminal) now hands each MOUSE_EVENT
+#                             to this library's rc_mouse_report through JNI and injects the bytes it returns,
+#                             so the sender of the reports is this stack and the old "somebody else's business"
+#                             ruling no longer holds. The declared string is the legacy prefix the default
+#                             family (X10, and 1000/1002/1003 without a format extension) puts on the wire,
+#                             asserted against the live bytes per family by cache/gaps/MouseLeg; an SGR
+#                             negotiation (?1006+) does not consult kmous for its shape, the same convention
+#                             xterm's own entry keeps.
+#   blink, invis, ncv      -- SGR 5/6/8 hold no state on either leg, and #94 closed the question at the carrier:
+#                             what this library writes is a CHAR_INFO attribute word, and that word has no blink
+#                             bit to hold one in. ncv would claim attributes cannot coexist with colour; the
+#                             console's answer is carried by the fold in rc_attr() instead.
+#   rmpch, sgr10/sgr11 arms -- no alternate-font path (rmacs is ESC ( B, not ESC [ 10m).
+#   mc5i                   -- no printer.
+#   flash                  -- ESC g flashes the ConEmu window (Ansi.cpp:2728 calls GuiFlashWindow); a renderer
+#                             must not, and leaving it out makes readers fall back to bel.
 #   initc, ccc             -- OSC 4/10/11 now change the palette (#55), but the entry also describes a session
 #                             parsed by ConEmu, which consumes them and changes nothing (I26 again).
 #   xenl                   -- measured absent on both writer legs; it is the whole reason `am` is declared.
@@ -36,9 +70,10 @@
 #                          -- jline's key leg synthesises the bytes for a modified key itself and never asks
 #                             caps; terminfo can name only the Shift arm, no widget binds a shifted key.
 #   u8, u9                 -- CSI c and CSI >c are BOTH answered, but no code in jline reads user8/user9
-#                             (CursorSupport reads user6 and user7 only), so a value here would be invented.
+#                             (CursorSupport reads user6 and user7 only), so a value here would be invented; and
+#                             ncurses spells u8 as a pattern whose %[ our own Curses.tputs refuses to compile.
 #
-# Inedits: kbs=^H stays because jline decodes it through Curses.tputs to 0x08 and binds 0x08 and 0x7f to the
+# In edits: kbs=^H stays because jline decodes it through Curses.tputs to 0x08 and binds 0x08 and 0x7f to the
 # same widget, and all three Windows entries in this jline spell it that way. rep is in because CSI b has a
 # body in the parser and a model in the renderer; its parameter must reach tputs as an INT, because
 # toInteger() parses a Character as a String and throws. u6/u7 are in because the answer leg writes the reply
@@ -72,6 +107,6 @@ windows-conemu|ConEmu ANSI with the native renderer (no xenl: margin wrap is imm
 	sgr=\E[0%?%p6%t;1%;%?%p2%t;4%;%?%p1%p3%|%t;7%;m,
 	sgr0=\E(B\E[0m,
 	u6=\E[%i%d;%dR, u7=\E[6n,
-	kdch1=\E[3~, kich1=\E[2~, kend=\E[4~, knp=\E[6~, kpp=\E[5~,
+	kdch1=\E[3~, kich1=\E[2~, kend=\E[4~, kmous=\E[M, knp=\E[6~, kpp=\E[5~,
 	kf1=\EOP, kf2=\EOQ, kf3=\EOR, kf4=\EOS, kf5=\E[15~, kf6=\E[17~,
 	kf7=\E[18~, kf8=\E[19~, kf9=\E[20~, kf10=\E[21~, kf11=\E[23~, kf12=\E[24~,

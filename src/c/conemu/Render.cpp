@@ -453,6 +453,7 @@ static void fill_span(RcGrid *g, int row, int from, int to, uint16_t attr)
   {
     RC_CELLS(g, row)[c].ch = ' ';
     RC_CELLS(g, row)[c].attr = attr;
+    RC_PROT(g, row)[c] = 0;   /* G9: the plain erase is the non-selective one -- protection does not survive it */
   }
   /* An erase that reaches the margin ends the row's claim to have overflowed: nothing ran off its right
      edge any more, whatever was there before. Erases short of the margin leave the claim alone. */
@@ -468,6 +469,171 @@ static void fill_row(RcGrid *g, int row, int from, uint16_t attr)
 {
   fill_span(g, row, from, g->cols - 1, attr);
 }
+
+/* G8/G9: the rectangular family, ditto -- and the region/col_span pair it reads. */
+static void region(const RcGrid *g, int *top, int *bot);
+static int  rect_of(const RcGrid *g, int t, int l, int b, int r, int *rt, int *rl, int *rb, int *rr);
+static void rect_fill(RcGrid *g, int rt, int rl, int rb, int rr, uint16_t ch, int prot);
+static void rect_selective_erase(RcGrid *g, int rt, int rl, int rb, int rr);
+static void rect_copy(RcGrid *g, int st, int sl, int sb, int sr, int dt, int dl);
+static void columns_shift(RcGrid *g, int n, int insert);
+
+/* ------------------------------------------------------------------ G8/G9: the rectangular family -------
+ *
+ * DECFRA (`CSI Pt;Pl;Pb;Pr;Ps $ x`), DECERA (`$ z`), DECSERA (`$ {`), DECCRA (`$ v`), DECIC/DECDC
+ * (`}`/`~`, no interim) and the selective halves of DECSED/DECSEL (`? J`/`? K`) -- plus DECSCA
+ * (`CSI Ps " q`), the pen that decides which cells the selective forms skip. The rules are MSFT's, which
+ * is the only reference with the whole family: adaptDispatch.cpp:1140-1265 (the three rects and DECSERA),
+ * :607-676 (_ScrollRectHorizontally, the columns' engine), :2187-2215 (the column pair and its margin
+ * guard) and adaptDispatchGraphics.cpp:435-455 (DECSCA). The DECSCA numbering follows ghostty as well
+ * (stream.zig:2237-2246), because the DEC documents read the other way round and the two living
+ * references agree -- see Render.h's `penProt`.
+ *
+ * `rect_of` mirrors `_CalculateRectArea` (:1005-1035): parameters are 1-based in the origin space -- the
+ * viewport normally, the region and the column margins under DECOM -- with 0 and absent meaning the
+ * space's edge; the result is clamped to the page, which vertically is the *viewport* (ED's own rule: the
+ * rows above it are scrollback no rect may touch) and horizontally the buffer's width (this renderer's
+ * contract includes the columns right of the window). An inverted or empty rect is a no-op, exactly as a
+ * falsy til::rect is upstream. */
+
+static int rect_of(const RcGrid *g, int t, int l, int b, int r,
+                   int *rt, int *rl, int *rb, int *rr)
+{
+  int top = gutter(g), bot = g->rows - 1, x0 = 0, x1 = g->cols - 1;
+  if (g->originMode)
+  {
+    region(g, &top, &bot);
+    if (g->marginSet) { x0 = g->leftMargin; x1 = g->rightMargin; }
+  }
+  const int pageh = bot - top + 1, pagew = x1 - x0 + 1;
+  int t2 = top + (t > 0 ? t : 1) - 1;
+  int b2 = top + (b > 0 ? b : pageh) - 1;
+  int l2 = x0 + (l > 0 ? l : 1) - 1;
+  int r2 = x0 + (r > 0 ? r : pagew) - 1;
+  if (t2 < top) t2 = top;
+  if (b2 > bot) b2 = bot;
+  if (l2 < x0) l2 = x0;
+  if (r2 > x1) r2 = x1;
+  *rt = t2; *rb = b2; *rl = l2; *rr = r2;
+  return t2 <= b2 && l2 <= r2;
+}
+
+/* The fill half. DECFRA carries the pen (upstream fills with `page.Attributes()`, the live rendition) and
+   therefore the pen's protection; DECERA uses the erase pen -- in this model's vocabulary the same
+   `g->attr` ED fills with -- and being non-selective it clears protection. Both heal the wide pairs an
+   edge can cut, the debt every cell write here pays `heal_pairs` for. */
+static void rect_fill(RcGrid *g, int rt, int rl, int rb, int rr, uint16_t ch, int prot)
+{
+  for (int r = rt; r <= rb; r++)
+  {
+    for (int c = rl; c <= rr; c++)
+    {
+      RC_CELLS(g, r)[c].ch = ch;
+      RC_CELLS(g, r)[c].attr = g->attr;
+      RC_PROT(g, r)[c] = (uint8_t)prot;
+    }
+    if (rr >= g->cols - 1) RC_ST(g, r).wrap = RC_WRAP_NONE;   /* nothing ran off a row the fill closed */
+    mark_dirty(g, r, rl, rr);
+    heal_pairs(g, r, rl - 1, rr + 1);
+  }
+}
+
+/* The selective half (DECSERA, DECSED, DECSEL): the text of unprotected cells goes, each cell's own
+   attribute stays ("The text is cleared but the attributes are left as is", _SelectiveEraseRect), and the
+   protection bit itself is untouched -- a cell this pass cleared stays unprotected for the next one. */
+static void rect_selective_erase(RcGrid *g, int rt, int rl, int rb, int rr)
+{
+  for (int r = rt; r <= rb; r++)
+    for (int c = rl; c <= rr; c++)
+      if (!RC_PROT(g, r)[c])
+      {
+        RC_CELLS(g, r)[c].ch = ' ';
+        mark_dirty(g, r, c, c);
+        heal_pairs(g, r, c - 1, c + 1);
+      }
+}
+
+/* DECCRA. The destination is *sized by the source* and clipped by the page (upstream builds dstRect from
+   the source's size and lets the calculator clip); the page parameters are consumed and ignored -- this
+   model has one page, and pretending page 2 is somewhere else would be a lie with a coordinate. Overlap
+   is answered by walk direction, both halves of the copy walking the same way: forwards when the
+   destination starts at or before the source (writing left-to-right only over cells already read),
+   backwards otherwise -- `Viewport::DetermineWalkDirection`'s rule, and the reason a one-column move
+   right cannot feed on itself. A half of a wide pair cut off by either edge is healed, as every write. */
+static void rect_copy(RcGrid *g, int st, int sl, int sb, int sr, int dt, int dl)
+{
+  int rtop, rleft, rbot, rright;
+  if (!rect_of(g, st, sl, sb, sr, &rtop, &rleft, &rbot, &rright)) return;
+  const int h = rbot - rtop + 1, w = rright - rleft + 1;
+  int top = gutter(g), x0 = 0;
+  if (g->originMode)
+  {
+    int db;
+    region(g, &top, &db);
+    if (g->marginSet) x0 = g->leftMargin;
+  }
+  const int e = top + (dt > 0 ? dt : 1) - 1;   /* destination row, same origin space as the source */
+  const int f = x0 + (dl > 0 ? dl : 1) - 1;
+  const int back = (e > rtop) || (e == rtop && f > rleft);
+  for (int i = 0; i < h; i++)
+  {
+    const int sr2 = rtop + i, dr2 = e + i;
+    if (dr2 < gutter(g) || dr2 > g->rows - 1) continue;      /* a row the page clips away */
+    for (int k = 0; k < w; k++)
+    {
+      const int j = back ? (w - 1 - k) : k;
+      const int sc = rleft + j, col = f + j;
+      if (col < 0 || col > g->cols - 1) continue;            /* a column the page clips away */
+      RC_CELLS(g, dr2)[col] = RC_CELLS(g, sr2)[sc];
+      RC_PROT(g, dr2)[col] = RC_PROT(g, sr2)[sc];
+    }
+    mark_row_dirty(g, dr2);
+    heal_pairs(g, dr2, f - 1, f + w);
+  }
+}
+
+/* DECIC/DECDC: shift the columns [cursor .. right margin] within the region's rows by +/- n, filling what
+   the shift reveals with the erase pen (upstream's "standard erase attributes" -- the same fill ED makes
+   in this model). The guard is the four-way one (`_InsertDeleteColumnHelper`: the cursor must be inside
+   both margin pairs or nothing happens at all), the count clamps to the span, and the cursor does not
+   move -- unlike IL/DL, neither reference homes it for a column shift. */
+static void columns_shift(RcGrid *g, int n, int insert)
+{
+  int top, bot;
+  region(g, &top, &bot);
+  const int x0 = g->marginSet ? g->leftMargin : 0;
+  const int x1 = g->marginSet ? g->rightMargin : g->cols - 1;
+  if (g->cy < top || g->cy > bot || g->cx < x0 || g->cx > x1) return;
+  if (n < 0) n = -n;
+  const int span = x1 - g->cx + 1;
+  if (n > span) n = span;
+  if (n <= 0) return;
+  for (int r = top; r <= bot; r++)
+  {
+    if (insert)
+    {
+      memmove(&RC_CELLS(g, r)[g->cx + n], &RC_CELLS(g, r)[g->cx],
+              (size_t)(span - n) * sizeof(RcCell));
+      memmove(&RC_PROT(g, r)[g->cx + n], &RC_PROT(g, r)[g->cx], (size_t)(span - n));
+    }
+    else
+    {
+      memmove(&RC_CELLS(g, r)[g->cx], &RC_CELLS(g, r)[g->cx + n],
+              (size_t)(span - n) * sizeof(RcCell));
+      memmove(&RC_PROT(g, r)[g->cx], &RC_PROT(g, r)[g->cx + n], (size_t)(span - n));
+    }
+    const int lo = insert ? g->cx : (x1 - n + 1);
+    for (int c = lo; c < lo + n; c++)
+    {
+      RC_CELLS(g, r)[c].ch = ' ';
+      RC_CELLS(g, r)[c].attr = g->attr;
+      RC_PROT(g, r)[c] = 0;
+    }
+    mark_dirty(g, r, g->cx, x1);
+    heal_pairs(g, r, g->cx - 1, x1 + 1);
+  }
+}
+
 
 /* Open `n` blank cells at `col` and push the rest of the row right, dropping what leaves the end. ICH is
  * this on its own, and a write under IRM is this followed by the write -- which is why it is one function and
@@ -688,6 +854,7 @@ static void scroll_up(RcGrid *g, int n)
     {
       RC_CELLS(g, r)[c].ch = ' ';
       RC_CELLS(g, r)[c].attr = g->attr;
+      RC_PROT(g, r)[c] = 0;          /* G9: a row arriving from the pool is unprotected, like the blank it holds */
     }
   }
   /* The grid is consistent at this point and the input is not: ask for a paint now rather than let the
@@ -794,6 +961,7 @@ static void blank_cell(RcGrid *g, int row, int col)
   if (row < 0 || row >= g->rows || col < 0 || col >= g->cols) return;
   RC_CELLS(g, row)[col].ch = ' ';
   RC_CELLS(g, row)[col].attr = g->attr;
+  RC_PROT(g, row)[col] = g->penProt;   /* G9: the pen's blank carries the pen's protection */
   mark_dirty(g, row, col, col);
   heal_pairs(g, row, col - 1, col + 1);   /* and take the half it just orphaned with it (I16) */
 }
@@ -851,10 +1019,12 @@ static void put_cell(RcGrid *g, uint16_t ch, int w)
 
   RC_CELLS(g, g->cy)[g->cx].ch = ch;
   RC_CELLS(g, g->cy)[g->cx].attr = (uint16_t)(g->attr | (w == 2 ? RC_LVB_LEADING : 0));
+  RC_PROT(g, g->cy)[g->cx] = g->penProt;
   if (w == 2)
   {
     RC_CELLS(g, g->cy)[g->cx + 1].ch = ch;
     RC_CELLS(g, g->cy)[g->cx + 1].attr = (uint16_t)(g->attr | RC_LVB_TRAILING);
+    RC_PROT(g, g->cy)[g->cx + 1] = g->penProt;
   }
   mark_dirty(g, g->cy, g->cx, g->cx + w - 1);
   /* The pair is a unit (I16): overwrite its front and the back is no longer anybody's glyph, and overwrite
@@ -1415,11 +1585,14 @@ static void move_row(RcGrid *g, int delta)
 static void blank_viewport(RcGrid *g)
 {
   for (int r = gutter(g); r < g->rows; r++)
+  {
     for (int c = 0; c < g->cols; c++)
     {
       RC_CELLS(g, r)[c].ch = ' ';
       RC_CELLS(g, r)[c].attr = g->attr;
+      RC_PROT(g, r)[c] = 0;              /* G9: a screen entered or left is unprotected, like the blank it holds */
     }
+  }
   rc_forget_row_state(g);
   rc_mark_all_dirty(g);
 }
@@ -1537,6 +1710,12 @@ static void full_reset(RcGrid *g)
   /* RIS discards the screen: its own scroll must not arm the takeover, or the next `\E[H` would bank a
      viewport of blanks. Cleared after the scroll for exactly that reason. */
   g->unpushed = 0;
+  /* And it clears the XTSAVE table with the modes themselves -- ghostty's fullReset calls modes.reset(),
+     which zeroes `saved` along with `values` (Terminal.zig fullReset -> modes.reset). DECSTR keeps it;
+     that asymmetry is the gap row's "whether either reset clears it", answered per reference. */
+  g->xtOn = 0;
+  g->xtHave = 0;
+  g->penProt = 0;      /* G9: the protection pen goes with the rest of the rendition (RIS's SoftReset half) */
   clxy(g, gutter(g), 0);
 }
 
@@ -1557,6 +1736,7 @@ static void full_reset(RcGrid *g)
 static void soft_reset(RcGrid *g)
 {
   sgr_reset(g, 0);
+  g->penProt = 0;      /* G9: DECSTR's protection arm -- MSFT's SoftReset calls SetCharacterProtectionAttribute({}) */
   /* DECSTR puts the character sets back (#85, corrected in -45).
    * ⚠ What this routine did until -44, and what the comment here claimed MSFT does, were both wrong, and the
    *   error was one long citation: it said "`SoftReset` is 37 lines and names neither" and pointed at
@@ -1623,6 +1803,17 @@ static int step_back_col(const RcGrid *g, int n)
 /* The CSI intermediates are matched the way ConEmu matches its Pvt buffer: the whole thing, length
    included. `PvtLen == 1 && Pvt[0] == L' '` (:3657) is one byte that happens to be a space, so a
    two-byte interim is not DECSCUSR there and is not DECSCUSR here either. */
+static int interim_is(const RcGrid *g, uint8_t ch);
+
+/* XTPUSHSGR/XTPOPSGR (G3): defined below the CSI dispatch, declared here for its '#' arms. */
+static void sgr_push(RcGrid *g);
+static void sgr_pop(RcGrid *g);
+
+/* XTSAVE/XTRESTORE (G4): same placement, same reason. */
+static void xt_save(RcGrid *g, int v);
+static void xt_restore(RcGrid *g, int v);
+
+
 static int interim_is(const RcGrid *g, uint8_t ch)
 {
   return g->nInterims == 1 && g->interims[0] == ch;
@@ -1834,11 +2025,33 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
 
     case 'J':
     {
+      /* G9: `CSI ? Ps J` is DECSED -- the same geometry as ED with the selective rule: unprotected cells
+         lose their text and keep their attributes, protected cells are not touched at all. Every arm
+         below is the plain ED exactly as it was; the private spelling takes the mirrored selective path.
+         (Upstream keeps the two in one function with a flag, SelectiveEraseInDisplay against
+         EraseInDisplay; the split here reads better at the arm because the *cursor* rules differ too --
+         ConEmu's 2J home is an ED behaviour the selective form does not copy, and ghostty's erase-display
+         dispatch passes the `protected` flag to the same three geometries without the home.) */
+      const int top = gutter(g);
+      int mode = arg(g, 0, 0);
+      if (g->priv == '?')
+      {
+        if (mode == 0)
+        {
+          rect_selective_erase(g, g->cy, g->cx, g->cy, g->cols - 1);
+          rect_selective_erase(g, g->cy + 1, 0, g->rows - 1, g->cols - 1);
+        }
+        else if (mode == 1)
+        {
+          rect_selective_erase(g, top, 0, g->cy - 1, g->cols - 1);
+          rect_selective_erase(g, g->cy, 0, g->cy, g->cx);
+        }
+        else rect_selective_erase(g, top, 0, g->rows - 1, g->cols - 1);
+        break;
+      }
       /* ED erases the *screen*, so it stops at the viewport: the rows above it are history the
          fallback leg cannot erase either, and blanking them here would paint over the user's
          scrollback. */
-      const int top = gutter(g);
-      int mode = arg(g, 0, 0);
       if (mode == 0) { fill_row(g, g->cy, g->cx, g->attr); for (int r = g->cy + 1; r < g->rows; r++) fill_row(g, r, 0, g->attr); }
       else if (mode == 1) { for (int r = top; r < g->cy; r++) fill_row(g, r, 0, g->attr); fill_row(g, g->cy, 0, g->attr); }
       else
@@ -1851,6 +2064,15 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
     case 'K':
     {
       int mode = arg(g, 0, 0);
+      /* G9: `CSI ? Ps K` is DECSEL, EL's selective twin -- the same three spans, the same keep-attribute
+         rule as DECSED above. */
+      if (g->priv == '?')
+      {
+        if (mode == 0) rect_selective_erase(g, g->cy, g->cx, g->cy, col_right(g));
+        else if (mode == 1) rect_selective_erase(g, g->cy, col_left(g), g->cy, g->cx);
+        else rect_selective_erase(g, g->cy, 0, g->cy, g->cols - 1);
+        break;
+      }
       /* EL's "end of the line" is the end the row has, which is the right margin when one is set and the
          page otherwise. `fill_row` keeps its whole-row meaning for the callers that really do want the page
          (ED, and a rebuild that starts from a narrowed row's beginning). */
@@ -2014,11 +2236,12 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       /* `CSI Pl;Pr s` is DECSLRM, but only while `CSI ?69 h` allowed it: MSFT's branch is explicit ("When
          DECSLRM isn't allowed, `CSI s` is interpreted as ANSISYSSC", :2369-2379) and xterm agrees. So the mode
          gates *which sequence this is*, not whether a margin is remembered -- a session that never touched
-         `?69` keeps the save-cursor it has always had. A private `?` on this final has no body in either
-         reference, so it is counted rather than guessed. */
-      if (g->priv) ignored(g, RC_UN_MODE);
+         `?69` keeps the save-cursor it has always had. The private spelling with a parameter is XTSAVE (G4,
+         ghostty modes.zig); without one it stays counted rather than guessed, exactly as before. */
+      if (g->priv) { if (g->nArgs) xt_save(g, g->args[0]); else ignored(g, RC_UN_MODE); }
       else if (g->declrmm) set_margins(g, arg(g, 0, 1), arg(g, 1, g->cols));
       else { g->saveX = g->cx; g->saveY = g->cy; g->saveOrigin = g->originMode; }
+
       break;
     /* DECRC, and the one place this model deliberately diverges from ConEmu, where "restore is
        unconditional" (Ansi.cpp:4194 -- PvtLen is never consulted for 'u'). The private spelling
@@ -2037,6 +2260,7 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
          application asked for nothing. */
       g->originMode = g->saveOrigin;
       clxy(g, g->saveY, g->saveX);
+
       break;
 
     /* DECSTBM. Two defaults, one refusal, and one clamp.
@@ -2066,6 +2290,13 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
        load-bearing, and it is the reason the rule here is `t > b` rather than `t >= b`. */
     case 'r':
     {
+      /* G4 fork: `CSI ? N r` with a parameter is XTRESTORE (ghostty modes.zig), which takes the DECSTBM
+         spelling away from the private form *only when it names a mode*. The bare `CSI ? r` keeps the
+         region-reset reading below, because upstream never consults PvtLen for this final -- that
+         tolerance is load-bearing for Status.reset()'s `CSI 1;1 r`-shaped writes and is documented further
+         down. A private r with a parameter this model cannot save is counted inside xt_restore, not
+         dropped into the region parser where `CSI ? 9999 r` would clamp a nonsense margin. */
+      if (g->priv && g->nArgs) { xt_restore(g, g->args[0]); break; }
       const int top = gutter(g);
       const int page = g->rows - top;              /* the 1-based rows the parameters may name */
       if (!g->nArgs) { g->regSet = 0; g->regionSerial++; break; }   /* `CSI r` is the reset form */
@@ -2222,6 +2453,17 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
            that is really parsing the bytes, and the stamp is the same string the live gate reads back out of
            the loaded dll (I26). */
         arm_report(g, RC_REP_XTVER, 0, 0, 0);
+      else if (interim_is(g, '"') && !g->priv)
+        /* G9: DECSCA, the protection pen. 1 protects, 0 and 2 clear, and any other number leaves the pen
+           alone rather than guessing -- MSFT's options switch simply matches nothing for it, and ghostty
+           refuses the whole sequence. Both references' numbering, and the DEC manuals read backwards;
+           the citations are in Render.h's `penProt`. */
+      {
+        const int v = g->nArgs ? g->args[0] : 0;
+        if (v == 1) g->penProt = 1;
+        else if (v == 0 || v == 2) g->penProt = 0;
+        else ignored(g, RC_UN_MODE);
+      }
       else ignored(g, RC_UN_SUP);   /* `CSI q` with no interim byte: XTSSZ, no case upstream */
       break;
     case 'p':
@@ -2481,7 +2723,228 @@ static void csi_dispatch(RcGrid *g, uint8_t final)
       else unsupported(g, RC_UN_REPORT);
       break;
     }
+    /* XTPUSHSGR / XTPUSGR's family reads the intermediate, and so does G8/G9's: `{` is three sequences
+       -- `# {` pushes a rendition (G3), `$ {` is DECSERA (G8/G9), and no interim leaves it the unknown
+       final it always was. `}` is XTPOPSGR under `#` and DECIC without one; `~` is DECDC, which no other
+       family claims. */
+    case '{':
+      if (interim_is(g, '#')) sgr_push(g);
+      else if (interim_is(g, '$') && !g->priv)
+      {
+        int a, b, c, d;
+        if (rect_of(g, g->nArgs > 0 ? g->args[0] : 0, g->nArgs > 1 ? g->args[1] : 0,
+                    g->nArgs > 2 ? g->args[2] : 0, g->nArgs > 3 ? g->args[3] : 0, &a, &b, &c, &d))
+          rect_selective_erase(g, a, b, c, d);
+      }
+      else unsupported(g, RC_UN_SUP);
+      break;
+    case '}':
+      if (interim_is(g, '#')) sgr_pop(g);
+      else if (!g->nInterims && !g->priv) columns_shift(g, arg(g, 0, 1), 1);   /* DECIC */
+      else unsupported(g, RC_UN_SUP);
+      break;
+    case '~':
+      /* DECDC, no interim and no other claimant: the same shift to the left. A private marker is nobody's
+         spelling here, so it keeps the unknown-final verdict. */
+      if (!g->nInterims && !g->priv) columns_shift(g, arg(g, 0, 1), 0);
+      else unsupported(g, RC_UN_SUP);
+      break;
+    case 'x':
+      /* DECFRA (`CSI Pt;Pl;Pb;Pr;Ps $ x`, G8): fill the rect with character Ps in the live pen. The
+         character's range is the GL/GR tables plus the BMP -- the reference gates the Unicode arm on the
+         UTF-8 code page, and this renderer is UTF-8 by construction (Render.h's encoding note), so the
+         whole 32..65535 range is honest here. Anything else is counted, not painted. */
+      if (interim_is(g, '$') && !g->priv)
+      {
+        const int ch = arg(g, 4, 32);
+        if (ch >= 32 && ch <= 65535)
+        {
+          int a, b, c, d;
+          if (rect_of(g, g->nArgs > 0 ? g->args[0] : 0, g->nArgs > 1 ? g->args[1] : 0,
+                      g->nArgs > 2 ? g->args[2] : 0, g->nArgs > 3 ? g->args[3] : 0, &a, &b, &c, &d))
+            rect_fill(g, a, b, c, d, (uint16_t)ch, g->penProt);
+        }
+        else ignored(g, RC_UN_SUP);
+      }
+      else unsupported(g, RC_UN_SUP);
+      break;
+    case 'z':
+      /* DECERA (`CSI Pt;Pl;Pb;Pr $ z`, G8): the rect to blanks in the erase pen, protection cleared --
+         the non-selective twin of the `$ {` above. */
+      if (interim_is(g, '$') && !g->priv)
+      {
+        int a, b, c, d;
+        if (rect_of(g, g->nArgs > 0 ? g->args[0] : 0, g->nArgs > 1 ? g->args[1] : 0,
+                    g->nArgs > 2 ? g->args[2] : 0, g->nArgs > 3 ? g->args[3] : 0, &a, &b, &c, &d))
+          rect_fill(g, a, b, c, d, ' ', 0);
+      }
+      else unsupported(g, RC_UN_SUP);
+      break;
+    case 'v':
+      /* DECCRA (`CSI Pt;Pl;Pb;Pr;Ps;Pt2;Pl2;Ps2 $ v`, G8): copy rect to rect. The page parameters (5th
+         and 8th) are consumed and dropped -- one page, and a page 2 would be a coordinate with no
+         address behind it. */
+      if (interim_is(g, '$') && !g->priv)
+        rect_copy(g, g->nArgs > 0 ? g->args[0] : 0, g->nArgs > 1 ? g->args[1] : 0,
+                  g->nArgs > 2 ? g->args[2] : 0, g->nArgs > 3 ? g->args[3] : 0,
+                  g->nArgs > 5 ? g->args[5] : 0, g->nArgs > 6 ? g->args[6] : 0);
+      else unsupported(g, RC_UN_SUP);
+      break;
     default: unsupported(g, RC_UN_SUP); break;
+  }
+}
+
+/* XTPUSHSGR / XTPOPSGR (`CSI # {` / `CSI # }`, gap G3). The rules are MSFT's, each with its citation
+ * in the Render.h field comment: ten deep, ring on overflow, empty pop ignored, resets leave it
+ * alone, parameters select parts and an unsupported part contributes nothing. Two things this
+ * implementation adds to those rules are deliberate. The ring is expressed with a plain wrapping
+ * index rather than a rotate, because a ring slot array with `top = next write` gives exactly "a
+ * full push drops the bottom" without moving anything. And a pop that restores a *part* keeps every
+ * other field of the live rendition untouched rather than copying the saved struct whole, which is
+ * what "combines those with the current attributes" means in MSFT's own description
+ * (adaptDispatchGraphics.cpp:471-480). `seeded` is never touched by either half: it is not a
+ * rendition fact, and this model already keeps it sticky for the whole process. */
+static void sgr_push(RcGrid *g)
+{
+  uint8_t mask = 0;
+  if (g->nArgs)
+  {
+    for (int i = 0; i < g->nArgs; i++)
+    {
+      switch (g->args[i])
+      {
+        case 1:  mask |= RC_SP_BOLD; break;
+        case 3:  mask |= RC_SP_ITAL; break;
+        case 4:  mask |= RC_SP_UNDER; break;
+        case 7:  mask |= RC_SP_INVERSE; break;
+        case 9:  mask |= RC_SP_CROSSED; break;
+        case 30: mask |= RC_SP_FORE; break;
+        case 31: mask |= RC_SP_BACK; break;
+        default: break;   /* faint/blink/invisible/double-underline: no carrier here, so no bit */
+      }
+    }
+    mask |= RC_SP_PARAMSED;
+  }
+  g->sgrStack[g->sgrTop] = g->sgr;
+  g->sgrParts[g->sgrTop] = mask;
+  g->sgrTop = (uint8_t)((g->sgrTop + 1) % RC_SGR_STACK);
+  if (g->sgrDepth < RC_SGR_STACK) g->sgrDepth++;
+}
+
+static void sgr_pop(RcGrid *g)
+{
+  if (!g->sgrDepth) return;                       /* MSFT: "just ignore pops when the stack is empty" */
+  g->sgrDepth--;
+  g->sgrTop = (uint8_t)((g->sgrTop + RC_SGR_STACK - 1) % RC_SGR_STACK);
+  const RcSgr s = g->sgrStack[g->sgrTop];
+  const uint8_t mask = g->sgrParts[g->sgrTop];
+  if (mask & RC_SP_PARAMSED)
+  {
+    if (mask & RC_SP_BOLD)    g->sgr.bold = s.bold;
+    if (mask & RC_SP_ITAL)    g->sgr.italic = s.italic;
+    if (mask & RC_SP_UNDER)   g->sgr.underline = s.underline;
+    if (mask & RC_SP_INVERSE) g->sgr.inverse = s.inverse;
+    if (mask & RC_SP_CROSSED) g->sgr.crossed = s.crossed;
+    if (mask & RC_SP_FORE)
+    { g->sgr.fg = s.fg; g->sgr.fgKind = s.fgKind; g->sgr.brightFore = s.brightFore; }
+    if (mask & RC_SP_BACK)
+    { g->sgr.bg = s.bg; g->sgr.bgKind = s.bgKind; g->sgr.brightBack = s.brightBack; }
+  }
+  else
+  {
+    const int seeded = g->sgr.seeded;
+    g->sgr = s;
+    g->sgr.seeded = seeded;
+  }
+  g->attr = rc_attr(g, &g->sgr);
+}
+
+/* ------------------------------------------------------------------ G4: XTSAVE / XTRESTORE -------
+ *
+ * `CSI ? N s` / `CSI ? N r`, the mode save/restore ghostty owns outright (modes.zig). The two decisions
+ * the gap row said had to be taken deliberately are ghostty's and are quoted in Render.h's field comment:
+ * one slot per mode rather than a stack (its own DoS note), and a restore of a never-saved mode is OFF,
+ * because the `saved` packed struct starts zeroed. The restore re-runs the mode's *act* through the same
+ * code shapes the DECSET/DECRST arm uses -- the 2026 engage counters rise exactly as they would for an
+ * `h`, and the mouse bits land where `?1000h` would put them -- which is what "an application that saved
+ * cursor visibility got a cursor it can see" demands: the bit alone would leave the flush and the CONIN$
+ * arming nothing to do.
+ *
+ * The bit mapping is a function rather than an enum so the ids stay in the stream's own numbering, and
+ * the two 16-bit masks in the grid hold everything else. A save of an id outside the set is counted as
+ * RC_UN_MODE -- the same verdict `h`/`l` gives a number it does not own. */
+static uint16_t xt_bit(int v)
+{
+  switch (v)
+  {
+    case 1:    return 0x0001;
+    case 4:    return 0x0002;
+    case 7:    return 0x0004;
+    case 25:   return 0x0008;
+    case 9:    return 0x0010;
+    case 1000: return 0x0020;
+    case 1002: return 0x0040;
+    case 1003: return 0x0080;
+    case 1004: return 0x0100;
+    case 2004: return 0x0200;
+    case 2048: return 0x0400;
+    case 2026: return 0x0800;
+    default:   return 0;
+  }
+}
+
+static int xt_get(const RcGrid *g, int v, uint16_t b)
+{
+  switch (b)
+  {
+    case 0x0001: return g->cursorKeys;
+    case 0x0002: return g->insertMode;
+    case 0x0004: return g->wrapMode;
+    case 0x0008: return g->cursorVisible;
+    case 0x0010: case 0x0020: case 0x0040: case 0x0080: case 0x0100:
+      return (g->mouseModes & mouseBit(v)) != 0;
+    case 0x0200: return g->bracketedPaste;
+    case 0x0400: return g->inbandResize;
+    case 0x0800: return g->sync;
+    default:     return 0;
+  }
+}
+
+static void xt_save(RcGrid *g, int v)
+{
+  const uint16_t b = xt_bit(v);
+  if (!b) { ignored(g, RC_UN_MODE); return; }
+  if (xt_get(g, v, b)) g->xtOn |= b; else g->xtOn = (uint16_t)(g->xtOn & (uint16_t)~b);
+  g->xtHave |= b;
+}
+
+static void xt_restore(RcGrid *g, int v)
+{
+  const uint16_t b = xt_bit(v);
+  if (!b) { ignored(g, RC_UN_MODE); return; }
+  const int on = (g->xtOn & b) != 0;    /* never saved reads 0: OFF, ghostty's zeroed `saved` */
+  switch (b)
+  {
+    case 0x0001: g->cursorKeys = (uint8_t)(on ? 1 : 0); break;
+    case 0x0002: g->insertMode = (uint8_t)(on ? 1 : 0); break;
+    case 0x0004: g->wrapMode = (uint8_t)(on ? 1 : 0); break;
+    case 0x0008: g->cursorVisible = (uint8_t)(on ? 1 : 0); break;
+    case 0x0010: case 0x0020: case 0x0040: case 0x0080: case 0x0100:
+    {
+      /* The five tracking bits keep their stream numbering through the same mouseBit() the h/l arm uses. */
+      const uint16_t mb = mouseBit(v);
+      g->mouseModes = on ? (uint16_t)(g->mouseModes | mb) : (uint16_t)(g->mouseModes & (uint16_t)~mb);
+      break;
+    }
+    case 0x0200: g->bracketedPaste = (uint8_t)(on ? 1 : 0); break;
+    case 0x0400: g->inbandResize = (uint8_t)(on ? 1 : 0); break;
+    case 0x0800:
+      /* Verbatim the h/l arm's pair, counters and all: a restore that engages when it was already on is a
+         nested engage, not a silent absorb, so the census can still tell the two apart. */
+      if (on) { if (g->sync) g->nSyncNested++; else { g->sync = 1; g->nSyncEngages++; } }
+      else g->sync = 0;
+      break;
+    default: break;
   }
 }
 
@@ -2512,6 +2975,7 @@ static void screen_alignment(RcGrid *g)
     {
       RC_CELLS(g, r)[c].ch = 'E';
       RC_CELLS(g, r)[c].attr = attr;
+      RC_PROT(g, r)[c] = 0;      /* G9: the alignment pattern is written through the standard erase pen */
     }
     RC_ST(g, r).wrap = RC_WRAP_NONE;                  /* nothing ran off the right edge of a filled row */
     mark_dirty(g, r, 0, g->cols - 1);
@@ -2569,8 +3033,10 @@ static void esc_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
        witness found: with `CSI s` redefined by `?69` (a `CSI s` with no parameters under DECLRMM is DECSLRM
        at its defaults, which clear the pair), `ESC 7` is the save that still exists. Attributes are NOT
        saved (Ansi.cpp:2719), and neither is anything else -- the mode is the one non-position fact here. */
-    case '7': g->saveX = g->cx; g->saveY = g->cy; g->saveOrigin = g->originMode; break;
-    case '8': g->originMode = g->saveOrigin; clxy(g, g->saveY, g->saveX); break;
+    case '7': g->saveX = g->cx; g->saveY = g->cy; g->saveOrigin = g->originMode;
+      break;
+    case '8': g->originMode = g->saveOrigin; clxy(g, g->saveY, g->saveX);
+      break;
     case 'c': full_reset(g); break;                      /* RIS: see full_reset above */
     case 'D': line_down(g); break;                          /* IND */
     case 'E': g->cx = col_left(g); line_down(g); break;     /* NEL: a new line begins inside the band */
@@ -4201,6 +4667,7 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
       RC_CELLS(g, r)[c].ch = ' ';
       RC_CELLS(g, r)[c].attr = defAttr;
     }
+  memset(g->cellProt, 0, sizeof g->cellProt);   /* G9: every fresh grid starts unprotected (calloc parity for the rc_reset path) */
   rc_clear_dirty(g);
   return 1;
 }

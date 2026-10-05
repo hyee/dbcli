@@ -6084,6 +6084,259 @@ static void plan_gutter(void)
  *
  * Carried in bottom form (`prevBase + prevRows - 1`) because the rebuilt grid has a different `rows`: the row
  * the content ends on is the one that means the same thing on both sides of the resize. */
+/* Gap G3: XTPUSHSGR / XTPOPSGR (`CSI # {` / `CSI # }`). One leg per rule the gap row demands a
+ * decision on, each with the MSFT citation kept in Render.h's field comment: the ring at ten, the
+ * empty-pop no-op, the resets that leave the stack alone, and the parameter-selected parts (with
+ * the "empty push" an unsupported part produces). The ring leg drives twelve distinct pushes so the
+ * drop-the-bottom is witnessed, not assumed: pops must hand back colours 12 down to 3. */
+static void plan_sgr_stack(void)
+{
+  static RcGrid g;
+  rc_reset_hist(&g, 80, 24, 24, 0x07);
+
+  /* Rule 1: depth ten, ring on overflow (the last 10 pushes work, the first 10 pops work). Twelve
+     distinct renditions: fg colours 1..7 (`31`..`37`), then bg colours 1..5 (`41`..`45`) -- the
+     parameter space past 37 is background and 38/39 are their own meanings, so the second half of the
+     ladder switches fields rather than running off the end of SGR's foreground range. */
+  for (int i = 1; i <= 12; i++)
+  {
+    char s[32];
+    snprintf(s, sizeof s, "\033[%dm\033[#{", i <= 7 ? 30 + i : 33 + i);
+    putraw(&g, s);
+  }
+  eq_u("sgrpush: depth caps at ten", (unsigned)g.sgrDepth, 10, "twelve pushes, ten slots");
+  int ok_order = 1;
+  for (int i = 12; i >= 3; i--)
+  {
+    putraw(&g, "\033[#}");
+    const int want = i <= 7 ? (int)g.sgr.fg : (int)g.sgr.bg;
+    if (want != (i <= 7 ? i : i - 7)) { ok_order = 0; break; }
+  }
+  eq_u("sgrpush: ring drops the bottom", (unsigned)ok_order, 1,
+       "pops hand back 12..3; pushes 1 and 2 were dropped by the ring");
+  eq_u("sgrpush: drained", (unsigned)g.sgrDepth, 0, "");
+
+  /* Rule 2: a pop on an empty stack is ignored -- "just ignore pops when the stack is empty",
+     sgrStack.hpp's own words. The state must be untouched, not reset. */
+  putraw(&g, "\033[31m");
+  const unsigned fg_before = (unsigned)g.sgr.fg;
+  putraw(&g, "\033[#}");
+  eq_u("sgrpush: empty pop leaves the pen", (unsigned)g.sgr.fg, fg_before, "no change, no crash");
+  eq_u("sgrpush: empty pop stays empty", (unsigned)g.sgrDepth, 0, "");
+
+  /* Rule 3: neither RIS nor DECSTR clears the stack. MSFT's AdaptDispatch touches _sgrStack in
+     exactly two places, Push and Pop (adaptDispatchGraphics.cpp:467/:479); HardReset calls
+     SoftReset and neither mentions it. */
+  putraw(&g, "\033[1;35m\033[#{");        /* push bold+magenta */
+  putraw(&g, "\033[m\033c");               /* rendition off, then the hard reset */
+  eq_u("sgrpush: RIS empties the pen", (unsigned)g.sgr.bold, 0, "reset rendition");
+  eq_u("sgrpush: RIS keeps the stack", (unsigned)g.sgrDepth, 1, "the saved entry survived");
+  putraw(&g, "\033[#}");
+  eq_u("sgrpush: pop after RIS restores", (unsigned)g.sgr.fg, 5, "magenta was under the reset");
+  putraw(&g, "\033[36m\033[#{");
+  putraw(&g, "\033[!p");                   /* DECSTR */
+  eq_u("sgrpush: DECSTR keeps the stack", (unsigned)g.sgrDepth, 1, "");
+  putraw(&g, "\033[#}");
+  eq_u("sgrpush: pop after DECSTR restores", (unsigned)g.sgr.fg, 6, "");
+
+  /* Rule 4: parameters select parts, and a part with no carrier here contributes nothing -- an
+     "empty push" whose pop changes nothing (MSFT sgrStack.cpp). */
+  putraw(&g, "\033[1;31m");                /* bold + red */
+  putraw(&g, "\033[1#{");                /* save the bold alone */
+  putraw(&g, "\033[m\033[34m");            /* everything off, then blue */
+  eq_u("sgrpush: parts setup is blue", (unsigned)g.sgr.fg, 4, "");
+  eq_u("sgrpush: parts setup lost bold", (unsigned)g.sgr.bold, 0, "");
+  putraw(&g, "\033[#}");
+  eq_u("sgrpush: part pop restores bold", (unsigned)g.sgr.bold, 1, "the saved part comes back");
+  eq_u("sgrpush: part pop keeps colour", (unsigned)g.sgr.fg, 4, "the unsaved part stays as it is");
+
+  putraw(&g, "\033[32m");
+  putraw(&g, "\033[5#{");                /* blink: no carrier, so an empty push */
+  putraw(&g, "\033[33m");
+  putraw(&g, "\033[#}");
+  eq_u("sgrpush: empty push pops to nothing", (unsigned)g.sgr.fg, 3,
+       "nothing was saved, so nothing was restored: yellow stays");
+
+  /* The interim is the discriminator: `}` without '#' is DECIC's final (G8's to claim), and today
+     it must keep the unsupported verdict rather than leak a pop. */
+  putraw(&g, "\033[3}");
+  eq_u("sgrpush: bare } is not a pop", (unsigned)g.sgrDepth, 0, "no stack effect from the unclaimed final");
+}
+
+/* Gap G4: XTSAVE / XTRESTORE (`CSI ? N s` / `CSI ? N r`), ghostty's rules (modes.zig: one slot per mode,
+ * a restore of a never-saved mode is OFF, RIS clears the table and DECSTR does not). Each rule one leg,
+ * plus the two forks the parser had to take: the bare `?r` keeps its DECSTBM reading, and the non-private
+ * `CSI s` stays the save-cursor it always was. */
+static void plan_xt_modes(void)
+{
+  static RcGrid g;
+  rc_reset_hist(&g, 80, 24, 24, 0x07);
+
+  /* Roundtrip: save on, turn off, restore -- the act runs, the field lands. */
+  putraw(&g, "\033[?25h\033[?25s\033[?25l");
+  eq_u("xt: setup has the cursor hidden", (unsigned)g.cursorVisible, 0, "");
+  putraw(&g, "\033[?25r");
+  eq_u("xt: restore re-runs the act", (unsigned)g.cursorVisible, 1, "the saved on came back");
+
+  /* Never saved means OFF, not "unchanged": ghostty's `saved` starts zeroed. */
+  putraw(&g, "\033[?7r");
+  eq_u("xt: never-saved restores off", (unsigned)g.wrapMode, 0, "wrap was on by default and the restore closed it");
+
+  /* One slot: the second save overwrites the first. */
+  putraw(&g, "\033[?1000h\033[?1000s\033[?1000l\033[?1000s");
+  putraw(&g, "\033[?1000h");
+  putraw(&g, "\033[?1000r");
+  eq_u("xt: one slot, last save wins", (unsigned)(g.mouseModes & 0x0002u), 0,
+       "the second save recorded off, so the restore closed the bit the h had opened (bit 1 is ?1000)");
+
+  /* RIS clears the table; DECSTR does not. */
+  putraw(&g, "\033[?4h\033[?4s\033[?4l\033c\033[?4h");
+  putraw(&g, "\033[?4r");
+  eq_u("xt: RIS cleared the table", (unsigned)g.insertMode, 0, "no save survived, so the restore reads off");
+  putraw(&g, "\033[?4h\033[?4s\033[?4l\033[!p");
+  putraw(&g, "\033[?4r");
+  eq_u("xt: DECSTR kept the table", (unsigned)g.insertMode, 1, "the save outlived the soft reset");
+
+  /* 2026's restore walks the h/l counters, not a bare bit write: restoring on while already on is a
+     nested engage, the same census distinction the DECSET arm makes. */
+  rc_reset_hist(&g, 80, 24, 24, 0x07);
+  putraw(&g, "\033[?2026h\033[?2026s\033[?2026r");
+  eq_u("xt: 2026 restore counts nested", (unsigned)g.nSyncNested, 1,
+       "the second engage through the restore door is named, not absorbed");
+
+  /* The forks. Bare `?r` is still the region reset (upstream never consults PvtLen for this final). */
+  putraw(&g, "\033[2;10r");
+  eq_u("xt: fork setup has a region", (unsigned)g.regSet, 1, "");
+  putraw(&g, "\033[?r");
+  eq_u("xt: bare ?r still resets the region", (unsigned)g.regSet, 0, "the parameterless private form kept DECSTBM");
+
+  /* Non-private `CSI 25 s` is still the save-cursor: the number is not a mode here, it is a position. */
+  putraw(&g, "\033[5;9H\033[25s\033[10;1H\033[u");
+  eq_u("xt: plain 25s stayed SCOSC", (unsigned)g.cy, (unsigned)(g.rows - g.winRows + 5 - 1),
+       "the restore walked the cursor to the saved model row 5, not to anything about modes");
+
+  /* Unknown ids are counted, and stay out of the region parser. */
+  rc_reset_hist(&g, 80, 24, 24, 0x07);
+  putraw(&g, "\033[2;10r");
+  putraw(&g, "\033[?9999r");
+  eq_u("xt: unknown id leaves the region alone", (unsigned)g.regSet, 1,
+       "`? 9999 r` is a counted refusal, not a nonsense margin");
+}
+
+
+/* Gap G8+G9: the rectangular family and the protection bits. One leg per shape, each rule cited where
+ * it is implemented (Render.cpp's family block): the rect calculator's defaults and clamps, DECFRA's
+ * pen and pen-protection, DECERA's non-selective clear, the selective trio's keep-attribute rule,
+ * DECCRA's direction-correct overlap copy, and DECIC/DECDC's margin guard. The wide-pair half of the
+ * gap row is witnessed at the fill's edge (an orphaned half is healed). */
+static void plan_rect_family(void)
+{
+  static RcGrid g;
+  rc_reset_hist(&g, 40, 6, 6, 0x07);        /* 12 model rows, the last 6 the window */
+
+  /* The calculator: 0 and absent mean the edges, and the rect clamps to the page. */
+  putraw(&g, "AB\r\nCD\r\nEF\r\n");
+  putraw(&g, "\033[2;3$z");                 /* erase rows 2..end, cols 3..end */
+  eq_u("rect: DECERA row 1 untouched", (unsigned)RC_CELLS(&g, 6)[0].ch, 'A', "");
+  eq_u("rect: DECERA inside cell untouched", (unsigned)RC_CELLS(&g, 7)[1].ch, 'D', "");
+  eq_u("rect: DECERA cleared the named cell", (unsigned)RC_CELLS(&g, 7)[2].ch, ' ', "row 2 col 3");
+  eq_u("rect: DECERA cleared to the page edge", (unsigned)RC_CELLS(&g, 9)[1].ch, ' ',
+       "row 4 col 2 by the b=0 default");
+
+  /* An inverted rect is a no-op, exactly as a falsy til::rect is upstream. */
+  putraw(&g, "\033[9;2;3;4$z");
+  eq_u("rect: inverted rect does nothing", (unsigned)RC_CELLS(&g, 6)[0].ch, 'A', "");
+
+  /* DECFRA: the fill character is the 5th parameter, the pen rides it, and the pen's protection rides
+     the pen. Out of the honest range the ask is counted, not painted. */
+  putraw(&g, "\033[31m\033[2;1;2;6;35$x");
+  eq_u("fra: the character", (unsigned)RC_CELLS(&g, 7)[0].ch, '#', "35 is #");
+  eq_u("fra: the pen's colour", (unsigned)RC_CELLS(&g, 7)[0].attr, 0x04, "red pen filled the rect");
+  eq_u("fra: outside the rect keeps the old text", (unsigned)RC_CELLS(&g, 6)[0].ch, 'A', "row 1");
+  putraw(&g, "\033[9;1;9;40;31$x");         /* the character 31 is a control: counted, not painted */
+  eq_u("fra: out-of-range character paints nothing", (unsigned)RC_CELLS(&g, 6)[0].ch, 'A',
+       "the cell kept its text");
+
+  /* The protection pen: DECSCA 1 sets it, writes stamp it, DECERA clears it. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "\033[1\"qP\033[2\"qQ");
+  eq_u("sca: the protected write carries the bit", (unsigned)RC_PROT(&g, 6)[0], 1, "the P");
+  eq_u("sca: 2 clears the pen", (unsigned)RC_PROT(&g, 6)[1], 0, "the Q");
+  putraw(&g, "\033[1;1;1;1;9$z");
+  eq_u("era: non-selective clears protection", (unsigned)RC_PROT(&g, 6)[0], 0,
+       "DECERA has no respect for the bit");
+
+  /* The selective trio: text goes, attributes stay, protected cells are not touched at all. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "\033[31mA\033[1\"qB\033[2\"q\033[mC\r\nXY");
+  /* row 1: A red unprotected, B protected, C unprotected; row 2: XY unprotected */
+  putraw(&g, "\033[?2J");                   /* DECSED all: the selective screen erase */
+  eq_u("sed: unprotected text goes", (unsigned)RC_CELLS(&g, 6)[0].ch, ' ', "the A");
+  eq_u("sed: protected text stays", (unsigned)RC_CELLS(&g, 6)[1].ch, 'B', "the B");
+  eq_u("sed: unprotected text keeps its colour", (unsigned)RC_CELLS(&g, 6)[0].attr, 0x04, "the red");
+  eq_u("sed: the row below went too", (unsigned)RC_CELLS(&g, 7)[0].ch, ' ', "the X");
+
+  /* DECSEL, the line twin, and the equivalence with nothing protected. */
+  putraw(&g, "\033[1;1H\033[1\"qZZ\033[2\"qW");
+  putraw(&g, "\033[1;3H\033[?K");       /* cursor on the W: to end of line from there */
+  eq_u("sel: unprotected W goes", (unsigned)RC_CELLS(&g, 6)[2].ch, ' ', "");
+  eq_u("sel: protected ZZ stays", (unsigned)RC_CELLS(&g, 6)[0].ch, 'Z', "");
+
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "KEEP\r\nGONE\r\n");
+  putraw(&g, "\033[2;1H\033[?J");
+  eq_u("sed: no protection, ?0J is ED 0", (unsigned)RC_CELLS(&g, 7)[0].ch, ' ',
+       "the selective half met its twin");
+
+  /* DECSERA, the rect twin of the selective rule. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "A\033[1\"qB\033[2\"qCD");  /* only the B carries the pen */
+  putraw(&g, "\033[1;2;1;3${");
+  eq_u("sera: the protected inside stays", (unsigned)RC_CELLS(&g, 6)[1].ch, 'B', "the B");
+  eq_u("sera: the unprotected inside goes", (unsigned)RC_CELLS(&g, 6)[2].ch, ' ', "the C");
+  eq_u("sera: outside stays", (unsigned)RC_CELLS(&g, 6)[3].ch, 'D', "the D");
+
+  /* DECCRA: direction-correct overlap. A rect copied one column right onto itself must arrive whole,
+     not half-eaten -- the walk runs backwards when the destination is beyond the source. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "ABCDEF\r\n");
+  putraw(&g, "\033[1;1;1;5;1;1;2$v");
+  eq_text(&g, 6, 7, "AABCDE ", "deccra right onto itself: the backwards walk did not eat the source");
+
+  /* ... and to the left, where the walk runs forwards for the same reason: src B..F onto cols 1..5. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "ABCDEF\r\n");
+  putraw(&g, "\033[1;2;1;6;1;1;1$v");
+  eq_text(&g, 6, 7, "BCDEFF ", "deccra left onto itself: forwards, and the copy landed whole");
+
+  /* The wide-pair edge: a fill that takes the cell after a pair heals the orphan's claim. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  RC_CELLS(&g, 6)[0].ch = 0x4E2D; RC_CELLS(&g, 6)[0].attr = 0x07 | RC_LVB_LEADING;
+  RC_CELLS(&g, 6)[1].ch = 0x4E2D; RC_CELLS(&g, 6)[1].attr = 0x07 | RC_LVB_TRAILING;
+  RC_CELLS(&g, 6)[2].ch = 'X';   RC_CELLS(&g, 6)[2].attr = 0x07;
+  putraw(&g, "\033[1;2;1;2$z");             /* erase the pair's trailing half itself */
+  eq_u("pair: the fill healed the orphan's front", (unsigned)RC_CELLS(&g, 6)[0].attr, 0x07u,
+       "no leading half claims a cell whose back the fill took");
+  eq_u("pair: and its glyph went with it", (unsigned)RC_CELLS(&g, 6)[0].ch, ' ',
+       "an orphaned half is blanked, not left as a lone half");
+
+  /* DECIC/DECDC: insert and delete inside the margins, with the guard. */
+  rc_reset_hist(&g, 40, 6, 6, 0x07);
+  putraw(&g, "abcdef\r\n");
+  putraw(&g, "\033[1;3H\033[2}");           /* insert 2 columns at c */
+  eq_text(&g, 6, 7, "ab  cdef", "decic opened two blanks at the cursor");
+  putraw(&g, "\033[1;3H\033[2~");           /* and delete them again */
+  eq_text(&g, 6, 7, "abcdef  ", "decdc closed them, the tail walked off the row");
+
+  /* The guard: a cursor outside the region does nothing at all. */
+  putraw(&g, "\033[2;6r\033[1;1H\033[3}");
+  eq_text(&g, 6, 7, "abcdef  ", "decic refused: the cursor row is outside the region");
+
+  /* Resets: DECSTR clears the protection pen (msfterm's SoftReset calls SetCharacterProtectionAttribute({})). */
+  putraw(&g, "\033[1\"q\033[!p");
+  eq_u("reset: DECSTR clears the pen", (unsigned)g.penProt, 0, "");
+}
+
 static void adopt_anchor(void)
 {
   /* A model with no claim -- a first adopt, a fresh session -- has nothing but the window to go on. Every
@@ -7019,6 +7272,9 @@ int main(int argc, char **argv)
   plan_scroll_band();
   plan_snap();
   plan_cursor_shape();
+  plan_sgr_stack();
+  plan_xt_modes();
+  plan_rect_family();
   adopt_anchor();
   plan_gutter_hook();
   plan_runs();

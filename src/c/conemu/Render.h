@@ -378,6 +378,21 @@ typedef struct RcGrid
   /* Only cells[r][c] with r < rows and c < cols is live; the fixed stride means the rest is stale
      after any row move, so a painter that reads past cols() repaints garbage. */
   RcCell cells[RC_MAX_ROWS][RC_MAX_COLS];
+  /* G9: DECSCA's per-cell protection bit (gap G9, ANSI_SUPPORTS_1 §3.4/§6). A shadow array rather than a
+     bit in `RcCell`, because the console's own cell type has nowhere to put it (`CHAR_INFO`'s attribute
+     word is conattrs.hpp's COMMON_LVB set: lead/trail, grid lines, reverse, underscore -- measured in
+     #110), so the bit cannot be painted, exported or read back off the console. That is the debt the gap
+     row names: an adopt cannot recover it and a rebuild therefore starts every cell unprotected -- the
+     cells themselves are re-read from the console on a rebuild, so carrying the bits would misdescribe
+     content that is no longer what they described. Indexed physically, through `of`, so a row that moves
+     by rotation takes its protection with it exactly as it takes its cells and its claims. */
+  uint8_t cellProt[RC_MAX_ROWS][RC_MAX_COLS];
+  /* The pen's own protection state: `CSI 1 " q` (DECSCA) set it, 0 and 2 clear it, and every write and
+     every pen-blank stamps it into the shadow the way it stamps `attr` into the cell. Carried across a
+     rebuild -- it is application state, like `bracketedPaste`, not content. Both references agree on the
+     numbering even though the DEC docs read the other way round: ghostty maps 0,2 -> off and 1 -> dec
+     (stream.zig:2237-2246) and MSFT's enum cast reads 1 as Protected (DispatchTypes.hpp:458). */
+  uint8_t penProt;
   /* Which pool row currently *is* the model's row r. The pool is storage and this is order: a scroll
    * rotates the order instead of moving the cells, which is the difference between touching one int per
    * row and touching `cols` cells per row. At the shapes this product runs on -- a 2000-column buffer,
@@ -519,6 +534,49 @@ typedef struct RcGrid
   uint8_t originMode;
 
   RcSgr   sgr;
+  /* XTPUSHSGR / XTPOPSGR -- `CSI # {` and `CSI # }` (gap G3). A ring stack, ten deep, with the three
+     rules that make it honest taken from the one reference that implements the family (MSFT
+     `types/inc/sgrStack.hpp`): depth is xterm's own ten; a push on a full stack drops the *bottom*
+     ("the last N pushes work and the first N pops work", so garbage needs no recovery procedure --
+     the header argues the whole choice); a pop on an empty stack is ignored; and neither RIS nor
+     DECSTR clears the stack (AdaptDispatch's two reset bodies touch `_sgrStack` nowhere -- its only
+     two uses are Push and Pop, adaptDispatchGraphics.cpp:467/:479).
+     `sgrParts` is the save's *shape*: 0 means no parameters were given and the whole RcSgr was
+     saved; otherwise bit 7 says parameters were present and the low bits name the parts, in the
+     xterm spelling (1 bold, 3 italic, 4 underline, 7 inverse, 9 crossed-out, 30 fore colour,
+     31 back colour). A parameter this model has no carrier for (2 faint, 5 blink, 8 invisible,
+     21 double-underline -- the same absences §3.2 argues) encodes no bit, so a push naming only
+     those is the "empty push" whose pop changes nothing, which is MSFT's behaviour for exactly
+     that case (sgrStack.cpp: "you'll do what is effectively an 'empty' push"). `seeded` is never
+     saved or restored in either shape: it is ConEmu's laziness marker, not a rendition. */
+#define RC_SGR_STACK 10
+#define RC_SP_BOLD   0x01
+#define RC_SP_ITAL   0x02
+#define RC_SP_UNDER  0x04
+#define RC_SP_INVERSE 0x08
+#define RC_SP_CROSSED 0x10
+#define RC_SP_FORE   0x20
+#define RC_SP_BACK   0x40
+#define RC_SP_PARAMSED 0x80
+  RcSgr   sgrStack[RC_SGR_STACK];
+  uint8_t sgrParts[RC_SGR_STACK];
+  uint8_t sgrTop;          /* next push slot; wraps, which is the ring */
+  uint8_t sgrDepth;        /* live entries, capped at RC_SGR_STACK */
+  /* XTSAVE / XTRESTORE -- `CSI ? N s` and `CSI ? N r` (gap G4). ghostty is the only reference with the
+     pair (modes.zig:12-27, "We only allow saving each mode once ... in line with other terminals"), so its
+     rules are the ones taken: one save slot per mode, a second save overwrites, and a restore of a mode
+     nobody saved reads the zero the `saved` packed struct starts at -- which means OFF, not "unchanged".
+     RIS clears the table (fullReset calls modes.reset(), which zeroes `saved`); DECSTR does not. The
+     saveable set is every mode this model owns as a plain bit: 1 (DECCKM), 4 (IRM), 7 (DECAWM), 25 (DECVSTM),
+     2026 (synchronized output), 2004 (bracketed paste), 2048 (inband resize), and the five tracking bits
+     9/1000/1002/1003/1004. Deliberately out: 6/69 and 47/1047/1049, whose acts move the cursor or the
+     screen (re-running those at restore time is a takeover question, not a bit); 1048, which is
+     save-cursor and has its own spellings; the four format numbers, a last-wins field rather than a bit;
+     and 1001, which even `h`/`l` refuses. `xtHave` distinguishes "saved" from "saved as off" for the
+     census and the legs; the restore itself never needs it, exactly as ghostty's restore does not. */
+#define RC_XT_BITS 12
+  uint16_t xtOn;           /* the saved values, one bit per saveable mode */
+  uint16_t xtHave;         /* which modes have ever been saved */
   uint16_t attr;          /* rc_attr() of the current state: what SetConsoleTextAttribute would get */
   uint16_t defAttr;       /* frozen console default (Ansi.cpp:691-709) -- frozen until OSC 10/11 moves it (I34) */
   uint16_t defAttrSeed;     /* the console default as this handle found it; OSC 110/111 restore it */
@@ -907,6 +965,7 @@ typedef struct RcGrid
    model row by hand. Every one of them takes r in [0, rows). */
 #define RC_PHYS(g, r)   ((g)->of[r])
 #define RC_CELLS(g, r)  ((g)->cells[RC_PHYS(g, r)])
+#define RC_PROT(g, r)   ((g)->cellProt[RC_PHYS(g, r)])
 #define RC_ST(g, r)     ((g)->rowState[RC_PHYS(g, r)])
 #define RC_DTY(g, r)    ((g)->rowDirty[RC_PHYS(g, r)])
 #define RC_LO(g, r)     ((g)->dirtyLo[RC_PHYS(g, r)])
