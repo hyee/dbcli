@@ -13,21 +13,66 @@
 #   4. The compiled entry dumps back (`infocmp`) as the same set the source claims, which is what catches a
 #      capability that tic silently dropped or renamed.
 #
-# Usage, from anywhere wsl.exe reaches:
-#   MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'bash /mnt/d/dbcli/src/c/conemu/terminfo/terminfo_check.sh'
+# Usage, from anywhere wsl.exe reaches. The assignments have to be EXPORTED: written in front of `tr`, they
+# bind to `tr`'s environment only, and the script that actually reads them sees nothing -- which is how arm 3
+# lost the jar and the jline copy. The `tr` is not decoration either: core.autocrlf=true with no .gitattributes
+# hands bash a CRLF script. Spell the `\r` as backslash-r, not as a raw carriage-return byte.
+#   MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'export DBCLI_ROOT=/mnt/d/dbcli \
+#     JLINE_CAPS=/mnt/d/JavaProjects/jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps \
+#     JAR=/mnt/d/dbcli/lib/JLine3.jar; \
+#     tr -d "\r" < /mnt/d/dbcli/src/c/conemu/terminfo/terminfo_check.sh | bash -s'
+# DBCLI_ROOT is a convenience, not a requirement -- the root is found by marker (see below).
 # Pass --refresh to rewrite infocmp-windows-conemu.txt from the compile. Nothing else here rewrites a file.
-# The dbcli root is never hardcoded:  $ROOT  >  $DBCLI_ROOT  >  derived from this script's own location.
 set -u
 
 REFRESH=no
 for a in "$@"; do [ "$a" = "--refresh" ] && REFRESH=yes; done
 
-ROOT="${DBCLI_ROOT:-}"
+# The dbcli root, resolved by MARKER rather than by arithmetic on `$0`. This script is normally fed through a
+# pipe -- `tr -d '\r' < this file | bash -s` -- and on that road `$0` is `bash`, not this path, so the old
+# `dirname "$0"` + up-four derived the root from the *caller's* cwd: from a repo root it walked off the top of
+# the filesystem, ROOT became `/`, and the run died on `no //src/c/conemu/terminfo/windows-conemu.ti`. A gate
+# whose documented invocation cannot run is worse than a gate with a missing leg, so the resolution now looks
+# for a file only this tree has, in the two places a path is honestly knowable: an explicit $DBCLI_ROOT, the
+# real script path if bash was given one, and upward from the cwd. Nothing is guessed and nothing is quiet --
+# when all three miss, the refusal names every candidate it tried.
+marker() { [ -f "$1/src/c/conemu/terminfo/windows-conemu.ti" ]; }
+
+ROOT=""
+TRIED=""
+if [ -n "${DBCLI_ROOT:-}" ]; then
+  TRIED="$TRIED \$DBCLI_ROOT=$DBCLI_ROOT"
+  marker "$DBCLI_ROOT" && ROOT="$DBCLI_ROOT"
+fi
 if [ -z "$ROOT" ]; then
-  here=$(cd "$(dirname "$0")" && pwd)          # .../<root>/src/c/conemu/terminfo
-  ROOT=$(cd "$here/../../../.." && pwd)
+  for s in "${BASH_SOURCE[0]:-}" "$0"; do
+    case "$s" in
+      */terminfo_check.sh)
+        here=$(cd "$(dirname "$s")" 2>/dev/null && pwd)
+        if [ -n "$here" ]; then
+          cand=$(cd "$here/../../../.." 2>/dev/null && pwd)
+          TRIED="$TRIED script-path=$cand"
+          [ -n "$cand" ] && marker "$cand" && ROOT="$cand" && break
+        fi ;;
+    esac
+  done
+fi
+if [ -z "$ROOT" ]; then
+  d=$(pwd)
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    TRIED="$TRIED cwd-up=$d"
+    marker "$d" && { ROOT="$d"; break; }
+    d=$(dirname "$d")
+  done
+fi
+marker "/" && [ -z "$ROOT" ] && ROOT="/"
+if [ -z "$ROOT" ]; then
+  echo "FAIL no dbcli root: nothing under[$TRIED] holds src/c/conemu/terminfo/windows-conemu.ti."
+  echo "     pass DBCLI_ROOT=<path to the tree> (WSL spelling, e.g. /mnt/d/dbcli)."
+  exit 1
 fi
 T="$ROOT/src/c/conemu/terminfo"
+echo "     root resolved to: $ROOT"
 JAR="${JAR:-$ROOT/lib/JLine3.jar}"
 # The caps entry jline's *source tree* carries, when there is one to find. Two known homes, and the refusal
 # names them rather than guessing a third: the authority tree and its build output.
@@ -57,7 +102,10 @@ fi
 
 TERMINFO="$WORK/tc" infocmp -x -1 -I windows-conemu >"$WORK/dump.txt" 2>"$WORK/dump.err"
 if [ ! -s "$WORK/dump.txt" ]; then
-  echo "FAIL infocmp could not read back what tic wrote:"; cat "$WORK/dump.err"; rc=1
+  echo "FAIL infocmp could not read back what tic wrote:"; cat "$WORK/dump.err"
+  # Stop here rather than letting the comparison python open a file that does not exist: a traceback is loud,
+  # but it is loud about the wrong thing -- the compile failed, and legs 2-4 never ran.
+  echo "TERMINFO CHECK: FAILED"; exit 1
 fi
 
 python3 - "$T" "$ROOT" "$WORK/dump.txt" "$@" <<'PY' || rc=1
@@ -174,7 +222,10 @@ if [ "$REFRESH" = "yes" ] && [ -s "$WORK/dump.txt" ]; then
     echo "# about windows-conemu.ti, which is derived from windows-conemu.caps -- the entry jline loads at run"
     echo "# time. The capability set is asserted equal to that file's on every run of this script."
     echo "# $(infocmp -V 2>/dev/null || echo 'ncurses version unavailable')"
-    cat "$WORK/dump.txt"
+    # infocmp's first line names the file it read back, and that file is this run's mktemp directory. Left in,
+    # every --refresh dirties the checkout on a line that means nothing, and a real drift hides in that noise:
+    # the whole point of checking the dump in is that `git diff` on it is a statement about the entry.
+    sed "s#$WORK#<tic output dir>#" "$WORK/dump.txt"
   } >"$T/infocmp-windows-conemu.txt"
   echo "ok   refreshed infocmp-windows-conemu.txt"
 fi

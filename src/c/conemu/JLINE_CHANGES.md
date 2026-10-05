@@ -548,3 +548,65 @@ DESIGN.md's §10 used to):
 - **`StatusTest` cannot red-arm against an older jar for the border-template cases** — an unpatched `Status`
   has no `setBorder(AttributedString,int)` to link against, so their control is the real-terminal leg and the
   `/tmp`-revert arm above, not `run-test.sh --control`.
+
+
+## 2026-10-05, WORK_ORDER_1005_REFACTOR slices C+F
+
+- **`dbcli/src/com/hyee/ansirender/NativeRenderer.java`** -- the hand-written `SLOT_*` constants and the
+  `UNMODELLED` array became one marker-delimited block generated from `Render.h`'s `RC_CENSUS_X` /
+  `RC_STATFAM_X` by `gen_statslots.py`; `build.sh` fails the build if either Java block or
+  `RenderJni.cpp`'s `STAT_` chain drifts from the table (values unchanged -- the live gate's
+  `reportSlotAgrees` legs re-verify the shipped class against the dll at run time).
+- **`terminal/src/main/resources/org/jline/utils/windows-conemu.caps`** -- owner ruling of 2026-10-05:
+  align spellings with `xterm-256color` where the function is the same. Adopted: `cub1=^H`, `sgr0=\E(B\E[m`, `khome=\EOH`, `kend=\EOF`, `smcup/rmcup` plus the
+  `22;0;0t`/`23;0;0t` title-stack suffixes. `cud1` was adopted as `
+` the same morning and reverted
+  to `\E[B` the same evening by owner ruling ("change cud1 back to \E[B") -- with cud1 back at the
+  CSI, jline's `Display.cursorDownIsNewLine` (Display.java:84) stays false for this entry, the
+  pre-batch redraw shape is preserved, and the interactive bar/pager legs ran on exactly that shape. Deliberately kept: `kbs=^H`, `kmous=\E[M` (xterm declares `\E[<`, the SGR
+  prefix -- ours names the X10 prefix the default family sends), `sgr` (reduced), and `setaf`/`setab`
+  stay `38;5;`/`48;5;` because this jline's `Curses.tputs` cannot evaluate xterm's chained
+  conditional (`%? c1 %t a %e c2 %t b ...%;` -- the second `%t` pops a stack the skipped first branch
+  never pushed, `Curses.java:379` throws `NoSuchElementException`; measured by `caps_check.ps1`
+  before the value was reverted). `cnorm`/`cvvis` stay `\E[?25h`: the renderer's h/l reads
+  args[0] only, so xterm's `\E[?12;25h` would apply the 12 and drop the 25.
+
+
+## 2026-10-05, later the same day: `terminal/src/main/java/org/jline/utils/Curses.java` (owner-ordered fix)
+
+The setaf/setab clause above ("stay 38;5 because tputs cannot chain %t") was superseded by the owner's
+ruling the same day: a bug in Curses.java gets fixed in Curses.java, not worked around by keeping the
+entry inconsistent with xterm-256color. Two defects, both in the `%` machine of `doTputs`:
+
+1. **`%d` and `%i` had no `exec` guard** -- every other operation checks `if (exec)`; a `%d` inside a
+   not-taken branch popped an empty stack and threw `NoSuchElementException` (the original crash).
+2. **A single `ifte` enum cannot express an else-if chain** (`%? c1 %t A %e c2 %t B %e C %;`, xterm's
+   own setaf/setab shape): after a taken branch the `%e` flipped `exec` back on, so the skipped
+   branch's condition ran half-evaluated and the next `%t` popped whatever it found. Replaced the
+   enum with a frame stack (`{active, taken}` per `%?`): a taken branch skips to the `%;`, an untaken
+   one re-arms at each `%e` so the next condition is evaluated, `%;` restores the enclosing exec --
+   nesting-correct, and a `%t` that arrives inside a finished chain skips rather than pops.
+
+Witness: `caps_check.ps1` both arms, with the xterm 3-tier setaf/setab values in the entry --
+`setaf(3)=\E[33m`, `setaf(9)=\E[91m`, `setaf(196)=\E[38;5;196m`, `setab(1)=\E[41m`, and the live
+gate both arches `checks=6373 failures=0` with the rebuilt jar. The fixed class is deployed in
+`lib\JLine3.jar` (compiled `-g -source 8 -target 8`, the flags the JAR CHECK hashes).
+
+
+## 2026-10-05, Curses.java synced to the jline4 tree (`D:\Green\github\jline4`)
+
+Owner instruction: carry the same fix across. jline4's `terminal/src/main/java/org/jline/utils/Curses.java`
+carried both defects verbatim (the unguarded `%d`/`%i`, the single-ifte machine); the conditional
+machine now reads identically to jline3.29's (the remaining tree difference is one commented-out
+block's indentation). Compiled and run under JDK 22 (`D:\jdk-22`, the tree's enforcer floor) with
+`mvn -pl terminal spotless:apply` + `mvn -pl terminal test -Dtest=CursesTest`: **5/5 green** -- the
+two pre-existing tests plus three new regression legs added to `CursesTest` (`testElseIfChain`
+asserts xterm's exact setaf shape through all three arms: `\E[33m` / `\E[91m` / `\E[38;5;196m`;
+`testSequentialConditionals`; `testNestedConditionals`). The crash itself was witnessed red earlier
+the same day on jline3.29's byte-identical code, which is the seen-red arm for these tests.
+
+Not synced: jline4's `terminal/src/main/resources/org/jline/utils/windows-conemu.caps` is **not** our
+audited entry -- it is jline upstream's generic one (16-colour `setaf=\E[3%p1%dm`, `blink`/`invis`
+advertised, no `acsc`/`csr`/`u6`/`u7`/`rep`, `ncv#3`). Porting the audited entry there interacts with
+the separate jline4 work and was left for its owner; noted here so the two trees' differing entries
+are a recorded fact, not a surprise.

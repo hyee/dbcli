@@ -84,6 +84,52 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
         }
     }
 
+    /* ------------------------------------------------------------- A1: the input-report injection ----
+     *
+     * The pump has read a mouse or focus record off CONIN$; the model -- the only thing that parsed the
+     * DECSET stream, because this writer took the host's parser off it -- is the one that knows which
+     * protocol was armed, so the record goes there and comes back as the bytes the stream asked for.
+     * Synchronized on this writer for the same reason writeConsole is: the pump thread and the writer
+     * thread are the two hands this renderer has, and the model's tracking state (lastBtn, the
+     * one-report-per-cell key) must not interleave with a parse in flight.
+     *
+     * @return true when the renderer answered -- including its "nothing is due" verdict, which is a
+     *         decision the caller must obey rather than paper over with the legacy bytes. False only when
+     *         there is no renderer to ask or the dll predates the seam, and the caller falls back to the
+     *         X10 encoding it has always had.
+     */
+    public synchronized boolean writeMouseReport(int buttonState, int eventFlags, int ctrlKeyState,
+                                                 int x, int y, java.io.Writer pipe) throws java.io.IOException {
+        if (nativeRenderer == null) {
+            return false;
+        }
+        final char[] buf = new char[40];
+        final int n = nativeRenderer.encodeMouse(x, y, -1, -1, buttonState, eventFlags, ctrlKeyState, buf);
+        if (n == -2) {
+            return false;
+        }
+        if (n > 0) {
+            pipe.write(buf, 0, n);
+        }
+        return true;
+    }
+
+    /** Focus is the same seam with nothing to derive: the record says focused, the mode says report. */
+    public synchronized boolean writeFocusReport(boolean focused, java.io.Writer pipe) throws java.io.IOException {
+        if (nativeRenderer == null) {
+            return false;
+        }
+        final char[] buf = new char[3];
+        final int n = nativeRenderer.encodeFocus(focused, buf);
+        if (n == -2) {
+            return false;
+        }
+        if (n > 0) {
+            pipe.write(buf, 0, n);
+        }
+        return true;
+    }
+
     /** Keeps the output when the renderer cannot take it, instead of dropping it silently. */
     private void writeRaw(char[] text, int off, int len) {
         if (len <= 0) {

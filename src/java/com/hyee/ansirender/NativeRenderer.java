@@ -50,49 +50,40 @@ public final class NativeRenderer {
        (`STAT_UNSUPPORTED + RC_UN_MAX`) and nothing here recomputes it. A missed +1 shows up exactly the way it
        did for #89 -- a run where the census prints a field of zeroes -- so `Render.java`'s equality length gate
        and the live gate's `reportSlotAgrees` are the two things keeping this table honest. */
-    private static final int SLOT_UNSUPPORTED = 17, SLOT_TITLES = 30, SLOT_TITLES_TRUNC = 31,
-            SLOT_TITLES_APPLIED = 32, SLOT_ALT = 33, SLOT_ALT_REFUSED = 34, SLOT_PROMPT_MARKS = 35,
-            SLOT_LAST_EXIT = 36, SLOT_SNAP = 40,
-            /* DECSET 2026's family, in the order RenderJni.cpp's STAT_SYNC gives them: regions opened, nested
-               BSUs, flushes deferred, and the ways a region ended before its ESU. SLOT_SYNC_ON is the mode as
-               it stands at teardown, not a count, and it is the one worth reading: a session that ended inside a
-               synchronized region is a session where an application sent a BSU and never sent the ESU, and the
-               counts next to it say whether that ever cost a frame. */
-            SLOT_SYNC_ENGAGES = 41, SLOT_SYNC_NESTED = 42, SLOT_SYNC_HELD = 43,
-            SLOT_SYNC_TIMEOUT = 44, SLOT_SYNC_OVERFLOW = 45, SLOT_SYNC_DECLINED = 46,
-            SLOT_SYNC_ON = 47,
-            /* OSC 52, in RenderJni.cpp's STAT_CLIP order: armed by the parser, then the three reasons a
-               request was refused, then what the clipboard API answered, then the policy bit. The census
-               slot for the family is the last of UNMODELLED, and the gate's own label list is compared
-               against the dll's table at run time. */
-            SLOT_CLIP_ARMED = 48, SLOT_CLIP_DECODE = 49, SLOT_CLIP_SELECTION = 50, SLOT_CLIP_READ = 51,
-            SLOT_CLIP_WRITES = 52, SLOT_CLIP_FAILS = 53, SLOT_CLIP_POLICY = 54,
-            /* The parser's one limit that a caller cannot otherwise see: a `CSI` whose parameter list is
-               longer than RC_CSI_ARGS keeps the first sixteen and the surplus is gone, exactly as ConEmu's
-               ArgV does. #74 counted it and RenderJni.cpp has written the slot ever since -- and this file
-               declared SLOT_LAST one short of it, which is the shape of miss the length gate in the live
-               harness was written to catch and did not: `s.length >= S_LEN` only ever notices a dll that is
-               too *short*, so an array that outgrew the table read as a clean run with an unread slot. */
-            SLOT_ARGTRUNC = 55,
-            /* DECSET 2004 as the grid stands at the close of the run -- a state, not a count, like the
-               sync family's live bit (#83). It exists because the census next to it cannot answer the
-               question a rollout asks: "no bracketed-paste OSC was counted" means either that no
-               application asked, or that it asked and the paste bytes belong to the host's input leg. */
-            SLOT_BP = 56,
-            /* DECSCUSR 5/6 on a kernel32 that has {@code SetConsoleCursorShape}: the shape word this handle last
-             * got accepted, where -1 is "never", 1 is block and 2 is the vertical bar (#88). It is a state like
-             * the bracketed-paste slot, and it carries the same warning: conhost has no getter for the shape, so
-             * this says what the handle <em>said</em>, not what the cursor is. A rollout that reads "2" as "there
-             * is a bar on the screen" is reading past what the dll can witness. */
-            SLOT_SHAPE = 57, SLOT_LAST = 58;
+    // BEGIN SLOT TABLE (generated from Render.h by gen_statslots.py -- build.sh verifies)
+    private static final int SLOT_UNSUPPORTED = 17;
+    private static final int SLOT_TITLES = 30;
+    private static final int SLOT_TITLES_TRUNC = 31;
+    private static final int SLOT_TITLES_APPLIED = 32;
+    private static final int SLOT_ALT = 33;
+    private static final int SLOT_ALT_REFUSED = 34;
+    private static final int SLOT_PROMPT_MARKS = 35;
+    private static final int SLOT_LAST_EXIT = 36;
+    private static final int SLOT_SNAP = 40;
+    private static final int SLOT_SYNC_ENGAGES = 41;
+    private static final int SLOT_SYNC_NESTED = 42;
+    private static final int SLOT_SYNC_HELD = 43;
+    private static final int SLOT_SYNC_TIMEOUT = 44;
+    private static final int SLOT_SYNC_OVERFLOW = 45;
+    private static final int SLOT_SYNC_DECLINED = 46;
+    private static final int SLOT_SYNC_ON = 47;
+    private static final int SLOT_CLIP_ARMED = 48;
+    private static final int SLOT_CLIP_DECODE = 49;
+    private static final int SLOT_CLIP_SELECTION = 50;
+    private static final int SLOT_CLIP_READ = 51;
+    private static final int SLOT_CLIP_WRITES = 52;
+    private static final int SLOT_CLIP_FAILS = 53;
+    private static final int SLOT_CLIP_POLICY = 54;
+    private static final int SLOT_ARGTRUNC = 55;
+    private static final int SLOT_BP = 56;
+    private static final int SLOT_SHAPE = 57;
+    private static final int SLOT_LAST = 58;
+    private static final String[] UNMODELLED = {"escape", "scroll region", "alt buffer", "mouse tracking", "mode", "bracketed paste", "private OSC 9", "other OSC", "DCS", "report request", "colon subparameter", "clipboard refused", "charset named but not drawable"};
+    // END SLOT TABLE (generated)
 
     /** The two answers Render.h gives a 133;D whose exit code was absent or was not a number. */
     private static final long EXIT_UNKNOWN = -1, EXIT_UNPARSABLE = 0x7FFFFFFFL;
 
-    /** What each unsupported-sequence counter is, for the one line at teardown. */
-    private static final String[] UNMODELLED = {"escape", "scroll region", "alt buffer", "mouse tracking",
-            "mode", "bracketed paste", "private OSC 9", "other OSC", "DCS", "report request",
-            "colon subparameter", "clipboard refused", "charset named but not drawable"};
 
     /**
      * ANSI_RENDER=off|0|false|no switches the renderer off; anything else -- including nothing at all --
@@ -429,6 +420,65 @@ public final class NativeRenderer {
      * once, by the terminal. The policy belongs to the caller, never to the library itself.
      */
     public static native void setPainting(long h, boolean on);
+
+    /* --------------------------------------------------------------- A1: the input-report seam -------
+     *
+     * The mouse and focus encoders have lived in the library since #108, ruled and unit-legged against
+     * all three references, but the one reader of console records -- jline's input pump -- encoded the
+     * legacy X10 shape itself whatever mode the stream had armed, which is gap A1's "told set, receives
+     * X10". These wrappers are the call site: the pump hands the record over in wincon's own values, the
+     * model (the only thing that parsed the DECSET stream) answers with the report the armed modes ask
+     * for, and the caller writes the units into the reader's pipe.
+     *
+     * Return: a positive count is units written into {@code out}; {@code 0} is a verdict that nothing is
+     * due for this event (the level, the format or the one-report-per-cell rule said so -- the caller
+     * must not fall back to any other encoding for it); {@code -2} means the library could not be asked
+     * at all (no handle, stopped, or a dll older than this export), and only that answer may send the
+     * caller back to the legacy path. {@code -1} is the contract's "no room", unreachable for the
+     * 40-unit buffer the shapes fit in. */
+
+    public synchronized int encodeMouse(int x, int y, int px, int py,
+                           int buttonState, int eventFlags, int ctrlKeyState, char[] out) {
+        if (h == 0 || stopped != null) {
+            return -2;
+        }
+        try {
+            return encodeMouse0(h, x, y, px, py, buttonState, eventFlags, ctrlKeyState, out);
+        } catch (UnsatisfiedLinkError e) {
+            reportMissingEncode(e);
+            return -2;
+        }
+    }
+
+    public synchronized int encodeFocus(boolean focused, char[] out) {
+        if (h == 0 || stopped != null) {
+            return -2;
+        }
+        try {
+            return encodeFocus0(h, focused ? 1 : 0, out);
+        } catch (UnsatisfiedLinkError e) {
+            reportMissingEncode(e);
+            return -2;
+        }
+    }
+
+    private static native int encodeMouse0(long h, int x, int y, int px, int py,
+                                           int buttonState, int eventFlags, int ctrlKeyState, char[] out);
+
+    private static native int encodeFocus0(long h, int focused, char[] out);
+
+    /** Once per process, and never on the pump's critical path louder than one line: a jar newer than its
+     *  dll loses the injection seam, not the session -- the caller falls back to what it always did. */
+    private static void reportMissingEncode(UnsatisfiedLinkError e) {
+        if (encodeMissing.compareAndSet(false, true)) {
+            System.err.println("native renderer: no input-report seam -- " + e.getMessage()
+                    + " (the library is older than the jar that loaded it; mouse reports fall back to X10)");
+        }
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean encodeMissing =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
 
     /* ------------------------------------------------------------------- state --------------------- */
 

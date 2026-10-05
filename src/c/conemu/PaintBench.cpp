@@ -1,25 +1,3 @@
-/*
- * PaintBench.cpp -- how much a flush actually costs, measured in C++ with no JVM in the way.
- *
- * DESIGN.md §8 question 1 is the reason this file exists: the painter deliberately writes every row out
- * to the BUFFER's right edge (rule I7) so that an erase-to-EOL leaves what ConEmu's own EL leaves. That
- * buys fidelity with a cost that scales with dwSize.X, and dwSize.X is 4096 for a lot of real consoles.
- * Whether that is affordable depends on whether WriteConsoleOutputW charges per row or per cell, and
- * nothing measured so far discriminates the two.
- *
- * Question 2 rides along for free: the cost of the calls the plan makes once per flush regardless of how
- * much it painted -- the two reads that build an RcView, the cursor park that a viewport slide is made
- * of, the buffer scroll, the attribute. "A scroll costs no cell writes" (Paint.h) is only a win if the
- * call itself is cheap next to the rectangles.
- *
- * Every project-measured console cost in .dsh/memory says a call costs 50-110 us whatever it carries; if
- * that holds here too, the width of paintCols is nearly free and I7 stays. If the rectangle rows instead
- * scale with cells, I7 needs narrowing to rows where an EL actually happened.
- *
- * Build: src/c/conemu/bench.sh (MinGW-w64 under WSL), run the exe on Windows.
- * It is a measurement tool: no gate, no assertions, and it must never be linked into render.dll.
- */
-
 #include <windows.h>
 #include <algorithm>
 #include <stdio.h>
@@ -35,8 +13,6 @@ static double usec_since(LARGE_INTEGER a)
   return (double)(b.QuadPart - a.QuadPart) * 1e6 / (double)s_freq.QuadPart;
 }
 
-/* The gate's console preparation, copied rather than shared: production must not carry this, and a
-   measurement tool that depends on the shipped DLL's test scaffolding cannot be rebuilt alone. */
 static void prepareConsole(void)
 {
   HANDLE std_out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -60,7 +36,7 @@ static BOOL setGeometry(HANDLE con, int bufW, int bufH, int winW, int winH)
   COORD size;
   size.X = (SHORT)bufW;
   size.Y = (SHORT)bufH;
-  SetConsoleScreenBufferSize(con, size);           /* already this size => fails harmlessly */
+  SetConsoleScreenBufferSize(con, size);
   SMALL_RECT wr;
   wr.Left = 0;
   wr.Top = 0;
@@ -72,8 +48,6 @@ static BOOL setGeometry(HANDLE con, int bufW, int bufH, int winW, int winH)
   return ok;
 }
 
-/* One timed configuration: warm up, then `reps` samples, and report the median as well as the best --
-   the spread is the interesting part, because conhost's work happens in another process. */
 struct Stat
 {
   double min, med, max;
@@ -82,7 +56,7 @@ struct Stat
 static Stat measure(const char *label, int reps, BOOL (*fn)(void *), void *ctx)
 {
   double *t = (double *)malloc((size_t)reps * sizeof *t);
-  for (int i = 0; i < 5; i++) fn(ctx);             /* warm the path, do not sample it */
+  for (int i = 0; i < 5; i++) fn(ctx);
   for (int i = 0; i < reps; i++)
   {
     LARGE_INTEGER a;
@@ -100,15 +74,13 @@ static Stat measure(const char *label, int reps, BOOL (*fn)(void *), void *ctx)
   return s;
 }
 
-/* ---------------------------------------------------------------- the operations ---------------------- */
-
 struct Rect
 {
   HANDLE con;
   CHAR_INFO *cells;
-  SMALL_RECT area;      /* destination, inclusive -- an absolute WINDOW rectangle */
-  COORD bufSize;        /* the source region typed out of cells[]: paintCols x rows */
-  COORD src;            /* origin: convention 1, as write_rect() uses */
+  SMALL_RECT area;
+  COORD bufSize;
+  COORD src;
   int cols, rows;
 };
 
@@ -129,7 +101,7 @@ static BOOL f_readView(void *p)
   CONSOLE_SCREEN_BUFFER_INFO csbi;
   CONSOLE_CURSOR_INFO ci;
   GetConsoleScreenBufferInfo(r->con, &csbi);
-  GetConsoleCursorInfo(r->con, &ci);               /* view_of() does exactly these two */
+  GetConsoleCursorInfo(r->con, &ci);
   return TRUE;
 }
 
@@ -168,8 +140,6 @@ static BOOL f_scroll(void *p)
   CONSOLE_SCREEN_BUFFER_INFO csbi;
   CHAR_INFO fill;
   if (!GetConsoleScreenBufferInfo(s->con, &csbi)) return FALSE;
-  /* The same rectangle production uses: the whole buffer, one row up, blank in the live attribute
-     (RenderJni.cpp:scroll_buffer). */
   SMALL_RECT whole;
   whole.Left = 0;
   whole.Top = 0;
@@ -181,16 +151,14 @@ static BOOL f_scroll(void *p)
   return ScrollConsoleScreenBufferW(s->con, &whole, NULL, s->dest, &fill);
 }
 
-/* build_row() staging a 30-row run into the scratch buffer: our own CPU cost, no console call. Reported
-   per cell so that a wide paintCols can be seen to cost us, not only conhost. */
-typedef struct BenchCell { unsigned short ch, attr; } BenchCell;   /* same layout as RcCell */
+typedef struct BenchCell { unsigned short ch, attr; } BenchCell;
 
 static CHAR_INFO *g_scratch;
 static BenchCell *g_grid;
 
 static BOOL f_buildRows(void *p)
 {
-  int *a = (int *)p;                               /* a[0]=cols a[1]=rows a[2]=paintCols */
+  int *a = (int *)p;
   const int cols = a[0], rows = a[1], pc = a[2];
   for (int r = 0; r < rows; r++)
   {
@@ -212,15 +180,11 @@ static BOOL f_buildRows(void *p)
   return TRUE;
 }
 
-/* ------------------------------------------------------------------------ main ---------------------- */
-
 int main(void)
 {
-  QueryPerformanceFrequency(&s_freq);              /* not Counter(): that fills in the clock, not its rate */
+  QueryPerformanceFrequency(&s_freq);
   prepareConsole();
   {
-    /* Calibrate before any number is printed: a clock that reads zero is how this file's first run
-       reported 0.0 us for a 122880-cell write. Sleep is coarse, but it is not coarse by 5 orders. */
     LARGE_INTEGER a;
     Sleep(20);
     QueryPerformanceCounter(&a);
@@ -232,7 +196,7 @@ int main(void)
 
   const int REPS = 200;
   const int WIN_W = 100, WIN_H = 30;
-  const int COLS_AT = 4096;                        /* RC_MAX_PAINT_COLS: the widest row we can be asked for */
+  const int COLS_AT = 4096;
   g_scratch = (CHAR_INFO *)malloc((size_t)COLS_AT * 40 * sizeof(CHAR_INFO));
   g_grid = (BenchCell *)malloc((size_t)COLS_AT * 40 * sizeof(BenchCell));
   for (size_t i = 0; i < (size_t)COLS_AT * 40; i++)
@@ -269,8 +233,8 @@ int main(void)
     for (int ri = 0; ri < (int)(sizeof rowcnt / sizeof *rowcnt); ri++)
     {
       const int rows = rowcnt[ri];
-      const int cols = bw;                         /* paintCols = bufW - winL, winL is 0 here */
-      if (cols > COLS_AT) continue;                /* scratch sized for COLS_AT; skip the widest rows */
+      const int cols = bw;
+      if (cols > COLS_AT) continue;
       Rect rr;
       rr.con = con;
       rr.cells = g_scratch;

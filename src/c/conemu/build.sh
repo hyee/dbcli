@@ -216,6 +216,17 @@ for c in "${DBCLI_JAVA_SRC:-}/com/hyee/ansirender/NativeRenderer.java" \
   [ -n "$c" ] && [ -f "$c" ] && { NR_JAVA="$c"; break; }
 done
 
+# The stats-slot seam: Render.h's RC_CENSUS_X/RC_STATFAM_X are the single source; the two Java
+# blocks and RenderJni.cpp's STAT_ chain are verified against them on every build.
+if [ -f "$SRC_DIR/gen_statslots.py" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$SRC_DIR/gen_statslots.py" --check "$SRC_DIR/Render.java" || FAILED="$FAILED host:statslots-gate"
+  [ -n "$NR_JAVA" ] && { python3 "$SRC_DIR/gen_statslots.py" --check "$NR_JAVA" || FAILED="$FAILED host:statslots-prod"; }
+  python3 "$SRC_DIR/gen_statslots.py" --check-c "$SRC_DIR/RenderJni.cpp" || FAILED="$FAILED host:statslots-chain"
+else
+  printf 'statslots: python3 missing, seam check skipped
+' >&2
+fi
+
 for plat in x86 x64; do
   case $plat in
     x86) TC=${TC_X86:-i686-w64-mingw32-g++}   OD=${OD_X86:-i686-w64-mingw32-objdump} ST=${ST_X86:-i686-w64-mingw32-strip} JDK="$JDK_X86"; KILLAT="-Wl,--kill-at" ;;
@@ -246,8 +257,10 @@ for plat in x86 x64; do
   # caller; the Java_Render_* exports are the gate's own scaffolding (see RenderJni.cpp).
   $TC $FLAGS -I"$JDK/include" -I"$JDK/include/win32" \
       -c "$SRC_DIR/RenderJni.cpp" -o "$SCRATCH/out/RenderJni-$plat.o" \
+      && $TC $FLAGS -I"$JDK/include" -I"$JDK/include/win32" \
+      -c "$SRC_DIR/RenderExec.cpp" -o "$SCRATCH/out/RenderExec-$plat.o" \
       && $TC $STATIC -shared $KILLAT -o "$SCRATCH/$plat/render.dll" \
-           "$SCRATCH/out/RenderJni-$plat.o" "$SCRATCH/out/Render-$plat.o" "$SCRATCH/out/Paint-$plat.o" \
+           "$SCRATCH/out/RenderJni-$plat.o" "$SCRATCH/out/RenderExec-$plat.o" "$SCRATCH/out/Render-$plat.o" "$SCRATCH/out/Paint-$plat.o" \
       && strip_debug "$ST" "$SCRATCH/$plat/render.dll" "$plat:render" \
       && printf '%s: built %s (%s bytes)\n' "$plat" "$SCRATCH/$plat/render.dll" "$(wc -c < "$SCRATCH/$plat/render.dll" | tr -d ' ')" \
       || { printf '%s: render build FAILED\n' "$plat" >&2; FAILED="$FAILED $plat:renderjni"; continue; }

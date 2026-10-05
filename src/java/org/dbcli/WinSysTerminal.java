@@ -526,6 +526,12 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
     private final char[] focus = new char[]{'\033', '[', ' '};
 
     private void processFocusEvent(boolean hasFocus) throws IOException {
+        /* A1: under the ConEmu writer the DECSET stream was parsed by render.dll, not by this class, so
+           the model is the one that knows whether `?1004` is armed. Its verdict -- including "nothing
+           is due" -- outranks the jline-side flag; only a library that cannot be asked falls back. */
+        if (consoleWriter != null && consoleWriter.writeFocusReport(hasFocus, slaveInputPipe)) {
+            return;
+        }
         if (focusTracking) {
             focus[2] = hasFocus ? 'I' : 'O';
             slaveInputPipe.write(focus);
@@ -537,6 +543,16 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
     private void processMouseEvent(Kernel32.MOUSE_EVENT_RECORD mouseEvent) throws IOException {
         int dwEventFlags = mouseEvent.eventFlags;
         int dwButtonState = mouseEvent.buttonState;
+        /* A1: same seam as focus above. The model parsed `?1006h` when the stream asked for SGR, so its
+           encoder answers in the armed format; the hand-rolled X10 below is the fallback for a console
+           this process does not render (the vtp path) or a dll older than the seam. The jline-side
+           `tracking` gate is deliberately not consulted first on this path: a program that armed the
+           mouse through the stream is owed its reports even when jline's own notion says Off. */
+        if (consoleWriter != null
+                && consoleWriter.writeMouseReport(dwButtonState, dwEventFlags, mouseEvent.controlKeyState,
+                        mouseEvent.mousePosition.x, mouseEvent.mousePosition.y, slaveInputPipe)) {
+            return;
+        }
         if (tracking == MouseTracking.Off
                 || tracking == MouseTracking.Normal && dwEventFlags == Kernel32.MOUSE_EVENT_RECORD.MOUSE_MOVED
                 || tracking == MouseTracking.Button

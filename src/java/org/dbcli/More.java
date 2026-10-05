@@ -736,25 +736,37 @@ final public class More {
                     buffer.insert(curPos++, bindingReader.getLastBinding());
                     break;
                 case BACKSPACE:
-                    if (curPos > begPos - 1) {
-                        buffer.deleteCharAt(--curPos);
+                    //Code-point aware, ported from jline 4's Less.LineEditor: a char-based
+                    //deleteCharAt(--curPos) splits a surrogate pair and leaves a lone half
+                    //behind in the pattern. The guard is curPos > begPos, not > begPos - 1:
+                    //the old form ate one char of the "/"/"?"/"Examine: " prefix.
+                    if (curPos > begPos) {
+                        int cpLen = Character.charCount(Character.codePointBefore(buffer, curPos));
+                        buffer.delete(curPos - cpLen, curPos);
+                        curPos -= cpLen;
                     }
                     break;
                 case NEXT_WORD:
                     int newPos = buffer.length();
-                    for (int i = curPos; i < buffer.length(); i++) {
-                        if (buffer.charAt(i) == ' ') {
-                            newPos = i + 1;
+                    for (int i = curPos; i < buffer.length(); ) {
+                        int cp = buffer.codePointAt(i);
+                        int cc = Character.charCount(cp);
+                        if (cp == ' ') {
+                            newPos = i + cc;
                             break;
                         }
+                        i += cc;
                     }
                     curPos = newPos;
                     break;
                 case PREV_WORD:
                     newPos = begPos;
-                    for (int i = curPos - 2; i > begPos; i--) {
-                        if (buffer.charAt(i) == ' ') {
-                            newPos = i + 1;
+                    for (int i = curPos; i > begPos; ) {
+                        int cp = Character.codePointBefore(buffer, i);
+                        int cc = Character.charCount(cp);
+                        i -= cc;
+                        if (cp == ' ') {
+                            newPos = i + cc;
                             break;
                         }
                     }
@@ -768,26 +780,25 @@ final public class More {
                     break;
                 case DELETE:
                     if (curPos >= begPos && curPos < buffer.length()) {
-                        buffer.deleteCharAt(curPos);
+                        int cpLen = Character.charCount(buffer.codePointAt(curPos));
+                        buffer.delete(curPos, curPos + cpLen);
                     }
                     break;
                 case DELETE_WORD:
-                    while (true) {
-                        if (curPos < buffer.length() && buffer.charAt(curPos) != ' ') {
-                            buffer.deleteCharAt(curPos);
+                    while (curPos < buffer.length()) {
+                        int cp = buffer.codePointAt(curPos);
+                        if (cp != ' ') {
+                            buffer.delete(curPos, curPos + Character.charCount(cp));
                         } else {
                             break;
                         }
                     }
-                    while (true) {
-                        if (curPos - 1 >= begPos) {
-                            if (buffer.charAt(curPos - 1) != ' ') {
-                                buffer.deleteCharAt(--curPos);
-                            } else {
-                                buffer.deleteCharAt(--curPos);
-                                break;
-                            }
-                        } else {
+                    while (curPos > begPos) {
+                        int cp = Character.codePointBefore(buffer, curPos);
+                        int cpLen = Character.charCount(cp);
+                        buffer.delete(curPos - cpLen, curPos);
+                        curPos -= cpLen;
+                        if (cp == ' ') {
                             break;
                         }
                     }
@@ -798,12 +809,12 @@ final public class More {
                     break;
                 case LEFT:
                     if (curPos > begPos) {
-                        curPos--;
+                        curPos -= Character.charCount(Character.codePointBefore(buffer, curPos));
                     }
                     break;
                 case RIGHT:
                     if (curPos < buffer.length()) {
-                        curPos++;
+                        curPos += Character.charCount(buffer.codePointAt(curPos));
                     }
                     break;
             }
@@ -877,7 +888,7 @@ final public class More {
             setBuffer(savelines, saveFirstLineInMemory);
             highWaterLines = saveHighWaterLines;
             if (failingSource != null) {
-                message = failingSource + " not found!";
+                message = stripControlChars(failingSource) + " not found!";
             }
         }
     }
@@ -1150,7 +1161,7 @@ final public class More {
                 if (displayMessage) {
                     AttributedStringBuilder asb = new AttributedStringBuilder();
                     asb.style(AttributedStyle.INVERSE);
-                    asb.append(source.getName() + " (press RETURN)");
+                    asb.append(stripControlChars(source.getName()) + " (press RETURN)");
                     asb.toAttributedString().println(terminal);
                     terminal.writer().flush();
                     terminal.reader().read();
@@ -1164,7 +1175,7 @@ final public class More {
                     throw exp;
                 } else {
                     AttributedStringBuilder asb = new AttributedStringBuilder();
-                    asb.append(source.getName() + " not found!");
+                    asb.append(stripControlChars(source.getName()) + " not found!");
                     asb.toAttributedString().println(terminal);
                     terminal.writer().flush();
                     open = false;
@@ -1323,6 +1334,21 @@ final public class More {
         return sb.toString();
     }
 
+    // Ported from jline 4's Less: drops ESC, BEL, the 8-bit C1 introducers and other ISO
+    // control characters while keeping printable (including non-ASCII) text, so a file name
+    // or message echoed on the status line cannot carry an escape sequence into the terminal.
+    // Applied only at the render points - the message field itself stays raw, because
+    // MESSAGE_FILE_INFO is recognised by an equals-comparison on it.
+    private static String stripControlChars(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        s.codePoints().forEach(cp -> {
+            if (!Character.isISOControl(cp)) {
+                sb.appendCodePoint(cp);
+            }
+        });
+        return sb.toString();
+    }
+
     private int titleLines = 0;
     private AttributedString[] titles = new AttributedString[titleLines];
 
@@ -1425,7 +1451,7 @@ final public class More {
     private void eof() {
         nbEof++;
         if (sourceIdx > 0 && sourceIdx < sources.size() - 1) {
-            message = "(END) - Next: " + sources.get(sourceIdx + 1).getName();
+            message = "(END) - Next: " + stripControlChars(sources.get(sourceIdx + 1).getName());
         } else {
             message = "(END)";
         }
@@ -1629,7 +1655,7 @@ final public class More {
         if (MESSAGE_FILE_INFO.equals(message)) {
             Source source = sources.get(sourceIdx);
             Long allLines = source.lines();
-            message = source.getName()
+            message = stripControlChars(source.getName())
                     + (sources.size() > 2 ? " (file " + sourceIdx + " of " + (sources.size() - 1) + ")" : "")
                     + " lines " + (firstLineToDisplay + 1) + "-" + lineIndex + "/"
                     + (allLines != null ? allLines : Math.max(highWaterLines, totalLines))
@@ -1642,7 +1668,7 @@ final public class More {
             msg.append(" ").append(printable(bindingReader.getCurrentBuffer()));
         } else if (message != null) {
             msg.style(AttributedStyle.INVERSE);
-            msg.append(message);
+            msg.append(stripControlChars(message));
             msg.style(AttributedStyle.INVERSE.inverseOff());
         } else if (displayPattern != null) {
             msg.append("&");

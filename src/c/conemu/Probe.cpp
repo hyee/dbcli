@@ -1,32 +1,8 @@
-// Stage-0 probe for a JNI-rendered console writer (see .dsh/memory/project/project-conemu-writer-perf.md).
-//
-// Proves four things before any real component is built:
-//   1. a MinGW-w64 cross DLL from WSL loads in JDK 8 (x86 and x64) through System.loadLibrary;
-//   2. the native side can drive the console API and read cells back (the oracle the real writer
-//      needs, same recipe as ProdBulkBench: FreeConsole + AllocConsole + CONOUT$ + hide);
-//   3. UTF-16 gets to WriteConsoleW without a copy or a transcode (GetPrimitiveArrayCritical on a
-//      Java char[] is already the console's encoding);
-//   4. which source-rectangle convention ReadConsoleOutputW actually accepts here - the one
-//      capability the Java rectangle writer (BulkCellWriter, retired 2026-09-23) depended on, and the
-//      one this probe exists to settle.
-//
-// Nothing here is production code; it exists to be deleted once the seams it tests are settled.
-//
-// Two toolchain traps this file already paid for: JNIEnv is a *reference* in C++ (env->Method(),
-// not (*env)->Method(env, ...)), and mingw-w64 calls the CHAR_INFO union member UnicodeChar.
-//
-// The native side deliberately reports instead of asserting: it hands back return codes and
-// GetLastError values and lets Probe.java decide what is a gate failure, so a change of opinion
-// about the expectations does not need a rebuild.
-
 #include <jni.h>
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
-
 #define PROBE_BUILD "probe-2026-09-22-3"
-
-// ReadConsoleOutputW/WriteConsoleOutputW cell rectangles, as reported to the gate.
 #define READ_MAX_CELLS 4096
 
 #ifdef __MINGW32__
@@ -37,7 +13,6 @@
 
 static HANDLE g_con = INVALID_HANDLE_VALUE;
 
-/** A jlongArray of n values, or NULL when the JVM cannot allocate it. */
 static jlongArray newLongs(JNIEnv *env, const jlong *vals, int n)
 {
   jlongArray arr = env->NewLongArray(n);
@@ -60,15 +35,6 @@ JNIEXPORT jstring JNICALL Java_Probe_build(JNIEnv *env, jclass cls)
   return env->NewStringUTF(b);
 }
 
-/**
- * Opens a console we can read back from.
- *
- * Only frees the inherited console when this process' stdout is a pipe, because otherwise
- * FreeConsole would silence our own reporting. Returns:
- *   [0] stdout file type  [1] FreeConsole rc  [2] AllocConsole rc  [3] conout file type
- *   [4] csbi ok           [5..6] buffer X,Y   [7..10] window L,R,T,B
- *   [11] attributes       [12..13] cursor X,Y [14] SetConsoleScreenBufferSize(120x2000) rc
- */
 JNIEXPORT jlongArray JNICALL Java_Probe_prepareConsole(JNIEnv *env, jclass cls)
 {
   jlong out[15];
@@ -111,15 +77,6 @@ JNIEXPORT jlongArray JNICALL Java_Probe_prepareConsole(JNIEnv *env, jclass cls)
   return newLongs(env, out, 15);
 }
 
-/**
- * Put the console into a shape the gate chooses: buffer bufW x bufH, window winW x winH at its top-left.
- * Buffer first, window second (the reverse fails while the window hangs below the buffer it is being
- * shrunk into). Returns the window call's result.
- *
- * This exists so one question can be asked of conhost directly, with no renderer in the way: what does
- * it do with a line longer than the window when the buffer is wider still. Stage 0 never shaped the
- * console that way, so the shipped writer's wrap assumption was never compared against it.
- */
 JNIEXPORT jboolean JNICALL Java_Probe_setGeometry(JNIEnv *env, jclass cls,
                                                   jint bufW, jint bufH, jint winW, jint winH)
 {
@@ -137,7 +94,6 @@ JNIEXPORT jboolean JNICALL Java_Probe_setGeometry(JNIEnv *env, jclass cls,
   return SetConsoleWindowInfo(g_con, TRUE, &wr) ? JNI_TRUE : JNI_FALSE;
 }
 
-/** Moves the cursor; proves the API the real writer will use for its geometry. */
 JNIEXPORT jboolean JNICALL Java_Probe_setCursor(JNIEnv *env, jclass cls, jint x, jint y)
 {
   if (g_con == INVALID_HANDLE_VALUE) return JNI_FALSE;
@@ -147,13 +103,6 @@ JNIEXPORT jboolean JNICALL Java_Probe_setCursor(JNIEnv *env, jclass cls, jint x,
   return SetConsoleCursorPosition(g_con, c) ? JNI_TRUE : JNI_FALSE;
 }
 
-/**
- * Writes len UTF-16 units at the cursor with the given attribute.
- *
- * Returns the write result plus the geometry the gate needs to name the cells it expects:
- *   [0] rc  [1] chars written  [2] GetLastError   [3..4] buffer X,Y
- *   [5..6] cursor X,Y after    [7..10] window L,R,T,B   [11] console attribute after
- */
 JNIEXPORT jlongArray JNICALL Java_Probe_writeText(JNIEnv *env, jclass cls,
                                                   jcharArray text, jint len, jint attr)
 {
@@ -197,21 +146,6 @@ JNIEXPORT jlongArray JNICALL Java_Probe_writeText(JNIEnv *env, jclass cls,
   return newLongs(env, out, 12);
 }
 
-/**
- * Reads a w-by-h block of cells starting at buffer cell (x,y), in one of the three rectangle
- * conventions the API documentation and practice disagree about.
- *
- * The shipped Java writer (ScreenBuffer.readRect) uses convention 1 and works, so this is about
- * confirming that the same shape is available to native code and about getting an error code when
- * it is not - not about picking a winner by guesswork.
- *
- *   convention 1  absolute:  lpBufferCoordinates=(0,0),  lpWindow=(x,y)-(x+w-1,y+h-1)
- *   convention 2  relative:  lpBufferCoordinates=(x,y),  lpWindow=(0,0)-(w-1,h-1)
- *   convention 3  both:      lpBufferCoordinates=(x,y),  lpWindow=(x,y)-(x+w-1,y+h-1)
- *
- * Returns NULL when the request itself is impossible (no console, empty or oversized block);
- * otherwise [0] rc  [1] GetLastError  [2] convention  [3..] w*h cells as (Unicode | Attr << 16).
- */
 JNIEXPORT jlongArray JNICALL Java_Probe_readCells(JNIEnv *env, jclass cls,
                                                   jint x, jint y, jint w, jint h, jint convention)
 {
@@ -269,4 +203,4 @@ JNIEXPORT jlongArray JNICALL Java_Probe_readCells(JNIEnv *env, jclass cls,
   return out;
 }
 
-}  // extern "C"
+}

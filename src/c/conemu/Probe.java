@@ -1,18 +1,3 @@
-/**
- * Stage-0 driver for probe.dll, built from src/c/conemu by src/c/conemu/build.sh.
- *
- * Hard gates are about the toolchain and the console plumbing; everything about what conhost
- * *stores* is OBSERVE, because this stage reports facts and the next one turns the ones it needs
- * into assertions. Run by src/c/conemu/run.ps1 on the x86 and x64 JDK 8.
- *
- * Why the probe exists at all: the shipped Java writer (ScreenBuffer.readRect) reads cells back
- * through JNA with one rectangle convention, and a native writer must be able to do the same.
- * tryConventions() runs all three documented shapes so the gate can name the one that works here
- * instead of assuming the Java writer's shape was ever verified from native code.
- *
- * Pure ASCII on purpose: JDK 8's javac defaults to the platform encoding (GBK on this box), and the
- * non-ASCII cases below are spelled as code points rather than characters.
- */
 public class Probe {
 
     static { System.loadLibrary("probe"); }
@@ -22,7 +7,6 @@ public class Probe {
     static native boolean setCursor(int x, int y);
     static native boolean setGeometry(int bufW, int bufH, int winW, int winH);
     static native long[] writeText(char[] text, int len, int attr);
-    /** @param convention 1=absolute rect, 2=rect relative to buffer coordinates, 3=both */
     static native long[] readCells(int x, int y, int w, int h, int convention);
 
     private static int failures = 0;
@@ -81,11 +65,6 @@ public class Probe {
         return true;
     }
 
-    /**
-     * Reads a block back through every rectangle convention and reports what each one said.
-     * Returns a result that held {@code want}, else the first readable one (a read that works but
-     * disagrees about content is a finding, not a failure of this stage).
-     */
     private static long[] tryConventions(String label, int x, int y, int w, int h,
                                          char[] want, int attr) {
         long[] readable = null;
@@ -190,9 +169,6 @@ public class Probe {
             tryConventions("nul", 0, 24, nul.length, 1, new char[0], 0);
         }
 
-        /* Does a bare LF fold the column? The shipped Java writer says row++/col=0, the C model says the
-           column survives (ConEmu's ExtWriteText). Only conhost decides, and "which one is right" is
-           exactly the question a live session answered the wrong way round. */
         setCursor(0, 26);
         char[] nl = "ab\ncd".toCharArray();
         long[] rn2 = writeText(nl, nl.length, 0x07);
@@ -212,11 +188,6 @@ public class Probe {
             }
         }
 
-        /* The question stage 0 never asked, because it never shaped the console this way: a line LONGER
-           than the window, in a buffer wider than the window. The renderer wraps at the window's right
-           column (Render.cpp put_cell) and the shipped writer assumed the same, but the assumption was
-           never compared against conhost on this shape -- and a query that prints 150 columns into a
-           100-column window is exactly what a DBA types. */
         if (setGeometry(200, 400, 100, 30)) {
             setCursor(0, 10);
             StringBuilder lb = new StringBuilder();
@@ -252,9 +223,6 @@ public class Probe {
                 }
             }
 
-            /* Same shape, multi-row input: does the console wrap each row on its own, or is the widest
-               row what the whole write is measured against? ansi_width answers that for a terminal application (it reports
-               the widest row of a multi-row string, never the sum), so the two have to agree. */
             setCursor(0, 20);
             char[] multi = (lb.toString() + "\r\nshort").toCharArray();
             long[] rm = writeText(multi, multi.length, 0x07);
@@ -274,34 +242,21 @@ public class Probe {
                     }
                 }
             }
-            setGeometry(200, 400, 100, 30);            /* leave the shape the render gate expects */
+            setGeometry(200, 400, 100, 30);
         } else {
             observe("cannot shape a wide buffer with a narrow window: nothing to measure");
         }
 
-        /* Where does a backspace land when the cell to its left is the TRAILING half of a wide glyph?
-           The C model steps one column (Render.cpp control(): 0x08 -> cx--), so BS after a 2-column glyph
-           stops on the trailing cell and the next character paints *inside* the glyph, leaving a leading
-           half with no partner. ConEmu's fallback leg has no backspace handling at all -- Ansi.cpp:1519 is
-           still a TODO naming BEL, BS, CR, LF -- so whatever conhost stores for these same UTF-16 units IS
-           what the off leg produces. Hence this block: no renderer in the way, just WriteConsoleW in and
-           ReadConsoleOutputW back.
-           Each case runs twice: one WriteConsoleW per UTF-16 unit, which names the cursor a backspace left
-           behind and the cell the following character was painted into, and then the same units as a single
-           write, because a legacy line processor may buffer a run and answer differently. Both are reported;
-           only a pair that disagrees is interesting.
-           Rows 2..8 are inside the 30-row viewport on purpose. A cursor below it makes conhost scroll, and
-           a scroll moves the content the next read is looking for. */
         if (setGeometry(200, 400, 100, 30) && goodConvention != 0) {
-            final char wide = (char) 0x3042;              /* hiragana A: 2 columns, never ambiguous */
+            final char wide = (char) 0x3042;
             final char bs = 8;
             char[][] bsCases = {
-                { wide, bs, 'X' },                          /* one BS: on the trailing half, or behind it? */
-                { wide, bs, bs, 'X' },                      /* two: does it step by glyph or by column? */
-                { wide, 'a', bs, 'X' },                     /* BS over a narrow cell, wide two cells back */
-                { wide, 'a', bs, bs, 'X' },                 /* the narrow, then the glyph: two steps or three? */
-                { 'a', wide, bs, 'X' },                     /* the glyph at the end of the run */
-                { wide, bs, bs, bs, 'X' },                  /* three: what stops it at the start of a row? */
+                { wide, bs, 'X' },
+                { wide, bs, bs, 'X' },
+                { wide, 'a', bs, 'X' },
+                { wide, 'a', bs, bs, 'X' },
+                { 'a', wide, bs, 'X' },
+                { wide, bs, bs, bs, 'X' },
             };
             String[] bsNames = { "wide BS X", "wide BS BS X", "wide a BS X",
                                  "wide a BS BS X", "a wide BS X", "wide BS BS BS X" };
@@ -332,9 +287,6 @@ public class Probe {
                         + " cells=" + (cells == null || cells[0] != 1 ? "read failed" : cellText(cells, 8)));
             }
 
-            /* And what does conhost keep when a plain character is told to land on a trailing cell --
-               which is exactly what a model that stepped one column then paints. The cursor is placed there
-               by SetConsoleCursorPosition rather than by a BS, so the two mechanisms cannot be confused. */
             setCursor(0, 12);
             char[] pair = { wide };
             writeText(pair, pair.length, 0x07);
@@ -346,14 +298,8 @@ public class Probe {
                     + (rw == null ? " write null" : " written=" + rw[1] + " cursorAfter=(" + rw[5] + "," + rw[6] + ")")
                     + "  cells=" + ((cells != null && cells[0] == 1) ? cellText(cells, 8) : "read failed"));
 
-            /* MSFT_TERMINAL_REFERENCE §5: conhost commit 8a26f141 (2022-07-23) made ReadConsoleOutput
-               deliberately lossy -- it repeats the leading code point into the trailing cell and ignores
-               whatever was written there, "to prevent users from storing additional data in the terminal
-               buffer". Our align() adopts a screen through that same API, so a surrogate pair's low half is
-               not recoverable after an adopt. Which conhost build does this box have is exactly the fact that
-               decides whether put_pair's hi/lo pair survives a resize, so it is measured, not assumed. */
             setCursor(0, 14);
-            char[] astral = new char[] { (char) 0xD83D, (char) 0xDE00 };   /* U+1F600, grinning face */
+            char[] astral = new char[] { (char) 0xD83D, (char) 0xDE00 };
             long[] ra = writeText(astral, astral.length, 0x07);
             long[] ac = (ra != null && ra[0] == 1) ? readCells(0, 14, 4, 1, goodConvention) : null;
             observe("row 14 [U+1F600 written as a surrogate pair]"
@@ -367,7 +313,6 @@ public class Probe {
         System.exit(failures == 0 ? 0 : 1);
     }
 
-    /** A printable name for a measured code point, so this file stays ASCII like the rest of the gate. */
     private static String name(char c) {
         if (c == 8) {
             return "BS";

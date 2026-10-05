@@ -3,7 +3,9 @@
 # CapsDump reads a .caps file through the parser jline uses at runtime (InfoCmp.parseInfoCmp) and asserts what
 # the terminal will actually see, then again through Curses.tputs, because the two layers disagree by design:
 # the parser keeps the file's spelling verbatim and skips line 0, and it is doTputs that turns "\E" and "^I"
-# into bytes. 81 assertions, and `CAPS CHECK: ok` is the verdict.
+# into bytes. The harness counts its own expectations and prints a coverage census (which declared capabilities
+# it named, which it left alone, and the reason for every one it left alone -- an unexplained gap is a red run),
+# so the total is no longer a number maintained in a comment; `CAPS CHECK: ok` is still the verdict.
 #
 # It runs TWICE by default -- against this tree's mirror and against the copy packed inside the jline jar --
 # and the two files are compared byte for byte first. That second run is the whole point of the script: the

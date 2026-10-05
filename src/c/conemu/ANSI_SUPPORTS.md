@@ -1,423 +1,278 @@
-# ANSI_SUPPORTS -- the ANSI escape support matrix of the C side (render.dll)
+# ANSI_SUPPORTS — what the native ANSI renderer supports
 
-Snapshot 2026-09-26, build `render-2026-09-26-29`. The source of truth is **the code itself**:
-`Render.cpp` (parsing + the grid model), `Render.h` (state and counters), `Paint.cpp` (turning the model into
-console calls), `RenderJni.cpp` (the JNI pen, the title, the query replies). The upstream comparison is ConEmu's
-`Ansi.cpp` (every rule carries its line number in the comments); OSC 133 was implemented against ghostty and the
-MSFT terminal as references. An unsupported sequence is **never silent**: it is consumed, counted by family
-(I19), and only "a final byte this switch has no case for" marks the frame `modelSuspect` and makes the painter
-re-adopt the console once (self-healing).
+Scope: the native renderer behind dbcli's terminal output (`render.dll`, terminal type `windows-conemu`).
+This page answers two questions for a reader of the terminal: what a program running in this session can
+use, and what it cannot. It carries no code references on purpose — the maintainer-level evidence lives in
+`ANSI_TODO.md` (the per-item ledger), `DESIGN.md` (the invariants) and `terminfo/TERMINFO.md` (the
+capability entry).
 
-The parse unit is a **UTF-16 code unit**; `rc_feed()` (Render.cpp:2695) is a resumable state machine, so a
-sequence broken across chunks continues in the next one, and ConEmu's 512-byte `gsPrevAnsiPart` reparse window
-simply does not exist here (deviation #2).
-
-Every `file:line` below points into this directory and was correct as of the build named above. Code moves and
-these numbers move with it, which makes them a liability as much as a citation: re-check them with
-`cache/p57/citeview.py` (prints what every citation in the two contract documents currently points at) and
-`cache/p57/citecheck2.py` (flags the ones whose symbol has walked away). A stale line number is a wrong fact
-wearing a citation -- and this pass found twelve of them here, all from code added by other stamps.
+One framing rule: **an unsupported sequence is never half-applied.** It is consumed, counted by family, and
+the session keeps running. A sequence the parser has no case for at all additionally marks the frame, which
+makes the next paint re-read the console once, so the model re-syncs with what is really on screen.
 
 ---
 
-## 1 Structural capability (the parsing framework)
+## 1 Structure
 
-| Capability | Behaviour |
+| Property | Behaviour |
 |---|---|
-| State machine | `RC_GROUND / RC_ESC / RC_ESC_INTERIM / RC_CSI / RC_OSC / RC_OSC_ESC` (Render.h:565) |
-| CSI byte classes | parameters `0x30..0x3F` (including `;` and the private bytes `? > < = / :`), intermediates `0x20..0x2F` (DECSCUSR's space, DECSTR's `!`; accumulated into a set, see §2.6), final `0x40..0x7E` |
-| Parameter count | capped at `RC_CSI_ARGS 16`; extra parameters are **dropped, not refused** (as upstream's ArgV) |
-| Parameter values | digits accumulate and **saturate at 65535** (deviation #3: upstream overflows an int); an empty parameter between `;`s is 0; a **trailing** empty parameter is not sent as 0; a list longer than **16** keeps its first sixteen -- the surplus is dropped, as upstream drops it, and **counted** (`argTrunc`, #74), because "it asked for three" and "it asked for forty" must not print the same |
-| `arg()` semantics | a missing or zero parameter takes the default (so `CSI 0 A` = `CSI A`) |
-| OSC/DCS payload | terminated by `BEL` or `ST(ESC \)`; abandoned by `ESC`/`CAN`/`SUB` it is **counted and never applied**; collection is capped at `RC_OSC_MAX 32768` units, and past that a **title is clipped to `RC_TITLE_MAX 256` and counted, while OSC 52 is refused whole** (half a base64 string is not a message) -- the sequence is consumed either way |
-| OSC code reading | matched exactly against the leading digit run (`"0133"` does not match `"133"`), saturating out of range, so `]0133;A` and `]1334;A` cannot hit the wrong family |
-| CAN/SUB | arriving inside a CSI or an OSC aborts the sequence back to ground, and the aborted half is charged to nothing |
-| Unknown sequences | consumed and counted by family (see the §6 census); `RC_UN_SUP` arriving through the `default:` arm also sets `modelSuspect` |
+| Feed | UTF-16 code units; a sequence split across two writes continues in the next one |
+| Parameters | up to 16 per sequence; values saturate at 65535; surplus parameters are dropped; an omitted or zero parameter takes the sequence's default |
+| Interruptions | `CAN`, `SUB` or `ESC` inside a half-read sequence abandon it cleanly — nothing is half-applied |
+| C1 bytes (`0x80`–`0x9F`) | ordinary text, not controls; being zero-width they never reach the screen |
 
 ---
 
-## 2 Supported features
+## 2 Supported
 
-### 2.1 C0 control characters (`control()`, Render.cpp:1772)
+### 2.1 C0 control characters
 
 | Code | Behaviour |
 |---|---|
-| `BEL 0x07` | takes no cell, rings nothing |
-| `BS 0x08` | moves left without erasing; when it lands on the trailing half of a wide glyph it steps one further (`step_back_col`, Render.cpp:1208 -- upstream's `ROW::_adjustBackward`, and the correct side of the #852 family) |
-| `HT 0x09` | walks the **tab-stop table**: the next claimed column strictly ahead of the cursor, or the last column when nothing is left -- it does not wrap to the next row (§2.11) |
-| `LF 0x0A` | moves down **and folds to column 0** (the conhost behaviour, measured WriteConsoleW semantics); `IND`/`RI` keep the column |
-| `CR 0x0D` | to column 0 |
-| other C0 and `DEL 0x7F` | ignored, and **never rendered as a glyph** (the answer to the #1900/#2158 family) |
-| C1 `0x80..0x9F` | **not interpreted as control characters**: they go through the width table as ordinary code points (the Cf class measures 0, so they never reach the screen) |
+| `BEL` | takes no cell, rings nothing |
+| `BS` | moves left, never erases; steps off the trailing half of a wide glyph |
+| `HT` | walks the tab-stop table forward; stops at the end of the line rather than wrapping |
+| `LF` | down one line **and to column 0** — the console's own behaviour |
+| `CR` | to column 0 |
+| `SO` / `SI` | select the drawing set / the default set for subsequent text |
+| other C0, `DEL` | ignored, never drawn as a glyph |
 
-### 2.2 ESC sequences (`esc_dispatch()`, Render.cpp:1703)
-
-| Sequence | Name | Behaviour |
-|---|---|---|
-| `ESC 7` / `ESC 8` | DECSC/DECRC | saves and restores the cursor position only; **attributes are not saved** (as upstream, Ansi.cpp:2719) |
-| `ESC c` | RIS | full reset (see `full_reset()`, Render.cpp:1154: leaves the alternate screen, resets SGR, clears the scroll region and the cursor shape, scrolls the viewport's content up into history, homes the cursor) |
-| `ESC D` | IND | one row down, column untouched. This model makes it **region-aware** (upstream's ForwardLF deliberately is not -- a divergence kept for consistency's sake) |
-| `ESC E` | NEL | CR + IND |
-| `ESC M` | RI | reverse line feed; at the viewport top or the region top it **inserts a blank row** (upstream's LinesInsert semantics); a cursor outside the region only moves |
-| `ESC ( 0` | SCACS | activates the G0 line-drawing substitution (the 31 `G0_DRAWING` entries, remapping `0x60..0x7E` only, width taken from the original letter, so a box border is still one cell per letter); `ESC ( B` and any other designator restore the default |
-| `ESC ( ) * + ~ c` and `SI`/`SO` | SCS and the locking shift of GL (#85) | **All five designators land in their own slot** -- `(` G0, `)` G1, `*` G2, `+` **G2 again** (ISO 2022's alias, not G3), `~` G3 -- and each slot holds one bit, because DEC special graphics is the only set this build can draw; `U` (Latin-1) and the rest load the slot as plain and vote the new `charset` census slot. ⚠ **Designating is invisible; only the shift shows.** `SI` (0x0F) puts G0 into GL, `SO` (0x0E) puts G1 in, and the remap at `Render.cpp:876` reads `charset[gshift]`, so `ESC ) 0` alone changes nothing on screen -- the leg that used to "prove" G1 was unreachable proved only that nothing could reach it. Default GL is G0, matching ghostty (`Screen.zig:209-221`) and msfterm (`terminalOutput.hpp:57-60`); **`RIS` and `DECSTR` both clear all four slots and un-shift** (§2.6 -- DECSTR's half was corrected in build -45, having shipped wrong from -41), and a rebuild **carries** both slots and the shift (`RenderJni.cpp`'s `keepCs`/`keepGl`) because losing the shift mid-session turns a drawn box into ASCII |
-| `ESC N` / `ESC O` | SS2/SS3 | swallow the introducer only -- **the next byte prints as ordinary text** (no eaten glyph, no lost column) |
-| `ESC g` / `ESC =` / `ESC >` | visual bell / keypad | counted (`RC_UN_MODE`); no cell moves and the input side does not change. `ESC H` (HTS) left this list at #70: it has state to change now (§2.11) |
-| `ESC ) c`, `ESC % G` | G1 / UTF-8 selection | counted (`RC_UN_SUP`); G1 is unreachable and the UTF-8 flag is never set (the input is UTF-16 already) -- the same as upstream's default arm |
-
-### 2.3 CSI cursor movement (`csi_dispatch()`, Render.cpp:1263)
+### 2.2 ESC sequences
 
 | Sequence | Name | Behaviour |
 |---|---|---|
-| `CSI A` / `CSI B` | CUU/CUD | vertical movement; `move_row()` clamps to the **scroll region** (a cursor outside the region is handed to the viewport bounds) |
-| `CSI C` / `CSI D` | CUF/CUB | horizontal movement; `D` landing on a wide glyph's trailing half steps one further (the same rule as BS) |
-| `CSI E` / `CSI F` | CNL/CPL | vertical movement plus column 0 |
-| `CSI G` | CHA | absolute column (1-based) |
-| `CSI H` / `CSI f` | CUP | row and column, **viewport-relative** (never lands in the scrollback gutter), clamped both ways |
-| `CSI d` | VPA | absolute row (viewport-relative) |
-| `CSI a` | HPR | relative **column** movement, clamped to the **viewport** and not constrained by the region (MSFT `adaptDispatch.cpp:427`: "Unlike CUF/CUD, this is not constrained by margin settings"); a missing or zero parameter means 1 |
-| `CSI e` | VPR | relative **row** movement, same rule: it takes `clxy` (viewport) rather than `move_row` (region), so it can walk out of a pinned region bottom; the column is preserved, which is its only behavioural difference from `CSI B` |
-| `CSI s` / `CSI u` | save/restore cursor | `u` restores only **without a private byte** (`CSI ?u` is the kitty capability query; upstream has no private-byte guard, which is a defect: every round of capability probing teleports the cursor to the DECSC position) |
-| `CSI ?1048 h/l` | save/restore cursor | the same slot as DECSC/DECRC |
+| `ESC 7` / `ESC 8` | save / restore cursor | position only — attributes are not saved; the origin mode travels with it |
+| `ESC c` | RIS | full reset: leaves the alternate screen, resets the pen, drops the scroll region and the cursor-shape claim, restores the tab interval, clears all four character sets, scrolls the viewport's content into history and homes the cursor |
+| `ESC D` / `ESC E` / `ESC M` | IND / NEL / RI | down a line, CR + down, up a line — all three honour the scroll region; `RI` at the region top inserts a blank line |
+| `ESC ( 0` | designate G0 | DEC line drawing for `` ` ``–`~`, one cell per character; `ESC ( B` restores ASCII |
+| `ESC ) * + ~` | designate G1–G3 | stored; **invisible until `SO`/`SI` shifts the slot in**. Only the drawing set and ASCII can be named |
+| `ESC H` | HTS | claims the cursor's column as a tab stop |
+| `ESC N` / `ESC O` | SS2 / SS3 | the introducer is consumed and the next byte prints as ordinary text — nothing is eaten |
+| `ESC # 8` | DECALN | screen-alignment test: fills the viewport with `E` and clears the scroll region and origin mode with it |
+| `ESC g`, `ESC =`, `ESC >` | visual bell, keypad | counted, nothing happens: this library owns no window to flash and no input encoding to switch |
 
-### 2.4 CSI editing / erasing / scrolling
+### 2.3 Cursor movement
 
 | Sequence | Name | Behaviour |
 |---|---|---|
-| `CSI J` 0/1/2 | ED | erases the screen, **stopping at the viewport** (scrollback is untouched); form 2 also homes the cursor to the viewport's top-left (upstream's 2J behaviour) |
-| `CSI K` 0/1/2 | EL | erases the line; "the line" is the whole **buffer row** (cols is the buffer width, I7); erasing to end of line also clears that row's wrap claim |
-| `CSI L` / `CSI M` | IL/DL | shift inside the region when there is one and are **refused** for a cursor outside it; with no region they shift inside the viewport; an `n` beyond the span is clamped, and **the two spans are not the same number** -- IL can push the whole window out, so its bound is the window's height, while DL deletes *from the cursor down*, so its bound is the rows below the cursor (upstream writes past the region bottom -- a defect, not copied). After a shift that happened the cursor is at **column 0 of the same row**: MSFT states it as the expectation (`adaptDispatch.cpp:2150`, `cursor.SetXPosition(leftMargin)`) and ghostty enforces it in a `defer` (`Terminal.zig:2977`, `:3151`). The application this costs anything is the one that redraws a table -- it walks in to a column, deletes the row, and writes the replacement from wherever the cursor ended up, so a kept column is every row printed n cells off. A **refused** IL/DL keeps its column, because it did nothing |
-| `CSI @` / `CSI P` | ICH/DCH | open and close slots inside the row, moving LEADING/TRAILING halves as one unit (as upstream does with the same pair); text pushed past the end of the row is gone; a pair that the shift split is healed (§2.10) |
-| `CSI X` | ECH | erases n cells **on the cursor's row and nowhere else**. Both references say so in prose and clamp the same way (MSFT `adaptDispatch.cpp:706-724`: "only erase characters in the current line, and won't wrap to the next", with `std::min(startCol + numChars, GetLineWidth(row))`; ghostty `Terminal.zig:3443-3446`: `remaining = cols - cursor.x`). The earlier row -- "may run into the following rows, ConEmu semantics" -- is withdrawn: what a `CSI 999X` did was erase the viewport below the cursor, which is content the application did not ask to lose (see §4 item 4). `CSI 0 X` still erases nothing |
-| `CSI b` | REP | replays `lastUnit` as text (so it can wrap, takes the current attribute and the charset remap, and a wide glyph costs 2 cells); what repeats is the code point **before** the remap (after `ESC ( 0` a repeat draws a box glyph rather than the letter); `lastUnit` is recorded **only for a unit that has width** (`rc_width(cp) > 0`, Render.cpp:768) -- ghostty assigns `previous_char` in the printable branch alone (`Terminal.zig:1469` → `:1515`), and storing a combining mark there makes `A`+U+0300 followed by `CSI 3b` draw nothing at all; `CSI 0 b` repeats nothing; the private form is refused and counted |
-| `CSI S` / `CSI T` | SU/SD | scroll the region up/down; with no region (or a region equal to the viewport) SU performs the whole-model scroll (carrying the gutter and the console scroll), and SD leaves the cursor alone |
-| `CSI r` | DECSTBM | creates the scroll region. **Missing parameters take the viewport edges**: `CSI 3r` = 3..last row, `CSI ;4r` = 1..4 (both references agree: MSFT `adaptDispatch.cpp:2243-2257`, whose comment at :2239 spells out `[3;r -> 3,h`); **an inverted pair is ignored rather than clearing the region** (`3;2r` keeps the region; MSFT :2242 "an illegal combo ... is ignored") -- clearing and ignoring are different acts, and clearing hands the next line feed the whole viewport, which is exactly the #47/#48 class of failure with a new trigger. Both were changed on 2026-09-25 while re-examining "upstream does not do it either" as a reason: upstream's `Ansi.cpp:3142` demands `ArgC>=2` and otherwise calls `SetScrollRegion(false)`. What still matches upstream and deliberately differs from MSFT is the **clamping**: a bottom parameter past the viewport is pulled back to its last row rather than rejected (MSFT :2260 refuses), and `Pt==Pb` is accepted as a one-row region (`Status.reset()` arrives here as `CSI 1;1r`, and refusing it would leave the status bar's region stuck). Also: parameter 0 clamps to the viewport's first row; setting a region does **not** home the cursor; `CSI ?r` is accepted too; a region that is exactly the viewport normalises to "no region" (MSFT normalises the same way for `apt`, :2262-2270); parameters are viewport-relative and clamped once, never recomputed (a geometry change goes through a re-open, and a re-open has no region) |
+| `CSI A B C D` | CUU/CUD/CUF/CUB | movement, clamped to the scroll region when one is set; leftward movement steps off a wide glyph's trailing half |
+| `CSI E` / `CSI F` | CNL/CPL | up/down plus column 0 |
+| `CSI G`, `` CSI ` `` | CHA/HPA | absolute column |
+| `CSI H` / `CSI f` | CUP | absolute position, viewport-relative — never lands in the scrollback gutter; clamped inside the margins when margins exist |
+| `CSI d` | VPA | absolute row |
+| `CSI a` / `CSI e` | HPR/VPR | relative column / row |
+| `CSI s` / `CSI u` | save / restore | `u` restores only without a private byte — `CSI ?u` is somebody else's protocol and is refused, not misread as a cursor jump |
+| `CSI ?1048 h/l` | save / restore | the same slot as `ESC 7`/`ESC 8` |
 
-### 2.5 DEC private modes (`CSI ? Pm h/l`)
+### 2.4 Editing, erasing, scrolling, rectangles
 
-Only `args[0]` is read (upstream looks at ArgV[0] alone, so `?1;2004h` acts on 1 only):
+| Sequence | Name | Behaviour |
+|---|---|---|
+| `CSI J` 0/1/2 | ED | erases to/before/after the cursor, **stopping at the viewport** — the user's scrollback is never destroyed; form 2 also homes the cursor |
+| `CSI K` 0/1/2 | EL | erases the line; erasing to the end also clears that row's wrap claim |
+| `CSI L` / `CSI M` | IL/DL | insert/delete lines inside the region; refused for a cursor outside it; after a shift that happened the cursor sits at column 0 of its own row |
+| `CSI @` / `CSI P` | ICH/DCH | open and close cells within the row; a wide glyph's two halves move as one unit and a pair the shift split is healed |
+| `CSI X` | ECH | erases cells **on the cursor's row only** |
+| `CSI b` | REP | repeats the last written glyph with the current attributes; it wraps, and a wide glyph costs two cells |
+| `CSI S` / `CSI T` | SU/SD | scroll the region; with no region this is the whole-model scroll, carrying history with it |
+| `CSI r` | DECSTBM | set the scroll region. A missing parameter takes the viewport's own edge; an inverted pair is ignored; an over-deep bottom is clamped; a one-row region is accepted; a region equal to the viewport is stored as "no region"; setting one does not home the cursor; `CSI ?r` is accepted too |
+| `CSI Pl;Pr s` + `CSI ?69 h/l` | DECSLRM / DECLRMM | left/right margins, gated by mode `?69`: off, the same bytes are save-cursor; on, they set margins and home the cursor |
+| `CSI ?6 h/l` | DECOM | origin mode: rows count from the region top, columns from the left margin; setting it homes the cursor |
+| `CSI Pt;Pl;Pb;Pr;Ps $ x` | DECFRA | fill the rectangle with character `Ps` in the live pen |
+| `CSI Pt;Pl;Pb;Pr $ z` | DECERA | erase the rectangle in the erase pen; non-selective, so protection does not survive it |
+| `CSI Pt;Pl;Pb;Pr $ {` | DECSERA | selective erase: unprotected cells lose their text and keep their attributes |
+| `CSI … $ v` | DECCRA | copy a rectangle to a destination, direction-correct when they overlap, clipped by the page |
+| `CSI Ps }` / `CSI Ps ~` | DECIC / DECDC | insert/delete columns within the region's rows; refused for a cursor outside the margins |
+| `CSI ? Ps J` / `CSI ? Ps K` | DECSED / DECSEL | the selective twins of ED/EL: unprotected text goes, attributes stay, protected cells are untouched |
+| `CSI Ps " q` | DECSCA | the protection pen: `1` protects what is written next, `0`/`2` clear |
+
+### 2.5 DEC private modes
+
+Only the first parameter of an `h`/`l` list acts.
 
 | Mode | Behaviour |
 |---|---|
-| `?25 h/l` | cursor visibility -> the painter's `SetConsoleCursorInfo`, called only on a real change |
-| `?47` / `?1047` / `?1049` | the alternate screen, **one behaviour for all three** (matching MSFT's `ASB_AlternateScreenBuffer`): entering snapshots the main viewport's rows (wrap claims and FTCS marks included) and clears the viewport; leaving restores both; leaving without entering is safe; the alternate screen has no scrollback, so a row scrolled off the top is gone and scrolling costs no console scroll; the only refusal is a snapshot that failed to allocate (counted `RC_UN_ALTBUF`) |
-| `?1048 h/l` | saves and restores the cursor only |
-| `?4 h/l` and `4 h/l` | **IRM, insert mode (#77, I40, build -31)**: a written glyph opens its own width at the cursor and the row's tail rides right, by the same primitive `CSI Ps @` uses. Both spellings, one bit (DEC's private 4 and the ANSI 4 both references register: MSFT `DispatchTypes.hpp:520`, ghostty `c/terminal.zig:2625`). No insert where the glyph would not fit strictly inside the row -- at the margin it overwrites, which is ghostty's rule (`Terminal.zig:1522-1528`). `RIS`/`DECSTR` clear it (MSFT's `SoftReset` names it at `:2989`, and its `HardReset` calls `SoftReset`); a resize carries it, like DECAWM and the tab table. DECRQM answers `?4$p` **and** `4$p` with 1/2, because the model holds the state either way |
-| `?2026 h/l` | **synchronized output** (BSU/ESU). While a region is open every on-screen plan is deferred: `flush()` still parses and still updates the model, but touches no console, damage stays marked until the region ends, and the closing flush paints **the whole union** (one rectangle per row, one frame). The first chunk that carries content is deferred too -- an application normally writes its BSU together with the top of the new screen. Three ways out: the ESU (the normal one), a **100 ms clock** (`RC_SYNC_TIMEOUT_MS`, the value MSFT also uses at `renderer.cpp:542`; when it expires the frame paints and the **mode is cleared**, because an application that leaked its BSU must not swallow a whole session one frame at a time), and a **full scrollback gutter** (`pendingScrolls` reaching `rc_scroll_room`: that frame must land or history is evicted, but the **region stays open**). An empty plan (state or cursor moves only) does not count as held; query replies are **sent either way** (a CPR or DA is a fact about the reader, and a program that asked and waits for the answer while we wait for its ESU hangs); `RIS`/`DECSTR` clear the bit. The counting family is in §6: engages/nested/held/timeout/overflow/declined |
-| `?6 h/l` | **DECOM -- origin mode (#80).** A base and a band, not a flag: with it on, `CSI r;c H` counts rows from the DECSTBM region's top and columns from the left margin, and the clamp is the region rather than the viewport; with it off the bases are the viewport and column 0. Setting it homes the cursor (MSFT `adaptDispatch.cpp:1794`), `?6$p` answers 1/2, RIS and DECSTR clear it, and `ESC 7`/`ESC 8` carry it with the position (`:481`/`:497`). Note what does **not** move with it: the column clamp, which is the margins in both states (`:366`) | 
-| `?69 h/l` | **DECLRMM -- the gate on DECSLRM (#80).** It narrows nothing by itself; it decides what `CSI Pl;Pr s` *is*: with the mode on that sequence sets the left/right margins, with it off the same bytes are ANSISYS save-cursor, exactly as MSFT branches it (`:2369-2379`) and xterm documents. `?69$p` answers 1/2; both resets clear it. The margins act on the writer (wrap and the decline-a-wide-glyph test now read `col_right()`), on EL, on the homing of CNL/CPL/NEL/IL/DL/ED, on the tab walk, and on IRM's insert guard; a pair that covers the page is cleared, not stored |
-| `?2048 h/l` | **the in-band size report (#82, build -37)**. One bit, off by default and settable only by the stream. While it is on, the seam queues `ESC [ 8 ; winRows ; cols t` -- the *same* entry `18t` answers with, because I42 gives one geometry one name -- on the first flush whose model shape differs from the one this handle last told the stream. It is armed in `RenderJni.cpp::flush_reports`, never in the parser and never in `build_model`: a parser cannot know the window moved, and `rc_reset_hist` zeroes the queue it would have to write into. `?2048$p` answers 1/2, `RIS`/`DECSTR` clear the bit, a rebuild carries it (the carried bit and the un-reset `repRows`/`repCols` are what make a user's drag report exactly once), and the notice goes out through the same `CONIN$` leg every reply uses | ghostty is the only reference with this mode (`src/terminal/modes.zig:381`, sent from `stream_terminal.zig:283-306`); ConEmu has no case for the number and MSFT's tree carries no such mode. **Divergence, stated:** ghostty's spelling is `CSI 48 ; rows ; cols ; heightPx ; widthPx t` (`size_report.zig:47-53`) and it declines to send one at all without cell pixel geometry (`stream_terminal.zig:288-290`). This library never has trustworthy pixels -- that is why `14t`/`16t` answer nothing (§3) -- so it reports the two numbers it can prove and reuses their one existing name. The default is the safety argument, not a missing feature: a report is bytes the program did not write |
-| everything else | counted `RC_UN_MODE` (the mouse family 9/1000/1002..1015 and bracketed paste 2004 have **their own** counters, see §3/§6) |
+| `?25` | cursor visibility |
+| `?47`, `?1047`, `?1049` | the alternate screen — one behaviour for all three spellings. Entering snapshots the main viewport and clears; leaving restores; the alternate screen has no scrollback |
+| `?1048` | save / restore the cursor |
+| `?7` | autowrap. Off, the last cell is overwritten in place, no row below is started, and a glyph that cannot fit is dropped whole rather than split |
+| `?4` and `4` | insert mode (IRM): an ordinary written glyph opens room for itself |
+| `?1` | application cursor keys: stored and answerable; the key bytes themselves belong to the input side |
+| `?6`, `?69` | origin mode and the margin gate — see §2.4 |
+| `?2004` | bracketed paste: stored and reported; the paste markers themselves are injected by the host program |
+| `?2026` | synchronised output: while open nothing reaches the screen and damage accumulates; the closing sequence (or a 100 ms timeout, or a full scrollback gutter) paints one combined frame. Query replies are never withheld |
+| `?2048` | in-band resize reports: while on, a window resize whose shape differs from the last one reported emits `CSI 8 ; rows ; cols t` through the reply channel |
+| `?9`, `?1000`, `?1002`, `?1003`, `?1005`, `?1006`, `?1015`, `?1016` | mouse tracking and encoding: one bit each; the console's own mouse input is genuinely armed; the report format is the armed one (legacy X10, UTF-8 coordinates, SGR, urxvt, SGR-with-pixels) — see §2.12 |
+| `?1004` | focus tracking, reported as `CSI I` / `CSI O` — see §2.12 |
+| `?1001` | recognised and refused |
+| `CSI ? Ps s` / `CSI ? Ps r` | XTSAVE/XTRESTORE: save and restore a mode. One slot per mode (a second save overwrites); restoring a mode nobody saved switches it **off**; RIS clears the table, a soft reset keeps it. Saveable: cursor keys, insert, autowrap, cursor visibility, bracketed paste, in-band resize, synchronised output and the mouse/focus tracking numbers |
 
-The private `CSI ?7 h/l` (DECAWM) **is acted on** -- see the wrap model in §2.3 and I35 (#61, build -22); the
-non-private `CSI 7 h/l` is GATM and is still counted `RC_UN_MODE`. The remaining two non-private modes each have
-their own reason, and "upstream has no case" is not one of them (see the #60 re-examination): **LNM(20)** is print
-**echo** -- what it changes is when a typed character reaches the screen, and this library owns no input handle
-and has no echo to manage; **IRM(4)** was refused with the sentence "there is no entity in the model whose behaviour it
-could alter", which was the I38 shape exactly: a refusal whose reason describes the implementation. The entity is
-the write path, and #77 gave it the mode (build -31) -- `CSI @`/`CSI P` stay the explicit sequences they were, and
-the mode changes what an ordinary glyph does instead. DECAWM was once refused with that same sentence, arguing that "caps declares
-`am`"; on review that conflated two things: **the caps `am` says whether the host terminal wraps, while this
-model's right edge is drawn by us**, so `?7` can be implemented while `smam`/`rmam` stay out of the caps entry --
-which also describes sessions where ConEmu's own parser reads the bytes and ignores `?7` (I26).
-
-### 2.6 DECSCUSR and DECSTR
+### 2.6 Cursor shape and soft reset
 
 | Sequence | Behaviour |
 |---|---|
-| `CSI Ps SP q` | DECSCUSR: 1..6 stored in `cursorShape`; a missing or out-of-range parameter is 0 (upstream's "default", i.e. do not touch the height). **Two doors since build -39 (#88), and which one a plan opens is a runtime fact, not a compile-time one.** `rc_cursor_style_for(style, haveShapeApi)` (`Paint.cpp:76`) is pure: with the shape API absent it returns `-1` for **every** parameter, so 0..6 fold exactly as they always did through `cursor_height()` (`Paint.cpp:60`) -> `CONSOLE_CURSOR_INFO.dwSize` -- 1/2 -> block (height 100), 0 and 3..6 -> thin (height 15), folding a bar into an underline as upstream's two-shape floor does. With the API present, 5/6 leave the height door shut and name `RC_CURSOR_STYLE_VERTICAL_BAR` instead (`Paint.h:120-124`), and the seam never opens both doors for one cursor (`RenderJni.cpp:1153-1175`). The flag comes from `GetProcAddress` **per handle** at `open()` (`RenderJni.cpp:1784-1790`), process-wide only because kernel32 is one image. ⚠ **What this box has**: no such export at all -- `kernel32.dll`'s 1697 named exports offer `Get/SetConsoleCursorInfo` and nothing shape-shaped (`cache/audit90/shape_exports.py`), so the present arm has never run here and **a bar has never been seen on a screen**. conhost exposes no getter for the axis (which is why the handle keeps `lastShapeStyle` at all: it is the only record that a bar was ever asked for). ⚠ All three reference terminals put the bar in *their own* model and draw it themselves -- msfterm `adaptDispatch.cpp:3250`/`:3281` -> `CursorType::VerticalBar`, wezterm `terminalstate/mod.rs:2712-2713`, ghostty `src/terminal/cursor.zig:9-11` -- and msfterm's `src/` never names this API; deviating from them is forced by not owning the renderer, and is recorded as such in `DESIGN.md` §10. **A session that never sent `CSI q` touches neither door** (the -1 sentinel). The test is **the intermediate set being exactly that one byte**: `CSI ? SP q`, `CSI ! SP q`, and a run of spaces before the `q` are all *not* DECSCUSR and count as SUP |
-| `CSI !p` (no parameters, no private byte) | DECSTR = `soft_reset()` (Render.cpp:1185): state back to default, **screen untouched**. It resets the pen, drops the scroll region, puts the cursor back visible and DECAWM on, closes a held synchronized region, and clears the **active** buffer's saved cursor -- by writing the saved coordinates over the current ones, since the model keeps two numbers and no "is there a save" bit. ⚠ It **does** reset the character sets and the shift (corrected in build -45; -41 through -44 shipped the opposite, and `ANSI_TODO.md` #85 carries why the citation was wrong). The chain, opened by hand: `adaptDispatch.cpp:2984` -> `:3000` `_termOutput.SoftReset(); // Reset all character set designations.` -> `terminalOutput.cpp:34-40` -> `RestoreFrom`'s `*this = savedState` (`:49`) -> a fresh `TerminalOutput` designates all four sets ASCII (`:16-24`) with `_glSetNumber = 0` (`terminalOutput.hpp:59`). So a soft reset un-designates G0..G3 **and** un-shifts GL, while leaving the screen, the cursor, the margins' work and the alternate buffer exactly as they were. The consequence is a rendering consequence: a program that died between its `smacs` and its `rmacs` used to leave the drawing set loaded for the whole session, and the next program's `q` drew U+2500. MSFT's `SoftReset` is otherwise that list and nothing else (`adaptDispatch.cpp:2984-3020`); the cursor move, the erase and the buffer switch belong to `HardReset` (:3042-3062, `UseMainScreenBuffer` at :3047), and clearing only the active saved state is deliberate xterm parity (GH#19918, :3005-3008). Until build -25 DECSTR called the same routine as RIS, so a soft reset left the alternate screen, scrolled a whole viewport into history and homed the cursor. `RIS` (`ESC c`) still hard-resets. The cursor **shape** splits: `RIS` drops the claim (`Render.cpp:1421`, so a following plan re-reads the console instead of trusting a bar the reset already erased -- pinned by `RenderCheck.cpp:3008`), DECSTR does not, because MSFT's list has no shape in it, and a fresh grid starts at `-1` (`Render.cpp:3427`) so a session that never asked leaves the user's preference alone. `!p` with parameters, `?!p`, and every other spelling of `p` are counted |
-| the intermediates themselves | accumulated into a set (`interims[RC_INTERIM_MAX]` + `nInterims`, overflow dropped), and consumers compare the **whole string exactly** (`interim_is()` requires length 1). Upstream does exactly this: `Ansi.cpp:1788` appends `0x20..0x2F` and `0x30..0x3F` into one `Pvt` buffer, and `:3645`/`:3657` both test `PvtLen == 1 && Pvt[0] == X`. A single slot lets the last byte win, which made `! SP q` impersonate a real DECSCUSR |
+| `CSI Ps SP q` (DECSCUSR) | 1–6 are remembered. Where the console offers a real shape API, the bar shapes take it; elsewhere they fold to a block or an underline. A session that never asked touches neither. Measured under a pseudo-console (Windows Terminal): the console forwards cursor **visibility** but not the shape, so no style is visible there — while a raw `CSI Ps SP q` passes through and the terminal honours it |
+| `CSI !p` (DECSTR) | soft reset: pen, region, cursor visibility, autowrap, synchronised output and all four character sets restored — while the screen, the cursor position, the margins and the alternate buffer are left alone. The cursor-shape claim and the tab table are also left alone |
+| guards | `CSI ? SP q`, `CSI ! SP q` and other misspellings are refused rather than mistaken for the real thing |
 
-### 2.7 SGR (`sgr_apply()`, Render.cpp:827)
-
-| Code | Behaviour |
-|---|---|
-| `0` | reset to the **frozen** default attribute (including the SGR 39/49 default colours) |
-| `1` | bold: participates in `rc_attr()` as **brightening** only (the foreground nibble gains its bright bit when `bold && !brightBack`) -- the xterm family's bold->bright semantics, #1896 parity |
-| `2` / `22` | bold off |
-| `4` / `24` | underline on/off -> lands in `RC_LVB_UNDERSCORE` for real, and is drawn |
-| `5` `6` / `25` | blink: **no state at all** (upstream is the same, Ansi.cpp:3530) |
-| `7` / `27` | reverse video on/off -> lands in `RC_LVB_REVERSE` for real |
-| `3` / `23`, `9` / `29` | italic and crossed out: **kept in the model** (`RcSgr.italic/crossed`) but the legacy console attribute has no bit for them, so `rc_attr()` emits nothing -- stored, not painted (the same shape as upstream's #677/#856 gap, see §3) |
-| `39` / `49` | default foreground/background (in the 4-bit space, from the frozen default) |
-| `30..37` / `40..47` | the standard 16 |
-| `90..97` / `100..107` | the bright 16 |
-| `38;5;n` / `48;5;n` | 256-colour, with an `n & 0xFF` mask and no range test (as upstream) |
-| `38;2;r;g;b` / `48;2;r;g;b` | truecolour, in `0x00BBGGRR` COLORREF order |
-
-Rules that go with them:
-
-- **A bare `CSI m` is a reset** (recorded as an assumption from upstream's convention, not measured parity).
-- **A private prefix drops the whole sequence** (`?31m` paints nothing and counts `RC_UN_MODE`) -- upstream's
-  Ansi.cpp:3494 discards the whole SGR the same way.
-- **An unknown parameter is skipped and the loop continues**: `\e[53;31m` still turns red; a truncated `38/48`
-  (fewer parameters after the `5`/`2`) paints nothing and lets the remaining parameters read as ordinary SGR.
-- Parameters cap at 16 and values saturate at 65535 (deviation #3). The cap is upstream's; **counting the loss**
-  is #74's -- a dropped surplus now raises `argTrunc`, so a session that sent forty parameters and had sixteen
-  kept says so instead of looking like a session that sent sixteen.
-- **The colour pipeline** (I15): `ReSetDisplayParm -> ExtPrepareColor -> the Far3Color fold`, with the folding
-  table `vendor/ConEmuRgbMap.h` (RgbMap[256], ClrMap[8]) and `vendor/ConEmuColors3.h` extracted verbatim from
-  upstream and counted at build time; the **fg==bg avoidance** rides on the result only when the background
-  really went through the COLORREF fold (index > 15) -- the condition the 633-sample measurement produced.
-
-### 2.8 OSC (`osc_finish()` consulting `rc_osc_families[]`, Render.cpp:2556)
-
-Dispatch is a table rather than a chain of `if`s: each family is `{name, owns(code), apply(...)}`, table order is
-precedence, and "no code is claimed twice" is now proved by `geo_osc_families` sweeping 0..4096. How far the
-table may be edited is decided by whether a gate asks -- and that is exactly what the chain could never be
-asked, because it could not state that no code has two handlers.
+### 2.7 Attributes (SGR)
 
 | Code | Behaviour |
 |---|---|
-| `0` / `1` / `2` | **the window title really lands**: upstream's guard copied verbatim (the digits must be followed by `;`, the payload must be non-empty, `]10;foo` is not a title); one pair of surrounding quotes is stripped (an empty string still *is* a title); the painter applies it with `SetConsoleTitleW`; longer than `RC_TITLE_MAX 256` it is clipped and counted and **the sequence is not lost**; an unterminated title counts and applies nothing |
-| `133` (FTCS) | **a first-class citizen** (`ftcs_apply()`, Render.cpp:1956): `A`/`N` start a new prompt row (moving to one first when needed -- the only place in the family that moves the cursor); `P` sets the prompt without moving the row; `L` is a plain line feed and **may not carry options**; `B`/`I` mark where input begins (`I`'s input ends at the line's end); `C` marks the output start and reclaims a fish-style continuation mark; `D` carries the exit code (the second field; a non-number is an error rather than a success, following MSFT) and stamps SUCCESS/ERROR onto the nearest marked row above it. `k=c`/`k=s` options recognise a continuation (ghostty's rule); a line feed or a wrap itself promotes a non-output row to CONTINUATION. Row marks are **model-private**: they travel with every vertical move and are dropped after an adopt |
-| `9` (ConEmu's private family; T7 split it) | **the safe subset is stored, never obeyed**: `9;4` stores `{state,progress}` (a state > 4 refuses the whole sequence and applies nothing, a progress > 100 clamps to 100 -- as MSFT does at `adaptDispatch.cpp:3596-3605`), `9;9` stores a path (one pair of quotes stripped, one illegal character refuses the whole thing, filtered like `til::is_legal_path`), and `9;12` calls `ftcs_apply("B")` directly -- the same code path as `133;B`, with no second copy of its semantics. Both are read **out** through `NativeRenderer.taskbar()/workingDirectory()`; this library paints no taskbar (it owns no window) and never `chdir`s (a directory from an output stream is data, not a command). **Every other subcommand counts `RC_UN_OSC_PRIV` and is never executed**: `9;1` sleep, `9;2` MessageBox, `9;3` set-environment, `9;6` GuiMacro, `9;7` DoProcess -- #687's RCE answer is unchanged. An unterminated payload counts **at the moment it is abandoned** (until then the parser is still inside it and nothing can be concluded) |
-| `4` / `10` / `11` / `104` / `110` / `111` (the palette, I34) | **they really change the console's colours**: the grammar is MSFT's (`OutputStateMachineEngine.cpp:955-1000`/`:1062-1092`) -- `4` is `(index;spec)*`, `?` inquires in place, `10/11` walk one resource per field, `104` with no fields resets the whole table and **stops at the first index it cannot parse** (MSFT:846 notes that is xterm's choice over VTE's), and `110/111` reset only on an empty payload. Accepted specs are `#RGB`/`#RRGGBB`/`#RRRRGGGGBBBB` (three equal widths) and `rgb:r/g/b` (1-4 digits each, widths may differ), scaled to 8 bits by bit replication. **X11 colour names resolve since build -40 (#84)**: a field that is neither shape is folded the way MSFT folds a query (`colorTable.cpp:296-334` -- ASCII lowercase, every byte <= space dropped, anything above 0x7F refused) and looked up in `vendor/X11ColorNames.h`, 676 keys cross-derived from four local reads of `rgb.txt` (ghostty's copy, wezterm's in `color-types`, the OS-packaged copy, msfterm's own re-derivation) by `gen_x11colors.sh`, whose `--check` build.sh runs on every host build. A name **not** in the table still joins `RC_UN_OSC_OTHER` like any other unreadable spec, and a field that begins `#` or `rgb:` is never re-tried as a name -- one spelling, one shape. Indices 0..15 change the **console attribute colours** (written back through `SetConsoleScreenBufferInfoEx` -- see that trap in §5) and participate in the fold; 16..255 change only the fold's target. `10/11` can only land on an **index** (a 4-bit default attribute), so a query answers with the **effective** colour, not the requested one |
-| `52` (the clipboard, I36) | **off by default, and only the host can turn it on**: `ANSI_CLIPBOARD=on\|1\|true\|yes` read once at class-init, or `NativeRenderer.setClipboardPolicy(true)`; nothing in the byte stream can reach either entry point, which is precisely why "off" means off (the census cannot tell a terminal the user configured from one a script configured, so a count is no substitute for a policy). There is no ASK setting: this library owns no window, so there is nowhere to ask. A **read** (`52;c;?`) is refused whether or not writing is enabled -- answering it would put what the user last copied into the console's **input** stream, i.e. into the next command line. The selection field accepts only `c` and empty: this machine has one clipboard, and ghostty can fold `p`/`s`/`q`/`0-7` only because X11 and macOS really do have those registers (`stream_terminal.zig:678-682`). base64 is strict RFC 4648: whole payload or nothing (never a partial decode), whitespace inside the payload refused rather than skipped, the unused bits of the final group required to be zero (so a tail like `QR==` -- "looks like an A, hides a character" -- is refused), a payload that decodes to a NUL refused whole (`CF_UNICODETEXT` is NUL-terminated, and storing the prefix hands the user half a paste), and the UTF-8 validated with `MB_ERR_INVALID_CHARS` before it becomes UTF-16. **An empty payload is the act of clearing**, not the absence of one. Refusals fall into four counted families (decode / selection / read / over-capacity), so `NativeRenderer`'s closing line can say which. `close()` does **not** restore the clipboard: snapshotting it at open would be the very read this half refuses. **ConEmu has no OSC 52 at all** (measured: its OSC switch is `switch (*Code.ArgSZ)` with cases 0/1/2/4/9… and no `case L'5'`). **But both reference terminals do, and both default to allowing it**: Windows Terminal has `OscActionCodes::SetClipboard = 52` (`OutputStateMachineEngine.hpp:222` -> `.cpp:821-827` -> `adaptDispatch.cpp:3302`), gated by `compatibility.allowOSC52` / `AllowVtClipboardWrite`, **default true** (`ControlProperties.h:59`, `MTSMSettings.h:119`, read at `Terminal.cpp:106`); ghostty's `clipboard-write` defaults to `.allow` (`Config.zig:2459`). So the default here is a **deliberate divergence from both references**, and the reason has to be our own: those two are terminals the user configures and answers for, and a setting exists because somebody turned it on, while a renderer living inside someone else's JVM has no such setting and no party who consented to the act -- silence can only be read as "not agreed", never as "agreed". Where the references agree, we agree: neither **answers** a read (WT parses the `?` and then drops it at `.cpp:825`; ghostty gates reads with `clipboard-read=.ask`), and this build refuses the read outright. One further deliberate split from MSFT: it ignores the selection field entirely (its own comment at `:1097` says "Currently the first parameter `Pc` is ignored"), so `52;p;…` writes the clipboard there, whereas this build follows ghostty's grammar and honours `c` and empty only -- folding answers a different question than the one that was asked, and MSFT's own comment calls that unfinished work |
-| everything else (8/…) | counted `RC_UN_OSC_OTHER` -- and that tail is the invariant: it bills **a code no family owns**. A refused 133 spelling, an unterminated 133, and the unreadable colour specs above also land here. 52 has left this list to run its own family, and its refusals are counted in `RC_UN_OSC_CLIP` |
+| `0` | reset to the default, including default colours |
+| `1` / `2`, `22` | bold on/off — bold participates as *brightening* |
+| `4` / `24` | underline, drawn — written as the console's own attribute bit (`0x8000`), which a classic console window paints. **Under a pseudo-console (Windows Terminal) it is invisible**: conhost's cell→VT serializer carries only reverse/foreground/background and drops the bit — measured, the affected cells serialize with **no SGR segment at all** |
+| `7` / `27` | reverse video, drawn |
+| `3`/`23`, `9`/`29` | italic and crossed-out: kept in the model so on/off pairs behave, but nothing is drawn (the console attribute has no bit) |
+| `5`, `6`, `25` | blink: no state — the console attribute word has no blink bit |
+| `30`–`37`, `90`–`97`, `40`–`47`, `100`–`107` | the standard and bright sixteen |
+| `38;5;n` / `48;5;n`, `38;2;r;g;b` / `48;2;r;g;b` | 256-colour and 24-bit, applied **through the console's own palette fold** — a deliberate property, not a loss of fidelity |
+| `39` / `49` | default foreground / background |
+| `38:2::r:g:b`, `38:5:n`, `4:n`, `58:` | colon subparameters are parsed; the colour arms land where the semicolon spellings do, and `58:` is consumed so its numbers cannot be misread |
+| `CSI m` with no parameters | a reset |
+| `CSI ?…m` | the whole sequence is dropped — a private prefix on an SGR is not a partial request |
 
-#### 2.8.1 The whole `OSC 9 ; <sub>` family, row by row (#111; no build stamp, because no shipping byte moved -- the legs are in `RenderCheck.cpp`/`Render.java` and the floor is in `build.sh`)
+### 2.8 OSC
 
-The row above says "the safe subset is stored, never obeyed". That is a claim about **twelve** ids, so the
-list is now written out instead of summarised. Sources, all three opened this round: ConEmu's own docs page
-(`cache/p111/conemu-ansi.html`, the table under "ConEmu specific OSC"; the reconstructed text is
-`cache/p111/osc9-family.txt`), Microsoft's `DoConEmuAction` (`adaptDispatch.cpp:3558-3641`, verified line
-numbers), and this library's `osc9_action` (`Render.cpp`). MSFT's function ends in
-`else { _api.UnknownSequence(); }`, so "everything else is refused" is that file's own structure, not an
-absence of code -- which is the distinction #111 was written to force.
-
-| sub | what ConEmu documents | what MSFT does | what this library does | leg |
-|---|---|---|---|---|
-| `9;1;ms` | Sleep for `ms` | `UnknownSequence()` | refused: one `RC_UN_OSC_PRIV` vote | `gm_osc9` sweep + live timing arm (a chunk asking to sleep 5000 ms returns in **0 ms**) |
-| `9;2;"txt"` | show a GUI MessageBox | `UnknownSequence()` | refused, and **unlinkable**: no `MessageBox*`/`DialogBox*` is imported | sweep + live + `build.sh`'s import floor |
-| `9;3;"txt"` | change the ConEmu tab text | `UnknownSequence()` | refused (it is *not* a title: `nTitleSet` must not move) | sweep (`nTitleSet` checked every id) + live title compare |
-| `9;4;st;pr` | taskbar state + progress | `_api.SetTaskbarProgress`, state >4 refused, progress >100 clamped | **stored** in the model and exposed through `taskbar0` -- deliberately **not** pushed to the real taskbar | `gm_osc9`'s five arms (store, clamp, refuse-past-4, bare-remove, empty-field) |
-| `9;5` | wait for Enter/Space/Esc and write `ConEmuWaitKey` | `UnknownSequence()` | refused; no env write is even linked (`SetEnvironmentVariable*` absent from the import table) | sweep + live timing + import floor |
-| `9;6;"txt"` | execute a GuiMacro, write `ConEmuMacroResult` | `UnknownSequence()` | refused -- this is the RCE-shaped one (I21's floor) | `9;7`-style arm + import floor |
-| `9;7;"cmd"` | **run a process with arguments** | `UnknownSequence()` | refused: `CreateProcess*`/`WinExec`/`ShellExecute*`/`_?ws?ystem` are not imported, so no future code path can run one without tripping the build gate | `gm_osc9`'s `9;7` arm, the sweep, and `build.sh`'s `no process/dialog/env-write entrypoint imported` |
-| `9;8;"env"` | **output the value of an environment variable** (into the stream!) | `UnknownSequence()` | refused, and the refusal is witnessed as *silence on the wire*: nothing lands in the reply queue and `CONIN$` reads empty | host `rc_report_pending == 0`; live `9;8 leaked no environment value into the input stream` |
-| `9;9;"cwd"` | inform the terminal of the shell's cwd | `_api.SetWorkingDirectory` after `til::is_legal_path` | **stored** in the model (`g->cwd`), exposed via `workingDirectory0`; the process's own CWD is **not** moved -- stated as a divergence, not hidden | `gm_osc9`'s five path arms (quote strip, unquoted accepted, control char refused, inner quote refused, empty refused) |
-| `9;10` / `9;10;n` | turn xterm keyboard/output emulation on or off | `UnknownSequence()` | refused, including `n=2` | the sweep + the arm that re-parses a byte after `9;10` to prove the parser did not change. This is the same question #109's `?2 = permanently set` answers, and the two must not contradict each other |
-| `9;11;"txt"` | a comment; skip it | `UnknownSequence()` | refused and counted -- "skip" in ConEmu is not "silently drop" here: a record is kept | sweep + the explicit "no title came out of the comment form" arm |
-| any other | not documented | `UnknownSequence()` | refused, one vote | the sweep walks **0..31** and asserts that the only ids that do *not* vote are 4 and 12, and that every refusing id also moved **no** state |
-
-Two things this table is not. It is not a claim that `9;4` and `9;9` do what ConEmu does -- they store a fact
-in the model for the host application to read, and the taskbar and the process CWD are the host's to apply
-(the divergence is in the row). And it is not a code-reading exercise: four mutation arms were run against
-it (`act-9-5`, `leak-9-8`, `osc9-silent`, `osc9-cwd` in `cache/vtp104mut/mut4.py`), which is what turned the
-sweep's sentinel from `-1` (a success value nobody had checked, red on a green build) into `0`.
-
-
-
-| Query | Reply (`reply_text()`, RenderJni.cpp:659) |
+| Code | Behaviour |
 |---|---|
-| `CSI 5 n` | `ESC [ 0 n` (ready) |
-| `CSI 6 n` | `ESC [ row ; col R`, 1-based, **counted from the window's top** (the same arithmetic the painter used); the answer is the cursor **as it stood when the query was read** (the queue entry is a snapshot -- `printf '\e[6n\e[2;3H'` reports row 1) |
-| `CSI c` / `CSI 0 c` | `ESC [ ?61;4;6;7;14;21;22;23;24;28;32;42c` -- **conhost's identity string** (with the `;52` clipboard bit removed), not ConEmu's `?1;2c`: a declined chunk is handed to conhost, which answers that one itself, and one session must not present two identities |
-| `CSI > c` / `CSI > 0 c` | `ESC [ >0;10;1c` (conhost's DA2) |
-| `OSC 4;<i>;?` / `OSC 10;?` / `OSC 11;?` | `OSC 4;<i>;rgb:RRRR/GGGG/BBBB` (or `10;rgb:…` with no index), 16-bit components = the byte x0x0101, closed with ST -- the same shape as MSFT's `adaptDispatch.cpp:3338`/`:3417`. **The answer is the effective colour**: the defaults are 4-bit, so what comes back is the colour of the index the request folded to |
-| `CSI ? <mode> $ p` | `ESC [ ? <mode> ; <status> $ y` (DECRPM), answering **only state the model really holds**: 25 -> `cursorVisible`, 47/1047/1049 -> `alt` (three spellings of one bit, so they cannot contradict each other or the DECSET that moved them), 2026 -> `sync`; and only two statuses, **DEC's own pair** -- `1 = set, 2 = reset`. Builds -18 through -45 sent these two **swapped** (`set ? 2 : 1`), on the strength of a comment in this file asserting that VT500 reads it the other way; #93 opened MSFT's enum (`DispatchTypes.hpp:555-556`, with `mapTemp` at `adaptDispatch.cpp:1936` mapping `true` to `Enabled`), found that the comment was the entire evidence, and flipped the function together with the 28 host and 15 live assertions that had been written from it. The inversion survived twenty-eight tickets because the only reader in the house cannot see the difference -- jline4 scores 1, 2 and 3 alike as SUPPORTED (`AbstractTerminal.java:683-685`) -- which is a fact about that reader, not a defence. Fixed in build -46. Snapshot semantics as for CPR (fixed when the question is read: `?2026h ?2026$p ?2026l` in one chunk still answers "it was on"). Upstream has no such reply (`Ansi.cpp:3650-3653` sends every `p` it does not know to DumpUnknownEscape); the reason to answer is jline4's probe batch, which looks replies up **by mode number** (`parseDecrpm`, AbstractTerminal.java:675-690) rather than reading them positionally |
+| `0`, `1`, `2` | the window title really lands; one pair of surrounding quotes is stripped; over-long titles are truncated, not dropped |
+| `4`, `10`, `11`, `104`, `110`, `111` | the palette: set and query index colours and the default foreground/background. Accepts `#RGB`/`#RRGGBB`/`#RRRRGGGGBBBB`, `rgb:r/g/b`, and 676 X11 colour names; indices 0–15 change the console's own attribute colours; a `?` query answers with the *effective* colour. Measured under a pseudo-console: the console's colour table is **not forwarded** (16-colour cells serialize as `38;5;n`, naming the *terminal's* palette entry), so recolors are invisible there — while a raw `OSC 4` passes through and the terminal honours it |
+| `9;4`, `9;9`, `9;12` | the safe part of the private family is **stored, never obeyed**: taskbar state and progress, a working directory, and a prompt-start mark. Both stored values are readable by the host application |
+| `52` | clipboard write, **off by default** and switchable only by the host program, never by the byte stream. Strict base64 (whole payload or nothing); an **empty payload means clear**; a read request is refused outright |
+| `7` | the working directory: stored as text, readable by the application, **never obeyed** — no directory is changed because of an output stream |
+| `133` | semantic prompts `A N P L B I C D`, with the exit code on `D` and continuation recognition; the marks travel with vertical movement |
+| anything else | counted; the side-effecting private `9` subcommands (sleep, message box, environment, macro, run process) are counted and **never executed** |
 
-Mechanism: a query is **queued** while parsing (FIFO, capped at `RC_REPORT_MAX 8`; a full queue refuses the new
-query and counts it rather than evicting an older one); the painter writes the answers at the **end of a
-successful flush**, one character at a time, as `KEY_EVENT` pairs into `CONIN$` (the same synthesis conhost's own
-output leg uses), and even an empty flush writes them; a **declined** chunk answers nothing (its bytes were
-handed back to conhost, and a second reply would be dirty input).
+### 2.9 Queries and replies
 
-### 2.10 Width, glyphs and wrapping
+A query is answered after the screen is updated, written back as console input events — the only channel
+this library has to speak to a program without owning its input handle.
 
-| Item | Behaviour |
+| Query | Answer |
 |---|---|
-| The width oracle | `rc_width()` (Render.cpp:39) = the Unicode 15 tables in `src/c/luauf8/ansi_width` (the jansi/JLine WCWidth family is explicitly excluded); control characters 0, wide 2, ordinary 1 |
-| The EAW ruling | **Ambiguous counts as wide**, minus the 206 exceptions measured at one cell across six fonts (`AMBIGUOUS_NARROW`: box glyphs, block elements, accented Latin); no VS16 promotion (`A\uFE0E` is as wide as `A`) |
-| Zero width | Mn/Me/Cf produce no cell and take no column (as xterm/WT/glibc; conhost gives a combining mark its own cell, and we **do not** follow it) |
-| Wide glyphs | 2 cells: a `LEADING` and a `TRAILING` half carrying the same code point; when they do not fit the **pair wraps whole** (`RC_WRAP_PAD`) and is never split |
-| The supplementary planes | a surrogate pair is reassembled into the full code point before it is measured; what reaches the console is the original pair of units (never folded to U+FFFD); a high surrogate at a chunk boundary is held in `wantLow` and completed next time; a lone low surrogate writes one U+FFFD cell |
-| Wrapping | **immediate** (no deferred wrap / pending-wrap): the four discriminators agreed on both legs when measured (CONEMU_ANSI_DEFECTS §2 end), so it stays undone |
-| Soft vs hard break | one bit per row, `RC_WRAP_FORCED` (pushed to the right edge) or `RC_WRAP_PAD` (a wide pair wrapped whole), for copy and export to join rows correctly; it is not in `CHAR_INFO` and is dropped after an adopt |
-| Erasing and attributes | an erase **overwrites whole cells** without merging, so a wide glyph's trailing half is destroyed when erased (I13, as conhost does) |
-| The pair is the unit | what an erase, a fill, an ICH/DCH shift or a narrow glyph over a wide one's head may **not** do is leave the other half standing: `heal_pairs()` (Render.cpp:354) blanks a `LEADING` whose next cell is not its `TRAILING` and vice versa, and every writer that can split a pair runs through it (`fill_span`, `blank_cell`, `put_cell`, `put_pair`, ICH/DCH). ghostty's `page.zig:518-540` treats the same state as an integrity violation and clears at each boundary (`Terminal.zig:3322-3342`, `:3411-3413`, `:3448-3452`); MSFT's `Row.cpp:1215` `_adjustBackward` is the same rule on the reading side. Witnessed by `no_orphan()` on the host gate and by `noOrphan()` on the live console |
+| `CSI 5 n` | `CSI 0 n` |
+| `CSI 6 n` | `CSI row ; col R`, one-based, reporting the cursor **as it stood when the question was read** |
+| `CSI c`, `CSI 0 c` / `CSI > c`, `CSI > 0 c` | the console host's own primary / secondary identification — one session presents one identity |
+| `CSI 18 t` | `CSI 8 ; rows ; cols t` — the text area, in the columns really painted |
+| `CSI 21 t` | the window title this parser last applied; a session that never set one gets nothing |
+| `CSI 22 t` / `CSI 23 t` | push / pop the title, two levels deep |
+| `CSI > q` | XTVERSION: this library's name and build stamp, as a device control string |
+| `OSC 4;i;?`, `OSC 10;?`, `OSC 11;?` | the effective colour, as `rgb:RRRR/GGGG/BBBB` |
+| `CSI ? N $ p` (DECRQM) | **1** set / **2** reset for every mode the model holds (§2.5); **0** not recognised for any number it does not |
 
-**The two DECRQM lists (pinned by #87, membership changed once by #82)**: the answer set = the numbers the model really holds state for -- 4 IRM, 6 DECOM, 7 DECAWM, 25 cursor visibility, 47/1047/1049 screens, 69 DECLRMM, 2004 bracketed paste, 2026 synchronized output, **2048 in-band size reporting (since -37)**, and **the whole mouse family 9/1000/1002/1003/1004/1005/1006/1015/1016 (since -45, #81: one bit for each of the nine numbers, `1001` is not on the list and neither reference accepts it)**; the silence set = 1/2/3/12/1034/1048/2000/2027/2031. ⚠ Moving 9 **out of** the silence set is -45's doing, and it raised `RC_REPORT_MAX` in the same breath (an eight-slot queue cannot hold nine answers, see below), each of them "zero answers + one `RC_UN_MODE` vote". The asymmetry has a reason: jline4's `parseDecrpm` looks the answer back up by mode number (`AbstractTerminal.java:675-690`), so one answer too many invents a new I26-style claim, while one answer too few is only "not supported". Both lists are pinned by one and the same leg, `RenderCheck.cpp::geo_decrpm_silence` (it enumerates **9** silent numbers + asserts that **6** must be answered; the nine mouse numbers are not in that leg, they are pinned number by number by the second arm `geo_mousemodes`: "answered 1 before the set, 2 after it, and 1 again after the reset"), and this leg **was seen red on the spot**: its first run was green, so #87 had `mode_status` answer 2048 out of thin air at a moment when no state stood behind it, and it failed at once -- which is exactly why landing #82 had to move 2048 **out of `SILENT[]`**: leaving it there would mean two tables each saying their piece about the same number.
+### 2.10 Text: width, glyphs, wrapping
 
-### 2.11 Tab stops (`#70`)
-
-| Item | Behaviour |
+| Property | Behaviour |
 |---|---|
-| The state | one claim per column (`RcGrid::tabStop[]`) plus one flag (`tabsDefaults`) saying whether the columns nobody claimed are stops every 8. Two facts, because `CSI 3g` and `ESC H` differ in kind: one empties the table *and* the interval, the other adds to it |
-| The defaults | columns 8, 16, 24 ... below the width -- **not** column 0, and not the last column (MSFT `adaptDispatch.cpp:2811`, ghostty `Tabstops.zig:165` with nine stops on 80 columns pinned by its own test at `:278`) |
-| `ESC H` HTS | claims the column the cursor stands on, leaves the rest alone, moves nothing |
-| `CSI 0g` / `CSI 3g` TBC | clear the claimed column / clear everything **and** the interval, so a later `\t` has nowhere to run to but the wall. Both references give the same answer (MSFT's `_ClearAllTabStops` clears the flag at `:2775`; ghostty's `reset(0)` reads "an interval of 0 sets no tabstops") |
-| `CSI 5g` DECST8C | puts the every-8 interval back. The name promises five columns and both references implement "restore the defaults" -- MSFT's enum calls the value 5 `SetEvery8Columns` (`DispatchTypes.hpp:579-582`), ghostty resets to `TABSTOP_INTERVAL` (`Terminal.zig:2309`) -- so this row is a naming divergence we inherit from them, not one we add |
-| `CSI Ps I` CHT, `CSI Ps Z` CBT | the same walk forward and back, `Ps` times (absent or 0 is 1). Neither wraps a row or changes the other's row; a back-tab with nothing left ends at column 0 (MSFT's `minColumn`, `:2712-2730`) |
-| Main and alternate screen | **one table for both**, because it is terminal state rather than screen state: MSFT's lives on the adapter (`:2649`), ghostty's on the Terminal (`Terminal.zig:56`) |
-| A resize | carries the table and fills the interval only in the columns that did not exist, and only if nobody cleared it (MSFT `_InitTabStopsForWidth`, `:2799-2817`; ghostty rebuilds the whole table at `Terminal.zig:4019`/`:4082` and loses custom stops -- we follow MSFT, because our own resize already carries application-set state: the palette, the OSC 9 face, DECAWM) |
-| `ESC c` RIS | restores the interval. **This is where we part with MSFT**, whose `HardReset` says nothing about tabs: DEC's reset means "as at power-up", and a session that cannot ask for its defaults back has no way to ask. ghostty restores (`Terminal.zig:4943`), so the split is one reference each way and the tiebreaker is what a caller can do with it |
-| DECSTR `CSI !p` | does not touch the table -- neither reference does, and a soft reset that silently un-claimed a stop would be a claim about the user's configuration |
-| A stop on a wide glyph | legal, and the cursor may stand on the leading half; the write that follows evicts the trailing one exactly as it does for CUP (I35's rule), and the grid oracle votes after every chunk either way |
-| The caps entry | advertises `cbt=\E[Z` since **#90**, and still no `hts`/`tbc` -- no code in this jline reads either one, and ConEmu's parser drops `ESC H` and `CSI 3g`, so writing them would be an invented value *and* a claim about the other reader. `cbt` is the exception because it has a reader: `LineReaderImpl.java:6420` binds `REVERSE_MENU_COMPLETE` to the capability's value, and an absent one unbinds the key in silence. `TERMINFO.md` carries the citations; the witness is `CapsDump.java`'s reader leg, which answers `no cbt to look up` against the pre-#90 jar and `reverse-menu-complete` against the shipped one. Moving the declaration meant moving all three byte-identical copies (the mirror, jline's source, `lib/JLine3.jar`), which is what `terminfo_check.sh` arm 3 exists to catch |
+| Width source | tables generated from **Unicode 15** with measured overrides — one oracle for the whole stack |
+| East Asian Ambiguous | counted as **wide**, minus 206 code points measured at one cell across six real fonts |
+| Zero width | combining and format characters take no cell |
+| Wide glyphs | two cells, a leading and a trailing half; a pair that does not fit wraps whole and is never split |
+| Supplementary planes | surrogate pairs are reassembled for measuring and written back unchanged; a lone low surrogate becomes one replacement cell |
+| Pair integrity | no operation may leave one half of a wide glyph standing — the orphan is blanked |
+| Wrapping | immediate, with one bit per row recording a soft break so copy and export can join rows |
+
+### 2.11 Tab stops
+
+Defaults are every eighth column. `ESC H` claims the cursor's column; `CSI 0g` clears that column, `CSI 3g`
+clears the table and the interval; `CSI 5g` and `CSI ? 5 W` restore the interval (a bare `W` is refused).
+`CSI Ps I` / `CSI Ps Z` walk forward and back without changing rows. One table serves the main and
+alternate screens; a resize keeps application-set stops; RIS restores the interval, a soft reset does not
+touch the table.
+
+### 2.12 Mouse and focus reports
+
+When a tracking mode is set, the console's own mouse input is armed and each console record is handed to
+this library's encoder, which injects the report bytes the mode selected: legacy X10, UTF-8 coordinates,
+SGR, urxvt or SGR-with-pixels, with the release, motion and modifier rules each format has. Focus changes
+are reported as `CSI I` / `CSI O` under `?1004`. A program that asks for a format receives that format.
 
 ---
 
-## 3 Not supported (all consumed and counted; see §6)
+## 3 Not supported
 
-### Charset / shifting (ISO 2022) -- the three deviations #85 left in place
+All of the following are consumed and counted — none of them changes anything on screen or claims to.
 
-| Item | Behaviour | Why, and what the references do |
-|---|---|---|
-| **GR (the 8-bit half)** | not implemented: `ESC *`/`ESC +`/`ESC ~` load G2/G3 and **nothing on screen can ever select them** | a 7-bit input path produces no C1 and no 8-bit text, so GR would be a set of slots with no reader. Both references carry it anyway -- msfterm `_grSetNumber = 2` (`terminalOutput.hpp:57-60`), ghostty `gr: Slots = .G2` (`Screen.zig:209-221`) -- so this is a deviation named out loud, not an oversight. The leg `ESC * 0q`/`ESC ~ 0q` pins "slot loaded, screen unchanged" precisely so nobody later reads "four slots" as "four rendered slots" |
-| **LS2 / LS3 / LS1R / LS2R / LS3R** | not implemented (C1 controls; `ESC . c` is **RIS**, not LS2R) | the C1 bytes cannot be produced by this parser at all (0x92 arrives as a UTF-16 code unit and is *text*), and `ESC .` is an intermediate whose final `c` reaches `esc_dispatch`'s RIS arm. ⚠ The ticket's gate asked for "`ENQ` and `ESC . c` still counted"; both halves are false, and the legs are written against the machine instead |
-| **`ESC %` (UTF-8 / Latin-1 selection)** | selects nothing, counted `unrecognised` | unchanged from before #85: the flag has no writer anywhere in this tree, and the input is UTF-16 before the grid. Counting it is the census's job -- that is what an application writes when it believes it turned UTF-8 on |
+### 3.1 Character sets
 
-### SGR / colour
+| Item | Why |
+|---|---|
+| GR, the 8-bit set half; `LS2`/`LS3`/`LS1R`/`LS2R`/`LS3R` | the input path is UTF-16 and produces no C1 bytes and no 8-bit text — there is nothing for these to select |
+| `ESC % G` (UTF-8 selection) | the input is already Unicode before the grid; there is no encoding to switch |
 
-| Item | Behaviour | Note |
-|---|---|---|
-| blink `5/6/25` | no state | as upstream |
-| **painting** italic `3/23` and crossed-out `9/29` | state kept, nothing drawn | the legacy attribute has no bit; drawing them means drawing ourselves (the same upstream gap as #677/#856) |
-| `8` invisible, `53` overline, `21` double underline, `51/52` framed, `58/59` underline colour | fall under "unknown parameter, skipped" | no state in the model for them |
-| **colon subparameters** `38:2:r:g:b`, `38:2::r:g:b`, `38:5:n`, `48:…`, `4:n`, `58:…` | **parsed and applied since #78** (build -32): the colour arms land on the same folded attribute as their semicolon spellings, `4:0`/`4:1` carry the underscore and `4:2..5` count the part that cannot be drawn, `58:` is consumed so its numbers can never be read as renditions | `:` was a Pvt byte in ConEmu, which dropped the whole sequence (Ansi.cpp:1788, :3494) -- that was the I10 parity claim, and two of the three references parse the form instead (MSFT `stateMachine.cpp:557-590`, ghostty `stream.zig:999-1002`), so parity with the one that does not is not a floor. `RC_UN_COLON` now means **an arm of a parsed colon sequence is not carried here**, not "a colon went past"; a colon on any final but `m` is still dropped and counted, which is ghostty's own rule ("We only allow colon or mixed separators for the 'm' command", stream.zig:1350-1358) |
-| 256-colour and 24-bit fidelity | supported, but **through ConEmu's palette fold** | differing from "true colour" is a feature, not a defect (#2516 reproduced); `48;2;…` does not degrade to colour number 8 |
+### 3.2 Attributes
 
-### Positioning and tabs
+| Item | Why |
+|---|---|
+| blink (`5`/`6`) | the console attribute word has no blink bit |
+| invisible (`8`), overline (`53`), double underline (`21`), framed/encircled (`51`/`52`) | no carrier in the console attribute |
+| underline colour (`58`) | consumed so its numbers cannot be misread, but nothing is drawn |
+| italic, crossed-out | stored (so `23`/`29` behave) but never drawn — same missing bit |
 
-| Item | Behaviour | Note |
-|---|---|---|
+### 3.3 Modes
 
-| left/right margins (DECLRMM/DECSLRM), origin mode DECOM | **modelled since #80 (build -34)** -- see §2 `?6`/`?69`. What is still refused is the *pixel* half: a margin is cells only. (`?3` used to sit in this cell as "stays silent because widening means moving the user's window" -- both halves of that sentence were wrong and it moved to its own row on 2026-09-28, #109) | was "not modelled" until 2026-09-27; that sentence outlived the feature by one ticket, which is the reason this row is dated |
+| Item | Why |
+|---|---|
+| `?12` cursor blink, `?8` columns, keypad and meta-key modes | want a blink bit, a second column mode, or a key *producer* — the input side is not this library's |
+| `?3` 132 columns, `?40` | means resizing the user's window; the query for it answers **4** (permanently reset) |
+| `?5` reverse video as a screen-wide mode | collides with how the console's own attributes are folded and re-imported |
+| `?45` reverse wraparound, `?2005` background-colour erase | each contradicts the wrap/erase contract this renderer advertises |
+| `?2027` grapheme clusters | width is a table lookup; the query answers **0** (not recognised) rather than claiming a capability |
+| `?2031`, `?2033`, `?5522`, `?7727`, `?2094`, `?8005`, `?8452` | report a window theme, a graphics plane or a paste pipeline this library does not own |
 
-### DEC/ANSI modes
+### 3.4 Erase and rectangles
 
-| Item | Behaviour | Note |
-|---|---|---|
-| `?1` DECCKM (application cursor keys) | **stored, answered and carried since #114 (build -51)**: `cursorKeys` holds the bit, `?1$p` answers 1/2 from it, `RIS` **and** `DECSTR` both clear it, and a rebuild carries it. What is still refused is the *effect*: the bytes this mode decides (`CSI A` vs `SS3 A`) are produced by whoever reads the console's key records, and in this stack that is jline's reader | MSFT stores it as an input mode and names it in both resets (`DispatchTypes.hpp:522`; `adaptDispatch.cpp:2990` `_terminalInput.SetInputMode(Mode::CursorKey, false)` inside `SoftReset`); ghostty lists `cursor_keys` = 1 (`modes.zig:340`); wezterm parses `ApplicationCursorKeys` and acts on it in its own key encoder (`terminalstate/mod.rs:1824-1834`). The old reason in this cell -- "it changes the input side only, and this renderer does not touch input encoding" -- proved a state twice over what #81 and #83 had already decided: holding a mode is not executing it, and silence at `?1$p` is indistinguishable to the asker from "this terminal has no such mode" (I26). Legs: `geo_ckm` (the 2→1→2 walk, both resets, the census re-baseline) and `Render.java::caseCursorKeys` (the reply read off CONIN$, and the carry across a rebuild -- the latter is the arm the host gate cannot see at all) |
-| `?2` DECANM (VT52 vs ANSI parsing) | **answered 3 = permanently set since build -53**, while `?2h`/`?2l` remain counted `RC_UN_MODE` | ⚠ **This row used to say "deliberately unanswered".** Its reason was half right and half policy: 1 or 2 would indeed describe a state the model cannot hold -- this parser has no VT52 table to switch into, `ESC D` is IND and `ESC E` is NEL (`Render.cpp:2337-2338`) -- but the second half, "and 3 is the number this library declines to send", was a **policy**, and #109 broke that policy on purpose when it earned a 4 for `?3`. Leaving `?2` silent after that made the silence the anomaly rather than the rule, which is why -53 answered it. The digit is a fact about the build, not about a bit: MSFT reaches the same conclusion from the other end by answering this query from the state machine's own parser mode (`adaptDispatch.cpp:1957-1958` `mapTemp(GetParserMode(Mode::Ansi))`), and neither ghostty nor wezterm carries a VT52 emulation at all (ghostty's only `vt52` matches are the `vt520`/`vt525` conformance levels, `device_attributes.zig:152-170`; wezterm: no match). `?2h`/`?2l` still vote, because refusing to change the parser is still a refusal. Legs: `geo_ckm`'s last block (answer 3, unmoved by `?2h` **and** `?2l`, the sets vote and the asks do not) and `Render.java::caseCursorKeys`, which reads `\e[?2;3$y` off CONIN$. Red arms: `dec-set` (3→1) host `fails=3`, `dec-silent` (case removed) host `fails=6` |
-| mouse `?9`, `?1000` `?1002` `?1003` `?1004` `?1005` `?1006` `?1015` `?1016` | **stored, answered, carried and armed (#81 = build -45, #95 = build -47) —— 但不出报告**：`mouseModes` holds one bit per number, `?N$p` answers 1/2 from its own bit, `RIS` clears the family and `DECSTR` does not, a rebuild carries it -- and since #95 (build -47) `sync_mouse` in `RenderJni.cpp` **does** arm the console: `ENABLE_MOUSE_INPUT | ENABLE_EXTENDED_FLAGS` with `ENABLE_QUICK_EDIT_MODE` cleared, borrowed only while a mouse bit is actually set, and the saved base written back verbatim on teardown -- quick-edit included, because that is the part the user notices if it is got wrong. Arming is **now also reporting**: `rc_mouse_report` (`Render.cpp:3674`) encodes the record and `RenderJni.cpp:844 write_input_units` is the same line the replies already use, so a report really reaches CONIN$ when an observer hands a record to `RenderJni.cpp:2799 mouseReport`. **This sentence was the other way up until build -54**; the owner's third ruling of 2026-09-28 struck "the reader is in jline" as an invalid reason (§4's fifth kind) and the encoder shipped instead. What still does not happen is the library *observing* on its own, and that refusal now names its cost (`ENABLE_VIRTUAL_TERMINAL_INPUT` turns the whole keyboard stream into text: `src/host/inputBuffer.cpp:706-715` → `:814`, `terminalInput.cpp:1266-1269`) | Only half of #81 landed **until build -54** -- the other half is the encoder, and it landed. Answering `?1000$p` = set is a claim about a bit the model really holds (the mode was asked for and remembered); it is **not** a claim that events will arrive, and the doc would be lying if it said so -- that is #83's "replies set and never speaks", one layer down. `?1001` stays in `RC_UN_MOUSE`, which is also what keeps that census row witnessed. `kmous` stays out of the terminfo entry for that reason (the entry's own kept-out line now names it, and `TERMINFO.md` carries the row with the two jline facts that make "declare it and the mouse works" a false enticement: `MouseSupport.hasMouseSupport` is a caps test, but the Windows leg's `trackMouse` is not, and `MouseSupport.keys()` binds the `ESC [ M` prefix with or without the capability) (`ANSI_TODO.md` #95 owned the remainder -- the borrow/return of the console input mode (**done, -47**), the reports themselves, and only then the caps entry -- and **#108 first closed the middle one with option ①, then reopened it the same day on the owner's third ruling** -- the encoder shipped in -54 (`rc_mouse_report` + the shared `write_input_units` line). The observation that made ① look right is still true and still worth knowing: dbcli's own `WinSysTerminal` already fills an `ESC [ M` template (`:526`) and writes it into the slave input pipe (`:559-561`, routed from `:480-481`) -- what that no longer buys is a *refusal*, because "the other layer already does it" is §4's fifth invalid reason. What the caps entry owes is now an open question, not a closed one: `kmous` says "this session sends those bytes", and whether it can say that depends on whether anyone hands a record to `mouseReport`. Side effect that turned out to be a real defect: a family is now the largest legal single-payload ask at **nine**, and the reply queue was eight deep -- the ninth answer was being dropped. The cap went to 64 (ghostty's mailbox depth, `termio/mailbox.zig:15`; msfterm appends without a bound, `ControlCore.cpp:109-111`; wezterm does not queue at all, `terminalstate/mod.rs:1516` -- **no reference drops an answer**), and `Render.java`'s queue leg now walks 8/16/24/32/48/64 and byte-compares every depth, then asks 72 and checks `asked == answered + refused` |
-| `?1004` focus reporting, in its own right (#106) | **stored and answered (it is one of the nine bits above) -- and since build -54 it *is* encoded into `\E[I`/`\E[O` by `rc_focus_report` (`Render.cpp:3806`), with `RenderJni.cpp:2816 focusReport(ph, focused, inject)` as the door an observer hands a record through. The row used to read "still never encoded"; that was struck with #108's option ① on the owner's third ruling. The reason is no longer "there is no source"** | Measured 2026-09-28 in three hosts with `cache/f106/focusprobe.py` (matrix: `cache/f106/matrix.txt`): a real `ReadConsoleInput` loop got **FOCUS_EVENT records in every host** -- 1 in classic conhost (`ConsoleWindowClass`), 1 in Windows Terminal (`PseudoConsoleWindow`), **3 in a real ConEmu window**, each carrying `bSetFocus=True`, with `ENABLE_VIRTUAL_TERMINAL_INPUT` toggled both ways (`mode_after` 503 → 1015). So the sentence this row used to carry -- "控制台记录里没有焦点事件来源" -- was **false**, and category ① (no carrier) does not apply. What survives is category ③: encoding a record into a report belongs to whoever owns the input read, and this library does not read CONIN$ (#83's steal-the-keys floor, #95's borrow-and-return, #104's borrowed host parser). The cost is stated rather than hidden: **while this library owns the output, `?1004h` is stored by the mouse family (`Render.cpp:1612`) and never reaches conhost's own parser, so the host's own translation -- `InputBuffer::WriteFocusEvent` calls `_termInput.HandleFocus()` and emits the bytes when the handle is in VT-input mode (`inputBuffer.cpp:585-600`, `terminalInput.cpp::HandleFocus`, gated on `Mode::FocusEvent` set by `CSI ?1004h`, `DispatchTypes.hpp:541`) -- is switched off by us.** Second honest finding: delivery is **not one record per focus change**. Twelve foreground transitions, each verified by reading `GetForegroundWindow`/`IsIconic` back rather than assuming, produced one record in the two conhost hosts and three in ConEmu -- while the same run collected **12 `MENU_EVENT` records** from the ALT taps the toggles needed, which is the control that says the reader was reading. A reporter therefore has to live where coalescing is possible. **Unproven, named so**: the "`?1004h` + VT-input ⇒ the record becomes `\E[I` text" arm was **not** measured -- the probe's `--emit1004` write failed (`{borrowed_vtp: False, write_ok: False, written: 0, mode_before: 0}`: the CONOUT$ it opened is not this session's), so the `[0, 0]` in `vt_focus_sequences` **must not be read as "VT mode produces no sequences"**; it only says 1004 never got in. The reproduction recipe is in `ANSI_TODO.md` #106. No library leg was added and no byte changed: nothing about this library's behaviour moved, and inventing an assertion over a behaviour the library does not own is the decoration §5 exists to refuse. The ownership question moved to **#116** (jline/dbcli input side) |
-| bracketed paste `?2004` | counted `RC_UN_DECBP`; there is no marker producer (a role mismatch: the paste is performed by conhost's QuickEdit, read by jline's pump, and the DLL is the output leg and **must not** read CONIN$ and steal input) | an optional upgrade: the DLL stores the bit + answers DECRPM + exposes it, and the host's input pump marks bursts -- see ANSI_TODO §6 |
-| every mode `mode_status` has no case for | **answered `0 = not recognised` since build -54 (GAP G11)** -- `Render.cpp:2197` `if (!mode_status(g, g->args[0], &st)) st = 0;`. Only the **set/reset** side is counted `RC_UN_MODE` | ⚠ This cell used to enumerate the answered spellings ("other than `?6n`, `?3`, `?12`, …"), and an enumeration in a doc rots the moment a ticket lands: #114 added `?1` and #109 added `?3` without this row moving, which left it naming `?3` as counted while `Render.cpp` was answering it. **Then -54 made the whole "counted on the ask" half false**: an unmodelled number no longer casts a mode vote, because it now gets an answer (0), and `geo_decrpm_unmodelled` (`RenderCheck.cpp:4107`) asserts exactly that -- "every id gets an answer / with the digit that says so / and no mode vote, because the question was answered". The authority is and stays the switch itself: `Render.cpp::mode_status` (4 IRM, 6 DECOM, 7 DECAWM, 25 cursor, 47/1047/1049 alt, 69 DECLRMM, 1 DECCKM, 3 DECCOLM-as-permanent-4, 2 DECANM-as-permanent-3, 2004 paste, 2026 sync, 2048 in-band, the nine mouse numbers). What is genuinely still counted includes the extended `CSI ? 6 n` CPR, `?1034`, `?2000`, `?2031`, the non-private `7` GATM and `20` LNM -- each checked against upstream: no case at all, or a case whose body is empty or commented out. IRM is modelled since #77 and answers `4`/`?4` (see §2.5). ⚠ the old cell name in that sentence, `geo_decrpm_silence`, is now only a `grid_ok` label at `RenderCheck.cpp:4203`; the function is `geo_decrpm_unmodelled` |
-| `CSI ? 6 n` extended CPR | **deliberately unanswered**, counted | answering an extended question with the plain form reports a position nobody asked for; refusing is the option that cannot be wrong |
-| `?2027$p` / `?1048$p` | ~~**deliberately unanswered**, counted `RC_UN_MODE`~~ → **answered 0 = not recognised since build -54** (`Render.cpp:2197`; leg `geo_decrpm_unmodelled`, `RenderCheck.cpp:4107`). The *set* side still votes `RC_UN_MODE` -- `?2027h` is still a refusal, and `RenderCheck.cpp:4161-4162` is that half's leg | **Two changes of position in one cell, both on the record.** (1) The reason this cell first gave -- that digits 3/4 "mean opposite things in DEC/xterm and in jline4's own documentation" -- was **false**: all three readers agree digit for digit (`DispatchTypes.hpp:557-558` `PermanentlyEnabled = 3` / `PermanentlyDisabled = 4`; xterm's ctlseqs; jline4's javadoc), which #93 established. (2) The silence that replaced that reason was itself struck on the 2026-09-28 GAP review (G11): all three references answer an unmodelled number -- MSFT initialises `state = DECRPM_Unsupported` before its switch (`adaptDispatch.cpp:1939`), ghostty's `getReport` falls through to `.not_recognized` (`modes.zig:80-102`), wezterm sets `recognized = false` and replies anyway (`mod.rs:1520-1526`) -- so 0, which claims only "this model holds no such state", is the one digit that cannot be wrong here. What survives untouched is the **mode** half: 2027 is grapheme-cluster reflow and this build wraps at cells with no cluster state, and 1048 is a save/restore **event**, not reportable state. The permanent digits stay only where they were *earned*: `?3`→4 (#109, measured), `?2`→3 (#114, a fact about the parser), and nothing joins that company without a fact of its own. ⚠ the leg label in the old text, `geo_decrpm_silence`, no longer names a function -- it survives only as a `grid_ok` message at `RenderCheck.cpp:4203`; cite `geo_decrpm_unmodelled` |
-| `?3` DECCOLM (132 vs 80 columns) | **refused, and now answered with the permanent value 4** (`#109`, build -52): `?3$p` replies `CSI ?3;4$y`, `?3h`/`?3l` still cast `RC_UN_MODE` and change nothing on the screen | Measured on 2026-09-28 in both hosts, geometrically read back (`cache/w109/`). In a classic console (`ConsoleWindowClass`) `SetConsoleScreenBufferSize(X=2040)` returns TRUE and leaves **the visible rect at 100x30 and the window at 633x416 px** -- it is the scrollback width, not the columns; the only call that moves the visible width is `SetConsoleWindowInfo`, and taking it to 140 columns took the user's window from `633x416 px` to `873x416 px` in the same breath. In WT (`PseudoConsoleWindow`) the same call returns TRUE and the shadow rect reads 140 while a **second process** (`cache/w109/wtrect.ps1`, `EnumWindows`+`GetWindowRect`) sampled the real terminal window eight times across a 14 s hold and got `(200,208)-(1209,723) = 1009x515 px` every time: under a pseudo-console the library cannot resize what it is asked to resize, it can only make the application read a width the human is not being given. `ResizePseudoConsole` is exported on this box but its first argument is the `HPCON` that `CreatePseudoConsole` hands to the *creator* (`winconpty.cpp:509`; in the oracle only the creator calls it -- `ConptyConnection.cpp:442/610/618`), so a process inside the console has nothing to pass. References, all three: MSFT does resize -- but only behind `Mode::AllowDECCOLM` (xterm's `?40h`), and the resize it performs is `_api.ResizeWindow` (`adaptDispatch.cpp:1715-1731`, call at :1723); ghostty ignores `?3h` without mode 40 and clears the bit while it does (`Terminal.zig:3958-3965`), and with it on resizes **its own grid**, its own comment admitting that "breaks the expectation around modern terminals that they resize with the window" (:3951-3957); wezterm has no DECCOLM arm at all. So the refusal is category ③ -- it collides with the rule #101/#103 hold the geometry to: the host decides the size and this library follows it -- and the cost is stated plainly: an application that asks for 132 columns will not get them here. **Why 4 and not the ticket's 1 or a friendly 2**: #93 fixed the vocabulary to 1=set / 2=reset (`DispatchTypes.hpp:555-558`), so a 1 would claim 132 columns are active, and jline4 documents a 2 as "reset, **but can be set**" (`AbstractTerminal.java:665`) -- the measurement is exactly the denial of that clause. 4 is the digit whose meaning the measurement established, and jline4's reader turns it into `NOT_SUPPORTED` (:685-689), which is the conclusion a caller should reach. Legs: `geo_deccolm` (host) and `Render.java::caseDeccolm`, which reads the reply **off CONIN$ as bytes**. `3 = permanently set` is still never sent by this library, and this row is the first place a permanent digit appears at all -- `RenderJni.cpp`'s DECRPM note says why. **`?40` (xterm's "allow DECCOLM") stays silent on purpose**: MSFT and ghostty both put the resize behind it, but here the gate would open onto nothing -- the resize is refused for a reason no mode bit can lift -- so answering `?40$p` either way would advertise a lever that does not exist |
-| `?2048 h/l` and `?2048$p` | **no longer a refusal (#82, build -37)**: the bit is stored, `$p` answers 1/2, **and the report is really sent** | This row used to share a cell with 2027/1048, on the grounds that "answering `permanently set` is claiming that resize reports enter the data stream" -- that sentence was never wrong, what was wrong is **doing only its first half**. What #82 supplies is exactly the subject of that sentence: the data stream now really does carry an `ESC [ 8 ; winRows ; cols t` (`RC_REP_WINOP` at `RenderJni.cpp:709-718`, landing at the head of the flush queue at `:781-785`), so 1/2 went from "a guess" to "backed by evidence". **3/4 were still not sent when this row was written, and #82's own reason for that has not changed** -- but the blanket "never" did not survive: `?3` answers 4 since -52 and `?2` answers 3 since -53, each because the build has a *fact* about permanence rather than a bit. 2048 has neither, so it stays on 1/2. `geo_inband` (`RenderCheck.cpp:3282-3288`) pins "only the private spelling `?2048$p` is answered, the non-private `2048$p` is not answered and casts a vote". When it is enabled the current shape is **not** reported (a deliberate divergence from ghostty `stream_terminal.zig:1664-1667`, which replies once on the spot at `?2048h`): those are bytes the program did not write, same family as `u6`/`u7` and OSC 52 being off by default |
+| Item | Why |
+|---|---|
+| `CSI 3J` (erase scrollback) | behaves as `2J` — the user's scrollback is not this library's to delete |
+| DECCARA / DECRARA (attribute rectangles) | not modelled; everything else in the rectangular family is (§2.4) |
+| DECRQCRA (rectangle checksum) | nobody else in the reference set has it either |
 
-### Reports and windows
+### 3.5 Reports
 
-| Item | Behaviour | Note |
-|---|---|---|
-| `CSI 18 t` | **answered since #79** (build -33, I42): `CSI 8 ; rows ; cols t`, from the model's own viewport -- `winRows`, not the model's `rows`, and the buffer-width `cols` (MSFT's `function - 10` arithmetic, `adaptDispatch.cpp:3490`; ghostty requires the same lone parameter, `stream.zig:2398-2402`) | the reply bytes are the seam's, so the live leg reads them back byte for byte |
-| `CSI 19 t` | **silence, by the user's ruling of 2026-09-26**, counted `RC_UN_REPORT` | xterm's 19t reports the *screen* as a geometry distinct from the text area; a console library has one such number, so answering with 18t's values under a `9` prefix would assert a distinction this build cannot show. Neither reference implements it. Silence is the answer that cannot be wrong, and the count keeps the ask visible |
-| `CSI 14 t` / `CSI 16 t` (pixels) | silence, counted | the only pixel figure reachable here is `GetConsoleFontSize` times a cell count, and MSFT's own 14t is not a measurement either -- it reports `Size() * SixelParser::CellSizeForLevel()`, a nominal cell chosen for Sixel emulation (`adaptDispatch.cpp:3512-3517`). Quoting a nominal constant we did not choose would be a fabricated measurement of the user's window |
-| `CSI 22 t` / `CSI 23 t` (title stack) | **push and pop since #79**, sub-codes 0/1/2 (the console has one title string, so xterm's icon/title/both all name it); 3..6 are counted | depth two, newest last, a third push evicts the oldest; a pop restores through the same sink an OSC 0 uses. With nothing saved it restores **nothing** and votes: the console's pre-session title is a value this library never observed, and the parser is console-free by construction |
-| DA with parameters (`CSI > 0 ; 1 c` and friends) | counted `RC_UN_REPORT` | upstream has no such reply spelling |
-| OSC 8 (hyperlinks) | counted `RC_UN_OSC_OTHER` | **not supported** (#56, ruled out by the user on 2026-09-26): a link is a **range**, not a cell, so it would have to live beside `rowWrap[]` and inherit I20's never-readable-back debt; the sequence alone buys the user nothing visible. OSC 52 landed as I36 (§2.8) and does not belong to this row, and neither does the palette family 4/10/11/104/110/111, landed as I34 |
-| the **dangerous half** of ConEmu's private OSC `9` (`9;1` sleep / `9;2` MessageBox / `9;3` set-environment / `9;6` GuiMacro / `9;7` **DoProcess**) | counted `RC_UN_OSC_PRIV`, **never executed** | #687's RCE: the only floor under executing the semantics is not implementing them. The safe half -- `9;4`/`9;9`/`9;12` -- is in §2.8: stored to be read is not the same as executed |
+| Item | Why |
+|---|---|
+| `CSI ? 6 n` (extended cursor report) | answering the plain question with the extended spelling reports a position nobody asked for |
+| `14t` / `16t` (pixels), `19t`, `20t` | pixel figures here would be fabricated measurements; one geometry has one name |
+| device-status beyond 5/6, answerback, terminal-parameter request | each would state a fact about a device this library is not |
+| termcap query (`XTGETTCAP`) | the capability table this session has is the terminfo entry; two sources for one table drift |
+| `?2048` report contents | rows and columns only, never pixels; nothing is sent at the moment of enabling |
 
-### Character sets and graphics
+### 3.6 Graphics, hyperlinks and payload protocols
 
-| Item | Behaviour | Note |
-|---|---|---|
-| `ESC ) c` G1, `ESC % G` UTF-8 selection | counted `RC_UN_SUP` | same as upstream's default arm; the input is UTF-16 already |
-| `ESC P/X/^/_` (DCS/SOS/PM/APC) | the payload is consumed with OSC's framing and then **discarded whole**, counted `RC_UN_DCS` | no Sixel or kitty graphics, no XTGETTCAP. **#107 made that fate a measurement instead of a sentence**: a real-shaped Sixel body (bare newlines, `$` repeats, `,` parameters, a `\`-escaped colour) between two visible markers paints nothing and votes once in the DCS bucket; a CAN abandons it; and a body split across two chunks votes **nothing** until the terminator arrives, because that is resumable state rather than an error (deviation #2's own rule, which the first draft of this leg got backwards and the gate caught). Legs: `gm_osc_family` (host) and the tail of `caseOscTitle` (live, reading the console grid back). Why the DA1 still says `;4` while the payload is eaten: that bit is Microsoft's own (`adaptDispatch.cpp:1441`, with a `SixelParser.cpp` behind it in the same clone), the reply is copied from the host on purpose, and the consumer that used to be fooled by it does not exist on the loaded chain at all -- see `ANSI_TODO.md` #107 and `JLINE_CHANGES.md`'s Sixel section |
-| SS2/SS3 shifts | only the introducer is swallowed; the byte after it prints normally | not eating the glyph is deliberate (eating one costs a column) |
+| Item | Why |
+|---|---|
+| DCS / SOS / PM / APC payloads | the container works; the payload is consumed and discarded whole |
+| Sixel, kitty graphics, iTerm2 images | there is no pixel plane in front of a buffer this library does not own |
+| OSC 8 hyperlinks | a link is a range, not a cell; the sequence alone buys a user nothing visible |
+| OSC 52 clipboard **read** | answering would place the user's clipboard into the next command line |
 
-### The wrap model
+### 3.7 Input side
 
-| Item | Behaviour | Note |
-|---|---|---|
-| deferred wrap (pending wrap / postponing DECAWM) | **not implemented** | all four discriminators (CR+Y after a full row, BS+Y, EL, CUA+Y) agreed on both legs; switching to deferred would only create a new divergence (upstream's breeding ground for the #2404 family). Unrelated to `?7`: what that postpones is "the cursor stays on the last cell after it is filled", and this model moves on immediately, wrap mode or not |
-| DECAWM `CSI ?7 h/l` (**implemented**, I35, #61) | on = wrap at the right edge (unchanged); **off = the last cell is overwritten repeatedly**: the cursor holds at the margin, the row takes **no** `RC_WRAP_FORCED` claim, no row below is started, and a glyph that cannot fit is dropped **whole** (and that cell cleared to blank) | wrapping is this model's behaviour rather than `ENABLE_WRAP_AT_EOL`'s, which is why it can be implemented at all. Dropping whole = MSFT `Row.cpp:474-494` ("Ignore the character. There's no correct alternative way to handle this situation") plus its anti-deadlock guard; clearing the orphaned back half when a narrow glyph overwrites a wide one's front half is conhost's cluster trim (I16's "the pair is one unit"); a cursor never rests inside a wide glyph (the `step_back_col` rule). `RIS`/`DECSTR` restore the mode; a resize rebuild **keeps** the current value (a resize is not a request to start wrapping again); DECRQM answers 1 or 2 for `?7`; `?7` no longer votes `RC_UN_MODE`. The caps entry **still** carries no `smam`/`rmam` -- see §2.5 for why |
+| Item | Why |
+|---|---|
+| bracketed-paste execution | the paste markers are bytes injected into the input stream; that is the host program's act, not this library's |
+| kitty keyboard protocol, modified-key reporting | key bytes are produced by the input leg; nothing here stores a pushed flag set to answer a query about |
 
----
+### 3.8 The wrap model
 
-## 4 Deliberate divergences from ConEmu (each of them on the record)
-
-1. **An ESC inside an unfinished CSI/OSC abandons and restarts** (`\e[3\e[31m` turns red; ConEmu parks the ESC in
-   Pvt and keeps swallowing, printing the text `31m`) -- Render.h deviation #1.
-2. **A resumable state machine instead of the 512-byte reparse window** (upstream's reparse silently drops what
-   does not fit) -- deviation #2.
-3. **Parameter accumulation saturates at 65535** instead of reproducing upstream's int overflow -- deviation #3,
-   differing only on absurd input.
-4. **ECH erases one row, not a tail of rows**: `CSI Ps X` clears `Ps` cells and stops at the end of the
-   cursor's row (both references), where upstream walks down through the following rows and its per-row
-   formula is one cell off besides. Until build -25 this project copied the walk-down and fixed only the
-   off-by-one, on the argument that buffer-relative filling is ConEmu's shape; that argument is withdrawn
-   (§2.4's ECH row), because the walk deletes text the application never named.
-5. **IL/DL clamp to the region**: when n exceeds the region's height only the region is filled (upstream writes
-   `dwSize.X * n` starting at the cursor's row, overrunning whatever sits below the region bottom).
-6. **IND is region-aware**: upstream's ForwardLF ignores the scroll region; here LF/IND/NEL/RI all agree about
-   which rows scroll.
-7. **`move_row`'s region clamp uses model coordinates**: upstream compares absolute buffer rows against a
-   window-relative cursor, off by exactly the window's position.
-8. **Reply identities are conhost's strings** (DA1 `?61;…`, DA2 `>0;10;1`), not ConEmu's `?1;2c` / `>0;136;0`: a
-   declined chunk is answered by conhost itself, and the two must not disagree.
-9. **The supplementary planes keep their original units** (`put_pair`), while `REP` stores a full code point
-   (upstream's WCHAR stores half a surrogate and replays the fragment twice).
-10. **IL/DL's region guard**: they do nothing when the cursor is outside the region. That is not "they can, we
-    cannot" -- it is us being **closer to VT**: xterm and MSFT both act inside the region only, and upstream
-    ConEmu lets a cursor parked above the top pull rows over it, which is its own looseness.
-11. **DECSTBM no longer mirrors upstream in two places** (the outcome of the 2026-09-25 review of "upstream does
-    not do it either"): a one-parameter call takes the missing edge from the viewport, and an inverted pair is
-    ignored rather than cleared -- both agree with MSFT/xterm and differ from `Ansi.cpp:3142-3150`. The clamping
-    and the `Pt==Pb` tolerance still agree with upstream (the reasons are in that §2.4 row).
-12. **`SetConsoleScreenBufferInfoEx` eats a window row on the round trip** (measured 2026-09-25): writing the
-    struct straight back after reading it moves `srWindow.Bottom` from 29 to 28 (a 30-row window becomes 29), the
-    next plan then reads NOGEOM and **declines the whole frame** -- setting a colour would shrink the user's
-    viewport and never paint again; the palette restore in `close()` walked into the same thing (a 24-row leg read
-    back 23). The countermeasure is to re-read the plain info after writing and, if the console disagrees, put the
-    rect and size back with `SetConsoleScreenBufferSize` + `SetConsoleWindowInfo`; both paths share one
-    `apply_palette`. **Any new feature that writes through InfoEx has to carry this fix.**
+| Item | Why |
+|---|---|
+| deferred (pending) wrap | immediate wrap is the measured behaviour of the console being replaced; switching would change what every line-ownership rule reads |
+| double-width / double-height lines (`ESC # 3`–`# 6`) | a doubled row changes what the viewport is, and that number is what every scroll and report rule is written against |
 
 ---
 
-## 5 Bounds and limits
+## 4 Limits
 
-| Limit | Value | Behaviour past it |
+| Limit | Value | Past it |
 |---|---|---|
-| `RC_MAX_COLS` | 4096 | `open()` refuses (OPEN_WIDE) and the caller keeps using the old Java writer |
-| `RC_MAX_ROWS` | 256 | refused at >= 256 rows (OPEN_NO_GUTTER); the gutter is a full screen at <= 128 rows and shrinks from 129 to 255 |
-| `RC_CSI_ARGS` | 16 | extra parameters are dropped |
-| `RC_TITLE_MAX` | 256 | the length of an **applied** title: clipped plus `nTitleTrunc` counted, the sequence still consumed |
-| `RC_OSC_MAX` | 32768 | how many units of OSC/DCS payload are **collected** (`nOsc`). Past it a title is still clipped to `RC_TITLE_MAX` and counted, while OSC 52 is refused whole (`nClipBad`) -- truncated base64 is not a message |
-| `RC_CLIP_ENC_MAX` | 16384 | the encoded-length cap on an OSC 52 payload; past it the request is refused whole |
-| `RC_CLIP_MAX` | 12288 | the decoded byte cap, which is also `rc_clip_take`'s cap, so "it does not fit" is decided while parsing |
-| `RC_REPORT_MAX` | 8 | a full queue **refuses** the new query and counts `nReportFull`; older entries are never evicted |
-| `RC_SGR_ECHO_MAX / RC_SGR_CAP_MAX` | 1024 / 64 | the SGR echo exists only as a witness stub; overflow counts `nSgrDrop` and never disturbs parsing |
-
----
-
-## 6 The counters (the census) (`RcUnsupported`, Render.h:94)
-
-Slot numbers are a **positional contract** with the JNI side and are never renumbered.
-
-| Counter | Trigger | sets `modelSuspect`? |
-|---|---|---|
-| `RC_UN_SUP` | a CSI/ESC final this switch has no case for (the `default:` arm) => **suspect**; and the known-inert `Z`, `q` with no interim, and the other spellings of `p` (through `ignored()`) => **not suspect** | the default arm only |
-| `RC_UN_DECSTBM` | a dead slot (`CSI r` is modelled), kept only for the positional contract | no |
-| `RC_UN_ALTBUF` | the alternate-screen snapshot failed to allocate | no (the sequence is consumed and the screen did not move) |
-| `RC_UN_MOUSE` | the mouse mode family | no |
-| `RC_UN_MODE` | private-prefixed SGR, unmodelled DEC/ANSI modes, `ESC g/H/=/>` and friends | no |
-| `RC_UN_DECBP` | bracketed paste 2004 | no |
-| `RC_UN_OSC_PRIV` | ConEmu's private OSC 9 (including unterminated) | no |
-| `RC_UN_OSC_OTHER` | any other OSC code, an unterminated title, a refused or unterminated 133 | no |
-| `RC_UN_DCS` | DCS/SOS/PM/APC | no |
-| `RC_UN_REPORT` | queries that are not answered (`19t`/`14t`/`16t`, a window op with a parameter list that is not a query, a `23t` with nothing to restore, DA with parameters, `?6n`, DSR other than 5/6) | no |
-| `RC_UN_COLON` | **an arm of a parsed colon sequence that this build does not carry** (`4:` styles above single, `58:`, a colour whose kind is unknown, a leftover sub-parameter, a colon on any final but `m`) -- #78 changed the meaning; a carried colon arm votes nothing | no |
-| `RC_UN_OSC_CLIP` | one of OSC 52's refusals: policy off, a selection this platform has no place for, a payload that failed the strict decode, a request over the cap -- or a **read** | no |
-
-What goes with them: once `modelSuspect` is set the painter **re-adopts the console once** and clears the bit
-(self-healing); besides that there are the family-specific tallies `nTitleSet/nTitleTrunc`,
-`nClipSet/nClipBad/nClipSel/nClipRead` (plus `g_clipCalls/g_clipFails` on the painter's side),
-`nAltSwitch/nAltFail`, `nReportOk/nReportFail/nReportFull` and `nPromptMark`. The 12th slot arrived at -24, and
-`STAT_TITLES = STAT_UNSUPPORTED + RC_UN_MAX` -- so **adding one slot shifts the offset of every family after
-it**, and `Render.java`'s and `NativeRenderer`'s two hardcoded tables have to move by +1 in lockstep (the field
-of zeroes the live gate printed on its first -24 run is the receipt for that).
-
-The synchronized-output family (`RcGrid`, deliberately not in `RcUnsupported`: they record *how the mode was
-used*, not *what is unmodelled*): `nSyncEngages` (how many regions opened -- the denominator for all the others),
-`nSyncNested` (a second BSU inside a region), `nSyncHeld` (frames deferred), `nSyncTimeout` (the clock expired,
-which also cleared the mode), `nSyncOverflow` (the gutter filled, the region kept open), `nSyncDeclined` (a chunk
-was refused, so the region ended and the re-adopt path ran). With the live bit `sync` that is seven slots at the
-tail of `stats()`, and the same positional contract: `Render.java`'s `S_SYNC*`, `NativeRenderer`'s `SLOT_SYNC*`
-and `RenderJni.cpp`'s `STAT_SYNC` move together, and the live gate has an assertion holding the array length.
+| grid width × height | 4096 × 256 | the renderer refuses to engage and the application keeps its existing writer |
+| parameters per sequence | 16 | surplus dropped |
+| parameter value | 65535 | saturates |
+| title length | 256 | truncated and still applied |
+| OSC/DCS payload collected | 32768 units | a title is truncated and applied; a clipboard payload is refused whole |
+| clipboard decoded size | 12288 bytes | refused whole |
+| queued replies | 64 | a full queue refuses the **new** question; nothing already asked is dropped |
+| title stack | 2 deep | a third push evicts the oldest |
