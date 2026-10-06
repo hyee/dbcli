@@ -761,7 +761,15 @@ final public class More {
                     break;
                 case PREV_WORD:
                     newPos = begPos;
-                    for (int i = curPos; i > begPos; ) {
+                    /* Step back over any spaces the cursor is sitting after first. Without this the scan's
+                       first candidate is that very space, newPos comes back as i + cc == curPos, and Alt+B
+                       does nothing however many times it is pressed -- which is what NEXT_WORD never suffers,
+                       because it lands after the space it found rather than before it. */
+                    int afterSpace = curPos;
+                    while (afterSpace > begPos && buffer.charAt(afterSpace - 1) == ' ') {
+                        afterSpace--;
+                    }
+                    for (int i = afterSpace; i > begPos; ) {
                         int cp = Character.codePointBefore(buffer, i);
                         int cc = Character.charCount(cp);
                         i -= cc;

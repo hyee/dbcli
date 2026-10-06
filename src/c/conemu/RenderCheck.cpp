@@ -1524,7 +1524,10 @@ static void geo_gaps(void)
   eq_u("the cursor is at the window's top row, not at the saved place", (unsigned)g.cy,
        (unsigned)(g.rows - g.winRows), "MSFT adaptDispatch.cpp:3161 puts it at 1,1 of the page");
   eq_u("and at column 0", (unsigned)g.cx, 0u, "");
-  eq_u("the save is still the save (DECALN does not write it)", (unsigned)g.saveY, (unsigned)savedY, "");
+  eq_u("the save is still the save (DECALN does not write it)", (unsigned)g.carried.saveY, (unsigned)savedY, "");
+  eq_u("and neither is the saved column", (unsigned)g.carried.saveX, (unsigned)savedX,
+       "the row above is the twin this test lost: screen_alignment touches saveOrigin only, so a regression "
+       "that clobbered the saved column would have passed here with savedX declared and never read");
   eq_u("every viewport row is 'E'", (unsigned)RC_CELLS(&g, g.rows - g.winRows)[0].ch, (unsigned)'E', "");
   eq_u("across the whole width", (unsigned)RC_CELLS(&g, g.rows - 1)[19].ch, (unsigned)'E', "");
   int allE = 1;
@@ -1538,7 +1541,7 @@ static void geo_gaps(void)
   eq_u("origin mode is off", (unsigned)g.carried.originMode, 0u, "adaptDispatch.cpp:3156");
   eq_u("the saved origin went with it, so a later DECRC cannot walk into a band that is gone",
        (unsigned)g.carried.saveOrigin, 0u, "");
-  eq_u("the vertical margins are gone", (unsigned)g.regSet, 0u, ":3157");
+  eq_u("the vertical margins are gone", (unsigned)g.carried.regSet, 0u, ":3157");
   eq_u("the horizontal pair is gone", (unsigned)g.carried.marginSet, 0u, ":3158-3159");
   eq_u("and the right margin is the page edge again", (unsigned)g.carried.rightMargin, (unsigned)(g.cols - 1), "");
   put(&g, "x");
@@ -1731,7 +1734,7 @@ static void gm_wrap_suspect()
   put(&g, "\033[2;4r");
   eq_u("a scroll region is counted nowhere", un(&g, RC_UN_DECSTBM), 0, "the slot is dead but kept in place");
   eq_u("and makes the model suspect nowhere", (unsigned)rc_model_suspect(&g), 0, "its rows are known");
-  eq_u("with the region itself live", (unsigned)g.regSet, 1, "");
+  eq_u("with the region itself live", (unsigned)g.carried.regSet, 1, "");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[?1049h");
@@ -1795,7 +1798,7 @@ static void gm_state_reset()
        "the consequence the whole correction is about: this is U+2500 on the screen for the rest of the "
        "session when any of the four facts above is wrong");
   eq_u("the rendition is back to normal", (unsigned)(g.attr & 0x0F), 7, "");
-  eq_u("the region is put back to the page", (unsigned)g.regSet, 0, "");
+  eq_u("the region is put back to the page", (unsigned)g.carried.regSet, 0, "");
   eq_u("the cursor shape is left alone", (unsigned)g.cursorShape, 5,
        "DECSTR's list has no shape in it, and the application that asked for one is still on this screen");
   put(&g, "\033[8");
@@ -2592,9 +2595,9 @@ static void geo_cursor()
 
   rc_reset(&g, 20, 6, 0x07);
   put(&g, "\033[?25l");
-  eq_u("DECSCNM ?25 hides", (unsigned)g.cursorVisible, 0, "");
+  eq_u("DECSCNM ?25 hides", (unsigned)g.carried.cursorVisible, 0, "");
   put(&g, "\033[?25h");
-  eq_u("?25 shows", (unsigned)g.cursorVisible, 1, "");
+  eq_u("?25 shows", (unsigned)g.carried.cursorVisible, 1, "");
   put(&g, "\033[?47h\033[?1049l\033[?1000h\033[?2004h\033[1;2r\033[c");
   eq_u("alt switches taken", g.nAltSwitch, 2, "47 in and 1049 out -- one behaviour for the family");
   eq_u("nothing counted as an unmodelled alt buffer", g.nUnsupported[RC_UN_ALTBUF], 0, "");
@@ -2622,7 +2625,7 @@ static void geo_cursor()
     eq_u("popping an empty queue", (unsigned)rc_report_take(&g, NULL), (unsigned)RC_REP_NONE, "so a drain loop can stop");
   }
   eq_u("DECSTBM painted nothing", g.nCells, 0, "modelled, and a region paints no cells");
-  eq_u("and the region it asked for is live", (unsigned)g.regSet, 1, "`CSI c` above is DA, not RIS");
+  eq_u("and the region it asked for is live", (unsigned)g.carried.regSet, 1, "`CSI c` above is DA, not RIS");
 }
 
 static void geo_alt()
@@ -2687,7 +2690,7 @@ static void geo_alt()
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "\033[?1049h\033[?25l\033[?1049l");
-  eq_u("hidden inside the alt, hidden outside", (unsigned)g.cursorVisible, 0, "as upstream ships it");
+  eq_u("hidden inside the alt, hidden outside", (unsigned)g.carried.cursorVisible, 0, "as upstream ships it");
 
   rc_reset(&g, 20, 4, 0x07);
   put(&g, "main\r\n\033[?1049h\033[1;1Hgone\r\nmore\033c");
@@ -2939,10 +2942,9 @@ static void geo_region()
 
   rc_reset(&g, 8, 5, 0x07);
   put(&g, "\033[2;4r");
-  eq_u("region live", (unsigned)g.regSet, 1, "");
-  eq_u("region top", (unsigned)g.regTop, 1, "1-based parameters, counted from the viewport");
-  eq_u("region bottom", (unsigned)g.regBot, 3, "");
-  eq_u("a region homes nothing", (unsigned)g.cy, 0, "SetScrollRegion has no SetConsoleCursorPosition");
+  eq_u("region live", (unsigned)g.carried.regSet, 1, "");
+  eq_u("region top", (unsigned)g.carried.regTop, 1, "1-based parameters, counted from the viewport");
+  eq_u("region bottom", (unsigned)g.carried.regBot, 3, "");
   eq_u("and a modelled sequence leaves the frame trusted", (unsigned)g.modelSuspect, 0, "");
 
   put(&g, "\033[H1\033[2;1H2\033[3;1H3\033[4;1H4\033[5;1H5");
@@ -2958,28 +2960,28 @@ static void geo_region()
   eq_u("and is still counted as a scroll", g.nScrolls, 1, "");
 
   put(&g, "\033[3;2r");
-  eq_u("top above bottom leaves the live region alone", (unsigned)g.regSet, 1, "");
-  eq_u("at its own top", (unsigned)g.regTop, 1, "");
-  eq_u("and its own bottom", (unsigned)g.regBot, 3, "");
+  eq_u("top above bottom leaves the live region alone", (unsigned)g.carried.regSet, 1, "");
+  eq_u("at its own top", (unsigned)g.carried.regTop, 1, "");
+  eq_u("and its own bottom", (unsigned)g.carried.regBot, 3, "");
   put(&g, "\033[2r");
-  eq_u("one argument names the top", (unsigned)g.regTop, 1, "row 2 of the viewport");
-  eq_u("and the bottom defaults to the viewport's last row", (unsigned)g.regBot, 4, "");
+  eq_u("one argument names the top", (unsigned)g.carried.regTop, 1, "row 2 of the viewport");
+  eq_u("and the bottom defaults to the viewport's last row", (unsigned)g.carried.regBot, 4, "");
   put(&g, "\033[r");
-  eq_u("no argument is the reset form", (unsigned)g.regSet, 0, "");
+  eq_u("no argument is the reset form", (unsigned)g.carried.regSet, 0, "");
   put(&g, "\033[1;99r");
-  eq_u("a whole-viewport request is normalised away", (unsigned)g.regSet, 0,
+  eq_u("a whole-viewport request is normalised away", (unsigned)g.carried.regSet, 0,
        "whatever the parameter that got it there: the paths that carry history out of the gutter branch on this");
   rc_reset(&g, 8, 5, 0x07);
   put(&g, "\033[4;99r");
-  eq_u("a bottom past the viewport clamps instead of refusing", (unsigned)g.regSet, 1,
+  eq_u("a bottom past the viewport clamps instead of refusing", (unsigned)g.carried.regSet, 1,
        "MSFT would ignore this whole request; the app asked for rows 4..end and that is what it gets");
-  eq_u("top", (unsigned)g.regTop, 3, "");
-  eq_u("bottom is the viewport's last row", (unsigned)g.regBot, 4, "");
+  eq_u("top", (unsigned)g.carried.regTop, 3, "");
+  eq_u("bottom is the viewport's last row", (unsigned)g.carried.regBot, 4, "");
 
   rc_reset(&g, 8, 5, 0x07);
   put(&g, "\033[0;3r");
-  eq_u("CSI 0;3r means CSI 1;3r: top", (unsigned)g.regTop, 0, "");
-  eq_u("and bottom", (unsigned)g.regBot, 2, "");
+  eq_u("CSI 0;3r means CSI 1;3r: top", (unsigned)g.carried.regTop, 0, "");
+  eq_u("and bottom", (unsigned)g.carried.regBot, 2, "");
 
   rc_reset(&g, 8, 5, 0x07);
   put(&g, "\033[H1\033[2;1H2\033[3;1H3\033[4;1H4\033[5;1H5\033[2;4r\033[1;1H");
@@ -3046,13 +3048,13 @@ static void geo_region()
 
   rc_reset_hist(&g, 8, 3, 2, 0x07);
   put(&g, "\033[1;3r");
-  eq_u("no region for a full-height request", (unsigned)g.regSet, 0, "");
+  eq_u("no region for a full-height request", (unsigned)g.carried.regSet, 0, "");
   put(&g, "\033[3;1HZ\n");
   eq_u("so its LF asks the console to scroll", (unsigned)g.pendingScrolls, 1, "");
   rc_reset_hist(&g, 8, 3, 2, 0x07);
   put(&g, "\033[3;99r");
-  eq_u("a region inside a guttered grid: top", (unsigned)g.regTop, 4, "the viewport's last model row");
-  eq_u("bottom clamped", (unsigned)g.regBot, 4, "");
+  eq_u("a region inside a guttered grid: top", (unsigned)g.carried.regTop, 4, "the viewport's last model row");
+  eq_u("bottom clamped", (unsigned)g.carried.regBot, 4, "");
   put(&g, "\033[3;1HZ\n");
   eq_text(&g, 4, 1, " ", "one-row region: the LF blanked it in place");
   eq_u("and asked the console for nothing", (unsigned)g.pendingScrolls, 0, "");
@@ -3084,8 +3086,8 @@ static void geo_region()
 
   rc_reset(&g, 8, 3, 0x07);
   put(&g, "\033[2;3r\033[?25l\033[1 qX\033c");
-  eq_u("RIS cleared the region", (unsigned)g.regSet, 0, "");
-  eq_u("RIS showed the cursor", (unsigned)g.cursorVisible, 1, "");
+  eq_u("RIS cleared the region", (unsigned)g.carried.regSet, 0, "");
+  eq_u("RIS showed the cursor", (unsigned)g.carried.cursorVisible, 1, "");
   eq_u("RIS stopped claiming a shape", (unsigned)g.cursorShape, -1, "");
   eq_u("RIS homed the cursor", (unsigned)g.cy, 0, "");
   eq_text(&g, 0, 1, " ", "RIS blanked the viewport, not just the attributes");
@@ -3161,6 +3163,142 @@ static void geo_region()
        "refusing was the truth -- this assertion is the census noticing that the sentence changed");
   eq_u("and it still cannot make the frame suspect", (unsigned)g.modelSuspect, 0,
        "a walk over state this model owns is the opposite of an unknown reach");
+
+  /* DECSTBM homes the cursor -- T-03. Its own rc_reset, because the sequence above leaves a region and a
+     suspect count behind, and a leg that inherits state cannot say what it proved. */
+  rc_reset(&g, 8, 5, 0x07);
+  /* Park the cursor away from home first. rc_reset leaves it at (0,0) on a buffer with no history, so a
+     "homes it" assertion written against the fresh grid passes without the implementation doing anything
+     -- green either way is the same as having no leg. */
+  put(&g, "\033[4;3H");
+  eq_u("setup: the cursor is where I put it", (unsigned)g.cy, 3, "");
+  eq_u("setup: and in the column I put it", (unsigned)g.cx, 2, "");
+  put(&g, "\033[2;4r");
+  eq_u("a region homes the cursor to its top", (unsigned)g.cy, 0u,
+       "the stream's DECSTBM always homes: conhost's dispatch passes homeCursor=true for every CSI r that "
+       "reaches it (OutputStateMachineEngine.cpp:456-457 -> adaptDispatch.cpp:2299), and ghostty ends "
+       "setTopAndBottomMargin with an unconditional setCursorPos(1,1) (Terminal.zig:2609). The reason string "
+       "this row used to carry cited SetScrollRegion -- an internal scroll routine, not the VT dispatch "
+       "port -- which is how a non-homing implementation got pinned as the spec.");
+  eq_u("and homes it to column 0", (unsigned)g.cx, 0u, "");
+  put(&g, "\033[4;3H\033[3;2r");
+  eq_u("an ignored set moves nothing, the cursor included", (unsigned)g.cy, 3,
+       "top above bottom is refused before any state is touched");
+  eq_u("and leaves the live region alone", (unsigned)g.carried.regSet, 1, "");
+  put(&g, "\033[4;3H\033[r");
+  eq_u("the no-parameter form drops the region", (unsigned)g.carried.regSet, 0, "");
+  eq_u("and homes as well, same dispatch", (unsigned)g.cy, 0u, "");
+}
+
+/* WORK_ORDER_1006 T-11/T-12: what a rebuild keeps and what it drops. build_model (RenderExec.cpp) makes a
+   fresh grid with rc_reset_hist and then copies RcCarried whole -- the legs below replay exactly those two
+   steps on a live grid, so each "survived"/"gone" answer is the model's own, not a paraphrase of it. They
+   assert today's truth: every reason names the defect it pins, and a fix flips the assertion. */
+static void rebuild_consequences()
+{
+  static RcGrid g;
+
+  /* T-11a: DECSET ?25 l now survives a rebuild */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?25l");
+  eq_u("setup: the stream hid the cursor", (unsigned)g.carried.cursorVisible, 0, "");
+  {
+    RcCarried keep = g.carried;
+    const int oC = g.cols, oR = g.rows, oW = g.winRows;
+    rc_reset_hist(&g, 20, 6, 0, 0x07);
+    g.carried = keep;
+    carried_readopt(&g, oC, oR, oW);
+  }
+  eq_u("T-11a: the same rebuild keeps the hide", (unsigned)g.carried.cursorVisible, 0,
+       "cursorVisible rides RcCarried and rc_modes' row 25 now says carried=1, so a window resize no "
+       "longer revokes `CSI ?25l` behind the app's back -- the #114 cursorKeys rule applied to the one "
+       "field it had missed; before the fix rc_reset_hist forced the bit back to 1 and Paint's setVisible "
+       "arm lit the host cursor while mode_status kept answering as if the hide were in force");
+
+  /* T-11b: the vertical band now crosses a rebuild like the horizontal one */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[?69h\033[2;4r\033[3;10s");
+  eq_u("setup: the scroll band is armed", (unsigned)g.carried.regSet, 1, "");
+  eq_u("setup: and so are the column margins", (unsigned)g.carried.marginSet, 1, "");
+  {
+    RcCarried keep = g.carried;
+    const int oC = g.cols, oR = g.rows, oW = g.winRows;
+    rc_reset_hist(&g, 20, 6, 0, 0x07);
+    g.carried = keep;
+    carried_readopt(&g, oC, oR, oW);
+  }
+  eq_u("T-11b: the same-size rebuild keeps the band", (unsigned)g.carried.regSet, 1, "");
+  eq_u("top unchanged", (unsigned)g.carried.regTop, 1, "");
+  eq_u("bottom unchanged", (unsigned)g.carried.regBot, 3, "");
+  eq_u("and the horizontal band with it", (unsigned)g.carried.marginSet, 1,
+       "regSet/regTop/regBot ride RcCarried and carried_readopt re-clamps them exactly like the margin "
+       "pair -- msfterm's keep-and-clamp answer (adaptDispatch.cpp:276-296); ghostty (Terminal.zig:4188-"
+       "4194) and wezterm (terminalstate/mod.rs:1003-1004) reset both bands instead, but this code's "
+       "horizontal precedent was already keep-and-clamp, so vertical now matches horizontal here too");
+  {
+    RcCarried keep = g.carried;
+    const int oC = g.cols, oR = g.rows, oW = g.winRows;
+    rc_reset_hist(&g, 20, 4, 2, 0x07);
+    g.carried = keep;
+    carried_readopt(&g, oC, oR, oW);
+  }
+  eq_u("a shrink to four window rows rebases the band", (unsigned)g.carried.regTop, 3,
+       "the viewport's gutter grew from 0 to 2, so viewport rows 1..3 are now absolute 3..5");
+  eq_u("and clamps the bottom", (unsigned)g.carried.regBot, 5, "");
+  eq_u("band still armed", (unsigned)g.carried.regSet, 1, "");
+  {
+    RcCarried keep = g.carried;
+    const int oC = g.cols, oR = g.rows, oW = g.winRows;
+    rc_reset_hist(&g, 20, 1, 5, 0x07);
+    g.carried = keep;
+    carried_readopt(&g, oC, oR, oW);
+  }
+  eq_u("a shrink to one window row drops the band", (unsigned)g.carried.regSet, 0,
+       "after the rebase and clamp the band covers the whole (single-row) viewport, and a full-window "
+       "band is no band -- same convention DECSTBM itself uses when the stream asks for the whole screen");
+
+  /* T-11c: DECRC after a rebuild returns to the cell DECSC stood on */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[3;5HX");
+  put(&g, "\033" "7");
+  {
+    RcCarried keep = g.carried;
+    const int oC = g.cols, oR = g.rows, oW = g.winRows;
+    rc_reset_hist(&g, 20, 6, 0, 0x07);
+    g.carried = keep;
+    carried_readopt(&g, oC, oR, oW);
+  }
+  put(&g, "\033" "8");
+  eq_u("T-11c: DECRC after a rebuild returns to the saved row", (unsigned)g.cy, 2, "");
+  eq_u("and the saved column", (unsigned)g.cx, 5,
+       "saveX/saveY ride RcCarried and carried_readopt rebases the row by the viewport shift -- wezterm "
+       "adjusts its saved cursor through a resize the same way (terminalstate/mod.rs:1016-1021); before "
+       "the fix half the save crossed (saveOrigin) and the position restored to the home corner");
+  {
+    RcCarried keep = g.carried;
+    const int oC = g.cols, oR = g.rows, oW = g.winRows;
+    rc_reset_hist(&g, 20, 6, 6, 0x07);
+    g.carried = keep;
+    carried_readopt(&g, oC, oR, oW);
+  }
+  put(&g, "\033" "8");
+  eq_u("a gutter-growing rebuild keeps the screen place", (unsigned)g.cy, 8,
+       "the viewport moved down six rows, so saved viewport row 2 is absolute row 8 now");
+
+  /* T-12c: RIS records a full window of scroll debt and retires the bare-home arm -- on purpose */
+  rc_reset(&g, 20, 6, 0x07);
+  put(&g, "\033[1;1Hr0\033[2;1Hr1\033[3;1Hr2\033[4;1Hr3\033[5;1Hr4");
+  put(&g, "\033c");
+  eq_u("setup: RIS owes the host a whole window", (unsigned)g.pendingScrolls, 6, "");
+  eq_u("and disarmed the takeover arm on its way out", (unsigned)g.carried.unpushed, 0, "");
+  put(&g, "\033[3;1H");
+  put(&g, "\033[H");
+  eq_u("T-12c: a bare home after RIS pays none of it", (unsigned)g.pendingScrolls, 6,
+       "intended, not debt left to rot: RIS cleared the screen and homed the cursor itself, so the "
+       "takeover arm's own gate (cy > tr on a bare home) could not fire anyway and full_reset retires "
+       "carried.unpushed deliberately; the pendingScrolls balance is ordinary paint economy -- the next "
+       "flush pays it, and with a live handle scroll_up's onFlush arm pays it inside the RIS dispatch "
+       "itself, because a full window of scrolls is exactly what fills the gutter");
 }
 
 static void status_bar()
@@ -3172,8 +3310,8 @@ static void status_bar()
   put(&g, "\033" "7");
   put(&g, "\033[1;4r");
   put(&g, "\033" "8");
-  eq_u("the region is the viewport minus the status row", (unsigned)g.regTop, 0, "model rows 0..3 scroll");
-  eq_u("bottom", (unsigned)g.regBot, 3, "");
+  eq_u("the region is the viewport minus the status row", (unsigned)g.carried.regTop, 0, "model rows 0..3 scroll");
+  eq_u("bottom", (unsigned)g.carried.regBot, 3, "");
   eq_u("and the caller came back from the save", (unsigned)g.cy, 3, "row 3, not the row the region ends on");
   eq_u("in the column it was in", (unsigned)g.cx, 1, "'Z' had already moved it one column right");
 
@@ -3200,12 +3338,12 @@ static void status_bar()
        "it keeps its content but not its buffer row -- MSFT's static-band copy at :2476");
 
   put(&g, "\033" "7\033[1;1r\033" "8");
-  eq_u("csr(0, 0) through %i is a region, not a reset", (unsigned)g.regSet, 1,
+  eq_u("csr(0, 0) through %i is a region, not a reset", (unsigned)g.carried.regSet, 1,
        "Status.java's reset; Display.java:112 turns a 0x0 size into rows=1 -- the same trap, one layer down");
-  eq_u("a one-row region: top", (unsigned)g.regTop, 0, "");
-  eq_u("bottom", (unsigned)g.regBot, 0, "so only the viewport's first row can scroll any more");
+  eq_u("a one-row region: top", (unsigned)g.carried.regTop, 0, "");
+  eq_u("bottom", (unsigned)g.carried.regBot, 0, "so only the viewport's first row can scroll any more");
   put(&g, "\033" "7\033[r\033" "8");
-  eq_u("the bare form is the reset", (unsigned)g.regSet, 0, "");
+  eq_u("the bare form is the reset", (unsigned)g.carried.regSet, 0, "");
   eq_u("and it moved nothing", (unsigned)g.cy, 3, "`CSI r` homes no cursor (Ansi.cpp:4146-4174)");
 
   static RcGrid g2;
@@ -5054,9 +5192,9 @@ static void plan_xt_modes(void)
   rc_reset_hist(&g, 80, 24, 24, 0x07);
 
   putraw(&g, "\033[?25h\033[?25s\033[?25l");
-  eq_u("xt: setup has the cursor hidden", (unsigned)g.cursorVisible, 0, "");
+  eq_u("xt: setup has the cursor hidden", (unsigned)g.carried.cursorVisible, 0, "");
   putraw(&g, "\033[?25r");
-  eq_u("xt: restore re-runs the act", (unsigned)g.cursorVisible, 1, "the saved on came back");
+  eq_u("xt: restore re-runs the act", (unsigned)g.carried.cursorVisible, 1, "the saved on came back");
 
   putraw(&g, "\033[?7r");
   eq_u("xt: never-saved restores off", (unsigned)g.carried.wrapMode, 0, "wrap was on by default and the restore closed it");
@@ -5080,9 +5218,9 @@ static void plan_xt_modes(void)
        "the second engage through the restore door is named, not absorbed");
 
   putraw(&g, "\033[2;10r");
-  eq_u("xt: fork setup has a region", (unsigned)g.regSet, 1, "");
+  eq_u("xt: fork setup has a region", (unsigned)g.carried.regSet, 1, "");
   putraw(&g, "\033[?r");
-  eq_u("xt: bare ?r still resets the region", (unsigned)g.regSet, 0, "the parameterless private form kept DECSTBM");
+  eq_u("xt: bare ?r still resets the region", (unsigned)g.carried.regSet, 0, "the parameterless private form kept DECSTBM");
 
   putraw(&g, "\033[5;9H\033[25s\033[10;1H\033[u");
   eq_u("xt: plain 25s stayed SCOSC", (unsigned)g.cy, (unsigned)(g.rows - g.winRows + 5 - 1),
@@ -5091,7 +5229,7 @@ static void plan_xt_modes(void)
   rc_reset_hist(&g, 80, 24, 24, 0x07);
   putraw(&g, "\033[2;10r");
   putraw(&g, "\033[?9999r");
-  eq_u("xt: unknown id leaves the region alone", (unsigned)g.regSet, 1,
+  eq_u("xt: unknown id leaves the region alone", (unsigned)g.carried.regSet, 1,
        "`? 9999 r` is a counted refusal, not a nonsense margin");
 }
 
@@ -5880,6 +6018,7 @@ int main(int argc, char **argv)
   geo_lines();
   geo_tabs();
   geo_region();
+  rebuild_consequences();
   status_bar();
   geo_takeover();
   geo_decrpm_unmodelled();

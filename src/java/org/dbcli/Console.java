@@ -315,9 +315,21 @@ public final class Console {
         return true;
     }
 
+    // The rows a dashboard holds back for the bar even while the bar is down. Set once, when the dashboard
+    // takes the screen; see barRows() for why the bar's own state is not enough to answer that.
+    private volatile int dashboardBarRows = 0;
+
     public void initDisplay() {
         display = new Display(terminal, false);
         if (status != null) {
+            // Ask before closing: close() hands the bar's rows back to the text area, so after it the bar can
+            // only report the rows it is holding right now -- none. A frame measured against that number is
+            // laid out for the whole window, and the bar's own 1 Hz tick then restores it (setStatus calls
+            // restore(), which repaints and re-takes the rows). With a cursor_down that expands to a line
+            // feed, that re-take scrolls the viewport and eats the first rows of the frame -- which is the
+            // "top's first screen is two rows short" report. Reserving here makes the frame the same height
+            // from the first tick as from the second, so nothing has to be taken back at all.
+            dashboardBarRows = status.size();
             status.close();
             status.suspend();
         }
@@ -328,6 +340,7 @@ public final class Console {
     public void exitDisplay() {
         if (display == null) return;
         //display.exit();
+        dashboardBarRows = 0;
         display.setNoWrap(false);
         prevDisplay = null;
         if (status != null) {
@@ -574,6 +587,16 @@ public final class Console {
                 return false;
             }
             if (terminal.paused()) return false;
+            // A spinner tick ("flush") must not reach the bar while a full-screen consumer owns it: the
+            // pager closes and suspends the bar for the whole session, and restore() here would un-suspend
+            // and repaint into whatever screen that consumer holds -- the alt-screen viewport included --
+            // while the save/DECSTBM/cursor dance around the update moves the shared cursor under the app's
+            // feet (the prompt can then print rows above where the app restored it). The time string is
+            // already current; the consumer's own exit repaint brings the bar back with it. A real title
+            // ("set status on") must keep taking this path.
+            if ("flush".equals(title) && (this.status.isClosed() || this.status.isSuspended())) {
+                return false;
+            }
             // The off branch suspends, and Status.update() returns while suspended -- so a real title, which
             // is all "set status on" delivers, reached an update() that drew nothing. The bar came back only
             // when some other path happened to call restore() (pause/resume, ttop), and by then the prompt had
@@ -657,9 +680,9 @@ public final class Console {
     private int barRows() {
         Status bar = terminal.getStatus(false);
         if (bar == null || bar.isClosed() || bar.isHided() || bar.isSuspended()) {
-            return 0;
+            return dashboardBarRows;
         }
-        return bar.size();
+        return Math.max(dashboardBarRows, bar.size());
     }
 
 

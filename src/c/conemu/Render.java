@@ -1333,10 +1333,12 @@ public class Render {
         v = consoleView();
         gate("the left margin came through the seam", v[5] == 5,
                 "x=" + v[5] + " want 5: the write landed on the carried column 4, not at 0");
-        gate("and the viewport top is the row, as it is with no region carried", v[6] == winT,
-                "y=" + v[6] + " want " + winT);
-        text("the earlier glyph is still where origin put it", winT + 1, 4, "X", DEF);
-        text("and the glyph written after the rebuild is on the viewport's top row", winT, 4, "Y", DEF);
+        gate("and the region came through the seam with it, so origin's row 1 is the band's top",
+                v[6] == winT + 1,
+                "y=" + v[6] + " want " + (winT + 1) + ": DECSTBM's band rides the rebuild re-clamped now (T-11b), "
+                + "so the write lands where the setup glyph stood, not on the viewport's top row");
+        text("the write overwrote the setup glyph on the region's top row", winT + 1, 4, "Y", DEF);
+        text("and the viewport's own top row stayed clear of it", winT, 4, " ", DEF);
         standardGeometry("leaving the viewport as the next case expects it");
     }
 

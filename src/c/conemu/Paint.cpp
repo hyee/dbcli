@@ -29,7 +29,7 @@ void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p)
   p->reason = RC_PLAN_OK;
   p->slideTo = -1;
   p->attr = g->attr;
-  p->cursorVisible = g->cursorVisible;
+  p->cursorVisible = g->carried.cursorVisible;
   p->shapeHeight = cursor_height(g->cursorShape);
   p->shapeStyle = rc_cursor_style_for(g->cursorShape, rcHaveShapeApi);
   p->setStyle = (g->cursorShape >= 0 && p->shapeStyle >= 0) ? 1 : 0;
@@ -128,7 +128,7 @@ void rc_plan_paint(const RcGrid *g, const RcView *v, RcPlan *p)
   for (int i = 0; i < p->nRuns; i++)
     p->cells += (unsigned long)p->run[i].nrows * (unsigned long)(p->run[i].hi - p->run[i].lo + 1);
   p->attrChanged = (v->attr != g->attr) ? 1 : 0;
-  p->setVisible = (v->cursorOn >= 0 && v->cursorOn != g->cursorVisible) ? 1 : 0;
+  p->setVisible = (v->cursorOn >= 0 && v->cursorOn != g->carried.cursorVisible) ? 1 : 0;
 
   p->curTX = v->winL + g->cx;
   if (p->curTX > v->winR) p->curTX = v->winR;
@@ -156,7 +156,7 @@ int rc_snap_view(const RcGrid *g, const RcView *v, int *row, int *col)
   if (v->bufW <= 0 || v->bufH < v->winT) return RC_SNAP_NOGEOM;
   if (v->bufW - v->winL != g->cols || v->winB - v->winT + 1 != g->winRows) return RC_SNAP_NOGEOM;
   if (!g->baseSet) return RC_SNAP_NOCHANGE;
-  if (!g->cursorVisible) return RC_SNAP_NOCHANGE;
+  if (!g->carried.cursorVisible) return RC_SNAP_NOCHANGE;
   const int want = g->baseRow + g->cy;
   if (want < 0 || want > v->bufH - 1) return RC_SNAP_NOCHANGE;
   if (want >= v->winT && want <= v->winB) return RC_SNAP_NOCHANGE;

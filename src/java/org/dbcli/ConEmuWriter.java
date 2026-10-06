@@ -98,13 +98,10 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
      *         there is no renderer to ask or the dll predates the seam, and the caller falls back to the
      *         X10 encoding it has always had.
      */
-    public synchronized boolean writeMouseReport(int buttonState, int eventFlags, int ctrlKeyState,
-                                                 int x, int y, java.io.Writer pipe) throws java.io.IOException {
-        if (nativeRenderer == null) {
-            return false;
-        }
+    public boolean writeMouseReport(int buttonState, int eventFlags, int ctrlKeyState,
+                                    int x, int y, java.io.Writer pipe) throws java.io.IOException {
         final char[] buf = new char[40];
-        final int n = nativeRenderer.encodeMouse(x, y, -1, -1, buttonState, eventFlags, ctrlKeyState, buf);
+        final int n = encodeMouseInto(buf, x, y, buttonState, eventFlags, ctrlKeyState);
         if (n == -2) {
             return false;
         }
@@ -114,13 +111,30 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
         return true;
     }
 
-    /** Focus is the same seam with nothing to derive: the record says focused, the mode says report. */
-    public synchronized boolean writeFocusReport(boolean focused, java.io.Writer pipe) throws java.io.IOException {
+    /**
+     * The encoder alone holds the writer monitor. It has to: it reads the tracking state the parse side
+     * writes (mouseFormat, lastBtn, the one-report-per-cell key), and those must not interleave with a parse
+     * in flight.
+     *
+     * <p>The hand-off to the input pipe deliberately happens outside it. {@code pipe} is the reader's ring,
+     * and a full ring blocks the writer until the reader drains it -- and the only reader is the thread that
+     * runs {@code readLine()}, which is the same thread that paints through this writer. So a locked write
+     * there is a cycle: this thread holds the monitor and waits on the ring, the painting thread waits on the
+     * monitor, and nothing drains anything. The ring has its own lock and shares no state with the model, so
+     * moving the copy out here costs no invariant the monitor was bought for.</p>
+     */
+    private synchronized int encodeMouseInto(char[] buf, int x, int y, int buttonState, int eventFlags,
+                                             int ctrlKeyState) {
         if (nativeRenderer == null) {
-            return false;
+            return -2;
         }
+        return nativeRenderer.encodeMouse(x, y, -1, -1, buttonState, eventFlags, ctrlKeyState, buf);
+    }
+
+    /** Focus is the same seam with nothing to derive: the record says focused, the mode says report. */
+    public boolean writeFocusReport(boolean focused, java.io.Writer pipe) throws java.io.IOException {
         final char[] buf = new char[3];
-        final int n = nativeRenderer.encodeFocus(focused, buf);
+        final int n = encodeFocusInto(buf, focused);
         if (n == -2) {
             return false;
         }
@@ -128,6 +142,14 @@ public final class ConEmuWriter extends AbstractWindowsConsoleWriter {
             pipe.write(buf, 0, n);
         }
         return true;
+    }
+
+    /** Locked for the same reason as {@link #encodeMouseInto}, and released for the same reason. */
+    private synchronized int encodeFocusInto(char[] buf, boolean focused) {
+        if (nativeRenderer == null) {
+            return -2;
+        }
+        return nativeRenderer.encodeFocus(focused, buf);
     }
 
     /** Keeps the output when the renderer cannot take it, instead of dropping it silently. */

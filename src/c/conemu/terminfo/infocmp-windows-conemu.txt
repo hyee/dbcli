@@ -23,7 +23,7 @@ windows-conemu|ConEmu-style ANSI as the native renderer paints it (margin wrap i
 	ed=\E[J,
 	hpa=\E[%i%p1%dG,
 	cup=\E[%i%p1%d;%p2%dH,
-	cud1=\n,
+	cud1=\E[B,
 	home=\E[H,
 	civis=\E[?25l,
 	cub1=^H,

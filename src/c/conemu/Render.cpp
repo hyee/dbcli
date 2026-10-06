@@ -230,17 +230,17 @@ int rc_validate_grid(const RcGrid *g, char *msg, int len)
   }
   if (g->cy < g->rows - g->winRows || g->cy >= g->rows)
     RC_BAD("cursor row %d outside the viewport %d..%d", g->cy, g->rows - g->winRows, g->rows - 1);
-  if (g->saveX < 0 || g->saveX >= g->cols) RC_BAD("saved column %d outside 0..%d", g->saveX, g->cols - 1);
-  if (g->saveY < 0 || g->saveY >= g->rows) RC_BAD("saved row %d outside 0..%d", g->saveY, g->rows - 1);
-  if (g->regSet && !(g->regTop >= 0 && g->regTop <= g->regBot && g->regBot < g->rows))
-    RC_BAD("region %d..%d is not an ordered span inside 0..%d", g->regTop, g->regBot, g->rows - 1);
+  if (g->carried.saveX < 0 || g->carried.saveX >= g->cols) RC_BAD("saved column %d outside 0..%d", g->carried.saveX, g->cols - 1);
+  if (g->carried.saveY < 0 || g->carried.saveY >= g->rows) RC_BAD("saved row %d outside 0..%d", g->carried.saveY, g->rows - 1);
+  if (g->carried.regSet && !(g->carried.regTop >= 0 && g->carried.regTop <= g->carried.regBot && g->carried.regBot < g->rows))
+    RC_BAD("region %d..%d is not an ordered span inside 0..%d", g->carried.regTop, g->carried.regBot, g->rows - 1);
   if (g->nInterims < 0 || g->nInterims > RC_INTERIM_MAX)
     RC_BAD("nInterims=%d outside 0..%d", g->nInterims, RC_INTERIM_MAX);
   for (int gs = 0; gs < 4; gs++)
     if (g->carried.charset[gs] != 0 && g->carried.charset[gs] != 1)
       RC_BAD("charset[%d]=%d is neither VTCS_DEFAULT nor VTCS_DRAWING", gs, (int)g->carried.charset[gs]);
   if (g->carried.gshift > 3) RC_BAD("gshift=%d names no G-set", (int)g->carried.gshift);
-  if (g->cursorVisible != 0 && g->cursorVisible != 1) RC_BAD("cursorVisible=%d", g->cursorVisible);
+  if (g->carried.cursorVisible != 0 && g->carried.cursorVisible != 1) RC_BAD("cursorVisible=%d", g->carried.cursorVisible);
   if (g->semanticContent < RC_SC_OUTPUT || g->semanticContent > RC_SC_PROMPT)
     RC_BAD("semanticContent=%d outside RC_SC_OUTPUT..RC_SC_PROMPT", g->semanticContent);
 
@@ -500,8 +500,8 @@ static void ftcs_line_ended(RcGrid *g)
 
 static void region(const RcGrid *g, int *top, int *bot)
 {
-  *top = g->regSet ? g->regTop : gutter(g);
-  *bot = g->regSet ? g->regBot : g->rows - 1;
+  *top = g->carried.regSet ? g->carried.regTop : gutter(g);
+  *bot = g->carried.regSet ? g->carried.regBot : g->rows - 1;
 }
 
 static void col_span(const RcGrid *g, int *left, int *right)
@@ -613,7 +613,12 @@ static void line_down(RcGrid *g)
 
 static void newline(RcGrid *g)
 {
-  g->cx = 0;
+  /* LF folds the column (that half is the host's: conhost does it on both of its write paths, and
+     ANSI_SUPPORTS.md row LF records it). This says only *which* column it folds to: the left margin, the way
+     NEL two lines below already does. With no DECSLRM in play col_left() is 0, so no byte stream that never
+     arms ?69h changes by one cell -- and one that does arm it stops putting the cursor outside the region it
+     just asked for, which rc_validate_grid would otherwise flag as "cursor column outside the margins". */
+  g->cx = col_left(g);
   line_down(g);
 }
 
@@ -1042,8 +1047,8 @@ static int alt_screen(RcGrid *g, int on)
       g->alt = 1;
     }
     g->nAltSwitch++;
-    g->saveX = g->cx;
-    g->saveY = g->cy;
+    g->carried.saveX = g->cx;
+    g->carried.saveY = g->cy;
     g->pendingScrolls = 0;
     blank_viewport(g);
     return 1;
@@ -1057,7 +1062,7 @@ static int alt_screen(RcGrid *g, int on)
   }
   g->alt = 0;
   g->pendingScrolls = 0;
-  clxy(g, g->saveY, g->saveX);
+  clxy(g, g->carried.saveY, g->carried.saveX);
   rc_mark_all_dirty(g);
   return 1;
 }
@@ -1074,7 +1079,11 @@ static void full_reset(RcGrid *g)
   g->carried.mouseFormat = RC_MF_X10;
   g->carried.lastBtn = 0; g->moveSeen = 0;
   g->lastMoveX = g->lastMoveY = 0; g->lastMoveBtn = 0;
-  g->regSet = 0;
+  /* Dropping the region has to be a region *change*: sync_region_host (RenderExec.cpp) forwards to the host
+     only when regionSerial moves, so a reset that cleared regSet in silence left a ConPTY-hosted console
+     scrolling inside a band the model no longer had -- rows outside the stale band froze while the model
+     rotated its own. Same reason the DECSTBM arm bumps it. */
+  g->carried.regSet = 0; g->regionSerial++;
   g->carried.marginSet = 0; g->carried.leftMargin = 0; g->carried.rightMargin = g->cols - 1;
   g->carried.saveOrigin = 0;
   g->cursorShape = -1;
@@ -1094,10 +1103,10 @@ static void soft_reset(RcGrid *g)
   g->carried.charset[0] = 0; g->carried.charset[1] = 0; g->carried.charset[2] = 0; g->carried.charset[3] = 0;
   g->carried.gshift = 0;
   mode_reset_walk(g, 0);
-  g->regSet = 0;
+  g->carried.regSet = 0; g->regionSerial++;   /* DECSTR drops the band, and the host has to be told (full_reset) */
   g->carried.marginSet = 0; g->carried.leftMargin = 0; g->carried.rightMargin = g->cols - 1;
-  g->saveX = g->cx;
-  g->saveY = g->cy;
+  g->carried.saveX = g->cx;
+  g->carried.saveY = g->cy;
 }
 
 static int step_back_col(const RcGrid *g, int n)
@@ -1172,7 +1181,7 @@ typedef struct RcModeSpec
   uint8_t carried;       /* build_model carries it across a rebuild */
 } RcModeSpec;
 
-static const RcModeSpec rc_modes[] =
+static constexpr RcModeSpec rc_modes[] =
 {
   /*    num fld              spell       xt ris risV dec carr */
   {     1, RC_MOD_CURSORKEYS, RC_MSP_PRIV, 1, 1, 0, 1, 1 },
@@ -1182,7 +1191,7 @@ static const RcModeSpec rc_modes[] =
   {     6, RC_MOD_ORIGIN,     RC_MSP_PRIV, 0, 1, 0, 1, 1 },
   {     7, RC_MOD_WRAP,       RC_MSP_PRIV, 1, 1, 1, 1, 1 },
   {     9, RC_MOD_MOUSE,      RC_MSP_PRIV, 1, 1, 0, 0, 1 },
-  {    25, RC_MOD_VISIBLE,    RC_MSP_PRIV, 1, 1, 1, 1, 0 },
+  {    25, RC_MOD_VISIBLE,    RC_MSP_PRIV, 1, 1, 1, 1, 1 },
   {    47, RC_MOD_ALT,        RC_MSP_PRIV, 0, 1, 0, 0, 0 },
   {    69, RC_MOD_DECLRMM,    RC_MSP_PRIV, 0, 1, 0, 1, 1 },
   {  1000, RC_MOD_MOUSE,      RC_MSP_PRIV, 1, 1, 0, 0, 1 },
@@ -1202,6 +1211,18 @@ static const RcModeSpec rc_modes[] =
   {  2048, RC_MOD_INBAND,     RC_MSP_PRIV, 1, 1, 0, 1, 1 },
 };
 
+/* RC_XT_BITS is not a comment that happens to carry a number: xtOn and xtHave are uint16_t indexed by a
+   row's position in the xt=1 list, so one more such row than the constant allows shifts out of the bitset
+   in silence. Counted off the table itself, which is why the table is constexpr -- the two cannot drift. */
+static constexpr int rc_xt_rows()
+{
+  int n = 0;
+  for (size_t i = 0; i < sizeof(rc_modes) / sizeof(rc_modes[0]); i++) if (rc_modes[i].xt) n++;
+  return n;
+}
+static_assert(rc_xt_rows() <= RC_XT_BITS, "more xt=1 rows in rc_modes[] than RC_XT_BITS can hold");
+static_assert(RC_XT_BITS <= 16, "RC_XT_BITS must fit the uint16_t xtOn/xtHave bitsets");
+
 #define RC_MODE_N ((int)(sizeof rc_modes / sizeof rc_modes[0]))
 
 static const RcModeSpec *rc_mode_find(int num)
@@ -1218,7 +1239,7 @@ static int mode_get(const RcGrid *g, const RcModeSpec *m)
     case RC_MOD_CURSORKEYS: return g->carried.cursorKeys;
     case RC_MOD_INSERT:     return g->carried.insertMode;
     case RC_MOD_WRAP:       return g->carried.wrapMode;
-    case RC_MOD_VISIBLE:    return g->cursorVisible;
+    case RC_MOD_VISIBLE:    return g->carried.cursorVisible;
     case RC_MOD_ORIGIN:     return g->carried.originMode;
     case RC_MOD_DECLRMM:    return g->carried.declrmm;
     case RC_MOD_BP:         return g->carried.bracketedPaste;
@@ -1238,7 +1259,7 @@ static void mode_set(RcGrid *g, const RcModeSpec *m, int on)
     case RC_MOD_CURSORKEYS: g->carried.cursorKeys = (uint8_t)(on ? 1 : 0); return;
     case RC_MOD_INSERT:     g->carried.insertMode = (uint8_t)(on ? 1 : 0); return;
     case RC_MOD_WRAP:       g->carried.wrapMode = (uint8_t)(on ? 1 : 0); return;
-    case RC_MOD_VISIBLE:    g->cursorVisible = (on ? 1 : 0); return;
+    case RC_MOD_VISIBLE:    g->carried.cursorVisible = (on ? 1 : 0); return;
     case RC_MOD_DECLRMM:    g->carried.declrmm = (uint8_t)(on ? 1 : 0); return;
     case RC_MOD_BP:         g->carried.bracketedPaste = (uint8_t)(on ? 1 : 0); return;
     case RC_MOD_INBAND:     g->carried.inbandResize = (uint8_t)(on ? 1 : 0); return;
@@ -1274,8 +1295,8 @@ static void mode_set(RcGrid *g, const RcModeSpec *m, int on)
     }
     case RC_MOD_ALT:        alt_screen(g, on); return;
     case RC_MOD_SAVECUR:
-      if (on) { g->saveX = g->cx; g->saveY = g->cy; }
-      else clxy(g, g->saveY, g->saveX);
+      if (on) { g->carried.saveX = g->cx; g->carried.saveY = g->cy; }
+      else clxy(g, g->carried.saveY, g->carried.saveX);
       return;
     case RC_MOD_REFUSED:    ignored(g, RC_UN_MOUSE); return;
     default:                ignored(g, RC_UN_MODE); return;
@@ -1291,12 +1312,27 @@ static void mode_restore(RcGrid *g, const RcModeSpec *m)
     case RC_MOD_CURSORKEYS: g->carried.cursorKeys = (uint8_t)m->risVal; return;
     case RC_MOD_INSERT:     g->carried.insertMode = (uint8_t)m->risVal; return;
     case RC_MOD_WRAP:       g->carried.wrapMode = (uint8_t)m->risVal; return;
-    case RC_MOD_VISIBLE:    g->cursorVisible = m->risVal; return;
+    case RC_MOD_VISIBLE:    g->carried.cursorVisible = m->risVal; return;
     case RC_MOD_ORIGIN:     g->carried.originMode = (uint8_t)m->risVal; return;
     case RC_MOD_DECLRMM:    g->carried.declrmm = (uint8_t)m->risVal; return;
     case RC_MOD_BP:         g->carried.bracketedPaste = (uint8_t)m->risVal; return;
     case RC_MOD_INBAND:     g->carried.inbandResize = (uint8_t)m->risVal; return;
     case RC_MOD_SYNC:       g->sync = (uint8_t)m->risVal; return;
+    /* The mouse rows carry ris=1 in rc_modes[], so the walk owes them a value: restore is
+       mode_set's off-arm, bit cleared and a matching format dropped, without CONIN$ side
+       effects. full_reset still hard-writes the pair afterwards -- the walk pays the
+       table's promise, the hard write stays the final authority. */
+    case RC_MOD_MOUSE:
+      g->carried.mouseModes = (uint16_t)(g->carried.mouseModes & ~mouseBit(m->num));
+      return;
+    case RC_MOD_MFORMAT:
+    {
+      const uint8_t f = (m->num == 1005) ? RC_MF_UTF8 : (m->num == 1006) ? RC_MF_SGR
+                      : (m->num == 1015) ? RC_MF_URXVT : RC_MF_SGR_PX;
+      g->carried.mouseModes = (uint16_t)(g->carried.mouseModes & ~mouseBit(m->num));
+      if (g->carried.mouseFormat == f) g->carried.mouseFormat = RC_MF_X10;
+      return;
+    }
     default: return;
   }
 }
@@ -1350,7 +1386,7 @@ case 'H': case 'f':
       int r0, c0;
       origin_base(g, &r0, &c0);
       const int tr = r0 + arg(g, 0, 1) - 1;
-      if (!g->alt && !g->regSet && g->nArgs == 0 && g->carried.unpushed && tr == gutter(g) && g->cy > tr)
+      if (!g->alt && !g->carried.regSet && g->nArgs == 0 && g->carried.unpushed && tr == gutter(g) && g->cy > tr)
       {
         scroll_up(g, g->cy - tr + 1);
         g->carried.unpushed = 0;
@@ -1418,9 +1454,9 @@ case 'L': case 'M':
     {
       int n, top, bot;
       region(g, &top, &bot);
-      if (g->regSet && (g->cy > bot || g->cy < top)) break;
-      n = count_arg(g, 0, g->regSet ? bot - g->cy + 1 : g->rows - g->cy);
-      if (g->regSet)
+      if (g->carried.regSet && (g->cy > bot || g->cy < top)) break;
+      n = count_arg(g, 0, g->carried.regSet ? bot - g->cy + 1 : g->rows - g->cy);
+      if (g->carried.regSet)
       {
         shift_region(g, n, g->cy, bot, final == 'L');
         g->cx = col_left(g);
@@ -1480,8 +1516,8 @@ case 'S':
     {
       int top, bot;
       region(g, &top, &bot);
-      const int n = count_arg(g, 0, g->regSet ? bot - top + 1 : g->rows);
-      if (!g->regSet && top == gutter(g) && bot == g->rows - 1) scroll_up(g, n);
+      const int n = count_arg(g, 0, g->carried.regSet ? bot - top + 1 : g->rows);
+      if (!g->carried.regSet && top == gutter(g) && bot == g->rows - 1) scroll_up(g, n);
       else shift_region(g, n, top, bot, 0);
       break;
     }
@@ -1505,14 +1541,14 @@ static void csi_region(RcGrid *g, uint8_t final)
 case 's':
       if (g->priv) { if (g->nArgs) xt_save(g, g->args[0]); else ignored(g, RC_UN_MODE); }
       else if (g->carried.declrmm) set_margins(g, arg(g, 0, 1), arg(g, 1, g->cols));
-      else { g->saveX = g->cx; g->saveY = g->cy; g->carried.saveOrigin = g->carried.originMode; }
+      else { g->carried.saveX = g->cx; g->carried.saveY = g->cy; g->carried.saveOrigin = g->carried.originMode; }
 
       break;
 
 case 'u':
       if (g->priv) { ignored(g, RC_UN_MODE); break; }
       g->carried.originMode = g->carried.saveOrigin;
-      clxy(g, g->saveY, g->saveX);
+      clxy(g, g->carried.saveY, g->carried.saveX);
 
       break;
 
@@ -1522,13 +1558,22 @@ case 'r':
       if (g->priv && g->nArgs) { xt_restore(g, g->args[0]); break; }
       const int top = gutter(g);
       const int page = g->rows - top;
-      if (!g->nArgs) { g->regSet = 0; g->regionSerial++; break; }
+      /* DECSTBM homes the cursor, both arms. conhost's own VT dispatch passes homeCursor=true for every
+         `CSI r` that reaches it (OutputStateMachineEngine.cpp:456-457 -> adaptDispatch.cpp:2299), and ghostty
+         ends setTopAndBottomMargin with an unconditional setCursorPos(1,1) (Terminal.zig:2609). The comment
+         table above _DoSetTopBottomScrollingMargins does list a no-parameter -> false row, but that arm is
+         only reached by internal callers (DECCOLM, reset), never by the stream -- so the stream's answer is
+         "home" either way. An `if (t > b) break` above still returns first: an ignored set must not move
+         anything, and that is what both references do for a reversed pair. */
+      int r0, c0;
+      if (!g->nArgs) { g->carried.regSet = 0; g->regionSerial++; origin_base(g, &r0, &c0); clxy(g, r0, c0); break; }
       int t = region_arg(g, 0, 1, page), b = region_arg(g, 1, page, page);
       if (t > b) break;
       const int rt = top + t - 1, rb = top + b - 1;
-      g->regSet = 0;
-      if (!(rt == top && rb == g->rows - 1)) { g->regSet = 1; g->regTop = rt; g->regBot = rb; }
+      g->carried.regSet = 0;
+      if (!(rt == top && rb == g->rows - 1)) { g->carried.regSet = 1; g->carried.regTop = rt; g->carried.regBot = rb; }
       g->regionSerial++;
+      origin_base(g, &r0, &c0); clxy(g, r0, c0);
       break;
     }
 
@@ -1883,8 +1928,8 @@ static void screen_alignment(RcGrid *g)
     mark_dirty(g, r, 0, g->cols - 1);
     heal_pairs(g, r, 0, g->cols - 1);
   }
-  g->regSet = 0;
-  g->regTop = 0; g->regBot = g->rows - 1;
+  g->carried.regSet = 0; g->regionSerial++;   /* DECALN takes the band back too; see full_reset */
+  g->carried.regTop = 0; g->carried.regBot = g->rows - 1;
   g->carried.marginSet = 0;
   g->carried.leftMargin = 0;
   g->carried.rightMargin = g->cols - 1;
@@ -1906,9 +1951,9 @@ static void esc_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
   }
   switch (final)
   {
-    case '7': g->saveX = g->cx; g->saveY = g->cy; g->carried.saveOrigin = g->carried.originMode;
+    case '7': g->carried.saveX = g->cx; g->carried.saveY = g->cy; g->carried.saveOrigin = g->carried.originMode;
       break;
-    case '8': g->carried.originMode = g->carried.saveOrigin; clxy(g, g->saveY, g->saveX);
+    case '8': g->carried.originMode = g->carried.saveOrigin; clxy(g, g->carried.saveY, g->carried.saveX);
       break;
     case 'c': full_reset(g); break;
     case 'D': line_down(g); break;
@@ -1917,7 +1962,7 @@ static void esc_dispatch(RcGrid *g, uint8_t interim, uint8_t final)
     {
       int top, bot;
       region(g, &top, &bot);
-      if (g->cy == gutter(g) || (g->regSet && g->cy == top))
+      if (g->cy == gutter(g) || (g->carried.regSet && g->cy == top))
       {
         if (g->cy >= top && g->cy <= bot) shift_region(g, 1, g->cy, bot, 1);
       }
@@ -1961,7 +2006,7 @@ static void control(RcGrid *g, uint16_t u)
     case 0x08: if (g->cx > 0) g->cx = step_back_col(g, 1); break;
     case 0x09: g->cx = tab_next(g, g->cx); break;
     case 0x0A: newline(g); break;
-    case 0x0D: g->cx = 0; break;
+    case 0x0D: g->cx = col_left(g); break;   /* CR folds to the left margin, same rule as LF and NEL */
     case 0x0E: g->carried.gshift = 1; break;
     case 0x0F: g->carried.gshift = 0; break;
     default: break;
@@ -3006,6 +3051,69 @@ void rc_tabs_widen(RcGrid *g, int from)
   tabs_default(g, from);
 }
 
+void carried_readopt(RcGrid *g, int oldCols, int oldRows, int oldWinRows)
+{
+  const int wasSet = g->carried.marginSet;
+  const int l0 = g->carried.leftMargin, r0 = g->carried.rightMargin;
+  g->carried.marginSet = 0;
+  g->carried.leftMargin = 0;
+  g->carried.rightMargin = g->cols - 1;
+  if (wasSet)
+  {
+    const int l = l0 < 0 ? 0 : l0;
+    const int r = r0 >= g->cols ? g->cols - 1 : r0;
+    if (l < r && !(l == 0 && r == g->cols - 1))
+    {
+      g->carried.marginSet = 1;
+      g->carried.leftMargin = l;
+      g->carried.rightMargin = r;
+    }
+  }
+  /* The vertical band rides along like the pair above: rebased from the old viewport into
+     the new one, clamped, dropped if nothing meaningful survives. The oracles split here --
+     msfterm keeps DECSTBM margins across a resize and re-clamps them where they are used
+     (adaptDispatch.cpp:276-296), while ghostty (Terminal.zig:4188-4194) and wezterm
+     (terminalstate/mod.rs:1003-1004) reset both bands outright -- and render.dll follows
+     its own horizontal precedent, the Windows oracle's keep-and-clamp. */
+  const int gut = g->rows - g->winRows;
+  const int oldGut = (oldRows > 0 && oldWinRows > 0 && oldRows >= oldWinRows) ? oldRows - oldWinRows : gut;
+  const int shift = gut - oldGut;
+  const int wasReg = g->carried.regSet;
+  const int t0 = g->carried.regTop, b0 = g->carried.regBot;
+  g->carried.regSet = 0;
+  g->carried.regTop = gut;
+  g->carried.regBot = g->rows - 1;
+  if (wasReg)
+  {
+    int t = t0 + shift, b = b0 + shift;
+    if (t < gut) t = gut;
+    if (t > g->rows - 1) t = g->rows - 1;
+    if (b > g->rows - 1) b = g->rows - 1;
+    if (t <= b && !(t == gut && b == g->rows - 1))
+    {
+      g->carried.regSet = 1;
+      g->carried.regTop = t;
+      g->carried.regBot = b;
+    }
+  }
+  /* The saved cursor is DECSC's half of the state saveOrigin already carried: rebase its
+     row by the same viewport shift and clamp both halves, so a DECRC after the rebuild
+     addresses the same place on screen instead of the home corner. wezterm adjusts its
+     saved cursor through a resize the same way (terminalstate/mod.rs:1016-1021). */
+  if (g->carried.saveX < 0) g->carried.saveX = 0;
+  if (g->carried.saveX > g->cols - 1) g->carried.saveX = g->cols - 1;
+  {
+    int sy = g->carried.saveY + shift;
+    if (sy < gut) sy = gut;
+    if (sy > g->rows - 1) sy = g->rows - 1;
+    g->carried.saveY = sy;
+  }
+  if (g->cx < g->carried.leftMargin) g->cx = g->carried.leftMargin;
+  if (g->cx > g->carried.rightMargin) g->cx = g->carried.rightMargin;
+  rc_tabs_widen(g, oldCols);
+  g->moveSeen = 0;
+}
+
 int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAttr)
 {
   if (!g || cols <= 0 || winRows <= 0 || histRows < 0) return 0;
@@ -3020,7 +3128,7 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   g->cy = histRows;
   g->carried.defAttr = defAttr;
   g->defAttrSeed = defAttr;
-  g->cursorVisible = 1;
+  g->carried.cursorVisible = 1;
   g->carried.wrapMode = 1;
   g->carried.insertMode = 0;
   g->carried.originMode = 0;
@@ -3035,6 +3143,11 @@ int rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAt
   g->carried.marginSet = 0;
   g->carried.leftMargin = 0;
   g->carried.rightMargin = cols - 1;
+  g->carried.regSet = 0;
+  g->carried.regTop = g->rows - g->winRows;
+  g->carried.regBot = g->rows - 1;
+  g->carried.saveX = 0;
+  g->carried.saveY = g->rows - g->winRows;
   g->carried.saveOrigin = 0;
   tabs_reset(g);
   g->cursorShape = -1;

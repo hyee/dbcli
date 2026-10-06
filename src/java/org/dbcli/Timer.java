@@ -19,10 +19,21 @@ class Timer {
     // status row has the input box line directly underneath it. One dot moves per frame.
     private static final String[] DOTS = new String[]{"\u283E", "\u283D", "\u283B", "\u2837", "\u282F", "\u281F"};
     private static final String[] BAR  = new String[]{"|", "/", "-", "\\"};
-    // The status text is encoded with the terminal charset -- Console.java pins that to
-    // Charset.forName("file.encoding") -- and no legacy code page encodes braille: measured,
-    // GBK/cp1252/ISO-8859-1/CP437/Shift_JIS/EUC-KR all answer "no" across U+2800..U+28FF and the
-    // encoder substitutes 0x3F. Ask that encoder rather than guess from the property name.
+    // Two different risks reach the spinner, and the encoder below only sees one of them.
+    //
+    // (a) Encoding. Console pins the terminal charset to Charset.forName(file.encoding), and on the paths that
+    //     actually encode text to bytes -- a dumb terminal, redirected output, ANSI_RENDER=off -- that charset
+    //     is real: canEncode says NO for U+2800..U+28FF on GBK / windows-1252 / ISO-8859-1 / CP437 / Shift_JIS
+    //     / EUC-KR, and the substitution character is '?'. Measured; see the 2026-09-28 round.
+    // (b) Glyphs. The console path does NOT encode: AbstractWindowsTerminal.java:156-157 hands that charset to
+    //     `output` only, while Status/Display write through terminal.writer() -- a PrintWriter into
+    //     WriteConsoleW / render.dll as UTF-16. Nothing substitutes there; what can fail is the font, and
+    //     neither this class nor the renderer probes glyph coverage.
+    //
+    // So this line is the guard for (a) and a proxy for (b) at best. It is kept because (a) is the failure
+    // that produces a wrong *character* rather than a wrong *picture*, and BAR is drawable everywhere. The leg
+    // that would settle (b) is three arms -- cp936 + raster font, cp936 + a braille-bearing font, chcp 65001
+    // -- reading back the cells the bar actually got. Until that runs, do not describe this as proof.
     private final String[] icons = encodable(DOTS) ? DOTS : BAR;
     private final String format = "[%s] %d:%02d:%02d.%02d |";
     private volatile String time = String.format(format, "*", 0, 0, 0, 0);

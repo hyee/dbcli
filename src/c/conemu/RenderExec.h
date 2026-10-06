@@ -113,7 +113,6 @@ int console_window_is_pty(void);
 int clip_apply(const wchar_t *wide, int chars, DWORD *why);
 int view_of(HANDLE con, RcView *v, CONSOLE_SCREEN_BUFFER_INFO *csbi);
 int align_grid(RcHandle *h, int reshaped);
-void carried_readopt(RcGrid *g, int oldCols);
 int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status);
 int readopt(RcHandle *h, int *status);
 int give_up(RcHandle *h, const char *why);

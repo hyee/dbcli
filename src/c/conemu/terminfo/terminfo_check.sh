@@ -12,6 +12,9 @@
 #      another costume.
 #   4. The compiled entry dumps back (`infocmp`) as the same set the source claims, which is what catches a
 #      capability that tic silently dropped or renamed.
+#   5. The checked-in `infocmp-windows-conemu.txt` snapshot still says what today's compile says -- token for
+#      token, values included, because both sides are infocmp output. Without this leg the snapshot is a
+#      write-only file that can describe a dead contract indefinitely.
 #
 # Usage, from anywhere wsl.exe reaches. The assignments have to be EXPORTED: written in front of `tr`, they
 # bind to `tr`'s environment only, and the script that actually reads them sees nothing -- which is how arm 3
@@ -169,6 +172,30 @@ else:
     print("FAIL the compiled entry is not the set the source claims")
     print("     only in source: %s" % sorted(set(names(ti)) - set(names(dump_caps)))[:8])
     print("     only in dump  : %s" % sorted(set(names(dump_caps)) - set(names(ti)))[:8])
+
+# Snapshot to live dump: TOKENS, not just names. This is the one comparison in this script where values may
+# be compared verbatim, because both sides come out of the same generator -- `infocmp` -- so there is no
+# spelling drift to forgive. The checked-in snapshot is otherwise write-only (only --refresh ever touches it),
+# which is how it kept advertising `cud1=\n` for hours after the entry went back to `\E[B`: a file that
+# describes the contract, is read by nobody, and is never re-derived, is a file that can lie forever.
+SNAP = os.path.join(T, "infocmp-windows-conemu.txt")
+if os.path.exists(SNAP):
+    snap_caps = caps_from_source(SNAP)
+    if snap_caps == dump_caps:
+        print("ok   the checked-in infocmp snapshot matches this compile, values and all (%d tokens)" % len(snap_caps))
+    else:
+        bad = 1
+        print("FAIL the checked-in snapshot is not what the entry compiles to now")
+        for x in snap_caps:
+            if x not in dump_caps:
+                print("     snapshot says: %s" % x)
+        for x in dump_caps:
+            if x not in snap_caps:
+                print("     the compile says: %s" % x)
+        print("     decide which side is right, then --refresh to rewrite the snapshot from the compile.")
+else:
+    bad = 1
+    print("FAIL no %s -- the snapshot leg has nothing to compare; run --refresh once to create it." % SNAP)
 
 # three copies of the entry that run time can actually see
 import hashlib

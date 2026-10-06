@@ -426,8 +426,12 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_encodeMouse0(
     jint buttonState, jint eventFlags, jint ctrlKeyState, jcharArray out)
 {
   (void)cls;
+  /* -2 = "cannot be asked", which is the value NativeRenderer.java:435-436 promises and the only one the
+     caller can obey: 0 means the model decided nothing is due, so a 0 here would swallow the report instead
+     of falling back to the X10 bytes this writer used to emit. Reachable in the window between give_up /
+     drop_model (RenderJni.cpp:82/:104) and the handle being cleared. */
   RcHandle *h = handle(ph);
-  if (!h || !h->g) return 0;
+  if (!h || !h->g) return -2;
   struct RcMouseRec m;
   m.x = (int16_t)x;  m.y = (int16_t)y;
   m.px = (int16_t)px; m.py = (int16_t)py;
@@ -447,7 +451,7 @@ JNIEXPORT jint JNICALL Java_com_hyee_ansirender_NativeRenderer_encodeFocus0(
 {
   (void)cls;
   RcHandle *h = handle(ph);
-  if (!h || !h->g) return 0;
+  if (!h || !h->g) return -2;   /* same contract as encodeMouse0: no model is "cannot ask", not "nothing due" */
   uint16_t buf[3];
   const int n = rc_focus_report(h->g, focused != 0, buf, 3);
   if (n <= 0 || !out) return n;

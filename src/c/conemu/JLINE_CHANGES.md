@@ -610,3 +610,29 @@ audited entry -- it is jline upstream's generic one (16-colour `setaf=\E[3%p1%dm
 advertised, no `acsc`/`csr`/`u6`/`u7`/`rep`, `ncv#3`). Porting the audited entry there interacts with
 the separate jline4 work and was left for its owner; noted here so the two trees' differing entries
 are a recorded fact, not a surprise.
+
+
+## 2026-10-06, Status.java grow branch: dropped the CUD/cursor_up compensation loops
+
+Defect (user-visible as `help` -> `more l` -> `q` leaving the prompt drawn two rows above the
+restored screen, overwriting live help rows): every grow of the bar ran
+
+```
+cursor_address(bottom); cursor_down x k; DECSTBM; restore_cursor; cursor_up x k; save_cursor
+```
+
+The `cursor_down` loop was written as if CUD at the bottom margin scrolled the region; CUD does
+not scroll anywhere (ECMA-48 8.3.19 "does not scroll"; xterm, conhost and this project's native
+renderer all clamp), so it never moved content -- and the `cursor_up x k` after `restore_cursor`
+then compensated a scroll that never happened, re-saving the caller's cursor k rows above where
+it was. Anything that trusted the re-saved position drew k rows high: the pager's exit (its init
+`close()`+`reset()` leaves `scrollRegion=rows-1`, so the exit `restore()` always grows) and
+`set status on` mid-session. The fix keeps `cursor_address` + `DECSTBM` + `restore_cursor` and
+re-saves the caller's position untouched.
+
+Witness: conpty legs `cache/moreq` (before: the pager's exit put the prompt at the saved
+`(entry-2)` row over the restored text; after: prompt lands on the row below the restored echo,
+one row per round -- the normal newline cost). Live gate both arches `checks=6373 failures=0`
+with the rebuilt jar; the class is deployed in `lib\JLine3.jar` alongside a `dbcli.jar` change
+(`Console.setStatus` no longer lets a spinner "flush" tick resurrect a closed/suspended bar --
+the dbcli side of the same incident, not a jline change).

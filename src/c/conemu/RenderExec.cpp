@@ -499,7 +499,7 @@ int paint_flush(RcHandle *h)
         bot.X = (SHORT)v.winL;
         {
           const int gut = g->rows - g->winRows;
-          bot.Y = (SHORT)(g->regSet ? (g->regBot - gut) : (v.bufH - 1));
+          bot.Y = (SHORT)(g->carried.regSet ? (g->carried.regBot - gut) : (v.bufH - 1));
         }
         DWORD wr = 0;
         if (!SetConsoleCursorPosition(h->con, bot) ||
@@ -678,30 +678,6 @@ void flush_now(void *ctx)
   if (paint_flush(h) < 0) h->g->onFlush = NULL;
 }
 
-void carried_readopt(RcGrid *g, int oldCols)
-{
-  const int wasSet = g->carried.marginSet;
-  const int l0 = g->carried.leftMargin, r0 = g->carried.rightMargin;
-  g->carried.marginSet = 0;
-  g->carried.leftMargin = 0;
-  g->carried.rightMargin = g->cols - 1;
-  if (wasSet)
-  {
-    const int l = l0 < 0 ? 0 : l0;
-    const int r = r0 >= g->cols ? g->cols - 1 : r0;
-    if (l < r && !(l == 0 && r == g->cols - 1))
-    {
-      g->carried.marginSet = 1;
-      g->carried.leftMargin = l;
-      g->carried.rightMargin = r;
-    }
-  }
-  if (g->cx < g->carried.leftMargin) g->cx = g->carried.leftMargin;
-  if (g->cx > g->carried.rightMargin) g->cx = g->carried.rightMargin;
-  rc_tabs_widen(g, oldCols);
-  g->moveSeen = 0;
-}
-
 int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status)
 {
   *status = OPEN_OK;
@@ -719,19 +695,21 @@ int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status)
   }
   fresh->streamScrolls = (uint8_t)(h->ptyMode ? 1 : 0);
   RcCarried keep;
-  int keepCols = 0;
+  int keepCols = 0, keepRows = 0, keepWin = 0;
   const int haveKeep = h->g != NULL;
   if (haveKeep)
   {
     keep = h->g->carried;
     keepCols = h->g->cols;
+    keepRows = h->g->rows;
+    keepWin = h->g->winRows;
   }
   drop_model(h);
   h->g = fresh;
   if (haveKeep)
   {
     fresh->carried = keep;
-    carried_readopt(fresh, keepCols);
+    carried_readopt(fresh, keepCols, keepRows, keepWin);
   }
   h->g->onFlush = flush_now;
   h->g->flushCtx = h;
@@ -785,9 +763,9 @@ void sync_region_host(RcHandle *h)
   wchar_t b[32];
   int m;
   const int gut = h->g->rows - h->g->winRows;
-  if (h->g->regSet)
+  if (h->g->carried.regSet)
     m = swprintf(b, (int)(sizeof b / sizeof b[0]), L"\x1b[%d;%dr",
-                 h->g->regTop - gut + 1, h->g->regBot - gut + 1);
+                 h->g->carried.regTop - gut + 1, h->g->carried.regBot - gut + 1);
   else
     m = swprintf(b, (int)(sizeof b / sizeof b[0]), L"\x1b[r");
   if (m <= 0) return;

@@ -218,13 +218,24 @@ done
 
 # The stats-slot seam: Render.h's RC_CENSUS_X/RC_STATFAM_X are the single source; the two Java
 # blocks and RenderJni.cpp's STAT_ chain are verified against them on every build.
+#
+# A skipped seam is not a passed seam. The generator script and python3 are both inputs to this check, and
+# until now the absence of either printed a note and left FAILED untouched -- so a tree that lost
+# gen_statslots.py, or a PATH without python3, went green while the Java block and the STAT_ chain drifted
+# from the table it is generated from. That is the same failure terminfo_check.sh already refuses for a
+# missing jar: absent input is a FAILURE, and an opt-out has to be said out loud.
 if [ -f "$SRC_DIR/gen_statslots.py" ] && command -v python3 >/dev/null 2>&1; then
   python3 "$SRC_DIR/gen_statslots.py" --check "$SRC_DIR/Render.java" || FAILED="$FAILED host:statslots-gate"
   [ -n "$NR_JAVA" ] && { python3 "$SRC_DIR/gen_statslots.py" --check "$NR_JAVA" || FAILED="$FAILED host:statslots-prod"; }
   python3 "$SRC_DIR/gen_statslots.py" --check-c "$SRC_DIR/RenderJni.cpp" || FAILED="$FAILED host:statslots-chain"
+elif [ -n "${SKIP_STATLOTS:-}" ]; then
+  printf 'statslots: seam skipped by SKIP_STATLOTS=%s (the table and the two Java blocks are NOT compared)\n' "$SKIP_STATLOTS" >&2
 else
-  printf 'statslots: python3 missing, seam check skipped
-' >&2
+  [ -f "$SRC_DIR/gen_statslots.py" ] || printf 'statslots: no %s/gen_statslots.py\n' "$SRC_DIR" >&2
+  command -v python3 >/dev/null 2>&1 || printf 'statslots: python3 not on PATH\n' >&2
+  printf 'statslots: the seam could not run, so nothing here proves the generated blocks match Render.h.\n' >&2
+  printf '           install python3, or opt out of the leg out loud: SKIP_STATLOTS=1 ./build.sh\n' >&2
+  FAILED="$FAILED host:statslots-unrunnable"
 fi
 
 for plat in x86 x64; do
