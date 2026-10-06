@@ -2236,6 +2236,14 @@ final public class More {
         boolean isStarted;
         boolean isEnterCA;
         Status status = null;
+        // What the bar was doing before this pager took it over. exit() restores the bar only when the
+        // pager is the one who put it away: an application that had already closed or suspended it
+        // (`set status off`, a paused session) must stay in that state after `q` -- restore() would
+        // un-suspend and repaint the bar mid-screen where the app explicitly ended it, and the next
+        // prompt then fights the bar for its own rows. This is the guard the 2025-06 jline3.29 merge
+        // dropped (`isSuspended` in the pre-merge init/exit); `set status off` -> `more l` -> `q`
+        // resurfacing the bar is it biting again.
+        boolean barWasSuspended;
 
         public void init(boolean isEnterCA) {
             if (isStarted) return;
@@ -2251,6 +2259,7 @@ final public class More {
                     && terminal.getStringCapability(Capability.exit_ca_mode) != null
                     && !OSUtils.IS_CONEMU;
             status = Status.getStatus(terminal, false);
+            barWasSuspended = status != null && status.isSuspended();
             if (status != null) {
                 status.close();
                 status.suspend();
@@ -2268,7 +2277,7 @@ final public class More {
                 this.isEnterCA = false;
             }
             status = Status.getStatus(terminal, false);
-            if (status != null) {
+            if (status != null && !barWasSuspended) {
                 status.restore();
             }
         }
