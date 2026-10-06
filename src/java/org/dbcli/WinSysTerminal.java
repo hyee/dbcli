@@ -595,6 +595,21 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
         return new Cursor(info.cursorPosition.x, info.cursorPosition.y);
     }
 
+    /* The cursor that cursor_address reaches is window-relative (its rows count from the window's top),
+       but getCursorPosition() above hands out the buffer-absolute answer of the same query. The two
+       differ by srWindow.top whenever the buffer is taller than the window, and the
+       buffer-height-minus-window-height guess is wrong exactly when it matters: a scrollback console
+       whose window is not parked at the buffer's end while a prompt sits on the window's own bottom
+       row. Callers comparing a readback against window coordinates want this one: {x, y}. */
+    public int[] getRelativeCursorPosition() {
+        CONSOLE_SCREEN_BUFFER_INFO info = new CONSOLE_SCREEN_BUFFER_INFO();
+        if (GetConsoleScreenBufferInfo(outConsole, info) == 0) {
+            throw new IOError(new IOException("Could not get the cursor position: " + getLastErrorMessage()));
+        }
+        return new int[] { info.cursorPosition.x - info.window.left,
+                           info.cursorPosition.y - info.window.top };
+    }
+
     public void disableScrolling() {
         strings.remove(InfoCmp.Capability.insert_line);
         strings.remove(InfoCmp.Capability.parm_insert_line);

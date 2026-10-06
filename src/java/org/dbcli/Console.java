@@ -344,9 +344,56 @@ public final class Console {
         display.setNoWrap(false);
         prevDisplay = null;
         if (status != null) {
+            liftCursorAboveBar(status.size());
             status.restore();
         }
         display.reset();
+    }
+
+    // The bar is about to take its bottom rows back and a prompt follows this call. If the hardware
+    // cursor sits inside the rows the bar will claim, make room the way one more line of output would:
+    // park on the window's last row and line-feed the difference -- each LF at the bottom of the still
+    // full-height region scrolls it up and turns the evicted top row into history -- then address the
+    // row just above the bar. Without this the next readLine draws its prompt on the bar's own border
+    // row, and every LF written afterwards scrolls at the *window's* bottom instead of the region's,
+    // the bar included: the "top Ctrl-C leaves the prompt in the status bar and output only scrolls
+    // around it" report. The dashboard's own tick is not this: it repaints the whole screen every
+    // second, so its parked cursor is covered for free and a scroll here would eat its title rows --
+    // which is why the call sites are the three prompt-bound restores (exitDisplay, the pager's
+    // un-pause, `set status on` outside a dashboard), never the tick, and why this makes room first
+    // instead of just moving the cursor: lifting onto a row that still holds text was tried and it
+    // overwrote the caller's last line (the conpty regress leg caught it 2/2).
+    private void liftCursorAboveBar(int barRows) {
+        if (barRows <= 0 || status == null) return;
+        try {
+            int col, row;
+            if (terminal instanceof WinSysTerminal) {
+                // The window-relative read; the plain getCursorPosition() is buffer-absolute and the
+                // two differ by srWindow.top on any console whose buffer is taller than its window.
+                int[] rc = ((WinSysTerminal) terminal).getRelativeCursorPosition();
+                col = rc[0];
+                row = rc[1];
+            } else {
+                org.jline.terminal.Cursor c = terminal.getCursorPosition(i -> { });
+                if (c == null) return;
+                col = c.getX();
+                row = c.getY();
+            }
+            int windowRows = terminal.getHeight();
+            int bandTop = windowRows - 1 - barRows;
+            if (row < 0 || row >= windowRows || row <= bandTop) return;
+            terminal.puts(InfoCmp.Capability.cursor_address, windowRows - 1, 0);
+            for (int i = 0; i < row - bandTop; i++) {
+                // scroll_forward is terminfo's `ind` (^J): at the bottom margin it scrolls the region,
+                // anywhere else it just steps down -- which is why the cursor is parked on the window's
+                // last row first.
+                terminal.puts(InfoCmp.Capability.scroll_forward);
+            }
+            terminal.puts(InfoCmp.Capability.cursor_address, bandTop, col);
+            terminal.flush();
+        } catch (Throwable ignored) {
+            // A terminal that cannot answer keeps today's behaviour; the bar still draws.
+        }
     }
 
     private volatile String[] prevDisplay = null;
@@ -602,6 +649,12 @@ public final class Console {
             // when some other path happened to call restore() (pause/resume, ttop), and by then the prompt had
             // already been laid out for a screen without the bar, which is the stray empty prompt line left
             // one row above the command.
+            // A dashboard (top/snap) also reaches here through its real-title tick -- with the whole screen
+            // repainted every second, a lift would only eat its title rows -- so the lift is prompt-bound:
+            // only when no dashboard holds the bottom rows.
+            if (dashboardBarRows == 0) {
+                liftCursorAboveBar(this.status.size());
+            }
             this.status.restore();
             String time = timer.getTime();
             this.status.resize();
@@ -883,6 +936,7 @@ public final class Console {
             terminal.resume();
             terminal.echo(false);
             if (status != null) {
+                liftCursorAboveBar(status.size());
                 status.restore();
                 setStatus("flush", "");
             }

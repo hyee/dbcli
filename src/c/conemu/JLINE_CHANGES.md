@@ -658,3 +658,18 @@ cursor's ledger lives in the reader, and every hardware-level "fix the cursor fi
 on which consumer reads it next. There is no single cursor semantics for this dance that serves
 both callers -- the fix belongs in the reader's geometry (raise WINCH on bar-row-count changes and
 fold "visible rows = window - bar rows" into the gate), which stays open on the dbcli side.
+
+### 2026-10-06 final — the dbcli-side fix landed; the reader-geometry half stays unneeded for now
+
+Follow-up to the entry above: the fix was implemented in `dbcli/src/org/dbcli/Console.java`
+(prompt-bound restores now `liftCursorAboveBar`: park on the window's last row, `scroll_forward`
+the difference so the region itself makes room, then address the row above the bar -- plus a
+`WinSysTerminal.getRelativeCursorPosition()` because the plain readback is buffer-absolute and the
+window is not always parked at the buffer's end). No jline file changed for it. The WINCH-gate
+fold suggested earlier turned out to be unnecessary for every observed trigger: bar row-count
+changes only ever happen between readLines, and the lift makes the screen self-consistent before
+any consumer reads the cursor. `regress.json`'s more-cycles were retired as an oracle:
+`printer.before_command` resets `more_text` for every non-MORE command, so `more l` after
+`set status off/on` pages an empty buffer by Lua design -- the "pager not engaging" that ledger
+entries had blamed on probe timing is this, and the baseline stream shows the same `qexit`
+assembly transiently. The pager is gated by race/fastq/liftsp2 instead.
