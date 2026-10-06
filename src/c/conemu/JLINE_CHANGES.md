@@ -636,3 +636,25 @@ one row per round -- the normal newline cost). Live gate both arches `checks=637
 with the rebuilt jar; the class is deployed in `lib\JLine3.jar` alongside a `dbcli.jar` change
 (`Console.setStatus` no longer lets a spinner "flush" tick resurrect a closed/suspended bar --
 the dbcli side of the same incident, not a jline change).
+
+### 2026-10-06 later — the removal above resurfaced as "top Ctrl-C" ; a conditional re-seat was tried and reverted (no code changed)
+
+The owner reported: `top` -> Ctrl-C -> "Statement is aborted." -> the prompt never appears, the
+cursor lands on the bar, and subsequent output scrolls only around the bar. Four-arm A/B on real
+window legs pinned the cause to **this grow-branch change**: old dbcli.jar + new jline reproduces,
+new dbcli.jar + **old** jline is clean. Mechanism: the exit path (`Console.exitDisplay` ->
+`status.restore()`) grows the bar while the caller's cursor sits on what is about to become the
+bar's border row, and the plain re-save now leaves it there -- `readLine` writes its prompt at the
+hardware cursor, so prompt and bar fight for the same row and the LF scrolls at the real window
+bottom, shoving the bar off and repainting it. The removed `cursor_up` loop had been compensating
+*that* caller by accident: the same `-k` was poison for the pager and medicine for `top`.
+
+A conditional re-seat was tried (after `restore_cursor`, read the cursor back locally via
+`GetConsoleScreenBufferInfo` -- no DSR round-trip -- and CUP above the bar when it is genuinely
+buried). It fixed the classic-window `top` leg completely and **broke the conpty regress leg
+stably (2/2) with the pre-fix `qexit`/`QMORE` symptom** that the removal above had cured. Reverted;
+both legs are witnesses. The lesson is the same one 2026-09-28 taught about the WINCH gate: the
+cursor's ledger lives in the reader, and every hardware-level "fix the cursor first" move is a bet
+on which consumer reads it next. There is no single cursor semantics for this dance that serves
+both callers -- the fix belongs in the reader's geometry (raise WINCH on bar-row-count changes and
+fold "visible rows = window - bar rows" into the gate), which stays open on the dbcli side.
