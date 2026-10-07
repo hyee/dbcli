@@ -462,7 +462,22 @@ public final class Console {
         for (int i = lines.size(); i < height; i++) {
             lines.add(blankRowOf(width));
         }
-        display.update(lines, -1);
+        /* Park the cursor at the left edge of the frame's last row, and do not let Display choose.
+           With -1 the library moves to `currentPos`, which is wherever the last written row ended -- and a
+           dashboard row is cut to exactly `width` columns while the pad rows above are `width` spaces, so the
+           frame's end position is the right margin. jline reaches the right margin the only way it can: it
+           writes a character into the last column (Display.moveVisualCursorTo's own comment says there is no
+           portable way), which leaves the console in deferred-wrap at (last row, column == width) -- the block
+           cursor parked in the bottom-right corner, visible through every frame of `top`, and the row the
+           prompt is drawn on once the dashboard exits. Measured on a windows-vtp leg: frames 1-2 sit at
+           [29,0] and every frame after that at [29,100] on a 100x30 screen.
+           The block path never showed it because a block ends with home + erase-to-EOL, which lands at column
+           zero by construction -- which is also why this only bites the terminals that parse the stream
+           themselves (windows-vtp/`msfterm`, plain `windows`, anything the generic builder hands a dashboard).
+           The stride is `width + 1` because Display counts one spare slot per row (columns1), and `height` is
+           already the dashboard's own height -- getScreenHeight() subtracts the bar's rows -- so this target is
+           the same cell the block path leaves the cursor in. */
+        display.update(lines, height > 0 && width > 0 ? (height - 1) * (width + 1) : -1);
         terminal.setAttributes(attrs);
         prevDisplay = args;
     }
