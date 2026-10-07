@@ -497,8 +497,14 @@ public final class Console {
      * the native renderer replaced the Java rectangle writer it used to ask.
      */
     static boolean isBlockPaintEnabled(Terminal terminal) {
+        // windows-render joins its conemu sibling: the type names the renderer dialect, not the writer
+        // path, and a windows-render session paints through the same render.dll. Missing it stranded the
+        // dashboard on the line-by-line Display path, whose first frame starts at the cursor row and
+        // never sends the bare home the takeover contract waits for -- top's interleaved first refresh
+        // (2026-10-07, trace: not one block chunk in the whole session).
         return NativeRenderer.isEnabled()
-                && AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType());
+                && (AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType())
+                    || AbstractWindowsTerminal.TYPE_WINDOWS_RENDER.equals(terminal.getType()));
     }
 
     public void handleResize(Terminal.Signal signal) {

@@ -693,7 +693,15 @@ int build_model(RcHandle *h, int cols, int rows, int defAttr, int *status)
     *status = OPEN_BIG;
     return 0;
   }
-  fresh->streamScrolls = (uint8_t)(h->ptyMode ? 1 : 0);
+  /* Batched, not streamed, on every console kind. Under a pseudo-console this used to be 1, which made
+     scroll_up's flush test fire per row: one 40-row dashboard chunk measured 17 flushes and 17
+     rectangles against the classic console's 1 and 1 for the same bytes (ProbeFlush, cache/topfix),
+     and conhost's serializer re-emits every intermediate state it is shown -- the interleaved first
+     refresh of top, #103's scrollback half. The per-scroll urgency bought nothing the chunk-end pay
+     does not: the debt is still paid in real line feeds under a pty, the host's scrollback still
+     grows one row per paid feed, and a chunk longer than the gutter still flushes at the gutter
+     boundary, so streaming survives at the granularity that matters. */
+  fresh->streamScrolls = 0;
   RcCarried keep;
   int keepCols = 0, keepRows = 0, keepWin = 0;
   const int haveKeep = h->g != NULL;
