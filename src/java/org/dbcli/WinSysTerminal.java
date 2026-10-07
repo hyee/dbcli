@@ -142,6 +142,16 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 type = term;
             }
         }
+        /* A real ConEmu window parses the stream itself, so its dialect is windows-conemu even when its
+           conhost advertises VTP -- the vtp caps describe conhost's parser, and the consumer of these
+           bytes is ConEmu. Measured 2026-10-07: the enableVtp branch below won over the IS_CONEMU branch
+           on a real ConEmu (type=windows-vtp, the same on the pre-TERM jars), which is the wrong dialect
+           for the thing actually reading the escapes. A TERM the host set still wins over this; it only
+           fills the default. The writer is untouched -- the stream still goes out as-is for ConEmu to
+           parse. */
+        if (type == null && OSUtils.IS_CONEMU) {
+            type = TYPE_WINDOWS_CONEMU;
+        }
         Boolean pty = NativeRenderer.pseudoConsole();
         /* 2026-09-29, owner's ruling: the claim wins. ANSICON_DEF=conemu is the owner saying "this session
            renders through the native renderer", and a pseudo-console test may not silently override it --

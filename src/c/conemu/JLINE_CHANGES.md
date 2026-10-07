@@ -705,3 +705,17 @@ TERM=xterm-256color → `xterm-256color` on both the pass-through and default br
 the harness inheriting the driver shell's `MSYSTEM=MINGW64` and a global `ANSICON_DEF=7` — the clean
 arms clear both in the tab before launching. Live gate 6373/0 x2, STAGE0 ok; liftsp2/offhelp regression
 legs green on the same jars.
+
+### 2026-10-07 later — a real ConEmu window defaults to its own dialect, not vtp's
+
+The owner ran dbcli in a real ConEmu and got `type='windows-vtp'`: the branch order
+below the TERM seed let `enableVtp` win over the IS_CONEMU branch (new ConEmu conhosts
+advertise the VTP bit), and the vtp caps describe conhost's parser while the consumer
+of a ConEmu session's bytes is ConEmu itself. Pre-TERM jars reproduce it, so the TERM
+work did not introduce it -- it only made the mismatch visible. Fix stays on the
+dbcli side: after the TERM seed, an unfilled `type` on a real ConEmu window defaults
+to `windows-conemu` (TERM still wins over this; the writer is untouched -- the stream
+goes out as-is for ConEmu to parse, only the caps/name now describe the right
+consumer). Witness: TypeDump4 file-writer in the real ConEmu, TERM unset ->
+`windows-conemu` (was windows-vtp on the old jars), TERM=xterm-256color ->
+`xterm-256color`; live gate 6373/0 x2 and the pager legs green on the same jar.
