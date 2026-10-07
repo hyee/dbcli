@@ -118,20 +118,47 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
            ANSI_RENDER=off remains the way out of both: ConEmuWriter then holds no renderer and every write
            goes out raw, which is always correct and only slower.
            See DESIGN.md rows #37, #38 and #99, ANSI_TODO #103/#104, and JLINE_CHANGES.md. */
-        final boolean conemuClaimed = ("conemu").equals(System.getenv("ANSICON_DEF"));
+        final String claim = System.getenv("ANSICON_DEF");
+        final String term = System.getenv("TERM");
+        /* TERM=windows-render is the same claim through the channel dbcli.bat uses: it selects the
+           renderer (ConEmuWriter/render.dll) AND its own caps. */
+        final boolean rendererClaimed = "conemu".equals(claim) || "render".equals(claim)
+                || "windows-render".equals(term) || "render".equals(term);
+        /* The hosting terminal's declared dialect outranks our Windows defaults when it set one and no
+           explicit claim says otherwise. wezterm and ghostty export TERM=xterm-256color even on Windows,
+           and on the branches below where the escapes flow out to that terminal (a pseudo-console
+           pass-through, a VTP-capable console) its dialect is the one worth encoding for. Only names with
+           built-in caps qualify: the lookup is InfoCmp's pure in-memory registry, never the infocmp
+           shell-out -- the Windows gate in InfoCmp.getInfoCmp stands untouched, by the owner's 2026-10-05
+           ruling -- and an unknown TERM keeps the Windows default instead of degrading the session.
+           MSYS/Cygwin are excluded on purpose (their consoles are ptys with their own terminfo chain, and
+           dbcli.bat already corrects ANSICON_DEF there), and `dumb` because honouring a TERM set for
+           redirected stdio would switch a live console session to dumb caps. The renderer branches below
+           still force their own type: a session painting through render.dll speaks the renderer's dialect,
+           whatever the host terminal would have said. */
+        if (type == null && !OSUtils.IS_MSYSTEM && !OSUtils.IS_CYGWIN && !rendererClaimed) {
+            if (term != null && !term.isEmpty() && !"dumb".equals(term) && !"dumb-color".equals(term)
+                    && InfoCmp.getDefaultInfoCmp(term) != null) {
+                type = term;
+            }
+        }
         Boolean pty = NativeRenderer.pseudoConsole();
         /* 2026-09-29, owner's ruling: the claim wins. ANSICON_DEF=conemu is the owner saying "this session
            renders through the native renderer", and a pseudo-console test may not silently override it --
            the 2026-09-28 ordering (pty first, claim ignored with a startup warning) routed every ConPTY-hosted
            session to the plain writer instead, which the owner called the bypass itself: the session prints
-           escapes to the terminal above and render.dll never runs. So conemuClaimed is tested first again
+           escapes to the terminal above and render.dll never runs. So the claim is tested first again
            (the #99 order of 2026-09-27), with no warning: the claim is honoured, not apologised for.
+           2026-10-07: ANSICON_DEF=render joins it with the renderer's own caps entry -- same dialect as
+           conemu at the fork, free to diverge -- so the two renderers' contracts can be told apart.
            What painting under a pseudo-console has to get right is then render.dll's business -- the
            re-serialization hazard is real (MSFT VtIo.cpp:771-830 turns a cell write back into escapes) and
            is tracked as ANSI_TODO #103/#104; it is a defect to fix in the renderer, not a licence to skip
            the renderer. */
-        if (conemuClaimed) {
-            type = TYPE_WINDOWS_CONEMU;
+        if (rendererClaimed) {
+            // ANSICON_DEF=conemu keeps the conemu name (the session's own declaration); the render forms
+            // -- TERM=windows-render as dbcli.bat exports, ANSICON_DEF=render -- take the renderer's own.
+            type = "conemu".equals(claim) ? TYPE_WINDOWS_CONEMU : TYPE_WINDOWS_RENDER;
             writer = new ConEmuWriter(console);
         } else if (pty != null ? pty.booleanValue()
                 : System.getenv("WT_SESSION") != null && enableVtp(console, outMode[0])) {

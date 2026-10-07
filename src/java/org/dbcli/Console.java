@@ -113,7 +113,8 @@ public final class Console {
                 && !mode.equals("jna")
                 && !mode.equals("ffm")
                 && !mode.equals("ansicon")
-                && !mode.equals("conemu")) {
+                && !mode.equals("conemu")
+                && !mode.equals("render")) {
             mode = "default";
         }
         // `OSUtils.IS_CONEMU` used to be in the skip list below, and that is why a real ConEmu window never
@@ -129,7 +130,7 @@ public final class Console {
             try {
                 this.terminal = WinSysTerminal.createTerminal(colorPlan,
                         null,
-                        "ansicon".equals(mode) || "conemu".equals(mode),
+                        "ansicon".equals(mode) || "conemu".equals(mode) || "render".equals(mode),
                         encoding, true,
                         Terminal.SignalHandler.SIG_IGN,
                         false);

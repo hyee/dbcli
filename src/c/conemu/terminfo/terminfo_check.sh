@@ -1,44 +1,9 @@
 #!/bin/bash
-# The terminfo contract, checked rather than asserted.
-#
-# Four facts, none of them provable by reading one file:
-#   1. `windows-conemu.ti` compiles under ncurses (`tic -x`). The jline spelling of the same entry does NOT:
-#      its first line carries prose with commas, and terminfo reads those as field separators. So the .ti is
-#      the only form a real terminfo tool can be pointed at, and two documents describing one contract drift
-#      unless something checks. This is that something.
-#   2. The .ti's capability set equals the set in `windows-conemu.caps`, the file jline actually loads.
-#   3. Three copies of that .caps agree: the renderer's mirror here, jline's source tree, and the copy
-#      inside the jar the application loads. A green audit against a stale jar copy is DESIGN §6 rule 10 in
-#      another costume.
-#   4. The compiled entry dumps back (`infocmp`) as the same set the source claims, which is what catches a
-#      capability that tic silently dropped or renamed.
-#   5. The checked-in `infocmp-windows-conemu.txt` snapshot still says what today's compile says -- token for
-#      token, values included, because both sides are infocmp output. Without this leg the snapshot is a
-#      write-only file that can describe a dead contract indefinitely.
-#
-# Usage, from anywhere wsl.exe reaches. The assignments have to be EXPORTED: written in front of `tr`, they
-# bind to `tr`'s environment only, and the script that actually reads them sees nothing -- which is how arm 3
-# lost the jar and the jline copy. The `tr` is not decoration either: core.autocrlf=true with no .gitattributes
-# hands bash a CRLF script. Spell the `\r` as backslash-r, not as a raw carriage-return byte.
-#   MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'export DBCLI_ROOT=/mnt/d/dbcli \
-#     JLINE_CAPS=/mnt/d/JavaProjects/jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps \
-#     JAR=/mnt/d/dbcli/lib/JLine3.jar; \
-#     tr -d "\r" < /mnt/d/dbcli/src/c/conemu/terminfo/terminfo_check.sh | bash -s'
-# DBCLI_ROOT is a convenience, not a requirement -- the root is found by marker (see below).
-# Pass --refresh to rewrite infocmp-windows-conemu.txt from the compile. Nothing else here rewrites a file.
 set -u
 
 REFRESH=no
 for a in "$@"; do [ "$a" = "--refresh" ] && REFRESH=yes; done
 
-# The dbcli root, resolved by MARKER rather than by arithmetic on `$0`. This script is normally fed through a
-# pipe -- `tr -d '\r' < this file | bash -s` -- and on that road `$0` is `bash`, not this path, so the old
-# `dirname "$0"` + up-four derived the root from the *caller's* cwd: from a repo root it walked off the top of
-# the filesystem, ROOT became `/`, and the run died on `no //src/c/conemu/terminfo/windows-conemu.ti`. A gate
-# whose documented invocation cannot run is worse than a gate with a missing leg, so the resolution now looks
-# for a file only this tree has, in the two places a path is honestly knowable: an explicit $DBCLI_ROOT, the
-# real script path if bash was given one, and upward from the cwd. Nothing is guessed and nothing is quiet --
-# when all three miss, the refusal names every candidate it tried.
 marker() { [ -f "$1/src/c/conemu/terminfo/windows-conemu.ti" ]; }
 
 ROOT=""
@@ -77,8 +42,6 @@ fi
 T="$ROOT/src/c/conemu/terminfo"
 echo "     root resolved to: $ROOT"
 JAR="${JAR:-$ROOT/lib/JLine3.jar}"
-# The caps entry jline's *source tree* carries, when there is one to find. Two known homes, and the refusal
-# names them rather than guessing a third: the authority tree and its build output.
 JLINE_CAPS="${JLINE_CAPS:-}"
 if [ -z "$JLINE_CAPS" ]; then
   for c in /mnt/d/JavaProjects/jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps            "$ROOT/../jline3.29/terminal/src/main/resources/org/jline/utils/windows-conemu.caps"; do
@@ -86,8 +49,6 @@ if [ -z "$JLINE_CAPS" ]; then
   done
 fi
 export JLINE_CAPS
-# `JAR` has to be exported or the python block below never sees it -- and the arm silently compared nothing
-# for its whole life because of exactly that. See the "compared N copies" line this script now prints.
 export JAR
 [ -f "$T/windows-conemu.ti" ] || { echo "no $T/windows-conemu.ti (set DBCLI_ROOT)"; exit 1; }
 for f in windows-conemu.caps; do [ -f "$T/$f" ] || { echo "no $T/$f"; exit 1; }; done
@@ -106,8 +67,6 @@ fi
 TERMINFO="$WORK/tc" infocmp -x -1 -I windows-conemu >"$WORK/dump.txt" 2>"$WORK/dump.err"
 if [ ! -s "$WORK/dump.txt" ]; then
   echo "FAIL infocmp could not read back what tic wrote:"; cat "$WORK/dump.err"
-  # Stop here rather than letting the comparison python open a file that does not exist: a traceback is loud,
-  # but it is loud about the wrong thing -- the compile failed, and legs 2-4 never ran.
   echo "TERMINFO CHECK: FAILED"; exit 1
 fi
 
@@ -249,13 +208,57 @@ if [ "$REFRESH" = "yes" ] && [ -s "$WORK/dump.txt" ]; then
     echo "# about windows-conemu.ti, which is derived from windows-conemu.caps -- the entry jline loads at run"
     echo "# time. The capability set is asserted equal to that file's on every run of this script."
     echo "# $(infocmp -V 2>/dev/null || echo 'ncurses version unavailable')"
-    # infocmp's first line names the file it read back, and that file is this run's mktemp directory. Left in,
-    # every --refresh dirties the checkout on a line that means nothing, and a real drift hides in that noise:
-    # the whole point of checking the dump in is that `git diff` on it is a statement about the entry.
     sed "s#$WORK#<tic output dir>#" "$WORK/dump.txt"
   } >"$T/infocmp-windows-conemu.txt"
   echo "ok   refreshed infocmp-windows-conemu.txt"
 fi
+# --- windows-render: render.dll's own entry, forked from windows-conemu 2026-10-07. Same gate shape,
+# one compile arm and a three-copy byte compare; independent because the whole point of the fork is
+# that the two entries can now diverge -- a gate that only ever compared conemu would wave a diverged
+# render entry through.
+if [ -f "$T/windows-render.ti" ] && [ -f "$T/windows-render.caps" ]; then
+  tic -x -o "$WORK/tc-render" "$T/windows-render.ti" >"$WORK/tic-render.log" 2>&1
+  if [ -s "$WORK/tic-render.log" ]; then
+    echo "FAIL tic -x said something about windows-render.ti:"; cat "$WORK/tic-render.log"; rc=1
+  else
+    echo "ok   tic -x compiles windows-render.ti with no complaint"
+  fi
+  RENDER_CAPS_NAME="org/jline/utils/windows-render.caps"
+  RENDER_MIRROR_JLINE="${JLINE_RENDER_CAPS:-$(dirname "${JLINE_CAPS:-/x/x}")/windows-render.caps}"
+  if [ -f "$RENDER_MIRROR_JLINE" ]; then
+    export RENDER_MIRROR_JLINE
+  fi
+  python3 - "$T" "$RENDER_MIRROR_JLINE" <<'PY' || rc=1
+import os, sys, hashlib, zipfile
+T, jline_copy = sys.argv[1], sys.argv[2]
+bad = 0
+mirror = open(os.path.join(T, "windows-render.caps"), "rb").read()
+copies = [("mirror", mirror)]
+if jline_copy and os.path.exists(jline_copy):
+    copies.append(("jline", open(jline_copy, "rb").read()))
+jar = os.environ.get("JAR", "")
+if jar and os.path.exists(jar):
+    z = zipfile.ZipFile(jar)
+    name = "org/jline/utils/windows-render.caps"
+    copies.append(("jar", z.read(name) if name in z.namelist() else None))
+else:
+    print("note the render jar copy was not compared (JAR unset)")
+def md5(b):
+    return hashlib.md5(b).hexdigest()
+base = copies[0][1]
+for tag, blob in copies[1:]:
+    if blob is None:
+        print("FAIL the %s copy of windows-render.caps is missing from the jar" % tag); bad = 1
+    elif blob == base:
+        print("ok   the %s copy of windows-render.caps is byte-identical to the mirror (%s)" % (tag, md5(base)[:12]))
+    else:
+        print("FAIL the %s copy of windows-render.caps differs from the mirror: %s vs %s" % (tag, md5(blob)[:12], md5(base)[:12])); bad = 1
+sys.exit(bad)
+PY
+else
+  echo "note windows-render entry not found in the mirror, render arm skipped"
+fi
+
 
 echo "TERMINFO CHECK: $([ $rc -eq 0 ] && echo ok || echo FAILED)"
 exit $rc

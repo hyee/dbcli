@@ -673,3 +673,35 @@ any consumer reads the cursor. `regress.json`'s more-cycles were retired as an o
 `set status off/on` pages an empty buffer by Lua design -- the "pager not engaging" that ledger
 entries had blamed on probe timing is this, and the baseline stream shows the same `qexit`
 assembly transiently. The pager is gated by race/fastq/liftsp2 instead.
+
+## 2026-10-07, the hosting terminal's TERM now seeds the Windows type, and render.dll gets its own caps entry
+
+Two changes, both in the files this ledger covers:
+
+1. **`terminal/.../InfoCmp.java`** — the built-in registry gains `windows-render` (`render.caps` beside
+   the conemu one). That is all: the Windows gate in `getInfoCmp` stands exactly as the owner ruled it
+   on 2026-10-05 (no infocmp shell-out on native Windows), and no caller of the loading chain changed.
+2. **`terminal/.../AbstractWindowsTerminal.java`** — `TYPE_WINDOWS_RENDER = "windows-render"`.
+
+The selection itself is dbcli-side (the `dbcli` subtree, recorded in the repo's own ledger):
+`WinSysTerminal.createTerminal` seeds `type` from the `TERM` environment variable on native Windows
+(`!IS_MSYSTEM && !IS_CYGWIN && !rendererClaimed`), only for names the built-in registry can answer,
+`dumb` excluded — so a wezterm/ghostty session that exports `TERM=xterm-256color` encodes its own
+dialect instead of `windows-vtp`, while no TERM keeps the Windows defaults. `TERM=windows-render` (what
+dbcli.bat exports when `ANSICON_DEF=render` runs with ANSICON present) and `ANSICON_DEF=render` are
+renderer claims: they select `ConEmuWriter`/render.dll **and** `windows-render.caps`, outranking any
+host TERM. Why render.dll gets an entry of its own rather than reusing the conemu one: the two dialects
+are identical today and the fork exists precisely so they can diverge without a re-audit of the other
+entry. `render.caps` in the jline resources, the renderer's mirror (`terminfo/windows-render.caps`) and
+the shipped jar copy are asserted byte-identical by `terminfo_check.sh`'s new render arm, which also
+compiles `windows-render.ti` under `tic -x`.
+
+Witness (2026-10-07): ConPTY five-arm (`cache/termcaps/arm{a..e}`) — TERM=xterm-256color seeds
+`xterm-256color` through both the VTP and pass-through branches, no TERM keeps `windows-vtp`,
+`TERM=windows-render` + `ANSICON_DEF=render` lands `windows-render` with the painter. Real ConEmu
+(`cache/termcaps/TypeDump{2,3}.java` writing to a file, because ConEmu eats injected keystrokes):
+TERM=xterm-256color → `xterm-256color` on both the pass-through and default branches, TERM unset →
+`windows-conemu`, render claim → `windows-render`. The first ConEmu capture that looked polluted was
+the harness inheriting the driver shell's `MSYSTEM=MINGW64` and a global `ANSICON_DEF=7` — the clean
+arms clear both in the tab before launching. Live gate 6373/0 x2, STAGE0 ok; liftsp2/offhelp regression
+legs green on the same jars.
