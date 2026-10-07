@@ -2278,6 +2278,10 @@ final public class More {
             }
             status = Status.getStatus(terminal, false);
             if (status != null && !barWasSuspended) {
+                // The pager's whole-screen block parks the hardware cursor on its own last row, which is
+                // inside the band the bar is about to re-claim. Make room first, exactly like
+                // Console's other prompt-bound restores, or the next prompt draws on the bar's border.
+                Console.liftCursorAboveBar(terminal, status, status.size());
                 status.restore();
             }
         }

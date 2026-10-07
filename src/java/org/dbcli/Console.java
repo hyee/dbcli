@@ -364,6 +364,13 @@ public final class Console {
     // instead of just moving the cursor: lifting onto a row that still holds text was tried and it
     // overwrote the caller's last line (the conpty regress leg caught it 2/2).
     private void liftCursorAboveBar(int barRows) {
+        liftCursorAboveBar(terminal, status, barRows);
+    }
+
+    // The static core, so the pager's own exit can lift at its restore too: More$Play.exit is the
+    // fifth prompt-bound point (the pager parks the hardware cursor on its own bottom row, which is
+    // inside the band the bar re-claims), and it lives in a different class than the other three.
+    static void liftCursorAboveBar(Terminal terminal, org.jline.utils.Status status, int barRows) {
         if (barRows <= 0 || status == null) return;
         try {
             int col, row;
