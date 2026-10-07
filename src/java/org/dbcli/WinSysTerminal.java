@@ -98,11 +98,13 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
            the variable gets wrong -- whereas the window class is VtIo mode as conhost itself reports it
            (getset.cpp:1262-1275). Where the library cannot answer, the old weaker test stands in, and it is
            only ever reached on a session that has no painter to begin with. */
-        /* #99: an explicit ANSICON_DEF=conemu now outranks the pseudo-console test, by the owner's
-           decision on 2026-09-27. Before this, a Windows Terminal session with ANSICON_DEF=conemu in its
-           environment took the ConPTY branch at the line below and never reached the ConEmuWriter branch,
-           so the painter was skipped for the whole session and nothing said so -- ConEmuWriter is the
-           only caller that reports unavailableReason().
+        /* #99 asked, from 2026-09-27, that an explicit ANSICON_DEF=conemu outrank the pseudo-console test, so
+           a Windows Terminal session carrying that variable in its environment would not skip the painter.
+           RETIRED 2026-10-07 by the owner: `conemu` names a dialect, not a request for render.dll, and the
+           renderer now has its own caps entry and its own type to be asked for. What survives of #99 is the
+           finding, not the exception -- ConEmuWriter is the only caller that reports unavailableReason(), so a
+           session that silently loses the painter is a session that says nothing; the claim forms that reach
+           it today (ANSICON_DEF=render, TERM=windows-render) still say so out loud when the dll refuses.
          
            WARNING, current as of build -48: two costs were measured on this branch and one has been paid.
            PAID (#104): the host's own escape parser is now switched off by render.dll for as long as it is
@@ -115,14 +117,25 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
            interleaved in two columns, two prompts. Clearing ENABLE_VIRTUAL_TERMINAL_PROCESSING does not help
            with that one: headless conhost serialises buffer changes to the pty whatever this buffer's mode
            says. The fix is in align_grid's `rc_mark_all_dirty` (ANSI_TODO #103 has the line).
-           ANSI_RENDER=off remains the way out of both: ConEmuWriter then holds no renderer and every write
-           goes out raw, which is always correct and only slower.
+           ANSI_RENDER=off is the way out of both -- but it is not "correct and only slower", as this comment
+           used to claim: ConEmuWriter then holds no renderer, and on a console that parses nothing the bytes
+           would arrive as literal text. What ConEmuWriter does with them depends on whether anything above it
+           reads escapes (its hostParses argument); where nothing does, it writes the text stripped, in plain
+           type, and says once that colour is unavailable here. That is a degradation, not a fix: #103 is still
+           owed inside render.dll.
            See DESIGN.md rows #37, #38 and #99, ANSI_TODO #103/#104, and JLINE_CHANGES.md. */
         final String claim = System.getenv("ANSICON_DEF");
         final String term = System.getenv("TERM");
-        /* TERM=windows-render is the same claim through the channel dbcli.bat uses: it selects the
-           renderer (ConEmuWriter/render.dll) AND its own caps. */
-        final boolean rendererClaimed = "conemu".equals(claim) || "render".equals(claim)
+        /* Only the render forms claim the painter. `ANSICON_DEF=conemu` stopped being one of them on
+           2026-10-07 by the owner's ruling, and #99's exception goes with it: the value names a *dialect*,
+           and since windows-render.caps forked (jline 54fd3100) the renderer has its own name for its own
+           contract. Leaving `conemu` in this list put a painter on a session whose caps entry describes
+           ConEmu's parser -- one entry serving two dialects, neither of them the renderer's, which is
+           exactly how a lying terminfo gets written. A session that wants render.dll says so with
+           ANSICON_DEF=render or TERM=windows-render (the channel dbcli.bat exports); a real ConEmu window
+           keeps the conemu name through the IS_CONEMU branch below, where the writer is the pass-through one
+           and ConEmu parses the bytes itself. */
+        final boolean rendererClaimed = "render".equals(claim)
                 || "windows-render".equals(term) || "render".equals(term);
         /* The hosting terminal's declared dialect outranks our Windows defaults when it set one and no
            explicit claim says otherwise. wezterm and ghostty export TERM=xterm-256color even on Windows,
@@ -153,23 +166,35 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
             type = TYPE_WINDOWS_CONEMU;
         }
         Boolean pty = NativeRenderer.pseudoConsole();
-        /* 2026-09-29, owner's ruling: the claim wins. ANSICON_DEF=conemu is the owner saying "this session
+        /* Does anything above this buffer read escape sequences when this process's own painter is not
+           running? A pseudo-console always does (the terminal hosting ConPTY parses the stream), and a
+           console whose output mode carries the VTP bit does. This is the fact ConEmuWriter needs to choose
+           between two honest fallbacks -- hand the bytes over, or strip them and say the screen is plain --
+           and it is read off the console rather than off a branch, because the ansicon leg below reaches a
+           VTP-capable buffer as often as the plain else does. */
+        final boolean hostParses = pty != null ? pty.booleanValue()
+                : (outMode[0] & AbstractWindowsTerminal.ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0;
+        /* 2026-09-29, owner's ruling: the claim wins. A renderer claim is the owner saying "this session
            renders through the native renderer", and a pseudo-console test may not silently override it --
            the 2026-09-28 ordering (pty first, claim ignored with a startup warning) routed every ConPTY-hosted
            session to the plain writer instead, which the owner called the bypass itself: the session prints
            escapes to the terminal above and render.dll never runs. So the claim is tested first again
            (the #99 order of 2026-09-27), with no warning: the claim is honoured, not apologised for.
-           2026-10-07: ANSICON_DEF=render joins it with the renderer's own caps entry -- same dialect as
-           conemu at the fork, free to diverge -- so the two renderers' contracts can be told apart.
+           2026-10-07, twice over: ANSICON_DEF=render joined the claim set with the renderer's own caps entry
+           (same dialect as conemu at the fork, free to diverge), and ANSICON_DEF=conemu then *left* it --
+           #99's original exception is retired, because a dialect name is not a request for a painter and the
+           entry it selected describes ConEmu's parser, not render.dll's model. What remains claimable is
+           ANSICON_DEF=render and TERM=windows-render / TERM=render.
            What painting under a pseudo-console has to get right is then render.dll's business -- the
            re-serialization hazard is real (MSFT VtIo.cpp:771-830 turns a cell write back into escapes) and
            is tracked as ANSI_TODO #103/#104; it is a defect to fix in the renderer, not a licence to skip
            the renderer. */
         if (rendererClaimed) {
-            // ANSICON_DEF=conemu keeps the conemu name (the session's own declaration); the render forms
-            // -- TERM=windows-render as dbcli.bat exports, ANSICON_DEF=render -- take the renderer's own.
-            type = "conemu".equals(claim) ? TYPE_WINDOWS_CONEMU : TYPE_WINDOWS_RENDER;
-            writer = new ConEmuWriter(console);
+            /* A claim is a statement about who parses this stream, so the type is the renderer's own: the
+               caps entry the reader layers consult has to describe render.dll's model. Every other leg that
+               reaches ConEmuWriter below takes the same type for the same reason. */
+            type = TYPE_WINDOWS_RENDER;
+            writer = new ConEmuWriter(console, hostParses);
         } else if (pty != null ? pty.booleanValue()
                 : System.getenv("WT_SESSION") != null && enableVtp(console, outMode[0])) {
             /* No enableVtp call here: a ConPTY console already has it on -- measured 2026-09-25 in Windows
@@ -183,8 +208,10 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                     type = type != null ? type : TYPE_WINDOWS_VTP;
                     writer = newConsoleWriter(console);
                 } else {
-                    type = TYPE_WINDOWS_CONEMU;
-                    writer = new ConEmuWriter(console);
+                    // Ansilog's parser is not on this console either, so the renderer parses and paints --
+                    // and the type has to name the parser that actually consumed the bytes.
+                    type = TYPE_WINDOWS_RENDER;
+                    writer = new ConEmuWriter(console, hostParses);
                 }
             } else {
                 type = type != null ? type : OSUtils.IS_CONEMU ? TYPE_WINDOWS_CONEMU : TYPE_WINDOWS;
@@ -198,15 +225,18 @@ public class WinSysTerminal extends AbstractWindowsTerminal<Long> {
                 type = type != null ? type : TYPE_WINDOWS_CONEMU;
                 writer = newConsoleWriter(console);
             } else {
-                // The console cannot parse the escapes itself and is not ConEmu, so somebody has to
-                // render them: the native renderer in ConEmuWriter does the parsing and paints the
-                // cells. The alternative here was JLine's WindowsAnsiWriter, which issues one console
-                // call per character and costs seconds on a large result set.
-                type = TYPE_WINDOWS_CONEMU;
-                writer = new ConEmuWriter(console);
+                /* The console cannot parse the escapes itself and is not ConEmu, so somebody has to render
+                   them: the native renderer in ConEmuWriter does the parsing and paints the cells. It takes
+                   the renderer's own type because that is whose model the caps entry has to describe.
+                   (2026-10-07, correcting what this comment used to claim: the alternative it named,
+                   "JLine's WindowsAnsiWriter", does not exist in this fork's tree -- grep the shipping
+                   terminal/impl and there is no such class, only org.jline.utils.AnsiWriter, which *emits*
+                   escapes rather than parsing them. The only parser on this box is render.dll; when it is
+                   off or unavailable, ConEmuWriter strips instead of spraying literals.) */
+                type = TYPE_WINDOWS_RENDER;
+                writer = new ConEmuWriter(console, hostParses);
             }
         }
-        // Create terminal
         WinSysTerminal terminal = new WinSysTerminal(
                 provider,
                 systemStream,

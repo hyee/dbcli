@@ -113,16 +113,22 @@ public final class Console {
                 && !mode.equals("jna")
                 && !mode.equals("ffm")
                 && !mode.equals("ansicon")
-                && !mode.equals("conemu")
                 && !mode.equals("render")) {
             mode = "default";
         }
+        /* `conemu` left this list on 2026-10-07, by the owner's ruling that the value ceases to exist: it was
+           the last place that still turned ANSICON_DEF=conemu into a different terminal, because it fed
+           `ansiPassThrough` below and so decided, from the application, which branch WinSysTerminal would
+           take. The dialect name survives where it means something -- a real ConEmu window is recognised by
+           OSUtils.IS_CONEMU inside WinSysTerminal's own branch order, and no variable the user did not set
+           picks the ANSI path any more. An inherited ANSICON_DEF=conemu now normalizes to "default", which
+           is what the retired claim should have done from the start. */
         // `OSUtils.IS_CONEMU` used to be in the skip list below, and that is why a real ConEmu window never
         // reached render.dll: with ConEmuPID set, this skipped dbcli's own createTerminal and the generic
         // builder handed the session jline's built-in ConEmu writer instead of org.dbcli.ConEmuWriter -- a
         // second, different ANSI path, chosen by a variable the user never set. `mode` already says what the
-        // user asked for (ANSICON_DEF=conemu), so the flag is dropped and the choice is made once, in
-        // WinSysTerminal's branch order. Cygwin/MSYS stay out: there is no console to adopt there.
+        // user asked for, so the flag is dropped and the choice is made once, in WinSysTerminal's branch
+        // order. Cygwin/MSYS stay out: there is no console to adopt there.
         if (OSUtils.IS_WINDOWS
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)
                 && !"jna".equals(mode)
@@ -130,7 +136,7 @@ public final class Console {
             try {
                 this.terminal = WinSysTerminal.createTerminal(colorPlan,
                         null,
-                        "ansicon".equals(mode) || "conemu".equals(mode) || "render".equals(mode),
+                        "ansicon".equals(mode) || "render".equals(mode),
                         encoding, true,
                         Terminal.SignalHandler.SIG_IGN,
                         false);
@@ -154,7 +160,7 @@ public final class Console {
                     .encoding(encoding)
                     .jansi(false)
                     .jna("jna".equals(mode))
-                    .jni("jni".equals(mode) || "ansicon".equals(mode) || "conemu".equals(mode) || "default".equals(mode))
+                    .jni("jni".equals(mode) || "ansicon".equals(mode) || "default".equals(mode))
                     // ffm stays out of the default mode set: it can warn on start up
                     .ffm("ffm".equals(mode))
                     .nativeSignals(true)
@@ -320,6 +326,12 @@ public final class Console {
     // takes the screen; see barRows() for why the bar's own state is not enough to answer that.
     private volatile int dashboardBarRows = 0;
 
+    // One-time complaints. Both paths below are reachable from the timer tick as well as from a command, so
+    // an unbounded System.err.println would print once per second into whatever screen is up: the fact is said
+    // once, and the silence after it is the fact still standing.
+    private static boolean resizeReadFailureReported;
+    private static boolean barUnsupportedReported;
+
     public void initDisplay() {
         display = new Display(terminal, false);
         if (status != null) {
@@ -389,7 +401,13 @@ public final class Console {
             }
             int windowRows = terminal.getHeight();
             int bandTop = windowRows - 1 - barRows;
-            if (row < 0 || row >= windowRows || row <= bandTop) return;
+            /* bandTop < 0 means the band is the whole window (a 2-row bar on a 2-row window, or a resize to
+               an extreme height): there is no row above the band to lift to. Without this term the loop ran
+               `row - bandTop` times -- more line feeds than the screen has rows, pushing the user's own
+               output into history -- and the last call emitted `\E[-1;<n>H`, a malformed cup every parser in
+               scope answers by ignoring or by homing. Refuse the lift; the bar still draws. A failed size
+               read (windowRows 0) lands here too, which is the other half of why this used to be silent. */
+            if (bandTop < 0 || row < 0 || row >= windowRows || row <= bandTop) return;
             terminal.puts(InfoCmp.Capability.cursor_address, windowRows - 1, 0);
             for (int i = 0; i < row - bandTop; i++) {
                 // scroll_forward is terminfo's `ind` (^J): at the bottom margin it scrolls the region,
@@ -497,14 +515,16 @@ public final class Console {
      * the native renderer replaced the Java rectangle writer it used to ask.
      */
     static boolean isBlockPaintEnabled(Terminal terminal) {
-        // windows-render joins its conemu sibling: the type names the renderer dialect, not the writer
-        // path, and a windows-render session paints through the same render.dll. Missing it stranded the
-        // dashboard on the line-by-line Display path, whose first frame starts at the cursor row and
-        // never sends the bare home the takeover contract waits for -- top's interleaved first refresh
-        // (2026-10-07, trace: not one block chunk in the whole session).
+        /* Only a windows-render session: the block path asks render.dll to take the whole screen as one
+           chunk, so it belongs to the dialect whose entry says the renderer parses the stream. Since the
+           2026-10-07 fork of windows-render.caps every leg that paints through render.dll answers
+           TYPE_WINDOWS_RENDER, and `ANSICON_DEF=conemu` no longer claims the renderer at all -- so the
+           sibling this test used to admit is gone, not narrowed. Missing windows-render here is what stranded
+           the dashboard on the line-by-line Display path, whose first frame starts at the cursor row and
+           never sends the bare home the takeover contract waits for -- top's interleaved first refresh
+           (2026-10-07, trace: not one block chunk in the whole session). */
         return NativeRenderer.isEnabled()
-                && (AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType())
-                    || AbstractWindowsTerminal.TYPE_WINDOWS_RENDER.equals(terminal.getType()));
+                &&  AbstractWindowsTerminal.TYPE_WINDOWS_RENDER.equals(terminal.getType());
     }
 
     public void handleResize(Terminal.Signal signal) {
@@ -513,7 +533,22 @@ public final class Console {
         // quantity that never changes: the first resize ran the body, stored 2000x9001, and every resize after
         // it returned here and did nothing -- leaving the status bar painted at the bottom of the window as it
         // was *then*, somewhere above the new bottom edge, with the rows between it and that edge untouched.
-        Size size = terminal.getSize();
+        Size size;
+        try {
+            size = terminal.getSize();
+        } catch (Throwable unreadable) {
+            /* This is a signal handler: WinSysTerminal.getSize() throws IOError when
+               GetConsoleScreenBufferInfo fails (deliberately -- a 0 answer used to be read as "one row, two
+               billion columns" by the bar and as "no status bar" below), and an unchecked throwable escaping
+               from here ends the thread that dispatches signals, which takes the keyboard with it. Say it
+               once, keep the geometry we last saw. */
+            if (!resizeReadFailureReported) {
+                resizeReadFailureReported = true;
+                System.err.println("resize: cannot read the window size (" + unreadable
+                        + "); keeping the last geometry");
+            }
+            return;
+        }
         if (prevSize != null && size.getRows() > 1
                 && prevSize.getColumns() == size.getColumns()
                 && prevSize.getRows() == size.getRows()) {
@@ -552,14 +587,19 @@ public final class Console {
             return;
         }
         // The click handler resolves a release into an edit by asking the terminal where its cursor is
-        // (LineReaderImpl.mouse(): getCursorPosition(...), then cursor.getY() with no null check). On
-        // Windows only WinSysTerminal answers that locally; every terminal the generic builder can pick --
-        // which is what a ConEmu, cygwin or msys session gets -- answers null, so switching the mouse on
-        // there schedules a NullPointerException for the user's first click. Advertising u6/u7 does not
-        // change that: the query is CursorSupport's, and none of those terminal classes implements it, so
-        // probing getCursorPosition() here would return the same null, only later. So the type decides, and
-        // the refusal is said now rather than thrown later.
-        if (!isJNIConsole) {
+        // (LineReaderImpl.mouse(): getCursorPosition(...), then cursor.getY() with no null check), so a
+        // terminal that cannot answer turns the user's first click into a NullPointerException. There are
+        // two ways to answer that question: WinSysTerminal reads the console grid locally, and every
+        // POSIX-ish terminal (AbstractPosixTerminal:123, ExternalTerminal:215 -- Linux, macOS, a ssh/pty
+        // session, and the cygwin/msys ones the generic builder picks) answers through CursorSupport, which
+        // needs `u6` and `u7` and gets them from those terminals' own entries. The gate is therefore "can
+        // this terminal answer", not "is this my Windows class": the old `!isJNIConsole` refused a working
+        // mouse on every non-Windows session, which is the shape of a bug where a library's silence was
+        // read as a missing capability. Asking getCursorPosition() directly is not the test -- on a terminal
+        // that will not reply it blocks reading for an answer that never comes.
+        if (!isJNIConsole
+                && (terminal.getStringCapability(InfoCmp.Capability.user6) == null
+                    || terminal.getStringCapability(InfoCmp.Capability.user7) == null)) {
             System.out.println("mouse is not available on this terminal: it cannot report the cursor"
                     + " position, which a click needs (terminal=" + terminal.getType() + ")");
             return;
@@ -641,6 +681,17 @@ public final class Console {
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
                 return false;
+            /* The library's other failure mode is quieter still: Status gates every mutator on `supported`,
+               which is a conjunction of csr/sc/rc/cup plus a sane size -- so a terminal whose entry has no
+               scroll region accepts "set status on" and then draws nothing, forever, without saying why.
+               That is not "off"; it is a contract the entry cannot carry, and the user deserves to hear which
+               one it is. Once per session, because the timer calls this every second. */
+            if (!this.status.isSupported() && !barUnsupportedReported) {
+                barUnsupportedReported = true;
+                System.err.println("status bar cannot draw: the terminal entry for type '"
+                        + terminal.getType() + "' has no scroll region (csr) or cursor save/restore,"
+                        + " which jline's Status needs (csr, sc, rc, cup)");
+            }
             if (title == null || title.equals("")) {
                 this.status.close();
                 this.status.suspend();

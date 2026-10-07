@@ -719,3 +719,107 @@ goes out as-is for ConEmu to parse, only the caps/name now describe the right
 consumer). Witness: TypeDump4 file-writer in the real ConEmu, TERM unset ->
 `windows-conemu` (was windows-vtp on the old jars), TERM=xterm-256color ->
 `xterm-256color`; live gate 6373/0 x2 and the pager legs green on the same jar.
+
+
+## 2026-10-07 (round 2, the P1 review batch): `Status` border cache, `LineReaderImpl` size reads, and two claims withdrawn
+
+The review of every Java change since 2026-09-24 (`cache/review-1007/JAVA_REVIEW_since-0924.md`) produced the
+items below. Library files were edited in `D:\JavaProjects\jline3.29` and copied to
+`D:\Green\github\jline3.29` the same day -- verified by md5 with CR stripped, all three files identical.
+
+### `terminal/src/main/java/org/jline/utils/Status.java` -- the border row stops rebuilding
+
+`setBorder(AttributedString,int)` used to null `borderString` unconditionally. The caller that matters,
+`dbcli`'s `Console.setStatus("flush", ...)`, rebuilds the template from the colour prefix on every timer tick,
+so the cached rule was thrown away once a second and a full-width row of attributed cells was re-tiled to come
+out identical. Now the call returns early when `(border, overflow, template)` all compare equal, and the
+comparison is by character *and* per-column style -- reference comparison could never match, because the caller
+constructs a new `AttributedString` each time, and text-only comparison would swallow a colour change.
+
+No API changed; `setBorder(boolean)` still delegates here. `isSupported()` already existed at :90 -- the defect
+was that nobody read it (see the dbcli round below), not that the library had no way to say it.
+
+**Witness.** `StatusTest` gained three cases (7 to 10), each with its own falsification arm run against a
+mutant copy of `Status.java` in `D:\dbcli\cache\redlab-1007` (the live tree was never mutated):
+
+| leg | arm | result |
+|---|---|---|
+| `equalBorderTemplateDoesNotRetileTheRule` | early return deleted | red, only this leg |
+| `styleOnlyBorderChangeStillRedrawsTheRule` | `styleAt()` comparison deleted | red, only this leg |
+| `glyphChangeUnderTheSameStyleRedrawsTheRule` | `charAt()` comparison deleted | red, only this leg |
+
+The first two assertions are on the identity of the private `borderString` field, read reflectively: the byte
+stream is identical either way, so the rebuild is invisible to an output-only test. That is stated here because
+it is the one place in this file where the witness is not "the bytes the terminal was handed".
+
+### `reader/src/main/java/org/jline/reader/impl/LineReaderImpl.java` -- a size we cannot read is not a resize
+
+`WinSysTerminal.getSize()` throws `IOError` when `GetConsoleScreenBufferInfo` fails (that throw was deliberate:
+a 0 answer used to be read by `Status` as "one row, two billion columns" and by `Console.setStatus` as "no
+status bar", both silently). Two of this file's own call sites were newly added on the fork side --
+`doDisplay()`'s `prevWindow.copy(terminal.getSize())` and the WINCH branch's `Size window = terminal.getSize()`
+-- and both sit on paths where an unchecked throwable is fatal: the signal handler runs on the input pump,
+which catches `IOException` but not `Error`. So both reads are now guarded, say once through `Log.warn`, and
+keep the last geometry.
+
+Compile-time fact worth keeping: `Terminal.getSize()`/`getBufferSize()` declare no checked exception, so
+`catch (IOException | RuntimeException | Error ...)` does not compile. The guards catch
+`RuntimeException | Error`.
+
+### Two claims from the review, withdrawn after measurement
+
+- **"A double-width border template overshoots the width and never hits the cache."** Measured against this
+  fork's own width model: `new AttributedString("\u25CF").columnLength() == 1`, and tiling `●` to 79/80/78
+  columns yields exactly 79/80/78 (`cache/redlab-1007` probe). The `columnSubSequence` trim written for that
+  claim was therefore dead code and has been removed from `getBorderString`, which is back to its previous
+  body. The dot/braille "2 columns" figure in project memory is `render.dll`'s oracle (`ansi_width.c`), not
+  jline's `WCWidth` -- the two disagree for U+25CF, and for this method jline's model is the one that runs.
+- **"`gen_statslots.py:282 if "Render.java" in target:` mis-routes the production block."** `"Render.java"`
+  is not a substring of `NativeRenderer.java`. `--check` on the production file exits 0 and its marker block
+  equals `prod_block` line-for-line; changing one constant in a copy (17 to 18) exits 1 and names the line.
+  The leg is a witness, not a counter.
+
+### Not a JLine change, but it belongs on this page: `ANSICON_DEF=conemu` retired, and the caps entries
+
+The owner ruled the same day that `ANSICON_DEF=conemu` ceases to exist. `WinSysTerminal` no longer treats it as
+a renderer claim and `Console`'s mode table no longer lists it, so it normalizes to `default`; the renderer is
+reachable only through `ANSICON_DEF=render` / `TERM=windows-render` / a console that cannot parse its own
+escapes. Every `ConEmuWriter` branch now names itself `windows-render`, which is also why `windows-conemu.caps`
+can stop describing the renderer.
+
+Two facts about the entries, both measured rather than inferred:
+
+- The owner restored `windows-conemu.caps` in the build tree to the stock entry plus `kmous=\E[M` (1090 B,
+  `6c28b2e9e993`). The audited mirror and the shipped jar still hold 1575 B (`fc6705a001eb`), and the
+  `Green` git tree still holds the 2026-09-28 audit expansion (7440 B, `9454e34c5e67`) -- three live versions.
+  `terminfo_check.sh` therefore reports `TERMINFO CHECK: FAILED` on arm 3's jline copy, which is the leg doing
+  its job. It is *not* a symptom of today's runtime: every jar reads `fc6705a0`.
+- Stock carries **no `csr`**, and `Status`'s constructor requires `change_scroll_region`
+  (`Status.java:100`), so a `windows-conemu` session built on the stock entry would draw no status bar and say
+  nothing. `Console.setStatus` now says it once (`status bar cannot draw: ... no scroll region (csr) ...`).
+  Whether the shipped entry for `windows-conemu` should be stock, or the audited set trimmed of the renderer-only
+  claims, is the owner's call and is still open.
+
+`ANSI_SUPPORTS.md` still states the renderer's terminal type is `windows-conemu`, and `DESIGN.md`/`ANSI_SUPPORTS.md`
+have zero mentions of `windows-render`; `CapsDump.java` and `caps_check.ps1` have zero legs naming it either, so
+the entry a render session actually loads is covered only by the tic/infocmp name round-trip and three-copy
+identity, not by the value-level census. Recorded here as the shape of the gap, not as a fixed item.
+
+
+### `liftCursorAboveBar`'s degenerate geometry, measured both ways
+
+The guard clause is not a theory: `cache/lift-1007` runs `Console.liftCursorAboveBar` against a stubbed
+terminal whose cursor read is local (the real one asks the host and blocks), and the mutant that deletes only
+`bandTop < 0 ||` produced exactly the bytes the review predicted:
+
+| window | band | mutant bytes | fixed |
+|---|---|---|---|
+| 2 rows | 2 rows | `\E[2;1H` + 2 LF + `\E[0;1H` | refuses, zero bytes |
+| 3 rows | 5 rows | `\E[3;1H` + **5** LF + `\E[-2;1H` | refuses, zero bytes |
+| 1 row | 1 row | `\E[1;1H` + 1 LF + `\E[0;1H` | refuses, zero bytes |
+
+Five line feeds on a three-row window is the over-scroll, and `\E[-2;1H` is the malformed cup. The gate also
+carries two positive cases (30/2 and 10/1) that assert the lift still happens with exactly the right number of
+feeds and lands on the band top -- a refusal-only test would pass if the feature were deleted. 6 checks, 0
+failures on the shipped classes; 3 failures on the mutant.
+
