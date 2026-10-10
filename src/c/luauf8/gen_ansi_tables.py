@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""gen_ansi_tables.py -- regenerate ansi_width_tables.h from Unicode 15.0 (Python unicodedata).
+"""gen_ansi_tables.py -- regenerate ansi_width_tables from Unicode 15.0 (Python unicodedata).
+
+Writes two files from one table, because the two width models in this project have to be the
+same width model: the C header `ansi_width_tables.h` (src/c/luauf8/ansi_width.c, the Lua
+utf8.ansi_width / utf8.ansi_cut engine) and the Java `AnsiWidthTables.java` (org/jline/utils,
+behind JLine's WCWidth, so Display/Status/LineReader measure a cell the way the grid paints it).
+`--java PATH...` writes the Java form; `--java-check PATH...` re-derives it and compares, so a
+tree left behind by an edit to the rules below fails a gate instead of shipping quietly.
 
 Width model, the one real terminals apply:
     Cc (C0, DEL, C1) + NUL  -> 0
@@ -16,7 +23,8 @@ Width model, the one real terminals apply:
     everything else         -> 1   (the narrow default every listed terminal uses)
 Only runs whose width is not 1 are emitted, so cp_width() can default to 1.
 The per-256-block map collapses every block whose 256 code points agree, so ASCII, CJK
-and Hangul resolve with one table read and never scan an interval.
+and Hangul resolve with one table read and never scan an interval. (C header only -- the
+Java table is a single binary search, which is the same answer and cannot drift from it.)
 """
 import sys
 import unicodedata as ud
@@ -35,7 +43,32 @@ if _unidata < UNIDATA_MIN:
 
 NBLK = 4352
 MAXCP = 0x10FFFF
-OUT = sys.argv[1] if len(sys.argv) > 1 else "ansi_width_tables.h"
+
+# Invocation:
+#   gen_ansi_tables.py [OUT.h]                      -- the C header (default name, as before)
+#   gen_ansi_tables.py --java P [P...]              -- write the Java table to each path
+#   gen_ansi_tables.py --java-check P [P...]         -- verify each path without touching it
+# The Java form exists because two hand-written width tables are the bug this script was
+# written to avoid: JLine's WCWidth carried its own Kuhn table while the Lua side consulted
+# the generated one, and the grid measured a cell one way and the layout the other.
+# Both files must come from ONE run of THIS script, so `--java` takes the list of trees to
+# write and `--java-check` is the leg that fails when any of them has fallen behind.
+JAVA_FLAG = "--java"
+JAVA_CHECK_FLAG = "--java-check"
+
+_argv = sys.argv[1:]
+MODE = "c"
+if _argv and _argv[0] == JAVA_FLAG:
+    MODE, PATHS = "java", _argv[1:]
+elif _argv and _argv[0] == JAVA_CHECK_FLAG:
+    MODE, PATHS = "check", _argv[1:]
+else:
+    PATHS = _argv
+if not PATHS:
+    PATHS = ["ansi_width_tables.h"] if MODE == "c" else None
+if MODE != "c" and not PATHS:
+    sys.exit("gen_ansi_tables.py: %s needs at least one path" % MODE)
+OUT = PATHS[0] if MODE == "c" else None
 
 ZERO_CAT = ("Mn", "Me", "Cf")
 
@@ -239,7 +272,8 @@ o.append(" * Width model: Mn/Me/Cf and Cc -> 0 (checked before EAW, since U+3099
          " * Measured overrides, see gen_ansi_tables.py: the soft hyphen and the 13\n"
          " * Prepended_Concatenation_Marks -> 1, conjoining Hangul jamo -> 0, Yijing -> 2.\n"
          " * Only runs that are not 1 are listed.\n")
-o.append(" * Regenerate with:  python3 gen_ansi_tables.py <path>/ansi_width_tables.h */\n")
+o.append(" * Regenerate with:  python3 gen_ansi_tables.py <path>/ansi_width_tables.h\n")
+o.append(" * The same run also writes the Java copy of this table -- see --java below. */\n")
 o.append("#ifndef ANSI_WIDTH_TABLES_H\n#define ANSI_WIDTH_TABLES_H\n#include <stdint.h>\n\n")
 o.append("#define ANSI_NBLK %d\n#define ANSI_NWIV %d\n\n" % (NBLK, niv))
 o.append("typedef struct { uint32_t first, last; uint8_t w; } ansi_iv;\n\n")
@@ -263,15 +297,154 @@ for b in range(NBLK):
     if (b + 1) % 32 == 0:
         o.append("\n")
 o.append("\n};\n\n#endif /* ANSI_WIDTH_TABLES_H */\n")
+C_TEXT = "".join(o)
 
-with open(OUT, "w", newline="\n") as fh:
-    fh.write("".join(o))
 
-print("unicode %s -> %s" % (ud.unidata_version, OUT))
+def java_rows(vals, per):
+    """8 intervals or 16 widths per line -- wide enough to keep the file short, narrow enough
+    that a stale copy shows up as a one-line diff instead of a wall of rewrapped numbers."""
+    return ["        " + " ".join(v + "," for v in vals[k:k + per]) + "\n"
+            for k in range(0, len(vals), per)]
+
+
+# The Java table is the same 594 runs, in the same order, with the same widths -- only the
+# shape of the array differs. No range is written down here twice: if the model changes, both
+# halves change together or --java-check says so.
+JAVA_BEGIN = ("    // ---- BEGIN GENERATED WIDTH TABLE (gen_ansi_tables.py --java) : DO NOT EDIT, "
+              "DO NOT HAND-COPY ----")
+JAVA_END = "    // ---- END GENERATED WIDTH TABLE ----\n"
+
+
+def build_java():
+    j = []
+    j.append("/*\n"
+             " * Copyright (c) 2002-2025, the original author(s).\n"
+             " *\n"
+             " * This software is distributable under the BSD license. See the terms of the\n"
+             " * BSD license in the documentation provided with this software.\n"
+             " *\n"
+             " * https://opensource.org/licenses/BSD-3-Clause\n"
+             " */\n")
+    j.append("package org.jline.utils;\n\n")
+    j.append("/**\n"
+             " * The display width of every Unicode code point, as the terminals this library is\n"
+             " * loaded into actually lay them out. <b>Generated file</b> -- dbcli's\n"
+             " * {@code src/c/luauf8/gen_ansi_tables.py} (Unicode %s, Python unicodedata) writes it together\n"
+             " * with {@code ansi_width_tables.h}, the table behind the Lua {@code utf8.ansi_width} engine.\n"
+             " * One run of one script writes both, which is the whole reason this class exists: the\n"
+             " * grid may not size a cell one way and the layout another.\n"
+             " *\n"
+             " * <p>The rules, and what each of them cost:\n"
+             " * <ul>\n"
+             " *   <li>Mn / Me / Cf and the C0/C1 controls count 0 -- checked before East_Asian_Width,\n"
+             " *       because U+3099 and U+302A are both Mn <i>and</i> EAW=W.</li>\n"
+             " *   <li>East_Asian_Width W and F count 2, and so do the undesignated code points inside\n"
+             " *       the CJK ideograph blocks and Planes 2 and 3 (UAX #11's default, which\n"
+             " *       unicodedata does not report for unassigned characters).</li>\n"
+             " *   <li>East_Asian_Width A counts 2 -- the ruling a CJK console font applies -- except\n"
+             " *       for the code points measured one cell in every console font on the box (box\n"
+             " *       drawing, block elements, accented Latin). That carve-out is\n"
+             " *       {@code AMBIGUOUS_NARROW} in the generator, and it is measured, not derived.</li>\n"
+             " *   <li>Measured overrides: the soft hyphen and the 13 Prepended_Concatenation_Marks\n"
+             " *       get a cell, conjoining Hangul jamo do not, the Yijing hexagrams count 2.</li>\n"
+             " *   <li>Everything else is 1, which is why only runs that are <i>not</i> 1 are listed.</li>\n"
+             " * </ul>\n"
+             " *\n"
+             " * <p>Control characters are listed here as 0, and {@link WCWidth#wcwidth(int)} answers\n"
+             " * them with its own contract first: JLine returns -1 for C0/C1 and DEL, where the C table\n"
+             " * says 0. That difference is JLine's, not a disagreement about the grid.\n"
+             " *\n"
+             " * <p>Regenerate with\n"
+             " * {@code python3 gen_ansi_tables.py --java <tree>/org/jline/utils/AnsiWidthTables.java ...}\n"
+             " * naming every jline tree that builds; {@code --java-check} with the same paths is the leg\n"
+             " * that fails when one of them has fallen behind.\n"
+             " */\n"
+             % ud.unidata_version)
+    j.append("public final class AnsiWidthTables {\n\n")
+    j.append("    private AnsiWidthTables() {}\n\n")
+    j.append(JAVA_BEGIN + "\n")
+    j.append("    /** Start of each run whose width is not 1, ascending and non-overlapping. */\n")
+    j.append("    static final int[] FIRST = {\n")
+    j.extend(java_rows(["0x%X" % a for a, b, v in iv], 8))
+    j.append("\n    };\n\n")
+    j.append("    /** End of each run, inclusive, paired with {@link #FIRST}. */\n")
+    j.append("    static final int[] LAST = {\n")
+    j.extend(java_rows(["0x%X" % b for a, b, v in iv], 8))
+    j.append("\n    };\n\n")
+    j.append("    /** The width of each run: 0 or 2 -- a run of 1s is not a run worth listing. */\n")
+    j.append("    static final byte[] WIDTH = {\n")
+    j.extend(java_rows([str(v) for a, b, v in iv], 16))
+    j.append("\n    };\n")
+    j.append(JAVA_END + "\n")
+    j.append("    /**\n"
+             "     * The width of one code point: 0, 1 or 2 columns. Binary search over the listed runs,\n"
+             "     * defaulting to 1; the answer is {@code cp_width()}'s in ansi_width.c for every code\n"
+             "     * point the Lua decoder can produce.\n"
+             "     */\n"
+             "    static int width(int cp) {\n"
+             "        if (cp < FIRST[0] || cp > LAST[LAST.length - 1]) {\n"
+             "            return 1;\n"
+             "        }\n"
+             "        int lo = 0;\n"
+             "        int hi = FIRST.length - 1;\n"
+             "        while (lo <= hi) {\n"
+             "            int mid = (lo + hi) >>> 1;\n"
+             "            if (cp > LAST[mid]) {\n"
+             "                lo = mid + 1;\n"
+             "            } else if (cp < FIRST[mid]) {\n"
+             "                hi = mid - 1;\n"
+             "            } else {\n"
+             "                return WIDTH[mid];\n"
+             "            }\n"
+             "        }\n"
+             "        return 1;\n"
+             "    }\n"
+             "}\n")
+    return "".join(j)
+
+
+JAVA_TEXT = build_java() if MODE != "c" else None
+
+if MODE == "c":
+    with open(OUT, "w", newline="\n") as fh:
+        fh.write(C_TEXT)
+    print("unicode %s -> %s" % (ud.unidata_version, OUT))
+else:
+    for path in PATHS:
+        if MODE == "check":
+            try:
+                raw = open(path, encoding="utf-8", newline="\n").read()
+            except IOError as err:
+                sys.exit("gen_ansi_tables.py --java-check: cannot read %s: %s" % (path, err))
+            # CRLF-tolerant on purpose. Both jline repos are checked out with core.autocrlf=true, so the
+            # same file is LF the moment the generator writes it and CRLF the moment git touches it --
+            # and a drift check that reports "STALE" for a line ending teaches nobody anything. The
+            # generator's own output stays LF; only the comparison folds.
+            have = raw.replace("\r\n", "\n")
+            if have == JAVA_TEXT:
+                print("%s: table is current (%d runs%s)"
+                      % (path, niv, ", CRLF" if raw != have else ""))
+                continue
+            a, b = have.splitlines(), JAVA_TEXT.splitlines()
+            sys.stderr.write("%s: STALE -- regenerate with: python3 gen_ansi_tables.py --java %s\n"
+                             % (path, path))
+            for i in range(max(len(a), len(b))):
+                x = a[i] if i < len(a) else "<none>"
+                y = b[i] if i < len(b) else "<none>"
+                if x != y:
+                    sys.stderr.write("  line %d\n  have: %s\n  want: %s\n" % (i + 1, x, y))
+                    break
+            sys.stderr.write("  have %d lines / want %d lines\n" % (len(a), len(b)))
+            sys.exit(1)
+        with open(path, "w", newline="\n") as fh:
+            fh.write(JAVA_TEXT)
+        print("unicode %s -> %s (%d runs)" % (ud.unidata_version, path, niv))
+
 print("intervals=%d  blocks uniform=%d mixed=%d  longest interval scan in one block=%d"
       % (niv, NBLK - mixed, mixed, maxscan))
-for cp in (0x231A, 0x2614, 0x2648, 0x2764, 0x4E2D, 0xAC00, 0x09BE, 0x0616, 0x0487,
-           0x3099, 0xFE0F, 0x1F3FB, 0x1F600, 0x2500, 0x00AD, 0x200B, 0x0009, 0x001B,
-           0x0600, 0x110BD, 0x1100, 0x1160, 0x4DC0, 0x3248, 0x2630):
-    print("  U+%04X cat=%-3s eaw=%-2s -> %d" % (cp, ud.category(chr(cp)),
-                                                ud.east_asian_width(chr(cp)), w[cp]))
+if MODE != "check":
+    for cp in (0x231A, 0x2614, 0x2648, 0x2764, 0x4E2D, 0xAC00, 0x09BE, 0x0616, 0x0487,
+               0x3099, 0xFE0F, 0x1F3FB, 0x1F600, 0x2500, 0x00AD, 0x200B, 0x0009, 0x001B,
+               0x0600, 0x110BD, 0x1100, 0x1160, 0x4DC0, 0x3248, 0x2630):
+        print("  U+%04X cat=%-3s eaw=%-2s -> %d" % (cp, ud.category(chr(cp)),
+                                                    ud.east_asian_width(chr(cp)), w[cp]))

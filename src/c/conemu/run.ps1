@@ -1,23 +1,11 @@
-# Runs the stage-0 gate against the DLLs src/c/conemu/build.sh cross-built into cache\native-probe.
-#
-# D:\jdkx86 is the default runtime for this install (the JVM is created in-process by bootstrap.lua), and
-# both bitnesses have to pass because lib\x86 and lib\x64 ship separate natives.
-#
-# Render.java drives com.hyee.ansirender.NativeRenderer -- the library's production class, which lives in the
-# java source tree it ships from (D:\JavaProjects\jline3.29\dbcli\src) -- so javac needs that root on its
-# sourcepath. The gate would otherwise be testing its own copy of the declarations, which is how an ABI can
-# go unbuilt and a gate stay green.
 param(
     [ValidateSet('x86', 'x64', 'both')] [string]$Arch = 'both',
     [string]$Scratch = 'D:\dbcli\cache\native-probe',
     [string]$JavaSrc = '',
-    # the install tree, for the optional ConEmuHk reference leg the both-leg A/B compares against. Never a hardcoded default:
-    # param > env > the tree this script sits in, and the candidates are named when none of them work.
     [string]$Install = '',
-    # The jar the *application* loads NativeRenderer from. This gate compiles the class out of the source tree and
-    # runs its own build, so without this path there is no comparison between what the gate tested and what ships.
     [string]$DbcliJar = '',
-    [switch]$SkipJarCheck
+    [switch]$SkipJarCheck,
+    [switch]$SkipWidthCheck
 )
 
 $src  = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -27,14 +15,11 @@ $rc   = 0
 if (-not $Install) { $Install = $env:DBCLI_HOME }
 if (-not $Install) { $Install = (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $src))) }
 
-# The tree this script sits in, independent of -Install (which names the ConEmuHk reference tree and is often a
-# different directory). The shipped jar belongs to the tree under test, not to the reference leg.
 $treeRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $src))
 if (-not $DbcliJar) { $DbcliJar = $env:DBCLI_DBCLI_JAR }
 if (-not $DbcliJar) { $DbcliJar = Join-Path $treeRoot 'lib\dbcli.jar' }
 
 if (-not $JavaSrc) {
-    # never a hardcoded install directory: derive it from this script, and say so when it is not there
     $cand = @($env:DBCLI_JAVA_SRC, 'D:\JavaProjects\jline3.29\dbcli\src', (Join-Path $Install 'src\java'))
     foreach ($c in $cand) {
         if ($c -and (Test-Path (Join-Path $c 'com\hyee\ansirender\NativeRenderer.java'))) { $JavaSrc = $c; break }
@@ -46,42 +31,74 @@ if (-not $JavaSrc) {
 }
 Write-Host "java source tree: $JavaSrc"
 
+# --------------------------------------------------------------------------- width table drift
+# org/jline/utils/AnsiWidthTables.java is generated, and it is the table JLine's whole column
+# arithmetic reads. If the generator's rules move and that file is not regenerated, the grid and
+# the layout disagree again -- the bug this file exists to keep from coming back, and invisible in
+# any single test because both sides stay internally consistent. So the gate re-derives the Java
+# table from the generator and refuses a stale copy. Every tree that builds is checked, not only
+# the one being compiled: the trees are copies of each other by convention, and a half-synced
+# pair is how the last one was found.
+if ($SkipWidthCheck) {
+    Write-Host '  WIDTH CHECK: skipped by -SkipWidthCheck'
+} else {
+    $genPy = Join-Path (Split-Path -Parent $src) 'luauf8\gen_ansi_tables.py'
+    $py = if ($env:DBCLI_PYTHON) { $env:DBCLI_PYTHON } else { 'F:\tools\python312\python.exe' }
+    $termSrc = Join-Path (Split-Path -Parent (Split-Path -Parent $JavaSrc)) 'terminal\src\main\java'
+    $trees = @($termSrc)
+    if ($env:DBCLI_JLINE_TREES) { $trees += @($env:DBCLI_JLINE_TREES -split '[;,]' | Where-Object { $_ }) }
+    if (-not (Test-Path $py) -and -not (Get-Command $py -ErrorAction SilentlyContinue)) {
+        Write-Host "  WIDTH CHECK: FAILED -- no python at $py (set DBCLI_PYTHON)"
+        $rc = 1
+    } elseif (-not (Test-Path $genPy)) {
+        Write-Host "  WIDTH CHECK: FAILED -- no generator at $genPy"
+        $rc = 1
+    } else {
+        foreach ($t in $trees) {
+            $java = Join-Path $t 'org\jline\utils\AnsiWidthTables.java'
+            if (-not (Test-Path $java)) {
+                if ($t -eq $termSrc) {
+                    Write-Host "  WIDTH CHECK: FAILED -- the build tree has no $java"
+                    $rc = 1
+                } else {
+                    Write-Host "  WIDTH CHECK: skipped a tree with no $java"
+                }
+                continue
+            }
+            & $py $genPy --java-check $java 2>&1 | ForEach-Object { Write-Host "  WIDTH: $_" }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  WIDTH CHECK: FAILED (exit $LASTEXITCODE) for $java"
+                $rc = 1
+            }
+        }
+        if ($trees.Count -lt 2) {
+            Write-Host '  WIDTH CHECK: only the build tree was checked; set DBCLI_JLINE_TREES to'
+            Write-Host '               include every other copy of this source (semicolon separated).'
+        }
+    }
+}
+
 foreach ($a in @($Arch -eq 'both' ? @('x86', 'x64') : @($Arch))) {
     Write-Host "=== $a ($($jdk[$a])) ==="
-    # The retired fallback leg, kept only as the A/B's reference oracle: the gate names the same file the
-    # writer used to load, 'ConEmuHk' on x86 and 'ConEmuHk64' on x64.
     $hk = Join-Path $Install ('lib\{0}\ConEmuHk{1}.dll' -f $a, ($a -eq 'x86' ? '' : '64'))
     if (-not (Test-Path $hk)) {
         Write-Host "  both-leg A/B skipped: no $hk (candidates: -Install, DBCLI_HOME, $(Split-Path -Parent (Split-Path -Parent $src)))"
         $hk = ''
     }
     if (-not (Test-Path "$Scratch\$a\probe.dll")) { Write-Host "no $Scratch\$a\probe.dll - run build.sh first"; $rc = 1; continue }
-    # JDK 8's javac will not create its -d target directory
     New-Item -ItemType Directory -Force -Path "$Scratch\out\$a" | Out-Null
     & "$($jdk[$a])\bin\javac.exe" -nowarn -encoding UTF-8 -d "$Scratch\out\$a" "$src\Probe.java"
     if ($LASTEXITCODE -ne 0) { Write-Host "javac failed for $a"; $rc = 1; continue }
     & "$($jdk[$a])\bin\java.exe" "-Djava.library.path=$Scratch\$a" -cp "$Scratch\out\$a" Probe
     if ($LASTEXITCODE -ne 0) { Write-Host "probe failed for $a (exit $LASTEXITCODE)"; $rc = 1 }
 
-    # The renderer gate: paints through render.dll and reads the cells back out of conhost.
     if (-not (Test-Path "$Scratch\$a\render.dll")) { Write-Host "no $Scratch\$a\render.dll - run build.sh first"; $rc = 1; continue }
-    # -g -source 8 -target 8 are build.sh's flags, repeated here deliberately. The JAR CHECK below compares the
-    # NativeRenderer.class this command pulls in off -sourcepath against the one lib/dbcli.jar ships, and a
-    # class file's debug tables are part of those bytes: compiling without -g produced a different hash from
-    # the same source and the check reported DRIFT on a jar that was up to date. Two flag sets that disagree
-    # make the check measure the flags, so the gate now compiles the way production does.
     & "$($jdk[$a])\bin\javac.exe" -nowarn -g -source 8 -target 8 -encoding UTF-8 -implicit:class -sourcepath "$JavaSrc" `
         -d "$Scratch\out\$a" "$src\Render.java"
     if ($LASTEXITCODE -ne 0) { Write-Host "javac Render.java failed for $a"; $rc = 1; continue }
     & "$($jdk[$a])\bin\java.exe" "-Djava.library.path=$Scratch\$a" "-Dhk=$hk" -cp "$Scratch\out\$a" Render
     if ($LASTEXITCODE -ne 0) { Write-Host "render gate failed for $a (exit $LASTEXITCODE)"; $rc = 1 }
 
-    # The seam this gate cannot see by construction: it compiles NativeRenderer.java out of $JavaSrc and runs
-    # THAT class, while a real session loads the one packed in lib\dbcli.jar. #89 is why this leg exists -- the
-    # source grew a stats() slot, the shipped jar did not, and every gate passed because nobody had compared
-    # the two. Byte level on purpose: "the shipped class is the class that was audited" is the only claim worth
-    # making here, and a hash says it. Absent input is a FAILURE, not a note (the same rule terminfo_check.sh's
-    # third arm learned the hard way); -SkipJarCheck is how a tree with no jar opts out explicitly.
     if ($SkipJarCheck) { Write-Host '  JAR CHECK: skipped by -SkipJarCheck' }
     else {
         $classOut = Join-Path $Scratch ('out\{0}\com\hyee\ansirender\NativeRenderer.class' -f $a)

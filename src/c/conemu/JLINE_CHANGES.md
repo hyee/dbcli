@@ -774,6 +774,14 @@ Compile-time fact worth keeping: `Terminal.getSize()`/`getBufferSize()` declare 
   claim was therefore dead code and has been removed from `getBorderString`, which is back to its previous
   body. The dot/braille "2 columns" figure in project memory is `render.dll`'s oracle (`ansi_width.c`), not
   jline's `WCWidth` -- the two disagree for U+25CF, and for this method jline's model is the one that runs.
+  **Superseded on 2026-10-10: the two no longer disagree** (`WCWidth` now reads the generated table and answers
+  2 for U+25CF), so the sentence above about the models was true of the code at the time and is not a
+  description of it now. What the withdrawal rested on -- `columnLength("●") == 1`, making any overshoot
+  unreachable -- is gone with it, and the tiling was re-measured instead of left to the old argument:
+  `StatusTest.doubleWidthBorderTemplateFitsTheRowItIsDrawnOn` asserts the tile of a 79-column wanted width
+  comes out 78 columns (39 dots) because `columnSubSequence` returns nothing for a one-column window that does
+  not cover a whole wide glyph, and that the row drawn is exactly that. The decision to keep `getBorderString`
+  without its own trim stands, now on a measurement.
 - **"`gen_statslots.py:282 if "Render.java" in target:` mis-routes the production block."** `"Render.java"`
   is not a substring of `NativeRenderer.java`. `--check` on the production file exits 0 and its marker block
   equals `prod_block` line-for-line; changing one constant in a copy (17 to 18) exits 1 and names the line.
@@ -822,4 +830,169 @@ Five line feeds on a three-row window is the over-scroll, and `\E[-2;1H` is the 
 carries two positive cases (30/2 and 10/1) that assert the lift still happens with exactly the right number of
 feeds and lands on the band top -- a refusal-only test would pass if the feature were deleted. 6 checks, 0
 failures on the shipped classes; 3 failures on the mutant.
+
+## 2026-10-10 (round 4): `WCWidth` reads the generated table -- JLine and the grid are one width model
+
+Owner's instruction was 改 jline 的 WCWidth, and the question that earned it was "是不是 jline 3.29 关于 wcwidth
+计算不准确". Measured 2026-10-08 (`cache/ambiguous/measure/`, six real console faces, 43,944 cursor readbacks,
+BMP exhaustive over the ambiguous set): of the 6,475 sampled code points that **every** face draws two cells wide,
+JLine answered 1 for 6,471. `DESIGN.md` I14 had long said the `ansi_width` table is the only width oracle; the
+Java side was still a second, hand-copied one, and the two disagreed.
+
+### What changed
+
+| file | change |
+|---|---|
+| `terminal/src/main/java/org/jline/utils/AnsiWidthTables.java` | **new, generated.** 594 runs as parallel `FIRST`/`LAST`/`WIDTH` arrays plus a binary search. Compiled class 15,358 B; `wcwidth` cost is one search instead of Kuhn's search + a chain of hardcoded ranges. |
+| `terminal/src/main/java/org/jline/utils/WCWidth.java` | the hand-written table is gone -- `combining[]`, `Interval`, `bisearch` deleted, 180 lines to 92. The control-character test stays first; everything else asks the generated table. |
+| `src/c/luauf8/gen_ansi_tables.py` (dbcli tree) | `--java <paths...>` writes the Java form, `--java-check <paths...>` re-derives it and compares the whole file. One run of one script now produces both halves, because two hand-copied tables is the failure mode this closes. |
+| `src/c/conemu/run.ps1` | a `WIDTH CHECK` leg: it runs `--java-check` against the build tree always and against every root in `DBCLI_JLINE_TREES`, prints one line per tree, and sets the gate's exit code on a stale copy. `-SkipWidthCheck` exists and says so loudly. |
+| both jline trees | `AnsiWidthTables.java` md5 `3e85f146f5d412f969732cccbd95cd60` in `D:\JavaProjects\jline3.29` **and** `D:\Green\github\jline3.29`; `WCWidth.java` md5 `53916958c0e3c0866b253f7fd9d55bab` in both. The C header regenerated after the generator edit differs from the deployed one by **one comment line only** (the "Regenerate with" block), so no width rule moved. |
+
+The table is the same data, not a translation of it: the run list is exactly what
+`ansi_width_tables.h` emits. The C file's per-256-block map was deliberately left out of the Java side -- a
+594-entry binary search answers the identical question, and a second structure is a second thing to drift.
+
+### What the change moves, measured against the class that shipped before it
+
+`cache/wcwidth-1010/ab1010.py` pulled HEAD's `WCWidth.java` out of git, compiled the two side by side and
+dumped both over every code point (surrogates excluded, 1,112,064 of them):
+
+| direction | count | what it is |
+|---|---|---|
+| 1 -> 2 | 146,194 | the ambiguous ruling (Greek/Cyrillic capitals, `‥ ℃ Ⅰ-ⅻ ⑴-⒀ △ ▽ ◆ ★ ∈ ∝ ∠`), 6,380 private-use code points, and the Wide/Fullwidth assigned characters Kuhn's 1998 ranges never saw |
+| 2 -> 1 | 2,589 | 1,354 **unassigned** holes inside Kuhn's blanket CJK ranges, 1,235 plane-1 symbols whose Unicode 15 EAW is Na (mahjong U+1F000.., dominoes, playcards -- text presentation, not emoji presentation) |
+| 1 -> 0 | 1,209 | Mn/Me/Cf added to Unicode since the table was cut |
+| 0 -> 1 | 8 | the drawn Cf the generator gives a cell to (U+0600..U+0605, U+06DD, U+06DE, U+070F, U+1734) |
+| 0 -> 2 | 7 | U+302E/U+302F (Hangul tone marks, Mc **and** W) and the five skin-tone modifiers U+1F3FB..FF (Sk, W -- Kuhn had them zero-width) |
+
+Every one of those 150,007 new answers equals the grid's answer (`oracle.txt` from `lib/x86/utf8.dll`), and the
+65 control code points answered identically by both classes -- the -1 contract did not move.
+
+`cache/wcwidth-1010/join1010.py` compares four faces per code point -- the C header parsed back out of
+`ansi_width_tables.h`, `lib/x86/utf8.dll`, the generated Java table, and the generator's own rules:
+**1,112,000 identical**, 64 differing, 0 unexplained. The 64 are the two documented exceptions:
+
+- 63 controls: table 0, `WCWidth` -1. That is JLine's contract (callers such as `DefaultHighlighter:115` and
+  `ScreenTerminal:233` test the negative to mean "cannot be placed"), and `columnLength()` adds it.
+- U+0009: the *string* entry point `utf8.ansi_width` replays a lone TAB as one 8-column stop while `cp_width`
+  says 0; JLine says -1. Neither answer is this round's -- `tab` measured 9 on the grid, 1 in JLine, before and
+  after alike.
+
+### String-level: the loop that reads the table, not just the table
+
+Per-code-point equality does not prove `AttributedCharSequence.columnLength()` composes it the way the grid
+does, so `cache/widthparity-1010/parity1010.py` ran 21 whole strings through `AttributedString.fromAnsi(s)
+.columnLength()` twice -- once with the jar that was then deployed, once with the staged tree -- against
+`utf8.ansi_width` on the same bytes. 19 of 21 agree with the grid; the 2 that do not are the TAB and the
+control cases above, and those -1 answers did not move. Eight strings changed their answer with this round,
+each one now matching the grid: `结果…` 5→6, `进度 ⅠⅡⅢ ℃` 10→14, `⑴⑵⑶⑷⑸` 5→10, PUA `6→6` (3→6), `●●●○○`
+5→10, `↑↓←→` 4→8, `‘’“”` 4→8, and the astral case moved the *other* way, 7→5, because regional indicators are
+EAW=N and Kuhn's blanket `0x1f000..0x1feee` said wide. The harness prints the `WCWidth` it actually loaded
+(its code source), which is what makes the before/after columns more than a hope.
+
+### Cross-checked against the three reference terminals (I14's rule: no made-up widths)
+
+The `2 -> 1` half was not cursor-measured -- unassigned holes and Na plane-1 symbols are not in the ambiguous
+sweep -- so it was checked against the three local implementations instead:
+
+| | our table | msfterm | ghostty | wezterm |
+|---|---|---|---|---|
+| U+1F000 (So, EAW=Na) | 1 | 1 | 1 | 1 |
+| U+2E9A (unassigned hole in 2E80..2EFF) | 1 | 1 | 1 | 1 |
+| U+25CF / U+2026 (EAW=A) | **2** | 1 by default | 1 | 1 by default |
+
+Verified lines, opened in this session: `src/types/inc/CodepointWidthDetector.hpp:76 int _ambiguousWidth = 1;`,
+`src/types/CodepointWidthDetector.cpp:847/944/1036/1101` (the paths that resolve ambiguous to that value),
+`:1157` and `:1203` (the only two callers of `_checkFallbackViaCache`), `:1221-1225`
+("Ambiguous glyphs are considered narrow by default ... if (!_pfnFallbackMethod) return 1;"), and
+`src/host/srvinit.cpp:836 if (!gci.IsInVtIoMode())` guarding the `:842-843` install of
+`pRender->IsGlyphWideByFont`. wezterm: `wezterm-cell/src/lib.rs:849-856` (`Unassigned` forced to 1, and
+`ambiguous_are_wide` off by default) with U+2E9A sitting in `UNASSIGNED_TABLE` at
+`wezterm-char-props/src/widechar_width.rs:935` while `:414-415` lists `(0x02E80,0x02E99),(0x02E9B,0x02EF3)` --
+the hole is excluded on purpose. ghostty: `src/unicode/main.zig:12-27` ("2 for wide ... 1 otherwise") and the
+in-repo range tables `src/simd/codepoint_width.cpp:82/99`, which are exactly the same block boundaries.
+
+**What that means for the ruling, and it is worth stating plainly.** None of the three defaults ambiguous to
+wide; all three make it a switch (`--ambiguousIsWide` / `compatibility.ambiguousWidth` in the msfterm stack,
+`treat_east_asian_ambiguous_width_as_wide` or the per-code-point `cell_widths` map in wezterm, not available at
+all in ghostty). Ours is 2 because the console dbcli is asked to serve is a Chinese Windows console whose
+default faces are MS Gothic and 新宋体, and the font query the references only run in classic-conhost mode
+(`IsGlyphWideByFont` behind `!IsInVtIoMode()`) is precisely what those faces answer 2 to. Two consequences
+follow and both are accepted rather than discovered later:
+
+- In classic conhost on a CJK face, JLine now counts what the console spends. That was the under-count, the
+  dangerous direction: a line the grid padded to `columns` cells and Display thought were fewer arrived past
+  the margin and wrapped.
+- In Windows Terminal with the default settings, ambiguous glyphs are drawn **one** cell, so counting them 2
+  over-predicts. Over-prediction cannot overflow a line; it leaves cells unused, and a row padded to the full
+  width stops short by one cell per ambiguous glyph. This is the price `DESIGN.md` already records for the
+  620 split code points, now paid by the Java side too, and it is the same price the Lua grid has paid for
+  weeks -- the two halves now pay it identically instead of one paying and one not.
+
+### Gates, legs, and the deployed bytes
+
+`StatusTest` 11/11 against the staged classes (`cache/deploy-1010/run-statustest-1010.sh`, staged first on the
+classpath so the suite cannot link against the old jar). The eleventh case is new and belongs to this round:
+`doubleWidthBorderTemplateFitsTheRowItIsDrawnOn` -- see the note above, it is the leg that re-measures the
+tiling under the new widths. `run.ps1` both arches: `checks=6373 failures=0`
+twice, `STAGE0 RUN: ok`, and the new `WIDTH CHECK` leg printed `table is current (594 runs)` for both trees.
+Red arms (`cache/wcwidth-1010/redarm1010.py`, all inside cache): flipping one run's width in a copy of the
+generated table changed exactly that run's code points and nothing else, and made `join1010` report that many
+unexplained differences; a one-hex-digit stale copy is caught by name with the fix command; moving a *rule*
+in a copy of the generator (adding U+25CF to `AMBIGUOUS_NARROW`) makes `--java-check` red against the untouched
+tree file without writing anything; `javap` confirms the compiled `WCWidth` has no `combining` member left.
+
+Legs, headless ConPTY through the real entry (`dbcli.bat` with `--env MSYSTEM= --env TERM=`), each self-
+reporting its terminal type: `WinSysTerminal[name='dbcli', type='windows-vtp', size=Size[cols=120, rows=30]]`.
+`top 5` at 120x30, 24 frames captured 0.35 s apart: **24/24 cursor [29,0]**, `feed_errors=0`,
+`stripped_sequences={}`, no row touching the right margin with a non-blank row under it. An earlier 8-frame run
+at 2 s cadence showed one frame at [7,0] (`r-06`) -- a repaint caught mid-flight, not reproduced in the dense
+sampling, and recorded rather than explained away.
+
+Deploy: `lib/JLine3.jar` md5 `5e384e7d7f8e4b1c...` → `e8274f88be144842...`, entries that moved
+`org/jline/utils/WCWidth.class` and `org/jline/utils/AnsiWidthTables.class`, set 746 → 747 class entries,
+added 1 / removed 0, then every listed entry read back out of the jar byte-for-byte
+(`verify_current.py`), and the post-deploy census against the tree is 183/183 identical.
+`cache/wcwidth-1010/verify-jar-1010.py` re-ran the four-face differential **with the jar first on the
+classpath**: same 1,112,000 / 64 / 0-unexplained result, so the shipped bytes are the measured bytes.
+
+`lib/dbcli.jar` also moved one entry, `org/dbcli/Console$1.class`: census found its `LineNumberTable` sitting
+6 lines behind `Console.java` while `javap -p -c` diffed 0 lines -- last round's `ship` list named
+`Console.class` and its siblings but not the anonymous class, so it kept the bytes of an earlier staging pass.
+Its stack frames named lines that hold other statements. Same md5-independent check as everywhere else:
+112 entries before, 112 after, one moved, read back byte-identical.
+
+### Two things the probe turned up that are not this round's, recorded so the next reader does not re-derive them
+
+- **A box-drawing rule template does not go out as U+2500.** `BorderTile.java` fed `Status.setBorder` the
+  single glyph `─` and the emitted bytes were `ESC(0` + `q` x n + `ESC(B` -- jline's alternate-charset path,
+  driven by the terminal's `enacs`/`exit_alt_charset_mode` caps. Whether a given host draws that as a line was
+  not tested here -- xterm honours DEC special graphics, and no leg in this session asked Windows Terminal or
+  conhost. It is completely independent of the width table: U+2500 is one column in the old Kuhn answer, in
+  the new generated answer, and in the grid. dbcli's template is `-` (`Console.java:759`), so
+  nothing in the shipping app is on that path today. Not fixed, not claimed broken -- just named.
+- **`src/c/conemu/ANSI_TODO.md` is gone from both trees** (`D:\dbcli` and `D:\Green\github\dbcli`), and it was
+  never tracked in git, so `git log` cannot say when. The newest copies found are `cache/topfix/ANSI_TODO-533a.md`
+  (476 KB, 2026-10-07 18:50) and `cache/ANSI_TODO.pre-move10.bak` (2026-09-27 23:46). This round's ledger went
+  into `JLINE_CHANGES.md` and `DESIGN.md` because that is where a JLine3 change belongs anyway, but the ticket
+  table's own rows (#108, #116, #122 and the rest) now have no live home -- if another session did not move it
+  on purpose, somebody has to decide where it goes before the next ticket work starts.
+
+### Not covered
+
+- `D:\Green\github\jline4` and `D:\JavaProjects\jline4` still carry Kuhn's `WCWidth` untouched. The owner's
+  standing ruling is that no jline4 jar goes into `lib`, so this is a known divergence between the two trees
+  rather than a stale deploy -- but the next jline4 merge must either regenerate its table the same way or
+  carry the disagreement forward on purpose, and nothing in this round decides which.
+- No leg ran in classic conhost on MS Gothic / 新宋体 with this change deployed. The width claim rests on the
+  2026-10-08 cursor measurements (which measured the console, not JLine) plus the source cross-check above;
+  a `top`/`more` leg whose rows contain `Ⅰ ℃ ⑴ ●` read back through `ReadConsoleOutputW` would close the
+  loop, and the probe's *input* path is not a usable way to get those glyphs on screen -- in the 60-column
+  leg the typed `────▀▄█` reached the session as `qqqq▀▄█`.
+- pyte, the headless leg's cell model, counts ambiguous as 1 like WT does, so a ConPTY leg cannot witness the
+  conhost half. Its frames were still the right instrument for the cursor/overflow question.
+- The `WIDTH CHECK` leg covers the two trees on this box. A clone elsewhere has no leg until its owner sets
+  `DBCLI_JLINE_TREES`; without it the check says out loud that it looked at one tree.
+
 
