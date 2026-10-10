@@ -70,6 +70,21 @@ if ($SkipWidthCheck) {
         Write-Host "  WIDTH CHECK: FAILED -- no generator at $genPy"
         $rc = 1
     } else {
+        # The C header is the half utf8.dll is COMPILED from, so it needs its own leg: --java-check
+        # re-derives the Java table, and if only that half is regenerated after a rule change the
+        # gate is green while the dll still answers with the old table. That is the same
+        # two-width-models bug, arriving from the other side.
+        $hdr = Join-Path (Split-Path -Parent $genPy) 'ansi_width_tables.h'
+        if (-not (Test-Path $hdr)) {
+            Write-Host "  WIDTH CHECK: FAILED -- no generated header at $hdr"
+            $rc = 1
+        } else {
+            & $py $genPy --c-check $hdr 2>&1 | ForEach-Object { Write-Host "  WIDTH: $_" }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  WIDTH CHECK: FAILED (exit $LASTEXITCODE) for $hdr"
+                $rc = 1
+            }
+        }
         foreach ($t in $trees) {
             $java = Join-Path $t 'org\jline\utils\AnsiWidthTables.java'
             if (-not (Test-Path $java)) {

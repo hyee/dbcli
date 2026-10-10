@@ -162,6 +162,41 @@ break the muscle memory of the 3.29 legs), and a diagnostic with no question att
 the question it answers on the jline4 side would be the #98 family ("the prompt lands inside the bar's rows"),
 which is still open there.
 
+### 2026-10-10: the trace has been removed from this side, and the row above is why
+
+The owner's ruling was that a library file should not carry a `DBCLI_`-prefixed knob. The page had already
+argued the same point in the paragraph above -- "a diagnostic with no question attached is dead weight" --
+and the row's own text records the question as closed. Two further facts from today settle it: no gate leg
+ever expected the trace to speak (so by this project's own rule it did not exist as a check, only as an
+option), and when I did reach for it, it failed silently -- a leg passed
+`DBCLI_STATUS_TRACE=D:\dbcli\...`, the backslashes were eaten before the JVM saw them, `FileWriter` threw,
+`catch (Throwable ignored)` swallowed it, and the leg reported nothing at all. A diagnostic that cannot say
+it did not run is worse than none.
+
+**What was removed** (both jline3.29 trees, byte-identical before and after the edit): the `trace(String,
+Integer)` method, its `traceCursor` field and javadoc, and the four call sites in `update(...)`
+(`before`, `grow-after-csr`, `grow-end`, `shrink-end`). The `shrink-end` comment was rewritten to state what
+the trace used to be there to settle, because the answer is now known and belongs in the code: giving rows
+back does leave the caller where it was, and the real cost is on the **grow** branch -- `restore_cursor`
+after `CSI 1;28r` returns the cursor *below* the region just created, because conhost (unlike DEC, xterm and
+pyte) does not confine a restored cursor to the scrolling region. That is the mechanism behind the
+"prompt lands in the bar's rows" report, and the fix is application-side (`Console.setStatus`'s lift), not a
+JLine edit.
+
+**Audit of the deploy**: `lib/JLine3.jar` `dcbe7926...` -> `ce58a4cb...` via `jar uf` of the two `Status*`
+entries; entry set 910 -> 910 with nothing added or removed, and exactly those two entries differing from the
+backup (`cache/exitesc/JLine3.jar.20261010-201247.bak`). `Status.class` 12536 -> 9754 B and
+`javap -p` loses precisely three members (`traceCursor`, `trace`, `lambda$trace$0`); the inner
+`Status$MovingCursorDisplay.class` is shipped alongside at the same 1771 B because its line tables move with
+the outer file. The `DBCLI_STATUS_TRACE` literal is absent from both entries read back out of the jar.
+
+**Gates re-run on the deployed bytes** (real window legs, classic conhost and Windows Terminal): cold start
+with the cursor pushed onto the window's last row -> prompt at row 27 both hosts; `login` + 5 s idle +
+`exit` -> both farewell lines present, zero literal ESC cells; `set status off` -> `on` -> prompt at row 11,
+not on the border row. Not re-run: the `top`/`more`/resize ledger legs and the render.dll host/live gates
+(no dll change).
+
+
 
 ---
 
@@ -197,7 +232,7 @@ match`, one rule row on screen, no residue. `selftest --leg both` 16/16 before e
 (`before`, `grow-after-csr`, `grow-end`, `shrink-end`) plus the `Cursor` readback it needs
 (`terminal.getCursorPosition(i -> {})` → `org.jline.terminal.Cursor`, whose accessors are `getX()`/`getY()` —
 there is no `getRow()`/`getColumn()` in 3.29, and that cost two failed builds). It writes **only** when
-`DBCLI_STATUS_TRACE` names a file, so nothing changes for anyone who does not set it.
+`DBCLI_STATUS_TRACE` names a file, so nothing changes for anyone who does not set it. **[Superseded 2026-10-10: the whole instrument was removed from this side by the owner's ruling -- see §"the trace has been removed" above; the text here is kept as written for the history of what it settled.]**
 
 It exists because four readings of this method had produced four different mechanisms for the report
 "`set status off` then `set status on` leaves an empty `SQL>` one row above the line you are typing on", and
@@ -994,5 +1029,222 @@ Its stack frames named lines that hold other statements. Same md5-independent ch
   conhost half. Its frames were still the right instrument for the cursor/overflow question.
 - The `WIDTH CHECK` leg covers the two trees on this box. A clone elsewhere has no leg until its owner sets
   `DBCLI_JLINE_TREES`; without it the check says out loud that it looked at one tree.
+
+## 2026-10-10 (same day, second half): the fork's fixes merged into the jline4 trees
+
+Owner's instruction: 将 jline 这 20 天的 bug 修复合并到 jline4, with four rulings taken up front -- both trees
+kept in step with `D:\JavaProjects\jline4` as the baseline, library files plus their tests, jline4's
+grapheme-cluster API left alone and only its width table replaced, and verification = full differential +
+whole-tree rebuild + unit/caps gates (no real-window matrix, nothing deployed into `lib`).
+
+**Starting state, measured rather than assumed:** the two jline4 trees disagreed with *each other*.
+`JavaProjects` (no git, the 09-28 merge's target) had the `setBorder` family and a hand-carved
+Unicode 16.0 width model but not the Curses fix and not the absolute-addressing status;
+`Green/github/jline4` (git, `2ab1d067` + `ae63982a`) was upstream plus the Curses fix, with an
+unmodified upstream `Status` -- which is why "Green already has `moveVisualCursorTo`" was a false
+lead: upstream's Display has that method, upstream's Status does not override it. Baselines of every
+file touched are in `cache/jline4-merge-1010/baseline.md5`.
+
+| Merged | What it took | Witness |
+|---|---|---|
+| `Curses.java` `%?/%t/%e/%;` frame stack | a copy -- jline4 build tree was byte-identical to upstream, so no conflict was possible | `CursesTest.testElseIfChain`/`testNestedConditionals`: red on the pre-merge jar, green after |
+| `4be9d95e` absolute addressing + `bbe6ea20` grow-branch loops | the override, and deletion of the CUD/cursor_up compensation loops | `barRepaintMustNotFeedLineScrolls` (ported with it): red pre-merge, green after |
+| `5c430834` border cache | `setBorder` early return + `sameTemplate` | `equalBorderTemplateDoesNotRetileTheRule`: red pre-merge, green after |
+| `5c430834` size guards | four sites -- jline4 assigns `size = terminal.getBufferSize()` where 3.29 copies into a mutable field, so the WINCH buffer guard became `size1 = size` on failure, keeping the last geometry the same way | no unit case either side; `LineReaderImpl` still has no automated coverage on either tree |
+| `54fd3100` `windows-render` | the type constant, the registry entry, and the audited 1,665-byte caps resource copied byte-for-byte | the caps gate, see the gate fix below |
+| `19bbdd7d` width table | `AnsiWidthTables.java` generated into both trees, `WCWidth.wcwidth` delegating, and **both hand tables plus `Interval`/`bisearch` deleted** (958 → 679 lines). The cluster helpers call `wcwidth(cp)`, so they inherit the same answer; `isGraphemeExtension`'s `cp == 0` test is now Unicode 15's too. | differential vs `lib/x86/utf8.dll`: **176 non-control differences before, 0 after**; 63 controls still `-1`, TAB still `-1` |
+| tests | `StatusTest` +5 cases (4 from `5c430834`/`19bbdd7d`, 1 the LF-count invariant), `CursesTest` from Green with its duplicated comment de-duplicated | `tests=31 found=31 succeeded=31 failed=0` on the merged jar; control on the pre-merge jar: `27/4`, the 4 being exactly the merged behaviours |
+
+**The merge's own bug, found by the suite and fixed -- and it is jline4's byte mode again.** The ported
+override emitted `terminal.puts(cursor_address, …)`, and jline4's `Display` buffers cells and control
+sequences together in `byteBuilder` in byte mode, flushing once at the end of `update()`. Writing to the
+terminal directly jumped that queue: **nine upstream grid cases came back with the row content rotated by
+one column** (`expected <my status> but was <y status …m>`) -- the same mechanism that made the 09-28 pass
+reject `rawPrint` batching, now hit from the opposite direction. Fix: `Display.puts(Capability, Object…)`
+(and its parameter-less sibling) widened `private` → `protected`, and the override emits through it. No
+behaviour changes for existing callers; the nine cases are the witness that this was not cosmetic. Lesson
+worth keeping: 3.29's `Display` has no byte mode at all (no `byteBuilder`, no `useByteMode`), so an
+override that is correct there is not automatically correct here.
+
+**Gates run.** `bash cache/jline4-build/build.sh` with `SRCP` pointed at the build tree: 417 sources,
+`--release 8` rc=0 with 0 errors, `--release 22` rc=0, packed `cache/jline4-merge-1010/out/JLine4.jar`
+(1,686,164 B). `bash cache/jline4-merge-1010/run-tests-1010.sh [<jar>]` runs `StatusTest` + `CursesTest`
+against the **jar** (bare `classes8` has no caps resources and every case dies inside `InfoCmp`).
+`--java-check` now passes for four paths (2 × jline3.29, 2 × jline4) and the two jline4 trees are
+byte-identical across all eleven touched files.
+
+**A gate fix that came out of this, and it was hiding a hole.** `caps_check.ps1`'s second leg pulled
+`*windows-conemu.caps` out of the jar by a hardcoded name, so auditing the new entry audited conemu twice
+and never once looked at the caps a `windows-render` session actually ships with -- the same zero-coverage
+gap this page already records for `ANSI_SUPPORTS.md`/`CapsDump`. It now derives the entry name from the
+file given to `-Caps`. Three runs after the change: default pair `CAPS CHECK: ok` (unchanged,
+90/92/51/unexplained=0), `-Caps windows-render` against the merged jar `ok` with the jar copy reported as
+`1665 bytes md5=E3C76F2A…` (proving the leg reads the right entry), and a falsification arm -- the stale
+7,440-byte conemu file against the shipping jar -- reporting `DRIFT` plus 9 FAILED.
+
+**Still open after this merge, all of it pre-existing and none of it deployed:**
+- **`windows-conemu.caps` has three generations and the jline4 trees hold the wrong one.** The audited
+  1,575-byte entry is what ships (`lib/JLine3.jar`, md5 `FC6705A0…`); both jline4 trees and the
+  `Green/github/jline3.29` resource carry a 7,440-byte older one (`9454E34C…`). Building a jline4 jar
+  from the tree therefore loses the audit -- `kmous` (mouse reports), the xterm 3-tier `setaf`/`setab`,
+  `smcup`/`rmcup`'s save/restore pairing and `sgr0`'s `\E[m`: nine gate assertions, red on the pre-merge
+  jar too. Whichever caps generation is authoritative is still the owner's call, and this merge did not
+  touch it -- `windows-render.caps` was copied byte-for-byte precisely so this decision stays open.
+  **Closed later the same day by the owner's "同步caps":** the four trees now all carry the audited
+  1,575-byte `FC6705A0…` file, the 7,440-byte and 1,090-byte generations are out of the build path, and
+  the originals are backed up in `cache/caps-sync-1010/orig`. See the round-5 section for the gate hole
+  this found on the way (`caps_check.ps1` only ever audited the `windows-conemu` entry inside the jar).
+- Unicode **15.0 vs 16.0**: jline4's hand tables were 16.0 projections. Pinning them to the shipped
+  table closed 176 code points; raising the oracle to 16.0 is a different decision (it needs a
+  `unicodedata` ≥ 16 interpreter, and Python 3.12.10 on this box is 15.0).
+  **Done the same day, and not through the interpreter:** the generator now reads the 16.0.0 data files
+  carried in `src/c/luauf8/ucd/`, so the version is a property of the repository. See the round-5
+  section -- including the 139 code points where the two console width paths gave this project two
+  different answers and what was chosen between them.
+- `ba06511f`'s `DBCLI_STATUS_TRACE`: nothing left to port -- removed from the JLine3 side on 2026-10-10 (see the trace section), so this stays a jline4-side non-item.
+- LineReaderImpl's guards are untested on either tree.
+
+## 2026-10-10 (round 5): caps unified across the four trees, the oracle raised to Unicode 16.0, and a
+## measured carve-out that a second host refused to confirm
+
+Owner's instruction: "同步caps，unicode升到16". Both halves went in; the second one turned out to need a
+measurement this project had not taken, and the table that ships is not the one that was written first.
+
+**caps.** The authoritative file is `src/c/conemu/terminfo/windows-conemu.caps` -- 1,575 bytes, md5
+`FC6705A001EB044EB929D9A89698602F`, the entry `lib/JLine3.jar` ships and the one `caps_check.ps1` audits.
+Copied into all four jline trees (`JavaProjects` and `Green/github`, jline3.29 and jline4), replacing three
+older generations: 7,440 bytes `9454E34C…` in three trees, 1,090 bytes `6C28B2E9…` in the `JavaProjects`
+jline3.29 tree (the 10-07 "stock + kmous" restore, superseded by this instruction), and 1,120 bytes
+`F80A4877…` in `Green/github/jline4`. Originals backed up under `cache/caps-sync-1010/orig`. The 10-10 merge
+section's open item about which generation is authoritative is closed by the owner's word, not by this
+session's preference.
+
+**A gate hole the sync found.** `caps_check.ps1` looked inside the jar with a hardcoded
+`-like '*windows-conemu.caps'`, so the `windows-render` entry -- a different file, audited in the tree -- was
+never compared against the jar's copy. It now derives the entry name from the file it is auditing
+(`$capsLeaf = Split-Path -Leaf $Caps`), and the leg was proven by an arm that plants a different file in the
+jar and comes back with `DRIFT` (the condition the second run exists to catch), then green again.
+
+**And a second defect in the same file, found while writing the paragraph above.** The live tree's
+`caps_check.ps1` had 98 lines and four comments; the repo tree's had 125 lines and 32 -- the 20-line header
+explaining why the script runs twice, and the inline notes on why the helper uses `Write-Host` rather than the
+pipeline, why the verdict test is `Select-String` and not `-notmatch`, why JDK 8's `javac` needs its own `-d`
+target created. The code was the same (82 lines against 81, the difference being this round's fix), so nothing
+behavioural was wrong and the gate had been passing -- a comment-less file is invisible to every test. An
+`Edit` that anchors on four lines cannot delete twenty-eight others, so the live copy was written whole by
+something at some point, and `git status` says the repo copy still equals HEAD, which is where the reasoning
+was recovered from. `cache/ucd16/merge_caps_check.ps1.py` merges the two with both directions asserted (every
+code line of the live file present, every comment line of the repo file present, the fix landing exactly once),
+refuses to write if any of those fail -- it fired once already, on an indentation difference, which is the
+check working -- and wrote the live tree only. The repo tree's copy is deliberately untouched: the fix belongs
+there too, and that sync is the owner's to name.
+
+**The generator owns its Unicode version.** `gen_ansi_tables.py` reads
+`src/c/luauf8/ucd/UnicodeData.txt` + `EastAsianWidth.txt` (16.0.0, copied verbatim with Unicode's notices
+intact, 2.4 MB), so the oracle's version is a repository fact: the same script under the same conditions
+produces the same table on any box, and the generated headers name the source. `--interp` is kept as the A/B
+leg only, and the old "this Python must have a new enough unicodedata" guard moved to that leg, where it is
+load-bearing. There is no silent fallback: a missing data file aborts with a message naming the path (two arms
+-- the tree's `ucd/` renamed away, and an empty `--ucd` directory -- exit 1 and write nothing). The staleness
+cross-check went the other way: it now only fails when the file and the interpreter claim the *same* version
+and still disagree (the shape a truncated copy takes); a file pinned older than the interpreter's
+`unicodedata` is the normal state and prints. `SOURCE` labels the pinned directory repo-relatively, because an
+absolute path in a generated file makes `--c-check` call a current file stale on every other clone.
+
+**`--c-check`, the missing half of the drift gate.** `run.ps1`'s WIDTH CHECK re-derived the Java table and
+refused a stale copy, but the C header was only ever *compiled*: a rule change with a half-regenerated tree
+would have shipped a dll built from the old table with the gate green. `--c-check PATH` re-derives the header,
+compares byte for byte and names the first differing line, and is now the first leg of WIDTH CHECK (build tree
+plus the git mirror). Its teeth were proven the same way -- pointing it at the git tree before that header was
+synced returned STALE with a non-zero exit, and green after.
+
+**Unicode 16.0, and the 139.** Against the table that shipped all week the net is 37 code points: 36 marks
+16.0 assigns (Garay, Tulu-Tigalari, Gurung Khema, Ol Onal, Arabic Pepet, Arabic Combining Alef Overlay, Kawi)
+going 1 -> 0, and U+1171E AHOM CONSONANT SIGN MEDIAL RA going 0 -> 1 because 16.0 reclassifies it Mn -> Mc.
+No box-drawing, block-element, braille, CJK, jamo or drawn-Cf code point moves -- re-checked against the two
+artifacts, not against the rules. The third group is the one that fought: 139 code points 16.0 moves to
+`East_Asian_Width=W` (the trigrams U+2630..U+2637, the taoist monograms and the Tai Xuan Jing tetragrams, the
+ideographic-description tail, two CJK strokes, one Khitan character, the counting rods, seven astral
+additions). `ambmeasure.exe` wrote all 139 with `WriteConsoleW` on six conhost faces and every face consumed
+one cell (1,056 readbacks), which is how the project's own ambiguous carve-out was originally built, so the
+model grew a second measured list holding them at 1 and the first deploy went out with it (605 runs).
+
+A dbcli leg in the pseudo-console then measured the same glyphs the other way: two cells each, with the 0x0000
+trailing cell conhost reserves for a wide glyph, from a pty stream in which each glyph crosses exactly once
+(`cache/ucd16/check_leg16.py` over `cache/leg-1010/ucd16*`). The reference tree shows two different width
+sources -- the renderer's font fallback is installed only `if (!gci.IsInVtIoMode())`
+(`src/host/srvinit.cpp:835`), while the VT path answers from the property trie and consults the font only for
+an ambiguous `width == 3` (`src/types/CodepointWidthDetector.cpp:1153-1157`) -- which is the mechanism the two
+measurements suggest; neither leg proved it. The choice was made on the asymmetry: 1 where the host spends 2
+puts the next column on top of the glyph, 2 where the host spends 1 leaves a blank. The carve-out came off and
+the table follows the property (607 runs). The blast radius of that reversal is not asserted: re-running the
+five-face differential against the jar that had carried it names **exactly 139** code points where the jar
+answered 1 while the header, the compiled module and the rules all answer 2.
+
+**Gates, in the order they were run.** Host `RenderCheck` `checks=8116 fails=0` (the same build also runs
+"width 0x110000 code points cross-checked, 20 pinned classes"). Live `run.ps1 -Arch both`: `checks=6341
+failures=0`, `RENDERGATE: ok`, `STAGE0 RUN: ok` on both arches -- with the OSC-52 leg bailing out loud:
+`skip the witness can read what it just wrote: read back ""; an outside process owns the register, so this
+case has no witness`. Two bail paths live in `caseClipboard()` and only the second one fired: `clipSeed`
+returning false prints `SKIP clipboard: no out-of-process clipboard witness`, while here the seed call
+*reported success* and the read-back came up empty, which is the signature of this box's clipboard having
+stopped answering `OpenClipboard` (ERROR_ACCESS_DENIED, `GetOpenClipboardWindow` naming no owner, no viewer
+in the chain, and pwsh's `Set-Clipboard` returning without error while writing nothing --
+`cache/ucd16/clipretry.ps1`). That skip is why the count is 6341 where the same gate measured 6373 earlier
+today: 32 assertions per arch, unmeasured for these bytes, and recorded as unmeasured rather than as passing. Five-face differential over 1,112,064 code points (header /
+`lib/x86/utf8.dll` / `lib/x64/utf8.dll` / the generator's rules / the jar): all five agree outright on
+1,112,000, the two named buckets are the 64 controls jline answers `-1` for and the lone TAB the string entry
+point replays as 8, and unexplained is 0. `StatusTest` 11/11 against the deployed `lib/JLine3.jar`; jline4
+whole-tree rebuild plus its suites 31/31 (cache jar only -- the owner's standing order keeps a jline4 jar out
+of `lib`); `caps_check.ps1` ok on both arms with the jar's entry and the tree's byte-identical.
+
+**Real machine.** `login o19c` then three grids, cells read back: the trigram column reserves 16 columns and
+the console spends 16, CJK 6 and 6, Tai Xuan Jing 10 and 10, astral 6 and 6, and every column to the right of
+them begins exactly at its header dash -- `cache/ucd16/check_align16.py`, worst displacement 0. Two harness
+lessons came out of building that leg: the banner's `Type 'conn'` is not the interactive command (`login
+<env>` is, matching `agent-test.ps1 -Login`), and a statement typed at the prompt needs its own `;` or it
+silently becomes continuation input -- which is how the first three legs "passed" while measuring only the
+echo of what was typed.
+
+**Deploy identity.** `lib/JLine3.jar` 747 class entries before and after, 0 added, 0 removed, one entry moved
+(`org/jline/utils/AnsiWidthTables.class`, CRC `d1f6275a` -> `78360b3c`), read back out of the jar byte for
+byte against the staged class, and the jar md5 equal to the candidate the gates ran (`7b923fb1…`).
+`lib/{x86,x64}/render.dll` renamed over from `cache/native-probe` and identical to the bytes the live gate
+loaded (`f26b74f7…` / `fc12ebfc…`); `lib/{x86,x64}/utf8.dll` rebuilt in place by `src/c/luauf8/build.sh`
+(`679accfd…` / `1af72ed2…`). Another session rewrote `lib/JLine3.jar` at 20:12 during this round
+(`Status.class` and `Status$MovingCursorDisplay.class` plus a table rebuild); the entry diff above is the
+proof that this deploy left both of their entries exactly as they put them and moved only the table.
+
+**Still open after this round.** The 139's one-cell answer on the six classic faces is a recorded cost, not a
+resolved disagreement -- if a face that really carries those glyphs turns up narrow, `cache/ucd16/faces16.py`
+is the leg to re-run, and the answer would be a host-conditional table rather than a second guess. The OSC-52
+family (32 assertions per arch) has no witness on the Unicode-16 bytes until this box's clipboard answers
+`OpenClipboard` again; the live gate must be re-run when it does. The 620 font-dependent ambiguous code points
+and the regional-indicator divergence are unchanged. Nothing in this round is committed.
+
+**Re-run on the final stack (the owner's "之前是其他agent修复开发残余，重跑吧"), and one new leg.** Identity
+first, because a shared tree moves: `lib/JLine3.jar 7b923fb1`, `utf8.dll 679accfd/1af72ed2`,
+`render.dll f26b74f7/fc12ebfc`, `ansi_width_tables.h b167b131` -- all still the bytes the gates ran. The
+other session's Status work was verified rather than assumed: recompiling the tree's `Status.java`
+(`-g -source 8 -target 8`) produces `Status.class` 9754 B `e54ae765` and
+`Status$MovingCursorDisplay.class` 1771 B `bce0b039`, both byte-identical to the entries in the shipping jar
+-- no "source moved, class did not" residue under my own round. Then: live both arches `6341/0` with
+`STAGE0 RUN: ok`, six WIDTH legs `table is current (607 runs)`, five-face differential PASS, `StatusTest`
+11/11 on the shipped jar, caps ok on both arms with the jar entry equal to the tree's.
+
+The new leg is the one that mattered: a CJK column of 96 cells (fits) and a trigram column of 120 cells
+(deliberately wider than the 100-column window). `frames-1010` reports `wrap_suspects` there -- over-width
+content folds onto the next row, which is the documented behaviour of `set linesize`/`DBCLI_BUFFER_COLS`, not
+a defect -- so the number that decides it is a different one. `cache/ucd16/check_split16.py` asks whether any
+wide glyph was *cut in half* by the margin (col 99 holding a glyph's leading cell while the next row's col 0
+holds its `0x0000` trailing cell, or a trailing cell with no leader): four stress frames plus the 24 dashboard
+frames give **0 split, 0 orphan**, and a planted control (row 5 col 99 = U+4E2D, row 6 col 0 = 0) is named and
+exits 1. `scan_literal_esc.py` over the same captures: 0 escape sequences arriving as text, with a control
+line that does get caught. So `wrap_suspects` is not a green-light metric for this class, and it is written
+down as such; what the flip buys is that the fold happens with every glyph pair intact. The opposite case --
+a 1-cell table in a 2-cell host -- was **not** rendered and measured here, only argued: the grid would
+reserve 60 columns for a 120-cell value and its padding would land where the console is still drawing, which
+is the overlap class this project ranks above a blank tail. It is written as the reason for the choice, not
+as a witnessed failure.
 
 

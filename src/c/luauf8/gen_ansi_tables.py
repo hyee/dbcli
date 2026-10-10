@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gen_ansi_tables.py -- regenerate ansi_width_tables from Unicode 15.0 (Python unicodedata).
+"""gen_ansi_tables.py -- regenerate ansi_width_tables from the Unicode data in src/c/luauf8/ucd/.
 
 Writes two files from one table, because the two width models in this project have to be the
 same width model: the C header `ansi_width_tables.h` (src/c/luauf8/ansi_width.c, the Lua
@@ -26,20 +26,24 @@ The per-256-block map collapses every block whose 256 code points agree, so ASCI
 and Hangul resolve with one table read and never scan an interval. (C header only -- the
 Java table is a single binary search, which is the same answer and cannot drift from it.)
 """
+import io
+import os
+import re
 import sys
 import unicodedata as ud
 
-# An older unicodedata silently produces a worse table: it does not know the code points
-# added since, so they come out unassigned and width 1, splitting runs that should be
-# uniform. The interval count this script prints is the tell -- Unicode 13 gave 1,036 where
-# Unicode 15 gives a few hundred -- and it moves again with every width rule, so compare
-# within a rule rather than against a number left in this comment.
+# The property source is the data carried in this tree, so the Unicode version this script
+# answers with does not depend on which interpreter runs it. That is the whole point: an older
+# unicodedata silently produces a worse table (it does not know the code points added since, so
+# they come out unassigned and width 1, splitting runs that should be uniform), and a NEWER
+# interpreter must not be able to move the oracle either -- the gates on this box would otherwise
+# compare a table from the current interpreter against a Java copy generated from the pinned files.
+# The interval count printed below is the tell for a rule change: 594 under Unicode 15.0, 607 under
+# 16.0, and it moves again with every width rule, so compare within a rule rather than against a
+# number left in a comment. (It briefly read 605 while a measured carve-out held Unicode 16.0's 139
+# newly-wide code points at one cell; that list is gone and the note where it was explains why.)
 UNIDATA_MIN = (15, 0, 0)
-_unidata = tuple(int(x) for x in ud.unidata_version.split("."))
-if _unidata < UNIDATA_MIN:
-    sys.exit("gen_ansi_tables.py: this Python's unicodedata is Unicode %s, need >= %s. "
-             "Run it with an interpreter whose unicodedata is new enough."
-             % (ud.unidata_version, ".".join(str(x) for x in UNIDATA_MIN)))
+DEFAULT_UCD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ucd")
 
 NBLK = 4352
 MAXCP = 0x10FFFF
@@ -47,7 +51,9 @@ MAXCP = 0x10FFFF
 # Invocation:
 #   gen_ansi_tables.py [OUT.h]                      -- the C header (default name, as before)
 #   gen_ansi_tables.py --java P [P...]              -- write the Java table to each path
-#   gen_ansi_tables.py --java-check P [P...]         -- verify each path without touching it
+#   gen_ansi_tables.py --java-check P [P...]        -- verify each path without touching it
+#   gen_ansi_tables.py --c-check P [P...]           -- the same leg for the C header, so the file
+#       the dll is compiled from cannot fall behind the rules while the Java copy keeps passing
 # The Java form exists because two hand-written width tables are the bug this script was
 # written to avoid: JLine's WCWidth carried its own Kuhn table while the Lua side consulted
 # the generated one, and the grid measured a cell one way and the layout the other.
@@ -55,13 +61,40 @@ MAXCP = 0x10FFFF
 # write and `--java-check` is the leg that fails when any of them has fallen behind.
 JAVA_FLAG = "--java"
 JAVA_CHECK_FLAG = "--java-check"
+C_CHECK_FLAG = "--c-check"
+UCD_FLAG = "--ucd"
+INTERP_FLAG = "--interp"
 
 _argv = sys.argv[1:]
+UCD_DIR = DEFAULT_UCD
+if INTERP_FLAG in _argv:
+    # Ask for the interpreter's own unicodedata instead of the pinned files. Only useful as the
+    # A/B leg that shows what an upgrade would change; a table built this way is a property of the
+    # machine, so nothing that ships may be generated from it.
+    _argv.remove(INTERP_FLAG)
+    UCD_DIR = None
+elif UCD_FLAG in _argv:
+    _k = _argv.index(UCD_FLAG)
+    if _k + 1 >= len(_argv):
+        sys.exit("gen_ansi_tables.py: --ucd wants a directory holding UnicodeData.txt and "
+                 "EastAsianWidth-<version>.txt")
+    UCD_DIR = _argv[_k + 1]
+    del _argv[_k:_k + 2]
+if UCD_DIR:
+    for _f in ("UnicodeData.txt",):
+        if not os.path.exists(os.path.join(UCD_DIR, _f)):
+            sys.exit("gen_ansi_tables.py: no %s in %s. The width oracle is generated from the "
+                     "Unicode data files carried in the tree; there is no fallback to the "
+                     "interpreter, because a silent fallback would downgrade the table without "
+                     "anybody editing a rule. Restore the file, point --ucd at a directory that "
+                     "has it, or pass --interp deliberately." % (_f, UCD_DIR))
 MODE = "c"
 if _argv and _argv[0] == JAVA_FLAG:
     MODE, PATHS = "java", _argv[1:]
 elif _argv and _argv[0] == JAVA_CHECK_FLAG:
     MODE, PATHS = "check", _argv[1:]
+elif _argv and _argv[0] == C_CHECK_FLAG:
+    MODE, PATHS = "ccheck", _argv[1:]
 else:
     PATHS = _argv
 if not PATHS:
@@ -199,6 +232,130 @@ AMBIGUOUS_NARROW = (
 
 _AMBIG_NARROW = frozenset(cp for lo, hi in AMBIGUOUS_NARROW for cp in range(lo, hi + 1))
 
+# A measured list that is deliberately NOT here, and the reason is a host that disagrees.
+# Unicode 16.0 moves 139 code points to East_Asian_Width=W -- the trigrams U+2630..U+2637, the taoist
+# monograms and the Tai Xuan Jing tetragrams, the ideographic-description tail U+2FFC..U+2FFF and its
+# subtraction mark, two CJK strokes, one Khitan character, the counting rods through tally mark five,
+# and seven astral additions. ambmeasure.exe wrote every one of them with WriteConsoleW on six conhost
+# faces (Consolas, Courier New, Lucida Console, MS Gothic, Terminal, 新宋体, each confirmed by
+# GetCurrentConsoleFontEx) and all six consumed ONE cell -- cache/ucd16/measured-moved.csv, 1,056
+# readbacks. dbcli writing the same glyphs as UTF-8 through the pseudo-console consumed TWO cells for
+# every one of them, with the 0x0000 trailing cell conhost reserves for a wide glyph
+# (cache/leg-1010/ucd16, and the pty stream shows each glyph crossing exactly once). The two console
+# width paths disagree: the WriteConsoleW path measures against the selected face and substitutes for
+# a glyph it has not, while the terminal-adapter path follows the generated property trie --
+# microsoft/terminal's is generated "from Unicode 16.0.0" (types/CodepointWidthDetector.cpp:46), which
+# is what the property file says. Under-predicting collides the rest of the row onto the glyph;
+# over-predicting only widens the column, so the table follows the property and these 139 count 2.
+# The narrow answer on the classic faces is a recorded known cost, the same shape as the 620
+# font-dependent ambiguous code points below.
+
+# ---------------------------------------------------------------------- property source ----
+# Two ways to ask the same two questions: what is this code point's general category, and what is
+# its East_Asian_Width. unicodedata is the convenient source and the one that moves under you --
+# the interpreter decides the Unicode version, so the oracle's answer becomes a property of the
+# machine and two runs of the same script on two Pythons can produce different tables without
+# anybody editing a rule. The files ARE the default now: load_ucd() reads them, takes the version
+# from the EastAsianWidth header line, and pins it in both outputs' headers. --interp is the leg
+# that still asks the interpreter, and it is for A/B, not for anything that ships.
+def load_ucd(d):
+    """(categories, east_asian_widths, version, eaw filename) from a UCD directory."""
+    udata = os.path.join(d, "UnicodeData.txt")
+    if not os.path.exists(udata):
+        sys.exit("gen_ansi_tables.py: no UnicodeData.txt in %s" % d)
+    eawname = None
+    for f in sorted(os.listdir(d)):
+        if f.lower().startswith("eastasianwidth"):
+            eawname = f
+    if not eawname:
+        sys.exit("gen_ansi_tables.py: no EastAsianWidth*.txt in %s" % d)
+    cats, first = {}, None
+    for line in io.open(udata, encoding="utf-8"):
+        f = line.rstrip("\n").split(";")
+        if len(f) < 3:
+            continue
+        cp = int(f[0], 16)
+        cats[cp] = f[2]
+        if re.match(r"<.+ First>$", f[1]):
+            first = cp
+        elif re.match(r"<.+ Last>$", f[1]) and first is not None:
+            for c in range(first, cp + 1):
+                cats[c] = f[2]
+    head = io.open(os.path.join(d, eawname), encoding="utf-8").readline()
+    m = re.search(r"EastAsianWidth-(\d+\.\d+\.\d+)", head)
+    if not m:
+        sys.exit("gen_ansi_tables.py: %s carries no version in its first line (%r); the "
+                 "table would have to be labelled with a guess" % (eawname, head[:60]))
+    version = m.group(1)
+    widths = {}
+    for line in io.open(os.path.join(d, eawname), encoding="utf-8"):
+        m = re.match(r"([0-9A-F]{4,6})(?:\.\.([0-9A-F]{4,6}))?\s*;\s*(\w+)", line)
+        if m:
+            a = int(m.group(1), 16)
+            b = int(m.group(2) or m.group(1), 16)
+            for c in range(a, b + 1):
+                widths[c] = m.group(3)
+    return cats, widths, version, eawname
+
+
+if UCD_DIR:
+    UCD_CAT, UCD_EAW, DATA_VERSION, UCD_FILE = load_ucd(UCD_DIR)
+    # Label the source the way a reader can find it from anywhere: the pinned directory in the tree
+    # gets its repo-relative name, so two clones on two drives generate the SAME bytes and
+    # --c-check cannot call a current file stale because of where it happens to live.
+    _label = ("src/c/luauf8/ucd"
+              if os.path.abspath(UCD_DIR) == os.path.abspath(DEFAULT_UCD) else UCD_DIR)
+    SOURCE = "Unicode %s (%s + UnicodeData.txt from %s)" % (DATA_VERSION, UCD_FILE, _label)
+    print("source: %s -- %d categorized, %d with an explicit EastAsianWidth entry"
+          % (SOURCE, len(UCD_CAT), len(UCD_EAW)))
+    # The one cross-check that catches a truncated or corrupt copy: when the file and the
+    # interpreter claim the SAME Unicode version they must agree on what is assigned. A file that
+    # is simply older than the interpreter is the normal state of a pinned oracle and only gets a
+    # warning -- the future Python that knows Unicode 17 must not be able to break these gates.
+    _ver = tuple(int(x) for x in DATA_VERSION.split("."))
+    _uni = tuple(int(x) for x in ud.unidata_version.split("."))
+    missing = [c for c in range(MAXCP + 1)
+               if ud.category(chr(c)) != "Cn" and c not in UCD_CAT]
+    if missing and _ver == _uni:
+        sys.exit("gen_ansi_tables.py --ucd: %s and unicodedata both claim Unicode %s, yet %d code "
+                 "points the interpreter assigns are UNASSIGNED in the file (first: %s) -- that "
+                 "copy is truncated or edited"
+                 % (UCD_FILE, DATA_VERSION, len(missing),
+                    " ".join("U+%04X" % c for c in missing[:6])))
+    newer = sum(1 for c in range(MAXCP + 1)
+                if ud.category(chr(c)) == "Cn" and c in UCD_CAT)
+    if missing:
+        print("cross-check: unicodedata %s assigns %d code points this %s (Unicode %s) does not "
+              "have; the file is pinned older on purpose, the table follows the file"
+              % (ud.unidata_version, len(missing), UCD_FILE, DATA_VERSION))
+    else:
+        print("cross-check: nothing unicodedata %s assigns is missing from the file; the file "
+              "assigns %d code points the interpreter has never heard of"
+              % (ud.unidata_version, newer))
+else:
+    # --interp: here the interpreter IS the oracle, so its version is load-bearing.
+    _uni = tuple(int(x) for x in ud.unidata_version.split("."))
+    if _uni < UNIDATA_MIN:
+        sys.exit("gen_ansi_tables.py --interp: this Python's unicodedata is Unicode %s, need "
+                 ">= %s. An older one answers Cn and width 1 for code points added since, which "
+                 "splits runs that should be uniform -- the interval count printed below is the "
+                 "tell. Use the default (the files in %s) unless you want that on purpose."
+                 % (ud.unidata_version, ".".join(str(x) for x in UNIDATA_MIN), DEFAULT_UCD))
+    DATA_VERSION = ud.unidata_version
+    SOURCE = "Unicode %s (Python unicodedata, --interp)" % DATA_VERSION
+
+
+def category(cp):
+    if UCD_DIR:
+        return UCD_CAT.get(cp, "Cn")
+    return ud.category(chr(cp))
+
+
+def eaw_of(cp):
+    if UCD_DIR:
+        return UCD_EAW.get(cp, "N")
+    return ud.east_asian_width(chr(cp))
+
 
 def in_ranges(cp, ranges):
     for lo, hi in ranges:
@@ -214,10 +371,9 @@ def width(cp):
         return 1
     if in_ranges(cp, JAMO_ZERO):
         return 0
-    ch = chr(cp)
-    if ud.category(ch) in ZERO_CAT:
+    eaw = eaw_of(cp)
+    if category(cp) in ZERO_CAT:
         return 0
-    eaw = ud.east_asian_width(ch)
     if eaw == "A":
         return 1 if cp in _AMBIG_NARROW else 2
     if eaw in ("W", "F"):
@@ -262,12 +418,14 @@ assert niv < 65536, "ansi_blk_iv is uint16_t"
 assert all(0 <= v <= 2 for v in blk_w if v >= 0)
 
 o = []
-o.append("/* GENERATED by gen_ansi_tables.py from Unicode %s (Python unicodedata) -- DO NOT EDIT BY HAND.\n"
-         % ud.unidata_version)
+o.append("/* GENERATED by gen_ansi_tables.py from %s -- DO NOT EDIT BY HAND.\n" % SOURCE)
 o.append(" * Width model: Mn/Me/Cf and Cc -> 0 (checked before EAW, since U+3099/U+302A are\n"
-         " * both Mn and EAW=W); EastAsianWidth W/F -> 2; unassigned code points inside the\n"
-         " * CJK ideograph blocks and Planes 2/3 -> 2 (UAX #11 default, which unicodedata\n"
-         " * does not report); EastAsianWidth A -> 2 except for the code points measured 1\n"
+         " * both Mn and EAW=W); EastAsianWidth W/F -> 2 (Unicode 16.0, whose 139 newly-W code\n"
+         " * points the classic WriteConsoleW faces measure 1 and the pseudo-console measures 2;\n"
+         " * the property wins because under-prediction collides a row -- see the note in\n"
+         " * gen_ansi_tables.py); unassigned code points inside the CJK ideograph blocks and\n"
+         " * Planes 2/3 -> 2 (UAX #11 default, which unicodedata does not report);\n"
+         " * EastAsianWidth A -> 2 except for the code points measured 1\n"
          " * cell in every console font, which stay 1 (AMBIGUOUS_NARROW in the generator).\n"
          " * Measured overrides, see gen_ansi_tables.py: the soft hyphen and the 13\n"
          " * Prepended_Concatenation_Marks -> 1, conjoining Hangul jamo -> 0, Yijing -> 2.\n"
@@ -329,7 +487,7 @@ def build_java():
     j.append("/**\n"
              " * The display width of every Unicode code point, as the terminals this library is\n"
              " * loaded into actually lay them out. <b>Generated file</b> -- dbcli's\n"
-             " * {@code src/c/luauf8/gen_ansi_tables.py} (Unicode %s, Python unicodedata) writes it together\n"
+             " * {@code src/c/luauf8/gen_ansi_tables.py} (%s) writes it together\n"
              " * with {@code ansi_width_tables.h}, the table behind the Lua {@code utf8.ansi_width} engine.\n"
              " * One run of one script writes both, which is the whole reason this class exists: the\n"
              " * grid may not size a cell one way and the layout another.\n"
@@ -347,6 +505,13 @@ def build_java():
              " *       {@code AMBIGUOUS_NARROW} in the generator, and it is measured, not derived.</li>\n"
              " *   <li>Measured overrides: the soft hyphen and the 13 Prepended_Concatenation_Marks\n"
              " *       get a cell, conjoining Hangul jamo do not, the Yijing hexagrams count 2.</li>\n"
+             " *   <li>Unicode 16.0's 139 newly-wide code points (the trigrams, the taoist and Tai\n"
+             " *       Xuan Jing symbols, the ideographic-description tail, the counting rods, seven\n"
+             " *       astral additions) count 2 here. Six classic WriteConsoleW console faces\n"
+             " *       measure them 1 and the pseudo-console measures them 2, and the property is\n"
+             " *       followed because a table that under-predicts lays the next cell of the row on\n"
+             " *       top of the glyph, while one that over-predicts only leaves a blank; see the\n"
+             " *       note in {@code gen_ansi_tables.py} for both measurements.</li>\n"
              " *   <li>Everything else is 1, which is why only runs that are <i>not</i> 1 are listed.</li>\n"
              " * </ul>\n"
              " *\n"
@@ -359,7 +524,7 @@ def build_java():
              " * naming every jline tree that builds; {@code --java-check} with the same paths is the leg\n"
              " * that fails when one of them has fallen behind.\n"
              " */\n"
-             % ud.unidata_version)
+             % SOURCE)
     j.append("public final class AnsiWidthTables {\n\n")
     j.append("    private AnsiWidthTables() {}\n\n")
     j.append(JAVA_BEGIN + "\n")
@@ -403,12 +568,37 @@ def build_java():
     return "".join(j)
 
 
-JAVA_TEXT = build_java() if MODE != "c" else None
+JAVA_TEXT = build_java() if MODE in ("java", "check") else None
 
 if MODE == "c":
     with open(OUT, "w", newline="\n") as fh:
         fh.write(C_TEXT)
-    print("unicode %s -> %s" % (ud.unidata_version, OUT))
+    print("unicode %s -> %s" % (SOURCE, OUT))
+elif MODE == "ccheck":
+    bad = 0
+    for path in PATHS:
+        try:
+            have = open(path, encoding="utf-8", newline="\n").read()
+        except IOError as err:
+            sys.stderr.write("--c-check: cannot read %s: %s\n" % (path, err))
+            bad += 1
+            continue
+        if have == C_TEXT:
+            print("%s: table is current (%d runs, %s)" % (path, niv, SOURCE))
+            continue
+        a, b = have.splitlines(), C_TEXT.splitlines()
+        sys.stderr.write("%s: STALE -- regenerate with: python3 gen_ansi_tables.py %s\n"
+                         % (path, path))
+        for i in range(max(len(a), len(b))):
+            x = a[i] if i < len(a) else "<none>"
+            y = b[i] if i < len(b) else "<none>"
+            if x != y:
+                sys.stderr.write("  first difference at line %d:\n    have: %s\n    want: %s\n"
+                                 % (i + 1, x[:120], y[:120]))
+                break
+        bad += 1
+    if bad:
+        sys.exit("--c-check: %d of %d headers have fallen behind the rules" % (bad, len(PATHS)))
 else:
     for path in PATHS:
         if MODE == "check":
@@ -438,7 +628,7 @@ else:
             sys.exit(1)
         with open(path, "w", newline="\n") as fh:
             fh.write(JAVA_TEXT)
-        print("unicode %s -> %s (%d runs)" % (ud.unidata_version, path, niv))
+        print("unicode %s -> %s (%d runs)" % (SOURCE, path, niv))
 
 print("intervals=%d  blocks uniform=%d mixed=%d  longest interval scan in one block=%d"
       % (niv, NBLK - mixed, mixed, maxscan))
@@ -446,5 +636,4 @@ if MODE != "check":
     for cp in (0x231A, 0x2614, 0x2648, 0x2764, 0x4E2D, 0xAC00, 0x09BE, 0x0616, 0x0487,
                0x3099, 0xFE0F, 0x1F3FB, 0x1F600, 0x2500, 0x00AD, 0x200B, 0x0009, 0x001B,
                0x0600, 0x110BD, 0x1100, 0x1160, 0x4DC0, 0x3248, 0x2630):
-        print("  U+%04X cat=%-3s eaw=%-2s -> %d" % (cp, ud.category(chr(cp)),
-                                                    ud.east_asian_width(chr(cp)), w[cp]))
+        print("  U+%04X cat=%-3s eaw=%-2s -> %d" % (cp, category(cp), eaw_of(cp), w[cp]))

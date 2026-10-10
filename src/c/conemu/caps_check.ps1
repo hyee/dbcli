@@ -99,8 +99,13 @@ if (-not $SkipJar) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($Jar)
     try {
-        $entry = $zip.Entries | Where-Object { $_.FullName -like '*windows-conemu.caps' } | Select-Object -First 1
-        if (-not $entry) { Write-Host "no windows-conemu.caps inside $Jar"; $rc = 1 }
+        # The entry to pull out of the jar is the one being audited, named by the file on -Caps: the
+        # second leg exists to compare the shipped copy against the audited one, and a hardcoded
+        # 'windows-conemu.caps' meant that passing the new windows-render entry audited conemu twice
+        # and render never -- a gate that cannot see the entry a session actually loads.
+        $capsLeaf = Split-Path -Leaf $Caps
+        $entry = $zip.Entries | Where-Object { $_.FullName -like "*$capsLeaf" } | Select-Object -First 1
+        if (-not $entry) { Write-Host "no $capsLeaf inside $Jar"; $rc = 1 }
         else {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $tmp, $true)
             $a = [System.IO.File]::ReadAllBytes($Caps); $b = [System.IO.File]::ReadAllBytes($tmp)

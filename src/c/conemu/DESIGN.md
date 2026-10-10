@@ -587,6 +587,19 @@ showed the gate had been leaving the *user's* clipboard holding the test's own s
 the value it had seeded. It now reads what was there before touching anything and puts that back on every exit
 path, which is the same courtesy `close()` owes the palette.
 
+   The same rule, read again on 2026-10-10 when the register stopped answering at all: this box's clipboard began
+   failing `OpenClipboard` with ERROR_ACCESS_DENIED while `GetOpenClipboardWindow` named no owner and the viewer
+   chain was empty, and pwsh's `Set-Clipboard` returned without error having written nothing. `caseClipboard()`
+   has two bailouts and only one of them prints `SKIP clipboard: no out-of-process clipboard witness` -- the one
+   that fired prints `skip the witness can read what it just wrote: read back ""; an outside process owns the
+   register`, because `clipSeed` *reports success* and the read-back comes up empty. Two consequences kept on
+   purpose: **the return value of a seeding call is not a witness, the read-back is**; and the totals move with
+   the register, so `checks=6341` (this state) and `checks=6373` (register available) are not two runs of one
+   suite -- 32 assertions per arch are simply absent, which is why the delta is stated instead of being
+   smoothed into "still zero failures". Recovery is not this library's to take: the holder has to let go
+   (the owning process exiting, or the session restarted), and `cache/ucd16/clipretry.ps1` is the probe that
+   says whether the register answers before a run is interpreted.
+
 18. **A new arm must be seen to fire, and a witness's own environment can veto it.** The four -25 console legs
 passed on both arches, and the contention branch above fired exactly once -- under the hammer, where the whole
 case declined to witness and said so. Rule 12 read from the other side: a green from a branch that never ran is
@@ -720,6 +733,35 @@ tail cell unused. Under-prediction is what wraps.
 Two of the sweep's own counts are the evidence for the ruling rather than the reasoning: the 206 carve-out code
 points were narrow in *every* one of the six faces (item 2), and the 620 split points are wide on the CJK faces
 and narrow on the Western ones (item 3).
+
+**The oracle is Unicode 16.0 now, and the instrument that decided the 139 disagreed with itself** (2026-10-10,
+same day). `gen_ansi_tables.py` reads `src/c/luauf8/ucd/UnicodeData.txt` + `EastAsianWidth.txt` (16.0.0, carried
+in the tree, so the version is a property of the repository and not of whichever Python runs the gate; `--interp`
+is the A/B leg, and a missing data file aborts rather than falling back). Against the table that shipped all week
+the net is **37 code points**: 36 marks 16.0 assigns going 1 -> 0, and U+1171E AHOM CONSONANT SIGN MEDIAL RA going
+0 -> 1 because 16.0 reclassifies it Mn -> Mc. No box-drawing, block-element, braille, CJK, jamo or drawn-Cf code
+point moves. The third group is the one that fought: 139 code points 16.0 reclassifies to `East_Asian_Width=W`
+(the trigrams U+2630..U+2637, the taoist monograms and the Tai Xuan Jing tetragrams, the ideographic-description
+tail, two CJK strokes, one Khitan character, the counting rods, seven astral additions). `ambmeasure.exe` wrote
+every one of them with `WriteConsoleW` on six conhost faces and all six consumed ONE cell -- the same instrument
+that built `AMBIGUOUS_NARROW` -- so the model grew a second measured carve-out holding them at 1, and that build
+was deployed. A dbcli leg in the pseudo-console then measured the same glyphs the other way: two cells each, with
+the `0x0000` trailing cell conhost reserves for a wide glyph, from a pty stream in which each glyph crosses exactly
+once. The two console width paths really do differ, and the reference tree carries both sources: the font fallback
+is installed only `if (!gci.IsInVtIoMode())` (`src/host/srvinit.cpp:835`), while the terminal-adapter path answers
+from the property trie and consults the font only for an ambiguous `width == 3`
+(`src/types/CodepointWidthDetector.cpp:1153-1157`); that trie is generated `from Unicode 16.0.0` (`:46`). The
+mechanism is what the measurements suggest, not what either leg proved. What settled the choice is the asymmetry:
+a table that says 1 where the host spends 2 lays the next cell of the row on top of the glyph -- the overlap class;
+a table that says 2 where the host spends 1 leaves a blank tail. **The 1-cell side was never rendered and
+measured, so it is written as the reason for the choice rather than as a witnessed failure.** The carve-out came
+off, the table follows the property, and the reversal's blast radius is measured rather than asserted: the
+five-face differential run against the jar that carried it names exactly those 139. Verified after the flip in the
+layout path, cell by cell, on a live grid: the trigram column reserves 16 and the console spends 16, CJK 6 and 6,
+Tai Xuan Jing 10 and 10, astral 6 and 6, every following column starting exactly at its header dash
+(`cache/ucd16/check_align16.py`, worst displacement 0), and no wide glyph is cut by the margin when a 120-cell
+value folds in a 100-column window (`cache/ucd16/check_split16.py`, 0 split / 0 orphan, with a planted control that
+does fire). The narrow answer on the six classic faces is now a recorded known cost, the same shape as the 620.
 
 One divergence from a reference is recorded rather than smoothed over: ghostty gives **regional indicators**
 (U+1F1E6..U+1F1FF) two cells each, this table gives them one (they are EAW=Na, and no measured face was asked).
