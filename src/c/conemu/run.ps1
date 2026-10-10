@@ -110,6 +110,28 @@ if ($SkipWidthCheck) {
 }
 
 
+# --------------------------------------------------------------------------- clipboard preflight
+# The OSC-52 family in Render.java witnesses through a second process, so when the machine's clipboard
+# stops cooperating it does not fail -- it declines, and the run comes out with about 32 fewer assertions
+# per arch and failures=0. A reader comparing two stamps has to know that before reading the numbers, so
+# ask the register the same way the gate will, once, up front. Whatever was in it is put back: this is a
+# probe, not a clipboard manager (DESIGN rule 17).
+$probe = "clip-preflight-$(Get-Random)"
+$prior = (Get-Clipboard -Raw)
+Set-Clipboard -Value $probe
+$echoed = (Get-Clipboard -Raw)
+if ($echoed -eq $probe) {
+    Write-Host '  CLIPBOARD: writable -- the OSC-52 family will witness itself'
+} else {
+    Write-Host "  CLIPBOARD: NOT WITNESSED -- seeded a probe and read back '$echoed'."
+    Write-Host '               The OSC-52 family will decline, and `checks` will be ~32 smaller per arch'
+    Write-Host '               than a run that had a register. That is a smaller suite, not a quieter one.'
+    Write-Host '               On this box the usual cause is OpenClipboard answering ERROR_ACCESS_DENIED'
+    Write-Host '               while GetClipboardOwner/GetOpenClipboardWindow both say NULL -- see'
+    Write-Host '               cache/ucd16/clipholder.ps1 and deskprobe.ps1 for the read-only diagnosis.'
+}
+if ($null -eq $prior -or $prior -eq '') { Set-Clipboard -Value '' } else { Set-Clipboard -Value $prior }
+
 foreach ($a in @($Arch -eq 'both' ? @('x86', 'x64') : @($Arch))) {
     Write-Host "=== $a ($($jdk[$a])) ==="
     # The retired fallback leg, kept only as the A/B's reference oracle: the gate names the same file the

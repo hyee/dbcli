@@ -40,6 +40,11 @@ public class Render {
     private static long handle;
     private static boolean shapePresentArmRan;
     private static int checks, failures;
+    // Rule 20 says a SKIP is not a pass and must be visible in the totals. `failures` alone cannot carry
+    // that: an unwitnessed clipboard family exits with failures=0 and a smaller `checks`, so the number
+    // itself has to say what it left out -- otherwise 6341 reads as a quieter 6373.
+    private static int skips;
+    private static final java.util.List<String> skipReasons = new java.util.ArrayList<String>();
     private static int winT;
 
     // BEGIN SLOT TABLE (generated from Render.h by gen_statslots.py -- build.sh verifies)
@@ -224,9 +229,30 @@ public class Render {
         } else {
             gate("the VTP leg recorded a base to return to", false, "vtpBase=" + vtpBase);
         }
-        System.out.println("checks=" + checks + " failures=" + failures);
+        // The totals have to explain their own size. `failures=0` says nothing about a run that quietly
+        // lost a family of arms because the machine refused to lend it a register; rule 20 asks for skips
+        // "visible in the totals", and a bare `checks=6341` next to this stamp's earlier `checks=6373`
+        // reads as the same suite being calmer than it was. So the count is printed with what it left out,
+        // and the verdict line says which of the two it is.
+        System.out.println("checks=" + checks + " failures=" + failures + " unwitnessed-legs=" + skips);
+        for (final String why : skipReasons) {
+            System.out.println("  NOT WITNESSED: " + why);
+        }
         if (failures > 0) { System.out.println("RENDERGATE: FAILED"); System.exit(1); }
+        if (skips > 0) {
+            System.out.println("RENDERGATE: ok, " + skips + " leg(s) unwitnessed -- this total is NOT"
+                    + " comparable with a run that had them");
+            return;
+        }
         System.out.println("RENDERGATE: ok");
+    }
+
+    /** A leg that could not run counts as unwitnessed, not as a pass and not as a failure. The reason is
+     *  stored so the totals line can name it: an unexplained drop in `checks` is how a gate hole gets
+     *  mistaken for a quieter machine. */
+    private static void noteSkip(final String why) {
+        skips++;
+        skipReasons.add(why);
     }
 
     private static void paint(String what, String s) {
@@ -608,6 +634,8 @@ public class Render {
         final String user = clipText();
         if (!clipSeed("clipboard-gate-before")) {
             System.out.println("  SKIP clipboard: no out-of-process clipboard witness (pwsh Set-/Get-Clipboard)");
+            noteSkip("clipboard (OSC 52): seeding through the outside process failed, so the whole"
+                    + " family of write/refuse/restore arms ran zero assertions");
             clipRestore(user);
             return;
         }
@@ -781,6 +809,7 @@ public class Render {
 
     private static void clipSkip(final String what, final String why) {
         checks++;
+        noteSkip("clipboard (OSC 52): " + what + " -- " + why);
         System.out.println("  skip " + what + ": " + why);
     }
 
@@ -1908,6 +1937,8 @@ public class Render {
                         "apiErrors=" + d[3] + " against " + errorsBefore);
             } else {
                 System.out.println("SKIP this kernel32 has no SetConsoleCursorShape -- the shape arms cannot run");
+                noteSkip("cursor shape (DECSCUSR/SetConsoleCursorShape): this kernel32 does not export"
+                        + " the function, so the PRESENT arm never ran on this box");
                 shapePresentArmRan = false;
             }
         } else {
@@ -2154,6 +2185,8 @@ public class Render {
         if (dll == null || dll.isEmpty()) {
             System.out.println("  SKIP both-leg A/B: no ConEmuHk named (-Dhk=<path> or DBCLI_HK). The"
                     + " fallback leg's answers are then unmeasured, not agreed.");
+            noteSkip("both-leg A/B against ConEmuHk: no -Dhk/DBCLI_HK named, so the fallback leg's"
+                    + " answers were never compared to the hook's");
             return;
         }
         if (!(new java.io.File(dll).isFile())) {
@@ -3724,6 +3757,8 @@ public class Render {
         final int gutter = (int) (pl[11] - pl[12]);
         if (gutter <= 0) {
             System.out.println("  skip the gutter-pressure leg: this model has no room to slide into");
+            noteSkip("gutter pressure (sync overflow): the model geometry has no gutter to slide into,"
+                    + " so the overflow arms were not exercised on this shape");
             return;
         }
         final int nlines = gutter + winRows + 12;

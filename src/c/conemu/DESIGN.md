@@ -626,6 +626,16 @@ protect was the one nothing could see. Re-run an arm before citing it; a green a
     itself. Pass `-Install` a tree that holds `lib/x86/ConEmuHk.dll` and `lib/x64/ConEmuHk64.dll` and the
     A/B's ~230 checks join the total, which is also the cheapest way to notice a leg has gone away: read the
     total, not the exit code. A decline must be loud in the output *and* visible in the number.
+    Implemented on 2026-10-10 rather than left as prose: `Render.java` keeps a `skips` counter and a reason
+    list, the five legs that can be vetoed by the environment (both-leg A/B, cursor shape, the clipboard
+    family both ways, gutter pressure) register there, and the totals print
+    `checks=N failures=0 unwitnessed-legs=3` followed by a `NOT WITNESSED:` line for each, with the verdict
+    reading `RENDERGATE: ok, 3 leg(s) unwitnessed -- this total is NOT comparable with a run that had them`.
+    The exit code stays 0: an environment that cannot lend a register is not the library's failure, and a
+    red there would train everyone to ignore it. `run.ps1` now also asks the clipboard the same way the gate
+    does, once, before any leg runs, and prints `CLIPBOARD: writable` or `NOT WITNESSED -- … checks will be
+    ~32 smaller per arch`, restoring whatever was in the register afterwards. What this caught by name on the
+    first run: `checks=6341` and `checks=6373` were never the same suite, and the number now says so.
 21. **A sequence learned from a summary is a hypothesis; the bytes are the evidence.** `caseTabStops` fed
     `\u001b[H` meaning HTS and got `CSI H` -- CUP, home -- and the console answered column 0 on both arches
     while the host gate, whose legs used `\u001bH`, stayed green. One character apart, and only the screen
