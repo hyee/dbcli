@@ -1217,10 +1217,25 @@ proof that this deploy left both of their entries exactly as they put them and m
 
 **Still open after this round.** The 139's one-cell answer on the six classic faces is a recorded cost, not a
 resolved disagreement -- if a face that really carries those glyphs turns up narrow, `cache/ucd16/faces16.py`
-is the leg to re-run, and the answer would be a host-conditional table rather than a second guess. The OSC-52
-family (32 assertions per arch) has no witness on the Unicode-16 bytes until this box's clipboard answers
-`OpenClipboard` again; the live gate must be re-run when it does. The 620 font-dependent ambiguous code points
-and the regional-indicator divergence are unchanged. Nothing in this round is committed.
+is the leg to re-run, and the answer would be a host-conditional table rather than a second guess. The 620
+font-dependent ambiguous code points and the regional-indicator divergence are unchanged. Nothing in this
+round was committed at the time of writing; see the next paragraph for what closed afterwards.
+
+**Closed on the next run, with the numbers the prediction named.** The box's clipboard came back
+(`clipretry.ps1`: `OpenClipboard OK on try 1`), and the clipboard's sequence number had gone 1366 -> 115 -- a
+different instance of the per-user clipboard subsystem, which is why it recovered without anything of ours
+changing. `run.ps1 -Arch both` then printed `CLIPBOARD: writable` from the preflight and
+**`checks=6373 failures=0 unwitnessed-legs=2` on both arches**, `STAGE0 RUN: ok`, so the 32 OSC-52
+assertions per arch are witnessed on the Unicode-16 bytes after all: the write reaches the register
+(`one write reached the clipboard writes=1 failed=0`), the two refusal arms are counted, the base64 and
+non-ASCII paths round-trip, and `clear` empties it. The restore arm ran in the state that matters --
+`the register is back to the text its owner had` with the user's real 157-character text, not the empty
+case -- and independently confirmed: the clipboard held byte-identical text after the run
+(`cache/ucd16/clipboard-backup-before-gate.txt`, md5 `cc7b37e0aad7`), which is rule 17 being honoured on a
+path that also had a failing history earlier the same day (the one x86 `which here was nothing` red).
+What remains genuinely unwitnessed on this box is only the two legs the environment vetoes and now says so:
+both-leg A/B (no `ConEmuHk` in the install tree) and the cursor-shape PRESENT arm (this kernel32 lacks
+`SetConsoleCursorShape`).
 
 **Re-run on the final stack (the owner's "之前是其他agent修复开发残余，重跑吧"), and one new leg.** Identity
 first, because a shared tree moves: `lib/JLine3.jar 7b923fb1`, `utf8.dll 679accfd/1af72ed2`,
