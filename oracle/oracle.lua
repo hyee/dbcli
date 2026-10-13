@@ -59,10 +59,10 @@ function oracle:helper(cmd)
     return ({
         CONNECT=[[
         Connect to Oracle database. Usage: @@NAME <user>[proxy]/<password>@<connection_string> [as sysdba]
-        
+
         connection_string Format:
         =========================
-        [| 
+        [|
          | Item                 | Format                                                                    | Examples                            |
          | Bequeth Connect      | '' (ORACLE_SID must be set in the database environment)                   | @@NAME / as sysdba                    |
          |                      |                                                                           | @@NAME / as sysasm                    |
@@ -85,7 +85,7 @@ function oracle:helper(cmd)
          |-|-|-|
          | Client Load-Balance  |tcp[s]:[//]<host1>[:<port>],<hostN>[:<port>]/<service_name>[?<properties>] | @@NAME scott/tiger@tcp://salesserver1:1521,salesserver2,salesserver3:1522/sales_srv |
          |-|-|-|
-         | LDAP                 |ldap[s]:[//]<server>[:<port>]/service_name,<context>                       | @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com  |      
+         | LDAP                 |ldap[s]:[//]<server>[:<port>]/service_name,<context>                       | @@NAME scott/tiger@ldap://ldap.acme.com:7777/orcl,cn=OracleContext,dc=com  |
          |-|-|-|
          | JDBC_URL             |<jdbc_url in "data/jdbc_url.cfg">                                          | @@NAME scott/tiger@tos |
         ]
@@ -129,7 +129,7 @@ function oracle:connect(conn_str)
             local props=conn_desc:split("?",true)
             for k,v in props[#props]:gmatch("([^&]+)=([^&]+)") do
                 k,v=k:trim(),v:trim()
-                if k:find('.',1,true) then 
+                if k:find('.',1,true) then
                     attrs[k]=v
                 else
                     if k:upper()=='TNS_ADMIN' then
@@ -166,7 +166,7 @@ function oracle:connect(conn_str)
         end
         env.checkhelp(url)
         --if usr:find('%[.*%]') then usr,proxy_user=usr:match('(.*)%[(.*)%]') end
-        
+
         sqlplustr,url=conn_str,url or conn_desc
         if url:find('?',1,true) then
             url,extras=url:match('^(.+)%s*(%?.*)')
@@ -191,7 +191,7 @@ function oracle:connect(conn_str)
             end
             if server then server=server:upper() end
             if port=="" and host~='ldap' and host~='ldaps' and host~='tcp' and not tns_admin then flag,port=false,':1521' end
-            if not flag then 
+            if not flag then
                 url=host..port..server_sep..database..(server and (':'..server) or '')..extras
                 sqlplustr=string.format('%s/%s@%s%s/%s%s',
                     usr..(proxy_user and ('['..proxy_user..']') or ''),
@@ -207,7 +207,7 @@ function oracle:connect(conn_str)
     end
 
     self.MAX_CACHE_SIZE=cfg.get('SQLCACHESIZE')
-    
+
     args=args or self:merge_props({
         user=usr,
         password=pwd,
@@ -249,8 +249,8 @@ function oracle:connect(conn_str)
                  version="#NUMBER",
                  ccflags="#VARCHAR",
                  mbrc="#NUMBER"}
-    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do 
-        props[v]="#VARCHAR" 
+    for k,v in ipairs{'db_user','db_version','nls_lang','isdba','service_name','db_role','container','israc','privs','isadb','dbname'} do
+        props[v]="#VARCHAR"
     end
 
     local succ,err=pcall(self.exec,self,[[
@@ -289,15 +289,15 @@ function oracle:connect(conn_str)
                     EXECUTE IMMEDIATE 'BEGIN :1:=sys.dbms_utility.get_parameter_value(:pname,:2,:3);END;'
                         USING OUT rtn,params,in out intval,in out rs;
                     rs := coalesce(rs,''||intval,dfl);
-                    RETURN CASE WHEN UPPER(dfl) IN('TRUE','FALSE') THEN 
+                    RETURN CASE WHEN UPPER(dfl) IN('TRUE','FALSE') THEN
                                 CASE rs WHEN '0' THEN 'FALSE' ELSE 'TRUE' END
-                           ELSE  rs END; 
+                           ELSE  rs END;
                 END IF;
             EXCEPTION WHEN OTHERS THEN
                 RETURN dfl;
             END;
         BEGIN
-            SELECT MAX(REGEXP_SUBSTR(banner,'\d+\.\d+\.[\.0-9]+')) 
+            SELECT MAX(REGEXP_SUBSTR(banner,'\d+\.\d+\.[\.0-9]+'))
             INTO   vf
             from   v$version;
             vs := regexp_substr(vf,'\d+');
@@ -324,7 +324,7 @@ function oracle:connect(conn_str)
 
             blk_siz:=get_param('db_block_size',8192);
             mbrc   :=get_param('_db_file_optimizer_read_count',8);
-            
+
             BEGIN
                 EXECUTE IMMEDIATE q'[
                     DECLARE
@@ -351,7 +351,7 @@ function oracle:connect(conn_str)
                 mbrc := CASE blk_siz WHEN 8192 THEN 0.271 WHEN 16384 THEN 0.375 ELSE 0.519 END;
             END;
             :mbrc := mbrc;
-                
+
             dbms_output.enable(null);
             set_param(q'[nls_date_format='yyyy-mm-dd hh24:mi:ss' nls_timestamp_format='yyyy-mm-dd hh24:mi:ssxff3' nls_timestamp_tz_format='yyyy-mm-dd hh24:mi:ssxff3 TZH:TZM']');
             set_param('statistics_level=all "_rowsource_statistics_sampfreq"=16');
@@ -368,6 +368,7 @@ function oracle:connect(conn_str)
             --wrong result for PL/SQL Open-FOR-SELECT on gv$ views
             set_param(q'["_fix_control"='34701323:1']');
             set_param(q'["_fix_control"='34993248:1']');
+            set_param(q'["_fix_control"='26552730:0']');
             IF vs < 18 THEN
                 did := get_param('select dbid from v$database');
             ELSE
@@ -385,7 +386,7 @@ function oracle:connect(conn_str)
             IF sys_context('userenv','isdba')='TRUE' THEN
                 ccflags := ccflags||','||'SYSDBA:TRUE';
             END IF;
-            
+
             IF sv like 'SYS$%' THEN
                 sv := regexp_substr(get_param('service_names','SQL'),'[^ ,]+');
             END IF;
@@ -423,7 +424,7 @@ function oracle:connect(conn_str)
             IF vs > 11 THEN
                 :container := sys_context('userenv', 'con_name');
             END IF;
-            
+
             :db_role:=CASE
                 WHEN :version <=11.1 THEN
                     ''
@@ -432,18 +433,18 @@ function oracle:connect(conn_str)
                 WHEN sys_context('userenv', 'DATABASE_ROLE')='TRUE CACHE' THEN
                     '(TC)> '
             END;
-            
-            IF :db_role IS NULL THEN 
+
+            IF :db_role IS NULL THEN
                 :db_role := get_param(q'[select decode(DATABASE_ROLE,'PHYSICAL STANDBY','(DG)> ','TRUE CACHE','(TC)> ') from v$database]');
             END IF;
-            
+
             strval  := get_param('cluster_database','FALSE');
             IF strval = 'TRUE' THEN
                 strval := get_param(q'[select decode(count(distinct inst_id),1,'FALSE','TRUE') from gv$instance where status='OPEN']');
             END IF;
             :isRac := strval;
         END;]],props)
-    
+
     props.dbid=props.dbid or tonumber(self.properties['AUTH_DB_ID']) or 0
     props.isdba=props.isdba=='TRUE' and true or false
     props.israc=props.israc=='TRUE' and true or false
@@ -484,7 +485,7 @@ function oracle:connect(conn_str)
         end
         privs[self.props.db_user]=true
         self.props.privs=privs
-        
+
         self.conn_str=self.conn_str:gsub('(:%d+)([:/]+)([%w%.$#]+)',function(port,sep,sid)
             if sep==':' or sep=='//' then
                 return port..'/'..self.props.service_name..'/'..sid
@@ -492,8 +493,8 @@ function oracle:connect(conn_str)
             return port..sep..sid
         end,1)
 
-        if props.instance_name and props.israc and 
-            self.conn_str:find('/'..props.service_name,1,true) and 
+        if props.instance_name and props.israc and
+            self.conn_str:find('/'..props.service_name,1,true) and
             not self.conn_str:find('/'..props.service_name..'/',1,true) then
             self.conn_str=self.conn_str:replace('/'..props.service_name,'/'..props.service_name..'/'..props.instance_name,true)
         end
@@ -517,7 +518,7 @@ function oracle:connect(conn_str)
             :format(self.props.db_user,prompt,self.props.sid,self.props.instance,self.props.db_version)
     if self.props.sid then
         env.set_title(self.session_title)
-    else 
+    else
         env.set_title("Connected(Limited)")
     end
     for k,v in pairs(self.props) do args[k]=v end
@@ -569,7 +570,7 @@ function oracle:parse(sql,params)
         end
         if v==nil then
             if counter<2 then counter=counter+2 end
-        elseif math.fmod(counter,2)==0 then 
+        elseif math.fmod(counter,2)==0 then
             counter=counter+1
         end
 
@@ -582,8 +583,8 @@ function oracle:parse(sql,params)
     local sql_type=self.get_command_type(sql)
     local func,value,typeid,typename,inIdx,outIdx,vname=1,2,3,4,5,6,7
 
-    if sql_type=="SELECT" or sql_type=="WITH" then 
-        if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then 
+    if sql_type=="SELECT" or sql_type=="WITH" then
+        if sql:lower():find('%Wtable%s*%(') and not sql:lower():find('xplan') then
             cfg.set("pipequery",'on')
         end
     end
@@ -615,16 +616,16 @@ function oracle:parse(sql,params)
                 typ=(typ=="VARCHAR" and "VARCHAR2(32767)") or typ
                 s1[idx]="V"..(idx+1)..' '..typ..':=:'..index..';/* :'..binds[idx]..'*/'
             end
-            s0[idx]=(idx==1 and 'USING ' or '') ..'IN OUT V'..(idx+1)    
+            s0[idx]=(idx==1 and 'USING ' or '') ..'IN OUT V'..(idx+1)
         end
 
         for idx=1,#binds do
             index=index+1;
             bind_info[binds[idx]][outIdx]=index
-            s2[idx]=":"..index.." := V"..(idx+1)..';' 
+            s2[idx]=":"..index.." := V"..(idx+1)..';'
         end
 
-        typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB' 
+        typ = org_sql:len()<=30000 and 'VARCHAR2(32767)' or 'CLOB'
         local method=self.db_types:set(typ~='CLOB' and 'VARCHAR' or typ,org_sql)
         sql='DECLARE /*INTERNAL_DBCLI_CMD*/ V1 %s:=:1;%sBEGIN EXECUTE IMMEDIATE V1 %s;%sEND;'
         sql=sql:format(typ,table.concat(s1,''),table.concat(s0,','),table.concat(s2,''))
@@ -690,10 +691,10 @@ function oracle:exec(sql,...)
     else
         args={...}
     end
-    
+
     if is_not_prep then sql=event("BEFORE_ORACLE_EXEC",{self,sql,args}) [2] end
     local result=self.super.exec(self,sql,...)
-    if is_not_prep and not bypass then 
+    if is_not_prep and not bypass then
         event("AFTER_ORACLE_EXEC",self,sql,args,result)
         self.print_feed(sql,result)
     end
@@ -766,14 +767,14 @@ function oracle:handle_error(info)
                     info.row=msg:match('%u%u%u+%-%d%d%d+: *at line (%d+)')
                     if info.row then
                         info.col = 0
-                        info.error = info.error:gsub('\n%s*%u%u%u+%-%d%d%d+ *: *at line 1 *(\n*)','%1') 
+                        info.error = info.error:gsub('\n%s*%u%u%u+%-%d%d%d+ *: *at line 1 *(\n*)','%1')
                     end
                 end
             end
         end
         return info
     end
-        
+
     return info
 end
 
@@ -860,10 +861,10 @@ function oracle:get_library()
         --for i=ver,v>64 and 11 or 6,-1 do
         for i=ver,v>64 and 8 or 6,-1 do
             local jar=env.join_path(home..'/jdbc/lib/ojdbc'..i..'.jar')
-            if os.exists(jar) then 
+            if os.exists(jar) then
                 files[#files+1]=jar
                 break
-            else 
+            else
                 jar=env.join_path(home..'/ojdbc'..i..'.jar')
                 if os.exists(jar) then
                     files[#files+1]=jar
@@ -919,7 +920,7 @@ function oracle:grid_db_call(sqls,args,is_cache)
     end
     stmt[#stmt+1]='END;'
     local results;
-    if not is_cache then 
+    if not is_cache then
         results=self.super.exec(self,table.concat(stmt,'\n'),args)
     else
         results=self.super.exec_cache(self,table.concat(stmt,'\n'),args,is_cache)

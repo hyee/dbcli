@@ -73,7 +73,7 @@ DECLARE
     sql_text CLOB;
     names    dbms_spm.name_list := dbms_spm.name_list();
     CURSOR finder(v2 VARCHAR2,v3 VARCHAR2) IS
-        SELECT /*+OPT_PARAM('_fix_control' '26552730:0') no_expand*/ sql_handle,plan_name
+        SELECT /*+no_expand*/ sql_handle,plan_name
         FROM   dba_sql_plan_baselines
         WHERE  upper(v2) IN (upper(sql_handle),upper(plan_name),
                              ''||signature,
@@ -88,7 +88,7 @@ DECLARE
         FROM   dba_sql_patches
         WHERE  upper(v2) IN (upper(name),''||signature);
     CURSOR get_sql(v2 VARCHAR2,phv INT) IS
-        SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 'cursor' grp,
+        SELECT 'cursor' grp,
                sql_id,
                plan_hash_value phv,
                sql_fulltext sql_text,
@@ -150,7 +150,7 @@ BEGIN
     END IF;
     IF v1='SQL' THEN
         BEGIN
-            SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ sql_text
+            SELECT sql_text
             INTO   sql_text
             FROM   (
                 SELECT sql_text
@@ -233,8 +233,7 @@ BEGIN
     ELSIF v1='LOAD' THEN
         tmp_now := sysdate;
         IF v3 IS NOT NULL THEN
-            SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/
-                   MAX(sql_id),MAX(plan_hash_value)
+            SELECT MAX(sql_id),MAX(plan_hash_value)
             INTO   new_sql,new_phv
             FROM   (
                 SELECT sql_id,plan_hash_value
@@ -317,7 +316,7 @@ BEGIN
             v2 := NULL;
         ELSIF length(v1)=13 AND regexp_like(v1,'^[0-9A-Z]+$') THEN
             BEGIN
-                SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/*
+                SELECT *
                 INTO   v1,v2,sql_text
                 FROM   (
                     SELECT exact_matching_signature,force_matching_signature,sql_fulltext
@@ -355,7 +354,7 @@ BEGIN
             END IF;
         ELSE
             BEGIN
-                SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/flag,1,plan_name,sql_text
+                SELECT flag,1,plan_name,sql_text
                 INTO   flag,cnt,v3,sql_text
                 FROM   (
                     SELECT 1 flag,plan_name,created,sql_text
@@ -416,7 +415,7 @@ BEGIN
             OPEN c FOR SELECT sql_text plan_table_output FROM dual;
         ELSE
             OPEN c FOR
-                SELECT /*+opt_param('optimizer_dynamic_sampling' 7) opt_param('_fix_control' '26552730:0')*/ *
+                SELECT /*+opt_param('optimizer_dynamic_sampling' 7)*/ *
                 FROM   (
                     SELECT /*+NO_EXPAND*/ plan_name,sql_handle handle,
                            to_number(substr(plan_name,-8),'fmxxxxxxxx') plan_hash_2,

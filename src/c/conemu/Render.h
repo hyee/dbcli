@@ -211,10 +211,6 @@ enum RcSemanticContent
 #define RC_SP_PARAMSED 0x80
 #define RC_XT_BITS 12
 
-/* Everything a rebuild carries: state the stream claimed, which a resize does not revoke.
-   build_model copies this struct whole; carried_readopt then re-derives what the new width
-   and height change (the margin pair and the vertical band are re-clamped, the tab table's
-   revealed tail re-defaulted, the saved cursor rebased into the new viewport). */
 typedef struct RcCarried
 {
   uint32_t palette[256];
@@ -226,10 +222,10 @@ typedef struct RcCarried
   uint8_t  originMode, declrmm, saveOrigin;
   uint8_t  marginSet;
   int      leftMargin, rightMargin;
-  uint8_t  regSet;                     /* DECSTBM's band rides a rebuild like the margin pair */
-  int      regTop, regBot;             /* above it: carried absolute, re-clamped to the new rows */
-  int      saveX, saveY;               /* DECSC's cursor crosses too; saveOrigin always did */
-  int      cursorVisible;              /* ?25 is a mode, not geometry: rebuilds keep it */
+  uint8_t  regSet;
+  int      regTop, regBot;
+  int      saveX, saveY;
+  int      cursorVisible;
   uint8_t  charset[4];
   uint8_t  gshift;
   uint16_t mouseModes;
@@ -271,8 +267,6 @@ typedef struct RcGrid
   uint8_t streamScrolls;
   uint32_t regionSerial;
 
-
-
   RcSgr   sgr;
   uint16_t attr;
   uint16_t defAttrSeed;
@@ -313,7 +307,6 @@ typedef struct RcGrid
 
   RcReportItem report[RC_REPORT_MAX];
   int reportHead, reportLen;
-
 
   unsigned long nUnsupported[RC_UN_MAX];
   unsigned long nCells, nScrolls, nAstral;
@@ -369,9 +362,6 @@ int  rc_reset(RcGrid *g, int cols, int rows, uint16_t defAttr);
 
 int  rc_reset_hist(RcGrid *g, int cols, int winRows, int histRows, uint16_t defAttr);
 
-/* After build_model copies a carried struct onto the fresh grid: re-derive what the new
-   width and height change. Lives with the model state, not the console side, so the host
-   RenderCheck legs exercise it directly. */
 void carried_readopt(RcGrid *g, int oldCols, int oldRows, int oldWinRows);
 
 int  rc_scroll_room(const RcGrid *g);

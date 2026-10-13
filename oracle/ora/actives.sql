@@ -1,6 +1,6 @@
 /*[[
     Show active sessions. Usage: @@NAME [sid|wt|ev|sql|<col>] [-s|-p|-b|-o|-m] {[-f"<filter>"|-text"<keyword>"|-u|-i] [-f2"<filter>"|-u2|-i2]}
-    
+
     Options(options within same group cannot combine, i.e. "@@NAME -u -i" is illegal, use "@@NAME -u -i2" instead):
         Filter options#1:
             -u   : Only show the sessions of current_schema
@@ -43,7 +43,7 @@
             u={schemaname=nvl(upper('&0'),sys_context('userenv','current_schema'))}
             i={wait_class!='Idle' &0}
         }
-        
+
         &fil2: {
             default={}
             sql={AND 1=1}
@@ -53,9 +53,9 @@
         }
         &style: default={0} new={1}
         &text: default={}  sql={AND upper(sql_fulltext) like upper(q'~%&0%~')}
-        &ouj : default={(+)} sql={/**/}  
+        &ouj : default={(+)} sql={/**/}
         &smen : default={0}, m={&CHECK_ACCESS_M}
-        &wait_time: 11.2={a.TIME_SINCE_LAST_WAIT_MICRO} default={wait_time} 
+        &wait_time: 11.2={a.TIME_SINCE_LAST_WAIT_MICRO} default={wait_time}
         &ord  : default={} cpu={"CPU%" desc nulls last,} io={"Physical|Reads" desc nulls last,} log={"Logical|Reads" desc nulls last,}
         @COST : 11.0={86400*(sysdate-sql_exec_start)},10.0={sql_secs}
         @CHECK_ACCESS_OBJ: dba_objects={dba_objects},all_objects={all_objects}
@@ -123,10 +123,10 @@ BEGIN
     IF dbms_db_version.version > 11 and &style=1 THEN
     OPEN :actives --don't materialize sess or v$sql will not use index. Use dynamic SQL to support older version
     FOR q'{WITH sess AS
-         (SELECT /*+inline no_parallel*/ 
-                (select /*+index(o) */ 
-                        object_name 
-                 from &CHECK_ACCESS_OBJ o 
+         (SELECT /*+inline no_parallel*/
+                (select /*+index(o) */
+                        object_name
+                 from &CHECK_ACCESS_OBJ o
                  where s.program_id>0 and o.object_id=s.program_id and o.object_type!='DATABASE LINK') program_name,
                  s.*
           FROM   TABLE(gv$(CURSOR(
@@ -161,7 +161,7 @@ BEGIN
                                  AND     s.sql_id is not null
                                  AND     s.sql_id=sq.sql_id
                                  AND     nvl(s.sql_child_number,0)=sq.child_number &text
-                                 UNION ALL 
+                                 UNION ALL
                                  select  /*+merge(sq) index(sq)*/
                                          program_line#,program_id,plan_hash_value,sql_id,
                                          substr(TRIM(regexp_replace(replace(sql_text,chr(0)), '\s+', ' ')), 1, 1024) sql_text,
@@ -198,7 +198,7 @@ BEGIN
                ROUND(greatest(nvl(&COST,0),wait_secs,nvl2(sq_id,last_call_et,0)),2) waited,
                &fields,substr(sql_text,1,200) sql_text
         FROM   s4 a
-        WHERE  :fil2 IS NOT NULL 
+        WHERE  :fil2 IS NOT NULL
         OR     (ROOT_SID =1 OR status='ACTIVE' and wait_class!='Idle')
         ORDER  BY r}' USING :fil2;
     ELSE
@@ -206,8 +206,8 @@ BEGIN
         BEGIN
         OPEN :actives FOR
             WITH s1 AS(
-              SELECT /*+no_parallel materialize OPT_PARAM('_fix_control' '26552730:0') opt_estimate(query_block rows=3000) table_stats(SYS.X$KSLWT set rows=3000)*/*
-              FROM   &CHECK_ACCESS_SES 
+              SELECT /*+no_parallel materialize opt_estimate(query_block rows=3000) table_stats(SYS.X$KSLWT set rows=3000)*/*
+              FROM   &CHECK_ACCESS_SES
               WHERE (&fil1)
               AND    sid||'@'||inst_id!=userenv('sid')||'@'||userenv('instance')
               AND    userenv('instance')=nvl('&instance',userenv('instance'))),
@@ -221,12 +221,12 @@ BEGIN
                     nvl(extractvalue(b.column_value,'/ROW/A5')+0,0)     sql_secs
               FROM (select /*+no_merge*/ distinct inst_id,sql_id,nvl(sql_child_number,0) child from s1 where sql_id is not null) A,
                     TABLE(XMLSEQUENCE(EXTRACT(dbms_xmlgen.getxmltype(q'[
-                        SELECT /*+CURSOR_SHARING_FORCE opt_param('_optim_peek_user_binds','false') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000) index(a)*/ 
-                              (select c.owner  ||'.' || c.object_name 
-                               from &CHECK_ACCESS_OBJ c 
+                        SELECT /*+CURSOR_SHARING_FORCE opt_param('_optim_peek_user_binds','false') table_stats(SYS.X$KGLCURSOR_CHILD set blocks=100000 rows=1000000) index(a)*/
+                              (select c.owner  ||'.' || c.object_name
+                               from &CHECK_ACCESS_OBJ c
                                where program_id>0
                                and   c.object_id=program_id
-                               and   object_type!='DATABASE LINK' 
+                               and   object_type!='DATABASE LINK'
                                and   rownum<2) A1,
                                program_line# A2,
                                substr(trim(regexp_replace(REPLACE(sql_text, chr(0)),'[[:space:][:cntrl:]]+',' ')),1,200) A3,
@@ -276,7 +276,7 @@ BEGIN
         EXCEPTION WHEN OTHERS THEN NULL;
         END;
         report_end;
-    END IF;   
+    END IF;
     $IF &smen=1 $THEN
     OPEN time_model FOR q'~
         SELECT rownum "#",a.*
@@ -324,9 +324,9 @@ BEGIN
                         JOIN  (SELECT s.*,userenv('instance') inst_id FROM V$SESSION s) s USING (sid)
                         LEFT   JOIN v$px_session p USING (sid)
                         LEFT   JOIN v$sql_workarea_active w USING (sid)
-                        WHERE  inst_id=nvl('&instance',inst_id) 
+                        WHERE  inst_id=nvl('&instance',inst_id)
                         &fil2
-                ))) a 
+                ))) a
                 GROUP BY session#
                 ORDER  BY &ord nvl("CPU%",0) + nvl("Physical|Reads%"/2,0) + nvl("Logical|Reads%"/15,0) DESC,"PGA|MEM" desc
         ) a WHERE ROWNUM<=50~';

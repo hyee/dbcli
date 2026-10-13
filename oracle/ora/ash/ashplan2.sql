@@ -11,7 +11,7 @@
        @adaptive : 12.1={adaptive} 11.1={}
        @check_access_pdb: awrpdb={AWR_PDB_} default={dba_hist_}
        &ash : {
-          ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and '&V1' in(sql_id,top_level_sql_id)))))}, 
+          ash={(select * from table(gv$(cursor(select userenv('instance') inst_id,a.* from v$active_session_history a where userenv('instance')=nvl(:instance,userenv('instance')) and '&V1' in(sql_id,top_level_sql_id)))))},
           dash={&check_access_pdb.Active_Sess_History},
           sqlset={&check_access_pdb.Active_Sess_History} ,
           t={&0}
@@ -35,7 +35,7 @@ WITH sql_plan_data AS
  (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 11)*/ *
   FROM   (SELECT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id DESC) seq
-          FROM   (SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ *
+          FROM   (SELECT *
                   FROM TABLE(gv$(CURSOR(
                       SELECT id,position pos,
                              decode(parent_id,-1,id-1,parent_id) parent_id,
@@ -96,48 +96,48 @@ ash_detail AS (
             SELECT h.*,
                    nvl(sql_id,'<Parsing>') sql_id_,
                    nvl(event,'ON CPU')||decode(in_parse,'Y',' [PARSE]') ev,
-                   nvl(trim(CASE 
+                   nvl(trim(CASE
                         WHEN current_obj# < -1 THEN
                             'Temp I/O'
-                        WHEN current_obj# > 0 THEN 
+                        WHEN current_obj# > 0 THEN
                              ''||current_obj#
                         WHEN p2text='id1' THEN
                              ''||p2
-                        WHEN p3text IN('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') THEN 
+                        WHEN p3text IN('(identifier<<32)+(namespace<<16)+mode','100*mode+namespace') THEN
                              ''||trunc(p3/power(16,8))
                         WHEN p3text LIKE '%namespace' AND p3>power(16,8)*4294950912 THEN
                             'Undo'
-                        WHEN p3text LIKE '%namespace' AND p3>power(16,8) THEN 
+                        WHEN p3text LIKE '%namespace' AND p3>power(16,8) THEN
                              ''||trunc(p3/power(16,8))
-                        WHEN p3text LIKE '%namespace' THEN 
+                        WHEN p3text LIKE '%namespace' THEN
                             'X$KGLST#'||trunc(mod(p3,power(16,8))/power(16,4))
-                        WHEN p1text LIKE 'cache id' THEN 
+                        WHEN p1text LIKE 'cache id' THEN
                             (SELECT parameter FROM v$rowcache WHERE cache#=p1 AND ROWNUM<2)
-                        WHEN event LIKE 'latch%' AND p2text='number' THEN 
+                        WHEN event LIKE 'latch%' AND p2text='number' THEN
                             (SELECT name FROM v$latchname WHERE latch#=p2 AND ROWNUM<2)
                         WHEN p3text='class#' THEN
                             (SELECT class FROM (SELECT class, ROWNUM r FROM v$waitstat) WHERE r=p3 AND ROWNUM<2)
-                        WHEN p1text ='file#' AND p2text='block#' THEN 
+                        WHEN p1text ='file#' AND p2text='block#' THEN
                             'file#'||p1||' block#'||p2
-                        WHEN p3text IN('block#','block') THEN 
-                            'file#'||dbms_utility.data_block_address_file(p3)||' block#'||dbms_utility.data_block_address_block(p3)    
+                        WHEN p3text IN('block#','block') THEN
+                            'file#'||dbms_utility.data_block_address_file(p3)||' block#'||dbms_utility.data_block_address_block(p3)
                         WHEN px_flags > 65536 THEN
                             decode(trunc(mod(px_flags/65536, 32)),
-                                   1,'[PX]Executing-Parent-DFO',     
+                                   1,'[PX]Executing-Parent-DFO',
                                    2,'[PX]Executing-Child-DFO',
                                    3,'[PX]Sampling-Child-DFO',
-                                   4,'[PX]Joining-Group',      
+                                   4,'[PX]Joining-Group',
                                    5,'[QC]Scheduling-Child-DFO',
                                    6,'[QC]Scheduling-Parent-DFO',
-                                   7,'[QC]Initializing-Objects', 
-                                   8,'[QC]Flushing-Objects',    
-                                   9,'[QC]Allocating-Slaves', 
-                                  10,'[QC]Initializing-Granules', 
-                                  11,'[PX]Parsing-Cursor',   
-                                  12,'[PX]Executing-Cursor',    
-                                  13,'[PX]Preparing-Transaction',    
-                                  14,'[PX]Joining-Transaction',  
-                                  15,'[PX]Load-Commit', 
+                                   7,'[QC]Initializing-Objects',
+                                   8,'[QC]Flushing-Objects',
+                                   9,'[QC]Allocating-Slaves',
+                                  10,'[QC]Initializing-Granules',
+                                  11,'[PX]Parsing-Cursor',
+                                  12,'[PX]Executing-Cursor',
+                                  13,'[PX]Preparing-Transaction',
+                                  14,'[PX]Joining-Transaction',
+                                  15,'[PX]Load-Commit',
                                   16,'[PX]Aborting-Transaction',
                                   17,'[QC]Executing-Child-DFO',
                                   18,'[QC]Executing-Parent-DFO')
@@ -150,18 +150,18 @@ ash_detail AS (
                    sql_plan_hash_value||','||nvl(qc_session_id,session_id)||','||sql_exec_id||to_char(nvl(sql_exec_start,sample_time+0),'yyyymmddhh24miss') sql_exec
             FROM   &ASH h
             WHERE  '&V1' IN(sql_id,top_level_sql_id)
-            AND    sample_time BETWEEN nvl(to_date(nvl('&V3',:STARTTIME),'YYMMDDHH24MISS'),sysdate-7) 
+            AND    sample_time BETWEEN nvl(to_date(nvl('&V3',:STARTTIME),'YYMMDDHH24MISS'),sysdate-7)
                                    AND nvl(to_date(nvl('&V4',:ENDTIME),'YYMMDDHH24MISS'),sysdate+1)) h) h) ,
 ash AS(SELECT b.*,
               round(sum(aas) OVER(PARTITION BY sql_id,sql_plan_line_id,&OBJ)*100/sum(aas) OVER(PARTITION BY sql_plan_line_id),1) tenv
        FROM (SELECT /*+no_expand no_merge(b) ordered use_hash(b)*/ b.*
-             FROM   qry a,ash_detail b 
+             FROM   qry a,ash_detail b
              WHERE  a.phv = nvl(nullif(b.sql_plan_hash_value,0),a.phv)
              AND    a.sq=b.sql_id_
              AND    ('&V2' IS NULL OR nvl(lengthb('&V2'),0) >6 OR NOT regexp_like('&V2','^\d+$') OR '&V2'+0 IN(qc_session_id,session_id))
        ) b),
 ash_base AS(
-   SELECT /*+materialize no_expand*/ 
+   SELECT /*+materialize no_expand*/
            nvl(sql_plan_line_id,0) id,
            sum(aas)||'('||round(100*ratio_to_report(sum(aas)) OVER())||'%)' px_hits,
            ceil(sum(secs)) secs,
@@ -176,7 +176,7 @@ ash_base AS(
     FROM   ash
     GROUP  BY nvl(sql_plan_line_id,0)),
 ash_agg AS
- (SELECT /*+materialize*/ 
+ (SELECT /*+materialize*/
          top_item,
          to_char(max(execs)) execs,
          nvl(trim(dbms_xplan.format_time_s(ceil(sum(secs)))),' ') secs,
@@ -214,18 +214,18 @@ ash_agg AS
   GROUP  BY top_item
   ORDER  BY aas+0 DESC),
 ash_width AS
- (SELECT greatest(max(length(top_item)),9) c1, 
-         greatest(max(length(execs)),5) c2, 
-         greatest(nvl(max(length(secs)),0),4) c3, 
-         greatest(max(length(aas)),4) c4, 
-         greatest(max(length(plan_lines)),18) c5, 
+ (SELECT greatest(max(length(top_item)),9) c1,
+         greatest(max(length(execs)),5) c2,
+         greatest(nvl(max(length(secs)),0),4) c3,
+         greatest(max(length(aas)),4) c4,
+         greatest(max(length(plan_lines)),18) c5,
          greatest(max(length(wait_objects)),18) c6,
          greatest(max(length(io_reqs)),7) c7,
          greatest(max(length(io_bytes)),8) c8,
          count(1) cnt
   FROM ash_agg),
 plan_agg AS(
-  SELECT /*+materialize*/ 
+  SELECT /*+materialize*/
          sql_id_,decode(sql_id_,'&V1',''||sql_plan_hash_value,'=> '||sql_id_) plan_hash,
          count(DISTINCT sql_exec) execs,
          nvl(trim(dbms_xplan.format_time_s(sum(secs))),' ') secs,
@@ -247,18 +247,18 @@ plan_agg AS(
              SELECT s.*,&OBJ obj,
                     round(100*sum(aas) OVER(PARTITION BY sql_id_,sql_plan_hash_value,&OBJ)/sum(aas) OVER(PARTITION BY sql_plan_hash_value),1) tenv
              FROM   ash_detail s) s
-        ) 
+        )
   GROUP  BY sql_id_,decode(sql_id_,'&V1',''||sql_plan_hash_value,'=> '||sql_id_)
 ),
 
 plan_width AS (
-  SELECT greatest(max(length(plan_hash)+1),9) c1, 
-         greatest(max(length(execs)),5) c2, 
-         greatest(nvl(max(length(secs)),0),4) c3, 
-         greatest(max(length(aas)),4) c4, 
+  SELECT greatest(max(length(plan_hash)+1),9) c1,
+         greatest(max(length(execs)),5) c2,
+         greatest(nvl(max(length(secs)),0),4) c3,
+         greatest(max(length(aas)),4) c4,
          greatest(max(length(io_reqs)),7) c7,
          greatest(max(length(io_bytes)),8) c8,
-         greatest(max(length(top_event)),10) c9, 
+         greatest(max(length(top_event)),10) c9,
          count(1) cnt
   FROM plan_agg
 ),
@@ -343,7 +343,7 @@ FROM    ash_width WHERE cnt>0
 UNION  ALL
 SELECT  '|'||rpad('TOP_ITEM',c1,' ')||'|'||lpad('EXECS',c2,' ')||'|'||rpad('TIME',c3,' ')||'|'||lpad('AAS',c4,' ')||'|'||lpad('IO Reqs',c7,' ')||'|'||lpad('IO Bytes',c8,' ')||'|'||rpad('TOP_SQL_PLAN_LINES',c5,' ')||'|'||rpad('TOP_WAIT_OBJECTS',c6,' ')||'|'
 FROM    ash_width WHERE cnt>0
-UNION ALL 
+UNION ALL
 SELECT  '|'||rpad('-',c1,'-')||'+'||rpad('-',c2,'-')||'+'||rpad('-',c3,'-')||'+'||rpad('-',c4,'-')||'+'||rpad('-',c7,'-')||'+'||rpad('-',c8,'-')||'+'||rpad('-',c5,'-')||'+'||rpad('-',c6,'-')||'|'
 FROM    ash_width WHERE cnt>0
 UNION ALL

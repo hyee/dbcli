@@ -256,8 +256,7 @@ BEGIN
         JOIN   gv$session
         USING  (inst_id, sid)
         WHERE  program LIKE  '%(LMS%)%'
-        AND    TYPE = 'BACKGROUND'
-        AND    stat_name LIKE  'background%time'
+        AND    stat_name in('DB time','background elapsed time')
         AND    VALUE > 0
         GROUP  BY ROLLUP(inst_id)~',
        q'~

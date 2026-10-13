@@ -17,7 +17,7 @@ ORCL> ora obj 727555
        727555                SYS   _ACTUAL_EDITION_OBJ VIEW                       2017-08-02 05:34:19 2017-08-02 05:36:06 2017-08-02:05:36:06 VALID  N         N         
 
     --[[
-        @check_access_obj: dba_objects={dba_objects}, default={all_objects}
+        @check_access_obj: cdb={cdb_objects} dba_objects={dba_objects}, default={all_objects}
         @check_access_pdb: pdb/awr_pdb_seg_stat_obj={awr_pdb_seg_stat_obj} default={dba_hist_seg_stat_obj}
         @check_access_awr: {
           dba_hist_seg_stat_obj={

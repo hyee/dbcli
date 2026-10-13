@@ -375,13 +375,16 @@ function ResultSet:print(res,conn,prefix,verticals,is_close)
         end
     end
     --deal with OOM
-    if has_lob and #cols>1 then
+    if has_lob then
         for i=2,#result do
             local row=result[i]
             for j=1,#cols do
                 local v=row[j]
-                if type(v)=='string' and #v>32768 then
-                    row[j]=v:sub(1,32768)
+                if type(v)=='string' then
+                    local pos=raw_types[cols[j].data_typeName] and 1024 or 4194304
+                    if #v>pos then
+                        row[j]=v:sub(1,pos)
+                    end
                 end
             end
         end

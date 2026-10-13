@@ -78,6 +78,13 @@ static inline unsigned cp_width(uint32_t cp) {
     return cw;
 }
 
+/* The same lookup, for callers outside this file. lutf8lib.c's utf8.width answered this question
+ * from unidata.h's own lists and disagreed with the measured model in 142,687 of the 1,112,064
+ * code points -- most of them the default-wide ranges of planes 2 and 3, plus every Mc spacing
+ * mark and the C0/C1 controls. One table decides a code point's width here, so a cell cannot be
+ * sized one way by the grid and measured another by utf8.width. */
+int ansi_cp_width(uint32_t cp) { return cp_width(cp); }
+
 /* Decode the UTF-8 sequence at s (rem = bytes available). Returns its length, or 0 when
  * the bytes are not well formed. The 2-byte form is fenced by its lead range C2..DF, which
  * excludes continuations and the C0/C1 overlong leads at once; the 3- and 4-byte forms are

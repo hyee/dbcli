@@ -9,6 +9,7 @@
 .qoder
 .qoder-cn
 .idea
+.codebuddy
 .workbuddy
 .github
 .agent-teams

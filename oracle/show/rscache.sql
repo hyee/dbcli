@@ -83,7 +83,7 @@ BEGIN
                        root_name name,
                        regexp_replace(listagg(&dst object_no,',') WITHIN GROUP(ORDER BY object_no),'([^,]+)(,\1)+','\1') dep_objs
                 FROM   TABLE(gv$(CURSOR(
-                                  SELECT /*+leading(c) use_hash(a c) no_merge(a) no_expand OPT_PARAM('_fix_control' '26552730:0')*/
+                                  SELECT /*+leading(c) use_hash(a c) no_merge(a) no_expand*/
                                   DISTINCT userenv('instance') inst_id,
                                            c.type,
                                            decode(a.id, c.id, 1, NULL, 1, 2) flag,
@@ -120,7 +120,7 @@ BEGIN
                        sum(build_time * 10) build,
                        sum(invalids) invalids
                 FROM   TABLE(gv$(CURSOR(
-                                  SELECT /*+leading(c) use_hash(a c) no_merge(a) no_expand OPT_PARAM('_fix_control' '26552730:0')*/
+                                  SELECT /*+leading(c) use_hash(a c) no_merge(a) no_expand*/
                                   DISTINCT userenv('instance') inst_id,
                                            c.type,
                                            decode(a.id, c.id, 1, NULL, 1, 2) flag,
@@ -150,7 +150,7 @@ END;
 grid {
     '/*grid={topic="Statistics"}*/ c1',
     '-',[[/*grid={topic='Object Summary'}*/
-        SELECT --+NO_EXPAND_GSET_TO_UNION OPT_PARAM('_fix_control' '26552730:0')
+        SELECT --+NO_EXPAND_GSET_TO_UNION
                coalesce(t,s,n,u) type,
                count(DISTINCT regexp_replace(name,'\W#.*')) names,
                count(1) keys,

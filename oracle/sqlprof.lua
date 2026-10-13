@@ -8,7 +8,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                                  p_sqlid      VARCHAR2,
                                  p_plan       VARCHAR2 := NULL,
                                  p_dbid       INT := NULL,
-                                 p_forcematch BOOLEAN := true) 
+                                 p_forcematch BOOLEAN := true)
         RETURN VARCHAR2 IS
             /*
             To generate the script to fix the execution plan with SQL profile
@@ -45,12 +45,12 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             v_pos         PLS_INTEGER;
             v_embed       VARCHAR2(200);
             v_schema      VARCHAR2(60):='<unknown>';
-            
+
             PROCEDURE get_sql(p_sqlid VARCHAR2,pos PLS_INTEGER:=1) IS
                 phv INT := nullif(regexp_substr(p_plan,'^\d+$'),0);
             BEGIN
                 v_sql_id := p_sqlid;
-                SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/ 
+                SELECT /*+PQ_CONCURRENT_UNION DYNAMIC_SAMPLING(0)*/
                        sql_text, src
                 INTO   v_sql, v_source
                 FROM   (
@@ -72,7 +72,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         FROM   gv$sql_monitor a
                         WHERE  IS_FULL_SQLTEXT='Y'
                         AND    sql_text IS NOT NULL
-                        AND    sql_id = v_sql_id 
+                        AND    sql_id = v_sql_id
                         AND    rownum<2
                     $END
                     $IF 1=1 AND DBMS_DB_VERSION.VERSION>10  $THEN
@@ -90,9 +90,9 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         AND    b.signature = a.signature
                     $END)
                 WHERE  rownum < 2;
-                
+
                 IF pos=1 AND v_plan IS NULL THEN
-                    SELECT /*+OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/ 
+                    SELECT /*+ DYNAMIC_SAMPLING(0)*/
                            max(schema_name),
                            max(nullif(p,0)),
                            max(src),
@@ -108,7 +108,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                             SELECT 2,MAX(PARSING_SCHEMA_NAME) OVER(PARTITION BY DBID order by c.end_interval_time desc),'AWR',plan_hash_value,nvl(c.end_interval_time+0,a.timestamp),dbid
                             FROM   DBA_HIST_SQL_PLAN A
                             LEFT   JOIN DBA_HIST_SQLSTAT B USING(DBID,SQL_ID,PLAN_HASH_VALUE)
-                            LEFT   JOIN DBA_HIST_SNAPSHOT C USING(DBID,INSTANCE_NUMBER,SNAP_ID) 
+                            LEFT   JOIN DBA_HIST_SNAPSHOT C USING(DBID,INSTANCE_NUMBER,SNAP_ID)
                             WHERE  SQL_ID=v_sql_id
                             AND    OTHER_XML IS NOT NULL
                             UNION ALL
@@ -124,10 +124,10 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                             AND    sql_plan_hash_value>0
                             AND    username is not null
                         $END
-                        ) 
+                        )
                         ORDER BY DECODE(p,phv,1,2),decode(dbid,v_dbid,1,2),seq_,last_active desc
                     ) WHERE ROWNUM<2;
-                    
+
                     IF v_plan IS NOT NULL AND ''||v_plan=p_plan THEN
                         v_flag := 1;
                     END IF;
@@ -144,14 +144,14 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 phv    INT := nvl(regexp_substr(qid, '^\d+$'),v_plan);
             BEGIN
                 --dbms_output.put_line(v_flag||','||v_plan||','||phv||','||qid);
-                SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0') DYNAMIC_SAMPLING(0)*/ 
+                SELECT /*+PQ_CONCURRENT_UNION DYNAMIC_SAMPLING(0)*/
                        xmltype(other_xml), src, p
                 INTO   v_hints, v_plan_source, v_plan
                 FROM   (SELECT other_xml, 'GV$SQL_PLAN' src, plan_hash_value p
                         FROM   gv$sql_plan a
                         WHERE  v_flag = 1
                         AND    v_plan_source='SQL'
-                        AND    sql_id = qid 
+                        AND    sql_id = qid
                         AND    plan_hash_value=phv
                         AND    other_xml IS NOT NULL
                         AND    rownum<2
@@ -166,8 +166,8 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         SELECT other_xml, 'PLAN_TABLE' src, -1
                         FROM   sys.plan_table$ a
                         WHERE  (v_flag=0 AND plan_id=(select max(plan_id) keep(dense_rank last order by timestamp) from sys.plan_table$)
-                                  OR 
-                                v_flag=2 AND UPPER(qid) IN(''||plan_id,upper(statement_id))) 
+                                  OR
+                                v_flag=2 AND UPPER(qid) IN(''||plan_id,upper(statement_id)))
                         AND    other_xml IS NOT NULL
                         AND    rownum<2
                         UNION ALL
@@ -175,7 +175,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         FROM   dba_hist_sql_plan a
                         WHERE  v_flag = 1
                         AND    v_plan_source='AWR'
-                        AND    sql_id = qid 
+                        AND    sql_id = qid
                         AND    plan_hash_value=phv
                         AND    dbid=v_dbid
                         AND    other_xml IS NOT NULL
@@ -193,7 +193,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         FROM   all_sqlset_plans a
                         WHERE  v_flag = 1
                         AND    v_plan_source='SQLSET'
-                        AND    sql_id = qid 
+                        AND    sql_id = qid
                         AND    plan_hash_value=phv
                         AND    other_xml IS NOT NULL
                         AND    rownum<2
@@ -210,7 +210,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                         FROM   gv$sql_plan_monitor a
                         WHERE  v_flag = 1
                         AND    v_plan_source='MON'
-                        AND    sql_id = qid 
+                        AND    sql_id = qid
                         AND    sql_plan_hash_value=phv
                         AND    other_xml IS NOT NULL
                         AND    rownum<2
@@ -318,7 +318,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                 FROM   v$database;
             END IF;
             get_sql(p_sqlid);
-            
+
             dbms_lob.createtemporary(v_text, TRUE);
             pr('Set define off sqlbl on serveroutput on'||chr(10));
             pr('DECLARE --Better for this script to have the access on gv$sqlarea');
@@ -330,7 +330,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr('    prof_name VARCHAR2(30);');
             pr('    procedure wr(x varchar2) is begin dbms_lob.writeappend(sql_txt, length(x), x);end;');
             pr('BEGIN');
-           
+
             pr('    BEGIN execute immediate ''select * from (SELECT SQL_FULLTEXT FROM gv$sqlarea WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_hist_sqltext WHERE SQL_ID=:1 union all SELECT SQL_TEXT FROM dba_sqlset_statements WHERE SQL_ID=:1) where rownum<2'' INTO sql_txt USING sq_id,sq_id,sq_id;');
             pr('    EXCEPTION WHEN OTHERS THEN NULL;END;');
             pr('    IF sql_txt IS NULL THEN');
@@ -341,7 +341,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             get_plan(nullif(p_plan,v_sql_id));
 
             v_signature := dbms_sqltune.SQLTEXT_TO_SIGNATURE(v_sql, TRUE);
-            
+
             pr('    sql_prof := SYS.SQLPROF_ATTR(');
             pr('        q''[BEGIN_OUTLINE_DATA]'',');
             FOR i IN (SELECT /*+ opt_param('parallel_execution_enabled', 'false') */
@@ -350,16 +350,16 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
                       FROM   TABLE(XMLSEQUENCE(EXTRACT(v_hints, '//outline_data/hint'))) d) LOOP
                 v_hint := REGEXP_REPLACE(i.hint,'^((NO_)?INDEX[A-Z_]*)_[ADE]+SC\(','\1(');
                 IF v_hint LIKE '%IGNORE_OPTIM_EMBEDDED_HINTS%' THEN
-                    v_embed := '        q''{' || v_hint || '}'','; 
+                    v_embed := '        q''{' || v_hint || '}'',';
                 ELSIF i.c > 1 AND v_hint LIKE 'FULL(%' THEN
                     NULL;  --bypass the FULL hint when USE_NL to access remote object via dblink
                 ELSIF v_hint NOT LIKE '%OUTLINE_DATA' AND length(v_hint)<500 THEN
                     pr('        q''{' || v_hint || '}'',');
                 END IF;
             END LOOP;
-            
+
             v_source := substr('PROF_'||nvl(regexp_replace(v_source,'^PROF_'),to_char(v_signature,'fm'||rpad('X',length(v_signature),'X'))),1,30);
-            
+
             IF v_embed IS NOT NULL THEN
                 pr(v_embed);
             END IF;
@@ -378,7 +378,7 @@ function sqlprof.extract_profile(sql_id,sql_plan,sql_text)
             pr(q'[    dbms_output.put_line('SQL Profile created, to drop this profile, execute: DBMS_SQLTUNE.DROP_SQL_PROFILE('''||prof_name||''')');]');
             pr('END;');
             pr('/');
-            
+
             p_buffer := v_text;
             RETURN trim('/' FROM v_plan_source||'/'||v_plan);
         END;
@@ -418,27 +418,27 @@ DECLARE --Better for this script to have the access on gv$sqlarea
     sq_id     VARCHAR2(30):='@sql_id@';
 BEGIN
     BEGIN
-        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION OPT_PARAM('_fix_control' '26552730:0')*/ * FROM (
+        EXECUTE IMMEDIATE q'[SELECT /*+PQ_CONCURRENT_UNION*/ * FROM (
                                  SELECT SQL_FULLTEXT FROM gv$sqlarea
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
                                  SELECT SQL_TEXT FROM dba_hist_sqltext
-                                 WHERE SQL_ID=:1 
+                                 WHERE SQL_ID=:1
                                  AND ROWNUM<2
                                  UNION ALL
                                  SELECT SQL_TEXT FROM all_sqlset_statements
                                  WHERE SQL_ID=:1 AND ROWNUM<2
                                  UNION ALL
-                                 SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor 
+                                 SELECT to_clob(SQL_TEXT) FROM gv$sql_monitor
                                  WHERE SQL_ID=:1 AND IS_FULL_SQLTEXT='Y'
                                  AND   SQL_TEXT IS NOT NULL AND ROWNUM<2
-                             ) WHERE ROWNUM<2]' 
+                             ) WHERE ROWNUM<2]'
         INTO sql_txt USING sq_id,sq_id,sq_id,sq_id;
     EXCEPTION WHEN OTHERS THEN NULL;END;
     IF sql_txt IS NULL THEN
         raise_application_error(-20001, 'Cannot find the SQL text for sql_id: ' || sq_id);
     END IF;
-    
+
     sql_prof := SYS.SQLPROF_ATTR(
         @sql_profile
     );
@@ -464,7 +464,7 @@ function sqlprof.generate_profile_from_outlines(sql_id,outlines)
             if s:find('<![CDATA',1,true) then
                 s=s:match('<!%[CDATA%[(.*)%]%]>')
             end
-            hints[#hints+1]=s:trim() 
+            hints[#hints+1]=s:trim()
         end)
     else
         for v in outlines:gsplit('\n') do
@@ -472,7 +472,7 @@ function sqlprof.generate_profile_from_outlines(sql_id,outlines)
             if v:find('^%a') then hints[#hints+1]=v end
         end
     end
-    
+
     for i=#hints,1,-1 do
         local hint=hints[i]
         if hint:upper():find('_OUTLINE_DATA',1,true) then
@@ -492,7 +492,7 @@ function sqlprof.generate_profile_from_outlines(sql_id,outlines)
             hints[i]=q.."'"..st..hint..ed.."'"
         end
     end
-    
+
     outlines=table.concat(hints,',\n        ')
     local profile=profile_template:gsub('@sql_id@',sql_id):gsub('@sql_profile',function() return outlines end)
     print("Result written to file "..env.write_cache('prof_'..sql_id..".sql",profile))

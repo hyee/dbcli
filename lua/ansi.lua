@@ -59,7 +59,7 @@ local enabled=isAnsiSupported
 --Color definitions from MUD, not all features are support in Ansicon/Jansi library
 local base_color={
     --For the ansi controls that have parameter, used '$<code>[,parameters]$' format
-    --For example: $SET,1,2$ 
+    --For example: $SET,1,2$
     SET        =function(r,c) return "\27["..r..";"..c.."H" end, --'Set Cursor position, Usage: SET,<n rows>,<n cols>'
 --  FRSCREEN   =function(a,b) return"\27["..a..";"..b.."r" end,
 --  FR         =function(a) return "\27["..a.."r" end,
@@ -77,7 +77,7 @@ local base_color={
     CYN={"\27[0;36m","Foreground Color: Cyan",'color:DarkCyan'},
     WHT={"\27[0;37m","Foreground Color: White",'color:GhostWhite'},
     GRY={"\27[90m","Foreground Color: Gray",'color:Gray'},
-    --GRY={"\27[30;1;40m","Foreground Color: Gray"}, 
+    --GRY={"\27[30;1;40m","Foreground Color: Gray"},
 
     --High Intensity Foreground Colors
    --BG Light gray
@@ -96,7 +96,7 @@ local base_color={
     HBBLU={"\27[104m","High Intensity Background Color: Blue",'background:Blue'},
     HBMAG={"\27[105m","High Intensity Background Color: Magenta",'background:Magenta'},
     HBCYN={"\27[106m","High Intensity Background Color: Cyan",'background:Cyan'},
-    HBWHT={"\27[107m","High Intensity Background Color: White",'background:White'},    
+    HBWHT={"\27[107m","High Intensity Background Color: White",'background:White'},
 
     --Background Colors
     BBLK={"\27[40m","Background Color: Black",'background:black'},
@@ -107,7 +107,7 @@ local base_color={
     BMAG={"\27[45m","Background Color: Magenta",'background:DarkMagenta'},
     BCYN={"\27[46m","Background Color: Cyan",'background:DarkCyan'},
     BWHT={"\27[47m","Background Color: White",'background:GhostWhite'},
-    BGRY={"\27[100m","Background Color: Gray",'background:gray'}, 
+    BGRY={"\27[100m","Background Color: Gray",'background:gray'},
     NOR ={"\27[39;49;0m","Puts every color back to normal",'\0'},
 
 
@@ -115,14 +115,14 @@ local base_color={
     --Note, these are Esc codes for VT100 terminals, and emmulators
     --and they may not all work within the mud
     RESET   ={"\27[0m","Reset",'\0',1},
-    BOLD    ={"\27[1m","Turn on  Bright Or Bold",'font-weight:bold'}, 
-    UBOLD   ={"\27[2m","Turn off Bright Or Bold",'font-weight:normal'}, 
-    ITA     ={"\27[3m","Turn on  Italic Or Inverse",'font-style:italic'}, 
+    BOLD    ={"\27[1m","Turn on  Bright Or Bold",'font-weight:bold'},
+    UBOLD   ={"\27[2m","Turn off Bright Or Bold",'font-weight:normal'},
+    ITA     ={"\27[3m","Turn on  Italic Or Inverse",'font-style:italic'},
     BKP     ={'\27[?2004h',"Turn on bracketed paste",nil,1},
     UBKP    ={'\27[?2004l',"Turn off bracketed paste",nil,1},
     CLR     ={"\27[2J\27[H\27[3J","Clear the screen",nil,1},
     HOME    ={"\27[H","Send cursor to home position",nil,1},
-    REF     ={"\27[2J;H" , "Clear screen and home cursor",nil,1},
+    REF     ={"\27[2J\27[H" , "Clear screen and home cursor",nil,1},
     KILLBL  ={"\27[0J","Clear from cursor to end of screen",nil,1},
     BIGTOP  ={"\27#3","Dbl height characters, top half",nil,1},
     BIGBOT  ={"\27#4","Dbl height characters, bottem half",nil,1},
@@ -146,7 +146,7 @@ local base_color={
     UCONC   ={"\27[28m","Concealed off",nil,0},
     CROSS   ={"\27[9m","Crossline on",'text-decoration: line-through',0},
     UCROSS  ={"\27[29m","Crossline off",'text-decoration: none',0},
-    HIREV   ={"\27[1,7m","High intensity reverse video",nil,0},
+    HIREV   ={"\27[1;7m","High intensity reverse video",nil,0},
     WRAP    ={"\27[?7h","Wrap lines at screen edge",nil,1},
     UNWRAP  ={"\27[?7l","Don't wrap lines at screen edge",nil,1}
 
@@ -309,7 +309,7 @@ function ansi.define_color(name,value,module,description)
     end
 
     if description then
-        local v=os.getenv(name:upper()) 
+        local v=os.getenv(name:upper())
         value = v and v:upper():gsub("%$(%u+)%$",'%1'):gsub('[\\%$]E%[','E[') or value
         ansi.cfg(name,ansi.cfg(name) or value,module,description)
         env.set.init(name,value,ansi.define_color,module,description)
@@ -358,7 +358,7 @@ function ansi.onload()
     ansi.loaded=true
     --str_completer=java.require("jline.console.completer.StringsCompleter",true)
     --arg_completer=java.require("jline.console.completer.ArgumentCompleter",true)
-    for k,v in pairs(base_color) do 
+    for k,v in pairs(base_color) do
         color[k]=isAnsiSupported and v or ''
         if type(v)=='table' and v[1] then
             v[0]=k
@@ -376,7 +376,7 @@ end
 
 local function _strip_ansi(str,func)
     local func_=nil
-    if type(func)=='function' then 
+    if type(func)=='function' then
         func_=function(s) return func(s,color_map[s]) end
     end
     return str:gsub(ansi.escape,function(m) return '\27'..m:gsub('M','m') end)
@@ -417,8 +417,8 @@ function string.from_ansi(str)
     for plain,color,cnt,start,stop in str1:gsplit(ansi.pattern) do
         if not start then
             if not grp then return str,first,last,str1 end
-            if type(grp)=='string' then 
-                grp={grp,plain} 
+            if type(grp)=='string' then
+                grp={grp,plain}
             else
                 grp[#grp+1]=plain
             end
@@ -426,8 +426,8 @@ function string.from_ansi(str)
         end
 
         if plain~='' then
-            if not grp then 
-                grp=plain 
+            if not grp then
+                grp=plain
             elseif type(grp)=='string' then
                 grp={grp,plain}
             else
@@ -441,7 +441,7 @@ function string.from_ansi(str)
                 ed=stop
             elseif ed and ed+1==start then
                 first=first..color
-                ed=stop 
+                ed=stop
             elseif stop==len then
                 if ec and ec+1==start then
                     last=curr..color
@@ -470,10 +470,10 @@ function ansi.test_text(str)
     if not str or str=="" then
         local rows=env.grid.new()
 
-        local rep=function(escapes) return 
+        local rep=function(escapes) return
             escapes:gsub("($E%[)(%d+)(.*)",function(e,bg,code)
                 return string.format("%s%-12s%s","\\e["..bg..code,e..code:sub(2),ansi.get_color("NOR"))
-            end) 
+            end)
         end
         local backs={}
         for i=0,31 do
@@ -500,12 +500,12 @@ function ansi.test_text(str)
         rawprint(env.space..string.rep("=",140))
         rows:print()
         rawprint("\n")
-        
+
         rawprint(env.space.."ANSI SGR Codes, where '$E' means ascii code 27(a.k.a chr(27)): ")
         rawprint(env.space..string.rep("=",140))
         print(env.load_data(env.join_path(env.WORK_DIR,"lib","ANSI.txt"),false))
         rawprint(env.space..string.rep("=",140))
-        
+
         local bf,wf,bb,wb=base_color['BLK'][1],base_color['HIW'][1],base_color['BBLK'][1],base_color['HBWHT'][1]
         if env.grid then
             local row=env.grid.new()
@@ -538,7 +538,7 @@ function ansi.test_text(str)
         rawprint(env.space.."Use 'set color' to adjust the color preferences of the console.")
         return
     end
-   
+
     return print("ANSI result: "..ansi.convert_ansi(str)..ansi.string_color('NOR'))
 end
 

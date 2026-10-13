@@ -3,7 +3,7 @@
   -avg  : show average values per second instead of total values
   -d    : analyze AWR views(DBA_HIST_*) instead of gv$ views
   -pdb  : analyze AWR PDB views(AWR_PDB_*) instead of gv$ views
-  
+
   Notes: Some stats(i.e. for LGWR) are missing in PDB level
 
   --[[
@@ -36,11 +36,11 @@ DECLARE
                                               SELECT TRIM(NAME), VALUE, NULL, 'Stat'
                                               FROM   v$sysstat
                                               WHERE  VALUE > 0
-                                              AND    (name like 'redo%'  or 
-                                                      name like '% log %' or 
-                                                      name like '%rdma on commit%' or 
+                                              AND    (name like 'redo%'  or
+                                                      name like '% log %' or
+                                                      name like '%rdma on commit%' or
                                                       name in('user commits','user rollbacks') or
-                                                      name like 'commit%' or 
+                                                      name like 'commit%' or
                                                       name like '%current block%flush%')
                                               AND    userenv('INSTANCE') = nvl('&instance', userenv('INSTANCE')))))!';
 
@@ -79,13 +79,13 @@ BEGIN
     ELSE
         func := q'!snap AS
                  (SELECT /*+materialize*/
-                         DECODE(row_number() OVER(PARTITION BY instance_number ORDER BY mid), 1, mid, -1) mid, 
-                         DECODE(row_number() OVER(PARTITION BY instance_number ORDER BY xid desc), 1, xid, -1) xxid, 
+                         DECODE(row_number() OVER(PARTITION BY instance_number ORDER BY mid), 1, mid, -1) mid,
+                         DECODE(row_number() OVER(PARTITION BY instance_number ORDER BY xid desc), 1, xid, -1) xxid,
                          XID,secs, dbid, instance_number
                   FROM   (SELECT MIN(snap_id) mid, MAX(snap_id) XID, dbid, instance_number,SUM((end_interval_time+0)-(begin_interval_time+0))*86400 secs
                           FROM   &flag.snapshot
                           WHERE  dbid = &dbid
-                          AND    end_interval_time+0 between nvl(to_date(nvl('&V1','&starttime'),'yymmddhh24mi'),sysdate-7) 
+                          AND    end_interval_time+0 between nvl(to_date(nvl('&V1','&starttime'),'yymmddhh24mi'),sysdate-7)
                                  and nvl(to_date(nvl('&V2','&endtime'),'yymmddhh24mi'),sysdate+1)
                           GROUP  BY dbid, instance_number, startup_time)),!';
         qry := q'!SELECT 'Event' typ,
@@ -120,9 +120,9 @@ BEGIN
                 USING  (dbid, instance_number)
                 WHERE  dbid = &dbid --
                  AND   snap_id IN (mid, XID) --
-                 AND   (stat_name LIKE 'redo%' or 
-                        stat_name like '% log %' or 
-                        stat_name like '%rdma on commit%' or 
+                 AND   (stat_name LIKE 'redo%' or
+                        stat_name like '% log %' or
+                        stat_name like '%rdma on commit%' or
                         stat_name in('user commits','user rollbacks') or
                         stat_name like 'commit%' or
                         stat_name like 'gc% block% flush%')
@@ -146,7 +146,9 @@ BEGIN
     qry:=replace(replace(q'!
         WITH @FUNC@
         STATS AS(
-            SELECT /*+inline no_merge OPT_PARAM('_fix_control' '26552730:0')*/ *
+            SELECT /*+inline no_merge
+                      OPT_PARAM('_optimizer_cartesian_enabled' 'false')
+                      OPT_PARAM('_optimizer_mjc_enabled' 'false')*/ *
             FROM   (@QUERY@)
             MODEL DIMENSION BY (NAME)
             MEASURES(typ,round(micro,2) micro,round(cnt,2) cnt,to_number(NULL) avg_time,to_number(NULL) delta_time,to_number(NULL) delta_pct)
@@ -211,7 +213,7 @@ BEGIN
                     delta_pct[SUBSTR(NAME,1,3) IN('LGW') or name='log file parallel write']=round(micro[CV()]/micro['redo write total time'],5)
             )
         )
-        SELECT CASE 
+        SELECT CASE
                     WHEN typ='Stat' AND name='redo write broadcast ack time' THEN
                       'CKPT'
                     WHEN name like 'redo write%' OR name in('redo wastage') THEN

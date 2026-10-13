@@ -367,7 +367,7 @@ BEGIN
                            max(last_refresh_time)
                     INTO   sq_id, sql_exec, sql_start, last_date
                     FROM   gv$sql_monitor
-                    WHERE  (sql_id = sq_id OR 
+                    WHERE  (sql_id = sq_id OR
                             lower(sq_id) IN ('l', 'last') AND inst_id = userenv('instance') AND sid = userenv('sid') AND sql_plan_hash_value>0)
                     AND    sql_exec_id > 0
                     AND    px_server# IS NULL
@@ -550,7 +550,7 @@ BEGIN
     ELSE
         OPEN :c FOR
             SELECT * --fix control 26552730 causes ORA-12850: Could not allocate slaves on all specified instances: 2 needed, 0 allocated
-            FROM   (SELECT /*+no_expand no_parallel OPT_PARAM('_fix_control' '26552730:0') no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/
+            FROM   (SELECT /*+no_expand no_parallel no_or_expand opt_param('optimizer_dynamic_sampling' 5)*/
                            a.sql_id &group,
                            &fields
                            MAX(nvl(regexp_substr(status, '\(.*\)'), status)) keep(dense_rank LAST ORDER BY last_refresh_time, sid) last_status,

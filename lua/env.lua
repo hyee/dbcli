@@ -1355,7 +1355,11 @@ function env.unload()
     --after "exit" the next process then prints where the cursor was parked, which reads as deleted
     --lines plus residue at the prompt. Once the console is paused every setStatus is a no-op, so
     --the last thing on screen stays the last text that was printed.
-    console:suspend(true)
+    --teardown(), not suspend(true): the latter also hands the *console* to a native child, which means
+    --switching its output off escape parsing. Nothing takes this console over after an unload, and the
+    --callbacks below still print -- with the parsing off they arrived as literal "<-[39;49;0m    Working
+    --directory changed to ..." (measured 2026-10-10, classic conhost and Windows Terminal alike).
+    console:teardown()
     if env.event then env.event.callback("ON_ENV_UNLOADED") end
     local e,msg=pcall(env.init.unload,env.init.module_list,env)
     if not e then print(msg) end

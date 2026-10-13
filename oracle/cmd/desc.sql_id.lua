@@ -18,7 +18,7 @@ local res = db:get_value([[
       AND    (SELECT count(1) FROM sqlmon) = 0
       AND    sql_id = :sql_id
       AND    rownum < 2)
-    SELECT /*+OPT_PARAM('_fix_control' '26552730:0') opt_param('optimizer_dynamic_sampling' 0)*/
+    SELECT /*+opt_param('optimizer_dynamic_sampling' 0)*/
            parsing_schema_name, sql_text
     FROM   dba_hist_sqltext a
     JOIN   dba_hist_sqlstat b

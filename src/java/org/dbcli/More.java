@@ -2230,7 +2230,35 @@ final public class More {
         }
 
         public Play(Terminal terminal, boolean fullScreen) {
-            super(terminal, fullScreen && terminal.getStringCapability(Capability.enter_ca_mode) != null);
+            super(terminal, fullScreen && canUseAltScreen(terminal));
+        }
+
+        /**
+         * Can this session take over an alternate screen *and hand the previous one back* when it is
+         * done? Asked once, answered once. Display's canvas assumption (this constructor) and the
+         * pager's decision to enter CA mode ({@link #init}) used to be computed independently and on a
+         * real ConEmu window they disagreed: Display was told it owned a fixed-height screen and issued
+         * {@code CSI <n>M} to scroll it, while the pager stayed on the normal screen, whose "height" is
+         * a 32766-row scroll buffer. The delete-lines removed history rows instead of scrolling a
+         * window -- measured page turn: {@code EDIT} followed by {@code RAC} with exactly those 23 rows
+         * gone, the same 23 the escape stream deleted.
+         *
+         * <p>ConEmu is excluded on measurement, not on reputation. Its alternate screen is reachable --
+         * {@code CSI ?1049h} does shrink the buffer to the window height -- but the previous screen
+         * never comes back: after {@code CSI ?1049l} the primary rows read empty. That is structural
+         * rather than a race. In ConEmuHk's {@code XTermAltBuffer} the independent-buffer branch
+         * (CreateConsoleScreenBuffer + SetConsoleActiveScreenBuffer, which would leave the primary
+         * buffer untouched) is gated on {@code isConnectorStarted()}, and that flag is only ever set by
+         * {@code RequestTermConnector} -- the cygwin/msys/wsl connector process. A native cmd/luajit
+         * child always takes the legacy branch, which resizes the *same* buffer and carries the note
+         * "Caller must clear active screen contents" in the server, while the saved-state struct holds
+         * buffer height, cursor position and scroll region and no cells at all. Upstream has been quiet
+         * since 2025-04, so this is not a thing to wait out.
+         */
+        static boolean canUseAltScreen(Terminal terminal) {
+            return terminal.getStringCapability(Capability.enter_ca_mode) != null
+                    && terminal.getStringCapability(Capability.exit_ca_mode) != null
+                    && !OSUtils.IS_CONEMU;
         }
 
         boolean isStarted;
@@ -2250,14 +2278,9 @@ final public class More {
             reset();
             prevBuff = null;
             isStarted = false;
-            // Inside a real ConEmu window the alternate screen is not something dbcli can use: leaving it
-            // (rmcup, \e[?1049l) does not bring the previous screen back, so the pager's exit left the
-            // screen empty with just the prompt - and the scrollback dbcli relies on for reading output
-            // is what the wide console buffer is there for. Paint on the normal screen instead, which is
-            // also what the pager already does on a console without an alternate screen.
-            this.isEnterCA = isEnterCA
-                    && terminal.getStringCapability(Capability.exit_ca_mode) != null
-                    && !OSUtils.IS_CONEMU;
+            // The same single answer Display got in the constructor, so the canvas assumption and the
+            // decision to take the screen over can no longer disagree on any terminal.
+            this.isEnterCA = isEnterCA && canUseAltScreen(terminal);
             status = Status.getStatus(terminal, false);
             barWasSuspended = status != null && status.isSuspended();
             if (status != null) {
@@ -2306,8 +2329,11 @@ final public class More {
             Size size = terminal.getSize();
             resize(size.getRows(), size.getColumns());
             isStarted = true;
-            if (!isEnterCA && fullScreen && !OSUtils.IS_CONEMU) {
-                // Check if terminal supports enter_ca_mode
+            // Late entry, and it asks nothing new: `fullScreen` is Display's canvas assumption, and the
+            // constructor now derives it from canUseAltScreen(), which already requires both CA
+            // capabilities. The inner test is redundant by that route and kept anyway -- the point is
+            // that a session whose alternate screen cannot be handed back never reaches either branch.
+            if (!isEnterCA && fullScreen) {
                 if (terminal.getStringCapability(Capability.enter_ca_mode) != null) {
                     terminal.puts(Capability.enter_ca_mode);
                     clear();
@@ -2360,10 +2386,20 @@ final public class More {
          * the last row it wrote, Display counting one virtual newline per row).
          */
         private boolean paintWholeScreen(List<AttributedString> newLines, int targetCursorPos) {
-            // isEnterCA (smcup, \e[?1049h) needs no guard: inside a real ConEmu window Console.java
-            // does not use WinSysTerminal at all, so a session that reaches this code has no ConEmu GUI
-            // to switch screen buffers - and the console handle this writer holds stays the visible one.
-            if (!Console.isBlockPaintEnabled(terminal)) {
+            /* No alternate-screen guard is needed here, and the reason for that changed on 2026-10-07,
+               when Console.java stopped skipping dbcli's own WinSysTerminal and a real ConEmu window
+               began reaching this code. It is safe because the two paths cannot overlap:
+               canUseAltScreen() keeps a session whose screen cannot be handed back out of smcup, and the
+               block written here is exactly what such a session needs instead -- HOME, one row per line,
+               erase-to-EOL. Measured on ConEmu's console: CSI H lands on the viewport's top row rather
+               than buffer row 0, and a 56-row block left the viewport at 245..300 with every history row
+               above it intact. What does eat history is the delete-lines Display.update falls back to,
+               and that fallback is what this path replaces.
+               Note the switch asked here is isPagerBlockEnabled, deliberately wider than the
+               isBlockPaintEnabled the dashboard asks: owning the screen is the pager's job, so a frame
+               written over the viewport is how it does that, whereas a frame landing on top of the
+               user's previous output is exactly what a dashboard must never do. */
+            if (!Console.isPagerBlockEnabled(terminal)) {
                 return false;
             }
             terminal.writer().print(Console.screenBlock(newLines, rows, columns));

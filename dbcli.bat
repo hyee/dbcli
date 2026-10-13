@@ -64,28 +64,27 @@ If not exist "!JAVA_EXE!" (
     )
 )
 
+if defined ANSICON (
+    set "ANSICON_DEF=ansicon"
+    set "TERM=windows-conemu"
+) else (
+    if not defined TERM (
+        if "!ANSICON_DEF!" equ "render" (
+            set "TERM=windows-render"
+        )
+    ) else (
+        set "ANSICON_DEF="
+    )
+)
+
 SET "PATH=.\lib\!bit!;!JAVA_BIN!;!EXT_PATH!;.\bin;!TEMP_PATH!"
 
-rem Nothing here picks an ANSI renderer any more. The block that used to sit here tested whether
-rem lib\x86\ConEmuHk.dll existed and set ANSICON_DEF from the answer, which meant the terminal chain a
-rem session got depended on a file on disk. ConEmuHk is retired; render.dll does the parsing and the
-rem painting, and it is found the same way every other native here is -- on PATH, just above.
-rem So the chain is chosen by the console itself now: WinSysTerminal asks it whether it can parse
-rem escapes (ENABLE_VIRTUAL_TERMINAL_PROCESSING) and hands the text to the renderer when it cannot.
-rem ANSICON_DEF is left exactly as the environment set it, and only MSYS is corrected for, because
-rem under MSYS the console is a pty and neither of the Windows branches applies.
 if defined MSYSTEM set "ANSICON_DEF=msys"
-
 rem set "ANSICON_DEF=native"
 rem set "ANSICON_DEF=ffm"
 rem set "ANSICON_DEF=jna"
-rem The native renderer (render.dll in the matching lib subdirectory) parses ANSI and paints the cells, and
-rem it is on unless switched off. Switching it off leaves the writer with a plain raw console write: the
-rem escapes reach the console undigested, which is what a console without ENABLE_VIRTUAL_TERMINAL_PROCESSING
-rem looks like. That is still the first thing to try when a session paints oddly.
-rem set ANSI_RENDER=off
-IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 
+IF !CONSOLE_COLOR! NEQ NA color !CONSOLE_COLOR!
 
 cmd.exe /c .\lib\%bit%\luajit .\lib\bootstrap.lua "!JAVA_EXE!" "!JAVA_VER_!" %*
 popd

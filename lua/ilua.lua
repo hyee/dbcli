@@ -61,6 +61,7 @@ local _VERSION = g._VERSION
 
 -- local vars
 local readline, saveline
+local INPUT_ABORT = {}  -- sentinel: reader aborted (Ctrl+C/Ctrl+Z), discard all input
 local identifier = "^[_%a][_%w]*$"
 
 --
@@ -256,7 +257,7 @@ function Pretty:table_children2str(tbl, path, depth, multiline)
     local bl, br = self.bl, self.br
     local bl_m, br_m = self.bl_m, self.br_m
     local tinfo = self.table_info and tostring(tbl)..sp or ""
-    local key_fmt, val_fmt, field = self.key, self.val, self.field
+    local key_fmt, val_fmt, field = self.key, self.value, self.field
     local compactable, cnt, c = 0, 0, {}
     -- multiline setup
     if multiline then
@@ -611,11 +612,16 @@ function Ilua:output(str)
 end
 
 function Ilua:precision(len,prec,all)
-    if not len then self.num_prec = nil
+    local prec_fmt
+    if not len then prec_fmt = nil
     else
-        self.num_prec = '%'..len..'.'..prec..'f'
+        prec_fmt = '%'..len..'.'..prec..'f'
     end
-    self.num_all = all
+    self.num_prec, self.num_all = prec_fmt, all
+    --the formatters live on the Pretty objects (self.p/ls/dir), not here
+    self.p.num_prec, self.p.num_all = prec_fmt, all
+    if self.ls then self.ls.num_prec, self.ls.num_all = prec_fmt, all end
+    if self.dir then self.dir.num_prec, self.dir.num_all = prec_fmt, all end
 end 
 
 function Ilua:line_handler(handler)
@@ -639,17 +645,23 @@ function Ilua:get_input()
     local lines, i, input, chunk, err = {}, 1
     while true do
         input = readline((i == 1) and self.prompt or self.prompt2)
-        if not input then return end
-        lines[i] = input
-        input = concat(lines, "\n")
-        chunk, err = loadstring(format("return(%s)", input), self.chunkname)
-        if chunk then return input end
-        chunk, err = loadstring(input, self.chunkname)
-        if chunk or not err:match("'<eof>'$") then
-            return input
+        if input == nil then return end
+        if input == INPUT_ABORT then
+            --Ctrl+C/Ctrl+Z: reset the prompt and discard the whole input
+            if i == 1 then return '' end
+            lines, i = {}, 1
+        else
+            lines[i] = input
+            input = concat(lines, "\n")
+            chunk, err = loadstring(format("return(%s)", input), self.chunkname)
+            if chunk then return input end
+            chunk, err = loadstring(input, self.chunkname)
+            if chunk or not err:match("'<eof>'$") then
+                return input
+            end
+            lines[1] = input
+            i = 2
         end
-        lines[1] = input
-        i = 2
     end
 end
 
@@ -809,7 +821,7 @@ local err = pcall(function()
     saveline = rl.add_history
 end)
 
-if not rl then
+if not rl or type(readline) ~= 'function' then
     readline = function(prompt)
         write(prompt)
         return read()
@@ -923,25 +935,87 @@ function Ilua:loop(...)
     self:init(params)
 
     --input channel:
-    --* interactive tty: hand the console to io.read via suspend, which stops the
-    --  JLine reader AND restores the original console mode; pausing alone leaves
-    --  raw/no-echo mode on, so typed keys never show up (resume on the way out)
-    --* dumb terminal (piped/redirected stdin): JLine owns stdin and buffers ahead,
-    --  io.read would see EOF immediately, so read lines through console:readLine
-    --  instead and leave the terminal running
-    local run_repl = function()
-        self:start()
-        self:run()
+    --* interactive tty: suspend the JLine reader (cooked mode restored, echo on)
+    --  and read via io.read. nil does NOT leave the REPL: Ctrl+C and Ctrl+Z
+    --  merely abort the pending read (the OS discards the line; JLine dispatches
+    --  no signal while its pump is paused) - INPUT_ABORT makes get_input drop
+    --  everything typed so far and restart at the main prompt. 'quit'/'exit'
+    --  leave the REPL. A run of consecutive nils means stdin is effectively dead
+    --  (CRT sticky EOF), so bail out instead of busy-spinning on nils.
+    --* dumb terminal (piped/redirected stdin): the running JLine pump buffers
+    --  pipe input ahead of io.read, so read through console:readLine instead;
+    --  its nil (EOF - the feeder is done) exits the REPL rather than spinning.
+    local function drop_ctrl_c(line)
+        if line:find('\3', 1, true) then return INPUT_ABORT end
+        return line
+    end
+    local is_dumb = tostring(terminal):find('[Dd]umb') ~= nil
+    if is_dumb then
+        readline = function(prompt)
+            local line = console:readLine(prompt)
+            if not line then return nil end
+            return drop_ctrl_c(line)
+        end
+    else
+        local dead_reads = 0
+        readline = function(prompt)
+            write(prompt)
+            local line = read()
+            if not line then
+                dead_reads = dead_reads + 1
+                if dead_reads >= 100 then
+                    write('ilua: input stream is not returning any data, leaving\n')
+                    return nil
+                end
+                --the aborted line keeps its screen content; just drop to the
+                --next line so the next prompt does not glue onto it
+                write('\n')
+                return INPUT_ABORT
+            end
+            dead_reads = 0
+            return drop_ctrl_c(line)
+        end
+    end
+    saveline = function() end
+    --evaluated chunks run in _G (the strict sandbox env stays dormant), so the
+    --documented helpers only work as real globals; shadow them for the session
+    --and restore whatever was there before (including nil) on the way out
+    local expose = self.expose
+    local shadow = {}
+    if expose["p"] then shadow.p = self.p end
+    if expose["ls"] and self.ls then shadow.ls = self.ls end
+    if expose["dir"] and self.dir then shadow.dir = self.dir end
+    if expose["slice"] then shadow.slice = slice end
+    if self.inject_helpers then
+        shadow.i, shadow.I, shadow.P = self, Ilua, Pretty
+        shadow.env, shadow.e = self.env, self.env
+        shadow.vars = function(...) return self:vars(...) end
+        shadow.v = function(...) return self:v(...) end
+    end
+    local saved, names = {}, {}
+    for name, val in pairs(shadow) do
+        names[#names + 1] = name
+        saved[name] = rawget(g, name)
+        --rawset bypasses dbcli's _G watchdog (__newindex records new globals
+        --and warns under DEBUG_MODE); these are temporary and restored below
+        rawset(g, name, val)
     end
     local ok, err
-    if tostring(terminal):find('[Dd]umb') then
-        readline = function(prompt) return console:readLine(prompt) end
-        saveline = function() end
-        ok, err = pcall(run_repl)
+    if is_dumb then
+        ok, err = pcall(function()
+            self:start()
+            self:run()
+        end)
     else
         console:suspend(true)
-        ok, err = pcall(run_repl)
+        ok, err = pcall(function()
+            self:start()
+            self:run()
+        end)
         console:suspend(false)
+    end
+    for _, name in ipairs(names) do
+        rawset(g, name, saved[name])
     end
     if not ok then error(err, 0) end
 end

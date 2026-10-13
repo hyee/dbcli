@@ -139,17 +139,30 @@ The two agree on everything except the surrogate run, and the `0/1/2` histogram 
 ## 3. How this relates to `utf8.width` (`unidata.h`)
 
 The module ships two width tables: `utf8.ansi_width` (documented here, measured) and `utf8.width`
-(`lutf8lib.c` plus a frozen `unidata.h`). They disagree on 142687 of 1,112,064 code points. One term of
-that sum is the ambiguous ruling (§1.1) and nothing else: 138165 code points East Asian Width `A` — 131217
-of them astral private use, 6948 in the BMP — where `unidata.h` has no wide answer to give. The remaining
-4522 split into four buckets, and **every one of those is `unidata.h`'s error**: 3904 judged 0 where this
-table gives 1 (3851 unassigned holes, 50 Mc spacing marks, 3 letters), 315 judged 1 where this table gives 0
-(64 C0/C1 controls, 231 conjoining Hangul jamo, 20 format and combining marks), 296 judged 2 where this
-table gives 1 (the trigram and Tai-Xuan-Jing blocks plus coarse-range holes), and 6 judged 0 where EAW says
-W -- U+115F, U+302E, U+302F, U+3164, U+16FF0, U+16FF1. A lone TAB is the seventh pair only because
-`utf8.width` never sees one: the sweep hands it a code point integer, and `Lutf8_width` reads
-`lua_tointeger`, so passing it a string silently yields garbage. New code should use `ansi_width`; the
-buckets above are the whole disagreement set but for the ruling.
+(`lutf8lib.c` plus a frozen `unidata.h`). Before 2026-09-27 they disagreed on 142687 of 1,112,064
+code points: 138165 East Asian Width `A` (131217 astral private use, 6948 in the BMP) where
+`unidata.h` has no wide answer to give, plus 4522 where **`unidata.h` is simply wrong** -- 3904 judged
+0 where this table gives 1 (3851 unassigned holes, 50 Mc spacing marks, 3 letters), 315 judged 1 where
+this table gives 0 (64 C0/C1 controls, 231 conjoining Hangul jamo, 20 format and combining marks),
+296 judged 2 where this table gives 1 (the trigram and Tai-Xuan-Jing blocks plus coarse-range holes),
+and 6 judged 0 where EAW says W -- U+115F, U+302E, U+302F, U+3164, U+16FF0, U+16FF1.
+
+`utf8.width`, `utf8.widthindex` and `utf8.widthlimit` now answer from **this** table when they are
+called without their `ambiwidth`/`default_width` arguments: `luW_width` takes the
+`ansi_cp_width()` route when both optionals are absent (`LU_W_UNSET`), and the `unidata.h` route
+otherwise, because those two arguments are the only reason that route still exists. The census
+(`cache/utf8-width-fix/width-census.lua`, per build, one process each -- two builds in one Lua state
+share the single global `utf8` table that `luaL_register` writes) reports 1 disagreement per platform
+afterwards, and that one is the boundary between the two functions rather than a defect: a lone TAB is
+8 columns to a cursor replay and 0 to a per-code-point width.
+
+What is left is the contract difference, and it is deliberate. `utf8.width(s)` is the sum of its code
+points' widths; `utf8.ansi_width(s)` replays a cursor -- TAB advances to the next stop, an escape
+sequence costs 0, and the answer is the widest line. Neither is the other; a string containing
+control characters will always measure larger under `ansi_width`. `utf8.width` has no callers in the
+Lua tree (grid columns go through `string.wcwidth` -> `ansi_width`), so the change is about not
+leaving a second, wrong answer reachable.
+
 
 ## 4. Character width tables (all measured)
 
@@ -1088,6 +1101,7 @@ bytes verbatim):
 | Against conhost, per font | `cache/ambiguous/measure/ambmeasure.c`: every BMP ambiguous code point and 669 astral ones, marker-column readback, six faces each confirmed by `GetCurrentConsoleFontEx` | 47,766 measurements; 7,110 wide in every font, 620 font-split, 229 narrow in every font; the BMP sweep reproduced byte for byte on a second run; code page 437 / 936 / 65001 identical |
 | Against xterm, per code point | `cache/ambiguous/xterm/{xmeasure.c,run1.sh,compare.py}`: the 7,324-point sample the conhost sweep uses (7,314 of them EastAsianWidth=A — all 7,282 BMP ambiguous code points per Unicode 15.0.0 plus 32 astral ones — and 10 non-ambiguous controls), one write per point inside a real xterm 372 under `TERM=xterm`, `XLOCALE=false`, `LC_ALL=C.UTF-8`, position read back with `ESC[6n`; three configurations | **`-cjk_width` (the ruling as a switch): 7,117 agree, 207 differ** — the 206 `AMBIGUOUS_NARROW` points (xterm 2, table 1) plus SOFT HYPHEN (xterm 0, table 1), so the blanket half of the ruling reproduces a shipping terminal exactly and the exception list is the only divergence. Cells consumed `{0:129, 1:6, 2:7189}`: the 129 zeros are the 128 sampled Mn of U+0300..U+037F and U+00AD, i.e. combining marks lose their columns *under* the wide-ambiguous rule, which is this table's step-3-before-step-5 ordering reached independently. **default** (glibc's answer): 353 agree, and all 6,971 differences are table 2 against xterm 1 — the ruling again, same shape as the glibc row above. **`-mk_width`** (xterm's own tables): 344 agree, cells `{0:129, 1:7191, 2:4}` — xterm's built-in table keeps every ambiguous point at one column, which is also what proves the default run really went through glibc. Astral, on the separate 669-point run and both configurations identically: 6 agree, 663 differ, cells `{0:3, 1:664, 2:2}` — `cjkWidth` does not reach past the BMP (the 3 zeros are the Mn variation selectors; the 2 twos are the W controls), so the astral half of the ruling rests on conhost, where a surrogate pair consumes two cells |
 | Against xterm, whole strings | `cache/ambiguous/xterm/{xstring.c,runstr.sh}` over `slines.txt`, costed by the shipped DLL with `sstr.lua`: write a line at a known column, read the cursor back, and the answer is the column count a model has to predict | the exception list, priced in columns. `-cjk_width` doubles what this table keeps narrow — a box top (`┌` + 10 `─` + `┐`) is **24 cells there and 12 here**, 40 `─` is **80 and 40**, `éüÖ` is **5 and 3**, `│░░░░░░░░░│` is **13 and 11** — while on the half of the ruling that was kept the two agree exactly: `10°C → 20°C` 14/14, `a—b` 4/4, `→ ← ↑ ↓` 11/11, `中文中文字` 10/10. Plain `-default` xterm is 12/40/3/11 on those four, i.e. it matches this table on the shapes and loses on `° → —`. Two points the per-code-point sample missed came out of this run: U+2590 and U+2591 stay one column even under `-cjk_width`, so xterm's own blanket rule is not quite blanket either |
+| `utf8.width` unified with this table (2026-09-27) | `luW_width` takes the `ansi_cp_width()` route when neither `ambiwidth` nor `default_width` is passed; `width-census.lua` per build (**one process per build** — `luaL_register(L,"utf8",…)` on LuaJIT 5.1 writes into one shared global table, so two builds loaded in one state alias each other; that trap made a first A/B harness report "0 changed" when 142,687 had), `utf8-dump.lua` over a 157-string corpus x 33 entry points | disagreements `width(cp)` vs this table: **142,687 -> 1** on x64/x86/linux and **4,523 -> 1** on linux-arm (its pre-change artifact was a 09-07 build). The remaining 1 is U+0009, the cursor/per-code-point boundary, not a disagreement. Every other export (`ansi_width`, `ansi_cut`, `trim_*`, all 24 string functions) is bit-identical to the pre-change artifact on both architectures, the explicit-override routes are unchanged, and the linux and windows dumps agree row for row |
 
 
 > `namecheck.lua` first tried to `dofile("lib/misc.lua")` with stubs for `java` and `env`, and failed

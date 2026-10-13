@@ -33,6 +33,7 @@
     --[[
         @ver12 : 12.1={} default={--}
         @con   : 12.1={,con_id} default={}
+        @ver23 : 23={1} default={0}
     --]]
 ]]*/
 {
@@ -42,6 +43,7 @@
                    sum(cr_requests)            "CR|REQS",
                    sum(current_requests)       "CU|REQS",
                    '|' "|",
+                   null                        "LMS|TOTAL",
                    sum(data_requests)          "LMS|DATA",
                    sum(undo_requests)          "LMS|UNDO",
                    sum(tx_requests)            "LMS|HEADER",
@@ -74,11 +76,13 @@
                      +200*(
                       sum(CASE WHEN a.name IN('gc status messages sent', 'ka messages sent', 'gc status messages received', 'ka grants received') THEN a.value ELSE 0 END)
                       +nvl(sum(c.sent+c.recv), 0)) "GC|Traffic",
-                   sum(decode(a.name, 'gc blocks lost', a.value)) "Blks|Lost",
-                   sum(b.total_waits) "CR|Failure",
+                   sum(decode(a.name, 'gc blocks lost', a.value)) "Blk|Lost",
+                   sum(b.total_waits) "CR|Fail",
                    '|' "|",
                    sum(decode(a.name, 'gc cr blocks served', a.value)) "CR|Sent",
                    sum(decode(a.name, 'gc cr blocks received', a.value)) "CR|Recv",
+                   sum(decode(a.name, 'gc local grants', a.value)) "Grants|Local",
+                   sum(decode(a.name, 'gc remote grants', a.value)) "Grants|Remote",
                    sum(decode(a.name, 'gc cr blocks built', a.value)) "CR|Built",
                    sum(decode(a.name, 'gc cr block receive time', a.value*10000)) "CR|Time",
                    sum(decode(a.name, 'gc cr block flush time', a.value*10000)) "CR|Flush",
@@ -88,6 +92,8 @@
                    '|' "|",
                    sum(decode(a.name, 'gc current blocks served', a.value)) "CU|Sent",
                    sum(decode(a.name, 'gc current blocks received', a.value)) "CU|Recv",
+                   sum(decode(a.name, 'gcs affinity lock grants', a.value)) "Grants|Affinity",
+                   sum(decode(a.name, 'gcs read-mostly lock grants', a.value)) "Grants|ReadMost",
                    sum(decode(a.name, 'gc current blocks pinned', a.value)) "CU|Pins",
                    sum(decode(a.name, 'gc current block receive time', a.value*10000)) "CU|Time",
                    sum(decode(a.name, 'gc current block flush time', a.value*10000)) "CU|Flush",
@@ -119,13 +125,19 @@
             GROUP  BY a.inst_id
             ORDER  BY 1
         ]],'-',[[/*grid={topic='Global Message Stats'}*/
-            SELECT inst_id "INST|ID",
+            SELECT /*+outline_leaf use_hash(a b)*/
+                   a.inst_id  "INST|ID",
+                   max(b.lms) "Num|LMS",
+                   max(b.v)   "LMS|Time",
+                   null       "LMS|Busy",
+                   '|' "|",
                    sum(decode(name, 'msgs sent queued', value)) "Sent|Queued",
                    sum(decode(name, 'msgs sent queue time (ms)', value*1000)) "Sent|Time",
+                   NULL   "LMS|Avg",
                    sum(decode(name, 'msgs sent queued on ksxp', value)) "ksxp|Queued",
                    sum(decode(name, 'msgs sent queue time on ksxp (ms)', value*1000)) "ksxp|Time",
-                   NULL   "Sent|Avg",
-                   NULL   "ksxp|Avg",
+                   max(c.v)   "IPC|CPU",
+                   NULL   "IPC|Avg",
                    '|' "|",
                    sum(decode(name, 'msgs received queued', value)) "Recv|Queued",
                    sum(decode(name, 'msgs received queue time (ms)', value*1000)) "Recv|Time",
@@ -140,84 +152,164 @@
                    sum(decode(name, 'messages sent directly', value)) "Msgs|Direct",
                    sum(decode(name, 'messages sent indirectly', value)) "Msgs|Indirect",
                    sum(decode(name, 'messages flow controlled', value)) "Msgs|FlowCtrl"
-            FROM   gv$dlm_misc
-            WHERE  value>0
-            GROUP  BY inst_id
-            ORDER  BY inst_id
+            FROM   gv$dlm_misc a
+            LEFT   JOIN (
+                SELECT inst_id, COUNT(DISTINCT sid) LMS, SUM(VALUE) v
+                FROM   gv$sess_time_model
+                JOIN   gv$session
+                USING  (inst_id, sid)
+                WHERE  program LIKE  '%(LMS%)%'
+                AND    stat_name in('DB CPU','background cpu time')
+                AND    VALUE > 0
+                GROUP  BY inst_id) b
+            ON     a.name='messages sent directly'
+            AND    a.inst_id=b.inst_id
+            LEFT   JOIN (
+                SELECT inst_id, SUM(VALUE)*1e4 v
+                FROM   gv$sysstat
+                WHERE  name='IPC CPU used by this session'
+                GROUP  BY inst_id) C
+            ON     a.name='messages sent directly'
+            AND    a.inst_id=b.inst_id
+            GROUP  BY a.inst_id
+            ORDER  BY a.inst_id
         ]],'-',[[/*grid={topic='Global Cache Instance Transfer Stats'}*/
-            SELECT inst_id || ' -> ' || instance "Instance|Transfer",
+            SELECT nvl(''||instance,'*')|| ' -> ' || nvl(''||inst_id,'*') "Instance|Transfer",
                    a.class "File|Type",
                    sum(lost) "File|Lost",
                    sum(lost_time) "Lost|Time",
                    '|' "|",
-                   sum(cr_block) "CR|Blks",
-                   NULL   "Avg|CR",
-                   sum(cr_block - current_busy - current_congested) "CR|Immedia",
+                   $IF &ver23=1 $THEN
+                       sum(cr_block+cr_busy+cr_congested+cr_rdma) "CR|Blks",
+                       NULL   "Avg|CR",
+                       sum(cr_rdma) "CR|RDMA",
+                   $ELSE
+                       sum(cr_block+cr_busy+cr_congested) "CR|Blks",
+                       NULL   "Avg|CR",
+                   $END
+                   sum(cr_block) "CR|Immedia",
                    '|' "|",
-                   sum(cr_block_time) "CR|Time",
+                   $IF &ver23=1 $THEN
+                       sum(cr_block_time+cr_busy_time+cr_congested_time+cr_rdma_time) "CR|Time",
+                       sum(cr_block_time+cr_rdma_time) "CR|Fast",
+                   $ELSE
+                       sum(cr_block_time+cr_busy_time+cr_congested_time) "CR|Time",
+                   $END
+
                    sum(cr_busy_time) "CR|Busy",
                    sum(cr_congested_time) "CR|Cogst",
                    sum(cr_2hop_time) "CR|2-Hop",
                    sum(cr_3hop_time) "CR|3-Hop",
                    '||' "||",
-                   sum(current_block) "CU|Blks",
-                   NULL   "Avg|CU",
-                   sum(current_block - current_busy - current_congested) "CU|Immedia",
+                   $IF &ver23=1 $THEN
+                       sum(current_block+current_busy+current_congested+current_rdma) "CU|Blks",
+                       NULL   "Avg|CU",
+                       sum(current_rdma) "CU|RDMA",
+                   $ELSE
+                       sum(current_block+current_busy+current_congested) "CU|Blks",
+                       NULL   "Avg|CU",
+                   $END
+                   sum(current_block) "CU|Immedia",
                    '|' "|",
-                   sum(current_block_time) "CU|Time",
+                   $IF &ver23=1 $THEN
+                       sum(current_block_time+current_busy_time+current_congested_time+current_rdma_time) "CU|Time",
+                       sum(current_block_time+current_rdma_time) "CU|Fast",
+                   $ELSE
+                       sum(current_block_time+current_busy_time+current_congested_time) "CU|Time",
+                   $END
                    sum(current_busy_time) "CU|Busy",
                    sum(current_congested_time) "CU|Cogst",
                    sum(current_2hop_time) "CU|2-Hop",
                    sum(current_3hop_time) "CU|3-Hop"
             FROM   gv$instance_cache_transfer a
-            GROUP  BY inst_id, instance, class
-            ORDER  BY a.class, 1
+            WHERE  inst_id!=instance
+            GROUP  BY grouping sets((inst_id),(instance), (class),())
+            ORDER  BY a.class nulls first, a.inst_id
+        ]],'-',{[[/*grid={topic='Cluster Wait Events',order_by='-TOTAL|TIME',autohide='col',max_rows=50}*/
+            SELECT event "Event|Name",
+                   SUM(total_waits) "TOTAL|WAITS",
+                   SUM(time_waited_micro) "TOTAL|TIME",
+                   null "Avg|Time",
+                   '|' "|",
+                   SUM(decode(inst_id,1,total_waits)) "Inst#1|WAITS",
+                   SUM(decode(inst_id,1,time_waited_micro)) "Inst#1|TIME",
+                   null "Inst#1|Avg",
+                   '|' "|",
+                   SUM(decode(inst_id,2,total_waits)) "Inst#2|WAITS",
+                   SUM(decode(inst_id,2,time_waited_micro)) "Inst#2|TIME",
+                   null "Inst#2|Avg",
+                   '|' "|",
+                   SUM(decode(inst_id,3,total_waits)) "Inst#3|WAITS",
+                   SUM(decode(inst_id,3,time_waited_micro)) "Inst#3|TIME",
+                   null "Inst#3|Avg",
+                   '|' "|",
+                   SUM(decode(inst_id,4,total_waits)) "Inst#4|WAITS",
+                   SUM(decode(inst_id,4,time_waited_micro)) "Inst#4|TIME",
+                   null "Inst#4|Avg"
+            FROM   gv$system_event
+            WHERE  (wait_class='Cluster' or  ' '||event like '% gc%' and wait_class!='Idle')
+            AND    total_waits>0
+            GROUP  BY event
         ]]
+        }
     },
     delta_by=[[CR|REQS,CU|REQS,LMS|DATA,LMS|UNDO,LMS|HEADER,LMS|OTHER,
-               CURR|RESULTS,PRIV|RESULTS,ZERO|RESULTS,DISK|RESULTS,FAIL|RESULTS,STALE|RESULTS,Blks|Lost,CR|Failure,
+               CURR|RESULTS,PRIV|RESULTS,ZERO|RESULTS,DISK|RESULTS,FAIL|RESULTS,STALE|RESULTS,Blk|Lost,CR|Fail,
                FAIRNESS|CONVERTS,FAIRNESS|CLEARS,GC_FREE|ELEMENT,FLUSH|COUNT,FLUSH|QUEUE,FLUSH|FULL,LIGHT|WORKS,NUM|ERRS,
                CR|Recv,CR|Time,CU|Recv,CR|Sent,CU|Sent,CU|Time,Build|Time,Pin|Time,CR|Built,CU|Pins,CR|Flush,CU|Flush,
                Sent|Queued,Sent|Time,ksxp|Queued,ksxp|Time,Recv|Queued,Recv|Time,Kernel|Time,
                Msgs|Direct,Msgs|Indirect,Msgs|FlowCtrl,GCS/GES|Msg Sent,GCS/GES|Msg Recv,GCS/GES|Avg,Recv|Time,Recv|Avg,GC|Traffic,
-               S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,
+               S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,LMS|Time,IPC|CPU,File|Lost,Lost|Time,
                CR|Blks,CR|Immedia,CR|Busy,CR|Cogst,CR|2-Hop,CR|3-Hop,CU|Blks,CU|Immedia,CU|Busy,CU|Cogst,CU|2-Hop,CU|3-Hop,
+               TOTAL|WAITS,TOTAL|TIME,Inst#1|WAITS,Inst#1|TIME,Inst#2|WAITS,Inst#2|TIME,Inst#3|WAITS,Inst#3|TIME,Inst#4|WAITS,Inst#4|TIME,
+               CR|RDMA,CU|RDMA,CR|Fast,CU|Fast,Grants|Local,Grants|Remote,Grants|Affinity,Grants|ReadMost,
         ]],
-    group_by="inst|id,Instance|Transfer,File|Type,",
+    group_by="inst|id,Instance|Transfer,File|Type,Event|Name",
     calc_rules={
+        ['LMS|TOTAL']='[LMS|DATA]+[LMS|UNDO]+[LMS|HEADER]+[LMS|OTHER]',
         ['CR|Avg']='[CR|Time]/[CR|Recv]',
         ['Build|Avg']='[Build|Time]/[CR|Built]',
         ['CU|Avg']='[CU|Time]/[CU|Recv]',
         ['Pin|Avg']='[Pin|Time]/[CU|Pins]',
-        ['Sent|Avg']='[Sent|Time]/[Sent|Queued]',
-        ['ksxp|Avg']='[ksxp|Time]/[ksxp|Queued]',
+        ['LMS|Avg']='[Sent|Time]/[Sent|Queued]',
+        ['IPC|Avg']='[ksxp|Time]/[ksxp|Queued]',
         ['Recv|Avg']='[Recv|Time]/[Recv|Queued]',
         ['Kernel|Avg']='[Kernel|Time]/[Recv|Queued]',
         ['GCS/GES|Avg']='[Recv|Time]/[GCS/GES|Avg]',
+        ['CR|RDMA']='[CR|RDMA]/[CR|Blks]',
         ['CR|Immedia']='[CR|Immedia]/[CR|Blks]',
+        ['CR|Fast']='[CR|Fast]/[CR|Time]',
         ['CR|Busy']='[CR|Busy]/[CR|Time]',
         ['CR|Cogst']='[CR|Cogst]/[CR|Time]',
         ['CR|2-Hop']='[CR|2-Hop]/[CR|Time]',
         ['CR|3-Hop']='[CR|3-Hop]/[CR|Time]',
+        ['CU|RDMA']='[CU|RDMA]/[CU|Blks]',
         ['CU|Immedia']='[CU|Immedia]/[CU|Blks]',
+        ['CU|Fast']='[CU|Fast]/[CU|Time]',
         ['CU|Busy']='[CU|Busy]/[CU|Time]',
         ['CU|Cogst']='[CU|Cogst]/[CU|Time]',
         ['CU|2-Hop']='[CU|2-Hop]/[CU|Time]',
         ['CU|3-Hop']='[CU|3-Hop]/[CU|Time]',
         ['Avg|CR']='[CR|Time]/[CR|Blks]',
         ['Avg|CU']='[CU|Time]/[CU|Blks]',
+        ['LMS|Busy']='[LMS|Time]/1e6/[Num|LMS]',
+        ['AVG|Time']='[TOTAL|TIME]/[TOTAL|WAITS]',
+        ['Inst#1|Avg']='[Inst#1|TIME]/[Inst#1|WAITS]',
+        ['Inst#2|Avg']='[Inst#2|TIME]/[Inst#2|WAITS]',
+        ['Inst#3|Avg']='[Inst#3|TIME]/[Inst#3|WAITS]',
+        ['Inst#4|Avg']='[Inst#4|TIME]/[Inst#4|WAITS]'
     },
+    zero2null=true,
     column_formatter={
-        pct2="CR|Immedia,CR|Busy,CR|Cogst,CR|2-Hop,CR|3-Hop,CU|Immedia,CU|Busy,CU|Cogst,CU|2-Hop,CU|3-Hop",
+        pct2="CR|Immedia,CR|RDMA,CR|Busy,CR|Cogst,CR|2-Hop,CR|3-Hop,CU|Immedia,CU|RDMA,CU|Busy,CU|Cogst,CU|2-Hop,CU|3-Hop,LMS|Busy",
         kmg2="GC|Traffic",
         usmhd2=[[CR|Time,Build|Time,CU|Time,Pin|Time,CR|Avg,CU|Avg,Build|Avg,Pin|Avg,Sent|Time,ksxp|Time,
-                 Sent|Avg,ksxp|Avg,Recv|Avg,Kernel|Avg,Recv|Time,Kernel|Time,CR|Flush,CU|Flush,
-                 GCS/GES|Avg,Avg|CR,Avg|CU,
-                                ]],
+                 Sent|Avg,ksxp|Avg,Recv|Avg,Kernel|Avg,Recv|Time,Kernel|Time,CR|Flush,CU|Flush,Lost|Time,
+                 GCS/GES|Avg,Avg|CR,Avg|CU,LMS|Time,AVG|Time,TOTAL|TIME,IPC|CPU,CR|FAST,CU|FAST,LMS|Avg,IPC|Avg,
+                 Inst#1|Avg,Inst#1|TIME,Inst#2|Avg,Inst#2|TIME,Inst#3|Avg,Inst#3|TIME,Inst#4|Avg,Inst#4|TIME,]],
         tmb2=[[Sent|Queued,ksxp|Queued,Recv|Queued,GCS/GES|Msg Sent,GCS/GES|Msg Recv,Msgs|Direct,Msgs|Indirect,Msgs|FlowCtrl,
-              S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,
+              S-optim|Broadcast,S-optim|S-lock,S-optim|Anti-Lock,Grants|Local,Grants|Remote,Grants|Affinity,Grants|ReadMost,
               Blks|Lost,CR|Sent,CR|Recv,CR|Built,CU|Sent,CU|Recv,CU|Pins,
-              File|Lost,CR|Blks,CU|Blks,
-                        ]]
+              File|Lost,CR|Blks,CU|Blks,LMS|TOTAL,LMS|DATA,LMS|UNDO,LMS|HEADER,LMS|OTHER,]]
     }
 }

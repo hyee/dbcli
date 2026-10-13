@@ -123,6 +123,7 @@ DECLARE
     key         VARCHAR2(128) := trim('%' FROM upper(:filter));
     pct         NUMBER := nvl(0+regexp_substr(:v3,'^[\.0-9]+$'),0);
     dop         INT := regexp_substr(:v2,'^\d+$');
+    bad_pct     BOOLEAN := :v3 IS NOT NULL AND regexp_instr(:v3,'^[\.0-9]+$')=0;
     opt         VARCHAR2(300) := trim(:v4);
     fmt         VARCHAR2(300) := q'[dbms_stats.gather_%s_stats('%s','%s','%s',%s%s%s,degree=>%s&invalid.&force.%s);]';
     pub         VARCHAR2(300) := q'[dbms_stats.publish_pending_stats('%s','%s'&invalid.);]';
@@ -455,10 +456,10 @@ BEGIN
         RETURN;
     END IF;
 
-    IF (pct=0 AND :v3 IS NULL OR dop IS NULL) AND &pending!=2 THEN
+    IF (bad_pct OR dop IS NULL) AND &pending!=2 THEN
         raise_application_error(-20001,'PARAMETERS: {{[<owner>.]<name>[.<partition>]} | <SQL Id>} <degree> [<percent>] [-async]');
     ELSIF key IS NOT NULL THEN
-        raise_application_error(-20001,'Option -f"<filter>" is only used to list database/schema stale stats');
+        raise_application_error(-20001,'Option -k"<filter>" is only used to list database/schema stale stats');
     END IF;
 
     IF tnam IS NOT NULL THEN

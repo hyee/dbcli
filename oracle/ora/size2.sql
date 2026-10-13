@@ -1,24 +1,45 @@
 /*[[
-    Show object space usage and relative Exadata FlashCache size. Usage: @@NAME [owner.]object_name[.PARTITION_NAME] [-d]
-    If EXA$CACHED_OBJECTS does not exist(refer to script oracle/shell/create_exa_external_tables.sh) then the relative FlashCache info will not be shown
-    
+    Show object space usage and relative Exadata FlashCache size. Usage: @@NAME [owner.]object_name[.PARTITION_NAME] [-d] [-flash]
+    The --TOTAL-- row sums up the object itself and all of its dependent segments, including its indexes, LOB segments and LOB indexes.
+    A LOB segment and its index segment are prefixed with the column name and are listed under the object that owns them.
+    If the given subobject is a partition of a composite-partitioned object, its subpartition segments are merged
+    into that partition, one row for each object, unless -d is given.
+    A clustered table has no segment of its own, so its own row shows no bytes and the cluster segment is not counted.
+
     Option:
-    ======
+    =======
         -d    : used to detail in segment level, otherwise in object name level
-        -flash: also check flashcache usage when view EXA$CACHED_OBJECTS is available
+        -flash: also check flashcache usage, which needs the external table EXA$CACHED_OBJECTS
+                (refer to script oracle/shell/create_exadata_external_tables.sh). The FC_* columns are not shown
+                without this option, and the query fails with ORA-00942 if the table does not exist
 
     Sample Output:
     ==============
-      OBJECT_NAME      OBJECT_TYPE TABLESPACE SEGS EXTENTS  BLOCKS   BYTES    INI_EXT NEXT_EXT|FC_CELLS FC_SEGS FC_REQS FC_HIT% FC_CACHED  FC_CC% FC_WRITE FC_KEEP FC_CCKEEP
-    ------------------ ----------- ---------- ---- ------- -------- -------- -------- --------+-------- ------- ------- ------- --------- ------- -------- ------- ---------
-    TOTAL                          TS_SSB        7  1.01 K   8.25 M 62.94 GB 64.00 MB 64.00 MB|       6       6 51.95 K 100.00%  11.10 GB 100.00%     0  B    0  B      0  B
-    SSB.LINEORDER      TABLE       TS_SSB        1   476     3.90 M 29.75 GB 64.00 MB 64.00 MB|       6       6 51.95 K 100.00%  11.10 GB 100.00%     0  B    0  B      0  B
-      SSB.LINEORDER_N1 INDEX       TS_SSB        1    98   802.82 K  6.12 GB 64.00 MB 64.00 MB|
-      SSB.LINEORDER_N2 INDEX       TS_SSB        1    82   671.74 K  5.12 GB 64.00 MB 64.00 MB|
-      SSB.LINEORDER_N3 INDEX       TS_SSB        1    84   688.13 K  5.25 GB 64.00 MB 64.00 MB|
-      SSB.LINEORDER_N4 INDEX       TS_SSB        1    82   671.74 K  5.12 GB 64.00 MB 64.00 MB|
-      SSB.LINEORDER_N5 INDEX       TS_SSB        1    84   688.13 K  5.25 GB 64.00 MB 64.00 MB|
-      SSB.LINEORDER_N6 INDEX       TS_SSB        1   101   827.39 K  6.31 GB 64.00 MB 64.00 MB|
+    -- ora size2 dbcli_s2_c2.p1 , the three subpartitions of P1 are merged, one row for each object
+    OBJECT_NAME                  OBJECT_TYPE     TABLESPACE TBSTYPE SEGS EXTENTS  BLOCKS   BYTES    INI_EXT NEXT_EXT
+    --------------------------------------- ------------------ ---------- ------- ---- ------- ------- --------- -------- --------
+    --TOTAL--                                                  SYSTEM     MSSM      12 12.00   96.00   768.00 KB 64.00 KB  1.00 MB
+    SYS.DBCLI_S2_C2.P1                      TABLE SUBPARTITION SYSTEM     MSSM       3  3.00   24.00   192.00 KB 64.00 KB  1.00 MB
+      SYS.DBCLI_S2_C2_IX.P1                 INDEX SUBPARTITION SYSTEM     MSSM       3  3.00   24.00   192.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_IL0000252124C00003$$.P1  INDEX SUBPARTITION SYSTEM     MSSM       3  3.00   24.00   192.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_LOB0000252124C00003$$.P1 LOB SUBPARTITION   SYSTEM     MSSM       3  3.00   24.00   192.00 KB 64.00 KB  1.00 MB
+
+    -- ora size2 dbcli_s2_c2.p1 -d , one row for each segment
+    OBJECT_NAME                                    OBJECT_TYPE     TABLESPACE TBSTYPE SEGS EXTENTS  BLOCKS   BYTES    INI_EXT NEXT_EXT
+    -------------------------------------------- ------------------ ---------- ------- ---- ------- ------- --------- -------- --------
+    --TOTAL--                                                       SYSTEM     MSSM      12 12.00   96.00   768.00 KB 64.00 KB  1.00 MB
+    SYS.DBCLI_S2_C2.P1_SB                        TABLE SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+    SYS.DBCLI_S2_C2.P1_SA                        TABLE SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+    SYS.DBCLI_S2_C2.P1_SMAX                      TABLE SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      SYS.DBCLI_S2_C2_IX.P1_SA                   INDEX SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      SYS.DBCLI_S2_C2_IX.P1_SB                   INDEX SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      SYS.DBCLI_S2_C2_IX.P1_SMAX                 INDEX SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_IL0000252124C00003$$.P1_SMAX  INDEX SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_IL0000252124C00003$$.P1_SB    INDEX SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_IL0000252124C00003$$.P1_SA    INDEX SUBPARTITION SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_LOB0000252124C00003$$.P1_SB   LOB SUBPARTITION   SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_LOB0000252124C00003$$.P1_SMAX LOB SUBPARTITION   SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
+      [LB] SYS.SYS_LOB0000252124C00003$$.P1_SA   LOB SUBPARTITION   SYSTEM     MSSM       1  1.00    8.00    64.00 KB 64.00 KB  1.00 MB
 
     --[[
         @ARGS: 1
@@ -63,14 +84,15 @@
 ]]*/
 
 findobj "&V1" "" 1
-COL BYTES,INI_EXT,NEXT_EXT,FC_CACHED,FC_CCCACHED,FC_WRITE,FC_KEEP,FC_CCKEEP FOR KMG
+COL BYTES,INI_EXT,NEXT_EXT,FC_CACHED,FC_WRITE,FC_KEEP,FC_CCKEEP FOR KMG
 COL BLOCKS,EXTENTS,fc_reqs FOR TMB
-COL "fc_hit%,fc_cc%" for pct
+COL "fc_hit%,fc_cc%" FOR pct
 WITH objs AS(
     SELECT /*+outline_leaf use_hash(objs lobs parts subs subt) opt_param('optimizer_dynamic_sampling' 11)*/
             objs.segment_owner,
             coalesce(subs.lob_name,parts.lob_name,lobs.segment_name,objs.segment_name) segment_name,
             coalesce(subs.lob_subpartition_name,parts.lob_partition_name,objs.partition_name) partition_name,
+            objs.partition_name obj_partition_name, --the object's own partition/subpartition name
             objs.segment_type segment_type,
             coalesce(lobs.tablespace_name,objs.tablespace_name) tablespace_name,
             objs.lob_column_name,
@@ -80,21 +102,18 @@ WITH objs AS(
                 '&object_owner', --objowner
                 '&object_name', --objname
                 NULL, --partname
-                CASE regexp_substr('&object_type', '[^ ]+')
-                    WHEN 'TABLE' THEN 1
-                    WHEN 'TABLE PARTITION' THEN 7
-                    WHEN 'TABLE SUBPARTITION' THEN 9
-                    WHEN 'INDEX' THEN 3
-                    WHEN 'INDEX PARTITION' THEN 8
-                    WHEN 'INDEX SUBPARTITION' THEN 10
-                    WHEN 'CLUSTER' THEN 4
-                    WHEN 'NESTED_TABLE' THEN 2
+                CASE '&object_type' --only the whole-object codes are accepted by the function:
+                    --passing a partition code with a NULL partname raises ORA-06502,
+                    --so the requested partition/subpartition is filtered out in the WHERE clause below
+                    WHEN 'TABLE' THEN 1 --TABLE / TABLE PARTITION / TABLE SUBPARTITION
+                    WHEN 'TABLE PARTITION' THEN 1
+                    WHEN 'TABLE SUBPARTITION' THEN 1
+                    WHEN 'INDEX' THEN 3 --INDEX / INDEX PARTITION / INDEX SUBPARTITION
+                    WHEN 'INDEX PARTITION' THEN 3
+                    WHEN 'INDEX SUBPARTITION' THEN 3
                     WHEN 'MATERIALIZED VIEW' THEN 13
                     WHEN 'MATERIALIZED VIEW LOG' THEN 14
-                    WHEN 'MATERIALIZED ZONEMAP' THEN 1
-                    WHEN 'LOB' THEN 21
-                    WHEN 'LOB PARTITION' THEN 40
-                    WHEN 'LOB SUBPARTITION' THEN 41
+                --other object types(LOB segment, cluster, zonemap...) are rejected by the function
                 END)) objs,
            &check_access_dba.lobs lobs,
            &check_access_dba.lob_partitions parts,
@@ -124,12 +143,14 @@ WITH objs AS(
     AND    objs.partition_name=subt.subpartition_name(+)
     AND    objs.lob_column_name = subs.column_name(+)
     AND    objs.partition_name=subs.subpartition_name(+)
-    AND    (nvl(objs.partition_name, ' ') LIKE '&object_subname%' or subt.subpartition_name IS NOT NULL))
+    AND    ('&object_subname' IS NULL --match the subobject name exactly, a prefix would also pull in P10/P100 for P1
+            OR nvl(objs.partition_name, ' ') = '&object_subname'
+            OR subt.subpartition_name IS NOT NULL)) --subpartitions of the requested partition
 SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name||nvl2(partition_name,'.'||partition_name,''),'--TOTAL--') object_name,
        object_type,
        max(TABLESPACE) keep(dense_rank last order by bytes) TABLESPACE,
        MAX(segment_subtype) keep(dense_rank last order by bytes) tbstype,
-       COUNT(1) segs,
+       COUNT(bytes) segs, --not COUNT(1): a cluster member or a deferred-creation table has no segment row to count
        SUM(extents) extents,
        SUM(blocks) blocks,
        SUM(BYTES) BYTES,
@@ -137,11 +158,13 @@ SELECT nvl(decode(lv, null,'', 1, '', '  ') || object_name||nvl2(partition_name,
        MAX(NEXT_EXT) NEXT_EXT
        &check_access_exa2 max(cells) fc_cells,sum(pieces) fc_segs,sum(hits+misses) fc_reqs,sum(hits)/nullif(sum(hits+misses),0) "FC_HIT%",sum(cachedsize) fc_cached,sum(columnarcache)/nullif(sum(cachedsize),0) "FC_CC%",sum(cachedwrite) fc_write,sum(cachedkeep) FC_KEEP,sum(columnarkeep) FC_CCKEEP
 FROM   (SELECT /*+ordered use_hash(segs objs) use_hash(exa) no_merge(objs) NO_EXPAND_GSET_TO_UNION*/
-        DISTINCT decode('&object_name'||:OPT2, objs.segment_name, 1, 2) lv,
+        DISTINCT decode('&object_name', objs.segment_name, 1, 2) lv,
                  NVL2(objs.lob_column_name,'['||objs.lob_column_name||'] ','')||objs.segment_owner || '.' || objs.segment_name object_name,
                  trim('%' from decode(:object_subname||:OPT2, '', regexp_substr(nvl(segs.segment_type,objs.segment_type), '^\S+'), nvl(segs.segment_type,objs.segment_type))) object_type,
                  nvl(segs.TABLESPACE_NAME,objs.TABLESPACE_NAME) TABLESPACE,
-                 coalesce('&object_subname',segs.partition_name,objs.partition_name) partition_name,
+                 decode('&OPT2', '1', objs.obj_partition_name
+                                , coalesce('&object_subname',segs.partition_name,objs.partition_name)) partition_name,
+                 coalesce(segs.partition_name,objs.partition_name) obj_seg_part,
                  segs.segment_subtype,
                  BLOCKS,
                  BYTES,
@@ -157,9 +180,9 @@ FROM   (SELECT /*+ordered use_hash(segs objs) use_hash(exa) no_merge(objs) NO_EX
                  exa.columnarcache,
                  exa.cachedkeep,
                  exa.columnarkeep
-        FROM   (SELECT segment_owner,segment_name,lob_column_name,segment_type,partition_name,tablespace_name from objs
+        FROM   (SELECT segment_owner,segment_name,lob_column_name,segment_type,partition_name,obj_partition_name,tablespace_name from objs
                 UNION  ALL
-                SELECT segment_owner,index_name,lob_column_name,'INDEX',INDEX_PART,tablespace_name from objs where index_name is not null) objs,
+                SELECT segment_owner,index_name,lob_column_name,'INDEX',INDEX_PART,obj_partition_name,tablespace_name from objs where index_name is not null) objs,
                &check_access_segs segs,
                &check_access_exa1 exa
         WHERE  objs.segment_owner = segs.owner(+)

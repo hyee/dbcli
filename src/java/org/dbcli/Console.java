@@ -116,19 +116,7 @@ public final class Console {
                 && !mode.equals("render")) {
             mode = "default";
         }
-        /* `conemu` left this list on 2026-10-07, by the owner's ruling that the value ceases to exist: it was
-           the last place that still turned ANSICON_DEF=conemu into a different terminal, because it fed
-           `ansiPassThrough` below and so decided, from the application, which branch WinSysTerminal would
-           take. The dialect name survives where it means something -- a real ConEmu window is recognised by
-           OSUtils.IS_CONEMU inside WinSysTerminal's own branch order, and no variable the user did not set
-           picks the ANSI path any more. An inherited ANSICON_DEF=conemu now normalizes to "default", which
-           is what the retired claim should have done from the start. */
-        // `OSUtils.IS_CONEMU` used to be in the skip list below, and that is why a real ConEmu window never
-        // reached render.dll: with ConEmuPID set, this skipped dbcli's own createTerminal and the generic
-        // builder handed the session jline's built-in ConEmu writer instead of org.dbcli.ConEmuWriter -- a
-        // second, different ANSI path, chosen by a variable the user never set. `mode` already says what the
-        // user asked for, so the flag is dropped and the choice is made once, in WinSysTerminal's branch
-        // order. Cygwin/MSYS stay out: there is no console to adopt there.
+
         if (OSUtils.IS_WINDOWS
                 && !(OSUtils.IS_CYGWIN || OSUtils.IS_MSYSTEM)
                 && !"jna".equals(mode)
@@ -141,12 +129,7 @@ public final class Console {
                         Terminal.SignalHandler.SIG_IGN,
                         false);
             } catch (IOException e) {
-                //No console attached (redirected stdio / harness / background): fall through to the generic
-                //builder, which yields a dumb terminal instead of aborting before anything can be printed.
-                //Saying so is not optional: this builder does not install ConEmuWriter, so a session that
-                //falls here never touches render.dll, and every "the renderer makes no difference" reading
-                //of such a session is a measurement of something else. Same once-per-process discipline as
-                //ConEmuWriter.report.
+
                 System.err.println("dbcli: no Windows console for this process (" + e.getMessage()
                         + "); using the generic terminal -- the native renderer is NOT in this session's write path.");
                 this.terminal = null;
@@ -324,6 +307,11 @@ public final class Console {
 
     // The rows a dashboard holds back for the bar even while the bar is down. Set once, when the dashboard
     // takes the screen; see barRows() for why the bar's own state is not enough to answer that.
+    // The bar's shape, stated once: a border row plus the single line setStatus builds (the timer's time
+    // string and the title). setStatus uses it as the prospective height on the first draw, when
+    // Status.size() can only answer 0 because the bar holds no lines yet -- see the lift there.
+    private static final int BAR_ROWS = 2;
+
     private volatile int dashboardBarRows = 0;
 
     // One-time complaints. Both paths below are reachable from the timer tick as well as from a command, so
@@ -517,29 +505,42 @@ public final class Console {
 
 
     /**
-     * The ConEmu console (no ENABLE_VIRTUAL_TERMINAL_PROCESSING) with a renderer that can take the whole
-     * screen as one chunk. A real ConEmu window counts as well: there dbcli gets JLine's native Windows
-     * terminal (Console.java:118 skips dbcli's own WinSysTerminal), whose type is still windows-conemu
-     * (NativeWinSysTerminal.java:74 picks it when TERM is unset and ConEmuPID is set). That is not
-     * incidental - the repaint the screen block replaces goes through Display.clear(), which makes
-     * Display.update emit clear_screen (\e[H\e[2J for windows-conemu) and wipes the screen.
+     * Who may take the whole screen as one sequential block <em>when redrawing the dashboard</em>.
      *
-     * <p>This asks the switch, not the live renderer, and that is deliberate: a session where render.dll
-     * refused to load still sends the screen as one sequential chunk instead of one cursor addressed write
-     * per row, which is the better half of the gain. Renamed from isBulkBlockEnabled on 2026-09-23, when
-     * the native renderer replaced the Java rectangle writer it used to ask.
+     * <p>Deliberately narrower than {@link #isPagerBlockEnabled}, because the two callers want opposite
+     * things from the same bytes. A block starts at the top of the viewport and writes over what is
+     * there; the line-by-line path it replaces appends below the cursor, which pushes the previous output
+     * up into the scrollback. For a dashboard that difference is the entire user experience -- the owner's
+     * report of {@code top} clearing everything before it on a real ConEmu window is the block version of
+     * that: every frame landing on top of what the user was reading instead of making room for it. The
+     * renderer's own sessions are the ones carrying the takeover contract (#125: push the history up
+     * first, then paint), so they keep the block and everyone else stays on the line-by-line path.
      */
     static boolean isBlockPaintEnabled(Terminal terminal) {
-        /* Only a windows-render session: the block path asks render.dll to take the whole screen as one
-           chunk, so it belongs to the dialect whose entry says the renderer parses the stream. Since the
-           2026-10-07 fork of windows-render.caps every leg that paints through render.dll answers
-           TYPE_WINDOWS_RENDER, and `ANSICON_DEF=conemu` no longer claims the renderer at all -- so the
-           sibling this test used to admit is gone, not narrowed. Missing windows-render here is what stranded
-           the dashboard on the line-by-line Display path, whose first frame starts at the cursor row and
-           never sends the bare home the takeover contract waits for -- top's interleaved first refresh
-           (2026-10-07, trace: not one block chunk in the whole session). */
         return NativeRenderer.isEnabled()
-                &&  AbstractWindowsTerminal.TYPE_WINDOWS_RENDER.equals(terminal.getType());
+                && AbstractWindowsTerminal.TYPE_WINDOWS_RENDER.equals(terminal.getType());
+    }
+
+    /**
+     * Who may repaint the <em>pager</em> as one whole-screen block.
+     *
+     * <p>Wider than the dashboard's answer, and for the mirror-image reason: a pager is meant to own the
+     * screen, so writing over the viewport is its semantics rather than a violation of it -- while its
+     * alternative is {@code Display.update}'s fallback, which scrolls with {@code CSI <n>M} and therefore
+     * deletes <em>buffer</em> rows. Measured on a real ConEmu window: one page turn took 23 rows out of the
+     * scrollback and left {@code EDIT} followed by {@code RAC} in the grid, which is the scrambling
+     * {@code more} shows there.
+     *
+     * <p>What the block itself needs is an addressable window, not a painter: {@code CSI H} resolving to
+     * the viewport's top row rather than buffer row 0 (measured: it landed on 245), and a 56-row block
+     * that left the viewport where it was with every history row above it intact -- byte for byte the
+     * same with the console's VTP bit off and on. {@code ANSI_RENDER} stays the user's switch over both
+     * paths.
+     */
+    static boolean isPagerBlockEnabled(Terminal terminal) {
+        return NativeRenderer.isEnabled()
+                && (AbstractWindowsTerminal.TYPE_WINDOWS_RENDER.equals(terminal.getType())
+                        || AbstractWindowsTerminal.TYPE_WINDOWS_CONEMU.equals(terminal.getType()));
     }
 
     public void handleResize(Terminal.Signal signal) {
@@ -684,23 +685,12 @@ public final class Console {
     private volatile String prevColor = "";
 
     public boolean setStatus(String title, String color) {
+        if(OSUtils.IS_CONEMU||terminal.getType().equals("windows")) return false;
         try {
             final int width = getScreenWidth() - 1;
-            // How many rows the bar holds *before* this call. Anything that changes that number invalidates
-            // the geometry the line editor cached when readLine() started, and only a WINCH makes it re-derive
-            // it (LineReaderImpl installs the handler at :684 and resizes at :1274). Without this, turning the
-            // bar on or off -- or a pager that takes the rows back -- leaves the editor laying its prompt out
-            // against a screen that no longer exists, which is the "cursor moved up one row" symptom, and it is
-            // the same symptom whether the rows went away through `more`, through `set status off` or through
-            // `set status on`.
             this.status = terminal.getStatus(title != null && !title.equals("") && !title.equals("flush"));
             if (this.status == null || width <= 0)
                 return false;
-            /* The library's other failure mode is quieter still: Status gates every mutator on `supported`,
-               which is a conjunction of csr/sc/rc/cup plus a sane size -- so a terminal whose entry has no
-               scroll region accepts "set status on" and then draws nothing, forever, without saying why.
-               That is not "off"; it is a contract the entry cannot carry, and the user deserves to hear which
-               one it is. Once per session, because the timer calls this every second. */
             if (!this.status.isSupported() && !barUnsupportedReported) {
                 barUnsupportedReported = true;
                 System.err.println("status bar cannot draw: the terminal entry for type '"
@@ -733,7 +723,20 @@ public final class Console {
             // repainted every second, a lift would only eat its title rows -- so the lift is prompt-bound:
             // only when no dashboard holds the bottom rows.
             if (dashboardBarRows == 0) {
-                liftCursorAboveBar(this.status.size());
+                /* Ask what the bar is about to hold, not what it holds. Status.size() is
+                   size(lines) = lines.isEmpty() ? 0 : lines.size() + border, so before the very first draw of
+                   a session (and again after `set status off`, which drops the Status) it reports 0 -- and a
+                   lift of 0 rows returns at once, leaving the hardware cursor exactly where the previous
+                   program put it. resize() then takes the bottom rows and restores that saved cursor to a
+                   row *below* the region it just created; a DEC terminal confines RESTORE CURSOR to the
+                   scrolling region and so hides the mistake, conhost does not, and every line printed
+                   afterwards is pinned to the bar's own content row. That is the "start dbcli with the
+                   cursor on the last row and the prompt lands in the status area" report: measured
+                   2026-10-10 through Status's own trace -- cursor 41 before, homed to 12 by the DECSTBM,
+                   restored to 41 at grow-end, region 0..27.
+                   This bar is one border row plus the single line built below (time + title), so the
+                   prospective height is BAR_ROWS; everywhere size() already answers, it wins. */
+                liftCursorAboveBar(Math.max(this.status.size(), BAR_ROWS));
             }
             this.status.restore();
             String time = timer.getTime();
@@ -867,9 +870,6 @@ public final class Console {
 
     public void println(String msg) {
         if (writer == null) return;
-        //PrintWriter.println() is two writes (the text, then newLine()): JLine hands each write to the
-        //console writer separately, so every line arrived as two chunks - and on a console without VT
-        //processing each chunk costs its own console round trip in ConEmuWriter. One write instead.
         writer.print(msg + System.lineSeparator());
         writer.flush();
     }
@@ -985,6 +985,36 @@ public final class Console {
         history.updateLast(line);
     }
 
+    /* Stop drawing and stop reading, for the rest of this process's life: the environment is being torn
+       down (exit, or a reload that will come back through load()), and the only writes left are the
+       farewell lines the unload callbacks print.
+
+       This is deliberately NOT suspend(true). That one hands the real console to a native child, so it
+       owes cooked input and no VT processing on output -- sqlplus 21c picks its own line editor on a VT
+       console and loses conhost's up-arrow history. Nothing takes over this console after a teardown: the
+       process is about to exit, and jline's own close hook restores the mode this process was started
+       with. Clearing the parser here therefore buys nothing and costs the last lines of the session,
+       because the parser is what turns the per-line reset (ansi.lua's NOR, "\E[39;49;0m") into nothing.
+       Measured 2026-10-10 with the clear on this path: `exit` printed "Working directory changed to ..."
+       and "Database disconnected." with a literal "<-[39;49;0m" in front of them, in a classic conhost
+       window and in Windows Terminal alike, and the same teardown left the next dbcli in that window
+       drawing its prompt on the status bar's row. */
+    public void teardown() {
+        if (status != null) {
+            status.hide();
+            status.suspend();
+        }
+        terminal.pause();
+        if (terminal instanceof WinSysTerminal) {
+            //Record what the console is set to now, so a reload's suspend(false) restores this exact mode
+            //instead of one left over from the last child handover. Nothing is changed here.
+            ((WinSysTerminal) terminal).saveConsoleMode();
+        }
+        pause = true;
+    }
+
+    /* Hand the console over to a native child (and take it back). For a session that is only ending, use
+       teardown() -- see the reason recorded there. */
     public void suspend(boolean enable) {
         if (terminal.paused() == enable && pause == enable) return;
         if (enable) {

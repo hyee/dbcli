@@ -199,10 +199,6 @@ public class CapsDump
     expect( "csr(0,22) one status line", Curses.tputs( raw( strs, Capability.change_scroll_region ), 0, 22 ), E + "[1;23r" );
     expect( "csr(0,0) Status.reset()", Curses.tputs( raw( strs, Capability.change_scroll_region ), 0, 0 ), E + "[1;1r" );
     expect( "cup(5,10)", Curses.tputs( raw( strs, Capability.cursor_address ), 5, 10 ), E + "[6;11H" );
-    /* The wire layer is the layer that decides behaviour, and for this pair it is the only one that matters:
-       Status.update()'s grow branch emits cursor_down while standing on the last row, so a cud1 that decodes
-       to LF scrolls the viewport there and a CSI does not. The file-spelling leg above cannot tell those two
-       apart -- that is exactly the difference this entry went through on 2026-10-05 and no gate saw. */
     expect( "cud1 bytes are a CSI, so a down-move at the bottom does not scroll",
             Curses.tputs( raw( strs, Capability.cursor_down ) ), E + "[B" );
     expect( "cud(2) bytes", Curses.tputs( raw( strs, Capability.parm_down_cursor ), 2 ), E + "[2B" );

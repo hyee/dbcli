@@ -30,6 +30,8 @@
     ...
     --[[
          &avg: default={adj} avg={secs}
+         &avgn: default={1} avg={nullif(max(snaps),0)}
+         &avgo: default={1} avg={nullif(count(snap_id),0)}
          &rd : default={0} avg={2}
          &unit: default={log(2,slot_time*2)} c={1}
          &V2   : default={&STARTTIME}
@@ -194,9 +196,9 @@ BEGIN
             SELECT grouping_id(inst,wait_class,event) grp,nvl(inst,'*') inst,
                    nvl(event,'- Wait Class: '||nvl(wait_class,'All')) event,
                    nvl2(event,wait_class,'') wait_class,
-                   round(sum(waits/div/snaps),&rd) counts,
+                   round(sum(waits/div)/&avgn,&rd) counts,
                    nullif(round(sum(timeouts)/nullif(sum(waits),0),4),0) timeouts,
-                   round(sum(micro/div/snaps),&rd) waited,
+                   round(sum(micro/div)/&avgn,&rd) waited,
                    round(sum(micro)/nullif(sum(DISTINCT ela),0),4) db,
                    round(sum(micro)/nullif(sum(waits),0),2) avg_wait
             FROM  (SELECT event_name event,wait_class,div,decode(f,0,''||inst,to_char(etime,'&fmt')) inst,
@@ -220,7 +222,7 @@ BEGIN
         SELECT * FROM (
             SELECT 1 grp,
                    decode(f,0,''||inst,to_char(etime,'&fmt')) inst,
-                   '- * ON CPU *' event,NULL wait_class,sum(cpu_count*secs/div) counts,NULL timeouts,sum(cpu/div) waited,
+                   '- * ON CPU *' event,NULL wait_class,sum(cpu_count*secs/div)/&avgo counts,NULL timeouts,sum(cpu/div)/&avgo waited,
                    sum(cpu/div)/sum(ela/div) "% DB",
                    round(sum(cpu/adj/cpu_count)/sum(secs/adj),6) avg_wait
                    &ver1,'|' "|" ,NULL "<1us",NULL "<2us",NULL "<4us",NULL "<8us",NULL "<16us",NULL "<32us",NULL "<64us",NULL "<128us",NULL "<256us",NULL "<512us",NULL "<1ms",NULL "<2ms",NULL "<4ms",NULL "<8ms",NULL "<16ms",NULL "<32ms",NULL "<64ms",NULL "<128ms",NULL "<256ms",NULL "<512ms",NULL "<1s",NULL "<2s",NULL "<4s",NULL "<8s",NULL "<16s",NULL "<32s",NULL "<1m",NULL ">1m"

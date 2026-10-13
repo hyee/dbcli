@@ -169,7 +169,7 @@ BEGIN
                                       2,phy_reads,
                                       3,phy_rreqs,
                                       4,dxr,
-                                      5,phy_reads*(1-opt_reads),
+                                      5,phy_reads*(1-nvl(opt_reads,0)),
                                       6,scans,
                                       7,imscans,
                                       8,blk_chgs,

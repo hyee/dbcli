@@ -76,7 +76,7 @@ BEGIN
     own := replace(own,id);
     IF sq_id IS NOT NULL THEN
     BEGIN
-        SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ nvl(upper(own),nam),txt,sig,br,phv
+        SELECT nvl(upper(own),nam),txt,sig,br,phv
         INTO own,sq_text,sig,bw,phv
         FROM (
             SELECT * FROM (
@@ -86,7 +86,7 @@ BEGIN
                 AND    sql_fulltext IS NOT NULL
                 AND    nvl(id, child_number) IN (child_number, plan_hash_value)
                 ORDER  BY nvl2(bind_data,1,2),last_active_time desc
-            ) 
+            )
             WHERE rownum<2
             UNION ALL
             SELECT parsing_schema_name, sql_text, force_matching_signature sig, bind_data,plan_hash_value

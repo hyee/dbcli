@@ -9,7 +9,7 @@
         @ARGS: 1
         @VER: 23={dba_hist_optimizer_env_details} default={(select 0 dbid,0 optimizer_env_hash_value,' ' name,' ' value from dual)}
         &opt: default={A} g={G} d={D}
-        &diff: default={1=1} diff={b.isdefault='N' or nvl(lower(a.value),' ')!=nvl(lower(b.value),' ')} 
+        &diff: default={1=1} diff={b.isdefault='N' or nvl(lower(a.value),' ')!=nvl(lower(b.value),' ')}
         @check_access_Sys: {
             sys.X$QKSCESYS={SELECT DISTINCT PNAME_QKSCESYROW NAME,X$QKSCESYS.PVALUE_QKSCESYROW VALUE,FID_QKSCESYROW SQL_FEATURE,DECODE(BITAND(X$QKSCESYS.FLAGS_QKSCESYROW,2),0,'NO','YES') ISDEFAULT FROM SYS.X$QKSCESYS}
             default={SELECT DISTINCT NAME,VALUE,SQL_FEATURE,ISDEFAULT FROM v$sys_optimizer_env}
@@ -33,7 +33,7 @@ WITH lst AS(
             USING  (sql_id, child_number)
             WHERE  sql_id = :v1
             AND    :opt in ('A','G')
-            AND    (:v3 IS NULL AND nvl(:v2+0,o.hash_value) IN (s.plan_hash_value,o.hash_value) 
+            AND    (:v3 IS NULL AND nvl(:v2+0,o.hash_value) IN (s.plan_hash_value,o.hash_value)
                 OR  :v3 IS NOT NULL AND s.plan_hash_value IN(:v2+0,:v3+0) OR o.hash_value IN(:v2+0,:v3+0))
             )))
         UNION
@@ -49,16 +49,16 @@ WITH lst AS(
              OR :v3 IS NOT NULL AND s.plan_hash_value IN(:v2+0,:v3+0) OR optimizer_env_hash_value IN(:v2+0,:v3+0))
     ) a
 )
-SELECT /*+OPT_PARAM('_fix_control' '26552730:0') opt_param('_no_or_expansion' 'true') opt_param('_optimizer_cbqt_or_expansion' 'off')*/* 
+SELECT /*+opt_param('_no_or_expansion' 'true') opt_param('_optimizer_cbqt_or_expansion' 'off')*/*
 FROM (
     SELECT a.*,'|' "|",b.value sys_value,b.isdefault,b.SQL_FEATURE
     FROM (
         SELECT decode(phvs,1,''||opt_env_hash,'<SAME>') opt_env_hash,null plan_hash,name,value,occurs,phvs all_plans
-        FROM lst 
+        FROM lst
         WHERE occurs=phvs AND phvs>1
         UNION
         SELECT ''||opt_env_hash,plan_hash,name,value,phvs,occurs
-        FROM lst 
+        FROM lst
         WHERE occurs!=phvs OR phvs=1
     ) a
     LEFT JOIN (&check_access_Sys) b

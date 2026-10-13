@@ -90,10 +90,9 @@ BEGIN
 
     OPEN :c FOR
     WITH r AS(
-        SELECT /*+opt_param('_fix_control' '26552730:0')
-                opt_param('_no_or_expansion' 'true')
-                opt_param('parallel_execution_enabled', 'false')
-                opt_param('_optimizer_cbqt_or_expansion' 'off')*/
+        SELECT /*+opt_param('_no_or_expansion' 'true')
+                  opt_param('parallel_execution_enabled', 'false')
+                  opt_param('_optimizer_cbqt_or_expansion' 'off')*/
                 signature,
                 grp,
                 dbid,

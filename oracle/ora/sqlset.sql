@@ -6,7 +6,7 @@ Show/Operate SQL Tuning Sets. Usage: @@NAME <sqlset> [create|load|drop [<sql_id>
     @@NAME <sqlset> unref   <ref id>                        : remove reference from target sqlset(dba_sqlset_references)
     @@NAME <sqlset> scan    "<filter>"                      : scan matched SQLs before loading into target sqlset
     @@NAME <sqlset> load    "<filter>"                      : load matched SQLs into target sqlset
-    @@NAME <sqlset> load <bid> <eid> [<dbid>] [-f"<filter>"]: load from awr snapshot 
+    @@NAME <sqlset> load <bid> <eid> [<dbid>] [-f"<filter>"]: load from awr snapshot
     @@NAME <sqlset> drop   ["<filter>"]                     : drop targt sqlset
 
 Parameters:
@@ -34,13 +34,13 @@ col execs for tmb2
 
 DECLARE
     sqlset  VARCHAR2(128):=replace(upper(:V1),'"');
-    sid     PLS_INTEGER  :=regexp_substr(sqlset,'^\d+$'); 
+    sid     PLS_INTEGER  :=regexp_substr(sqlset,'^\d+$');
     v2      VARCHAR2(128):=:V2;
     v3      VARCHAR2(512):=:V3;
     v4      VARCHAR2(512):=:V4;
-    bid     INT := regexp_substr(v3,'^\d+$'); 
-    eid     INT := regexp_substr(v4,'^\d+$'); 
-    did     INT := nvl(regexp_substr(:v5,'^\d+$'),&dbid); 
+    bid     INT := regexp_substr(v3,'^\d+$');
+    eid     INT := regexp_substr(v4,'^\d+$');
+    did     INT := nvl(regexp_substr(:v5,'^\d+$'),&dbid);
     op      VARCHAR2(128):=upper(V2);
     usr     VARCHAR2(128):=sys_context('userenv','current_schema');
     fullset VARCHAR2(128);
@@ -62,16 +62,16 @@ DECLARE
         END IF;
 
         SELECT id,owner,name,
-              (select count(1) 
-               FROM &check_access_dba.sqlset_references b 
-               WHERE b.sqlset_name=a.name 
-               AND   b.sqlset_owner=a.owner 
-               AND   rownum<2) 
+              (select count(1)
+               FROM &check_access_dba.sqlset_references b
+               WHERE b.sqlset_name=a.name
+               AND   b.sqlset_owner=a.owner
+               AND   rownum<2)
         INTO   sid,tmp_owner,tmp_set,active
         FROM (
             SELECT id,owner,name
             FROM   &check_access_dba.sqlset
-            WHERE  (id=sid  OR upper(name)=tmp_set) 
+            WHERE  (id=sid  OR upper(name)=tmp_set)
             AND    upper(owner)=upper(nvl(tmp_owner,owner))
             ORDER  BY decode(upper(owner),upper(tmp_owner),1,upper(user),2,3)) a
         WHERE rownum < 2;
@@ -112,7 +112,7 @@ BEGIN
     filter := filter ||' AND NOT regexp_like(substr(sql_text,1,128),''\* (OPT_DYN_SAMP|DS_SVC|dbms_stats|SQL Analyze|AUTO_INDEX:ddl\W'',''i'')';
 
     IF coalesce(sqlset,op,''||sid) IS NULL THEN
-        OPEN c FOR 
+        OPEN c FOR
             SELECT decode(nvl(r,1),1,id) sqlset_id,
                    decode(nvl(r,1),1,owner) sqlset_owner,
                    decode(nvl(r,1),1,name) sqlset_name,
@@ -191,7 +191,7 @@ BEGIN
 
         stmt := 'SELECT %s source,
                         sql_id,
-                        plan_hash, 
+                        plan_hash,
                         schema,
                         elapsed_time,
                         executions,
@@ -203,7 +203,7 @@ BEGIN
                  WHERE '||filter;
         stmt := replace(replace('
         WITH t AS(select /*+materialize opt_estimate(query_block rows=0)*/ 1 from v$sqlarea where 1=2)
-        SELECT /*+monitor opt_param(''_fix_control'' ''26552730:0'')*/
+        SELECT /*+monitor*/
                source,
                sql_id,
                plan_hash,
@@ -260,31 +260,31 @@ BEGIN
                         from (select /*+merge*/ * from dba_hist_sqlstat where dbid=&dbid) a
                         join (select /*+merge*/ * from dba_hist_sqltext where dbid=&dbid) b
                         on    a.sql_id=b.sql_id
-                        join (select c.*,lag(snap_id) over(partition by dbid,instance_number order by snap_id) begin_snap 
+                        join (select c.*,lag(snap_id) over(partition by dbid,instance_number order by snap_id) begin_snap
                               from   dba_hist_snapshot c
                               where  dbid=&dbid) c
                         on    a.instance_number=c.instance_number
                         and   a.snap_id=c.snap_id
                         and   c.begin_snap is not null')||'
-                 ) 
+                 )
                  GROUP BY sql_id,plan_hash,schema
                  UNION ALL
                  '||utl_lms.format_message(stmt,'3','sqlset_owner','sqlset_name',
                        'select a.*,
                                ''SQLSET'' source,
                                a.plan_hash_value plan_hash,
-                               a.parsing_schema_name schema 
+                               a.parsing_schema_name schema
                         from   &check_access_dba.sqlset_statements a
                         where  sqlset_id != @sid')
-                 ||'                 
+                 ||'
             ) a
-        ) 
+        )
         WHERE seq=1
         ORDER BY elapsed_time desc nulls last','@schema',usr),'@sid',sid);
         --dbms_output.put_line(stmt);
         OPEN c FOR stmt;
         LOOP
-            FETCH c 
+            FETCH c
             INTO  row.priority,
                   row.sql_id,
                   row.plan_hash_value,
@@ -304,8 +304,7 @@ BEGIN
 
         IF op='LOAD' THEN
             OPEN c FOR
-                SELECT  /*+opt_param(''_fix_control'' ''26552730:0'')*/
-                       value(p) val
+                SELECT value(p) val
                 FROM   TABLE(sets) a,
                        TABLE(sys.dbms_sqltune.select_cursor_cache(basic_filter=>to_char(a.other))) p
                 WHERE  a.priority=1

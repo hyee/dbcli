@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-#
-# gen_rgbmap.sh -- extract ConEmu's ClrMap[8] and RgbMap[256] verbatim into vendor/ConEmuRgbMap.h.
-#
-# Why a generator instead of a hand-written table: RgbMap is 256 literals that must match upstream
-# exactly, and the replica formula (xterm cube + greyscale ramp) is only *nearly* it -- 15 of 256
-# entries disagree with a naive computation, which is precisely the kind of difference that shows up
-# as "the prompt is cyan on Win7 and yellow on Win11". Anchored on the declarations, not on line
-# numbers, so upstream edits above this block do not silently misalign the extraction.
-#
-# Usage:  src/c/conemu/gen_rgbmap.sh [ConEmu-src-dir]      (default /mnt/d/ConEmu-master/src)
-#         src/c/conemu/gen_rgbmap.sh --check               (fail if the header is stale)
 
 set -u
 

@@ -24,9 +24,9 @@
         &FILTER2: default={1=1}, w={w.sid is not null}
         &V2    :  default={&instance}
         @CHECK_ACCESS: gv$libcache_locks={gv$libcache_locks},Dba_Kgllock={(SELECT NULL inst_id,KGLLKTYPE TYPE,KGLLKUSE HOLDING_USER_SESSION,KGLLKHDL OBJECT_HANDLE,KGLLKMOD MODE_HELD,KGLLKREQ MODE_REQUESTED FROM Dba_Kgllock)}
-        @CHECK_ACCESS_X: sys.x$kglst={coalesce((select KGLSTDSC from sys.x$kglst where indx=nvl(w.namespace,h.namespace)),''||w.namespace,''||h.namespace) namespace} default={nvl(w.namespace,h.namespace) "x$kglst"} 
+        @CHECK_ACCESS_X: sys.x$kglst={coalesce((select KGLSTDSC from sys.x$kglst where indx=nvl(w.namespace,h.namespace)),''||w.namespace,''||h.namespace) namespace} default={nvl(w.namespace,h.namespace) "x$kglst"}
         @OBJ_CACHE: {
-                  12.1={(select owner to_owner,name to_name,addr to_address,TYPE from v$db_object_cache where instr(name,' ')=0)} 
+                  12.1={(select owner to_owner,name to_name,addr to_address,TYPE from v$db_object_cache where instr(name,' ')=0)}
                   default={(select a.*,
                     decode(to_type,
                           -1,'NONE',
@@ -117,18 +117,18 @@
                           155,'Optimizer Expresion Object',
                           158,'RUNTIME STATISTICS',
                           255,'NONE',
-                          'INVALID TYPE:' || to_type) AS TYPE 
-                from v$object_dependency A)} 
+                          'INVALID TYPE:' || to_type) AS TYPE
+                from v$object_dependency A)}
                 }
         @GV: 11.1={TABLE(GV$(CURSOR(} default={(((}
-    --]]    
+    --]]
 ]]*/
 set feed off verify on
 
 WITH LP AS (
-    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ * 
+    SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ *
     FROM &GV
-        SELECT /*+ordered no_merge(h) use_hash(h l d)*/DISTINCT 
+        SELECT /*+ordered no_merge(h) use_hash(h l d)*/DISTINCT
                  l.type lock_type,
                  OBJECT_HANDLE handler,
                  MODE_REQUESTED,MODE_HELD,
@@ -163,13 +163,13 @@ SELECT /*+no_expand*/distinct
        nvl(h.object_id,w.object_id) obj#,
        nvl(h.object_name,w.object_name) object_name,
        nvl(h.object_type,w.object_type) object_type,
-       h.session# holder_session, nvl(h.held_mode,w.held_mode) hold_mode,  
+       h.session# holder_session, nvl(h.held_mode,w.held_mode) hold_mode,
        h.sql_id holder_sqlid,
        w.session# waiter_session, nvl(w.req_mode,h.req_mode) wait_mode,
        w.sql_id waiter_sqlid,
        &CHECK_ACCESS_X,
        h.event holder_event, w.event waiter_event
-FROM   (select * from lp where mode_held>1) h 
+FROM   (select * from lp where mode_held>1) h
 FULL JOIN (select * from lp where mode_requested>1)  w
 ON     h.lock_type = w.lock_type and h.object_type=w.object_type and  h.mode_held>1 and w.mode_requested>1 and
       ((h.inst_id  = w.inst_id and h.handler     = w.handler) or

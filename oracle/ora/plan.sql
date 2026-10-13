@@ -1,5 +1,5 @@
 /*[[
-Show execution plan. Usage: @@NAME [x|<plan_id>|<sql_id>] [<plan_hash>|<child#>|<sql_handle>] [<format>] [-all|-last|-b|-s|-ol|-adv] [-g|-d] 
+Show execution plan. Usage: @@NAME [x|<plan_id>|<sql_id>] [<plan_hash>|<child#>|<sql_handle>] [<format>] [-all|-last|-b|-s|-ol|-adv] [-g|-d]
 
 Options:
     -b    : show binding variables
@@ -63,18 +63,18 @@ Options:
                   AND    a.plan_hash_value = coalesce('&v2'+0,(
                      select --+precompute_subquery index(c.sql(WRH$_SQLSTAT.SQL_ID)) index(c.sn)
                             max(plan_hash_value) keep(dense_rank last order by snap_id)
-                     from &check_access_pdb.sqlstat c 
-                     where sql_id='&v1' 
+                     from &check_access_pdb.sqlstat c
+                     where sql_id='&v1'
                      AND   &SRC IN (0,2)
                      AND  dbid=a.dbid
                      AND   '&v1' not in('X','&_sql_id')),(
-                     select /*+precompute_subquery*/ 
-                            max(plan_hash_value) keep(dense_rank last order by timestamp) 
-                     from &check_access_pdb.sql_plan 
+                     select /*+precompute_subquery*/
+                            max(plan_hash_value) keep(dense_rank last order by timestamp)
+                     from &check_access_pdb.sql_plan
                      where sql_id='&v1'
                      AND   &SRC IN (0,2)
                      AND    '&v1' not in('X','&_sql_id')
-                     AND  dbid=a.dbid))} 
+                     AND  dbid=a.dbid))}
            default={0}
           }
     @check_access_advisor: {
@@ -102,8 +102,8 @@ Options:
                   AND    &SRC IN (0,8)
                   AND    '&v1' not in('X','&_sql_id')
                   AND    (a.task_id,a.plan_hash_value) = (
-                        select /*+precompute_subquery*/ max(task_id),max(plan_hash_value) keep(dense_rank last order by task_id,timestamp) 
-                        from   dba_advisor_sqlplans 
+                        select /*+precompute_subquery*/ max(task_id),max(plan_hash_value) keep(dense_rank last order by task_id,timestamp)
+                        from   dba_advisor_sqlplans
                         where  sql_id='&v1'
                         AND    &SRC IN (0,8)
                         AND    '&v1' not in('X','&_sql_id')
@@ -139,8 +139,8 @@ Options:
                   AND    a.signature = o.signature
                   AND    a.plan_id   = o.p
                   AND    ('&v1' = o.name or a.plan_id = coalesce('&V2'+0,(
-                        select max(plan_id) keep(dense_rank last order by timestamp) 
-                        from   sys.sqlobj$plan b 
+                        select max(plan_id) keep(dense_rank last order by timestamp)
+                        from   sys.sqlobj$plan b
                         where  b.signature=a.signature
                         AND    &SRC IN (0)
                         AND   '&v1' not in('X','&_sql_id'))))
@@ -166,8 +166,7 @@ DECLARE/*INTERNAL_DBCLI_CMD*/
 BEGIN
     IF :binds = 'PEEKED_BINDS' THEN
         FOR r IN (WITH qry AS
-                       (SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ 
-                               a.*, dense_rank() OVER(ORDER BY decode('&V2',c,0,1),captured, r DESC) seq
+                       (SELECT a.*, dense_rank() OVER(ORDER BY decode('&V2',c,0,1),captured, r DESC) seq
                        FROM   (SELECT a.*, decode(max(was_captured) OVER(PARTITION BY r), 'YES', 0, 1) captured
                                FROM   (SELECT max(last_captured) OVER(PARTITION BY child_number,inst_id) || child_number || ':' || inst_id r,
                                               ''||child_number c,
@@ -244,7 +243,7 @@ BEGIN
             ELSE
                 str_val := '<NOT CAPTURE>';
             END IF;
-        
+
             SELECT xmlelement("bind",
                               xmlelement("inst", r.inst),
                               xmlelement("pos", r.pos#),
@@ -267,7 +266,7 @@ BEGIN
                    cast(extractvalue(column_value, '//src') AS VARCHAR2(30)) source
             FROM   TABLE(xmlsequence(extract(binds, '/BINDS/BIND')));
     END IF;
-    
+
     IF '&v1' = '&_SQL_ID' THEN
         msg  := 'Displaying execution plan for last SQL: &_SQL_ID';
         :msg := 'PRO ' || msg || chr(10) || 'PRO ' || rpad('=', length(msg), '=');
@@ -279,7 +278,7 @@ END;
 
 print c
 WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
- (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5) OPT_PARAM('_fix_control' '26552730:0')*/ *
+ (SELECT /*+materialize opt_param('optimizer_dynamic_sampling' 5)*/ *
   FROM   (SELECT /*+no_merge(a) NO_PQ_CONCURRENT_UNION*/ DISTINCT a.*,
                  dense_rank() OVER(ORDER BY flag, tm DESC, child_number DESC, plan_hash_value DESC,inst_id) seq
           FROM   (SELECT /*+no_expand*/ id,
@@ -328,10 +327,10 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   AND    &SRC IN (0)
                   AND    '&v1' NOT IN('X','&_sql_id')
                   AND    (sqlset_id,a.plan_hash_value) = (
-                        SELECT /*+precompute_subquery*/ 
+                        SELECT /*+precompute_subquery*/
                                max(sqlset_id),
-                               max(plan_hash_value) KEEP(dense_rank LAST ORDER BY sqlset_id,timestamp) 
-                        FROM   all_sqlset_plans 
+                               max(plan_hash_value) KEEP(dense_rank LAST ORDER BY sqlset_id,timestamp)
+                        FROM   all_sqlset_plans
                         WHERE  sql_id='&V1'
                         AND    &SRC IN (0)
                         AND    '&v1' NOT IN('X','&_sql_id')
@@ -362,7 +361,7 @@ WITH /*INTERNAL_DBCLI_CMD*/ sql_plan_data AS
                   WHERE  '&v1' NOT IN('&_sql_id')
                   AND    &SRC IN (0,4)
                   AND    (plan_id,timestamp)=(
-                      SELECT /*+precompute_subquery*/ 
+                      SELECT /*+precompute_subquery*/
                              max(plan_id) KEEP(dense_rank LAST ORDER BY timestamp),
                              max(timestamp)
                       FROM   sys.plan_table$
@@ -381,19 +380,19 @@ hierarchy_data AS
   ORDER  SIBLINGS BY position DESC,id DESC),
 ordered_hierarchy_data AS
 (SELECT /*+materialize*/ a.*,
-        CASE 
+        CASE
             WHEN nvl(ap,sc) IS NOT NULL THEN 'A'
-        END||CASE 
+        END||CASE
             WHEN sc IS NOT NULL THEN sc
-            WHEN ap IS NOT NULL THEN 
+            WHEN ap IS NOT NULL THEN
               (SELECT count(DISTINCT regexp_substr(regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level),'".*"'))
                FROM   dual
                CONNECT BY regexp_substr(replace(ap,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL)
-        END||CASE 
+        END||CASE
             WHEN fp IS NOT NULL THEN
             (SELECT 'F'||count(DISTINCT regexp_substr(regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level),'".*"'))
              FROM dual
-             CONNECT BY regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL) 
+             CONNECT BY regexp_substr(replace(fp,al),'([^.]|^)"([a-zA-Z0-9#_$]+)([^.]|$)"',1,level) IS NOT NULL)
         END pred
  FROM(SELECT a.*,
              '"'||regexp_substr(nvl(alias,first_value(alias IGNORE NULLS) OVER(ORDER BY r_ ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING)),'[^@]+')||'".' al,
@@ -443,15 +442,15 @@ xplan_data AS
            r,
            max(o.minid) OVER() AS minid,
            count(*) OVER() AS rc,
-           nvl(trim(dbms_xplan.format_number(CASE 
+           nvl(trim(dbms_xplan.format_number(CASE
                WHEN regexp_like(x.plan_table_output,'(TABLE ACCESS [^|]*(FULL|SAMPLE)|INDEX .*FAST FULL)') THEN
                    greatest(1,floor(io_cost*nvl(dop*1.009,1)/mbrc))
                ELSE
                    io_cost
            END)),' ') blks
-  FROM  (SELECT rownum r, 
+  FROM  (SELECT rownum r,
                  CASE WHEN regexp_like(plan_table_output, '^\|[-\* ]*[0-9]+ \|') THEN to_number(regexp_substr(plan_table_output, '[0-9]+')) END oid,
-                 x.* 
+                 x.*
          FROM   xplan x) x
   LEFT   OUTER JOIN ordered_hierarchy_data o
   ON     (o.id = x.oid)
@@ -470,20 +469,20 @@ MEASURES(plan_table_output,id,maxid,pred,oid,minid,qb,alias,nullif(proj,NULL) pr
          rc)
 RULES SEQUENTIAL ORDER (
         inject[r] = CASE
-              WHEN plan_table_output[cv()] LIKE '------%' THEN 
-                   rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+bsize[cv()]+1, '-') || '{PLAN}'  
+              WHEN plan_table_output[cv()] LIKE '------%' THEN
+                   rpad('-', csize[cv()]+psize[cv()]+jsize[cv()]+qsize[cv()]+asize[cv()]+bsize[cv()]+1, '-') || '{PLAN}'
               WHEN id[cv()+2] = 0 THEN
-                   '|' || lpad('Ord ', csize[cv()]) || '{PLAN}' 
+                   '|' || lpad('Ord ', csize[cv()]) || '{PLAN}'
                        || rpad(' Blks',bsize[cv()]-1)||'|'
                        || decode(psize[cv()],0,'',rpad(' Pred', psize[cv()]-1)||'|')
-                       || lpad('Proj |', jsize[cv()]) 
+                       || lpad('Proj |', jsize[cv()])
                        || decode(qsize[cv()],0,'',rpad(' Q.B', qsize[cv()]-1)||'|')
                        || decode(asize[cv()],0,'',rpad(' Alias', asize[cv()]-1)||'|')
               WHEN id[cv()] IS NOT NULL THEN
                    '|' || lpad(oid[cv()]||' ', csize[cv()]) || '{PLAN}'
                        || lpad(blks[cv()],bsize[cv()]-1)||'|'
                        || decode(psize[cv()],0,'',rpad(' '||pred[cv()], psize[cv()]-1)||'|')
-                       || lpad(proj[cv()] || ' |', jsize[cv()]) 
+                       || lpad(proj[cv()] || ' |', jsize[cv()])
                        || decode(qsize[cv()],0,'',rpad(' '||qb[cv()], qsize[cv()]-1)||'|')
                        || decode(asize[cv()],0,'',rpad(' '||alias[cv()] , asize[cv()]-1)||'|')
           END,

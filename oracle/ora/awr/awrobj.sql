@@ -1,4 +1,4 @@
-/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME <name|obj#> [<sort_by>] [yymmddhhmi] [yymmddhhmi] 
+/*[[Search for the SQLs in AWR snapshots that reference the specific object. Usage: @@NAME <name|obj#> [<sort_by>] [yymmddhhmi] [yymmddhhmi]
     <sort_by>: Sort the records with specific order, use "." to keep the default order. Available options:
         ela  : elapsed time (default)
         exe  : executions
@@ -134,7 +134,7 @@ BEGIN
     stmt :=q'~
         WITH ops AS(
             SELECT *
-            FROM xmltable('/ROWSET/ROW' PASSING :xml 
+            FROM xmltable('/ROWSET/ROW' PASSING :xml
                 COLUMNS dbid INT PATH 'DBID',
                         id INT PATH 'ID',
                         sorttype VARCHAR2(30) PATH 'SORTTYPE',
@@ -152,8 +152,9 @@ BEGIN
     IF '&typ' ='d' THEN
         stmt := stmt||q'~@qry@
                 FROM  (
-                      SELECT b.*,plan_full,a.plan_hash,a.op,trim(chr(10) FROM preds) preds
-                      FROM  (SELECT /*+no_merge*/ DISTINCT dbid,plan_hash,plan_full,coalesce(op,operation,options) op,preds FROM ops WHERE plan_hash>0) a
+                      SELECT /*+no_merge(a) no_merge(b) use_hash(a b)*/
+                             b.*,plan_full,a.plan_hash,a.op,trim(chr(10) FROM preds) preds
+                      FROM  (SELECT DISTINCT dbid,plan_hash,plan_full,coalesce(op,operation,options) op,preds FROM ops WHERE plan_hash>0) a
                       JOIN  &check_access_pdb.sqlstat b
                       ON     a.dbid=b.dbid
                       AND    a.plan_hash=b.plan_hash_value
@@ -182,8 +183,8 @@ BEGIN
                       JOIN   gv$sqlstats b
                       ON     a.sq_id=b.sql_id
                       AND    b.plan_hash_value=0) hs
-                WHERE nvl(hs.last_active_time,sysdate) BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI') 
-                AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';        
+                WHERE nvl(hs.last_active_time,sysdate) BETWEEN to_date(coalesce('&V3', to_char(sysdate - 7, 'YYMMDDHH24MI')),'YYMMDDHH24MI')
+                AND   to_date(coalesce('&V4', to_char(sysdate+1, 'YYMMDDHH24MI')), 'YYMMDDHH24MI')~';
     END IF;
 
     OPEN :C1 FOR replace(stmt,'@qry@',q'~

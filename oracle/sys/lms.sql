@@ -1,4 +1,5 @@
-/*[[Show LMS info
+/*[[Show LMS info.
+    Impacted parameters: gcs_server_processes,
     ---
 ]]*/
 SET FEED OFF

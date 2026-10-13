@@ -34,7 +34,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE lower(cell) like lower('%'||:V1||'%') 
+        WHERE lower(cell) like lower('%'||:V1||'%')
         AND   VALUE>0
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
@@ -50,7 +50,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE lower(cell) like lower('%'||:V1||'%') 
+        WHERE lower(cell) like lower('%'||:V1||'%')
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
         '-',{[[/*grid={topic='OCL RH Stats'}*/
@@ -65,9 +65,9 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE lower(cell) like lower('%'||:V1||'%') 
+        WHERE lower(cell) like lower('%'||:V1||'%')
         GROUP BY NAME &cell
-        ORDER BY NAME,2   
+        ORDER BY NAME,2
         ]],'|',[[/*grid={topic='Copy From Remote Stats'}*/
         SELECT NAME &cell,SUM(VALUE) CNT
         FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
@@ -80,9 +80,9 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                                 NAME VARCHAR2(50) path '@name',
                                 VALUE NUMBER path '.') b
                 WHERE  statistics_type = 'PREDIO')
-        WHERE lower(cell) like lower('%'||:V1||'%') 
+        WHERE lower(cell) like lower('%'||:V1||'%')
         GROUP BY NAME &cell
-        ORDER BY NAME,2   
+        ORDER BY NAME,2
         ]]},
         '-',{[[ /*grid={topic='Predicate IMC Pop Job Stats'}*/
         SELECT NAME &cell,SUM(VALUE) CNT
@@ -99,7 +99,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
         WHERE lower(cell) like lower('%'||:V1||'%')  AND VALUE>0
         GROUP BY NAME &cell
         ORDER BY NAME,2]],
-        '|',[[ /*grid={topic='CPU ResourceManager Stats'}*/
+        '|',[[ /*grid={topic='CPU Resource Manager Stats'}*/
         SELECT NAME &cell,SUM(VALUE) CNT
         FROM   (SELECT (SELECT extractvalue(xmltype(c.confval), '/cli-output/context/@cell')
                         FROM   v$cell_config c
@@ -153,7 +153,7 @@ grid {[[ /*grid={topic='Predicate I/O'}*/
                    xmltable('//bucket' passing c.value columns --
                             BUCKET# VARCHAR2(50) path '@limit', VALUE NUMBER path '.') b
             WHERE  statistics_type = 'PREDIO')
-        WHERE lower(cell) like lower('%'||:V1||'%') 
+        WHERE lower(cell) like lower('%'||:V1||'%')
         GROUP BY name &cell,bucket#)
     PIVOT(SUM(VALUE) FOR BUCKET# IN(1 "1 KB",2 "2 KB",4 "4 KB",8 "8 KB",32 "32 KB",64 "64 KB",128 "128 KB",256 "256 KB",512 "512 KB", 1024 "1 MB", 2048 "2 MB", 4096 "4 MB", 8192 "8 MB", 16384 "16 MB"))
     ORDER  BY NAME

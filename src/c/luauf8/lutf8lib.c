@@ -16,6 +16,11 @@ int luautf8_trim_space(lua_State *L);
 int luautf8_trim_chars(lua_State *L);
 int luautf8_ansi_width(lua_State *L);
 int luautf8_ansi_cut(lua_State *L);
+int ansi_cp_width(uint32_t cp);         /* ansi_width.c: the measured per-code-point table */
+
+/* No optional width argument given. utf8.width* then answers from ansi_cp_width, the same table
+ * every grid column is sized from; see luW_width. */
+#define LU_W_UNSET (-1)
 
 /* UTF-8 string operations */
 
@@ -836,6 +841,15 @@ static int luT_isalnum(utfint ch) {
 }
 
 static int luW_width(utfint ch, int ambiwidth, int default_width) {
+    /* Asked without overrides, this entry point has to agree with the grid: one code point, one
+     * width, from the table ansi_width.c documents. Asked *with* overrides, the caller is using
+     * this API's own knob (the vim ambiwidth/default pair) and gets this API's own tables --
+     * unidata.h disagrees with the measured model in 142,687 code points, mostly the default-wide
+     * ranges of planes 2 and 3, so it is now the escape hatch rather than the default. */
+    if (ambiwidth == LU_W_UNSET && default_width == LU_W_UNSET)
+        return ansi_cp_width((uint32_t)ch);
+    if (ambiwidth == LU_W_UNSET) ambiwidth = 1;
+    if (default_width == LU_W_UNSET) default_width = 0;
     if (luT_find(unprintable_table, lu_tabsize(unprintable_table), ch))
         return default_width;
     if (luT_find(compose_table, lu_tabsize(compose_table), ch))
@@ -1282,8 +1296,8 @@ static int Lutf8_codes(lua_State *L) {
 }
 
 static int luW_opt(lua_State *L, int idx, int *pdefault) {
-    int ambiwidth = (int)luaL_optinteger(L, idx, 1);
-    if (pdefault != NULL) *pdefault = (int)luaL_optinteger(L, idx + 1, 0);
+    int ambiwidth = (int)luaL_optinteger(L, idx, LU_W_UNSET);
+    if (pdefault != NULL) *pdefault = (int)luaL_optinteger(L, idx + 1, LU_W_UNSET);
     return ambiwidth;
 }
 

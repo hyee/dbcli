@@ -3,24 +3,30 @@
     If no segment name is specified, then the top 100 segments will be listed.
     This script needs the 'SELECT ANY DICTIONARY' privilege.
 
-    -d: Show the details at segment level instead of object level; only the top 1000 segments are listed
+    -d: Show the details at segment level instead of object level, that is, one row for each
+        partition/subpartition segment; only the top 1000 segments are listed
     -a: Include all schemas, by default only the current schema is included.
 
+    EST_BYTES is the space that DBMS_SPACE.CREATE_TABLE_COST/CREATE_INDEX_COST would allocate for a
+    fresh creation of the object, so it can be larger than the current ACT_BYTES. It's left blank
+    when the object has no statistics, when it is a LOB segment, or when it is an index
+    partition/subpartition, because DBMS_SPACE costs an entire index only.
+
     Sample Output:
-    ==============                                                                                                                                               
-    OWNER OBJECT_NAME PARTITION_NAME OBJECT_TYPE EST_BYTES ACT_BYTES EXTENTS SEGMENTS BLOCKS INIT_KB NEXT_KB TABLESPACE_NAME NUM_ROWS AVG_ROW_LEN PCT_FREE INITRANS DEGREE
-    ----- ----------- -------------- ----------- --------- --------- ------- -------- ------ ------- ------- --------------- -------- ----------- -------- -------- ------
-    SYS   OBJ$                       TABLE         9.02 MB  10.00 MB      25        1   1280      16     104 SYSTEM             72955         111       10        1      1
-    SYS   I_OBJ2                     INDEX         7.69 MB   8.00 MB      23        1   1024      16     104 SYSTEM                            65       10        2      1
-    SYS   I_OBJ5                     INDEX         7.69 MB   8.00 MB      23        1   1024      64    1024 SYSTEM                            65       10        2      1
-    SYS   I_OBJ4                     INDEX       638.51 KB   3.00 MB      18        1    384      64    1024 SYSTEM                            12       10        2      1
-    SYS   I_OBJ1                     INDEX       851.34 KB   2.00 MB      17        1    256      64    1024 SYSTEM                            15       10        2      1
-    SYS   I_OBJ3                     INDEX       141.89 KB 256.00 KB       4        1     32      64    1024 SYSTEM                             3       10        2      1
+    ==============
+    OWNER OBJECT_NAME PARTITION OBJECT_TYPE TABLESPACE TBSTYPE EST_BYTES ACT_BYTES EXTENTS SEGMENTS BLOCKS INIT_KB NEXT_KB NUM_ROWS AVG_ROW_LEN PCT_FREE INITRANS DEGREE
+    ----- ----------- --------- ----------- ---------- ------- --------- --------- ------- -------- ------ ------- ------- -------- ----------- -------- -------- ------
+    SYS   OBJ$                  TABLE       SYSTEM     MSSM      9.00 MB  10.00 MB      25        1   1280      16     104  73.81 K         110       10        1      1
+    SYS   I_OBJ2                INDEX       SYSTEM     MSSM     10.00 MB   8.00 MB      23        1   1024      16     104                   65       10        2      1
+    SYS   I_OBJ5                INDEX       SYSTEM     MSSM     10.00 MB   8.00 MB      23        1   1024      64    1024                   65       10        2      1
+    SYS   I_OBJ4                INDEX       SYSTEM     MSSM      2.00 MB   3.00 MB      18        1    384      64    1024                   12       10        2      1
+    SYS   I_OBJ1                INDEX       SYSTEM     MSSM      2.00 MB   2.00 MB      17        1    256      64    1024                   15       10        2      1
+    SYS   I_OBJ3                INDEX       SYSTEM     MSSM      2.00 MB 256.00 KB       4        1     32      64    1024                    3       10        2      1
 
     --[[
         @CHECK_ACCESS_OBJ: SYS.OBJ$/SYS.TAB$={}
         &OPT2: default={}, d={partition_name,}
-        &OPT3: default={null}, d={subobject_name}
+        &OPT3: default={null}, d={b.partition_name}
         &OPT4: default={OWNER=SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')}, a={1=1}
     --]]
 ]]*/
@@ -145,25 +151,30 @@ BEGIN
                              extractvalue(column_value,'//TABLESPACE_NAME') TABLESPACE_NAME,
                              extractvalue(column_value,'//TBSTYPE') TBSTYPE
                       FROM   table(xmlsequence(extract(v_xml,'/ROWSET/ROW')))) LOOP
-                v_alloc := NULL;
-                v_used  := NULL;
-                hdl     := hdl + 1;
+                v_alloc    := NULL;
+                v_used     := NULL;
+                v_degree   := NULL;
+                v_initrans := NULL;
+                v_free     := NULL;
+                hdl        := hdl + 1;
                 IF r.object_type = 'INDEX' THEN
                     BEGIN
                         v_ddl := dbms_metadata.get_ddl(r.object_type,r.object_name,r.owner);
-                        dbms_space.create_index_cost(v_ddl,v_alloc,v_used);
+                        dbms_space.create_index_cost(v_ddl,v_used,v_alloc);
                     EXCEPTION WHEN OTHERS THEN NULL;
                     END;
                     SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/
-                           SUM(a.avg_col_len+1),max(c.pct_free),max(nvl(regexp_substr(c.degree,'\d+'),'1')+0),max(c.ini_trans)
-                    INTO   v_used,v_free,v_degree,v_initrans
-                    FROM   dba_tab_cols a,dba_ind_columns b,dba_indexes c
+                           max(c.pct_free),max(nvl(regexp_substr(c.degree,'\d+'),'1')+0),max(c.ini_trans)
+                    INTO   v_free,v_degree,v_initrans
+                    FROM   dba_indexes c
+                    WHERE  c.owner = r.owner
+                    AND    c.index_name = r.object_name;
+                    SELECT /*+opt_param('optimizer_dynamic_sampling' 11)*/
+                           SUM(a.avg_col_len+1)
+                    INTO   v_used
+                    FROM   dba_tab_cols a,dba_ind_columns b
                     WHERE  b.index_owner = r.owner
                     AND    b.index_name = r.object_name
-                    AND    c.owner = r.owner
-                    AND    c.index_name = r.object_name
-                    AND    c.owner = b.index_owner
-                    AND    c.index_name = b.index_name
                     AND    b.table_owner = a.owner
                     AND    b.table_name = a.table_name
                     AND    b.column_name = a.column_name;
@@ -173,8 +184,6 @@ BEGIN
                             FROM   dba_tables
                             WHERE  table_name = r.object_name
                             AND    owner = r.owner
-                            AND    avg_row_len > 0
-                            AND    num_rows > 0
                             AND    r.object_type = 'TABLE'
                             UNION ALL
                             SELECT tablespace_name,avg_row_len,num_rows,pct_free,null degree,ini_trans
@@ -182,8 +191,6 @@ BEGIN
                             WHERE  table_name = r.object_name
                             AND    table_owner = r.owner
                             AND    partition_name = r.partition_name
-                            AND    avg_row_len > 0
-                            AND    num_rows > 0
                             AND    r.object_type = 'TABLE PARTITION'
                             UNION ALL
                             SELECT tablespace_name,avg_row_len,num_rows,pct_free,null degree,ini_trans
@@ -191,11 +198,15 @@ BEGIN
                             WHERE  table_name = r.object_name
                             AND    table_owner = r.owner
                             AND    subpartition_name = r.partition_name
-                            AND    avg_row_len > 0
-                            AND    num_rows > 0
                             AND    r.object_type = 'TABLE SUBPARTITION') LOOP
-                        dbms_space.create_table_cost(coalesce(r1.tablespace_name,r.tablespace_name,'SYSTEM'),r1.avg_row_len,r1.num_rows,r1.pct_free,v_alloc,v_used);
-                        v_used     := r1.avg_row_len;
+                        IF r1.avg_row_len > 0 AND r1.num_rows > 0 THEN
+                            BEGIN
+                                dbms_space.create_table_cost(coalesce(r1.tablespace_name,r.tablespace_name,'SYSTEM'),r1.avg_row_len,r1.num_rows,r1.pct_free,v_used,v_alloc);
+                            EXCEPTION WHEN OTHERS THEN
+                                v_alloc := NULL;
+                            END;
+                            v_used := r1.avg_row_len;
+                        END IF;
                         v_degree   := r1.degree;
                         v_initrans := r1.ini_trans;
                         v_free     := r1.pct_free;

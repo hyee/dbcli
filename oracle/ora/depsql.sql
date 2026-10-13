@@ -9,7 +9,7 @@
 ora _find_object &V1 0
 col ela,avg_ela for usmhd2
 set printsize 50
-SELECT /*+ OPT_PARAM('_fix_control' '26552730:0') opt_param('optimizer_dynamic_sampling' 0)*/
+SELECT /*+ opt_param('optimizer_dynamic_sampling' 0)*/
      sql_id,
      COUNT(DISTINCT plan_hash) plans,
      TRIM(',' FROM decode(bitand(SUM(DISTINCT FLAG),1),1,'SQLAREA,')
@@ -30,7 +30,7 @@ FROM  (
                 USERS_EXECUTING EXECUTING,
                 TRIM(regexp_replace(substr(b.sql_text, 1, 250), '\s+', ' ')) sql_text,
                 1 flag
-          FROM  (SELECT DISTINCT from_hash,from_address FROM v$object_dependency WHERE to_name = :object_name AND to_owner = :object_owner) a, 
+          FROM  (SELECT DISTINCT from_hash,from_address FROM v$object_dependency WHERE to_name = :object_name AND to_owner = :object_owner) a,
                  v$sql b
           WHERE a.from_hash = b.hash_value
           AND   a.from_address = b.address
@@ -43,16 +43,16 @@ FROM  (
                 0 EXECUTING,
                 TRIM(regexp_replace(substr(b.sql_text, 1, 250), '\s+', ' ')) sql_text,
                 2 flag
-          FROM  (SELECT /*+cardinality(1)*/ 
-                       DISTINCT key 
-                 FROM  v$sql_plan_monitor 
-                 WHERE plan_object_owner = :object_owner 
-                 AND   plan_object_name = :object_name) a, 
+          FROM  (SELECT /*+cardinality(1)*/
+                       DISTINCT key
+                 FROM  v$sql_plan_monitor
+                 WHERE plan_object_owner = :object_owner
+                 AND   plan_object_name = :object_name) a,
                 v$sql_monitor b
           WHERE a.key = b.key
           AND   b.status not like '%EXECUTING%')))
     UNION ALL
-    SELECT /*+outline_leaf*/ 
+    SELECT /*+outline_leaf*/
            sql_id,
            plan_hash_value,
            elapsed_time_delta,
@@ -73,4 +73,3 @@ FROM  (
     WHERE  dbid = :dbid)
 GROUP  BY sql_id
 ORDER  BY EXECUTING DESC, ela DESC;
-

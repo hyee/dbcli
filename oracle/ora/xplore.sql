@@ -21,7 +21,7 @@
 
     Output is written to "D:\dbcli\cache\imtst\xplore_25jq1h90jjj13.txt".
     * Note: Run "ora plan <statement_id> -all" to query the detailed plan.
-    * Note: Totally 1479 options are tested. Please reconnect to reset all options to the defaults.    
+    * Note: Totally 1479 options are tested. Please reconnect to reset all options to the defaults.
     --[[
         @ARGS  : 1
         &typ   : default={all} ofe={ofe} env={env}
@@ -177,7 +177,7 @@ DECLARE
 BEGIN
     IF instr(sq_id, ' ') = 0 THEN
         BEGIN
-            SELECT /*+OPT_PARAM('_fix_control' '26552730:0')*/ *
+            SELECT *
             INTO   to_schema, buff
             FROM   (SELECT parsing_schema_name, sql_fulltext
                     FROM   gv$sqlarea
@@ -277,7 +277,7 @@ BEGIN
                         WHEN lst(i).name = '_optimizer_max_permutations' THEN
                             avails := SYS.ODCIVARCHAR2LIST(100, 2000, 40000, 79999, 80000);
                         WHEN lst(i).name = '_optimizer_degree' THEN
-                            avails := SYS.ODCIVARCHAR2LIST(1,4,16,32,64,128,256,512,1024);    
+                            avails := SYS.ODCIVARCHAR2LIST(1,4,16,32,64,128,256,512,1024);
                         WHEN lst(i).name = '_sort_elimination_cost_ratio' THEN
                             avails := SYS.ODCIVARCHAR2LIST(0, 3, 6, 12, 25, 50, 100, 1000);
                         WHEN lst(i).name = '_optimizer_extended_stats_usage_control' THEN
@@ -337,10 +337,10 @@ BEGIN
         IF changed THEN
             alter_session(NAME, VALUE, fix);
         END IF;
-        SYS.DBMS_APPLICATION_INFO.set_session_longops(rindex      => rindex, 
+        SYS.DBMS_APPLICATION_INFO.set_session_longops(rindex      => rindex,
                                                       slno        => slno,
                                                       op_name     => 'XPLORE '||sq_id,
-                                                      sofar       => i, 
+                                                      sofar       => i,
                                                       totalwork   => lst.count,
                                                       target_desc => ' ',
                                                       units       => 'options');
@@ -353,7 +353,7 @@ BEGIN
                    (select trim(chr(10) from v) from (SELECT rownum r,column_value v from table(elas)) where r=regexp_substr(STATEMENT_ID, '\d+$'))
     WHERE  regexp_like(STATEMENT_ID, '\d+$')
     AND    OTHER_XML IS NOT NULL;
-    COMMIT; 
+    COMMIT;
 
     fmt := 'ALL ALLSTATS OUTLINE';
     IF dbms_db_version.version > 10 THEN
@@ -395,7 +395,7 @@ BEGIN
     :plans := sql_text;
 
     OPEN :cur FOR
-        WITH plans AS 
+        WITH plans AS
          (SELECT A.*,
                  dense_rank() over(order by grp, plan_hash, cost, bytes, total_card, card) p,
                  regexp_substr(remarks,'[^'||CHR(9)||']+',1,1) d1,
@@ -422,7 +422,7 @@ BEGIN
                   FROM   &ptable q
                   GROUP  BY STATEMENT_ID) a),
         finals AS
-         (SELECT a.*, 
+         (SELECT a.*,
                  decode(seq,1,listagg(d1,chr(10)) within group(ORDER BY seq) over(partition by p)) settings,
                  decode(seq,1,listagg(d2,chr(10)) within group(ORDER BY seq) over(partition by p)) description
           FROM   (SELECT a.*,

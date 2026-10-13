@@ -61,7 +61,7 @@ BEGIN
                     dbms_output.put_line(vw);
                     &ver..expand_sql_text(vw,txt);
                 $ELSE
-                    name := regexp_replace(part1,'^G?V_?\$','GV_$');
+                    name := regexp_replace(part1,'^G?V_?\$','GV$');
                     EXECUTE IMMEDIATE q'[SELECT VIEW_NAME,VIEW_DEFINITION FROM V$FIXED_VIEW_DEFINITION WHERE VIEW_NAME=:1]'
                         INTO   vw,txt USING name;
                 $END
@@ -149,20 +149,20 @@ BEGIN
         END;
         END IF;
         
+        IF regexp_substr(obj_type,'^\w+') IN ('TABLE','VIEW','SYNONYM') THEN
+        BEGIN
+            dbms_lob.append(txt,dbms_metadata.get_dependent_ddl('COMMENT',part1,schem));
+        EXCEPTION
+            WHEN OTHERS THEN
+                NULL;
+        END;
+        END IF;
+
         dbms_metadata.set_transform_param(v_default,'DEFAULT');
         txt := regexp_replace(txt,'\(' || chr(9),'(' || chr(10) || chr(9),1,1);
         IF regexp_substr(obj_type,'^\w+') NOT IN ('TRIGGER','FUNCTION','PROCEDURE','PACKAGE') THEN
             txt := regexp_replace(txt,'"([A-Z][A-Z0-9$#\_]+)"','\1');
         END IF;
-    END IF;
-    
-    IF regexp_substr(obj_type,'^\w+') IN ('TABLE','VIEW','SYNONYM') THEN
-    BEGIN
-        dbms_lob.append(txt,dbms_metadata.get_dependent_ddl('COMMENT',part1,schem));
-    EXCEPTION
-        WHEN OTHERS THEN
-            NULL;
-    END;
     END IF;
     :text := txt;
     :dest := part1 || '.sql';

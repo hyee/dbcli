@@ -1,59 +1,4 @@
 #!/usr/bin/env bash
-#
-# gen_x11colors.sh -- build X11ColorNames.h for ticket #84 out of local copies of X11's
-#                     rgb.txt, under three independent cross-checks.
-#
-# Why a generator and not a hand-written table
-# --------------------------------------------
-# #84 lets an OSC 4/10/11 colour spec be a *name*. The result is 676 rows of numbers nobody
-# will re-read, so a mis-transcription is invisible until somebody's prompt comes out the wrong
-# colour. build.sh:39-43 states the precedent this copies (gen_rgbmap.sh + extract_rgbmap.py):
-#
-#   "Two independent extractions ... reading one source is the point: RenderCheck's 'RgbMap
-#    identity' assertion fails if either parser misreads the table."
-#
-# Three legs, because one is not enough
-# -------------------------------------
-#  L1 PARSER x SOURCE independence.  Four cells, one answer:
-#       fixed-column byte slicing  -- ghostty's own rule  (src/terminal/x11_color.zig:45-48)
-#       whitespace field splitting -- wezterm's own rule  (color-types/src/lib.rs:393-403)
-#     each applied to BOTH vendored copies (ghostty's and wezterm's rgb.txt). The two files are
-#     byte-different (CRLF vs LF, and 97 lines re-pad a numeric column with a TAB where the other
-#     uses a space), so agreement is a fact about the data rather than a shared input buffer.
-#     This is the gen_rgbmap shape, with one extra dimension.
-#
-#  L2 THIRD DISTRIBUTION CHANNEL.  The OS-packaged /etc/X11/rgb.txt, pulled out of WSL into
-#     wsl_rgb.txt next to this script (Debian/Ubuntu xorg, dated 2020-10-09, older upstream). It
-#     may differ only by the names freedesktop added afterwards -- each one allowlisted by hand --
-#     and must never differ on the RGB of a name the two vintages share.
-#
-#  L3 DERIVATION independence. msfterm's colorTable.cpp is not a copy of rgb.txt at all -- it is
-#     somebody else's curated re-derivation (C++ literals plus a *computed* gray ramp). It must
-#     disagree with X11 only inside ALLOWED_MSFT.
-#
-# What L1 is really guarding
-# --------------------------
-# ghostty's rule is positional and wezterm's is not, and the two vendored files are
-# byte-different: wezterm's is CRLF and re-pads 97 numeric columns with a TAB where ghostty's
-# uses a space ("139 121  94" vs "139 121\t 94"). All four readings return one identical set of
-# 676 (name,r,g,b) tuples, so the reflow is cosmetic for both rules -- but that is only known
-# because both were run over both. A vendor refresh that pushed a digit past column 11 would
-# move a component by a factor of 16 without changing any row count: invisible to a check that
-# reads one file with one parser, and loud here. That, not the current agreement, is the reason
-# the four cells are asserted.
-#
-# Usage
-#   bash src/c/conemu/gen_x11colors.sh              write vendor/X11ColorNames.h
-#   bash src/c/conemu/gen_x11colors.sh --check      fail if the header is stale (build.sh runs this)
-#   bash src/c/conemu/gen_x11colors.sh --report     print the three legs, write nothing
-
-# Ticket #84. Sources are four local reads of X11's rgb.txt -- ghostty's and wezterm's vendored
-# copies, the OS-packaged copy, and msfterm's independent re-derivation -- so every path below is
-# overridable: GHOSTTY_DIR, WEZTERM_DIR, MSFTERM_DIR, WSL_RGB, X11_DATA_DIR.
-#
-# Environment overrides: GHOSTTY_DIR, WEZTERM_DIR, MSFTERM_DIR, WSL_RGB (path to a cached copy
-# of the system rgb.txt; empty string disables L2's third copy).
-# Exit: 0 ok, 1 a leg failed or a source moved, 2 a required source is missing.
 
 set -u
 set -o pipefail
@@ -61,9 +6,6 @@ LC_ALL=C
 export LC_ALL
 
 SELF=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P) || SELF=.
-# The generated header ships beside the other vendored tables; the cross-check artefacts (the two
-# tsv tables, report.txt, the cached system rgb.txt) stay in the ticket work area -- they are
-# evidence and inputs to the check, not something Render.cpp includes.
 DATA=${X11_DATA_DIR:-/d/dbcli/cache/audit90/x11}
 
 GHOSTTY=${GHOSTTY_DIR:-/d/Green/github/ghostty}
@@ -76,12 +18,10 @@ SRC_B="$WEZTERM/color-types/src/rgb.txt"
 SRC_D="$MSFT/src/types/colorTable.cpp"
 OUT="$SELF/vendor/X11ColorNames.h"
 
-EXPECT_N=676                       # folded rows; a deliberate edit if upstream really changes
-ALLOWED_MSFT='^(gray|grey)(50|90)$'   # msfterm computes the ramp, X11 spells it out -- VERIFY.md
-ALLOWED_MSFT_ONLY='0$'                # msfterm invents "<family>0" as an alias of the base colour
+EXPECT_N=676
+ALLOWED_MSFT='^(gray|grey)(50|90)$'
+ALLOWED_MSFT_ONLY='0$'
 
-# Names in the 2020 system copy's successor that the OS-packaged /etc/X11/rgb.txt predates.
-# These are the CSS4 keywords plus the web*/x11* disambiguators freedesktop added later.
 NEWER_THAN_SYSTEM='aqua
 crimson
 fuchsia
@@ -101,7 +41,6 @@ x11green
 x11grey
 x11maroon
 x11purple'
-# Debian patches one colour of its own into the packaged file.
 SYSTEM_ONLY='debianred'
 
 CHECK=""
@@ -111,7 +50,7 @@ for a in "$@"; do
   case $a in
     --check)  CHECK=1 ;;
     --report) REPORT=1 ;;
-    --dump-table) DUMP=1 ;;     # write the verified extraction as name<TAB>r<TAB>g<TAB>b
+    --dump-table) DUMP=1 ;;
     *) printf 'usage: %s [--check|--report|--dump-table]\n' "$0" >&2; exit 2 ;;
   esac
 done
@@ -123,13 +62,6 @@ done
 WORK=$(mktemp -d) || exit 2
 trap 'rm -rf "$WORK"' EXIT
 
-# ----------------------------------------------------------------------------------------
-# parser 1 -- ghostty's fixed-column rule.
-#   Zig: trim(line[0..3]) trim(line[4..7]) trim(line[8..11])  name = trim(line[12..])
-#   awk counts from 1, so those four fields are substr(,1,3) substr(,5,3) substr(,9,3) substr(,13)
-# A line that is not "three 0..255 integers in columns 1-11 plus a name" is a hard error, never
-# a silent skip -- a silently skipped line is how a table quietly loses rows.
-# ----------------------------------------------------------------------------------------
 p_fixed() {
   awk '
     { sub(/\r$/, "") }
@@ -154,13 +86,6 @@ p_fixed() {
   ' "$1"
 }
 
-# ----------------------------------------------------------------------------------------
-# parser 2 -- wezterm's whitespace rule.
-#   Rust: split_ascii_whitespace(); [0][1][2] are the components; name = [3..].join(" ")
-#         .to_ascii_lowercase()                                     (color-types/src/lib.rs:393-403)
-# Carries no column assumption at all, which is what makes it an independent second opinion
-# of parser 1 rather than a restatement of it.
-# ----------------------------------------------------------------------------------------
 p_wssplit() {
   awk '
     { sub(/\r$/, "") }
@@ -180,13 +105,6 @@ p_wssplit() {
   ' "$1"
 }
 
-# ----------------------------------------------------------------------------------------
-# parser 3 -- msfterm's derivation, a structurally different artifact:
-#   xorgAppVariantColorTable  colorTable.cpp:49    family + index 0..4  -> family0 .. family4
-#   xorgAppColorTable         colorTable.cpp:130   plain names
-#   gray0..99 / grey0..99     colorTable.cpp:346-355  computed: ((i*255)+50)/100
-#   fold rule                 colorTable.cpp:296-334  ASCII lowercase, spaces dropped
-# ----------------------------------------------------------------------------------------
 p_msft() {
   awk '
     function trim(s) { gsub(/^ +/, "", s); gsub(/ +$/, "", s); return s }
@@ -222,9 +140,6 @@ p_msft() {
   ' "$1" | sort -u
 }
 
-# ----------------------------------------------------------------------------------------
-# L1 -- two parsers x two vendored copies: all four readings must return one identical set.
-# ----------------------------------------------------------------------------------------
 A1="$WORK/a1"; A2="$WORK/a2"; B2="$WORK/b2"; C2="$WORK/c2"; D3="$WORK/d3"
 p_fixed   "$SRC_A" > "$A1" || { printf 'L1: parser 1 choked on %s -- the file moved out from under the fixed-column rule; look before regenerating\n' "$SRC_A" >&2; exit 1; }
 p_wssplit "$SRC_A" > "$A2" || { printf 'L1: parser 2 choked on %s\n' "$SRC_A" >&2; exit 1; }
@@ -234,7 +149,6 @@ p_msft    "$SRC_D" > "$D3" || { printf 'L3: parser 3 choked on %s\n' "$SRC_D" >&
 sort -u "$A1" > "$WORK/a1s"; sort -u "$A2" > "$WORK/a2s"
 N_A1=$(wc -l < "$WORK/a1s" | tr -d ' '); N_A2=$(wc -l < "$WORK/a2s" | tr -d ' ')
 
-# A folded name reaching two different RGBs is the failure this script exists to catch.
 CONFLICT=$(cat "$WORK/a1s" "$WORK/a2s" | cut -f1 | uniq -d)
 if [ -n "$CONFLICT" ]; then
   printf 'L1 FAILED: the two parsers give one name two different colours:\n' >&2
@@ -254,9 +168,6 @@ fi
 TAB="$WORK/a1s"
 N=$N_A1
 
-# All four cells of {parser 1, parser 2} x {copy A, copy B} must be one identical set. Running B
-# through parser 1 as well is the point: A and B are byte-different artifacts, so this is four
-# readings of two things, not one reading of two files.
 sort -u "$B2" > "$WORK/b2s"
 N_B2=$(wc -l < "$WORK/b2s" | tr -d ' ')
 if p_fixed "$SRC_B" > "$WORK/b1" 2>"$WORK/b1.err"; then
@@ -278,9 +189,6 @@ for cell in "$WORK/b2s" "$WORK/b1s"; do
   }
 done
 
-# Independence, checked rather than claimed. If the two "copies" were the same bytes, L1 would be
-# two parsers over one artifact and the source dimension would be empty -- worth knowing, because
-# both files descend from the same freedesktop upstream.
 MD_A=$(cksum "$SRC_A" | awk '{print $1 "/" $2}')
 MD_B=$(cksum "$SRC_B" | awk '{print $1 "/" $2}')
 if [ "$MD_A" = "$MD_B" ]; then
@@ -294,15 +202,11 @@ B_CRS=$(tr -dc '\r' < "$SRC_B" | wc -c | tr -d ' ')
 REFLOW=$(diff <(tr -d '\r' < "$SRC_A") <(tr -d '\r' < "$SRC_B") | grep -c '^<' || true)
 ROWS_A=$(awk '{ sub(/\r$/, "") } $0 != "" && substr($0, 1, 1) != "!" { n++ } END { print n }' "$SRC_A")
 
-# ----------------------------------------------------------------------------------------
-# L2 -- the third, OS-packaged copy (Debian/Ubuntu xorg's /etc/X11/rgb.txt, 2020 vintage).
-# ----------------------------------------------------------------------------------------
 L2C=skipped
 N_C=0
 if [ -n "$WSL_RGB" ] && [ -f "$WSL_RGB" ]; then
   p_wssplit "$WSL_RGB" > "$C2" || { printf 'L2: parser 2 choked on %s\n' "$WSL_RGB" >&2; exit 1; }
   sort -u "$C2" > "$WORK/c2s"; N_C=$(wc -l < "$WORK/c2s" | tr -d ' ')
-  # values on shared names must agree absolutely -- a rename is not a redefinition
   CDIFF=$(awk -F'\t' 'NR==FNR{x[$1]=$2"/"$3"/"$4;next} ($1 in x) && x[$1]!=$2"/"$3"/"$4 \
     { printf "  SHARED-NAME VALUE DIFF %s system=%s current=%s\n", $1, x[$1], $2"/"$3"/"$4 }' \
       "$WORK/c2s" "$WORK/a1s")
@@ -319,9 +223,6 @@ if [ -n "$WSL_RGB" ] && [ -f "$WSL_RGB" ]; then
   L2C=ok
 fi
 
-# ----------------------------------------------------------------------------------------
-# L3 -- msfterm's derivation.
-# ----------------------------------------------------------------------------------------
 N_D=$(wc -l < "$D3" | tr -d ' ')
 MSFT_BAD=$(awk -F'\t' -v ok="$ALLOWED_MSFT" '
   NR == FNR { d[$1] = $2 "/" $3 "/" $4; next }
@@ -366,16 +267,11 @@ MSFT_ONLY_BAD=$(printf '%s\n' "$MSFT_ONLY" | grep -v "$ALLOWED_MSFT_ONLY" || tru
 
 [ "$N" = "$EXPECT_N" ] || { printf 'unexpected table size %s (expected %s). If upstream really changed, edit EXPECT_N deliberately and re-read VERIFY.md.\n' "$N" "$EXPECT_N" >&2; exit 1; }
 
-# ----------------------------------------------------------------------------------------
-# Anchors. A table that parses cleanly and still gets red wrong is worse than no table. Every
-# line below is a claim a reference implementation makes about itself, not our arithmetic.
-# ----------------------------------------------------------------------------------------
 anchor() {
   local want=$1 name=$2 rgb
   rgb=$(awk -F'\t' -v k="$name" '$1 == k { print $2 "/" $3 "/" $4; exit }' "$TAB")
   [ "$rgb" = "$want" ] || { printf 'anchor failed: %s is %s, expected %s\n' "$name" "${rgb:-<absent>}" "$want" >&2; exit 1; }
 }
-# ghostty src/terminal/x11_color.zig:83-95 -- its own test block
 anchor 255/255/255 white
 anchor   0/250/154 mediumspringgreen
 anchor  34/139/34  forestgreen
@@ -384,14 +280,11 @@ anchor 255/0/0     red
 anchor   0/255/0   green
 anchor   0/0/255   blue
 anchor 124/252/0   lawngreen
-# the spellings #84 names in its acceptance text
 anchor 127/127/127 gray50
 anchor 127/127/127 grey50
 anchor 173/216/230 lightblue
 anchor 188/143/143 rosybrown
 anchor 102/51/153  rebeccapurple
-# the X11-vs-CSS pairs that share a word and must not be averaged: rgb.txt spells the X11 value
-# with the bare word and the web value under web*/x11* (ghostty's copy lines 58/218/240).
 anchor 190/190/190 gray
 anchor 128/128/128 webgray
 anchor 190/190/190 x11gray
@@ -401,37 +294,26 @@ anchor 176/48/96   maroon
 anchor 128/0/0     webmaroon
 anchor 0/255/255   aqua
 anchor 127/255/212 aquamarine
-# numbered rows are data here, not arithmetic: msfterm computes these and gets two wrong
 anchor 127/255/212 aquamarine1
 anchor 118/238/198 aquamarine2
 anchor 102/205/170 aquamarine3
 anchor  69/139/116 aquamarine4
-# every numbered gray, both spellings, no gaps (202 rows)
 for i in $(seq 0 100); do
   for s in gray grey; do
     awk -F'\t' -v k="$s$i" '$1 == k { found = 1 } END { exit !found }' "$TAB" \
       || { printf 'missing %s%s\n' "$s" "$i" >&2; exit 1; }
   done
 done
-# No key may be confusable with a hex spec. This is the fact that makes "parse the spec first,
-# fall back to the name" safe regardless of which order a caller picks, so it is asserted rather
-# than observed once: 0 keys start with a digit, and none starts with "rgb".
 DIGIT_INITIAL=$(cut -f1 "$TAB" | grep -c '^[0-9]' || true)
 [ "$DIGIT_INITIAL" = 0 ] || { printf '%s keys start with a digit, so a name could shadow a spec\n' "$DIGIT_INITIAL" >&2; exit 1; }
 RGB_PREFIX=$(cut -f1 "$TAB" | grep -c '^rgb' || true)
 [ "$RGB_PREFIX" = 0 ] || { printf '%s keys start with "rgb", so rgb:... would be ambiguous\n' "$RGB_PREFIX" >&2; exit 1; }
 
-# wezterm synthesises transparent/none/clear as alpha 0 and rgb.txt has none of them; a palette
-# entry has no alpha to carry, so they must stay absent.
 for k in transparent none clear; do
   ! awk -F'\t' -v k="$k" '$1 == k { found = 1 } END { exit !found }' "$TAB" \
     || { printf '%s must not be in the table (no rgb.txt row; wezterm-only, alpha 0)\n' "$k" >&2; exit 1; }
 done
 
-# --dump-table: the verified extraction, one name<TAB>r<TAB>g<TAB>b row per entry, plus msfterm's
-# own derivation beside it. x11_selftest.cpp reads these to check the header name-for-name --
-# the L1 four-cell test compares two SETS built from the same pipeline and so cannot see a row
-# that the emitter drops or duplicates. This closes that hole with a reader in a third language.
 if [ -n "$DUMP" ]; then
   cp "$TAB" "$DATA/x11colors.table.tsv" || exit 1
   cp "$D3"  "$DATA/msfterm.table.tsv"  || exit 1
@@ -559,9 +441,6 @@ TMP=$(mktemp)
   printf '#endif /* DBCLI_CONEMU_X11COLORNAMES_H */\n'
 } > "$TMP" || { printf 'header emission failed\n' >&2; rm -f "$TMP"; exit 1; }
 
-# Emission self-check: every C format string here goes through bash printf, which silently eats a
-# bare %02x and turns it into 00 -- the header then still compiles and answers #000000 for
-# everything. This exact bug happened once; the guard is the reason it cannot happen quietly again.
 grep -qF 'snprintf(buf, cap, "rgb:%02x/%02x/%02x", r, g, b)' "$TMP" \
   || { printf 'emission mangled the C format strings (unescaped %% in this script)\n' >&2; rm -f "$TMP"; exit 1; }
 grep -qF 'snprintf(buf, cap, "#%04x%04x%04x"' "$TMP" \
